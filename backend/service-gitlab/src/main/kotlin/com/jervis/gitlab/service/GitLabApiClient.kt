@@ -18,7 +18,17 @@ class GitLabApiClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun getApiUrl(baseUrl: String): String {
-        return baseUrl.takeIf { it.isNotBlank() } ?: "https://gitlab.com/api/v4"
+        val base = baseUrl.takeIf { it.isNotBlank() } ?: "https://gitlab.com"
+        return "${base.trimEnd('/')}/api/v4"
+    }
+
+    private suspend fun checkResponse(response: HttpResponse, context: String): String {
+        val responseText = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            log.error { "GitLab API error ($context): status=${response.status.value}, body=$responseText" }
+            throw RuntimeException("GitLab API error ($context): ${response.status.value}")
+        }
+        return responseText
     }
 
     suspend fun getUser(baseUrl: String, token: String): GitLabUser {
@@ -26,7 +36,7 @@ class GitLabApiClient(
         val response = httpClient.get("$apiUrl/user") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "getUser")
         return json.decodeFromString(GitLabUser.serializer(), responseText)
     }
 
@@ -38,7 +48,7 @@ class GitLabApiClient(
             parameter("order_by", "last_activity_at")
             parameter("membership", true)
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "listProjects")
         return json.decodeFromString(responseText)
     }
 
@@ -47,7 +57,7 @@ class GitLabApiClient(
         val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "getProject")
         return json.decodeFromString(GitLabProject.serializer(), responseText)
     }
 
@@ -57,7 +67,7 @@ class GitLabApiClient(
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("per_page", 100)
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "listIssues")
         return json.decodeFromString(responseText)
     }
 
@@ -66,7 +76,7 @@ class GitLabApiClient(
         val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "getIssue")
         return json.decodeFromString(GitLabIssue.serializer(), responseText)
     }
 
@@ -75,7 +85,7 @@ class GitLabApiClient(
         val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "listWikis")
         return json.decodeFromString(responseText)
     }
 
@@ -84,7 +94,7 @@ class GitLabApiClient(
         val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis/$slug") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "getWikiPage")
         return json.decodeFromString(GitLabWikiPage.serializer(), responseText)
     }
 
@@ -94,7 +104,7 @@ class GitLabApiClient(
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("ref", ref ?: "main")
         }
-        val responseText = response.bodyAsText()
+        val responseText = checkResponse(response, "getFile")
         return json.decodeFromString(GitLabFile.serializer(), responseText)
     }
 }

@@ -2,6 +2,7 @@ package com.jervis.service.oauth2
 
 import com.jervis.common.types.ConnectionId
 import com.jervis.domain.OAuth2Provider
+import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.entity.connection.ConnectionDocument
@@ -76,6 +77,8 @@ class OAuth2Service(
                 state = state,
             )
 
+        log.info { "OAuth2 authorization URL generated for $provider: ${authorizationUrl.take(200)}..." }
+
         return OAuth2AuthorizationResponse(
             authorizationUrl = authorizationUrl,
             state = state,
@@ -137,9 +140,13 @@ class OAuth2Service(
         code: String,
         state: String,
     ): OAuth2CallbackResult {
+        log.info { "OAuth2 callback received: state=$state, code=${code.take(10)}..." }
         val connectionId =
             pendingAuthorizations.remove(state)
-                ?: return OAuth2CallbackResult.InvalidState
+                ?: run {
+                    log.warn { "OAuth2 callback: state not found (server may have restarted). Pending states: ${pendingAuthorizations.keys.size}" }
+                    return OAuth2CallbackResult.InvalidState
+                }
 
         return try {
             val connection =
@@ -159,16 +166,31 @@ class OAuth2Service(
                     redirectUri = oauth2Properties.redirectUri,
                 )
 
-            // Update connection with access token
-            val accessToken = tokenResponse["access_token"] as String
+            // Update connection with access token, refresh token, and expiry
+            val accessToken = tokenResponse["access_token"]
+                ?: throw IllegalStateException("No access_token in OAuth2 response")
+            val refreshToken = tokenResponse["refresh_token"]
+            val expiresIn = tokenResponse["expires_in"]?.toLongOrNull()
+            val tokenExpiresAtEpochMs = expiresIn?.let { System.currentTimeMillis() + it * 1000 }
+
+            // For Atlassian, resolve cloud ID from accessible-resources endpoint
+            val cloudId = if (provider == OAuth2Provider.ATLASSIAN) {
+                resolveAtlassianCloudId(accessToken)
+            } else {
+                null
+            }
+
             val updatedConnection =
                 connection.copy(
-                    bearerToken = accessToken,  // Store in the standard field, not legacy credentials
+                    bearerToken = accessToken,
+                    refreshToken = refreshToken,
+                    tokenExpiresAtEpochMs = tokenExpiresAtEpochMs,
+                    cloudId = cloudId ?: connection.cloudId,
                     state = ConnectionStateEnum.VALID,
                 )
             connectionService.save(updatedConnection)
 
-            log.info { "Successfully authorized connection: $connectionId" }
+            log.info { "Successfully authorized connection: $connectionId, cloudId=$cloudId" }
             OAuth2CallbackResult.Success
         } catch (e: Exception) {
             log.error(e) { "Failed to complete OAuth2 flow" }
@@ -236,11 +258,91 @@ class OAuth2Service(
             when (provider) {
                 OAuth2Provider.GITHUB -> "repo user admin:org admin:public_key admin:repo_hook admin:org_hook gist notifications workflow write:discussion write:packages delete:packages admin:gpg_key admin:ssh_signing_key codespace project security_events"
                 OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository read_registry write_registry sudo admin_mode"
-                OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space offline_access"
+                OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
             }
         }
     }
+
+    /**
+     * Refresh an expired OAuth2 access token using the stored refresh token.
+     * Returns true if the token was refreshed, false if no refresh needed or no refresh token available.
+     */
+    suspend fun refreshAccessToken(connection: ConnectionDocument): Boolean {
+        if (connection.authType != AuthTypeEnum.OAUTH2) return false
+        if (connection.refreshToken == null) {
+            log.warn { "Connection ${connection.id} has no refresh token, cannot refresh" }
+            return false
+        }
+
+        // Check if token is still valid (with 5 min buffer)
+        val expiresAtMs = connection.tokenExpiresAtEpochMs
+        if (expiresAtMs != null && System.currentTimeMillis() + 300_000 < expiresAtMs) {
+            return false // Token still valid
+        }
+
+        log.info { "Refreshing OAuth2 token for connection ${connection.id} (${connection.name})" }
+
+        val provider = determineProvider(connection)
+        val providerConfig = getProviderConfig(provider)
+        val tokenUrl = getTokenUrl(provider)
+
+        return try {
+            val response =
+                httpClient.submitForm(
+                    url = tokenUrl,
+                    formParameters =
+                        io.ktor.http.parameters {
+                            append("client_id", providerConfig.clientId)
+                            append("client_secret", providerConfig.clientSecret)
+                            append("refresh_token", connection.refreshToken)
+                            append("grant_type", "refresh_token")
+                        },
+                ) {
+                    accept(ContentType.Application.Json)
+                }
+
+            val responseText = response.bodyAsText()
+            log.debug { "OAuth2 refresh response: $responseText" }
+
+            val tokenResponse =
+                if (responseText.startsWith("{")) {
+                    parseJsonResponse(responseText)
+                } else {
+                    parseUrlEncodedResponse(responseText)
+                }
+
+            val accessToken = tokenResponse["access_token"]
+                ?: throw IllegalStateException("No access_token in refresh response")
+            val newRefreshToken = tokenResponse["refresh_token"] ?: connection.refreshToken
+            val expiresIn = tokenResponse["expires_in"]?.toLongOrNull()
+            val newExpiresAtMs = expiresIn?.let { System.currentTimeMillis() + it * 1000 }
+
+            val updatedConnection =
+                connection.copy(
+                    bearerToken = accessToken,
+                    refreshToken = newRefreshToken,
+                    tokenExpiresAtEpochMs = newExpiresAtMs,
+                    state = ConnectionStateEnum.VALID,
+                )
+            connectionService.save(updatedConnection)
+
+            log.info { "Successfully refreshed OAuth2 token for connection ${connection.id}" }
+            true
+        } catch (e: Exception) {
+            log.error(e) { "Failed to refresh OAuth2 token for connection ${connection.id}" }
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            false
+        }
+    }
+
+    private fun getTokenUrl(provider: OAuth2Provider): String =
+        when (provider) {
+            OAuth2Provider.GITHUB -> "https://github.com/login/oauth/access_token"
+            OAuth2Provider.GITLAB -> "https://gitlab.com/oauth/token"
+            OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/access_token"
+            OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/oauth/token"
+        }
 
     private suspend fun exchangeCodeForToken(
         provider: OAuth2Provider,
@@ -249,13 +351,7 @@ class OAuth2Service(
         clientSecret: String,
         redirectUri: String,
     ): Map<String, String> {
-        val tokenUrl =
-            when (provider) {
-                OAuth2Provider.GITHUB -> "https://github.com/login/oauth/access_token"
-                OAuth2Provider.GITLAB -> "https://gitlab.com/oauth/token"
-                OAuth2Provider.BITBUCKET -> "https://bitbucket.org/site/oauth2/access_token"
-                OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/oauth/token"
-            }
+        val tokenUrl = getTokenUrl(provider)
 
         val response =
             if (provider == OAuth2Provider.GITHUB) {
@@ -296,12 +392,14 @@ class OAuth2Service(
     }
 
     private fun parseJsonResponse(json: String): Map<String, String> {
-        // Simple JSON parsing for access_token
         val result = mutableMapOf<String, String>()
-        val accessTokenMatch = Regex("""access_token"\s*:\s*"([^"]+)"""").find(json)
-        if (accessTokenMatch != null) {
-            result["access_token"] = accessTokenMatch.groupValues[1]
+        for (key in listOf("access_token", "refresh_token", "token_type", "scope")) {
+            val match = Regex(""""$key"\s*:\s*"([^"]+)"""").find(json)
+            if (match != null) result[key] = match.groupValues[1]
         }
+        // expires_in is a number, not a string
+        val expiresMatch = Regex(""""expires_in"\s*:\s*(\d+)""").find(json)
+        if (expiresMatch != null) result["expires_in"] = expiresMatch.groupValues[1]
         return result
     }
 
@@ -310,6 +408,38 @@ class OAuth2Service(
             val parts = it.split("=", limit = 2)
             parts[0] to (parts.getOrNull(1) ?: "")
         }
+
+    /**
+     * Resolve Atlassian cloud ID by calling the accessible-resources endpoint.
+     * Returns the first cloud ID (most users have one site).
+     * See: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3LO-apps/#2--get-the-cloudid-for-your-site
+     */
+    private suspend fun resolveAtlassianCloudId(accessToken: String): String? {
+        return try {
+            val response = httpClient.get("https://api.atlassian.com/oauth/token/accessible-resources") {
+                headers.append("Authorization", "Bearer $accessToken")
+                accept(io.ktor.http.ContentType.Application.Json)
+            }
+
+            val responseText = response.bodyAsText()
+            log.info { "Atlassian accessible-resources response: $responseText" }
+
+            // Parse JSON array: [{"id":"cloudId","url":"https://xxx.atlassian.net","name":"xxx",...}]
+            val cloudIdMatch = Regex(""""id"\s*:\s*"([^"]+)"""").find(responseText)
+            val cloudId = cloudIdMatch?.groupValues?.get(1)
+
+            if (cloudId != null) {
+                log.info { "Resolved Atlassian cloudId: $cloudId" }
+            } else {
+                log.warn { "No cloudId found in accessible-resources response" }
+            }
+
+            cloudId
+        } catch (e: Exception) {
+            log.error(e) { "Failed to resolve Atlassian cloud ID" }
+            null
+        }
+    }
 }
 
 data class OAuth2AuthorizationResponse(

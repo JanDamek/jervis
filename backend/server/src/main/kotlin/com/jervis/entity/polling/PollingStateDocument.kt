@@ -30,8 +30,8 @@ import java.time.Instant
 @Document(collection = "polling_states")
 @CompoundIndexes(
     CompoundIndex(
-        name = "connection_provider_unique_idx",
-        def = "{'connectionId': 1, 'provider': 1}",
+        name = "connection_provider_tool_unique_idx",
+        def = "{'connectionId': 1, 'provider': 1, 'tool': 1}",
         unique = true,
     ),
 )
@@ -40,6 +40,7 @@ data class PollingStateDocument(
     val id: PollingStateId = PollingStateId.generate(),
     val connectionId: ConnectionId,
     val provider: ProviderEnum,
+    val tool: String = "",
     val lastFetchedUid: Long? = null,
     val lastFetchedMessageNumber: Int? = null,
     val lastSeenUpdatedAt: Instant? = null,

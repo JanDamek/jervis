@@ -10,6 +10,7 @@ data class BugTrackerUserRequest(
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable
@@ -28,6 +29,7 @@ data class BugTrackerSearchRequest(
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val projectKey: String? = null,
     val query: String? = null,
     val maxResults: Int = 100,
@@ -46,6 +48,7 @@ data class BugTrackerIssueRequest(
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val issueKey: String,
 )
 
@@ -87,6 +90,7 @@ data class BugTrackerProjectsRequest(
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable

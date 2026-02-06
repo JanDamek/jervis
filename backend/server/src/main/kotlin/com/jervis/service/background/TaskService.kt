@@ -9,6 +9,7 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
+import com.jervis.configuration.properties.KoogProperties
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
@@ -25,6 +26,7 @@ import java.time.Instant
 class TaskService(
     private val taskRepository: TaskRepository,
     private val tikaTextExtractionService: TikaTextExtractionService,
+    private val koogProperties: KoogProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -189,55 +191,64 @@ class TaskService(
 
     /**
      * Return the task from QUALIFYING to READY_FOR_QUALIFICATION for retry.
-     * Used when qualification fails with retriable error (timeout, connection).
-     * Increments retry counter.
+     * Uses DB-based exponential backoff: 1s, 2s, 4s, 8s, ... up to 5min, then stays at 5min forever.
+     * Operational errors (timeout, connection refused) never mark as ERROR - they keep retrying.
+     * The task is stored in DB with a future nextQualificationRetryAt timestamp.
      */
-    suspend fun returnToQueue(
-        task: TaskDocument,
-        maxRetries: Int,
-    ) {
-        if (task.state != TaskStateEnum.QUALIFYING) {
+    suspend fun returnToQueue(task: TaskDocument) {
+        // Reload from DB to get current state (caller may have stale in-memory object)
+        val current = task.id?.let { taskRepository.findById(it) } ?: task
+        if (current.state != TaskStateEnum.QUALIFYING) {
             logger.warn {
-                "Cannot return task to queue - expected QUALIFYING but was ${task.state}: ${task.id}"
+                "Cannot return task to queue - expected QUALIFYING but was ${current.state}: ${current.id}"
             }
             return
         }
 
-        val newRetryCount = task.qualificationRetries + 1
+        val newRetryCount = current.qualificationRetries + 1
 
-        if (newRetryCount >= maxRetries) {
-            logger.warn {
-                "TASK_MAX_RETRIES_REACHED: id=${task.id} correlationId=${task.correlationId} " +
-                    "retries=$newRetryCount maxRetries=$maxRetries - marking as ERROR"
-            }
-            markAsError(task, "Max qualification retries reached ($maxRetries)")
-            return
-        }
+        // Exponential backoff: min(initialMs * 2^(retry-1), maxMs)
+        val backoffMs = minOf(
+            koogProperties.qualifierInitialBackoffMs * (1L shl minOf(newRetryCount - 1, 30)),
+            koogProperties.qualifierMaxBackoffMs,
+        )
+        val nextRetryAt = Instant.now().plusMillis(backoffMs)
 
-        val updated =
-            task.copy(
-                state = TaskStateEnum.READY_FOR_QUALIFICATION,
-                qualificationRetries = newRetryCount,
-                createdAt = Instant.now(), // Move to the end of the queue
-            )
+        val updated = current.copy(
+            state = TaskStateEnum.READY_FOR_QUALIFICATION,
+            qualificationRetries = newRetryCount,
+            nextQualificationRetryAt = nextRetryAt,
+        )
         taskRepository.save(updated)
 
         logger.info {
-            "TASK_RETURNED_TO_QUEUE: id=${task.id} correlationId=${task.correlationId} " +
-                "from=QUALIFYING to=READY_FOR_QUALIFICATION retry=$newRetryCount/$maxRetries " +
-                "(moved to end of queue)"
+            "TASK_RETURNED_TO_QUEUE: id=${current.id} correlationId=${current.correlationId} " +
+                "retry=$newRetryCount backoffMs=$backoffMs nextRetryAt=$nextRetryAt"
         }
     }
 
     /**
-     * Return all tasks that should be considered for qualification now:
-     * - READY_FOR_QUALIFICATION: need to be claimed
+     * Return all tasks eligible for qualification now:
+     * - READY_FOR_QUALIFICATION where nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
      *
-     * Note: QUALIFYING tasks are NOT included - they are already being processed.
-     * This prevents multiple concurrent processing of the same task.
+     * Tasks with future nextQualificationRetryAt are hidden until their backoff window elapses.
      */
     suspend fun findTasksForQualification(): Flow<TaskDocument> =
-        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_QUALIFICATION)
+        flow {
+            // New tasks (never retried, no nextQualificationRetryAt)
+            emitAll(
+                taskRepository.findByStateAndNextQualificationRetryAtIsNullOrderByCreatedAtAsc(
+                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                ),
+            )
+            // Retried tasks where backoff has elapsed
+            emitAll(
+                taskRepository.findByStateAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
+                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                    Instant.now(),
+                ),
+            )
+        }
 
     /**
      * Atomically claim a task for qualification using MongoDB findAndModify.

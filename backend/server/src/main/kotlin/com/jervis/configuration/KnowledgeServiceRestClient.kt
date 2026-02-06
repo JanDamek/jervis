@@ -14,6 +14,7 @@ import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
@@ -54,6 +55,11 @@ class KnowledgeServiceRestClient(
                     encodeDefaults = true
                 },
             )
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 600_000   // 10 minutes - ingestFull uses LLM for each attachment
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 600_000
         }
     }
 

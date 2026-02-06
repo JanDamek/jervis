@@ -3,21 +3,28 @@ package com.jervis.service.project
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.repository.ProjectRepository
+import com.jervis.service.indexing.git.GitRepositoryService
 import com.jervis.service.storage.DirectoryStructureService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 @Service
 class ProjectService(
     private val projectRepository: ProjectRepository,
-    // private val gitRepositoryService: GitRepositoryService, // Temporarily disabled
+    private val gitRepositoryService: GitRepositoryService,
     private val directoryStructureService: DirectoryStructureService,
 ) {
+    private val bgScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     companion object {
         private val logger = KotlinLogging.logger {}
     }
@@ -35,15 +42,12 @@ class ProjectService(
                 name = project.name,
                 description = project.description,
                 communicationLanguageEnum = project.communicationLanguageEnum,
-                gitRepositoryConnectionId = project.gitRepositoryConnectionId,
-                gitRepositoryIdentifier = project.gitRepositoryIdentifier,
-                bugtrackerConnectionId = project.bugtrackerConnectionId,
-                bugtrackerProjectKey = project.bugtrackerProjectKey,
-                wikiConnectionId = project.wikiConnectionId,
-                wikiSpaceKey = project.wikiSpaceKey,
                 buildConfig = project.buildConfig,
                 costPolicy = project.costPolicy,
                 gitCommitConfig = project.gitCommitConfig,
+                connectionCapabilities = project.connectionCapabilities,
+                resources = project.resources,
+                resourceLinks = project.resourceLinks,
             )
                 ?: project
 
@@ -55,6 +59,18 @@ class ProjectService(
             logger.info { "Created new project: ${savedProject.name}" }
         } else {
             logger.info { "Updated project: ${savedProject.name}" }
+        }
+
+        // Trigger async repo sync if project has REPOSITORY resources
+        val hasRepos = savedProject.resources.any { it.capability == ConnectionCapability.REPOSITORY }
+        if (hasRepos) {
+            bgScope.launch {
+                try {
+                    gitRepositoryService.syncProjectRepositories(savedProject)
+                } catch (e: Exception) {
+                    logger.error(e) { "Background repo sync failed for project ${savedProject.name}" }
+                }
+            }
         }
 
         return savedProject.toDto()

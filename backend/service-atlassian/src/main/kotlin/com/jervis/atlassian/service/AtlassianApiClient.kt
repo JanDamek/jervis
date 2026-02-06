@@ -292,6 +292,59 @@ private data class ConfluenceSpacesResultDto(
     val size: Int? = null,
 )
 
+// Confluence V2 API DTOs (used for Cloud gateway where V1 returns 410 Gone)
+@Serializable
+private data class ConfluenceV2SpacesResultDto(
+    val results: List<ConfluenceV2SpaceItemDto>? = null,
+)
+
+@Serializable
+private data class ConfluenceV2SpaceItemDto(
+    val id: String,
+    val key: String,
+    val name: String,
+    val type: String? = null,
+    val status: String? = null,
+    val description: ConfluenceV2DescriptionDto? = null,
+)
+
+@Serializable
+private data class ConfluenceV2DescriptionDto(
+    val plain: ConfluenceV2PlainDto? = null,
+)
+
+@Serializable
+private data class ConfluenceV2PlainDto(
+    val value: String? = null,
+)
+
+@Serializable
+private data class ConfluenceV2SearchResultDto(
+    val results: List<ConfluenceV2SearchItemDto>? = null,
+)
+
+@Serializable
+private data class ConfluenceV2SearchItemDto(
+    val content: ConfluenceV2ContentDto? = null,
+    // CQL search wraps content in a "content" field
+)
+
+@Serializable
+private data class ConfluenceV2ContentDto(
+    val id: String,
+    val title: String,
+    val type: String? = null,
+    val status: String? = null,
+    val spaceId: String? = null,
+    val version: ConfluenceV2VersionDto? = null,
+)
+
+@Serializable
+private data class ConfluenceV2VersionDto(
+    val number: Int? = null,
+    val createdAt: String? = null,
+)
+
 @Serializable
 private data class ConfluencePageDetailDto(
     val id: String,
@@ -356,6 +409,52 @@ class AtlassianApiClient(
         }
     }
 
+    private fun resolveConnection(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String? = null,
+    ): AtlassianConnection {
+        val auth = when (authType) {
+            com.jervis.common.dto.AuthType.BASIC -> com.jervis.common.dto.atlassian.AtlassianAuth.Basic(basicUsername.orEmpty(), basicPassword.orEmpty())
+            com.jervis.common.dto.AuthType.BEARER, com.jervis.common.dto.AuthType.OAUTH2 -> com.jervis.common.dto.atlassian.AtlassianAuth.Bearer(bearerToken.orEmpty())
+            com.jervis.common.dto.AuthType.NONE -> com.jervis.common.dto.atlassian.AtlassianAuth.None
+        }
+        return AtlassianConnection(baseUrl = baseUrl, auth = auth, cloudId = cloudId)
+    }
+
+    /**
+     * Get Jira API base URL. For OAuth2 with cloudId, uses the Atlassian cloud gateway.
+     * Direct: https://mazlusek.atlassian.net → https://mazlusek.atlassian.net
+     * OAuth2: https://mazlusek.atlassian.net + cloudId → https://api.atlassian.com/ex/jira/{cloudId}
+     */
+    private fun getJiraBaseUrl(conn: AtlassianConnection): String {
+        if (conn.cloudId != null && conn.auth is com.jervis.common.dto.atlassian.AtlassianAuth.Bearer) {
+            return "https://api.atlassian.com/ex/jira/${conn.cloudId}"
+        }
+        return conn.baseUrl.trimEnd('/')
+    }
+
+    /**
+     * Get Confluence API base URL. For OAuth2 with cloudId, uses the Atlassian cloud gateway.
+     * Direct: https://mazlusek.atlassian.net → https://mazlusek.atlassian.net/wiki
+     * OAuth2 gateway: https://api.atlassian.com/ex/confluence/{cloudId}/wiki
+     * The /wiki prefix is needed on both direct AND gateway paths.
+     * See: https://community.developer.atlassian.com/t/unauthorized-scope-does-not-match-confluence/73795
+     */
+    private fun getConfluenceBaseUrl(conn: AtlassianConnection): String {
+        if (conn.cloudId != null && conn.auth is com.jervis.common.dto.atlassian.AtlassianAuth.Bearer) {
+            return "https://api.atlassian.com/ex/confluence/${conn.cloudId}/wiki"
+        }
+        return "${conn.baseUrl.trimEnd('/')}/wiki"
+    }
+
+    /** Whether this connection uses the Atlassian cloud gateway (OAuth2 + cloudId). */
+    private fun isCloudGateway(conn: AtlassianConnection): Boolean =
+        conn.cloudId != null && conn.auth is com.jervis.common.dto.atlassian.AtlassianAuth.Bearer
+
     /**
      * Execute HTTP request with rate limiting.
      * Automatically applies rate limiting based on the target domain.
@@ -375,30 +474,13 @@ class AtlassianApiClient(
     }
 
     suspend fun getMyself(request: AtlassianMyselfRequest): AtlassianUserDto {
-        logger.info { "Resolving Atlassian user for baseUrl=${request.baseUrl}" }
-        val auth =
-            when (request.authType.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
+        logger.info { "Resolving Atlassian user for baseUrl=${request.baseUrl}, cloudId=${request.cloudId}" }
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-
-        val isCloud = request.baseUrl.contains("atlassian.net")
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = request.baseUrl.contains("atlassian.net") || conn.cloudId != null
         val apiVersion = if (isCloud) "3" else "2"
-        val url = "${conn.baseUrl.trimEnd('/')}/rest/api/$apiVersion/myself"
+        val url = "$jiraBase/rest/api/$apiVersion/myself"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
@@ -409,8 +491,9 @@ class AtlassianApiClient(
             }
 
         if (response.status.value !in 200..299) {
-            logger.warn { "Jira /myself failed with status=${response.status.value}" }
-            return AtlassianUserDto(displayName = "Unknown")
+            val body = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.warn { "Jira /myself failed with status=${response.status.value}, body=$body" }
+            throw IllegalStateException("Atlassian API returned ${response.status.value}: $body")
         }
 
         @Serializable
@@ -432,33 +515,16 @@ class AtlassianApiClient(
     }
 
     suspend fun searchJiraIssues(request: JiraSearchRequest): JiraSearchResponse {
-        logger.info { "Searching Jira issues with JQL: ${request.jql}, baseUrl: ${request.baseUrl}" }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
+        logger.info { "Searching Jira issues with JQL: ${request.jql}, baseUrl: ${request.baseUrl}, cloudId: ${request.cloudId}" }
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-
-        val isCloud = request.baseUrl.contains("atlassian.net")
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = request.baseUrl.contains("atlassian.net") || conn.cloudId != null
         val url =
             if (isCloud) {
-                "${conn.baseUrl.trimEnd('/')}/rest/api/3/search/jql"
+                "$jiraBase/rest/api/3/search/jql"
             } else {
-                "${conn.baseUrl.trimEnd('/')}/rest/api/2/search"
+                "$jiraBase/rest/api/2/search"
             }
 
         logger.debug { "Using Jira API ${if (isCloud) "v3 /search/jql (GET)" else "v2 /search (POST)"}: $url" }
@@ -674,33 +740,11 @@ class AtlassianApiClient(
 
     suspend fun getJiraIssue(request: JiraIssueRequest): JiraIssueResponse {
         logger.info { "Getting Jira issue: ${request.issueKey}" }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
-
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-        val isCloud = request.baseUrl.contains("atlassian.net")
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = request.baseUrl.contains("atlassian.net") || conn.cloudId != null
         val apiVersion = if (isCloud) "3" else "2"
-        val url =
-            "${
-                conn.baseUrl.trimEnd(
-                    '/',
-                )
-            }/rest/api/$apiVersion/issue/${request.issueKey}"
+        val url = "$jiraBase/rest/api/$apiVersion/issue/${request.issueKey}"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
@@ -829,25 +873,7 @@ class AtlassianApiClient(
         logger.info {
             "Searching Confluence pages with CQL: ${request.cql}, spaceKey: ${request.spaceKey}, lastModifiedSince: ${request.lastModifiedSince}"
         }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
-
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
         val cqlQuery: String =
             when {
@@ -882,11 +908,15 @@ class AtlassianApiClient(
                 }
             }.toString()
 
-        val baseUrl = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/content/search"
+        val confluenceBase = getConfluenceBaseUrl(conn)
+        // CQL search: V1 /rest/api/content/search works on both cloud gateway and direct
+        // Requires 'search:confluence' OAuth2 scope for cloud
+        val searchUrl = "$confluenceBase/rest/api/content/search"
+        logger.info { "Confluence search URL: $searchUrl, CQL: $cqlQuery" }
 
         val response =
-            rateLimitedRequest(baseUrl) { client, _ ->
-                client.request(baseUrl) {
+            rateLimitedRequest(searchUrl) { client, _ ->
+                client.request(searchUrl) {
                     method = HttpMethod.Get
                     applyAuth(conn)
 
@@ -900,7 +930,8 @@ class AtlassianApiClient(
             }
 
         if (response.status.value !in 200..299) {
-            logger.warn { "Confluence search failed with status=${response.status.value}" }
+            val body = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.warn { "Confluence search failed with status=${response.status.value}, body=$body" }
             return ConfluenceSearchResponse(total = 0, startAt = 0, maxResults = 0, pages = emptyList())
         }
 
@@ -952,27 +983,11 @@ class AtlassianApiClient(
     }
 
     suspend fun getConfluencePage(request: ConfluencePageRequest): ConfluencePageResponse {
-        logger.info { "Getting Confluence page: ${request.pageId}" }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
-
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-        val url = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/content/${request.pageId}"
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
+        val confluenceBase = getConfluenceBaseUrl(conn)
+        // V1 content endpoint works on both cloud gateway and direct
+        val url = "$confluenceBase/rest/api/content/${request.pageId}"
+        logger.info { "Getting Confluence page: ${request.pageId}, URL: $url" }
 
         val response =
             rateLimitedRequest(url) { client, _ ->
@@ -1088,25 +1103,7 @@ class AtlassianApiClient(
 
     suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest): ByteArray? {
         logger.info { "Downloading Jira attachment from: ${request.attachmentUrl}" }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
-
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
         logger.debug { "Downloading Jira attachment (Ktor will follow redirects): ${request.attachmentUrl}" }
 
@@ -1130,25 +1127,7 @@ class AtlassianApiClient(
 
     suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest): ByteArray? {
         logger.info { "Downloading Confluence attachment from: ${request.attachmentDownloadUrl}" }
-        val auth =
-            when (request.authType?.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
-
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
         logger.debug { "Downloading Confluence attachment (Ktor will follow redirects): ${request.attachmentDownloadUrl}" }
 
@@ -1173,30 +1152,13 @@ class AtlassianApiClient(
     }
 
     suspend fun listJiraProjects(request: BugTrackerProjectsRequest): BugTrackerProjectsResponse {
-        logger.info { "Listing Jira projects for baseUrl=${request.baseUrl}" }
-        val auth =
-            when (request.authType.name) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
+        logger.info { "Listing Jira projects for baseUrl=${request.baseUrl}, cloudId=${request.cloudId}" }
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
 
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
-
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
-                }
-            }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
-
-        val isCloud = request.baseUrl.contains("atlassian.net")
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = request.baseUrl.contains("atlassian.net") || conn.cloudId != null
         val apiVersion = if (isCloud) "3" else "2"
-        val url = "${conn.baseUrl.trimEnd('/')}/rest/api/$apiVersion/project"
+        val url = "$jiraBase/rest/api/$apiVersion/project"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
@@ -1230,35 +1192,71 @@ class AtlassianApiClient(
                     key = project.key,
                     name = project.name,
                     description = null,
-                    url = "${conn.baseUrl.trimEnd('/')}/browse/${project.key}",
+                    url = "${request.baseUrl.trimEnd('/')}/browse/${project.key}",
                 )
             } ?: emptyList(),
         )
     }
 
     suspend fun listConfluenceSpaces(request: WikiSpacesRequest): WikiSpacesResponse {
-        logger.info { "Listing Confluence spaces for baseUrl=${request.baseUrl}" }
-        val auth =
-            when (request.authType.uppercase()) {
-                "BASIC" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.Basic(
-                        request.basicUsername.orEmpty(),
-                        request.basicPassword.orEmpty(),
-                    )
-                }
+        logger.info { "Listing Confluence spaces for baseUrl=${request.baseUrl}, cloudId=${request.cloudId}" }
+        val conn = resolveConnection(request.baseUrl, request.authType, request.basicUsername, request.basicPassword, request.bearerToken, request.cloudId)
+        val confluenceBase = getConfluenceBaseUrl(conn)
 
-                "BEARER" -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth
-                        .Bearer(request.bearerToken.orEmpty())
-                }
+        // Cloud gateway: use V2 API (V1 /rest/api/space returns 410 Gone)
+        // Direct/Server: use V1 API
+        return if (isCloudGateway(conn)) {
+            listSpacesV2(conn, confluenceBase, request.baseUrl)
+        } else {
+            listSpacesV1(conn, confluenceBase, request.baseUrl)
+        }
+    }
 
-                else -> {
-                    com.jervis.common.dto.atlassian.AtlassianAuth.None
+    private suspend fun listSpacesV2(conn: AtlassianConnection, confluenceBase: String, originalBaseUrl: String): WikiSpacesResponse {
+        val url = "$confluenceBase/api/v2/spaces"
+        logger.info { "Confluence V2 list spaces URL: $url" }
+
+        val response =
+            rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Get
+                    applyAuth(conn)
+                    url {
+                        parameters.append("limit", "100")
+                    }
                 }
             }
-        val conn = AtlassianConnection(baseUrl = request.baseUrl, auth = auth)
 
-        val url = "${conn.baseUrl.trimEnd('/')}/wiki/rest/api/space"
+        if (response.status.value !in 200..299) {
+            val body = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.warn { "Confluence V2 list spaces failed with status=${response.status.value}, body=$body" }
+            return WikiSpacesResponse(spaces = emptyList())
+        }
+
+        val dto =
+            runCatching {
+                response.body<String>().let {
+                    json.decodeFromString(ConfluenceV2SpacesResultDto.serializer(), it)
+                }
+            }.onFailure {
+                logger.error(it) { "Failed to deserialize Confluence V2 spaces response" }
+            }.getOrNull()
+
+        return WikiSpacesResponse(
+            spaces = dto?.results?.map { space ->
+                WikiSpaceDto(
+                    id = space.id,
+                    key = space.key,
+                    name = space.name,
+                    description = space.description?.plain?.value,
+                    url = "${originalBaseUrl.trimEnd('/')}/wiki/spaces/${space.key}",
+                )
+            } ?: emptyList(),
+        )
+    }
+
+    private suspend fun listSpacesV1(conn: AtlassianConnection, confluenceBase: String, originalBaseUrl: String): WikiSpacesResponse {
+        val url = "$confluenceBase/rest/api/space"
 
         val response =
             rateLimitedRequest(url) { client, _ ->
@@ -1273,7 +1271,7 @@ class AtlassianApiClient(
             }
 
         if (response.status.value !in 200..299) {
-            logger.warn { "Confluence list spaces failed with status=${response.status.value}" }
+            logger.warn { "Confluence V1 list spaces failed with status=${response.status.value}" }
             return WikiSpacesResponse(spaces = emptyList())
         }
 
@@ -1293,7 +1291,7 @@ class AtlassianApiClient(
                     key = space.key,
                     name = space.name,
                     description = space.description?.plain?.value,
-                    url = "${conn.baseUrl.trimEnd('/')}/wiki/spaces/${space.key}",
+                    url = "${originalBaseUrl.trimEnd('/')}/wiki/spaces/${space.key}",
                 )
             } ?: emptyList(),
         )

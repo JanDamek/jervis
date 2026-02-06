@@ -2,7 +2,6 @@ package com.jervis.service.gitlab
 
 import com.jervis.entity.connection.ConnectionDocument
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -19,32 +18,25 @@ class GitLabClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun getBaseUrl(connection: ConnectionDocument): String {
-        return connection.baseUrl.takeIf { it.isNotBlank() } ?: "https://gitlab.com/api/v4"
+        val base = connection.baseUrl.takeIf { it.isNotBlank() } ?: "https://gitlab.com"
+        return "${base.trimEnd('/')}/api/v4"
     }
 
-    /**
-     * Get authenticated user info
-     */
-    suspend fun getUser(connection: ConnectionDocument): GitLabUser {
-        val token = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token
+    private fun requireToken(connection: ConnectionDocument): String =
+        connection.bearerToken
             ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
 
+    suspend fun getUser(connection: ConnectionDocument): GitLabUser {
+        val token = requireToken(connection)
         val baseUrl = getBaseUrl(connection)
         val response = httpClient.get("$baseUrl/user") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(GitLabUser.serializer(), responseText)
+        return json.decodeFromString(GitLabUser.serializer(), response.bodyAsText())
     }
 
-    /**
-     * List projects for authenticated user
-     */
     suspend fun listProjects(connection: ConnectionDocument): List<GitLabProject> {
-        val token = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token
-            ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
-
+        val token = requireToken(connection)
         val baseUrl = getBaseUrl(connection)
         val response = httpClient.get("$baseUrl/projects") {
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -52,42 +44,26 @@ class GitLabClient(
             parameter("order_by", "last_activity_at")
             parameter("membership", true)
         }
-
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(responseText)
+        return json.decodeFromString(response.bodyAsText())
     }
 
-    /**
-     * Get project details
-     */
     suspend fun getProject(connection: ConnectionDocument, projectId: String): GitLabProject {
-        val token = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token
-            ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
-
+        val token = requireToken(connection)
         val baseUrl = getBaseUrl(connection)
         val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(GitLabProject.serializer(), responseText)
+        return json.decodeFromString(GitLabProject.serializer(), response.bodyAsText())
     }
 
-    /**
-     * List issues for a project
-     */
     suspend fun listIssues(connection: ConnectionDocument, projectId: String): List<GitLabIssue> {
-        val token = (connection.credentials as? ConnectionDocument.HttpCredentials.Bearer)?.token
-            ?: throw IllegalArgumentException("GitLab connection requires Bearer token")
-
+        val token = requireToken(connection)
         val baseUrl = getBaseUrl(connection)
         val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}/issues") {
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("per_page", 100)
         }
-
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(responseText)
+        return json.decodeFromString(response.bodyAsText())
     }
 }
 

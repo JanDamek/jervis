@@ -9,6 +9,7 @@ import com.jervis.github.service.GitHubProviderService
 import com.jervis.github.service.GitHubRepositoryService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
@@ -44,6 +45,11 @@ fun main() {
                         coerceInputValues = true
                     },
                 )
+            }
+            install(HttpTimeout) {
+                requestTimeoutMillis = 60_000
+                connectTimeoutMillis = 10_000
+                socketTimeoutMillis = 60_000
             }
         }
 

@@ -4,6 +4,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.properties.PollingProperties
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderEnum
@@ -11,6 +12,7 @@ import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ClientRepository
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.connection.ConnectionService
+import com.jervis.service.oauth2.OAuth2Service
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.service.task.UserTaskService
@@ -58,6 +60,7 @@ class CentralPoller(
     private val handlers: List<PollingHandler>,
     private val userTaskService: UserTaskService,
     private val pollingProperties: PollingProperties,
+    private val oauth2Service: OAuth2Service,
 ) {
     private val logger = KotlinLogging.logger {}
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -181,12 +184,8 @@ class CentralPoller(
             // Find all clients/projects using this connectionDocument
             val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
 
-            // Projects can reference connection in multiple fields
-            val projectsByGit = projectRepository.findByGitRepositoryConnectionId(connectionDocument.id).toList()
-            val projectsByJira = projectRepository.findByBugtrackerConnectionId(connectionDocument.id).toList()
-            val projectsByConfluence =
-                projectRepository.findByWikiConnectionId(connectionDocument.id).toList()
-            val projects = (projectsByGit + projectsByJira + projectsByConfluence).distinctBy { it.id }
+            // Find projects that reference this connection in their resources
+            val projects = projectRepository.findByResourcesConnectionId(connectionDocument.id.value).toList()
 
             if (clients.isEmpty() && projects.isEmpty()) {
                 logger.debug {
@@ -203,6 +202,19 @@ class CentralPoller(
                 connectionId = connectionDocument.id,
             )
 
+            // Refresh OAuth2 token if needed (before polling)
+            val effectiveConnection =
+                if (connectionDocument.authType == AuthTypeEnum.OAUTH2 && connectionDocument.refreshToken != null) {
+                    val refreshed = oauth2Service.refreshAccessToken(connectionDocument)
+                    if (refreshed) {
+                        connectionService.findById(connectionDocument.id) ?: connectionDocument
+                    } else {
+                        connectionDocument
+                    }
+                } else {
+                    connectionDocument
+                }
+
             val handlerName = handler::class.simpleName ?: "Unknown"
             val clientNames = clients.joinToString(", ") { it.name }
             val projectNames = projects.joinToString(", ") { it.name }
@@ -218,9 +230,9 @@ class CentralPoller(
 
             val totalResult =
                 try {
-                    handler.poll(connectionDocument, context)
+                    handler.poll(effectiveConnection, context)
                 } catch (e: Exception) {
-                    logger.error(e) { "Error in handler $handlerName for connection ${connectionDocument.name}" }
+                    logger.error(e) { "Error in handler $handlerName for connection ${effectiveConnection.name}" }
                     PollingResult(errors = 1)
                 }
 

@@ -4,9 +4,13 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.ProjectResourceDto
+import com.jervis.dto.ResourceLinkDto
 import com.jervis.entity.GitCommitConfig
 import com.jervis.entity.ProjectConnectionCapability
 import com.jervis.entity.ProjectDocument
+import com.jervis.entity.ProjectResource
+import com.jervis.entity.ResourceLink
 import org.bson.types.ObjectId
 
 fun ProjectDocument.toDto(): ProjectDto =
@@ -16,12 +20,6 @@ fun ProjectDocument.toDto(): ProjectDto =
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        gitRepositoryConnectionId = this.gitRepositoryConnectionId?.toString(),
-        gitRepositoryIdentifier = this.gitRepositoryIdentifier,
-        bugtrackerConnectionId = this.bugtrackerConnectionId?.toString(),
-        bugtrackerProjectKey = this.bugtrackerProjectKey,
-        wikiConnectionId = this.wikiConnectionId?.toString(),
-        wikiSpaceKey = this.wikiSpaceKey,
         gitCommitMessageFormat = this.gitCommitConfig?.messageFormat,
         gitCommitAuthorName = this.gitCommitConfig?.authorName,
         gitCommitAuthorEmail = this.gitCommitConfig?.authorEmail,
@@ -30,6 +28,8 @@ fun ProjectDocument.toDto(): ProjectDto =
         gitCommitGpgSign = this.gitCommitConfig?.gpgSign,
         gitCommitGpgKeyId = this.gitCommitConfig?.gpgKeyId,
         connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
+        resources = this.resources.map { it.toDto() },
+        resourceLinks = this.resourceLinks.map { it.toDto() },
     )
 
 fun ProjectDto.toDocument(): ProjectDocument {
@@ -59,16 +59,12 @@ fun ProjectDto.toDocument(): ProjectDocument {
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
-        gitRepositoryConnectionId = gitRepositoryConnectionId?.let { ObjectId(it) },
-        gitRepositoryIdentifier = gitRepositoryIdentifier,
-        bugtrackerConnectionId = bugtrackerConnectionId?.let { ObjectId(it) },
-        bugtrackerProjectKey = bugtrackerProjectKey,
-        wikiConnectionId = wikiConnectionId?.let { ObjectId(it) },
-        wikiSpaceKey = wikiSpaceKey,
         buildConfig = null, // TODO: Map buildConfig
         costPolicy = com.jervis.entity.ProjectCostPolicy(),
         gitCommitConfig = gitCommitConfig,
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
+        resources = this.resources.map { it.toEntity() },
+        resourceLinks = this.resourceLinks.map { it.toEntity() },
     )
 }
 
@@ -93,3 +89,27 @@ fun ProjectConnectionCapabilityDto.toEntity(): ProjectConnectionCapability =
         resourceIdentifier = this.resourceIdentifier,
         selectedResources = this.selectedResources,
     )
+
+fun ProjectResource.toDto(): ProjectResourceDto =
+    ProjectResourceDto(
+        id = this.id,
+        connectionId = this.connectionId.toString(),
+        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
+        displayName = this.displayName,
+    )
+
+fun ProjectResourceDto.toEntity(): ProjectResource =
+    ProjectResource(
+        id = this.id.ifEmpty { ObjectId.get().toString() },
+        connectionId = ObjectId(this.connectionId),
+        capability = com.jervis.dto.connection.ConnectionCapability.valueOf(this.capability.name),
+        resourceIdentifier = this.resourceIdentifier,
+        displayName = this.displayName,
+    )
+
+fun ResourceLink.toDto(): ResourceLinkDto =
+    ResourceLinkDto(sourceId = this.sourceId, targetId = this.targetId)
+
+fun ResourceLinkDto.toEntity(): ResourceLink =
+    ResourceLink(sourceId = this.sourceId, targetId = this.targetId)

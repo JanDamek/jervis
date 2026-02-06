@@ -28,6 +28,16 @@ value class SourceUrn(
             issueKey: String,
         ): SourceUrn = SourceUrn("jira::conn:${connectionId.toHexString()},issueKey:${encodeValue(issueKey)}")
 
+        fun githubIssue(
+            connectionId: ObjectId,
+            issueKey: String,
+        ): SourceUrn = SourceUrn("github-issue::conn:${connectionId.toHexString()},issueKey:${encodeValue(issueKey)}")
+
+        fun gitlabIssue(
+            connectionId: ObjectId,
+            issueKey: String,
+        ): SourceUrn = SourceUrn("gitlab-issue::conn:${connectionId.toHexString()},issueKey:${encodeValue(issueKey)}")
+
         fun email(
             connectionId: ConnectionId,
             messageId: String,

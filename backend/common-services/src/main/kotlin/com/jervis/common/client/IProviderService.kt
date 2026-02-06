@@ -29,6 +29,7 @@ data class ProviderTestRequest(
     val useSsl: Boolean? = null,
     val useTls: Boolean? = null,
     val folderName: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable
@@ -44,4 +45,5 @@ data class ProviderListResourcesRequest(
     val port: Int? = null,
     val useSsl: Boolean? = null,
     val useTls: Boolean? = null,
+    val cloudId: String? = null,
 )

@@ -51,6 +51,7 @@ class BugTrackerServiceImpl(
                         basicUsername = connection.username,
                         basicPassword = connection.password,
                         bearerToken = connection.bearerToken,
+                        cloudId = connection.cloudId,
                         query = finalQuery,
                         maxResults = maxResults,
                     ),

@@ -80,6 +80,9 @@ data class ConnectionResponseDto(
     // Connection capabilities - derived from provider/protocol
     val capabilities: Set<ConnectionCapability> = emptySet(),
 
+    // Cloud flag - when true, provider uses its default cloud URL
+    val isCloud: Boolean = false,
+
     // HTTP/API configuration (for DevOps providers)
     val baseUrl: String? = null,
     val timeoutMs: Long? = null,

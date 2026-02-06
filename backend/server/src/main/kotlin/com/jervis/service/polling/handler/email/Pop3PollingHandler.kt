@@ -31,7 +31,7 @@ class Pop3PollingHandler(
     private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
     fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.POP3
+        connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.POP3
 
     override fun getProtocolName(): String = "POP3"
 
@@ -99,7 +99,7 @@ class Pop3PollingHandler(
                     }
 
                     // Load polling state
-                    val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+                    val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, "POP3")
                     val lastFetchedNumber = pollingState?.lastFetchedMessageNumber ?: 0
 
                     logger.debug { "POP3 sync state: lastFetchedMessageNumber=$lastFetchedNumber, currentCount=$messageCount" }
@@ -136,7 +136,7 @@ class Pop3PollingHandler(
 
                     // Save polling state
                     if (maxNumberFetched > lastFetchedNumber) {
-                        pollingStateService.updateWithMessageNumber(connectionDocument.id, connectionDocument.provider, maxNumberFetched)
+                        pollingStateService.updateWithMessageNumber(connectionDocument.id, connectionDocument.provider, maxNumberFetched, "POP3")
                         logger.info {
                             "Updated lastFetchedMessageNumber: $lastFetchedNumber -> $maxNumberFetched (processed: created=$created, skipped=$skipped)"
                         }

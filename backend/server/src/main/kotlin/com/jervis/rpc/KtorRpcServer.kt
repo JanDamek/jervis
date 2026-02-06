@@ -39,7 +39,6 @@ class KtorRpcServer(
     private val bugTrackerSetupRpcImpl: BugTrackerSetupRpcImpl,
     private val integrationSettingsRpcImpl: IntegrationSettingsRpcImpl,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
-    private val migrationService: com.jervis.service.migration.ConnectionCapabilityMigrationService,
     private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -141,9 +140,6 @@ class KtorRpcServer(
                                     }
                                 }
                             }
-
-                            // Migration routes
-                            migrationRoutes(migrationService)
 
                             rpc("/rpc") {
                                 rpcConfig {

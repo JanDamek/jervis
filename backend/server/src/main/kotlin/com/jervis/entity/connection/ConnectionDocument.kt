@@ -43,6 +43,9 @@ data class ConnectionDocument(
     // Capabilities (derived from provider/protocol, stored for query optimization)
     val availableCapabilities: Set<ConnectionCapability> = emptySet(),
 
+    // Cloud flag - when true, provider uses its default cloud URL
+    val isCloud: Boolean = false,
+
     // HTTP/API configuration (for DevOps providers)
     val baseUrl: String = "",
     val timeoutMs: Long = 30000,
@@ -58,6 +61,9 @@ data class ConnectionDocument(
     val clientSecret: String? = null,   // Plain text!
     val scopes: List<String> = emptyList(),
     val redirectUri: String? = null,
+    val refreshToken: String? = null,
+    val tokenExpiresAtEpochMs: Long? = null,
+    val cloudId: String? = null, // Atlassian OAuth2 3LO cloud ID
 
     // Email configuration (for email providers)
     val host: String? = null,
@@ -157,22 +163,3 @@ data class ConnectionDocument(
     }
 }
 
-// Legacy extension functions (deprecated)
-@Deprecated("Use AuthTypeEnum from DTO instead")
-fun ConnectionDocument.HttpCredentials.toAuthType(): AuthTypeEnum =
-    when (this) {
-        is ConnectionDocument.HttpCredentials.Basic -> AuthTypeEnum.BASIC
-        is ConnectionDocument.HttpCredentials.Bearer -> AuthTypeEnum.BEARER
-    }
-
-@Deprecated("Use ConnectionDocument.username instead")
-fun ConnectionDocument.HttpCredentials.basicUsername(): String? =
-    (this as? ConnectionDocument.HttpCredentials.Basic)?.username
-
-@Deprecated("Use ConnectionDocument.password instead")
-fun ConnectionDocument.HttpCredentials.basicPassword(): String? =
-    (this as? ConnectionDocument.HttpCredentials.Basic)?.password
-
-@Deprecated("Use ConnectionDocument.bearerToken instead")
-fun ConnectionDocument.HttpCredentials.bearerToken(): String? =
-    (this as? ConnectionDocument.HttpCredentials.Bearer)?.token

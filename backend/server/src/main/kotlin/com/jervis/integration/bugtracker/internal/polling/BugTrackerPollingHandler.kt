@@ -49,9 +49,9 @@ class BugTrackerPollingHandler(
         connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
             (connectionDocument.baseUrl.contains("atlassian.net") || connectionDocument.baseUrl.contains("atlassian"))
 
-    override fun getSystemName(): String = "Jira"
+    override fun getSystemName(): String = "Atlassian Bug Tracker"
 
-    override fun getToolName(): String = "JIRA"
+    override fun getToolName(): String = "BUGTRACKER"
 
     override fun buildQuery(
         client: ClientDocument?,
@@ -116,6 +116,7 @@ class BugTrackerPollingHandler(
                     basicUsername = connectionDocument.username,
                     basicPassword = connectionDocument.password,
                     bearerToken = connectionDocument.bearerToken,
+                    cloudId = connectionDocument.cloudId,
                     query = query,
                 )
 
@@ -188,10 +189,4 @@ class BugTrackerPollingHandler(
         }
     }
 
-    private data class AuthInfo(
-        val authType: String,
-        val username: String?,
-        val password: String?,
-        val bearerToken: String?,
-    )
 }

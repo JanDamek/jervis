@@ -1,18 +1,17 @@
 package com.jervis.integration.bugtracker.internal.indexing
 
 import com.jervis.common.client.IAtlassianClient
+import com.jervis.common.client.IBugTrackerClient
+import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.atlassian.JiraAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.JiraIssueRequest
+import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
 import com.jervis.common.types.SourceUrn
 import com.jervis.domain.PollingStatusEnum
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
-import com.jervis.entity.connection.basicPassword
-import com.jervis.entity.connection.basicUsername
-import com.jervis.entity.connection.bearerToken
-import com.jervis.entity.connection.toAuthType
 import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDocument
 import com.jervis.integration.bugtracker.internal.state.BugTrackerStateManager
 import com.jervis.service.background.TaskService
@@ -31,17 +30,19 @@ import org.springframework.stereotype.Service
 private val logger = KotlinLogging.logger {}
 
 /**
- * Continuous indexer for Jira issues.
+ * Continuous indexer for bug tracker issues (Jira, GitHub Issues, GitLab Issues, etc.).
  *
- * NEW ARCHITECTURE (Two-Phase Indexing):
+ * Two-Phase Indexing:
  * - CentralPoller fetches MINIMAL data for change detection → stores in MongoDB as NEW
  * - This indexer:
  *   1. Reads NEW documents from MongoDB
- *   2. Fetches COMPLETE issue details from Jira API (getJiraIssue)
- *   3. Creates JIRA_PROCESSING PendingTask with full content
+ *   2. Fetches COMPLETE issue details from provider-specific API
+ *   3. Creates BUGTRACKER_PROCESSING PendingTask with full content
  * - KoogQualifierAgent (CPU) handles ALL structuring
  *
- * ETL Flow: MongoDB (NEW minimal) → API (full details) → JIRA_PROCESSING Task → KoogQualifierAgent → Graph + RAG
+ * Provider-specific logic:
+ * - Atlassian: fetches full issue details + attachments via IAtlassianClient
+ * - GitHub: fetches issue details via IBugTrackerClient (githubBugTrackerClient)
  */
 @Service
 @Order(10)
@@ -50,6 +51,8 @@ class BugTrackerContinuousIndexer(
     private val taskService: TaskService,
     private val connectionService: ConnectionService,
     private val atlassianClient: IAtlassianClient,
+    private val githubBugTrackerClient: IBugTrackerClient,
+    private val gitlabBugTrackerClient: IBugTrackerClient,
     private val directoryStructureService: DirectoryStructureService,
 ) {
     private val supervisor = SupervisorJob()
@@ -70,7 +73,7 @@ class BugTrackerContinuousIndexer(
             try {
                 indexIssue(doc)
             } catch (e: Exception) {
-                logger.error(e) { "Failed to index Jira issue ${doc.issueKey}" }
+                logger.error(e) { "Failed to index issue ${doc.issueKey}" }
                 stateManager.markAsFailed(doc, "Indexing error: ${e.message}")
             }
         }
@@ -82,43 +85,158 @@ class BugTrackerContinuousIndexer(
             return
         }
 
-        logger.debug { "Processing Jira issue ${doc.issueKey} (${doc.summary})" }
+        val connection = connectionService.findById(doc.connectionId)
+            ?: throw IllegalStateException("Connection ${doc.connectionId} not found")
+
+        when (connection.provider) {
+            ProviderEnum.GITHUB -> indexGitHubIssue(doc, connection)
+            ProviderEnum.GITLAB -> indexGitLabIssue(doc, connection)
+            else -> indexAtlassianIssue(doc, connection)
+        }
+    }
+
+    private suspend fun indexGitHubIssue(doc: BugTrackerIssueIndexDocument, connection: ConnectionDocument) {
+        logger.debug { "Processing GitHub issue ${doc.issueKey} (${doc.summary})" }
 
         try {
-            // Fetch complete issue details from Jira API
-            val connection = connectionService.findById(doc.connectionId)
-            require(connection?.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP) {
-                "Connection ${doc.connectionId} is not an HTTP connection"
+            // Parse issueKey "owner/repo#123" to get repo and issue number
+            val repoKey = doc.issueKey.substringBeforeLast("#")
+            val issueNumber = doc.issueKey.substringAfterLast("#")
+
+            // Fetch full issue data from GitHub API
+            val searchRequest = BugTrackerSearchRequest(
+                baseUrl = connection.baseUrl,
+                authType = AuthType.BEARER,
+                bearerToken = connection.bearerToken,
+                projectKey = repoKey,
+            )
+
+            val response = githubBugTrackerClient.searchIssues(searchRequest)
+            val issue = response.issues.find { it.key == "#$issueNumber" }
+
+            val issueContent = buildString {
+                append("# ${doc.issueKey}: ${issue?.title ?: doc.summary}\n\n")
+
+                if (issue != null) {
+                    append("**Status:** ${issue.status}\n")
+                    if (issue.assignee != null) append("**Assignee:** ${issue.assignee}\n")
+                    if (issue.reporter != null) append("**Reporter:** ${issue.reporter}\n")
+                    append("**Created:** ${issue.created}\n")
+                    append("**Updated:** ${issue.updated}\n")
+                    if (issue.url.isNotBlank()) append("**URL:** ${issue.url}\n")
+                    append("\n")
+
+                    if (!issue.description.isNullOrBlank()) {
+                        append("## Description\n\n")
+                        append(issue.description)
+                        append("\n\n")
+                    }
+                }
+
+                append("## Document Metadata\n")
+                append("- **Source:** GitHub Issue\n")
+                append("- **Repository:** $repoKey\n")
+                append("- **Document ID:** github:${doc.issueKey}\n")
+                append("- **Connection ID:** ${doc.connectionId}\n")
+                append("- **Issue Key:** ${doc.issueKey}\n")
             }
 
-            val credentials = connection.credentials
-            require(credentials is HttpCredentials) {
-                "Connection ${doc.connectionId} does not have HTTP credentials"
+            taskService.createTask(
+                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
+                content = issueContent,
+                projectId = doc.projectId,
+                clientId = doc.clientId,
+                correlationId = "github:${doc.issueKey}",
+                sourceUrn = SourceUrn.githubIssue(
+                    connectionId = doc.connectionId.value,
+                    issueKey = doc.issueKey,
+                ),
+            )
+
+            stateManager.markAsIndexed(doc)
+            logger.info { "Created BUGTRACKER_PROCESSING task for GitHub issue: ${doc.issueKey}" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create task for GitHub issue ${doc.issueKey}" }
+            stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
+        }
+    }
+
+    private suspend fun indexGitLabIssue(doc: BugTrackerIssueIndexDocument, connection: ConnectionDocument) {
+        logger.debug { "Processing GitLab issue ${doc.issueKey} (${doc.summary})" }
+
+        try {
+            val projectKey = doc.issueKey.substringBeforeLast("#")
+            val issueNumber = doc.issueKey.substringAfterLast("#")
+
+            val searchRequest = BugTrackerSearchRequest(
+                baseUrl = connection.baseUrl,
+                authType = AuthType.BEARER,
+                bearerToken = connection.bearerToken,
+                projectKey = projectKey,
+            )
+
+            val response = gitlabBugTrackerClient.searchIssues(searchRequest)
+            val issue = response.issues.find { it.key == "#$issueNumber" }
+
+            val issueContent = buildString {
+                append("# ${doc.issueKey}: ${issue?.title ?: doc.summary}\n\n")
+
+                if (issue != null) {
+                    append("**Status:** ${issue.status}\n")
+                    if (issue.assignee != null) append("**Assignee:** ${issue.assignee}\n")
+                    if (issue.reporter != null) append("**Reporter:** ${issue.reporter}\n")
+                    append("**Created:** ${issue.created}\n")
+                    append("**Updated:** ${issue.updated}\n")
+                    if (issue.url.isNotBlank()) append("**URL:** ${issue.url}\n")
+                    append("\n")
+
+                    if (!issue.description.isNullOrBlank()) {
+                        append("## Description\n\n")
+                        append(issue.description)
+                        append("\n\n")
+                    }
+                }
+
+                append("## Document Metadata\n")
+                append("- **Source:** GitLab Issue\n")
+                append("- **Project:** $projectKey\n")
+                append("- **Document ID:** gitlab:${doc.issueKey}\n")
+                append("- **Connection ID:** ${doc.connectionId}\n")
+                append("- **Issue Key:** ${doc.issueKey}\n")
             }
 
+            taskService.createTask(
+                taskType = TaskTypeEnum.BUGTRACKER_PROCESSING,
+                content = issueContent,
+                projectId = doc.projectId,
+                clientId = doc.clientId,
+                correlationId = "gitlab:${doc.issueKey}",
+                sourceUrn = SourceUrn.gitlabIssue(
+                    connectionId = doc.connectionId.value,
+                    issueKey = doc.issueKey,
+                ),
+            )
+
+            stateManager.markAsIndexed(doc)
+            logger.info { "Created BUGTRACKER_PROCESSING task for GitLab issue: ${doc.issueKey}" }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to create task for GitLab issue ${doc.issueKey}" }
+            stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
+        }
+    }
+
+    private suspend fun indexAtlassianIssue(doc: BugTrackerIssueIndexDocument, connection: ConnectionDocument) {
+        logger.debug { "Processing Atlassian issue ${doc.issueKey} (${doc.summary})" }
+
+        try {
             val issueRequest =
                 JiraIssueRequest(
                     baseUrl = connection.baseUrl,
-                    authType =
-                        when (credentials) {
-                            is HttpCredentials.Basic -> "BASIC"
-                            is HttpCredentials.Bearer -> "BEARER"
-                        },
-                    basicUsername =
-                        when (credentials) {
-                            is HttpCredentials.Basic -> credentials.username
-                            else -> null
-                        },
-                    basicPassword =
-                        when (credentials) {
-                            is HttpCredentials.Basic -> credentials.password
-                            else -> null
-                        },
-                    bearerToken =
-                        when (credentials) {
-                            is HttpCredentials.Bearer -> credentials.token
-                            else -> null
-                        },
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
                     issueKey = doc.issueKey,
                 )
 
@@ -157,7 +275,7 @@ class BugTrackerContinuousIndexer(
 
                     // Add metadata for qualifier
                     append("## Document Metadata\n")
-                    append("- **Source:** Jira Issue\n")
+                    append("- **Source:** Atlassian Jira Issue\n")
                     append("- **Document ID:** jira:${doc.issueKey}\n")
                     append("- **Connection ID:** ${doc.connectionId}\n")
                     append("- **Issue Key:** ${doc.issueKey}\n")
@@ -177,10 +295,11 @@ class BugTrackerContinuousIndexer(
                             val request =
                                 JiraAttachmentDownloadRequest(
                                     baseUrl = connection.baseUrl,
-                                    authType = credentials.toAuthType().name,
-                                    basicUsername = credentials.basicUsername(),
-                                    basicPassword = credentials.basicPassword(),
-                                    bearerToken = credentials.bearerToken(),
+                                    authType = AuthType.valueOf(connection.authType.name),
+                                    basicUsername = connection.username,
+                                    basicPassword = connection.password,
+                                    bearerToken = connection.bearerToken,
+                                    cloudId = connection.cloudId,
                                     attachmentUrl = downloadUrl,
                                 )
 
@@ -235,9 +354,9 @@ class BugTrackerContinuousIndexer(
             // Convert to INDEXED state - delete full content, keep minimal tracking
             stateManager.markAsIndexed(doc)
 
-            logger.info { "Created JIRA_PROCESSING task for Jira issue: ${doc.issueKey}" }
+            logger.info { "Created BUGTRACKER_PROCESSING task for Atlassian issue: ${doc.issueKey}" }
         } catch (e: Exception) {
-            logger.error(e) { "Failed to create task for Jira issue ${doc.issueKey}" }
+            logger.error(e) { "Failed to create task for Atlassian issue ${doc.issueKey}" }
             stateManager.markAsFailed(doc, "Task creation failed: ${e.message}")
         }
     }

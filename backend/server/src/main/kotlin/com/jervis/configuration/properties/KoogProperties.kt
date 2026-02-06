@@ -13,7 +13,9 @@ data class KoogProperties(
      * Maximum retry attempts for KoogQualifierAgent on retriable errors.
      * Default: 2 (first attempt + 1 retry)
      */
-    val qualifierMaxRetries: Int = 2,
+    val qualifierMaxRetries: Int = 5,
+    val qualifierInitialBackoffMs: Long = 1000,
+    val qualifierMaxBackoffMs: Long = 300_000,
     /**
      * Data directory for persistence and checkpoints.
      * Defaults to /Users/damekjan/git/jervis/data (from data.root-dir)

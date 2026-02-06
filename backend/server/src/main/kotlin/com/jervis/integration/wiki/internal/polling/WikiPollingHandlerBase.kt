@@ -3,9 +3,9 @@ package com.jervis.integration.wiki.internal.polling
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.PollingContext
@@ -39,8 +39,8 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.HTTP || connectionDocument.credentials == null) {
-            logger.warn { "  → ${getSystemName()} handler: Invalid connectionDocument or credentials" }
+        if (connectionDocument.protocol != ProtocolEnum.HTTP) {
+            logger.warn { "  → ${getSystemName()} handler: Invalid connection protocol ${connectionDocument.protocol}" }
             return PollingResult(errors = 1)
         }
 
@@ -104,11 +104,8 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
         client: ClientDocument,
         resourceFilter: ResourceFilter,
     ): PollingResult {
-        val credentials =
-            requireNotNull(connectionDocument.credentials) { "HTTP credentials required for ${getSystemName()} polling" }
-
         // Get last polling state for incremental polling
-        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, getToolName())
 
         // Determine which spaces to poll based on resource filter
         val spacesToPoll = getSpacesToPoll(client, resourceFilter, connectionDocument)
@@ -125,7 +122,6 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
             val fullPages =
                 fetchFullPages(
                     connectionDocument = connectionDocument,
-                    credentials = credentials,
                     clientId = client.id,
                     spaceKey = spaceKey,
                     lastSeenUpdatedAt = state?.lastSeenUpdatedAt,
@@ -152,7 +148,7 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
                 // Save progress every 100 items to prevent re-downloading on interruption
                 if ((totalCreated + totalSkipped) % 100 == 0) {
                     val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, newLatest) } ?: newLatest
-                    pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
+                    pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated, getToolName())
                     logger.debug { "${getSystemName()} progress saved: processed ${totalCreated + totalSkipped}" }
                 }
             }
@@ -164,7 +160,7 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
         // Use latest page timestamp if available, otherwise use current time to mark polling completion
         val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
         val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
-        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
+        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated, getToolName())
         logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(
@@ -229,7 +225,6 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
      */
     protected abstract suspend fun fetchFullPages(
         connectionDocument: ConnectionDocument,
-        credentials: HttpCredentials,
         clientId: ClientId,
         spaceKey: String?,
         lastSeenUpdatedAt: Instant?,

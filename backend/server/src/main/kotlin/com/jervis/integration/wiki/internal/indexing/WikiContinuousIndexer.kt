@@ -1,6 +1,7 @@
 package com.jervis.integration.wiki.internal.indexing
 
 import com.jervis.common.client.IAtlassianClient
+import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.atlassian.ConfluenceAttachmentDownloadRequest
 import com.jervis.common.dto.atlassian.ConfluencePageRequest
 import com.jervis.common.types.SourceUrn
@@ -81,38 +82,16 @@ class WikiContinuousIndexer(
         try {
             // Fetch complete page details from Confluence API
             val connection = connectionService.findById(doc.connectionDocumentId)
-            require(connection?.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP) {
-                "Connection ${doc.connectionDocumentId} is not an HTTP connection"
-            }
-
-            val credentials = connection.credentials
-            require(credentials is ConnectionDocument.HttpCredentials) {
-                "Connection ${doc.connectionDocumentId} does not have HTTP credentials"
-            }
+                ?: throw IllegalStateException("Connection ${doc.connectionDocumentId} not found")
 
             val pageRequest =
                 ConfluencePageRequest(
                     baseUrl = connection.baseUrl,
-                    authType =
-                        when (credentials) {
-                            is ConnectionDocument.HttpCredentials.Basic -> "BASIC"
-                            is ConnectionDocument.HttpCredentials.Bearer -> "BEARER"
-                        },
-                    basicUsername =
-                        when (credentials) {
-                            is ConnectionDocument.HttpCredentials.Basic -> credentials.username
-                            else -> null
-                        },
-                    basicPassword =
-                        when (credentials) {
-                            is ConnectionDocument.HttpCredentials.Basic -> credentials.password
-                            else -> null
-                        },
-                    bearerToken =
-                        when (credentials) {
-                            is ConnectionDocument.HttpCredentials.Bearer -> credentials.token
-                            else -> null
-                        },
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
                     pageId = doc.pageId,
                 )
 
@@ -182,10 +161,13 @@ class WikiContinuousIndexer(
                             return@mapNotNull null
                         }
 
-                        // Build full download URL (downloadUrl from API is relative, needs baseUrl + /wiki prefix)
+                        // Build full download URL (downloadUrl from API is relative)
+                        // For OAuth2 with cloudId, use cloud gateway; otherwise use baseUrl + /wiki
                         val fullDownloadUrl =
                             if (downloadUrl.startsWith("http")) {
                                 downloadUrl
+                            } else if (connection.cloudId != null) {
+                                "https://api.atlassian.com/ex/confluence/${connection.cloudId}$downloadUrl"
                             } else {
                                 "${connection.baseUrl.trimEnd('/')}/wiki$downloadUrl"
                             }
@@ -193,26 +175,11 @@ class WikiContinuousIndexer(
                         val downloadRequest =
                             ConfluenceAttachmentDownloadRequest(
                                 baseUrl = connection.baseUrl,
-                                authType =
-                                    when (credentials) {
-                                        is ConnectionDocument.HttpCredentials.Basic -> "BASIC"
-                                        is ConnectionDocument.HttpCredentials.Bearer -> "BEARER"
-                                    },
-                                basicUsername =
-                                    when (credentials) {
-                                        is ConnectionDocument.HttpCredentials.Basic -> credentials.username
-                                        else -> null
-                                    },
-                                basicPassword =
-                                    when (credentials) {
-                                        is ConnectionDocument.HttpCredentials.Basic -> credentials.password
-                                        else -> null
-                                    },
-                                bearerToken =
-                                    when (credentials) {
-                                        is ConnectionDocument.HttpCredentials.Bearer -> credentials.token
-                                        else -> null
-                                    },
+                                authType = AuthType.valueOf(connection.authType.name),
+                                basicUsername = connection.username,
+                                basicPassword = connection.password,
+                                bearerToken = connection.bearerToken,
+                                cloudId = connection.cloudId,
                                 attachmentDownloadUrl = fullDownloadUrl,
                             )
 

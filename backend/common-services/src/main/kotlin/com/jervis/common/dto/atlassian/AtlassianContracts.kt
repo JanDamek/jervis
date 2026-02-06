@@ -1,14 +1,16 @@
 package com.jervis.common.dto.atlassian
 
+import com.jervis.common.dto.AuthType
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class AtlassianMyselfRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable
@@ -21,10 +23,11 @@ data class AtlassianUserDto(
 @Serializable
 data class JiraSearchRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val jql: String,
     val maxResults: Int = 1000,
     val startAt: Int = 0,
@@ -125,10 +128,11 @@ data class JiraIssueRef(
 @Serializable
 data class JiraIssueRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val issueKey: String,
 )
 
@@ -187,10 +191,11 @@ data class JiraAttachment(
 @Serializable
 data class JiraAttachmentDownloadRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val attachmentUrl: String, // Full URL to attachment content
 )
 
@@ -199,10 +204,11 @@ data class JiraAttachmentDownloadRequest(
 @Serializable
 data class ConfluenceSearchRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val spaceKey: String? = null,
     val cql: String? = null,
     val lastModifiedSince: String? = null, // ISO timestamp as String
@@ -253,10 +259,11 @@ data class ConfluenceUser(
 @Serializable
 data class ConfluencePageRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val pageId: String,
 )
 
@@ -303,9 +310,10 @@ data class ConfluenceAttachment(
 @Serializable
 data class ConfluenceAttachmentDownloadRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val attachmentDownloadUrl: String, // Full download URL from attachment._links.download
 )

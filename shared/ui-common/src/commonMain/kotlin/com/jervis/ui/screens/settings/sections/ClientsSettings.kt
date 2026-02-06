@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
+import com.jervis.dto.ProjectConnectionCapabilityDto
+import com.jervis.dto.ProjectDto
+import com.jervis.dto.ProjectResourceDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
@@ -140,7 +143,7 @@ private fun ClientEditForm(
     var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
 
     // Projects
-    var projects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
+    var projects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
     var showCreateProjectDialog by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
@@ -203,6 +206,26 @@ private fun ClientEditForm(
     LaunchedEffect(Unit) {
         loadConnections()
         loadProjects()
+    }
+
+    // Eager-load resources for all assigned connections when connections become available
+    LaunchedEffect(availableConnections, selectedConnectionIds.size) {
+        selectedConnectionIds.forEach { connId ->
+            val connection = availableConnections.firstOrNull { it.id == connId }
+            connection?.capabilities?.forEach { capability ->
+                loadResourcesForCapability(connId, capability)
+            }
+        }
+    }
+
+    fun findLinkedProject(connectionId: String, capability: ConnectionCapability, resourceId: String): ProjectDto? {
+        return projects.find { project ->
+            project.resources.any { res ->
+                res.connectionId == connectionId &&
+                    res.capability == capability &&
+                    res.resourceIdentifier == resourceId
+            }
+        }
     }
 
     val scrollState = androidx.compose.foundation.rememberScrollState()
@@ -361,6 +384,73 @@ private fun ClientEditForm(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Provider resources → project creation section
+            JSection(title = "Dostupné zdroje z providerů") {
+                Text(
+                    "Zdroje z připojených služeb. Můžete vytvořit projekt propojený s daným zdrojem.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                if (selectedConnectionIds.isEmpty()) {
+                    Text(
+                        "Nejprve přiřaďte alespoň jedno připojení.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    selectedConnectionIds.forEach { connId ->
+                        val connection = availableConnections.firstOrNull { it.id == connId }
+                        if (connection != null && connection.capabilities.isNotEmpty()) {
+                            ProviderResourcesCard(
+                                connection = connection,
+                                availableResources = availableResources,
+                                loadingResources = loadingResources,
+                                findLinkedProject = { capability, resourceId ->
+                                    findLinkedProject(connId, capability, resourceId)
+                                },
+                                onCreateProject = { resource, capability ->
+                                    scope.launch {
+                                        try {
+                                            repository.projects.saveProject(
+                                                ProjectDto(
+                                                    name = resource.name,
+                                                    description = resource.description,
+                                                    clientId = client.id,
+                                                    connectionCapabilities = listOf(
+                                                        ProjectConnectionCapabilityDto(
+                                                            connectionId = connId,
+                                                            capability = capability,
+                                                            enabled = true,
+                                                            resourceIdentifier = resource.id,
+                                                            selectedResources = listOf(resource.id),
+                                                        ),
+                                                    ),
+                                                    resources = listOf(
+                                                        ProjectResourceDto(
+                                                            connectionId = connId,
+                                                            capability = capability,
+                                                            resourceIdentifier = resource.id,
+                                                            displayName = resource.name,
+                                                        ),
+                                                    ),
+                                                ),
+                                            )
+                                            loadProjects()
+                                        } catch (_: Exception) {
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             JSection(title = "Projekty klienta") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -454,23 +544,10 @@ private fun ClientEditForm(
                                 scope.launch {
                                     try {
                                         repository.projects.saveProject(
-                                            com.jervis.dto.ProjectDto(
-                                                id = "",
+                                            ProjectDto(
                                                 name = newProjectName,
                                                 description = newProjectDescription.ifBlank { null },
                                                 clientId = client.id,
-                                                gitRepositoryConnectionId = null,
-                                                bugtrackerConnectionId = null,
-                                                bugtrackerProjectKey = null,
-                                                wikiConnectionId = null,
-                                                wikiSpaceKey = null,
-                                                gitCommitMessageFormat = null,
-                                                gitCommitAuthorName = null,
-                                                gitCommitAuthorEmail = null,
-                                                gitCommitCommitterName = null,
-                                                gitCommitCommitterEmail = null,
-                                                gitCommitGpgSign = false,
-                                                gitCommitGpgKeyId = null
                                             )
                                         )
                                         loadProjects()
@@ -807,6 +884,8 @@ private fun CapabilityConfigItem(
                 }
 
                 if (!indexAllResources) {
+                    var resourceFilter by remember { mutableStateOf("") }
+
                     Column(modifier = Modifier.padding(start = 32.dp, top = 4.dp)) {
                         if (isLoadingResources) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -828,7 +907,27 @@ private fun CapabilityConfigItem(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
-                            resources.forEach { resource ->
+                            if (resources.size > 5) {
+                                OutlinedTextField(
+                                    value = resourceFilter,
+                                    onValueChange = { resourceFilter = it },
+                                    label = { Text("Filtrovat...") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                            }
+
+                            val sortedFiltered = resources
+                                .sortedBy { it.name.lowercase() }
+                                .filter { res ->
+                                    resourceFilter.isBlank() ||
+                                        res.name.contains(resourceFilter, ignoreCase = true) ||
+                                        res.id.contains(resourceFilter, ignoreCase = true) ||
+                                        (res.description?.contains(resourceFilter, ignoreCase = true) == true)
+                                }
+
+                            sortedFiltered.forEach { resource ->
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
@@ -871,6 +970,180 @@ private fun CapabilityConfigItem(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderResourcesCard(
+    connection: ConnectionResponseDto,
+    availableResources: Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>,
+    loadingResources: Set<Pair<String, ConnectionCapability>>,
+    findLinkedProject: (ConnectionCapability, String) -> ProjectDto?,
+    onCreateProject: (ConnectionResourceDto, ConnectionCapability) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(true) }
+
+    val totalResources = connection.capabilities.sumOf { cap ->
+        availableResources[Pair(connection.id, cap)]?.size ?: 0
+    }
+    val isAnyLoading = connection.capabilities.any { cap ->
+        Pair(connection.id, cap) in loadingResources
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        connection.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "${connection.provider.name} · $totalResources zdrojů",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    )
+                }
+                if (isAnyLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (expanded) {
+                var providerResourceFilter by remember { mutableStateOf("") }
+                val allResourceCount = connection.capabilities.sumOf { cap ->
+                    (availableResources[Pair(connection.id, cap)] ?: emptyList()).size
+                }
+
+                if (allResourceCount > 5) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = providerResourceFilter,
+                        onValueChange = { providerResourceFilter = it },
+                        label = { Text("Filtrovat zdroje...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+
+                connection.capabilities.forEach { capability ->
+                    val key = Pair(connection.id, capability)
+                    val resources = availableResources[key] ?: emptyList()
+                    val isLoading = key in loadingResources
+
+                    val sortedFiltered = resources
+                        .sortedBy { it.name.lowercase() }
+                        .filter { res ->
+                            providerResourceFilter.isBlank() ||
+                                res.name.contains(providerResourceFilter, ignoreCase = true) ||
+                                res.id.contains(providerResourceFilter, ignoreCase = true) ||
+                                (res.description?.contains(providerResourceFilter, ignoreCase = true) == true)
+                        }
+
+                    if (isLoading && resources.isEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Načítám ${getCapabilityLabel(capability)}...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else if (sortedFiltered.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            getCapabilityLabel(capability),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+
+                        sortedFiltered.forEach { resource ->
+                            val linkedProject = findLinkedProject(capability, resource.id)
+                            ProviderResourceRow(
+                                resource = resource,
+                                linkedProject = linkedProject,
+                                onCreateProject = { onCreateProject(resource, capability) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderResourceRow(
+    resource: ConnectionResourceDto,
+    linkedProject: ProjectDto?,
+    onCreateProject: () -> Unit,
+) {
+    var isCreating by remember { mutableStateOf(false) }
+
+    // Reset creating state when project gets linked
+    LaunchedEffect(linkedProject) {
+        if (linkedProject != null) isCreating = false
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(resource.name, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                resource.id + (resource.description?.let { " · $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+            )
+        }
+
+        if (linkedProject != null) {
+            Text(
+                linkedProject.name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Button(
+                onClick = {
+                    isCreating = true
+                    onCreateProject()
+                },
+                enabled = !isCreating,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                if (isCreating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Text("Vytvořit", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

@@ -70,10 +70,11 @@ class AtlassianServiceImpl(
                 atlassianApiClient.getMyself(
                     AtlassianMyselfRequest(
                         baseUrl = request.baseUrl,
-                        authType = request.authType.name,
+                        authType = request.authType,
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                     ),
                 )
             BugTrackerUserDto(
@@ -91,10 +92,11 @@ class AtlassianServiceImpl(
                 atlassianApiClient.searchJiraIssues(
                     JiraSearchRequest(
                         baseUrl = request.baseUrl,
-                        authType = request.authType.name,
+                        authType = request.authType,
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                         jql = request.query ?: "",
                         maxResults = request.maxResults,
                     ),
@@ -112,10 +114,11 @@ class AtlassianServiceImpl(
                 atlassianApiClient.getJiraIssue(
                     JiraIssueRequest(
                         baseUrl = request.baseUrl,
-                        authType = request.authType.name,
+                        authType = request.authType,
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                         issueKey = request.issueKey,
                     ),
                 )
@@ -143,6 +146,7 @@ class AtlassianServiceImpl(
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                     ),
                 )
             WikiUserDto(
@@ -164,6 +168,7 @@ class AtlassianServiceImpl(
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                         spaceKey = request.spaceKey,
                         cql = request.query,
                         maxResults = request.maxResults,
@@ -186,6 +191,7 @@ class AtlassianServiceImpl(
                         basicUsername = request.basicUsername,
                         basicPassword = request.basicPassword,
                         bearerToken = request.bearerToken,
+                        cloudId = request.cloudId,
                         pageId = request.pageId,
                     ),
                 )

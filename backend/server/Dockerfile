@@ -3,7 +3,7 @@ FROM eclipse-temurin:21-jre-jammy
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    curl && \
+    curl git && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/jervis/server

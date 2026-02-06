@@ -10,12 +10,12 @@ import java.time.Instant
 /**
  * Service for managing polling states.
  *
- * Each handler (JIRA, CONFLUENCE, IMAP, POP3, etc.) maintains its own polling state
+ * Each handler (JIRA, WIKI, IMAP, POP3, etc.) maintains its own polling state
  * independently per connection. This prevents race conditions when multiple handlers
  * run in parallel for the same connection (e.g., Jira + Confluence for Atlassian).
  *
  * Architecture:
- * - One PollingStateDocument per (connectionId, provider) pair
+ * - One PollingStateDocument per (connectionId, provider, tool) triple
  * - Atomic updates via Spring Data MongoDB save() with unique compound index
  * - No race conditions - each handler writes only its own document
  */
@@ -26,13 +26,14 @@ class PollingStateService(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Get polling state for a specific provider on a specific connection.
+     * Get polling state for a specific provider and tool on a specific connection.
      * Returns null if no state exists yet (first poll).
      */
     suspend fun getState(
         connectionId: ConnectionId,
         provider: com.jervis.dto.connection.ProviderEnum,
-    ): PollingStateDocument? = repository.findByConnectionIdAndProvider(connectionId, provider)
+        tool: String = "",
+    ): PollingStateDocument? = repository.findByConnectionIdAndProviderAndTool(connectionId, provider, tool)
 
     /**
      * Update polling state with lastSeenUpdatedAt (for HTTP handlers like Jira, Confluence).
@@ -42,8 +43,9 @@ class PollingStateService(
         connectionId: ConnectionId,
         provider: com.jervis.dto.connection.ProviderEnum,
         lastSeenUpdatedAt: Instant,
+        tool: String = "",
     ): PollingStateDocument {
-        val existing = repository.findByConnectionIdAndProvider(connectionId, provider)
+        val existing = repository.findByConnectionIdAndProviderAndTool(connectionId, provider, tool)
         val updated =
             existing?.copy(
                 lastSeenUpdatedAt = lastSeenUpdatedAt,
@@ -51,12 +53,13 @@ class PollingStateService(
             ) ?: PollingStateDocument(
                 connectionId = connectionId,
                 provider = provider,
+                tool = tool,
                 lastSeenUpdatedAt = lastSeenUpdatedAt,
                 lastUpdated = Instant.now(),
             )
 
         val saved = repository.save(updated)
-        logger.debug { "Updated polling state: connectionId=$connectionId, provider=$provider, lastSeenUpdatedAt=$lastSeenUpdatedAt" }
+        logger.debug { "Updated polling state: connectionId=$connectionId, provider=$provider, tool=$tool, lastSeenUpdatedAt=$lastSeenUpdatedAt" }
         return saved
     }
 
@@ -68,8 +71,9 @@ class PollingStateService(
         connectionId: ConnectionId,
         provider: com.jervis.dto.connection.ProviderEnum,
         lastFetchedUid: Long,
+        tool: String = "",
     ): PollingStateDocument {
-        val existing = repository.findByConnectionIdAndProvider(connectionId, provider)
+        val existing = repository.findByConnectionIdAndProviderAndTool(connectionId, provider, tool)
         val updated =
             existing?.copy(
                 lastFetchedUid = lastFetchedUid,
@@ -77,12 +81,13 @@ class PollingStateService(
             ) ?: PollingStateDocument(
                 connectionId = connectionId,
                 provider = provider,
+                tool = tool,
                 lastFetchedUid = lastFetchedUid,
                 lastUpdated = Instant.now(),
             )
 
         val saved = repository.save(updated)
-        logger.debug { "Updated polling state: connectionId=$connectionId, provider=$provider, lastFetchedUid=$lastFetchedUid" }
+        logger.debug { "Updated polling state: connectionId=$connectionId, provider=$provider, tool=$tool, lastFetchedUid=$lastFetchedUid" }
         return saved
     }
 
@@ -94,8 +99,9 @@ class PollingStateService(
         connectionId: ConnectionId,
         provider: com.jervis.dto.connection.ProviderEnum,
         lastFetchedMessageNumber: Int,
+        tool: String = "",
     ): PollingStateDocument {
-        val existing = repository.findByConnectionIdAndProvider(connectionId, provider)
+        val existing = repository.findByConnectionIdAndProviderAndTool(connectionId, provider, tool)
         val updated =
             existing?.copy(
                 lastFetchedMessageNumber = lastFetchedMessageNumber,
@@ -103,13 +109,14 @@ class PollingStateService(
             ) ?: PollingStateDocument(
                 connectionId = connectionId,
                 provider = provider,
+                tool = tool,
                 lastFetchedMessageNumber = lastFetchedMessageNumber,
                 lastUpdated = Instant.now(),
             )
 
         val saved = repository.save(updated)
         logger.debug {
-            "Updated polling state: connectionId=$connectionId, provider=$provider, lastFetchedMessageNumber=$lastFetchedMessageNumber"
+            "Updated polling state: connectionId=$connectionId, provider=$provider, tool=$tool, lastFetchedMessageNumber=$lastFetchedMessageNumber"
         }
         return saved
     }

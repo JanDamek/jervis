@@ -2,7 +2,6 @@ package com.jervis.configuration
 
 import com.jervis.configuration.properties.DomainRateLimitProperties
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.service.http.RateLimitingPlugin
 import com.jervis.service.ratelimit.DomainRateLimiterService
 import io.ktor.client.HttpClient
@@ -93,31 +92,18 @@ class HttpClientConfiguration {
 
     /**
      * Authorization plugin - injects auth headers from ConnectionDocument.
-     * Credentials must be provided via ConnectionCredentialsKey attribute.
      */
     private fun createAuthPlugin() =
         createClientPlugin("AuthPlugin") {
             onRequest { request, _ ->
                 val connection = request.attributes.getOrNull(ConnectionDocumentKey)
-                val credentials = request.attributes.getOrNull(ConnectionCredentialsKey)
 
-                if (connection?.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP && credentials != null) {
-                    when (credentials) {
-                        is HttpCredentials.Basic -> {
-                            request.header(
-                                HttpHeaders.Authorization,
-                                credentials.toAuthHeader(),
-                            )
-                        }
-
-                        is HttpCredentials.Bearer -> {
-                            request.header(
-                                HttpHeaders.Authorization,
-                                credentials.toAuthHeader(),
-                            )
-                        }
+                if (connection != null) {
+                    val authHeader = connection.toAuthHeader()
+                    if (authHeader != null) {
+                        request.header(HttpHeaders.Authorization, authHeader)
+                        logger.debug { "Added authentication header for ${connection.name}" }
                     }
-                    logger.debug { "Added authentication header for ${connection.name}" }
                 }
             }
         }
@@ -137,8 +123,3 @@ class HttpClientConfiguration {
  * Attribute key for passing ConnectionDocument through request attributes.
  */
 val ConnectionDocumentKey = AttributeKey<ConnectionDocument>("ConnectionDocument")
-
-/**
- * Attribute key for passing decrypted HttpCredentials through request attributes.
- */
-val ConnectionCredentialsKey = AttributeKey<HttpCredentials>("ConnectionCredentials")

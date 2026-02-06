@@ -13,14 +13,6 @@ data class ProjectDto(
     val name: String,
     val description: String? = null,
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
-    // Project-specific resource identifiers within client's connections
-    // These refer to resources in the parent client's connections
-    val gitRepositoryConnectionId: String? = null, // Which connection has the Git repo
-    val gitRepositoryIdentifier: String? = null, // repo name, URL, or path within that connection
-    val bugtrackerConnectionId: String? = null,
-    val bugtrackerProjectKey: String? = null,
-    val wikiConnectionId: String? = null,
-    val wikiSpaceKey: String? = null,
     // Git commit configuration override (inherits from client if null)
     val gitCommitMessageFormat: String? = null,
     val gitCommitAuthorName: String? = null,
@@ -29,8 +21,11 @@ data class ProjectDto(
     val gitCommitCommitterEmail: String? = null,
     val gitCommitGpgSign: Boolean? = null, // null = inherit from client
     val gitCommitGpgKeyId: String? = null,
-    // Connection capabilities
+    // Connection capabilities (legacy - used by polling)
     val connectionCapabilities: List<ProjectConnectionCapabilityDto> = emptyList(),
+    // Multi-resource model with N:M linking
+    val resources: List<ProjectResourceDto> = emptyList(),
+    val resourceLinks: List<ResourceLinkDto> = emptyList(),
 )
 
 /**
@@ -49,4 +44,35 @@ data class ProjectConnectionCapabilityDto(
     val resourceIdentifier: String? = null,
     /** Specific resources to index for this project (overrides client's selectedResources) */
     val selectedResources: List<String> = emptyList(),
+)
+
+/**
+ * A specific resource assigned to a project.
+ * Multiple resources of the same capability type are allowed (e.g., 5 repos, 3 bug trackers).
+ */
+@Serializable
+data class ProjectResourceDto(
+    /** Unique ID within project (empty = new, server generates) */
+    val id: String = "",
+    /** Connection providing this resource */
+    val connectionId: String,
+    /** Resource capability type */
+    val capability: ConnectionCapability,
+    /** Provider-specific identifier (Jira project key, repo name, Confluence space key) */
+    val resourceIdentifier: String,
+    /** Human-readable display name */
+    val displayName: String = "",
+)
+
+/**
+ * N:M link between project resources.
+ * Typically links REPOSITORY ↔ BUGTRACKER or REPOSITORY ↔ WIKI.
+ * Resources without links are project-level (e.g., overall Jira project).
+ */
+@Serializable
+data class ResourceLinkDto(
+    /** Source resource ID (typically REPOSITORY) */
+    val sourceId: String,
+    /** Target resource ID (typically BUGTRACKER, WIKI) */
+    val targetId: String,
 )

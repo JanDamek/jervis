@@ -3,6 +3,7 @@ package com.jervis.service.polling.handler.github
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.integration.bugtracker.internal.polling.GitHubBugTrackerPollingHandler
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component
 @Component
 class GitHubPollingHandler(
     private val gitPollingHandler: GitPollingHandler,
+    private val gitHubBugTrackerPollingHandler: GitHubBugTrackerPollingHandler,
 ) : PollingHandler {
     private val logger = KotlinLogging.logger {}
 
@@ -44,7 +46,18 @@ class GitHubPollingHandler(
             }
         }
 
-        // TODO: Add BUGTRACKER polling for GitHub Issues
+        if (connectionDocument.availableCapabilities.contains(ConnectionCapability.BUGTRACKER)) {
+            try {
+                val result = gitHubBugTrackerPollingHandler.poll(connectionDocument, context)
+                totalDiscovered += result.itemsDiscovered
+                totalCreated += result.itemsCreated
+                totalSkipped += result.itemsSkipped
+                totalErrors += result.errors
+            } catch (e: Exception) {
+                logger.error(e) { "Error polling GitHub Issues for ${connectionDocument.name}" }
+                totalErrors++
+            }
+        }
 
         return PollingResult(
             itemsDiscovered = totalDiscovered,

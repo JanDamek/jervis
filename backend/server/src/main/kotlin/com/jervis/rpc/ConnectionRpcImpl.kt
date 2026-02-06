@@ -66,6 +66,7 @@ class ConnectionRpcImpl(
             authType = authType,
             state = request.state,
             availableCapabilities = capabilities,
+            isCloud = request.isCloud,
             baseUrl = baseUrl,
             timeoutMs = request.timeoutMs ?: 30000,
             username = request.username,
@@ -114,13 +115,22 @@ class ConnectionRpcImpl(
             existing.availableCapabilities
         }
 
+        val newIsCloud = request.isCloud ?: existing.isCloud
+        val newBaseUrl = if (newIsCloud && request.baseUrl == null) {
+            // Cloud mode: use default cloud URL from descriptor if no explicit baseUrl
+            providerRegistry.getDescriptorOrNull(newProvider)?.defaultCloudBaseUrl ?: existing.baseUrl
+        } else {
+            request.baseUrl ?: existing.baseUrl
+        }
+
         val updated = existing.copy(
             name = request.name ?: existing.name,
             provider = newProvider,
             protocol = request.protocol ?: existing.protocol,
             authType = request.authType ?: existing.authType,
             availableCapabilities = capabilities,
-            baseUrl = request.baseUrl ?: existing.baseUrl,
+            isCloud = newIsCloud,
+            baseUrl = newBaseUrl,
             timeoutMs = request.timeoutMs ?: existing.timeoutMs,
             username = request.username ?: existing.username,
             password = request.password ?: existing.password,
@@ -233,6 +243,7 @@ private fun ConnectionDocument.toTestRequest(): ProviderTestRequest =
         useSsl = useSsl,
         useTls = useTls,
         folderName = folderName,
+        cloudId = cloudId,
     )
 
 private fun ConnectionDocument.toListResourcesRequest(capability: ConnectionCapability): ProviderListResourcesRequest =
@@ -248,6 +259,7 @@ private fun ConnectionDocument.toListResourcesRequest(capability: ConnectionCapa
         port = port,
         useSsl = useSsl,
         useTls = useTls,
+        cloudId = cloudId,
     )
 
 private fun ConnectionDocument.toDto(): ConnectionResponseDto =
@@ -259,6 +271,7 @@ private fun ConnectionDocument.toDto(): ConnectionResponseDto =
         name = name,
         state = state,
         capabilities = availableCapabilities,
+        isCloud = isCloud,
         baseUrl = baseUrl,
         timeoutMs = timeoutMs,
         username = username,

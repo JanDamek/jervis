@@ -145,7 +145,7 @@ private fun ProviderListResourcesRequest.toBugTrackerProjectsRequest() =
 private fun ProviderListResourcesRequest.toWikiSpacesRequest() =
     WikiSpacesRequest(
         baseUrl = baseUrl,
-        authType = authType.name,
+        authType = AuthType.valueOf(authType.name),
         basicUsername = username,
         basicPassword = password,
         bearerToken = bearerToken,

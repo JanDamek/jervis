@@ -1,12 +1,12 @@
 package com.jervis.integration.wiki.internal.polling
 
 import com.jervis.common.client.IWikiClient
+import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.wiki.WikiSearchRequest
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.entity.connection.ConnectionDocument.HttpCredentials
 import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.integration.wiki.internal.repository.WikiPageIndexRepository
 import com.jervis.service.polling.PollingStateService
@@ -33,10 +33,10 @@ class WikiPollingHandler(
         pollingStateService = pollingStateService,
     ) {
     fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.HTTP &&
+        connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.HTTP &&
             (connectionDocument.baseUrl.contains("atlassian.net") || connectionDocument.baseUrl.contains("atlassian"))
 
-    override fun getSystemName(): String = "Wiki"
+    override fun getSystemName(): String = "Atlassian Wiki"
 
     override fun getToolName(): String = "WIKI"
 
@@ -44,7 +44,6 @@ class WikiPollingHandler(
 
     override suspend fun fetchFullPages(
         connectionDocument: ConnectionDocument,
-        credentials: HttpCredentials,
         clientId: ClientId,
         spaceKey: String?,
         lastSeenUpdatedAt: Instant?,
@@ -52,19 +51,14 @@ class WikiPollingHandler(
         startAt: Int,
     ): List<WikiPageIndexDocument> {
         try {
-            val authInfo =
-                when (credentials) {
-                    is HttpCredentials.Basic -> AuthInfo("BASIC", credentials.username, credentials.password, null)
-                    is HttpCredentials.Bearer -> AuthInfo("BEARER", null, null, credentials.token)
-                }
-
             val searchRequest =
                 WikiSearchRequest(
                     baseUrl = connectionDocument.baseUrl,
-                    authType = authInfo.authType,
-                    basicUsername = authInfo.username,
-                    basicPassword = authInfo.password,
-                    bearerToken = authInfo.bearerToken,
+                    authType = AuthType.valueOf(connectionDocument.authType.name),
+                    basicUsername = connectionDocument.username,
+                    basicPassword = connectionDocument.password,
+                    bearerToken = connectionDocument.bearerToken,
+                    cloudId = connectionDocument.cloudId,
                     spaceKey = spaceKey ?: connectionDocument.confluenceSpaceKey,
                     query = null,
                     lastModifiedSince = lastSeenUpdatedAt?.toString(),
@@ -103,13 +97,6 @@ class WikiPollingHandler(
         } else {
             Instant.now()
         }
-
-    private data class AuthInfo(
-        val authType: String,
-        val username: String?,
-        val password: String?,
-        val bearerToken: String?,
-    )
 
     override fun getPageUpdatedAt(page: WikiPageIndexDocument): Instant = page.wikiUpdatedAt
 

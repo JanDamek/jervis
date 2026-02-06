@@ -15,12 +15,13 @@ import org.springframework.stereotype.Repository
 @Repository
 interface PollingStateRepository : CoroutineCrudRepository<PollingStateDocument, PollingStateId> {
     /**
-     * Find polling state for a specific connection and provider combination.
+     * Find polling state for a specific connection, provider and tool combination.
      * Returns null if no state exists yet (first poll).
      */
-    suspend fun findByConnectionIdAndProvider(
+    suspend fun findByConnectionIdAndProviderAndTool(
         connectionId: ConnectionId,
         provider: com.jervis.dto.connection.ProviderEnum,
+        tool: String,
     ): PollingStateDocument?
 
     /**

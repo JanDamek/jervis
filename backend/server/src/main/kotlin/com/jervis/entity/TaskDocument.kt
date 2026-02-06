@@ -112,6 +112,7 @@ data class TaskDocument(
     val sourceUrn: SourceUrn,
     val errorMessage: String? = null,
     val qualificationRetries: Int = 0,
+    val nextQualificationRetryAt: Instant? = null,
     val attachments: List<AttachmentMetadata> = emptyList(),
     val scheduledAt: Instant? = null,
     val cronExpression: String? = null,

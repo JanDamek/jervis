@@ -44,10 +44,11 @@ class WikiServiceImpl(
                 wikiClient.searchPages(
                     WikiSearchRequest(
                         baseUrl = connection.baseUrl,
-                        authType = connection.authType.name,
+                        authType = com.jervis.common.dto.AuthType.valueOf(connection.authType.name),
                         basicUsername = connection.username,
                         basicPassword = connection.password,
                         bearerToken = connection.bearerToken,
+                        cloudId = connection.cloudId,
                         spaceKey = spaceKey,
                         query = query,
                         maxResults = maxResults,
@@ -85,7 +86,7 @@ class WikiServiceImpl(
                 wikiClient.getPage(
                     WikiPageRequest(
                         baseUrl = connection.baseUrl,
-                        authType = connection.authType.name,
+                        authType = com.jervis.common.dto.AuthType.valueOf(connection.authType.name),
                         basicUsername = connection.username,
                         basicPassword = connection.password,
                         bearerToken = connection.bearerToken,

@@ -80,9 +80,16 @@ class SimpleQualifierAgent(
             }
 
             if (!result.success) {
-                logger.error { "SIMPLE_QUALIFIER_KB_FAILED | taskId=${task.id} | error=${result.error}" }
-                taskService.markAsError(task, result.error ?: "KB ingest failed")
-                return "FAILED: ${result.error}"
+                val errorMsg = result.error ?: "KB ingest failed"
+                logger.error { "SIMPLE_QUALIFIER_KB_FAILED | taskId=${task.id} | error=$errorMsg" }
+
+                // Throw for connection errors so TaskQualificationService can handle retry logic
+                if (isConnectionError(errorMsg)) {
+                    throw RuntimeException("KB connection error: $errorMsg")
+                }
+
+                taskService.markAsError(task, errorMsg)
+                return "FAILED: $errorMsg"
             }
 
             // 5. Route based on actionability
@@ -185,6 +192,13 @@ class SimpleQualifierAgent(
         // Try to extract subject from first line or metadata
         return task.content.lineSequence().firstOrNull()?.take(200)
     }
+
+    private fun isConnectionError(message: String): Boolean =
+        message.contains("Connection refused", ignoreCase = true) ||
+            message.contains("connection reset", ignoreCase = true) ||
+            message.contains("timeout", ignoreCase = true) ||
+            message.contains("socket", ignoreCase = true) ||
+            message.contains("network", ignoreCase = true)
 
     private fun buildMetadata(task: TaskDocument): Map<String, String> {
         return buildMap {

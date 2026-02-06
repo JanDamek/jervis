@@ -127,7 +127,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         resourceFilter: ResourceFilter,
     ): PollingResult {
         // Get last polling state for incremental polling
-        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+        val state = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, getToolName())
         val query = buildQuery(client, connectionDocument, state?.lastSeenUpdatedAt, resourceFilter)
 
         logger.debug { "Polling ${getSystemName()} for client ${client.name} with query: $query" }
@@ -163,7 +163,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             // Save progress every 100 items to prevent re-downloading on interruption
             if ((index + 1) % 100 == 0) {
                 val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, latestUpdatedAt) } ?: latestUpdatedAt
-                pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
+                pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated, getToolName())
                 logger.debug { "${getSystemName()} progress saved: processed ${index + 1}/${fullIssues.size}" }
             }
         }
@@ -174,7 +174,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         // Use latest issue timestamp if available, otherwise use current time to mark polling completion
         val finalUpdatedAt = latestUpdatedAt ?: state?.lastSeenUpdatedAt ?: Instant.now()
         val maxUpdated = state?.lastSeenUpdatedAt?.let { maxOf(it, finalUpdatedAt) } ?: finalUpdatedAt
-        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated)
+        pollingStateService.updateWithTimestamp(connectionDocument.id, connectionDocument.provider, maxUpdated, getToolName())
         logger.debug { "${getSystemName()} polling state saved: lastSeenUpdatedAt=$maxUpdated" }
 
         return PollingResult(

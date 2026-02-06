@@ -25,13 +25,6 @@ data class ProjectDocument(
     val name: String,
     val description: String? = null,
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
-    // Project-specific resource identifiers within client's connections
-    val gitRepositoryConnectionId: ObjectId? = null,
-    val gitRepositoryIdentifier: String? = null,
-    val bugtrackerConnectionId: ObjectId? = null,
-    val bugtrackerProjectKey: String? = null,
-    val wikiConnectionId: ObjectId? = null,
-    val wikiSpaceKey: String? = null,
     val buildConfig: ProjectBuildConfig? = null,
     val costPolicy: ProjectCostPolicy = ProjectCostPolicy(),
     val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config
@@ -41,6 +34,10 @@ data class ProjectDocument(
      * Example: GitHub for repository, Atlassian for bugtracker, GitLab for wiki
      */
     val connectionCapabilities: List<ProjectConnectionCapability> = emptyList(),
+    /** Multi-resource model: all resources in this project */
+    val resources: List<ProjectResource> = emptyList(),
+    /** N:M links between resources (e.g., repo ↔ issue tracker) */
+    val resourceLinks: List<ResourceLink> = emptyList(),
 )
 
 /**
@@ -88,6 +85,26 @@ data class GitCommitConfig(
     val gpgSign: Boolean = false,
     /** GPG key ID to use for signing */
     val gpgKeyId: String? = null,
+)
+
+/**
+ * A specific resource assigned to a project.
+ * Multiple resources of the same capability type are allowed.
+ */
+data class ProjectResource(
+    val id: String,
+    val connectionId: ObjectId,
+    val capability: ConnectionCapability,
+    val resourceIdentifier: String,
+    val displayName: String = "",
+)
+
+/**
+ * N:M link between project resources.
+ */
+data class ResourceLink(
+    val sourceId: String,
+    val targetId: String,
 )
 
 /**

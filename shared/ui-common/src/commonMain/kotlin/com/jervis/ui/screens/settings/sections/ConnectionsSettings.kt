@@ -146,6 +146,17 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 }
                             },
+                            onReauthorize = {
+                                scope.launch {
+                                    try {
+                                        val authUrl = repository.connections.initiateOAuth2(connection.id)
+                                        openUrlInBrowser(authUrl)
+                                        snackbarHostState.showSnackbar("OAuth2 re-autorizace spuštěna. Dokončete ji v prohlížeči.")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba re-autorizace: ${e.message}")
+                                    }
+                                }
+                            },
                             onEdit = { showEditDialog = connection },
                             onDelete = { showDeleteDialog = connection },
                         )
@@ -243,6 +254,7 @@ private fun ConnectionItemCard(
     connection: ConnectionResponseDto,
     clients: List<ClientDto>,
     onTest: () -> Unit,
+    onReauthorize: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -284,6 +296,12 @@ private fun ConnectionItemCard(
                         Icon(Icons.Default.PlayArrow, contentDescription = "Test")
                         Spacer(Modifier.width(4.dp))
                         Text("Test")
+                    }
+                    if (connection.authType == AuthTypeEnum.OAUTH2) {
+                        Spacer(Modifier.width(8.dp))
+                        JPrimaryButton(onClick = onReauthorize) {
+                            Text("Re-auth")
+                        }
                     }
                     Spacer(Modifier.width(8.dp))
                     JPrimaryButton(onClick = onEdit) {
@@ -519,7 +537,7 @@ private fun ConnectionEditDialog(
             connection.useSsl?.let { put(FormFieldType.USE_SSL, it.toString()) }
             connection.folderName?.let { put(FormFieldType.FOLDER_NAME, it) }
             put(FormFieldType.PROTOCOL, connection.protocol.name)
-            put(FormFieldType.CLOUD_TOGGLE, if (connection.baseUrl.isNullOrEmpty()) "true" else "false")
+            put(FormFieldType.CLOUD_TOGGLE, connection.isCloud.toString())
         }
     }
 

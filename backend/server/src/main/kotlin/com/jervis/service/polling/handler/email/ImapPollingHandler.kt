@@ -34,7 +34,7 @@ class ImapPollingHandler(
     private val pollingStateService: PollingStateService,
 ) : EmailPollingHandlerBase(repository) {
     fun canHandle(connectionDocument: ConnectionDocument): Boolean =
-        connectionDocument.connectionType == ConnectionDocument.ConnectionTypeEnum.IMAP
+        connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.IMAP
 
     override fun getProtocolName(): String = "IMAP"
 
@@ -44,7 +44,7 @@ class ImapPollingHandler(
         projectId: ProjectId?,
         resourceFilter: ResourceFilter,
     ): PollingResult {
-        if (connectionDocument.connectionType != ConnectionDocument.ConnectionTypeEnum.IMAP) {
+        if (connectionDocument.protocol != com.jervis.dto.connection.ProtocolEnum.IMAP) {
             logger.warn { "Invalid connectionDocument type for IMAP polling" }
             return PollingResult(errors = 1)
         }
@@ -180,7 +180,7 @@ class ImapPollingHandler(
 
             // Load polling state (per folder)
             val stateKey = "${connectionDocument.id}_$folderName"
-            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider)
+            val pollingState = pollingStateService.getState(connectionDocument.id, connectionDocument.provider, "IMAP")
             val lastFetchedUid = pollingState?.lastFetchedUid ?: 0L
 
             logger.debug { "IMAP sync state for $folderName: lastFetchedUid=$lastFetchedUid" }
@@ -248,7 +248,7 @@ class ImapPollingHandler(
 
             // Save polling state
             if (filteredMessages.isNotEmpty() && maxUidFetched > lastFetchedUid) {
-                pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, maxUidFetched)
+                pollingStateService.updateWithUid(connectionDocument.id, connectionDocument.provider, maxUidFetched, "IMAP")
                 logger.debug {
                     "Updated lastFetchedUid for $folderName: $lastFetchedUid -> $maxUidFetched (created=$created, skipped=$skipped)"
                 }

@@ -1,14 +1,16 @@
 package com.jervis.common.dto.wiki
 
+import com.jervis.common.dto.AuthType
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class WikiUserRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable
@@ -22,10 +24,11 @@ data class WikiUserDto(
 @Serializable
 data class WikiSearchRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val spaceKey: String? = null,
     val query: String? = null,
     val maxResults: Int = 100,
@@ -42,10 +45,11 @@ data class WikiSearchResponse(
 @Serializable
 data class WikiPageRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
     val pageId: String,
 )
 
@@ -86,10 +90,11 @@ data class WikiAttachmentDto(
 @Serializable
 data class WikiSpacesRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,
+    val cloudId: String? = null,
 )
 
 @Serializable
@@ -109,7 +114,7 @@ data class WikiSpaceDto(
 @Serializable
 data class WikiAttachmentRequest(
     val baseUrl: String,
-    val authType: String,
+    val authType: AuthType,
     val basicUsername: String? = null,
     val basicPassword: String? = null,
     val bearerToken: String? = null,

@@ -92,4 +92,17 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         processingMode: ProcessingMode,
         state: TaskStateEnum,
     ): Long
+
+    /**
+     * Find tasks ready for qualification where backoff window has elapsed.
+     * Returns tasks where nextQualificationRetryAt is null (new) or <= now (backoff expired).
+     */
+    suspend fun findByStateAndNextQualificationRetryAtIsNullOrderByCreatedAtAsc(
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    suspend fun findByStateAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
+        state: TaskStateEnum,
+        now: Instant,
+    ): Flow<TaskDocument>
 }

@@ -4,6 +4,7 @@ data class AtlassianConnection(
     val baseUrl: String,
     val auth: AtlassianAuth,
     val timeoutMs: Long? = null,
+    val cloudId: String? = null,
 )
 
 sealed class AtlassianAuth {

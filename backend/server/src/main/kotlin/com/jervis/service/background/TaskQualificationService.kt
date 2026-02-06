@@ -1,6 +1,5 @@
 package com.jervis.service.background
 
-import com.jervis.configuration.properties.KoogProperties
 import com.jervis.entity.TaskDocument
 import com.jervis.koog.qualifier.SimpleQualifierAgent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,53 +12,37 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Simplified qualification service.
+ * Qualification service - sends tasks to KB microservice for indexing.
  *
- * Delegates all heavy lifting to KB microservice:
- * - Text extraction (Tika)
- * - Vision/OCR (qwen3-vl)
- * - RAG indexing
- * - Graph creation
- * - Summary generation for routing
+ * Retry strategy (DB-based exponential backoff):
+ * - Operational errors (timeout, connection refused): retry with backoff 1s→2s→4s→...→5min, then 5min forever
+ * - Actual indexing errors: mark as ERROR permanently (no retry)
+ * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
  *
- * Routes based on KB's hasActionableContent flag:
- * - true → READY_FOR_GPU (user action required)
- * - false → DONE (just indexed)
- *
- * SINGLETON GUARANTEE:
- * - Only ONE instance of processAllQualifications() can run at a time
- * - Uses an atomic flag to prevent concurrent execution
+ * Concurrency: 4 parallel KB requests to improve throughput during bulk indexing.
  */
 @Service
 class TaskQualificationService(
     private val taskService: TaskService,
     private val simpleQualifierAgent: SimpleQualifierAgent,
-    private val koogProperties: KoogProperties,
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Atomic flag to ensure only one qualification cycle runs at a time
     private val isQualificationRunning =
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
-        // SINGLETON GUARANTEE: Only one qualification cycle can run at a time
         if (!isQualificationRunning.compareAndSet(false, true)) {
-            logger.warn {
-                "QUALIFICATION_SKIPPED: Another qualification cycle is already running. " +
-                    "This prevents concurrent qualifier agent execution."
-            }
+            logger.debug { "QUALIFICATION_SKIPPED: Another cycle already running" }
             return
         }
 
         try {
-            logger.debug { "QUALIFICATION_CYCLE_START: Acquired singleton lock (simplified)" }
+            logger.debug { "QUALIFICATION_CYCLE_START" }
 
-            // Process tasks sequentially - KB microservice handles the heavy lifting
-            // Concurrency is limited since we're just proxying to KB
-            val effectiveConcurrency = 2
+            val effectiveConcurrency = 4
 
             taskService
                 .findTasksForQualification()
@@ -74,10 +57,10 @@ class TaskQualificationService(
                                 }
 
                                 if (isRetriable) {
-                                    // Return to READY_FOR_QUALIFICATION for retry
-                                    taskService.returnToQueue(task, koogProperties.qualifierMaxRetries)
+                                    // Operational error → return to queue with exponential backoff (never marks ERROR)
+                                    taskService.returnToQueue(task)
                                 } else {
-                                    // Non-retriable error - mark as ERROR
+                                    // Actual indexing error → permanent ERROR
                                     taskService.markAsError(task, e.message ?: "Unknown error")
                                 }
                             }
@@ -87,9 +70,8 @@ class TaskQualificationService(
                     logger.error(e) { "Qualification stream failure: ${e.message}" }
                 }.collect()
 
-            logger.info { "QUALIFICATION_CYCLE_COMPLETE: Processing finished, releasing singleton lock" }
+            logger.info { "QUALIFICATION_CYCLE_COMPLETE" }
         } finally {
-            // ALWAYS release the lock, even if an exception occurs
             isQualificationRunning.set(false)
         }
     }
@@ -115,8 +97,7 @@ class TaskQualificationService(
             message.contains("connection", ignoreCase = true) ||
             message.contains("socket", ignoreCase = true) ||
             message.contains("network", ignoreCase = true) ||
-            message.contains("doesn't match any condition on available edges", ignoreCase = true) ||
-            message.contains("stuck in node", ignoreCase = true) ||
+            message.contains("prematurely closed", ignoreCase = true) ||
             e is java.net.SocketTimeoutException ||
             e is java.net.SocketException
     }

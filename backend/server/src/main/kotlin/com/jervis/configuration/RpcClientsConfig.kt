@@ -53,6 +53,8 @@ class RpcClientsConfig(
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
     private var _atlassianClient: IAtlassianClient? = null
     private var _bugTrackerClient: IBugTrackerClient? = null
+    private var _githubBugTrackerClient: IBugTrackerClient? = null
+    private var _gitlabBugTrackerClient: IBugTrackerClient? = null
     private var _wikiClient: IWikiClient? = null
 
     @Bean
@@ -123,6 +125,24 @@ class RpcClientsConfig(
             override suspend fun searchIssues(request: BugTrackerSearchRequest) = getBugTracker().searchIssues(request)
             override suspend fun getIssue(request: BugTrackerIssueRequest) = getBugTracker().getIssue(request)
             override suspend fun listProjects(request: BugTrackerProjectsRequest) = getBugTracker().listProjects(request)
+        }
+
+    @Bean
+    fun githubBugTrackerClient(): IBugTrackerClient =
+        object : IBugTrackerClient {
+            override suspend fun getUser(request: BugTrackerUserRequest) = getGitHubBugTracker().getUser(request)
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getGitHubBugTracker().searchIssues(request)
+            override suspend fun getIssue(request: BugTrackerIssueRequest) = getGitHubBugTracker().getIssue(request)
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getGitHubBugTracker().listProjects(request)
+        }
+
+    @Bean
+    fun gitlabBugTrackerClient(): IBugTrackerClient =
+        object : IBugTrackerClient {
+            override suspend fun getUser(request: BugTrackerUserRequest) = getGitLabBugTracker().getUser(request)
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getGitLabBugTracker().searchIssues(request)
+            override suspend fun getIssue(request: BugTrackerIssueRequest) = getGitLabBugTracker().getIssue(request)
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getGitLabBugTracker().listProjects(request)
         }
 
     @Bean
@@ -209,6 +229,22 @@ class RpcClientsConfig(
     private fun getBugTracker(): IBugTrackerClient =
         _bugTrackerClient ?: synchronized(this) {
             _bugTrackerClient ?: createRpcClient<IBugTrackerClient>(atlassianUrl()).also { _bugTrackerClient = it }
+        }
+
+    private fun githubUrl(): String =
+        endpoints.providers["github"] ?: throw IllegalStateException("No endpoint configured for github")
+
+    private fun getGitHubBugTracker(): IBugTrackerClient =
+        _githubBugTrackerClient ?: synchronized(this) {
+            _githubBugTrackerClient ?: createRpcClient<IBugTrackerClient>(githubUrl()).also { _githubBugTrackerClient = it }
+        }
+
+    private fun gitlabUrl(): String =
+        endpoints.providers["gitlab"] ?: throw IllegalStateException("No endpoint configured for gitlab")
+
+    private fun getGitLabBugTracker(): IBugTrackerClient =
+        _gitlabBugTrackerClient ?: synchronized(this) {
+            _gitlabBugTrackerClient ?: createRpcClient<IBugTrackerClient>(gitlabUrl()).also { _gitlabBugTrackerClient = it }
         }
 
     private fun getWiki(): IWikiClient =

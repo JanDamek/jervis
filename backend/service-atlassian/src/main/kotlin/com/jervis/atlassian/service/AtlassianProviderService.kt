@@ -35,7 +35,7 @@ class AtlassianProviderService(
         supportsSelfHosted = true,
         oauth2AuthorizationUrl = "https://auth.atlassian.com/authorize",
         oauth2TokenUrl = "https://auth.atlassian.com/oauth/token",
-        oauth2Scopes = "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-space.summary offline_access",
+        oauth2Scopes = "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access",
         authOptions = listOf(
             AuthOption(
                 AuthTypeEnum.OAUTH2, "OAuth 2.0",
@@ -55,16 +55,23 @@ class AtlassianProviderService(
     )
 
     override suspend fun testConnection(request: ProviderTestRequest): ConnectionTestResultDto {
-        val user = atlassianService.getUser(request.toBugTrackerUserRequest())
-        return ConnectionTestResultDto(
-            success = true,
-            message = "Atlassian connection successful! User: ${user.displayName}",
-            details = mapOf(
-                "id" to user.id,
-                "displayName" to user.displayName,
-                "email" to (user.email ?: "N/A"),
-            ),
-        )
+        return try {
+            val user = atlassianService.getUser(request.toBugTrackerUserRequest())
+            ConnectionTestResultDto(
+                success = true,
+                message = "Atlassian connection successful! User: ${user.displayName}",
+                details = mapOf(
+                    "id" to user.id,
+                    "displayName" to user.displayName,
+                    "email" to (user.email ?: "N/A"),
+                ),
+            )
+        } catch (e: Exception) {
+            ConnectionTestResultDto(
+                success = false,
+                message = "Atlassian connection failed: ${e.message}",
+            )
+        }
     }
 
     override suspend fun listResources(request: ProviderListResourcesRequest): List<ConnectionResourceDto> =
@@ -107,6 +114,7 @@ private fun ProviderTestRequest.toBugTrackerUserRequest() =
         basicUsername = username,
         basicPassword = password,
         bearerToken = bearerToken,
+        cloudId = cloudId,
     )
 
 private fun ProviderListResourcesRequest.toBugTrackerProjectsRequest() =
@@ -116,13 +124,15 @@ private fun ProviderListResourcesRequest.toBugTrackerProjectsRequest() =
         basicUsername = username,
         basicPassword = password,
         bearerToken = bearerToken,
+        cloudId = cloudId,
     )
 
 private fun ProviderListResourcesRequest.toWikiSpacesRequest() =
     WikiSpacesRequest(
         baseUrl = baseUrl,
-        authType = authType.name,
+        authType = AuthType.valueOf(authType.name),
         basicUsername = username,
         basicPassword = password,
         bearerToken = bearerToken,
+        cloudId = cloudId,
     )

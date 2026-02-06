@@ -61,7 +61,7 @@ fun main() {
 
             get("/oauth2/scopes") {
                 call.respondText(
-                    """{"scopes":"read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space offline_access"}""",
+                    """{"scopes":"read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"}""",
                     io.ktor.http.ContentType.Application.Json,
                 )
             }
