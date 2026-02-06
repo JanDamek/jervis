@@ -114,11 +114,7 @@ class GitLabBugTrackerPollingHandler(
                     allIssues.addAll(projectIssues)
                     logger.debug { "  Fetched ${projectIssues.size} issues from $projectKey" }
                 } catch (e: Exception) {
-                    if (e.message?.contains("404") == true) {
-                        logger.warn { "  GitLab project $projectKey: Issues feature likely disabled (404)" }
-                    } else {
-                        logger.error(e) { "  Failed to fetch issues from GitLab project $projectKey: ${e.message}" }
-                    }
+                    logger.error(e) { "  Failed to fetch issues from GitLab project $projectKey: ${e.message}" }
                 }
             }
 

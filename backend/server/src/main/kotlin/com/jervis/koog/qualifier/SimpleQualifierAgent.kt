@@ -194,11 +194,11 @@ class SimpleQualifierAgent(
     }
 
     private fun isConnectionError(message: String): Boolean =
-        message.contains("Connection refused", ignoreCase = true) ||
-            message.contains("connection reset", ignoreCase = true) ||
+        message.contains("connection", ignoreCase = true) ||
             message.contains("timeout", ignoreCase = true) ||
             message.contains("socket", ignoreCase = true) ||
-            message.contains("network", ignoreCase = true)
+            message.contains("network", ignoreCase = true) ||
+            message.contains("prematurely closed", ignoreCase = true)
 
     private fun buildMetadata(task: TaskDocument): Map<String, String> {
         return buildMap {
