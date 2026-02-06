@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -9,6 +10,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+# Suppress noisy httpx INFO logs (every HTTP request to Weaviate/Ollama/etc.)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +27,17 @@ class _HealthCheckAccessFilter(logging.Filter):
         return True
 
 
-app = FastAPI(title="Knowledge Service", version="1.0.0")
-
-app.include_router(router, prefix="/api/v1")
-
-
-@app.on_event("startup")
-async def _startup():
-    # Apply filter here – uvicorn's access logger is guaranteed to exist at this point
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: apply filter when uvicorn's access logger is guaranteed to exist
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
     logger.info("Knowledge Service ready")
+    yield
+
+
+app = FastAPI(title="Knowledge Service", version="1.0.0", lifespan=lifespan)
+
+app.include_router(router, prefix="/api/v1")
 
 
 @app.get("/health")
