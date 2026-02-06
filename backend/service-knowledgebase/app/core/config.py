@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "qwen3-embedding:8b"
     LLM_MODEL: str = "qwen2.5:14b"
-    VISION_MODEL: str = "qwen3-vl-tool:latest"
+    VISION_MODEL: str = "qwen3-vl:latest"
 
     # OCR-first image processing configuration
     OCR_TEXT_THRESHOLD: int = 100  # Minimum characters for OCR to be considered sufficient

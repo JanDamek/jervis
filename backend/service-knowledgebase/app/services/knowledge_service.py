@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from datetime import datetime
+from urllib.parse import urlparse, urlunparse
 
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
@@ -13,6 +15,7 @@ from app.services.clients.tika_client import TikaClient
 from app.services.clients.joern_client import JoernClient, JoernQueryDto, JoernResultDto
 from app.services.image_service import ImageService
 from app.core.config import settings
+from app.db.arango import get_arango_db
 from langchain_community.document_loaders import RecursiveUrlLoader
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,52 @@ class KnowledgeService:
         self.tika_client = TikaClient()
         self.joern_client = JoernClient()
         self.image_service = ImageService()
+        self._arango_db = get_arango_db()
+        self._ensure_crawl_schema()
+
+    def _ensure_crawl_schema(self):
+        """Ensure CrawledUrls collection exists for URL dedup tracking."""
+        if not self._arango_db.has_collection("CrawledUrls"):
+            col = self._arango_db.create_collection("CrawledUrls")
+            col.add_hash_index(fields=["clientId", "normalizedUrl"], unique=True)
+
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL for dedup: strip fragment, trailing slash, lowercase host."""
+        parsed = urlparse(url)
+        normalized = urlunparse((
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip('/') or '/',
+            parsed.params,
+            parsed.query,
+            '',  # strip fragment
+        ))
+        return normalized
+
+    async def _is_url_indexed(self, client_id: str, url: str) -> bool:
+        """Check if URL was already crawled and indexed."""
+        normalized = self._normalize_url(url)
+        col = self._arango_db.collection("CrawledUrls")
+        cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
+        return len(list(cursor)) > 0
+
+    async def _mark_url_indexed(self, client_id: str, url: str, depth: int):
+        """Mark URL as crawled/indexed."""
+        normalized = self._normalize_url(url)
+        col = self._arango_db.collection("CrawledUrls")
+        try:
+            col.insert({
+                "clientId": client_id,
+                "normalizedUrl": normalized,
+                "originalUrl": url,
+                "depth": depth,
+                "indexedAt": datetime.utcnow().isoformat(),
+            })
+        except Exception:
+            # Already exists (unique index), update timestamp
+            cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
+            for doc in cursor:
+                col.update({"_key": doc["_key"], "indexedAt": datetime.utcnow().isoformat()})
 
     async def ingest(self, request: IngestRequest) -> IngestResult:
         """
@@ -135,9 +184,13 @@ class KnowledgeService:
         return await self.graph_service.traverse(request)
 
     async def crawl(self, request: CrawlRequest) -> IngestResult:
-        # Use Tika for extraction
-        # We'll use RecursiveUrlLoader to fetch raw HTML, then send to Tika
-        
+        """
+        Crawl and ingest web content with URL dedup and LLM relevance filtering.
+
+        - Tracks already-indexed URLs to avoid re-downloading
+        - Max depth default 2
+        - LLM decides what's relevant for further indexing
+        """
         def raw_extractor(html):
             return html
 
@@ -150,7 +203,7 @@ class KnowledgeService:
             timeout=10,
             check_response_status=True
         )
-        
+
         # Run blocking load in thread pool
         docs = await asyncio.to_thread(loader.load)
         logger.info("Crawl fetched %d pages from %s (depth=%d)", len(docs), request.url, request.maxDepth)
@@ -158,32 +211,54 @@ class KnowledgeService:
         total_chunks = 0
         total_nodes = 0
         total_edges = 0
+        skipped = 0
 
         for doc in docs:
-            # Extract text using Tika
-            try:
-                # doc.page_content is raw HTML
-                text = await self.tika_client.process_file(doc.page_content.encode('utf-8'), "page.html")
-            except Exception as e:
-                logger.warning("Tika extraction failed for %s: %s", doc.metadata.get('source'), e)
+            source_url = doc.metadata.get("source", request.url)
+            depth = doc.metadata.get("depth", 0)
+
+            # Skip already-indexed URLs
+            if await self._is_url_indexed(request.clientId, source_url):
+                skipped += 1
                 continue
 
+            try:
+                text = await self.tika_client.process_file(doc.page_content.encode('utf-8'), "page.html")
+            except Exception as e:
+                logger.warning("Tika extraction failed for %s: %s", source_url, e)
+                continue
+
+            if not text or len(text.strip()) < 50:
+                continue
+
+            # LLM relevance check for sub-pages (depth > 0)
+            if depth > 0:
+                relevant = await self._check_link_relevance(text, request.url, source_url)
+                if not relevant:
+                    logger.info("Skipping irrelevant page: %s", source_url)
+                    await self._mark_url_indexed(request.clientId, source_url, depth)
+                    skipped += 1
+                    continue
+
             ingest_req = IngestRequest(
-                clientId=request.clientId,  # Empty string = global (default)
+                clientId=request.clientId,
                 projectId=request.projectId,
-                sourceUrn=doc.metadata.get("source", request.url),
+                sourceUrn=source_url,
                 kind="documentation",
                 content=text,
                 metadata=doc.metadata
             )
-            
+
             res = await self.ingest(ingest_req)
             total_chunks += res.chunks_count
             total_nodes += res.nodes_created
             total_edges += res.edges_created
 
-        logger.info("Crawl complete url=%s pages=%d chunks=%d nodes=%d edges=%d",
-                     request.url, len(docs), total_chunks, total_nodes, total_edges)
+            await self._mark_url_indexed(request.clientId, source_url, depth)
+
+        logger.info("Crawl complete url=%s pages=%d indexed=%d skipped=%d chunks=%d nodes=%d edges=%d",
+                     request.url, len(docs), len(docs) - skipped, skipped,
+                     total_chunks, total_nodes, total_edges)
 
         return IngestResult(
             status="success",
@@ -191,6 +266,50 @@ class KnowledgeService:
             nodes_created=total_nodes,
             edges_created=total_edges
         )
+
+    async def _check_link_relevance(self, text: str, root_url: str, page_url: str) -> bool:
+        """Let LLM decide if a sub-page is relevant for indexing."""
+        from langchain_ollama import ChatOllama
+
+        llm = ChatOllama(
+            base_url=settings.OLLAMA_BASE_URL,
+            model="qwen2.5:7b",
+            format="json",
+            temperature=0
+        )
+
+        truncated = text[:3000] if len(text) > 3000 else text
+        prompt = f"""You are evaluating whether a web page is relevant for indexing in a knowledge base.
+
+Root URL: {root_url}
+Page URL: {page_url}
+
+Page content (first 3000 chars):
+{truncated}
+
+Is this page relevant for a knowledge base? Relevant pages contain:
+- Technical documentation, API docs, guides, tutorials
+- Product information, feature descriptions
+- Architecture decisions, design docs
+- Bug reports, changelogs, release notes
+
+NOT relevant:
+- Login/auth pages, cookie policies, legal notices
+- Navigation-only pages, empty pages, error pages
+- Marketing fluff, pricing pages, testimonials
+- Social media feeds, comment sections
+
+Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
+
+        try:
+            logger.info("Calling LLM for relevance check page=%s", page_url)
+            response = await llm.ainvoke(prompt)
+            import json
+            result = json.loads(response.content)
+            return result.get("relevant", True)
+        except Exception:
+            # On error, default to indexing
+            return True
 
     async def ingest_full(
         self,
