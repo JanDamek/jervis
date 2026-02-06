@@ -4,14 +4,16 @@ import com.jervis.common.client.IProviderService
 import com.jervis.common.client.ProviderListResourcesRequest
 import com.jervis.common.client.ProviderTestRequest
 import com.jervis.configuration.ProviderRegistry
+import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionTestResultDto
+import com.jervis.dto.connection.FormField
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.dto.connection.ProviderUiHints
 import jakarta.annotation.PostConstruct
 import jakarta.mail.Authenticator
 import jakarta.mail.Folder
@@ -33,26 +35,51 @@ class EmailProviderService(
         ProviderEnum.GOOGLE_WORKSPACE to ProviderDescriptor(
             provider = ProviderEnum.GOOGLE_WORKSPACE,
             displayName = "Google Workspace (Gmail)",
-            capabilities = setOf(ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND),
-            authTypes = listOf(AuthTypeEnum.OAUTH2),
-            protocols = setOf(ProtocolEnum.IMAP, ProtocolEnum.SMTP),
-            uiHints = ProviderUiHints(showEmailFields = true, showBaseUrl = false),
+            capabilities = setOf(ConnectionCapability.EMAIL_READ),
+            protocols = setOf(ProtocolEnum.IMAP),
+            authOptions = listOf(
+                AuthOption(AuthTypeEnum.OAUTH2, "OAuth 2.0", fields = emptyList()),
+            ),
         ),
         ProviderEnum.MICROSOFT_365 to ProviderDescriptor(
             provider = ProviderEnum.MICROSOFT_365,
             displayName = "Microsoft 365 (Outlook)",
-            capabilities = setOf(ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND),
-            authTypes = listOf(AuthTypeEnum.OAUTH2, AuthTypeEnum.BASIC),
-            protocols = setOf(ProtocolEnum.IMAP, ProtocolEnum.SMTP),
-            uiHints = ProviderUiHints(showEmailFields = true, showBaseUrl = false),
+            capabilities = setOf(ConnectionCapability.EMAIL_READ),
+            protocols = setOf(ProtocolEnum.IMAP),
+            authOptions = listOf(
+                AuthOption(AuthTypeEnum.OAUTH2, "OAuth 2.0", fields = emptyList()),
+                AuthOption(
+                    AuthTypeEnum.BASIC, "App Password",
+                    fields = listOf(
+                        FormField(FormFieldType.HOST, "IMAP Host", placeholder = "outlook.office365.com", defaultValue = "outlook.office365.com"),
+                        FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
+                        FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
+                        FormField(FormFieldType.USERNAME, "Email"),
+                        FormField(FormFieldType.PASSWORD, "App Password", isSecret = true),
+                        FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
+                    ),
+                ),
+            ),
         ),
         ProviderEnum.GENERIC_EMAIL to ProviderDescriptor(
             provider = ProviderEnum.GENERIC_EMAIL,
             displayName = "Generic Email (IMAP/POP3/SMTP)",
             capabilities = setOf(ConnectionCapability.EMAIL_READ, ConnectionCapability.EMAIL_SEND),
-            authTypes = listOf(AuthTypeEnum.BASIC),
             protocols = setOf(ProtocolEnum.IMAP, ProtocolEnum.POP3, ProtocolEnum.SMTP),
-            uiHints = ProviderUiHints(showEmailFields = true, showBaseUrl = false),
+            authOptions = listOf(
+                AuthOption(
+                    AuthTypeEnum.BASIC, "Username / Password",
+                    fields = listOf(
+                        FormField(FormFieldType.PROTOCOL, "Protokol"),
+                        FormField(FormFieldType.HOST, "Host", placeholder = "imap.example.com"),
+                        FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
+                        FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
+                        FormField(FormFieldType.USERNAME, "Username"),
+                        FormField(FormFieldType.PASSWORD, "Password", isSecret = true),
+                        FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
+                    ),
+                ),
+            ),
         ),
     )
 

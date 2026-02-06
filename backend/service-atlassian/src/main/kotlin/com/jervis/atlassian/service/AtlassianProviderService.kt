@@ -7,14 +7,16 @@ import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
 import com.jervis.common.dto.bugtracker.BugTrackerUserRequest
 import com.jervis.common.dto.wiki.WikiSpacesRequest
+import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionTestResultDto
+import com.jervis.dto.connection.FormField
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.dto.connection.ProviderUiHints
 
 class AtlassianProviderService(
     private val atlassianService: AtlassianServiceImpl,
@@ -28,18 +30,27 @@ class AtlassianProviderService(
             ConnectionCapability.BUGTRACKER,
             ConnectionCapability.WIKI,
         ),
-        authTypes = listOf(AuthTypeEnum.BASIC, AuthTypeEnum.OAUTH2),
         protocols = setOf(ProtocolEnum.HTTP),
         supportsCloud = true,
         supportsSelfHosted = true,
         oauth2AuthorizationUrl = "https://auth.atlassian.com/authorize",
         oauth2TokenUrl = "https://auth.atlassian.com/oauth/token",
         oauth2Scopes = "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-space.summary offline_access",
-        uiHints = ProviderUiHints(
-            showBaseUrl = true,
-            baseUrlPlaceholder = "https://yourcompany.atlassian.net",
-            usernameLabel = "Email",
-            passwordLabel = "API Token",
+        authOptions = listOf(
+            AuthOption(
+                AuthTypeEnum.OAUTH2, "OAuth 2.0",
+                fields = listOf(
+                    FormField(FormFieldType.BASE_URL, "Atlassian URL", placeholder = "https://yourcompany.atlassian.net"),
+                ),
+            ),
+            AuthOption(
+                AuthTypeEnum.BASIC, "API Token",
+                fields = listOf(
+                    FormField(FormFieldType.BASE_URL, "Atlassian URL", placeholder = "https://yourcompany.atlassian.net"),
+                    FormField(FormFieldType.USERNAME, "Email"),
+                    FormField(FormFieldType.PASSWORD, "API Token", isSecret = true),
+                ),
+            ),
         ),
     )
 

@@ -5,11 +5,15 @@ endpoints:
     baseUrl: ws://localhost:8081/
   whisper:
     baseUrl: ws://localhost:8083/
-  atlassian:
-    baseUrl: ws://localhost:8084/
   aider:
     baseUrl: ws://localhost:3100/
   coding:
     baseUrl: ws://localhost:3200/
   junie:
     baseUrl: ws://localhost:3300/
+  knowledgebase:
+    baseUrl: http://localhost:8080/
+  providers:
+    github: ws://localhost:8085/
+    gitlab: ws://localhost:8086/
+    atlassian: ws://localhost:8084/

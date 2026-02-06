@@ -148,22 +148,22 @@ coding-tools:
 
 endpoints:
   searxng:
-    baseUrl: http://192.168.100.117:30053/
+    baseUrl: http://localhost:30053/
   joern:
-    baseUrl: wss://jervis.damek-soft.eu/joern/
+    baseUrl: ws://localhost:8082/
   tika:
-    baseUrl: wss://jervis.damek-soft.eu/tika/
+    baseUrl: ws://localhost:8081/
   whisper:
-    baseUrl: wss://jervis.damek-soft.eu/whisper/
+    baseUrl: ws://localhost:8083/
   aider:
-    baseUrl: wss://jervis.damek-soft.eu/aider/
+    baseUrl: ws://localhost:3100/
   coding:
-    baseUrl: wss://jervis.damek-soft.eu/coding/
+    baseUrl: ws://localhost:3200/
   junie:
-    baseUrl: wss://jervis.damek-soft.eu/junie/
+    baseUrl: ws://localhost:3300/
   knowledgebase:
-    baseUrl: wss://jervis.damek-soft.eu/knowledgebase/
+    baseUrl: http://localhost:8080/
   providers:
-    github: wss://jervis.damek-soft.eu/github/
-    gitlab: wss://jervis.damek-soft.eu/gitlab/
-    atlassian: wss://jervis.damek-soft.eu/atlassian/
+    github: ws://localhost:8085/
+    gitlab: ws://localhost:8086/
+    atlassian: ws://localhost:8084/

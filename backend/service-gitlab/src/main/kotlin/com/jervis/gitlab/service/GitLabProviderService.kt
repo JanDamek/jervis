@@ -7,14 +7,16 @@ import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
 import com.jervis.common.dto.repository.RepositoryListRequest
 import com.jervis.common.dto.wiki.WikiSpacesRequest
+import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionTestResultDto
+import com.jervis.dto.connection.FormField
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.dto.connection.ProviderUiHints
 
 class GitLabProviderService(
     private val repositoryService: GitLabRepositoryService,
@@ -30,7 +32,6 @@ class GitLabProviderService(
             ConnectionCapability.BUGTRACKER,
             ConnectionCapability.WIKI,
         ),
-        authTypes = listOf(AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2),
         protocols = setOf(ProtocolEnum.HTTP),
         defaultCloudBaseUrl = "https://gitlab.com",
         supportsCloud = true,
@@ -38,9 +39,21 @@ class GitLabProviderService(
         oauth2AuthorizationUrl = "https://gitlab.com/oauth/authorize",
         oauth2TokenUrl = "https://gitlab.com/oauth/token",
         oauth2Scopes = "api read_user read_api read_repository write_repository",
-        uiHints = ProviderUiHints(
-            showCloudToggle = true,
-            baseUrlPlaceholder = "https://gitlab.example.com",
+        authOptions = listOf(
+            AuthOption(
+                AuthTypeEnum.OAUTH2, "OAuth 2.0",
+                fields = listOf(
+                    FormField(FormFieldType.CLOUD_TOGGLE, "Cloud (veřejná instance)", defaultValue = "true"),
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://gitlab.example.com", required = false),
+                ),
+            ),
+            AuthOption(
+                AuthTypeEnum.BEARER, "Personal Access Token",
+                fields = listOf(
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://gitlab.example.com"),
+                    FormField(FormFieldType.BEARER_TOKEN, "Personal Access Token", isSecret = true),
+                ),
+            ),
         ),
     )
 

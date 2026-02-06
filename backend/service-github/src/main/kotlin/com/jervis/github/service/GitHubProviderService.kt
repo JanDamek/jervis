@@ -6,14 +6,16 @@ import com.jervis.common.client.ProviderTestRequest
 import com.jervis.common.dto.AuthType
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
 import com.jervis.common.dto.repository.RepositoryListRequest
+import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionTestResultDto
+import com.jervis.dto.connection.FormField
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.dto.connection.ProviderUiHints
 
 class GitHubProviderService(
     private val repositoryService: GitHubRepositoryService,
@@ -28,7 +30,6 @@ class GitHubProviderService(
             ConnectionCapability.BUGTRACKER,
             ConnectionCapability.WIKI,
         ),
-        authTypes = listOf(AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2),
         protocols = setOf(ProtocolEnum.HTTP),
         defaultCloudBaseUrl = "https://api.github.com",
         supportsCloud = true,
@@ -36,9 +37,21 @@ class GitHubProviderService(
         oauth2AuthorizationUrl = "https://github.com/login/oauth/authorize",
         oauth2TokenUrl = "https://github.com/login/oauth/access_token",
         oauth2Scopes = "repo user admin:org admin:public_key admin:repo_hook gist notifications workflow",
-        uiHints = ProviderUiHints(
-            showCloudToggle = true,
-            baseUrlPlaceholder = "https://github.example.com",
+        authOptions = listOf(
+            AuthOption(
+                AuthTypeEnum.OAUTH2, "OAuth 2.0",
+                fields = listOf(
+                    FormField(FormFieldType.CLOUD_TOGGLE, "Cloud (veřejná instance)", defaultValue = "true"),
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://github.example.com", required = false),
+                ),
+            ),
+            AuthOption(
+                AuthTypeEnum.BEARER, "Personal Access Token",
+                fields = listOf(
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://github.example.com"),
+                    FormField(FormFieldType.BEARER_TOKEN, "Personal Access Token", isSecret = true),
+                ),
+            ),
         ),
     )
 

@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +30,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
@@ -42,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,15 +50,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.connection.AuthOption
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionUpdateRequestDto
+import com.jervis.dto.connection.FormFieldType
 import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
-import com.jervis.dto.connection.ProviderUiHints
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.StatusIndicator
 import com.jervis.ui.design.JPrimaryButton
@@ -73,7 +73,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
 
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
-    var descriptors by remember { mutableStateOf<Map<ProviderEnum, ProviderDescriptor>>(emptyMap()) }
+    var descriptors by remember { mutableStateOf(ProviderDescriptor.defaultsByProvider) }
     var isLoading by remember { mutableStateOf(false) }
 
     // Dialog states
@@ -81,7 +81,6 @@ fun ConnectionsSettings(repository: JervisRepository) {
     var showEditDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
     var showDeleteDialog by remember { mutableStateOf<ConnectionResponseDto?>(null) }
 
-    // Function to reload connections
     suspend fun loadConnections() {
         try {
             connections = repository.connections.getAllConnections()
@@ -90,15 +89,21 @@ fun ConnectionsSettings(repository: JervisRepository) {
         }
     }
 
-    // Load connections, clients, and descriptors initially
     LaunchedEffect(Unit) {
         isLoading = true
         try {
             connections = repository.connections.getAllConnections()
             clients = repository.clients.getAllClients()
-            descriptors = repository.connections.getProviderDescriptors().associateBy { it.provider }
         } catch (e: Exception) {
             snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
+        }
+        try {
+            val serverDescriptors = repository.connections.getProviderDescriptors().associateBy { it.provider }
+            if (serverDescriptors.isNotEmpty()) {
+                descriptors = ProviderDescriptor.defaultsByProvider + serverDescriptors
+            }
+        } catch (_: Exception) {
+            // Descriptors are optional - UI uses defaults from ProviderDescriptor.defaultsByProvider
         }
         isLoading = false
     }
@@ -141,12 +146,8 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                     }
                                 }
                             },
-                            onEdit = {
-                                showEditDialog = connection
-                            },
-                            onDelete = {
-                                showDeleteDialog = connection
-                            },
+                            onEdit = { showEditDialog = connection },
+                            onDelete = { showDeleteDialog = connection },
                         )
                     }
                 }
@@ -159,7 +160,6 @@ fun ConnectionsSettings(repository: JervisRepository) {
         )
     }
 
-    // Create Dialog
     if (showCreateDialog) {
         ConnectionCreateDialog(
             descriptors = descriptors,
@@ -185,7 +185,6 @@ fun ConnectionsSettings(repository: JervisRepository) {
         )
     }
 
-    // Edit Dialog
     showEditDialog?.let { connection ->
         ConnectionEditDialog(
             connection = connection,
@@ -206,7 +205,6 @@ fun ConnectionsSettings(repository: JervisRepository) {
         )
     }
 
-    // Delete Dialog
     showDeleteDialog?.let { connection ->
         AlertDialog(
             onDismissRequest = { showDeleteDialog = null },
@@ -254,13 +252,8 @@ private fun ConnectionItemCard(
         modifier = Modifier.fillMaxWidth(),
         border = CardDefaults.outlinedCardBorder(),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-        ) {
-            // Header row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(connection.name, style = MaterialTheme.typography.titleMedium)
@@ -306,12 +299,9 @@ private fun ConnectionItemCard(
                 }
             }
 
-            // Capabilities row
             if (connection.capabilities.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Funkce: ",
                         style = MaterialTheme.typography.bodySmall,
@@ -329,29 +319,23 @@ private fun ConnectionItemCard(
 
 @Composable
 private fun CapabilityChip(capability: ConnectionCapability) {
-    val (label, color) =
-        when (capability) {
-            ConnectionCapability.BUGTRACKER -> "BugTracker" to MaterialTheme.colorScheme.error
-            ConnectionCapability.WIKI -> "Wiki" to MaterialTheme.colorScheme.tertiary
-            ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
-            ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
-            ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
-        }
-
+    val (label, color) = when (capability) {
+        ConnectionCapability.BUGTRACKER -> "BugTracker" to MaterialTheme.colorScheme.error
+        ConnectionCapability.WIKI -> "Wiki" to MaterialTheme.colorScheme.tertiary
+        ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
+        ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
+    }
     SuggestionChip(
         onClick = {},
-        label = {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
-            )
-        },
+        label = { Text(label, style = MaterialTheme.typography.labelSmall, color = color) },
     )
 }
 
 private val ConnectionResponseDto.displayUrl: String
     get() = baseUrl ?: host?.let { "$it${port?.let { port -> ":$port" } ?: ""}" } ?: "Bez adresy"
+
+// ── Create Dialog ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun ConnectionCreateDialog(
@@ -360,83 +344,64 @@ private fun ConnectionCreateDialog(
     onCreate: (ConnectionCreateRequestDto) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
-    // Provider is the primary selector
     var provider by remember { mutableStateOf(ProviderEnum.GITHUB) }
-    // Auth type determined by provider selection
-    var authType by remember { mutableStateOf(AuthTypeEnum.OAUTH2) }
-    // Common fields
-    var baseUrl by remember { mutableStateOf("") }
-    // Cloud flag for OAuth2 providers (GitHub, GitLab, Atlassian)
-    var isCloud by remember { mutableStateOf(true) }
-    // UI state
     var expandedProvider by remember { mutableStateOf(false) }
-    var expandedAuthType by remember { mutableStateOf(false) }
+    var expandedAuthOption by remember { mutableStateOf(false) }
 
-    // OAuth2 fields
-    var authorizationUrl by remember { mutableStateOf("") }
-    var tokenUrl by remember { mutableStateOf("") }
-    var clientSecret by remember { mutableStateOf("") }
-    var redirectUri by remember { mutableStateOf("") }
-    var scope by remember { mutableStateOf("") }
-    // Bearer token field
-    var bearerToken by remember { mutableStateOf("") }
-    // Basic auth fields
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    // Email fields
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
-    var folderName by remember { mutableStateOf("INBOX") }
-    var useSsl by remember { mutableStateOf(true) }
-    var useTls by remember { mutableStateOf(true) }
-
-    // Derive UI hints from descriptors
     val descriptor = descriptors[provider]
-    val uiHints = descriptor?.uiHints ?: ProviderUiHints()
-    val isEmailProvider = uiHints.showEmailFields
-    val isDevOpsProvider = !isEmailProvider
+    val authOptions = descriptor?.authOptions ?: emptyList()
+    var selectedAuthOption by remember { mutableStateOf(authOptions.firstOrNull()) }
 
-    // Get available auth types and protocols from descriptor
-    val availableAuthTypes = descriptor?.authTypes?.toSet() ?: setOf(AuthTypeEnum.NONE)
-    val availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP)
+    // Field values keyed by FormFieldType
+    val fieldValues = remember { mutableStateMapOf<FormFieldType, String>() }
 
-    // Protocol (derived from provider for DevOps, selectable for email)
-    var protocol by remember { mutableStateOf(ProtocolEnum.HTTP) }
-    var expandedProtocol by remember { mutableStateOf(false) }
-
-    // Update protocol when provider changes
+    // Reset auth option and field values when provider changes
     LaunchedEffect(provider) {
-        protocol = availableProtocols.firstOrNull() ?: ProtocolEnum.HTTP
-        authType = availableAuthTypes.firstOrNull() ?: AuthTypeEnum.NONE
+        val newAuthOptions = descriptors[provider]?.authOptions ?: emptyList()
+        selectedAuthOption = newAuthOptions.firstOrNull()
+        fieldValues.clear()
+        // Initialize defaults
+        selectedAuthOption?.fields?.forEach { field ->
+            if (field.defaultValue.isNotEmpty()) {
+                fieldValues[field.type] = field.defaultValue
+            }
+        }
     }
 
-    val enabled =
-        name.isNotBlank() &&
-            when {
-                isEmailProvider -> {
-                    host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
-                }
-                isDevOpsProvider -> {
-                    when (authType) {
-                        AuthTypeEnum.OAUTH2 -> name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
-                        AuthTypeEnum.BEARER -> baseUrl.isNotBlank() && bearerToken.isNotBlank()
-                        AuthTypeEnum.BASIC -> baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
-                        AuthTypeEnum.NONE -> baseUrl.isNotBlank()
-                    }
-                }
-                else -> false
+    // Reset field values when auth option changes
+    LaunchedEffect(selectedAuthOption) {
+        fieldValues.clear()
+        selectedAuthOption?.fields?.forEach { field ->
+            if (field.defaultValue.isNotEmpty()) {
+                fieldValues[field.type] = field.defaultValue
             }
+        }
+    }
+
+    val authType = selectedAuthOption?.authType ?: AuthTypeEnum.NONE
+    val fields = selectedAuthOption?.fields ?: emptyList()
+    val isCloud = fieldValues[FormFieldType.CLOUD_TOGGLE] == "true"
+
+    // Validation: all required fields must be non-blank (CLOUD_TOGGLE and USE_SSL are always valid)
+    val enabled = name.isNotBlank() && fields.all { field ->
+        !field.required ||
+            field.type == FormFieldType.CLOUD_TOGGLE ||
+            field.type == FormFieldType.USE_SSL ||
+            field.type == FormFieldType.PROTOCOL ||
+            // BASE_URL is not required when cloud toggle is on
+            (field.type == FormFieldType.BASE_URL && isCloud) ||
+            fieldValues[field.type]?.isNotBlank() == true
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Vytvořit nové připojení") },
         text = {
             Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
             ) {
                 // Connection name
                 OutlinedTextField(
@@ -446,243 +411,67 @@ private fun ConnectionCreateDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Provider dropdown (primary selector)
-                ExposedDropdownMenuBox(
+                // Provider dropdown
+                ProviderDropdown(
+                    selected = provider,
+                    descriptors = descriptors,
                     expanded = expandedProvider,
-                    onExpandedChange = { expandedProvider = !expandedProvider },
-                ) {
-                    OutlinedTextField(
-                        value = provider.name,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Provider") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProvider) },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedProvider,
-                        onDismissRequest = { expandedProvider = false },
-                    ) {
-                        ProviderEnum.entries.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption.name) },
-                                onClick = {
-                                    provider = selectionOption
-                                    expandedProvider = false
-                                },
-                            )
-                        }
-                    }
-                }
-
+                    onExpandedChange = { expandedProvider = it },
+                    onSelect = { provider = it; expandedProvider = false },
+                )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Protocol dropdown (for email providers only)
-                if (isEmailProvider && availableProtocols.size > 1) {
-                    ExposedDropdownMenuBox(
-                        expanded = expandedProtocol,
-                        onExpandedChange = { expandedProtocol = !expandedProtocol },
-                    ) {
-                        OutlinedTextField(
-                            value = protocol.name,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Protokol") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocol) },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedProtocol,
-                            onDismissRequest = { expandedProtocol = false },
-                        ) {
-                            availableProtocols.forEach { selectionOption ->
-                                DropdownMenuItem(
-                                    text = { Text(selectionOption.name) },
-                                    onClick = {
-                                        protocol = selectionOption
-                                        expandedProtocol = false
-                                    },
-                                )
-                            }
-                        }
-                    }
+                // Auth option dropdown (if multiple)
+                if (authOptions.size > 1) {
+                    AuthOptionDropdown(
+                        selected = selectedAuthOption,
+                        options = authOptions,
+                        expanded = expandedAuthOption,
+                        onExpandedChange = { expandedAuthOption = it },
+                        onSelect = { selectedAuthOption = it; expandedAuthOption = false },
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Auth type dropdown (for DevOps providers with multiple auth options)
-                if (isDevOpsProvider && availableAuthTypes.size > 1) {
-                    ExposedDropdownMenuBox(
-                        expanded = expandedAuthType,
-                        onExpandedChange = { expandedAuthType = !expandedAuthType },
-                    ) {
-                        OutlinedTextField(
-                            value = authType.name,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Metoda autentizace") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuthType) },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedAuthType,
-                            onDismissRequest = { expandedAuthType = false },
-                        ) {
-                            availableAuthTypes.forEach { selectionOption ->
-                                DropdownMenuItem(
-                                    text = { Text(selectionOption.name) },
-                                    onClick = {
-                                        authType = selectionOption
-                                        expandedAuthType = false
-                                    },
-                                )
-                            }
-                        }
-                    }
+                // OAuth2 info text when no fields
+                if (authType == AuthTypeEnum.OAUTH2 && fields.isEmpty()) {
+                    Text(
+                        "Přihlašovací údaje pro OAuth2 jsou spravovány automaticky serverem.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Cloud checkbox for OAuth2 (only for GitHub/GitLab, Atlassian always needs URL)
-                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2 && provider != ProviderEnum.ATLASSIAN) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Checkbox(
-                            checked = isCloud,
-                            onCheckedChange = { isCloud = it },
-                        )
-                        Text("Cloud (veřejný GitHub/GitLab)", modifier = Modifier.weight(1f))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Base URL (for DevOps providers)
-                // For cloud OAuth2: hidden for GitHub/GitLab (auto-set), shown for Atlassian (user-specific)
-                val showBaseUrlField = isDevOpsProvider && (
-                    authType != AuthTypeEnum.OAUTH2 ||
-                    !isCloud ||
-                    provider == ProviderEnum.ATLASSIAN
+                // Render fields from auth option definition
+                FormFields(
+                    fields = fields,
+                    fieldValues = fieldValues,
+                    availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP),
                 )
-                if (showBaseUrlField) {
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Atlassian URL (např. https://firma.atlassian.net)" else "Base URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Bearer token field
-                if (isDevOpsProvider && authType == AuthTypeEnum.BEARER) {
-                    OutlinedTextField(
-                        value = bearerToken,
-                        onValueChange = { bearerToken = it },
-                        label = { Text("API Token") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Basic auth fields
-                if ((isDevOpsProvider && authType == AuthTypeEnum.BASIC) || isEmailProvider) {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Email" else "Uživatelské jméno") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "API Token" else "Heslo") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Email-specific fields
-                if (isEmailProvider) {
-                    OutlinedTextField(
-                        value = host,
-                        onValueChange = { host = it },
-                        label = { Text("Host") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = port,
-                        onValueChange = { port = it },
-                        label = { Text("Port") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Checkbox(
-                            checked = useSsl,
-                            onCheckedChange = { useSsl = it },
-                        )
-                        Text("Použít SSL", modifier = Modifier.weight(1f))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (protocol == ProtocolEnum.IMAP) {
-                        OutlinedTextField(
-                            value = folderName,
-                            onValueChange = { folderName = it },
-                            label = { Text("Název složky (volitelné)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
+                    val protocol = fieldValues[FormFieldType.PROTOCOL]?.let { ProtocolEnum.valueOf(it) }
+                        ?: descriptor?.protocols?.firstOrNull() ?: ProtocolEnum.HTTP
                     val request = ConnectionCreateRequestDto(
                         provider = provider,
                         protocol = protocol,
                         authType = authType,
                         name = name,
                         isCloud = isCloud,
-                        baseUrl = if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) baseUrl else null,
-                        username = if (authType == AuthTypeEnum.BASIC || isEmailProvider) username else null,
-                        password = if (authType == AuthTypeEnum.BASIC || isEmailProvider) password else null,
-                        bearerToken = if (authType == AuthTypeEnum.BEARER) bearerToken else null,
-                        host = if (isEmailProvider) host else null,
-                        port = if (isEmailProvider) port.toIntOrNull() else null,
-                        useSsl = if (isEmailProvider) useSsl else null,
-                        folderName = if (isEmailProvider && protocol == ProtocolEnum.IMAP) folderName else null,
+                        baseUrl = fieldValues[FormFieldType.BASE_URL]?.takeIf { it.isNotBlank() },
+                        username = fieldValues[FormFieldType.USERNAME]?.takeIf { it.isNotBlank() },
+                        password = fieldValues[FormFieldType.PASSWORD]?.takeIf { it.isNotBlank() },
+                        bearerToken = fieldValues[FormFieldType.BEARER_TOKEN]?.takeIf { it.isNotBlank() },
+                        host = fieldValues[FormFieldType.HOST]?.takeIf { it.isNotBlank() },
+                        port = fieldValues[FormFieldType.PORT]?.toIntOrNull(),
+                        useSsl = fieldValues[FormFieldType.USE_SSL]?.let { it == "true" },
+                        folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
                     )
                     onCreate(request)
                 },
@@ -692,12 +481,12 @@ private fun ConnectionCreateDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrušit")
-            }
+            TextButton(onClick = onDismiss) { Text("Zrušit") }
         },
     )
 }
+
+// ── Edit Dialog ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ConnectionEditDialog(
@@ -707,68 +496,56 @@ private fun ConnectionEditDialog(
     onSave: (String, ConnectionUpdateRequestDto) -> Unit,
 ) {
     var name by remember { mutableStateOf(connection.name) }
-    var state by remember { mutableStateOf(connection.state) }
+    val state = connection.state
     var provider by remember { mutableStateOf(connection.provider) }
-    var protocol by remember { mutableStateOf(connection.protocol) }
-    var authType by remember { mutableStateOf(connection.authType) }
-
-    // Common fields
-    var baseUrl by remember { mutableStateOf(connection.baseUrl ?: "") }
-    var isCloud by remember { mutableStateOf(connection.baseUrl.isNullOrEmpty()) }
-
-    // UI state
     var expandedProvider by remember { mutableStateOf(false) }
-    var expandedAuthType by remember { mutableStateOf(false) }
-    var expandedProtocol by remember { mutableStateOf(false) }
+    var expandedAuthOption by remember { mutableStateOf(false) }
 
-    // Bearer token
-    var bearerToken by remember { mutableStateOf(connection.bearerToken ?: "") }
-    // Basic auth
-    var username by remember { mutableStateOf(connection.username ?: "") }
-    var password by remember { mutableStateOf(connection.password ?: "") }
-    // Email fields
-    var host by remember { mutableStateOf(connection.host ?: "") }
-    var port by remember { mutableStateOf(connection.port?.toString() ?: "") }
-    var folderName by remember { mutableStateOf(connection.folderName ?: "INBOX") }
-    var useSsl by remember { mutableStateOf(connection.useSsl ?: true) }
-
-    // Derive UI hints from descriptors
     val descriptor = descriptors[provider]
-    val uiHints = descriptor?.uiHints ?: ProviderUiHints()
-    val isEmailProvider = uiHints.showEmailFields
-    val isDevOpsProvider = !isEmailProvider
-    val availableAuthTypes = descriptor?.authTypes?.toSet() ?: setOf(AuthTypeEnum.NONE)
-    val availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP)
+    val authOptions = descriptor?.authOptions ?: emptyList()
+    var selectedAuthOption by remember {
+        mutableStateOf(authOptions.firstOrNull { it.authType == connection.authType } ?: authOptions.firstOrNull())
+    }
 
-    val enabled =
-        name.isNotBlank() &&
-            when {
-                isEmailProvider -> {
-                    host.isNotBlank() && username.isNotBlank() && password.isNotBlank()
-                }
-                isDevOpsProvider -> {
-                    when (authType) {
-                        AuthTypeEnum.OAUTH2 -> name.isNotBlank() && (isCloud || baseUrl.isNotBlank())
-                        AuthTypeEnum.BEARER -> baseUrl.isNotBlank() && bearerToken.isNotBlank()
-                        AuthTypeEnum.BASIC -> baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()
-                        AuthTypeEnum.NONE -> baseUrl.isNotBlank()
-                    }
-                }
-                else -> false
-            }
+    // Field values initialized from connection
+    val fieldValues = remember {
+        mutableStateMapOf<FormFieldType, String>().apply {
+            connection.baseUrl?.let { put(FormFieldType.BASE_URL, it) }
+            connection.username?.let { put(FormFieldType.USERNAME, it) }
+            connection.password?.let { put(FormFieldType.PASSWORD, it) }
+            connection.bearerToken?.let { put(FormFieldType.BEARER_TOKEN, it) }
+            connection.host?.let { put(FormFieldType.HOST, it) }
+            connection.port?.let { put(FormFieldType.PORT, it.toString()) }
+            connection.useSsl?.let { put(FormFieldType.USE_SSL, it.toString()) }
+            connection.folderName?.let { put(FormFieldType.FOLDER_NAME, it) }
+            put(FormFieldType.PROTOCOL, connection.protocol.name)
+            put(FormFieldType.CLOUD_TOGGLE, if (connection.baseUrl.isNullOrEmpty()) "true" else "false")
+        }
+    }
+
+    val authType = selectedAuthOption?.authType ?: AuthTypeEnum.NONE
+    val fields = selectedAuthOption?.fields ?: emptyList()
+    val isCloud = fieldValues[FormFieldType.CLOUD_TOGGLE] == "true"
+
+    val enabled = name.isNotBlank() && fields.all { field ->
+        !field.required ||
+            field.type == FormFieldType.CLOUD_TOGGLE ||
+            field.type == FormFieldType.USE_SSL ||
+            field.type == FormFieldType.PROTOCOL ||
+            (field.type == FormFieldType.BASE_URL && isCloud) ||
+            fieldValues[field.type]?.isNotBlank() == true
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Upravit připojení") },
         text = {
             Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
             ) {
-                // Connection name
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -776,127 +553,29 @@ private fun ConnectionEditDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Provider dropdown (primary selector)
-                ExposedDropdownMenuBox(
+                ProviderDropdown(
+                    selected = provider,
+                    descriptors = descriptors,
                     expanded = expandedProvider,
-                    onExpandedChange = { expandedProvider = !expandedProvider },
-                ) {
-                    OutlinedTextField(
-                        value = provider.name,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Provider") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProvider) },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedProvider,
-                        onDismissRequest = { expandedProvider = false },
-                    ) {
-                        ProviderEnum.entries.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption.name) },
-                                onClick = {
-                                    provider = selectionOption
-                                    expandedProvider = false
-                                },
-                            )
-                        }
-                    }
-                }
-
+                    onExpandedChange = { expandedProvider = it },
+                    onSelect = { provider = it; expandedProvider = false },
+                )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Protocol dropdown (for email providers only)
-                if (isEmailProvider && availableProtocols.size > 1) {
-                    ExposedDropdownMenuBox(
-                        expanded = expandedProtocol,
-                        onExpandedChange = { expandedProtocol = !expandedProtocol },
-                    ) {
-                        OutlinedTextField(
-                            value = protocol.name,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Protokol") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocol) },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedProtocol,
-                            onDismissRequest = { expandedProtocol = false },
-                        ) {
-                            availableProtocols.forEach { selectionOption ->
-                                DropdownMenuItem(
-                                    text = { Text(selectionOption.name) },
-                                    onClick = {
-                                        protocol = selectionOption
-                                        expandedProtocol = false
-                                    },
-                                )
-                            }
-                        }
-                    }
+                if (authOptions.size > 1) {
+                    AuthOptionDropdown(
+                        selected = selectedAuthOption,
+                        options = authOptions,
+                        expanded = expandedAuthOption,
+                        onExpandedChange = { expandedAuthOption = it },
+                        onSelect = { selectedAuthOption = it; expandedAuthOption = false },
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Auth type dropdown (for DevOps providers with multiple auth options)
-                if (isDevOpsProvider && availableAuthTypes.size > 1) {
-                    ExposedDropdownMenuBox(
-                        expanded = expandedAuthType,
-                        onExpandedChange = { expandedAuthType = !expandedAuthType },
-                    ) {
-                        OutlinedTextField(
-                            value = authType.name,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Metoda autentizace") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAuthType) },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = expandedAuthType,
-                            onDismissRequest = { expandedAuthType = false },
-                        ) {
-                            availableAuthTypes.forEach { selectionOption ->
-                                DropdownMenuItem(
-                                    text = { Text(selectionOption.name) },
-                                    onClick = {
-                                        authType = selectionOption
-                                        expandedAuthType = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Cloud checkbox for OAuth2
-                if (isDevOpsProvider && authType == AuthTypeEnum.OAUTH2) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Checkbox(
-                            checked = isCloud,
-                            onCheckedChange = { isCloud = it },
-                        )
-                        Text("Cloud (veřejný GitHub/GitLab/Atlassian)", modifier = Modifier.weight(1f))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
+                if (authType == AuthTypeEnum.OAUTH2 && fields.isEmpty()) {
                     Text(
                         "Přihlašovací údaje pro OAuth2 jsou spravovány automaticky serverem.",
                         style = MaterialTheme.typography.bodySmall,
@@ -905,116 +584,33 @@ private fun ConnectionEditDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Base URL (for DevOps providers) - hidden for cloud OAuth2
-                if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) {
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text("Base URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Bearer token field
-                if (isDevOpsProvider && authType == AuthTypeEnum.BEARER) {
-                    OutlinedTextField(
-                        value = bearerToken,
-                        onValueChange = { bearerToken = it },
-                        label = { Text("API Token") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Basic auth fields
-                if ((isDevOpsProvider && authType == AuthTypeEnum.BASIC) || isEmailProvider) {
-                    OutlinedTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "Email" else "Uživatelské jméno") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text(if (provider == ProviderEnum.ATLASSIAN) "API Token" else "Heslo") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Email-specific fields
-                if (isEmailProvider) {
-                    OutlinedTextField(
-                        value = host,
-                        onValueChange = { host = it },
-                        label = { Text("Host") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = port,
-                        onValueChange = { port = it },
-                        label = { Text("Port") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Checkbox(
-                            checked = useSsl,
-                            onCheckedChange = { useSsl = it },
-                        )
-                        Text("Použít SSL", modifier = Modifier.weight(1f))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (protocol == ProtocolEnum.IMAP) {
-                        OutlinedTextField(
-                            value = folderName,
-                            onValueChange = { folderName = it },
-                            label = { Text("Název složky (volitelné)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
+                FormFields(
+                    fields = fields,
+                    fieldValues = fieldValues,
+                    availableProtocols = descriptor?.protocols ?: setOf(ProtocolEnum.HTTP),
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
+                    val protocol = fieldValues[FormFieldType.PROTOCOL]?.let { ProtocolEnum.valueOf(it) }
+                        ?: descriptor?.protocols?.firstOrNull() ?: ProtocolEnum.HTTP
                     val request = ConnectionUpdateRequestDto(
                         name = name,
                         provider = provider,
                         protocol = protocol,
                         authType = authType,
                         state = state,
-                        isCloud = if (authType == AuthTypeEnum.OAUTH2) isCloud else null,
-                        baseUrl = if (isDevOpsProvider && (authType != AuthTypeEnum.OAUTH2 || !isCloud)) baseUrl else null,
-                        username = if (authType == AuthTypeEnum.BASIC || isEmailProvider) username else null,
-                        password = if (authType == AuthTypeEnum.BASIC || isEmailProvider) password else null,
-                        bearerToken = if (authType == AuthTypeEnum.BEARER) bearerToken else null,
-                        host = if (isEmailProvider) host else null,
-                        port = if (isEmailProvider) port.toIntOrNull() else null,
-                        useSsl = if (isEmailProvider) useSsl else null,
-                        folderName = if (isEmailProvider && protocol == ProtocolEnum.IMAP) folderName else null,
+                        isCloud = isCloud,
+                        baseUrl = fieldValues[FormFieldType.BASE_URL]?.takeIf { it.isNotBlank() },
+                        username = fieldValues[FormFieldType.USERNAME]?.takeIf { it.isNotBlank() },
+                        password = fieldValues[FormFieldType.PASSWORD]?.takeIf { it.isNotBlank() },
+                        bearerToken = fieldValues[FormFieldType.BEARER_TOKEN]?.takeIf { it.isNotBlank() },
+                        host = fieldValues[FormFieldType.HOST]?.takeIf { it.isNotBlank() },
+                        port = fieldValues[FormFieldType.PORT]?.toIntOrNull(),
+                        useSsl = fieldValues[FormFieldType.USE_SSL]?.let { it == "true" },
+                        folderName = fieldValues[FormFieldType.FOLDER_NAME]?.takeIf { it.isNotBlank() },
                     )
                     onSave(connection.id, request)
                 },
@@ -1024,9 +620,183 @@ private fun ConnectionEditDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrušit")
-            }
+            TextButton(onClick = onDismiss) { Text("Zrušit") }
         },
     )
+}
+
+// ── Shared form components ─────────────────────────────────────────────────────
+
+@Composable
+private fun ProviderDropdown(
+    selected: ProviderEnum,
+    descriptors: Map<ProviderEnum, ProviderDescriptor>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (ProviderEnum) -> Unit,
+) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { onExpandedChange(!expanded) },
+    ) {
+        OutlinedTextField(
+            value = descriptors[selected]?.displayName ?: selected.name,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Provider") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            ProviderEnum.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(descriptors[option]?.displayName ?: option.name) },
+                    onClick = { onSelect(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuthOptionDropdown(
+    selected: AuthOption?,
+    options: List<AuthOption>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (AuthOption) -> Unit,
+) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { onExpandedChange(!expanded) },
+    ) {
+        OutlinedTextField(
+            value = selected?.displayName ?: "",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Metoda autentizace") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.displayName) },
+                    onClick = { onSelect(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FormFields(
+    fields: List<com.jervis.dto.connection.FormField>,
+    fieldValues: MutableMap<FormFieldType, String>,
+    availableProtocols: Set<ProtocolEnum>,
+) {
+    val isCloud = fieldValues[FormFieldType.CLOUD_TOGGLE] == "true"
+
+    for (field in fields) {
+        when (field.type) {
+            FormFieldType.CLOUD_TOGGLE -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked = fieldValues[FormFieldType.CLOUD_TOGGLE] == "true",
+                        onCheckedChange = { fieldValues[FormFieldType.CLOUD_TOGGLE] = it.toString() },
+                    )
+                    Text(field.label, modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            FormFieldType.BASE_URL -> {
+                // Hide base URL when cloud toggle is on
+                if (!isCloud) {
+                    OutlinedTextField(
+                        value = fieldValues[FormFieldType.BASE_URL] ?: "",
+                        onValueChange = { fieldValues[FormFieldType.BASE_URL] = it },
+                        label = { Text(field.label) },
+                        placeholder = if (field.placeholder.isNotEmpty()) {{ Text(field.placeholder) }} else null,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            FormFieldType.USE_SSL -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked = fieldValues[FormFieldType.USE_SSL] != "false",
+                        onCheckedChange = { fieldValues[FormFieldType.USE_SSL] = it.toString() },
+                    )
+                    Text(field.label, modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            FormFieldType.PROTOCOL -> {
+                if (availableProtocols.size > 1) {
+                    var expanded by remember { mutableStateOf(false) }
+                    val currentProtocol = fieldValues[FormFieldType.PROTOCOL]
+                        ?: availableProtocols.firstOrNull()?.name ?: ""
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded },
+                    ) {
+                        OutlinedTextField(
+                            value = currentProtocol,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(field.label) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                        ) {
+                            availableProtocols.forEach { proto ->
+                                DropdownMenuItem(
+                                    text = { Text(proto.name) },
+                                    onClick = {
+                                        fieldValues[FormFieldType.PROTOCOL] = proto.name
+                                        expanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            else -> {
+                // Text fields: USERNAME, PASSWORD, BEARER_TOKEN, HOST, PORT, FOLDER_NAME
+                OutlinedTextField(
+                    value = fieldValues[field.type] ?: "",
+                    onValueChange = { fieldValues[field.type] = it },
+                    label = { Text(field.label) },
+                    placeholder = if (field.placeholder.isNotEmpty()) {{ Text(field.placeholder) }} else null,
+                    singleLine = true,
+                    visualTransformation = if (field.isSecret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
 }
