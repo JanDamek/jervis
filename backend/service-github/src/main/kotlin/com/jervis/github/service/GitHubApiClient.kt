@@ -1,69 +1,117 @@
 package com.jervis.github.service
 
+import com.jervis.common.http.checkProviderResponse
+import com.jervis.common.http.paginateViaLinkHeader
+import com.jervis.common.ratelimit.DomainRateLimiter
+import com.jervis.common.ratelimit.UrlUtils
 import io.ktor.client.*
 import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 /**
- * Low-level GitHub API client
+ * Low-level GitHub API client with response validation, rate limiting, and pagination.
  */
 class GitHubApiClient(
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val rateLimiter: DomainRateLimiter,
 ) {
     private val log = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun getUser(token: String): GitHubUser {
-        val response = httpClient.get("https://api.github.com/user") {
+    private fun getApiUrl(baseUrl: String?): String {
+        val base = baseUrl?.takeIf { it.isNotBlank() } ?: "https://api.github.com"
+        return base.trimEnd('/')
+    }
+
+    private suspend fun rateLimit(url: String) {
+        if (!UrlUtils.isInternalUrl(url)) {
+            rateLimiter.acquire(UrlUtils.extractDomain(url))
+        }
+    }
+
+    suspend fun getUser(token: String, baseUrl: String? = null): GitHubUser {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/user"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
             header(HttpHeaders.Accept, "application/vnd.github+json")
         }
-        val responseText = response.bodyAsText()
+        val responseText = response.checkProviderResponse("GitHub", "getUser")
         return json.decodeFromString(GitHubUser.serializer(), responseText)
     }
 
-    suspend fun listRepositories(token: String): List<GitHubRepository> {
-        val response = httpClient.get("https://api.github.com/user/repos") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            header(HttpHeaders.Accept, "application/vnd.github+json")
-            parameter("per_page", 100)
-            parameter("sort", "updated")
-        }
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(responseText)
+    suspend fun listRepositories(token: String, baseUrl: String? = null): List<GitHubRepository> {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/user/repos?per_page=100&sort=updated"
+        rateLimit(url)
+        return paginateViaLinkHeader(
+            httpClient = httpClient,
+            initialUrl = url,
+            provider = "GitHub",
+            context = "listRepositories",
+            requestBuilder = {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                header(HttpHeaders.Accept, "application/vnd.github+json")
+            },
+            deserialize = { body -> json.decodeFromString(body) },
+        )
     }
 
-    suspend fun getRepository(token: String, owner: String, repo: String): GitHubRepository {
-        val response = httpClient.get("https://api.github.com/repos/$owner/$repo") {
+    suspend fun getRepository(token: String, owner: String, repo: String, baseUrl: String? = null): GitHubRepository {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
             header(HttpHeaders.Accept, "application/vnd.github+json")
         }
-        val responseText = response.bodyAsText()
+        val responseText = response.checkProviderResponse("GitHub", "getRepository")
         return json.decodeFromString(GitHubRepository.serializer(), responseText)
     }
 
-    suspend fun listIssues(token: String, owner: String, repo: String): List<GitHubIssue> {
-        val response = httpClient.get("https://api.github.com/repos/$owner/$repo/issues") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            header(HttpHeaders.Accept, "application/vnd.github+json")
-            parameter("per_page", 100)
-            parameter("state", "all")
-        }
-        val responseText = response.bodyAsText()
-        return json.decodeFromString(responseText)
+    suspend fun listIssues(token: String, owner: String, repo: String, baseUrl: String? = null): List<GitHubIssue> {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues?per_page=100&state=all"
+        rateLimit(url)
+        return paginateViaLinkHeader(
+            httpClient = httpClient,
+            initialUrl = url,
+            provider = "GitHub",
+            context = "listIssues($owner/$repo)",
+            requestBuilder = {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                header(HttpHeaders.Accept, "application/vnd.github+json")
+            },
+            deserialize = { body -> json.decodeFromString(body) },
+        )
     }
 
-    suspend fun getFile(token: String, owner: String, repo: String, path: String, ref: String?): GitHubFile {
-        val response = httpClient.get("https://api.github.com/repos/$owner/$repo/contents/$path") {
+    suspend fun getIssue(token: String, owner: String, repo: String, issueNumber: Int, baseUrl: String? = null): GitHubIssue {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues/$issueNumber"
+        rateLimit(url)
+        val response = httpClient.get(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+        }
+        val responseText = response.checkProviderResponse("GitHub", "getIssue(#$issueNumber)")
+        return json.decodeFromString(GitHubIssue.serializer(), responseText)
+    }
+
+    suspend fun getFile(token: String, owner: String, repo: String, path: String, ref: String?, baseUrl: String? = null): GitHubFile {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/contents/$path"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
             header(HttpHeaders.Accept, "application/vnd.github+json")
             ref?.let { parameter("ref", it) }
         }
-        val responseText = response.bodyAsText()
+        val responseText = response.checkProviderResponse("GitHub", "getFile($path)")
         return json.decodeFromString(GitHubFile.serializer(), responseText)
     }
 }

@@ -4,6 +4,8 @@ import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IProviderService
 import com.jervis.common.client.IRepositoryClient
 import com.jervis.common.client.IWikiClient
+import com.jervis.common.ratelimit.DomainRateLimiter
+import com.jervis.common.ratelimit.ProviderRateLimits
 import com.jervis.gitlab.service.GitLabApiClient
 import com.jervis.gitlab.service.GitLabBugTrackerService
 import com.jervis.gitlab.service.GitLabProviderService
@@ -55,7 +57,8 @@ fun main() {
             }
         }
 
-    val gitlabApiClient = GitLabApiClient(httpClient)
+    val rateLimiter = DomainRateLimiter(ProviderRateLimits.GITLAB)
+    val gitlabApiClient = GitLabApiClient(httpClient, rateLimiter)
     val repositoryService = GitLabRepositoryService(gitlabApiClient)
     val bugTrackerService = GitLabBugTrackerService(gitlabApiClient)
     val wikiService = GitLabWikiService(gitlabApiClient)

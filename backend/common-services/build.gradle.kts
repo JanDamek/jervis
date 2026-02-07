@@ -37,6 +37,9 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.cbor)
     implementation(libs.kotlin.logging)
 
+    // Ktor Client (for shared HTTP helpers: ResponseValidation, PaginationHelper)
+    implementation(libs.ktor.client.core)
+
     // RPC
     implementation(libs.kotlinx.rpc.krpc.client)
     implementation(libs.kotlinx.rpc.krpc.ktor.client)

@@ -1,5 +1,9 @@
 package com.jervis.gitlab.service
 
+import com.jervis.common.http.checkProviderResponse
+import com.jervis.common.http.paginateViaOffset
+import com.jervis.common.ratelimit.DomainRateLimiter
+import com.jervis.common.ratelimit.UrlUtils
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -9,10 +13,11 @@ import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 
 /**
- * Low-level GitLab API client
+ * Low-level GitLab API client with response validation, rate limiting, and pagination.
  */
 class GitLabApiClient(
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val rateLimiter: DomainRateLimiter,
 ) {
     private val log = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
@@ -22,89 +27,118 @@ class GitLabApiClient(
         return "${base.trimEnd('/')}/api/v4"
     }
 
-    private suspend fun checkResponse(response: HttpResponse, context: String): String {
-        val responseText = response.bodyAsText()
-        if (response.status.value !in 200..299) {
-            log.error { "GitLab API error ($context): status=${response.status.value}, body=$responseText" }
-            throw RuntimeException("GitLab API error ($context): ${response.status.value}")
+    private suspend fun rateLimit(url: String) {
+        if (!UrlUtils.isInternalUrl(url)) {
+            rateLimiter.acquire(UrlUtils.extractDomain(url))
         }
-        return responseText
     }
 
     suspend fun getUser(baseUrl: String, token: String): GitLabUser {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/user") {
+        val url = "$apiUrl/user"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = checkResponse(response, "getUser")
+        val responseText = response.checkProviderResponse("GitLab", "getUser")
         return json.decodeFromString(GitLabUser.serializer(), responseText)
     }
 
     suspend fun listProjects(baseUrl: String, token: String): List<GitLabProject> {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            parameter("per_page", 100)
-            parameter("order_by", "last_activity_at")
-            parameter("membership", true)
-        }
-        val responseText = checkResponse(response, "listProjects")
-        return json.decodeFromString(responseText)
+        return paginateViaOffset(
+            provider = "GitLab",
+            context = "listProjects",
+            fetchPage = { page, perPage ->
+                val url = "$apiUrl/projects"
+                rateLimit(url)
+                val response = httpClient.get(url) {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    parameter("per_page", perPage)
+                    parameter("page", page)
+                    parameter("order_by", "last_activity_at")
+                    parameter("membership", true)
+                }
+                val responseText = response.checkProviderResponse("GitLab", "listProjects")
+                val projects: List<GitLabProject> = json.decodeFromString(responseText)
+                projects to response
+            },
+        )
     }
 
     suspend fun getProject(baseUrl: String, token: String, projectId: String): GitLabProject {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}") {
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = checkResponse(response, "getProject")
+        val responseText = response.checkProviderResponse("GitLab", "getProject")
         return json.decodeFromString(GitLabProject.serializer(), responseText)
     }
 
     suspend fun listIssues(baseUrl: String, token: String, projectId: String): List<GitLabIssue> {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/issues") {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            parameter("per_page", 100)
-        }
-        val responseText = checkResponse(response, "listIssues")
-        return json.decodeFromString(responseText)
+        return paginateViaOffset(
+            provider = "GitLab",
+            context = "listIssues($projectId)",
+            fetchPage = { page, perPage ->
+                val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues"
+                rateLimit(url)
+                val response = httpClient.get(url) {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    parameter("per_page", perPage)
+                    parameter("page", page)
+                }
+                val responseText = response.checkProviderResponse("GitLab", "listIssues")
+                val issues: List<GitLabIssue> = json.decodeFromString(responseText)
+                issues to response
+            },
+        )
     }
 
     suspend fun getIssue(baseUrl: String, token: String, projectId: String, issueIid: Int): GitLabIssue {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid") {
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = checkResponse(response, "getIssue")
+        val responseText = response.checkProviderResponse("GitLab", "getIssue(#$issueIid)")
         return json.decodeFromString(GitLabIssue.serializer(), responseText)
     }
 
     suspend fun listWikis(baseUrl: String, token: String, projectId: String): List<GitLabWikiPage> {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis") {
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/wikis"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = checkResponse(response, "listWikis")
+        val responseText = response.checkProviderResponse("GitLab", "listWikis")
         return json.decodeFromString(responseText)
     }
 
     suspend fun getWikiPage(baseUrl: String, token: String, projectId: String, slug: String): GitLabWikiPage {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/wikis/$slug") {
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/wikis/$slug"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        val responseText = checkResponse(response, "getWikiPage")
+        val responseText = response.checkProviderResponse("GitLab", "getWikiPage($slug)")
         return json.decodeFromString(GitLabWikiPage.serializer(), responseText)
     }
 
     suspend fun getFile(baseUrl: String, token: String, projectId: String, filePath: String, ref: String?): GitLabFile {
         val apiUrl = getApiUrl(baseUrl)
-        val response = httpClient.get("$apiUrl/projects/${projectId.encodeURLParameter()}/repository/files/${filePath.encodeURLParameter()}") {
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/repository/files/${filePath.encodeURLParameter()}"
+        rateLimit(url)
+        val response = httpClient.get(url) {
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("ref", ref ?: "main")
         }
-        val responseText = checkResponse(response, "getFile")
+        val responseText = response.checkProviderResponse("GitLab", "getFile($filePath)")
         return json.decodeFromString(GitLabFile.serializer(), responseText)
     }
 }

@@ -21,7 +21,7 @@ import com.jervis.common.dto.wiki.WikiSpaceDto
 import com.jervis.common.dto.wiki.WikiSpacesRequest
 import com.jervis.common.dto.wiki.WikiSpacesResponse
 import com.jervis.common.ratelimit.DomainRateLimiter
-import com.jervis.common.ratelimit.RateLimitConfig
+import com.jervis.common.ratelimit.ProviderRateLimits
 import com.jervis.common.ratelimit.UrlUtils
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -365,7 +365,7 @@ class AtlassianApiClient(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    private val rateLimiter = DomainRateLimiter(RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100))
+    private val rateLimiter = DomainRateLimiter(ProviderRateLimits.ATLASSIAN)
 
     private val json =
         Json {

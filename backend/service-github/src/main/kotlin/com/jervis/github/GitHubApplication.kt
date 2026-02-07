@@ -3,6 +3,8 @@ package com.jervis.github
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.client.IProviderService
 import com.jervis.common.client.IRepositoryClient
+import com.jervis.common.ratelimit.DomainRateLimiter
+import com.jervis.common.ratelimit.ProviderRateLimits
 import com.jervis.github.service.GitHubApiClient
 import com.jervis.github.service.GitHubBugTrackerService
 import com.jervis.github.service.GitHubProviderService
@@ -53,7 +55,8 @@ fun main() {
             }
         }
 
-    val githubApiClient = GitHubApiClient(httpClient)
+    val rateLimiter = DomainRateLimiter(ProviderRateLimits.GITHUB)
+    val githubApiClient = GitHubApiClient(httpClient, rateLimiter)
     val repositoryService = GitHubRepositoryService(githubApiClient)
     val bugTrackerService = GitHubBugTrackerService(githubApiClient)
     val providerService = GitHubProviderService(repositoryService, bugTrackerService)

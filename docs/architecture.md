@@ -313,13 +313,20 @@ const val PLATFORM_DESKTOP = "Desktop"
 ### Module Structure
 
 - **backend/server**: Spring Boot WebFlux (orchestrator, RAG, scheduling, integrations)
-- **backend/service-***: Compute-only services (joern, tika, whisper, atlassian)
+- **backend/common-services**: Shared library (RPC interfaces, rate limiting, HTTP helpers, DTOs)
+- **backend/service-***: Ktor microservices (github, gitlab, atlassian, joern, tika, whisper, aider, coding-engine, junie, claude)
 - **shared/common-dto**: Data transfer objects
 - **shared/common-api**: `@HttpExchange` contracts
 - **shared/domain**: Pure domain types
 - **shared/ui-common**: Compose Multiplatform UI screens
 - **apps/desktop**: Primary desktop application
 - **apps/mobile**: iOS/Android port from desktop
+
+### Shared Infrastructure (`backend/common-services`)
+
+- **`com.jervis.common.http`**: Typed exception hierarchy (`ProviderApiException`), response validation (`checkProviderResponse()`), pagination helpers (Link header, offset-based)
+- **`com.jervis.common.ratelimit`**: `DomainRateLimiter` (per-domain sliding window), `ProviderRateLimits` (centralized configs for GitHub/GitLab/Atlassian), `UrlUtils`
+- **`com.jervis.common.client`**: kRPC service interfaces (`IBugTrackerClient`, `IRepositoryClient`, `IWikiClient`, `IProviderService`)
 
 ### Communication Patterns
 

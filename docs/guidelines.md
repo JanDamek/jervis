@@ -192,26 +192,55 @@ install(HttpTimeout) {
 
 ### Ktor with DomainRateLimiter
 
-**Use for:** Microservices with dynamic domains (user-specified URLs)
+**Use for:** Provider services with dynamic domains (user-specified URLs)
+
+**Rate limits** are centralized in `ProviderRateLimits`:
 
 ```kotlin
-private val rateLimiter = DomainRateLimiter(
-    RateLimitConfig(
-        maxRequestsPerSecond = 10,
-        maxRequestsPerMinute = 100
-    )
-)
-
-private suspend fun <T> rateLimitedRequest(
-    url: String,
-    block: suspend (HttpClient, String) -> T
-): T {
-    if (!UrlUtils.isInternalUrl(url)) {
-        val domain = UrlUtils.extractDomain(url)
-        rateLimiter.acquire(domain)  // Blocks until quota available
-    }
-    return block(httpClient, url)
+// common-services/.../ratelimit/ProviderRateLimits.kt
+object ProviderRateLimits {
+    val GITHUB = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 80)
+    val GITLAB = RateLimitConfig(maxRequestsPerSecond = 20, maxRequestsPerMinute = 300)
+    val ATLASSIAN = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100)
 }
+
+// Usage in Application.kt:
+val rateLimiter = DomainRateLimiter(ProviderRateLimits.GITHUB)
+val apiClient = GitHubApiClient(httpClient, rateLimiter)
+```
+
+### Provider Response Validation
+
+All provider API clients use `checkProviderResponse()` for typed error handling:
+
+```kotlin
+// common-services/.../http/ResponseValidation.kt
+val responseText = response.checkProviderResponse("GitHub", "listRepositories")
+```
+
+Throws typed exceptions from `ProviderApiException` sealed hierarchy:
+- `ProviderAuthException` (401, 403)
+- `ProviderNotFoundException` (404)
+- `ProviderRateLimitException` (429, parses `Retry-After` header)
+- `ProviderServerException` (5xx)
+
+### Provider Pagination Helpers
+
+Two pagination strategies in `common-services/.../http/PaginationHelper.kt`:
+
+**Link header** (GitHub): Parses `Link: <url>; rel="next"` header
+```kotlin
+paginateViaLinkHeader(httpClient, url, "GitHub", "listRepositories",
+    requestBuilder = { header(...) },
+    deserialize = { body -> json.decodeFromString(body) },
+    maxPages = 10)
+```
+
+**Offset-based** (GitLab): Uses `x-next-page` / `x-total-pages` headers
+```kotlin
+paginateViaOffset("GitLab", "listProjects",
+    fetchPage = { page, perPage -> /* returns Pair<List<T>, HttpResponse> */ },
+    perPage = 100, maxPages = 10)
 ```
 
 ### WebClientFactory - Only for @HttpExchange
