@@ -10,6 +10,8 @@ import json
 import logging
 from typing import Any
 
+from langgraph.types import interrupt
+
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
@@ -291,6 +293,11 @@ async def git_operations(state: dict) -> dict:
 
     Coding agents write better commit messages and handle staging properly.
     Orchestrator only decides WHEN and UNDER WHAT CONDITIONS.
+
+    Uses LangGraph interrupt() to pause execution when user approval
+    is required. The graph saves its checkpoint and the SSE stream
+    delivers the approval request to the UI. When the user responds,
+    POST /approve resumes the graph via Command(resume=...).
     """
     task = CodingTask(**state["task"])
     rules = ProjectRules(**state["rules"])
@@ -302,12 +309,25 @@ async def git_operations(state: dict) -> dict:
         return {"branch": None}
 
     branch = rules.branch_naming.format(taskId=task.id)
+    changed_files = []
+    for r in step_results:
+        changed_files.extend(StepResult(**r).changed_files)
 
-    # COMMIT decision
+    # --- COMMIT approval gate ---
     if rules.require_approval_commit:
-        # In a real implementation, this would use LangGraph interrupt()
-        # For now, we log and proceed (approval flow will be wired later)
-        logger.info("Commit approval required for task %s", task.id)
+        approval = interrupt({
+            "type": "approval_request",
+            "action": "commit",
+            "description": f"Commit changes to branch '{branch}'",
+            "branch": branch,
+            "task_id": task.id,
+            "changed_files": list(set(changed_files)),
+        })
+        if not approval.get("approved", False):
+            logger.info(
+                "Commit rejected by user: %s", approval.get("reason", "")
+            )
+            return {"branch": None}
 
     # Delegate commit to coding agent (ALLOW_GIT=true)
     commit_instructions = (
@@ -329,12 +349,22 @@ async def git_operations(state: dict) -> dict:
         instructions_override=commit_instructions,
     )
 
-    # PUSH decision
-    if rules.require_approval_push:
-        logger.info("Push approval required for task %s", task.id)
-        # Will use LangGraph interrupt() when approval flow is wired
-
+    # --- PUSH approval gate ---
     if rules.auto_push:
+        if rules.require_approval_push:
+            approval = interrupt({
+                "type": "approval_request",
+                "action": "push",
+                "description": f"Push branch '{branch}' to origin",
+                "branch": branch,
+                "task_id": task.id,
+            })
+            if not approval.get("approved", False):
+                logger.info(
+                    "Push rejected by user: %s", approval.get("reason", "")
+                )
+                return {"branch": branch}
+
         push_instructions = (
             f"Push branch '{branch}' to origin. Do NOT force push."
         )

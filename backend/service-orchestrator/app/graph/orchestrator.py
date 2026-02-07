@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from langgraph.types import Command
 
 from app.graph.nodes import (
     advance_step,
@@ -204,11 +205,16 @@ async def run_orchestration_streaming(
             }
 
 
-async def resume_orchestration(thread_id: str) -> dict:
+async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict:
     """Resume a paused orchestration from its checkpoint.
+
+    Uses LangGraph Command(resume=...) to pass the user's response
+    back to the interrupted node (e.g., approval response).
 
     Args:
         thread_id: Thread ID to resume.
+        resume_value: Value to pass to the interrupt() call that paused the graph.
+            For approval flow, this is {"approved": bool, "reason": str | None}.
 
     Returns:
         Final state after resumption completes.
@@ -216,9 +222,12 @@ async def resume_orchestration(thread_id: str) -> dict:
     graph = get_orchestrator_graph()
     config = {"configurable": {"thread_id": thread_id}}
 
-    logger.info("Resuming orchestration: thread=%s", thread_id)
+    logger.info("Resuming orchestration: thread=%s resume_value=%s", thread_id, resume_value)
 
-    final_state = await graph.ainvoke(None, config=config)
+    final_state = await graph.ainvoke(
+        Command(resume=resume_value),
+        config=config,
+    )
 
     logger.info(
         "Resumed orchestration complete: thread=%s result=%s",
@@ -227,6 +236,20 @@ async def resume_orchestration(thread_id: str) -> dict:
     )
 
     return final_state
+
+
+async def get_graph_state(thread_id: str):
+    """Get the current state of a graph execution.
+
+    Used to detect if the graph is interrupted (waiting for approval).
+    Returns the StateSnapshot or None if no state exists.
+    """
+    graph = get_orchestrator_graph()
+    config = {"configurable": {"thread_id": thread_id}}
+    try:
+        return await graph.aget_state(config)
+    except Exception:
+        return None
 
 
 def _safe_serialize(obj: Any) -> Any:

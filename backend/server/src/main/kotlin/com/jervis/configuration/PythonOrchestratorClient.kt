@@ -14,6 +14,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
@@ -78,9 +79,12 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
-     * Send approval response (approve/reject commit, push, etc.)
+     * Send approval response and resume graph.
+     *
+     * Returns the orchestration result, which may be another interrupt
+     * (e.g., commit approved → push approval required).
      */
-    suspend fun approve(threadId: String, approved: Boolean, reason: String? = null): Map<String, String> {
+    suspend fun approve(threadId: String, approved: Boolean, reason: String? = null): OrchestrateResponseDto {
         logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved" }
         return client.post("$apiBaseUrl/approve/$threadId") {
             contentType(ContentType.Application.Json)
@@ -147,13 +151,18 @@ data class ProjectRulesDto(
 @Serializable
 data class OrchestrateResponseDto(
     @SerialName("task_id") val taskId: String,
-    val success: Boolean,
+    val success: Boolean = false,
     val summary: String,
+    val status: String? = null,
     val branch: String? = null,
     val artifacts: List<String> = emptyList(),
     @SerialName("step_results") val stepResults: List<StepResultDto> = emptyList(),
     @SerialName("thread_id") val threadId: String? = null,
-)
+    val interrupt: JsonObject? = null,
+) {
+    /** True when the graph is paused at an interrupt (awaiting approval). */
+    val isInterrupted: Boolean get() = status == "interrupted"
+}
 
 @Serializable
 data class StepResultDto(

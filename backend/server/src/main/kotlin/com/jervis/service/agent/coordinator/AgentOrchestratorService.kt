@@ -4,6 +4,7 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.OrchestrateRequestDto
+import com.jervis.configuration.OrchestrateResponseDto
 import com.jervis.configuration.ProjectRulesDto
 import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.domain.atlassian.AttachmentMetadata
@@ -13,6 +14,7 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.service.background.TaskService
+import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -32,6 +34,7 @@ import org.springframework.stereotype.Service
 class AgentOrchestratorService(
     private val koogWorkflowService: KoogWorkflowService,
     private val pythonOrchestratorClient: PythonOrchestratorClient,
+    private val preferenceService: PreferenceService,
     private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
     private val taskService: TaskService,
 ) {
@@ -180,7 +183,10 @@ class AgentOrchestratorService(
      * 1. Task decomposition → goal planning
      * 2. Coding agent execution via K8s Jobs
      * 3. Result evaluation
-     * 4. Git operations (commit/push with approval)
+     * 4. Git operations (commit/push with approval via interrupt)
+     *
+     * If the graph hits an interrupt (approval required), this method
+     * auto-approves for now (TODO: wire to UI approval dialog).
      */
     private suspend fun delegateToPythonOrchestrator(
         task: TaskDocument,
@@ -195,18 +201,74 @@ class AgentOrchestratorService(
 
         onProgress("Spouštím Python orchestrator...", mapOf("phase" to "python_orchestrator"))
 
+        val rules = loadProjectRules(task.clientId, task.projectId)
+
         val request = OrchestrateRequestDto(
             taskId = task.correlationId ?: ObjectId().toString(),
             clientId = task.clientId?.toString() ?: "",
             projectId = task.projectId?.toString(),
             workspacePath = resolveWorkspacePath(task),
             query = userInput,
-            rules = ProjectRulesDto(),  // Will be loaded from DB in production
+            rules = rules,
         )
 
-        val response = pythonOrchestratorClient.orchestrate(request)
+        var response = pythonOrchestratorClient.orchestrate(request)
 
-        // Build chat response from orchestration result
+        // Handle interrupt loop (commit approval → push approval)
+        while (response.isInterrupted) {
+            val interruptAction = response.interrupt?.get("action")?.toString()?.trim('"') ?: "unknown"
+            logger.info { "Orchestrator interrupted: action=$interruptAction threadId=${response.threadId}" }
+            onProgress(
+                "Čekám na schválení: $interruptAction",
+                mapOf("phase" to "approval", "action" to interruptAction),
+            )
+
+            // TODO: Wire to UI approval dialog via notification service.
+            // For now, auto-approve commit, reject push (safe default).
+            val autoApprove = interruptAction == "commit"
+            response = pythonOrchestratorClient.approve(
+                threadId = response.threadId ?: break,
+                approved = autoApprove,
+                reason = if (autoApprove) "auto-approved" else "auto-push disabled",
+            )
+        }
+
+        return formatOrchestratorResponse(response)
+    }
+
+    /**
+     * Load project rules from PreferenceService (scope: PROJECT → CLIENT → GLOBAL).
+     */
+    private suspend fun loadProjectRules(
+        clientId: ClientId?,
+        projectId: ProjectId?,
+    ): ProjectRulesDto {
+        val prefs = preferenceService.getAllPreferences(clientId, projectId)
+
+        return ProjectRulesDto(
+            branchNaming = prefs["orchestrator.branch_naming"] ?: "task/{taskId}",
+            commitPrefix = prefs["orchestrator.commit_prefix"] ?: "task({taskId}):",
+            requireReview = prefs["orchestrator.require_review"]?.toBoolean() ?: false,
+            requireTests = prefs["orchestrator.require_tests"]?.toBoolean() ?: false,
+            requireApprovalCommit = prefs["orchestrator.require_approval_commit"]?.toBoolean() ?: true,
+            requireApprovalPush = prefs["orchestrator.require_approval_push"]?.toBoolean() ?: true,
+            allowedBranches = prefs["orchestrator.allowed_branches"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?: listOf("task/*", "fix/*"),
+            forbiddenFiles = prefs["orchestrator.forbidden_files"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?: listOf("*.env", "secrets/*"),
+            maxChangedFiles = prefs["orchestrator.max_changed_files"]?.toIntOrNull() ?: 20,
+            autoPush = prefs["orchestrator.auto_push"]?.toBoolean() ?: false,
+        )
+    }
+
+    /**
+     * Format Python orchestrator response into a ChatResponseDto.
+     */
+    private fun formatOrchestratorResponse(response: OrchestrateResponseDto): ChatResponseDto {
         val resultText = buildString {
             appendLine(response.summary)
             if (response.branch != null) {
@@ -227,7 +289,6 @@ class AgentOrchestratorService(
                 }
             }
         }
-
         return ChatResponseDto(resultText)
     }
 

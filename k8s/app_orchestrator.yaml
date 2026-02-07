@@ -25,7 +25,7 @@ spec:
             - name: ORCHESTRATOR_PORT
               value: "8090"
             - name: KOTLIN_SERVER_URL
-              value: "http://jervis-server:8080"
+              value: "http://jervis-server:5500"
             - name: KNOWLEDGEBASE_URL
               value: "http://jervis-knowledgebase:8080"
             - name: K8S_NAMESPACE
