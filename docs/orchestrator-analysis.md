@@ -1,8 +1,8 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07 (rev.3)
+**Datum:** 2026-02-07 (rev.4)
 **Autor:** Automatizovaná analýza
-**Rozsah:** OrchestratorAgent, GoalExecutor, 11 sub-agentů, tools, models, koog integrace, streaming, approval flow, GPU budget, hybrid routing, unified coding agents
+**Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling
 
 ---
 
@@ -21,6 +21,7 @@
 11. [Model Strategy – P40 GPU, VRAM budget, hybridní routing](#11-model-strategy--p40-gpu-vram-budget-hybridní-routing)
 12. [Hybridní model routing – lokální + placené modely](#12-hybridní-model-routing--lokální--placené-modely)
 13. [Unified Agent Interface – Claude Code jako 4. coding agent](#13-unified-agent-interface--claude-code-jako-4-coding-agent)
+14. [Agent Settings UI & K8s Dynamic Scaling](#14-agent-settings-ui--k8s-dynamic-scaling)
 
 ---
 
@@ -2028,4 +2029,553 @@ async def execute_code_change(
             continue
 
     return "All coding agents failed. Manual intervention required."
+```
+
+---
+
+## 14. Agent Settings UI & K8s Dynamic Scaling
+
+### 14.1 Nová kategorie v Settings: AGENTS
+
+Aktuální `SettingsCategory` enum má 5 položek (GENERAL, CLIENTS, PROJECTS, CONNECTIONS, LOGS). Přidáme **AGENTS** – konfiguraci orchestrátoru, coding agentů, limitů a model routingu.
+
+```kotlin
+enum class SettingsCategory(...) {
+    GENERAL("Obecné", "⚙️", "..."),
+    CLIENTS("Klienti", "🏢", "..."),
+    PROJECTS("Projekty", "📁", "..."),
+    CONNECTIONS("Připojení", "🔌", "..."),
+    AGENTS("Agenti", "🤖", "Konfigurace AI agentů, modelů a limitů."),  // ← NOVÝ
+    LOGS("Logy", "📜", "..."),
+}
+```
+
+### 14.2 Agent Settings – UI layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Settings > Agenti                                                        │
+│                                                                          │
+│ ┌── Coding Agents ──────────────────────────────────────────────────┐   │
+│ │                                                                    │   │
+│ │  Agent           Enabled  Max Instances  Status      Model        │   │
+│ │  ─────────────   ──────   ─────────────  ──────      ─────        │   │
+│ │  🟢 Aider        [✓]     [ 2 ▾]         Running (1)  Qwen3-30B   │   │
+│ │  🟢 OpenHands    [✓]     [ 1 ▾]         Idle         Qwen3-30B   │   │
+│ │  🟡 Junie        [✓]     [ 1 ▾]         Idle         Claude 3.5  │   │
+│ │  🔵 Claude Code  [✓]     [ 1 ▾]         Idle         Sonnet 4.5  │   │
+│ │                                                                    │   │
+│ │  Celkový limit concurrent agentů: [ 3 ▾]                         │   │
+│ │  ⚠️ Pozor: Aider + OpenHands sdílejí Ollama GPU (max 1 naráz)    │   │
+│ │                                                                    │   │
+│ └────────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌── Model Routing ──────────────────────────────────────────────────┐   │
+│ │                                                                    │   │
+│ │  Preference:  ○ Economy (jen lokální)                             │   │
+│ │               ● Balanced (lokální + cloud pro složité)            │   │
+│ │               ○ Quality (cloud preferovaný)                       │   │
+│ │                                                                    │   │
+│ │  Lokální model: qwen3-coder-tool:30b  (P40 24GB)    [Change ▾]   │   │
+│ │  Cloud model:   Claude Sonnet 4.5     (Anthropic)   [Change ▾]   │   │
+│ │  Premium model: Claude Opus 4         (Anthropic)   [Change ▾]   │   │
+│ │                                                                    │   │
+│ │  Max context (lokální): [ 32k ▾]  (4k│8k│16k│32k│48k│64k)       │   │
+│ │  Eskalovat na cloud po: [ 2 ▾] selháních lokálního modelu        │   │
+│ │                                                                    │   │
+│ └────────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌── Budget & Cost ──────────────────────────────────────────────────┐   │
+│ │                                                                    │   │
+│ │  Měsíční budget:     [ $50.00    ]                                │   │
+│ │  Spotřebováno:       $12.35 (24.7%)  ████░░░░░░                  │   │
+│ │  Zbývá:              $37.65                                       │   │
+│ │                                                                    │   │
+│ │  Schvalovat nad:     [ $1.00  ] za jednotlivý request             │   │
+│ │  Auto-reject nad:    [ $5.00  ] (background tasks)                │   │
+│ │                                                                    │   │
+│ │  Historie nákladů:   [Zobrazit ▾]                                │   │
+│ │                                                                    │   │
+│ └────────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌── Risky Actions ──────────────────────────────────────────────────┐   │
+│ │                                                                    │   │
+│ │  Vyžadovat schválení pro:                                         │   │
+│ │  [✓] Code changes (Aider/OpenHands/Junie/Claude Code)            │   │
+│ │  [✓] Jira ticket transitions                                     │   │
+│ │  [✓] Odesílání emailů                                            │   │
+│ │  [✓] Cloud model spend nad budget threshold                      │   │
+│ │  [✓] Delete operace (soubory, graph nodes)                       │   │
+│ │  [ ] Git push (aktuálně blokovaný)                               │   │
+│ │  [ ] Scheduler vytvoření úloh                                    │   │
+│ │                                                                    │   │
+│ │  Background tasks timeout: [ 24h ▾] (auto-reject po timeout)     │   │
+│ │                                                                    │   │
+│ └────────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌── Orchestrator ───────────────────────────────────────────────────┐   │
+│ │                                                                    │   │
+│ │  Max goals per request:     [ 5 ▾]                                │   │
+│ │  Max iterations per goal:   [ 30 ▾]                               │   │
+│ │  Review po execution:       [✓] Pro complex tasks                 │   │
+│ │  Conversation history:      [ 20 ▾] zpráv v kontextu             │   │
+│ │  Language:                  ● Auto-detect  ○ Čeština  ○ English   │   │
+│ │                                                                    │   │
+│ └────────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│                                    [ Uložit ]  [ Zrušit ]               │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 14.3 Data model – AgentConfigDto
+
+```kotlin
+// shared/common-dto – nový soubor AgentConfigDto.kt
+
+@Serializable
+data class AgentConfigDto(
+    // Coding agents
+    val codingAgents: List<CodingAgentConfigDto>,
+    val maxConcurrentCodingAgents: Int = 3,
+
+    // Model routing
+    val modelPreference: ModelPreference = ModelPreference.BALANCED,
+    val localModel: String = "qwen3-coder-tool:30b",
+    val cloudModel: String = "claude-sonnet-4-5-20250929",
+    val premiumModel: String = "claude-opus-4-6",
+    val maxLocalContext: Int = 32,  // v tisícich (k)
+    val escalateAfterFailures: Int = 2,
+
+    // Budget
+    val monthlyBudgetUsd: Double = 50.0,
+    val approvalThresholdUsd: Double = 1.0,
+    val autoRejectThresholdUsd: Double = 5.0,
+
+    // Risky actions
+    val riskyActions: RiskyActionsConfig = RiskyActionsConfig(),
+
+    // Orchestrator
+    val maxGoalsPerRequest: Int = 5,
+    val maxIterationsPerGoal: Int = 30,
+    val reviewComplexTasks: Boolean = true,
+    val conversationHistorySize: Int = 20,
+    val language: LanguagePreference = LanguagePreference.AUTO,
+)
+
+@Serializable
+data class CodingAgentConfigDto(
+    val name: String,           // "aider" | "openhands" | "junie" | "claude-code"
+    val enabled: Boolean = true,
+    val maxInstances: Int = 1,
+    val defaultModel: String?,  // Override pro tento agent
+    val paidModel: String?,
+    val priority: Int = 0,      // Nižší = vyšší priorita v auto-select
+)
+
+@Serializable
+data class RiskyActionsConfig(
+    val codeChanges: Boolean = true,
+    val jiraTransitions: Boolean = true,
+    val emailSend: Boolean = true,
+    val cloudSpend: Boolean = true,
+    val deleteOperations: Boolean = true,
+    val gitPush: Boolean = false,
+    val schedulerCreate: Boolean = false,
+    val backgroundTimeout: String = "24h",
+)
+
+@Serializable
+enum class ModelPreference { ECONOMY, BALANCED, QUALITY }
+
+@Serializable
+enum class LanguagePreference { AUTO, CS, EN }
+```
+
+### 14.4 Scope – kde se ukládá konfigurace
+
+Využije se existující `PreferenceTools` pattern (scope hierarchy: GLOBAL → CLIENT → PROJECT):
+
+| Setting | Scope | Důvod |
+|---------|-------|-------|
+| `codingAgents[*].enabled` | **GLOBAL** | Infra – agent buď běží nebo ne |
+| `codingAgents[*].maxInstances` | **GLOBAL** | Infra – K8s limity |
+| `maxConcurrentCodingAgents` | **GLOBAL** | Infra – GPU/CPU limity |
+| `modelPreference` | **CLIENT** | Různí klienti mají různý budget |
+| `localModel` | **GLOBAL** | Závisí na HW |
+| `cloudModel` | **CLIENT** | Klient může preferovat jiný provider |
+| `monthlyBudgetUsd` | **CLIENT** | Per-client billing |
+| `approvalThresholdUsd` | **CLIENT** | Per-client risk tolerance |
+| `riskyActions.*` | **PROJECT** | Různé projekty mají různé požadavky |
+| `maxGoalsPerRequest` | **GLOBAL** | Systémový limit |
+| `maxIterationsPerGoal` | **PROJECT** | Velké projekty mohou potřebovat víc |
+| `conversationHistorySize` | **GLOBAL** | Závisí na context window |
+| `language` | **CLIENT** | Per-klient jazykové preference |
+
+### 14.5 K8s dynamic scaling – Deployments vs Jobs
+
+#### Současný stav
+
+Všechny coding služby běží jako **Deployment** s `replicas: 1`, stále čekají na práci. To plýtvá resources když nejsou potřeba.
+
+#### Dva přístupy
+
+##### Přístup A: Deployment + HPA (Horizontal Pod Autoscaler)
+
+```yaml
+# k8s/app_aider.yaml – rozšíření o HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: jervis-aider-hpa
+  namespace: jervis
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: jervis-aider
+  minReplicas: 0           # Scale-to-zero když nic neběží
+  maxReplicas: 3            # Max dle AgentConfigDto.maxInstances
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # 5 minut po idle → scale down
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0     # Okamžitý scale up
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+  metrics:
+    - type: Object
+      object:
+        describedObject:
+          apiVersion: v1
+          kind: Service
+          name: jervis-aider
+        metric:
+          name: active_coding_tasks     # Custom metrika z orchestrátoru
+        target:
+          type: Value
+          value: "1"                    # 1 pod per aktivní task
+```
+
+**Pro:** Kubernetes-native, automatické, funguje s liveness/readiness probes
+**Proti:** Scale-to-zero trvá (5 min stabilizace), cold start podu ~10-30s
+
+##### Přístup B: Kubernetes Jobs (DOPORUČENÝ pro coding agenty)
+
+```yaml
+# Job se vytvoří dynamicky pro každý coding task
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jervis-aider-task-abc123
+  namespace: jervis
+  labels:
+    app: jervis-coding
+    agent: aider
+    task-id: abc123
+    client-id: client-xyz
+spec:
+  backoffLimit: 1           # 1 retry
+  activeDeadlineSeconds: 1800  # 30 min timeout
+  ttlSecondsAfterFinished: 300  # Cleanup po 5 min
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: aider
+          image: ghcr.io/jandamek/jervis-aider:latest
+          env:
+            - name: TASK_ID
+              value: "abc123"
+            - name: ORCHESTRATOR_CALLBACK_URL
+              value: "http://jervis-orchestrator:8090/callback/abc123"
+            - name: INSTRUCTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: coding-task-abc123
+                  key: instructions
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: jervis-workspace
+```
+
+**Pro:**
+- Přesně N instancí = N concurrent tasks (žádná zbytečná alokace)
+- Automatický cleanup (`ttlSecondsAfterFinished`)
+- Přirozený timeout (`activeDeadlineSeconds`)
+- Job failure = viditelný v `kubectl get jobs`
+- Scale-to-zero nativně (žádný Job = žádné resources)
+
+**Proti:**
+- Cold start pro každý task (~10-30s)
+- Potřeba K8s API přístupu z orchestrátoru
+
+### 14.6 Hybridní přístup (DOPORUČENÝ)
+
+| Služba | Typ | Důvod |
+|--------|-----|-------|
+| **Orchestrator** (Python) | Deployment (replicas: 1) | Stálý, zpracovává všechny requesty |
+| **Aider** | Job (on-demand) | Krátké tasky (sekundy), časté |
+| **OpenHands** | Job (on-demand) | Dlouhé tasky (minuty), méně časté |
+| **Junie** | Job (on-demand) | Premium, jen když potřeba |
+| **Claude Code** | Job (on-demand) | Cloud-based, jen když potřeba |
+| **Knowledgebase** | Deployment (replicas: 1) | Stálý, obsluhuje RAG/search |
+| **Server** (Kotlin) | Deployment (replicas: 1) | Stálý, API gateway |
+
+### 14.7 Python orchestrátor – Job management
+
+```python
+# service-orchestrator/app/k8s/job_manager.py
+
+from kubernetes import client, config
+from kubernetes.client import V1Job, V1ObjectMeta, V1JobSpec, V1PodTemplateSpec
+
+class CodingJobManager:
+    """Dynamicky vytváří K8s Jobs pro coding agenty."""
+
+    def __init__(self):
+        config.load_incluster_config()  # V K8s clusteru
+        self.batch_v1 = client.BatchV1Api()
+        self.core_v1 = client.CoreV1Api()
+
+    async def launch_coding_job(
+        self,
+        agent: str,             # "aider" | "openhands" | "junie" | "claude-code"
+        task_id: str,
+        instructions: str,
+        project_path: str,
+        max_instances: int,     # Z AgentConfigDto
+    ) -> str:
+        """Spustí K8s Job pro coding task. Vrací job_name."""
+
+        # 1. Zkontrolovat limit concurrent instancí
+        active_jobs = await self._count_active_jobs(agent)
+        if active_jobs >= max_instances:
+            raise TooManyInstancesError(
+                f"Agent {agent} má {active_jobs}/{max_instances} aktivních instancí. "
+                f"Čekejte nebo zvyšte limit v Settings > Agenti."
+            )
+
+        # 2. Vytvořit ConfigMap s instrukcemi
+        config_map = client.V1ConfigMap(
+            metadata=client.V1ObjectMeta(
+                name=f"coding-task-{task_id}",
+                namespace="jervis",
+            ),
+            data={
+                "instructions": instructions,
+                "project_path": project_path,
+            },
+        )
+        self.core_v1.create_namespaced_config_map("jervis", config_map)
+
+        # 3. Vytvořit Job
+        job = self._build_job(agent, task_id)
+        result = self.batch_v1.create_namespaced_job("jervis", job)
+
+        return result.metadata.name
+
+    async def _count_active_jobs(self, agent: str) -> int:
+        """Kolik Jobů tohoto agenta aktuálně běží."""
+        jobs = self.batch_v1.list_namespaced_job(
+            "jervis",
+            label_selector=f"app=jervis-coding,agent={agent}",
+        )
+        return sum(1 for j in jobs.items if j.status.active)
+
+    async def get_job_status(self, job_name: str) -> dict:
+        """Stav Jobu pro UI Running Processes panel."""
+        job = self.batch_v1.read_namespaced_job(job_name, "jervis")
+        return {
+            "name": job_name,
+            "active": job.status.active or 0,
+            "succeeded": job.status.succeeded or 0,
+            "failed": job.status.failed or 0,
+            "start_time": job.status.start_time,
+        }
+
+    async def stream_job_logs(self, job_name: str):
+        """Stream logy z running Jobu → SSE → UI."""
+        pods = self.core_v1.list_namespaced_pod(
+            "jervis",
+            label_selector=f"job-name={job_name}",
+        )
+        if not pods.items:
+            return
+
+        pod_name = pods.items[0].metadata.name
+        # Follow logs (streaming)
+        async for line in self.core_v1.read_namespaced_pod_log(
+            pod_name, "jervis",
+            follow=True,
+            _preload_content=False,
+        ):
+            yield line.decode("utf-8")
+
+    def _build_job(self, agent: str, task_id: str) -> V1Job:
+        """Sestaví K8s Job spec pro daného agenta."""
+        AGENT_IMAGES = {
+            "aider": "ghcr.io/jandamek/jervis-aider:latest",
+            "openhands": "ghcr.io/jandamek/jervis-coding-engine:latest",
+            "junie": "ghcr.io/jandamek/jervis-junie:latest",
+            "claude-code": "ghcr.io/jandamek/jervis-claude-code:latest",
+        }
+        AGENT_TIMEOUTS = {
+            "aider": 600,       # 10 min
+            "openhands": 1800,  # 30 min
+            "junie": 1200,      # 20 min
+            "claude-code": 1800,# 30 min
+        }
+
+        return V1Job(
+            metadata=V1ObjectMeta(
+                name=f"jervis-{agent}-{task_id[:8]}",
+                namespace="jervis",
+                labels={
+                    "app": "jervis-coding",
+                    "agent": agent,
+                    "task-id": task_id,
+                },
+            ),
+            spec=V1JobSpec(
+                backoff_limit=1,
+                active_deadline_seconds=AGENT_TIMEOUTS[agent],
+                ttl_seconds_after_finished=300,
+                template=V1PodTemplateSpec(
+                    spec=client.V1PodSpec(
+                        restart_policy="Never",
+                        containers=[
+                            client.V1Container(
+                                name=agent,
+                                image=AGENT_IMAGES[agent],
+                                env=[
+                                    client.V1EnvVar(name="TASK_ID", value=task_id),
+                                    client.V1EnvVar(
+                                        name="ORCHESTRATOR_CALLBACK_URL",
+                                        value=f"http://jervis-orchestrator:8090/callback/{task_id}",
+                                    ),
+                                ],
+                                env_from=[
+                                    client.V1EnvFromSource(
+                                        config_map_ref=client.V1ConfigMapEnvSource(
+                                            name=f"coding-task-{task_id}",
+                                        ),
+                                    ),
+                                    client.V1EnvFromSource(
+                                        secret_ref=client.V1SecretEnvSource(
+                                            name="jervis-secrets",
+                                        ),
+                                    ),
+                                ],
+                                volume_mounts=[
+                                    client.V1VolumeMount(
+                                        name="workspace",
+                                        mount_path="/workspace",
+                                    ),
+                                ],
+                            ),
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="workspace",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name="jervis-workspace",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        )
+```
+
+### 14.8 Jak UI zobrazí aktivní agenty
+
+Running Processes panel (ze sekce 7.5) se rozšíří o K8s Job data:
+
+```kotlin
+data class ProcessInfo(
+    // ... existující fieldy ...
+    val k8sJobName: String?,    // "jervis-aider-abc12345"
+    val k8sJobStatus: String?,  // "Running" | "Succeeded" | "Failed"
+    val maxInstances: Int?,     // Z AgentConfigDto
+    val activeInstances: Int?,  // Aktuální count
+)
+```
+
+```
+┌── Running Processes ─────────────────────────────────────────┐
+│                                                               │
+│ 🟢 Orchestrator: Goal 2/3 – JWT implementation               │
+│                                                               │
+│ 🟡 Aider (1/2 instancí):                                    │
+│    └─ Task abc123: Modifying AuthService.kt...  [2m 15s]     │
+│                                                               │
+│ 🔵 Claude Code (1/1 instancí):                               │
+│    └─ Task def456: Reviewing security config... [45s]         │
+│                                                               │
+│ ⚪ OpenHands (0/1 instancí): Idle                             │
+│ ⚪ Junie (0/1 instancí): Idle                                 │
+│                                                               │
+│ 📊 Background: 3 tasks in queue, 1 qualifying                │
+│ 💰 Budget: $12.35 / $50.00 (24.7%)                           │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### 14.9 RPC endpoint – agent config CRUD
+
+```kotlin
+// shared/common-api – nový interface
+@Rpc
+interface IAgentConfigService {
+    suspend fun getAgentConfig(clientId: String): AgentConfigDto
+    suspend fun updateAgentConfig(clientId: String, config: AgentConfigDto)
+    suspend fun getCostSummary(clientId: String): CostSummaryDto
+    suspend fun getActiveAgents(): List<ActiveAgentDto>
+}
+
+@Serializable
+data class CostSummaryDto(
+    val monthlyBudgetUsd: Double,
+    val spentThisMonthUsd: Double,
+    val remainingUsd: Double,
+    val costBreakdown: List<CostEntryDto>,  // Per-model, per-agent breakdown
+)
+
+@Serializable
+data class CostEntryDto(
+    val model: String,
+    val agent: String?,
+    val calls: Int,
+    val promptTokens: Long,
+    val completionTokens: Long,
+    val costUsd: Double,
+)
+
+@Serializable
+data class ActiveAgentDto(
+    val agent: String,           // "aider" | "openhands" | "junie" | "claude-code"
+    val activeInstances: Int,
+    val maxInstances: Int,
+    val tasks: List<ActiveTaskDto>,
+)
+
+@Serializable
+data class ActiveTaskDto(
+    val taskId: String,
+    val status: String,          // "running" | "succeeded" | "failed"
+    val startedAt: Long,
+    val elapsedSeconds: Int,
+    val currentAction: String?,
+)
 ```
