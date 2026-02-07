@@ -22,6 +22,7 @@ data class EndpointProperties(
     val junie: Host,
     val claude: Host,
     val knowledgebase: Host,
+    val orchestrator: Host = Host("http://localhost:8090"),
     val providers: Map<String, String> = emptyMap(),
 ) {
     data class Api(

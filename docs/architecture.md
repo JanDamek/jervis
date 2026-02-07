@@ -16,6 +16,7 @@
 7. [Smart Model Selector](#smart-model-selector)
 8. [Security Architecture](#security-architecture)
 9. [Coding Agents](#coding-agents)
+10. [Python Orchestrator](#python-orchestrator)
 
 ---
 
@@ -32,6 +33,8 @@ The Jervis system is built on several key architectural patterns:
 ---
 
 ## Koog Agent Framework
+
+> For complete Koog reference see [koog.md](koog.md).
 
 ### Core Libraries & Components
 
@@ -140,6 +143,8 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
 ---
 
 ## Knowledge Graph Design
+
+> Full KB reference: [knowledge-base.md](knowledge-base.md). Data processing pipeline: [structures.md](structures.md).
 
 ### ArangoDB Schema - "Two-Collection" Approach
 
@@ -404,3 +409,83 @@ Each agent has its own build script in `k8s/build_<name>.sh` which calls the gen
 2. Build Docker image for `linux/amd64`
 3. Push to `registry.damek-soft.eu/jandamek/jervis-<name>:latest`
 4. Apply K8s deployment and restart pods
+
+---
+
+## Python Orchestrator
+
+> Authoritative spec: [orchestrator-final-spec.md](orchestrator-final-spec.md).
+
+### Overview
+
+The Python Orchestrator (`backend/service-orchestrator/`) is a FastAPI service using LangGraph
+that centrally manages coding workflows. It runs as a separate K8s Deployment and communicates
+with the Kotlin server via REST.
+
+**Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
+to do and WHEN; agents just execute.
+
+### Architecture
+
+```
+Kotlin Server (BackgroundEngine)
+    │
+    ├── POST /orchestrate/stream ──► Python Orchestrator (LangGraph)
+    │   (fire-and-forget,               │
+    │    returns thread_id)              ├── decompose → plan → execute → evaluate
+    │                                    │   (K8s Jobs for coding agents)
+    ├── GET /status/{thread_id} ◄──────│
+    │   (polling every 5s)               │
+    │                                    └── interrupt() for commit/push approval
+    ├── POST /approve/{thread_id} ──► resume from checkpoint
+    │   (after USER_TASK response)
+    │
+    └── TaskDocument (MongoDB) = SSOT for lifecycle state
+```
+
+### State Persistence
+
+- **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, `orchestratorThreadId`, USER_TASK state
+- **LangGraph checkpoints** (Python/MongoDB): Graph execution state, auto-saved after every node
+- **Checkpointer**: `AsyncMongoDBSaver` from `langgraph-checkpoint-mongodb` (same MongoDB instance)
+- Thread ID is the link between TaskDocument and LangGraph checkpoint
+
+### Task State Machine (Python orchestrator path)
+
+```
+READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
+                    │                → error → ERROR
+                    └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
+```
+
+### Approval Flow (USER_TASK)
+
+1. LangGraph hits `interrupt()` at `git_operations` node (commit/push approval)
+2. Checkpoint saved to MongoDB automatically
+3. `BackgroundEngine.runOrchestratorResultLoop()` detects "interrupted" status
+4. `UserTaskService.failAndEscalateToUserTask()` creates USER_TASK with notification
+5. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = READY_FOR_GPU
+6. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
+7. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
+
+### Concurrency Control
+
+Only **one orchestration at a time** (LLM cannot handle concurrent requests efficiently).
+
+Two layers:
+1. **Kotlin** (early guard): `countByState(PYTHON_ORCHESTRATING) > 0` → skip dispatch
+2. **Python** (definitive): `asyncio.Semaphore(1)` → HTTP 429 if busy
+
+`/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background with semaphore.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency (Semaphore), MongoDB lifecycle |
+| `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, checkpointing |
+| `backend/service-orchestrator/app/graph/nodes.py` | Node functions: decompose, plan, execute, evaluate, git_ops |
+| `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
+| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
+| `backend/server/.../BackgroundEngine.kt` | Result polling loop, USER_TASK escalation |
+| `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |

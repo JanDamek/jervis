@@ -10,6 +10,7 @@ enum class TaskStateEnum {
     QUALIFYING, // Claimed by qualifier, making decision
     READY_FOR_GPU, // Qualification complete, complex task needs GPU execution
     DISPATCHED_GPU, // Delegated to strong model / GPU pipeline
+    PYTHON_ORCHESTRATING, // Dispatched to Python orchestrator (LangGraph), awaiting result
     USER_TASK, // Waiting for user input/decision
     ERROR,
 }

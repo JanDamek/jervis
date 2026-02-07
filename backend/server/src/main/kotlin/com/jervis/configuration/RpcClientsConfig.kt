@@ -50,6 +50,7 @@ class RpcClientsConfig(
     private var _junieClient: ICodingClient? = null
     private var _claudeClient: ICodingClient? = null
     private var _knowledgeService: KnowledgeService? = null
+    private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
     private var _atlassianClient: IAtlassianClient? = null
@@ -57,6 +58,11 @@ class RpcClientsConfig(
     private var _githubBugTrackerClient: IBugTrackerClient? = null
     private var _gitlabBugTrackerClient: IBugTrackerClient? = null
     private var _wikiClient: IWikiClient? = null
+
+    @Bean
+    fun pythonOrchestratorClient(): PythonOrchestratorClient =
+        _pythonOrchestratorClient
+            ?: PythonOrchestratorClient(endpoints.orchestrator.baseUrl).also { _pythonOrchestratorClient = it }
 
     @Bean
     fun knowledgeService(): KnowledgeService =

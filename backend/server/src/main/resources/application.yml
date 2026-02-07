@@ -163,6 +163,10 @@ endpoints:
     baseUrl: ws://localhost:3300/
   knowledgebase:
     baseUrl: http://localhost:8080/
+  claude:
+    baseUrl: ws://localhost:3400/
+  orchestrator:
+    baseUrl: http://localhost:8090
   providers:
     github: ws://localhost:8085/
     gitlab: ws://localhost:8086/
