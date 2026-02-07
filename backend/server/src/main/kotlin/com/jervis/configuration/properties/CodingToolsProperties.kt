@@ -7,6 +7,7 @@ data class CodingToolsProperties(
     val aider: AiderConfig,
     val openhands: OpenHandsConfig,
     val junie: JunieConfig,
+    val claude: ClaudeConfig,
 )
 
 data class AiderConfig(
@@ -25,6 +26,13 @@ data class OpenHandsConfig(
 )
 
 data class JunieConfig(
+    val defaultProvider: String,
+    val defaultModel: String,
+    val paidProvider: String,
+    val paidModel: String,
+)
+
+data class ClaudeConfig(
     val defaultProvider: String,
     val defaultModel: String,
     val paidProvider: String,

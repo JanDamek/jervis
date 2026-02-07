@@ -105,6 +105,7 @@ fun JervisApp(
                 connections = currentServices.connectionService,
                 notifications = currentServices.notificationService,
                 bugTrackerSetup = currentServices.bugTrackerSetupService,
+                codingAgents = currentServices.codingAgentSettingsService,
             )
         }
 

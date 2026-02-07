@@ -48,6 +48,7 @@ class RpcClientsConfig(
     private var _aiderClient: ICodingClient? = null
     private var _codingEngineClient: ICodingClient? = null
     private var _junieClient: ICodingClient? = null
+    private var _claudeClient: ICodingClient? = null
     private var _knowledgeService: KnowledgeService? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
@@ -104,6 +105,12 @@ class RpcClientsConfig(
     fun junieClient(): ICodingClient =
         object : ICodingClient {
             override suspend fun execute(request: CodingRequest) = getJunie().execute(request)
+        }
+
+    @Bean
+    fun claudeClient(): ICodingClient =
+        object : ICodingClient {
+            override suspend fun execute(request: CodingRequest) = getClaude().execute(request)
         }
 
     @Bean
@@ -175,6 +182,9 @@ class RpcClientsConfig(
             override suspend fun reconnectJunie() {
                 _junieClient = createRpcClient(endpoints.junie.baseUrl)
             }
+            override suspend fun reconnectClaude() {
+                _claudeClient = createRpcClient(endpoints.claude.baseUrl)
+            }
             override suspend fun reconnectKnowledgebase() {
                 _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
             }
@@ -210,6 +220,11 @@ class RpcClientsConfig(
     private fun getJunie(): ICodingClient =
         _junieClient ?: synchronized(this) {
             _junieClient ?: createRpcClient<ICodingClient>(endpoints.junie.baseUrl).also { _junieClient = it }
+        }
+
+    private fun getClaude(): ICodingClient =
+        _claudeClient ?: synchronized(this) {
+            _claudeClient ?: createRpcClient<ICodingClient>(endpoints.claude.baseUrl).also { _claudeClient = it }
         }
 
     private fun getKnowledgeService(): KnowledgeService =

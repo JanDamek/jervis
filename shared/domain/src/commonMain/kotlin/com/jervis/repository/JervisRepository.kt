@@ -3,6 +3,7 @@ package com.jervis.repository
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientService
+import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.INotificationService
@@ -29,4 +30,5 @@ class JervisRepository(
     val connections: IConnectionService,
     val notifications: INotificationService,
     val bugTrackerSetup: IBugTrackerSetupService,
+    val codingAgents: ICodingAgentSettingsService,
 )
