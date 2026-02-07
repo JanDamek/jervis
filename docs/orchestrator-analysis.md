@@ -3700,42 +3700,47 @@ V nové architektuře Python orchestrator **nevolá agenty přes RPC**. Místo t
 ```
 Python Orchestrator                    K8s Job (coding agent)
 ─────────────────                     ─────────────────────
-1. Připraví workspace:
-   - git worktree create
-   - zapíše instructions.md
+1. Server má workspace připravený:
+   - codebase na shared PVC
+   - orchestrator zapíše instrukce
    - zapíše .jervis/kb-context.md
    - zapíše .claude/mcp.json (Claude)
    - zapíše CLAUDE.md (Claude)
 
 2. Vytvoří K8s Job:                   3. Job se spustí:
-   kubectl create job                    - přečte instructions.md
-   --env TASK_ID=xxx                     - spustí CLI (aider/claude/...)
-   --env CLIENT_ID=yyy                   - pracuje na git worktree
-   --env PROJECT_ID=zzz                  - (Claude: MCP pro KB)
-   --env WORKSPACE=/data/wt-xxx         - commitne výsledek
+   kubectl create job                    - cd do workspace
+   --env TASK_ID=xxx                     - vytvoří branch (task/{id})
+   --env CLIENT_ID=yyy                   - spustí CLI (aider/claude/...)
+   --env PROJECT_ID=zzz                  - pracuje na existující codebase
+   --env WORKSPACE=/data/project         - (Claude: MCP pro KB za běhu)
+                                         - agent sám rozhodne o commit
                                          - zapíše result.json
+                                         - **agent se ukončí sám**
 
-4. Sleduje Job status:               5. Job dokončí:
-   kubectl get job                       - exit code 0/1
-   + čte result.json                     - result.json s summary
-   + streamuje log:                      - git branch s výsledkem
-     kubectl logs -f                     - TTL auto-cleanup
+4. Sleduje průběh:                    5. Job skončí:
+   + streamuje log:                      - přirozený exit agenta
+     kubectl logs -f                     - exit code 0 = úspěch
+   + čte result.json po skončení         - activeDeadlineSeconds
+                                           jako safety timeout
+                                         - TTL auto-cleanup podu
 ```
 
-**Výhody:**
-- Žádné WebSocket/RPC – jen filesystem + K8s API
-- Job si přečte instrukce z disku, výsledek zapíše na disk
-- Orchestrator sleduje průběh přes `kubectl logs -f` (streaming)
-- Výsledek = git branch + result.json na shared PVC
+**Klíčové principy:**
+- Workspace je **připravený serverem** – codebase už na disku existuje
+- Agent pracuje přímo v existujícím adresáři, vytvoří si branch
+- **Commit je rozhodnutí agenta**, ne entrypointu – někteří agenti (Aider, Claude) commitují sami
+- **Ukončení řídí agent** – když dodělá, skončí (exit 0). `activeDeadlineSeconds` je jen pojistka
+- Výsledek = stav branche + result.json na shared PVC
 
 ### 18.4 Workspace setup – co orchestrator připraví před Job spuštěním
+
+Codebase je **již připravena serverem** na shared PVC. Orchestrator pouze doplní
+instrukce, KB kontext a agent-specifickou konfiguraci do existujícího workspace.
 
 ```python
 # Python orchestrator – workspace_manager.py
 
-import subprocess
 import json
-import os
 from pathlib import Path
 
 DATA_ROOT = Path("/opt/jervis/data")
@@ -3744,27 +3749,20 @@ async def prepare_workspace(
     task_id: str,
     client_id: str,
     project_id: str | None,
-    project_path: str,          # e.g. "clients/acme/web-app"
+    project_path: str,          # e.g. "clients/acme/web-app" – již existuje na PVC
     instructions: str,
     files: list[str],
     agent_type: str,            # "aider" | "openhands" | "claude" | "junie"
     kb_context: str | None,     # pre-fetched KB kontext
 ) -> Path:
-    """Připraví izolovaný workspace pro coding agent Job."""
+    """Doplní instrukce a kontext do existujícího workspace."""
 
-    project_root = DATA_ROOT / project_path
-    worktree_path = DATA_ROOT / "worktrees" / task_id
+    workspace = DATA_ROOT / project_path
+    # Workspace musí existovat – server ho připravil
+    assert workspace.exists(), f"Workspace {workspace} not found on PVC"
 
-    # 1. Vytvořit git worktree pro izolaci
-    branch_name = f"task/{task_id}"
-    subprocess.run(
-        ["git", "worktree", "add", "-b", branch_name,
-         str(worktree_path), "HEAD"],
-        cwd=project_root, check=True
-    )
-
-    # 2. Zapsat instrukce
-    jervis_dir = worktree_path / ".jervis"
+    # 1. Zapsat instrukce a metadata pro agenta
+    jervis_dir = workspace / ".jervis"
     jervis_dir.mkdir(exist_ok=True)
 
     (jervis_dir / "instructions.md").write_text(instructions)
@@ -3776,17 +3774,17 @@ async def prepare_workspace(
         "files": files,
     }))
 
-    # 3. KB kontext – PRE-FETCH (funguje pro VŠECHNY agenty)
+    # 2. KB kontext – PRE-FETCH (funguje pro VŠECHNY agenty)
     if kb_context:
         (jervis_dir / "kb-context.md").write_text(kb_context)
 
-    # 4. Agent-specifická konfigurace
+    # 3. Agent-specifická konfigurace
     if agent_type == "claude":
-        _setup_claude_workspace(worktree_path, client_id, project_id, kb_context)
+        _setup_claude_workspace(workspace, client_id, project_id, kb_context)
     elif agent_type == "aider":
-        _setup_aider_workspace(worktree_path, files, kb_context)
+        _setup_aider_workspace(workspace, files, kb_context)
 
-    return worktree_path
+    return workspace
 
 
 def _setup_claude_workspace(
@@ -3876,9 +3874,9 @@ metadata:
     task-id: "{{taskId}}"
     client-id: "{{clientId}}"
 spec:
-  ttlSecondsAfterFinished: 300     # Auto-cleanup po 5 minutách
+  ttlSecondsAfterFinished: 300     # Auto-cleanup podu po 5 minutách
   backoffLimit: 0                   # Bez retry – orchestrator řeší escalation
-  activeDeadlineSeconds: 2700       # Hard timeout 45 min
+  activeDeadlineSeconds: 2700       # Safety timeout 45 min (agent by měl skončit dřív)
   template:
     metadata:
       labels:
@@ -3900,7 +3898,7 @@ spec:
             - name: PROJECT_ID
               value: "{{projectId}}"
             - name: WORKSPACE
-              value: "/opt/jervis/data/worktrees/{{taskId}}"
+              value: "/opt/jervis/data/{{projectPath}}"   # Existující codebase
             - name: AGENT_TYPE
               value: "{{agentType}}"
             # Auth – z K8s secrets
@@ -3934,6 +3932,13 @@ spec:
 
 ### 18.6 Entrypoint pro Job mode
 
+Agent se **ukončí sám** když dodělá práci. Entrypoint jen nastaví prostředí,
+spustí agenta a zapíše výsledek. **Commit je rozhodnutí agenta** – Aider a Claude
+Code commitují samy jako součást svého workflow. OpenHands a Junie mohou nebo nemusí.
+
+`activeDeadlineSeconds` v Job spec slouží jako **safety timeout** – pokud se agent
+zasekne nebo zacyklí, K8s ho po 45 minutách ukončí.
+
 ```bash
 #!/bin/bash
 # /opt/jervis/entrypoint-job.sh – společný pro všechny agenty
@@ -3964,9 +3969,12 @@ write_result() {
 RESULT_EOF
 }
 
+# Vytvoř branch pro tento task
+git checkout -b "task/${TASK_ID}" 2>/dev/null || git checkout "task/${TASK_ID}"
+
 case "$AGENT_TYPE" in
   aider)
-    # Aider: file-focused, rychlý
+    # Aider: sám commituje po každé změně
     CMD="aider --yes --message \"$INSTRUCTIONS\""
     if [ -n "$FILES" ]; then
       CMD="$CMD $FILES"
@@ -3981,7 +3989,7 @@ case "$AGENT_TYPE" in
     ;;
 
   claude)
-    # Claude Code: plné agentní chování (ne --print!)
+    # Claude Code: plné agentní chování – sám iteruje, commituje, testuje
     CMD="claude --dangerously-skip-permissions --output-format json"
     if [ -n "${CLAUDE_MODEL:-}" ]; then
       CMD="$CMD --model $CLAUDE_MODEL"
@@ -4001,18 +4009,11 @@ esac
 
 echo "=== JERVIS AGENT START: $AGENT_TYPE / $TASK_ID ==="
 echo "=== WORKSPACE: $WORKSPACE ==="
-echo "=== COMMAND: $CMD ==="
 
-# Spusť agenta
+# Spusť agenta – agent se ukončí sám když dodělá práci
+# activeDeadlineSeconds v Job spec je safety timeout (45 min)
 if eval "$CMD" 2>&1; then
-    # Úspěch – commitni změny
-    git add -A
-    if git diff --cached --quiet; then
-        write_result true "No changes were needed."
-    else
-        git commit -m "task($TASK_ID): automated changes by $AGENT_TYPE"
-        write_result true "Changes committed successfully."
-    fi
+    write_result true "Agent completed successfully."
 else
     EXIT_CODE=$?
     write_result false "Agent exited with code $EXIT_CODE"
@@ -4020,6 +4021,21 @@ else
 fi
 
 echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID ==="
+```
+
+**Životní cyklus agenta:**
+```
+Job start → entrypoint.sh → git checkout -b task/{id}
+  → spustí CLI agenta (aider/claude/openhands/junie)
+  → agent pracuje (čte soubory, mění kód, možná commituje)
+  → agent se UKONČÍ SÁM (přirozený exit)
+  → entrypoint zapíše result.json
+  → Job pod skončí (exit 0 nebo 1)
+  → K8s: ttlSecondsAfterFinished → cleanup podu
+
+Pokud se agent zasekne:
+  → activeDeadlineSeconds (45 min) → K8s kill
+  → orchestrator detekuje timeout → escalation
 ```
 
 ### 18.7 Python orchestrator – spouštění a sledování Jobs
@@ -4356,37 +4372,39 @@ async def prefetch_kb_context(
 3. Orchestrator pre-fetchne KB kontext:
    │  kb_prefetch.py → kb-context.md
    │
-4. Orchestrator připraví workspace:
+4. Orchestrator doplní workspace (codebase už je na PVC):
    │  workspace_manager.py:
-   │  ├── git worktree create /data/worktrees/{taskId}
-   │  ├── .jervis/instructions.md
-   │  ├── .jervis/task.json
-   │  ├── .jervis/kb-context.md
-   │  ├── .claude/mcp.json       (Claude only)
-   │  ├── CLAUDE.md               (Claude only)
-   │  └── .aider.conf.yml         (Aider only)
+   │  ├── .jervis/instructions.md    (vždy)
+   │  ├── .jervis/task.json          (vždy)
+   │  ├── .jervis/kb-context.md      (pokud KB vrátila výsledky)
+   │  ├── .claude/mcp.json           (Claude only – runtime KB)
+   │  ├── CLAUDE.md                   (Claude only – projekt kontext)
+   │  └── .aider.conf.yml            (Aider only – read KB soubor)
    │
 5. Orchestrator vytvoří K8s Job:
-   │  job_runner.py → kubectl create job
+   │  job_runner.py → K8s API create job
    │
 6. Job se spustí:
    │  entrypoint-job.sh:
-   │  ├── cd $WORKSPACE
-   │  ├── přečte instructions.md
-   │  ├── spustí agenta (aider/claude/openhands/junie)
-   │  │   └── Claude: MCP tools pro KB (runtime dotazy)
-   │  ├── agent pracuje...
-   │  ├── git add + commit
-   │  └── zapíše result.json
+   │  ├── cd $WORKSPACE (existující codebase na PVC)
+   │  ├── git checkout -b task/{taskId}
+   │  ├── spustí CLI agenta (aider/claude/openhands/junie)
+   │  │   ├── Claude: MCP tools pro KB za běhu
+   │  │   ├── Aider: --read kb-context.md
+   │  │   └── Ostatní: KB kontext v instrukcích
+   │  ├── agent pracuje... (sám rozhoduje o commitech)
+   │  ├── **agent se ukončí sám** (přirozený exit)
+   │  └── entrypoint zapíše result.json
    │
 7. Orchestrator sleduje průběh:
    │  ├── kubectl logs -f → SSE → Kotlin server → UI chat
-   │  └── čeká na Job completion
+   │  └── K8s watch: Job completion event
+   │  └── (safety: activeDeadlineSeconds = 45 min timeout)
    │
-8. Job dokončí:
+8. Job dokončí (agent exit):
    │  ├── orchestrator přečte result.json
-   │  ├── orchestrator přečte git diff (branch task/{taskId} vs HEAD)
-   │  └── git worktree remove (cleanup)
+   │  ├── orchestrator přečte git diff (branch task/{taskId})
+   │  └── cleanup .jervis/ soubory z workspace
    │
 9. Orchestrator reportuje výsledek:
    │  ├── Kotlin server → UI (summary, diff, status)
