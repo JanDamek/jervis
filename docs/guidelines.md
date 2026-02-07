@@ -361,92 +361,60 @@ suspend fun interpretRequest(): String {
 
 ## UI Design System
 
-### Hierarchy & Data Model
+> **SSOT:** Full design system documentation is in **[`docs/ui-design.md`](ui-design.md)**.
+> This section is a quick-reference summary. When in conflict, `ui-design.md` is authoritative.
 
-**Connection** → **Client** → **Project**
+### Core Principles
 
-1. **Connection** - Technical connection to external system (GitHub, Jira, Confluence...)
-   - Contains: credentials, URL, auth type, capabilities (BUGTRACKER, WIKI, REPOSITORY, EMAIL, GIT)
-   - Global or assigned to client
+- **Consistency:** Use shared components from `com.jervis.ui.design` (JTopBar, JSection, JActionBar, etc.)
+- **Adaptive layout:** `COMPACT_BREAKPOINT_DP = 600` – phone (<600dp) vs tablet/desktop (≥600dp)
+- **Fail-fast in UI:** Show errors via `JErrorState`, never hide
+- **Touch targets ≥ 44dp:** `JervisSpacing.touchTarget` – all clickable elements
+- **No secrets masking:** Passwords, tokens, keys always visible (private app)
 
-2. **Client** - Organization/Team
-   - Has assigned Connections (`connectionIds`)
-   - Has `connectionCapabilities` - default capability configuration:
-     - Per capability: enabled, indexAllResources, selectedResources
-   - Has default Git commit configuration for all projects
+### Key Adaptive Components
 
-3. **Project** - Specific project within client
-   - Has `connectionCapabilities` - overrides client defaults when set:
-     - Per capability: enabled, resourceIdentifier (specific repo/project/space)
-   - Inheritance: missing capabilities inherit from client
-   - Can override Git commit configuration
+| Component | Use when |
+|-----------|---------|
+| `JAdaptiveSidebarLayout` | Category-based navigation (settings, admin panels) |
+| `JListDetailLayout` | Entity list with create/edit/detail (clients, projects) |
+| `JDetailScreen` | Edit forms – provides consistent back nav + save/cancel bar |
+| `JNavigationRow` | Touch-friendly navigation rows in compact mode |
 
-### Design Principles
+### Shared Form Helpers
 
-**Consistency:** Use shared components from `com.jervis.ui.design`
+| Helper | Location | Purpose |
+|--------|----------|---------|
+| `GitCommitConfigFields(...)` | `ClientsSettings.kt` (internal) | Reusable git commit config form |
+| `getCapabilityLabel(capability)` | `ClientsSettings.kt` (internal) | Human-readable capability labels |
+| `getIndexAllLabel(capability)` | `ClientsSettings.kt` (internal) | "Index all..." labels per capability |
 
-**Fail-Fast:** Show errors openly via `JErrorState`, don't hide
+### Quick Decision Tree
 
-**Unified States:** Loading/error/empty via shared components
-
-**Mobile-First:** All screens in `shared/ui-common` must work on Desktop + iPhone
-
-**No Secrets Masking:** Passwords, tokens, keys always visible (private app)
-
-### Shared Components
-
-**Layout:**
-- `JTopBar(title, onBack, actions)` - Navigation bar
-- `JSection(title, content)` - Logical block with background
-- `JActionBar(content)` - Action buttons (right-aligned)
-
-**Tables & Lists:**
-- `JTableHeaderRow`, `JTableHeaderCell` - Table header
-- `JTableRowCard(selected, content)` - List/table row card
-
-**States:**
-- `JCenteredLoading()` - Centered spinner
-- `JErrorState(message, onRetry)` - Error with retry
-- `JEmptyState(message, icon)` - Empty state
-
-**Utilities:**
-- `JRunTextButton(onClick, enabled, text)` - Action button with ▶
-- `ConfirmDialog(...)` - Confirmation dialog
-- `RefreshIconButton()`, `DeleteIconButton()`, `EditIconButton()` - Standard buttons
-- `CopyableTextCard(text, label)` - Clickable text card
-
-### Responsive Design
-
-**✅ DO:**
-- Use `Modifier.fillMaxWidth()`
-- Implement scrolling for narrow displays
-- Touch targets ≥ 44dp on mobile
-- Column layouts for narrow screens
-- Readable text on small displays
-
-**❌ DON'T:**
-- Fixed widths
-- Content overflow on mobile
-- Tiny touch targets
-
-### Spacing
-
-```kotlin
-// JervisSpacing constants
-outerPadding        // 10.dp - outer margin
-sectionPadding      // 12.dp - section interior
-itemGap             // 8.dp  - element spacing
+```
+Category-based screen?         → JAdaptiveSidebarLayout
+Entity CRUD list?              → JListDetailLayout + JDetailScreen
+Simple flat list with actions? → LazyColumn + JActionBar + state components
+Edit form?                     → JDetailScreen (provides back + save/cancel)
 ```
 
-### Component Migration
+### Card & Spacing Standards
 
-| Before | After | Reason |
-|--------|-------|--------|
-| `TopAppBar` | `JTopBar` | Consistency |
-| `CircularProgressIndicator` centered | `JCenteredLoading()` | Unified state |
-| Custom loading/error UI | Shared components | Consistency |
-| Direct layout | `JSection` | Organized blocks |
-| Inline actions | `JActionBar` | Consistent action bar |
+- Cards: `CardDefaults.outlinedCardBorder()` (no elevation, no surfaceVariant)
+- Spacing: `JervisSpacing.outerPadding` (10dp), `.sectionPadding` (12dp), `.itemGap` (8dp), `.touchTarget` (44dp)
+- Between form sections: `Arrangement.spacedBy(16.dp)`
+
+### Forbidden Patterns
+
+| Don't | Do instead |
+|-------|-----------|
+| `Card(elevation/surfaceVariant)` | `Card(border = outlinedCardBorder())` |
+| `Box { CircularProgressIndicator() }` | `JCenteredLoading()` |
+| Inline save/cancel in form | `JDetailScreen(onSave, onBack)` |
+| Fixed sidebar without adaptive | `JAdaptiveSidebarLayout` |
+| `IconButton` without explicit 44dp size | `IconButton(Modifier.size(touchTarget))` |
+| `TopAppBar` directly | `JTopBar(title, onBack, actions)` |
+| Duplicating `getCapabilityLabel()` | Import from `ClientsSettings.kt` |
 
 ---
 
