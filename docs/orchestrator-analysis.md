@@ -1,8 +1,8 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07 (rev.5)
+**Datum:** 2026-02-07 (rev.6)
 **Autor:** Automatizovaná analýza
-**Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling
+**Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling, MCP KB, Claude CLI
 
 ---
 
@@ -23,6 +23,8 @@
 13. [Unified Agent Interface – Claude Code jako 4. coding agent](#13-unified-agent-interface--claude-code-jako-4-coding-agent)
 14. [Agent Settings UI & K8s Dynamic Scaling](#14-agent-settings-ui--k8s-dynamic-scaling)
 15. [K8s Strategie – Job vs Deployment vs Hybrid (revidovaná)](#15-k8s-strategie--job-vs-deployment-vs-hybrid-revidovaná)
+16. [MCP Server pro Knowledge Base – přístup coding agentů ke KB](#16-mcp-server-pro-knowledge-base)
+17. [Claude CLI Agent – analýza aktuální implementace a vylepšení](#17-claude-cli-agent)
 
 ---
 
@@ -2856,3 +2858,765 @@ roleRef:
 **Resource savings vs aktuální stav:**
 - Idle: 4 coding Deploymenty × ~256MB = **1 GB RAM ušetřeno** když nic neběží
 - GPU: Coding agenti nepoužívají GPU (volají Ollama/Anthropic API) → RAM only
+
+---
+
+## 16. MCP Server pro Knowledge Base – přístup coding agentů ke KB {#16-mcp-server-pro-knowledge-base}
+
+### 16.1 Motivace
+
+Coding agenti (Aider, OpenHands, Junie, Claude Code) aktuálně pracují **izolovaně** – nemají přístup ke Knowledge Base, takže:
+- Neznají architektonická rozhodnutí, coding conventions, ani historii projektu
+- Nemohou se zeptat na kontext ("jak je implementován UserService?")
+- Opakují chyby, které už KB dokumentuje
+- Nemají přístup ke graph knowledge (entity relationships, component dependencies)
+
+**Řešení:** MCP (Model Context Protocol) server jako univerzální adaptér mezi KB a coding agenty.
+
+### 16.2 Proč MCP a ne přímé REST volání
+
+| Aspekt | Přímé REST | MCP |
+|--------|-----------|-----|
+| **Claude Code** | Musí manuálně volat curl | Nativní podpora MCP z CLI |
+| **Aider** | Nepodporuje custom tools | MCP přes custom commands |
+| **OpenHands** | Možné přes custom actions | MCP přes tool interface |
+| **Junie** | IDE plugin API | MCP přes integraci |
+| **Standardizace** | Každý agent jinak | Jednotné rozhraní pro všechny |
+| **Evoluce** | Breaking changes | Verzované schema |
+
+Claude Code má **nativní MCP podporu** – stačí nakonfigurovat v `.claude/mcp.json` nebo CLAUDE.md.
+Pro ostatní agenty se MCP server může použít přes wrapper/adapter.
+
+### 16.3 Architektura
+
+```
+┌────────────────────────────────────────────────────┐
+│                  Coding Agent                       │
+│  (Aider / OpenHands / Junie / Claude Code)         │
+│                                                     │
+│  env: CLIENT_ID=xxx  PROJECT_ID=yyy                │
+└────────────┬───────────────────────────────────────┘
+             │ MCP protocol (stdio / SSE)
+             ▼
+┌────────────────────────────────────────────────────┐
+│              KB MCP Server (Python)                 │
+│                                                     │
+│  Tools:                                             │
+│    kb_search(query, scope?)                         │
+│    kb_retrieve(query, max_results?, min_conf?)      │
+│    kb_traverse(start_node, direction?, hops?)       │
+│    kb_graph_search(query, node_type?)               │
+│    kb_get_evidence(node_key)                        │
+│    kb_store(content, kind, metadata?)       [write] │
+│    kb_resolve_alias(alias)                          │
+│                                                     │
+│  Context injection:                                 │
+│    clientId ← env CLIENT_ID (povinné)              │
+│    projectId ← env PROJECT_ID (volitelné)          │
+│                                                     │
+│  Scope resolution:                                  │
+│    null/global → client → project                   │
+└────────────┬───────────────────────────────────────┘
+             │ HTTP REST
+             ▼
+┌────────────────────────────────────────────────────┐
+│         Knowledge Base Service (FastAPI)            │
+│                                                     │
+│  /retrieve        → hybrid RAG + graph             │
+│  /retrieve/simple → RAG only                       │
+│  /retrieve/hybrid → full control                   │
+│  /traverse        → graph traversal                │
+│  /ingest          → store knowledge                │
+│  /graph/search    → node search                    │
+│  /graph/node/{key}/evidence → supporting chunks    │
+│  /alias/resolve   → entity resolution              │
+│                                                     │
+│  Weaviate (vector) + ArangoDB (graph)              │
+└────────────────────────────────────────────────────┘
+```
+
+### 16.4 Multi-tenant data separation
+
+KB služba **již implementuje** multi-tenant filtrování – MCP server ho pouze konzumuje:
+
+#### Aktuální model v KB (rag_service.py):
+
+```python
+# Weaviate filter – vždy se aplikuje
+filter_conditions = [
+    # Global/null scope: clientId="" (sentinel pro obecné znalosti)
+    # NEBO přesný match na clientId
+    Filter.by_property("clientId").equal("") |
+    Filter.by_property("clientId").equal(client_id),
+]
+if project_id:
+    filter_conditions.append(
+        Filter.by_property("projectId").equal("") |
+        Filter.by_property("projectId").equal(project_id)
+    )
+```
+
+#### Aktuální model v KB (graph_service.py):
+
+```python
+# ArangoDB AQL filter
+FILTER doc.clientId == "" OR doc.clientId == @clientId
+FILTER @projectId == null OR doc.projectId == "" OR doc.projectId == @projectId
+```
+
+#### Search hierarchy (klíčový invariant):
+
+```
+Scope 1: clientId="" AND projectId=""     → GLOBÁLNÍ znalosti (best practices, frameworks)
+Scope 2: clientId="acme" AND projectId="" → KLIENT znalosti (coding style, architecture decisions)
+Scope 3: clientId="acme" AND projectId="web-app" → PROJEKT znalosti (implementation details)
+
+Dotaz s clientId="acme", projectId="web-app" vrátí:
+  ✅ Scope 1 (global)  +  ✅ Scope 2 (client)  +  ✅ Scope 3 (project)
+
+Dotaz s clientId="acme", projectId=null vrátí:
+  ✅ Scope 1 (global)  +  ✅ Scope 2 (client)  +  ❌ Scope 3 (nikoliv project-specific)
+
+INVARIANT: projectId vyžaduje clientId (projectId bez clientId nedává smysl)
+```
+
+#### Jak MCP server předává kontext:
+
+```python
+# MCP server – každý tool call automaticky injectuje scope
+class KBMcpServer:
+    def __init__(self):
+        self.client_id = os.environ.get("CLIENT_ID", "")
+        self.project_id = os.environ.get("PROJECT_ID")  # None pokud nenastaveno
+        self.kb_base_url = os.environ.get("KB_URL", "http://jervis-knowledgebase:8100")
+
+    async def kb_search(self, query: str, scope: str = "auto") -> list:
+        """
+        scope = "auto"    → použije CLIENT_ID + PROJECT_ID z env
+        scope = "global"  → hledá jen globální (clientId="", projectId="")
+        scope = "client"  → hledá jen client-level (bez project)
+        scope = "project" → plný scope (default)
+        """
+        client_id, project_id = self._resolve_scope(scope)
+
+        response = await httpx.post(f"{self.kb_base_url}/retrieve", json={
+            "query": query,
+            "clientId": client_id,
+            "projectId": project_id,
+            "maxResults": 10,
+            "minConfidence": 0.6
+        })
+        return response.json()
+```
+
+### 16.5 MCP Tool definice
+
+#### Read tools (bezpečné, vždy povolené):
+
+| Tool | Popis | Parametry | KB endpoint |
+|------|-------|-----------|-------------|
+| `kb_search` | Hybrid search (RAG + graph) | `query`, `scope?`, `max_results?` | POST /retrieve |
+| `kb_search_simple` | Rychlý RAG-only search | `query`, `max_results?` | POST /retrieve/simple |
+| `kb_traverse` | Graph traversal od uzlu | `start_node`, `direction?`, `max_hops?` | POST /traverse |
+| `kb_graph_search` | Hledání uzlů v grafu | `query`, `node_type?`, `limit?` | GET /graph/search |
+| `kb_get_evidence` | Podpůrné chunky pro uzel | `node_key` | GET /graph/node/{key}/evidence |
+| `kb_resolve_alias` | Rozlišení aliasu entity | `alias` | GET /alias/resolve |
+
+#### Write tools (vyžadují approval pokud je zapnutý):
+
+| Tool | Popis | Parametry | KB endpoint |
+|------|-------|-----------|-------------|
+| `kb_store` | Uložení nové znalosti | `content`, `kind`, `source_urn?`, `metadata?` | POST /ingest |
+| `kb_store_finding` | Uložení nálezu z code review | `content`, `subject`, `source_urn` | POST /ingest/full |
+
+### 16.6 Implementace MCP serveru
+
+```python
+# backend/service-kb-mcp/server.py
+from mcp.server import Server, Tool
+from mcp.server.stdio import stdio_server
+import httpx
+import os
+import json
+
+app = Server("jervis-kb")
+
+# Tenant context z environment variables
+CLIENT_ID = os.environ.get("CLIENT_ID", "")
+PROJECT_ID = os.environ.get("PROJECT_ID")
+KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8100")
+
+def _resolve_scope(scope: str = "auto") -> tuple[str, str | None]:
+    """Resolve tenant scope based on parameter or env defaults."""
+    if scope == "global":
+        return "", None
+    elif scope == "client":
+        return CLIENT_ID, None
+    else:  # "auto" or "project"
+        return CLIENT_ID, PROJECT_ID
+
+@app.tool()
+async def kb_search(
+    query: str,
+    scope: str = "auto",
+    max_results: int = 10,
+    min_confidence: float = 0.6
+) -> str:
+    """Search the Knowledge Base for relevant information.
+
+    Combines vector search (RAG) with knowledge graph expansion.
+    Results are scoped to the current client and project.
+
+    Args:
+        query: Natural language search query
+        scope: "auto" (client+project), "global", "client" (no project filter)
+        max_results: Maximum number of results (default 10)
+        min_confidence: Minimum confidence threshold (0.0-1.0)
+    """
+    client_id, project_id = _resolve_scope(scope)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{KB_URL}/retrieve", json={
+            "query": query,
+            "clientId": client_id,
+            "projectId": project_id,
+            "maxResults": max_results,
+            "minConfidence": min_confidence,
+            "expandGraph": True
+        })
+        data = resp.json()
+        # Format for LLM consumption
+        results = []
+        for item in data.get("items", []):
+            results.append(f"[{item.get('confidence', 0):.2f}] {item.get('sourceUrn', '?')}: {item.get('content', '')[:500]}")
+        return "\n---\n".join(results) if results else "No results found."
+
+@app.tool()
+async def kb_search_simple(query: str, max_results: int = 5) -> str:
+    """Quick RAG-only search without graph expansion. Faster but less comprehensive."""
+    client_id, project_id = _resolve_scope("auto")
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(f"{KB_URL}/retrieve/simple", json={
+            "query": query,
+            "clientId": client_id,
+            "projectId": project_id,
+            "maxResults": max_results
+        })
+        data = resp.json()
+        results = []
+        for item in data.get("items", []):
+            results.append(f"{item.get('sourceUrn', '?')}: {item.get('content', '')[:500]}")
+        return "\n---\n".join(results) if results else "No results found."
+
+@app.tool()
+async def kb_traverse(
+    start_node: str,
+    direction: str = "outbound",
+    max_hops: int = 2
+) -> str:
+    """Traverse the knowledge graph starting from a node.
+
+    Args:
+        start_node: Node key or label to start traversal from
+        direction: "outbound", "inbound", or "any"
+        max_hops: Maximum traversal depth (1-3 recommended)
+    """
+    client_id, project_id = _resolve_scope("auto")
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(f"{KB_URL}/traverse", json={
+            "startNodeKey": start_node,
+            "direction": direction,
+            "maxDepth": max_hops,
+            "clientId": client_id,
+            "projectId": project_id
+        })
+        nodes = resp.json()
+        if not nodes:
+            return f"No graph nodes found for '{start_node}'."
+        lines = []
+        for node in nodes:
+            lines.append(f"[{node.get('type', '?')}] {node.get('label', '?')} (key={node.get('key', '?')})")
+            if node.get('properties'):
+                for k, v in node['properties'].items():
+                    lines.append(f"  {k}: {v}")
+        return "\n".join(lines)
+
+@app.tool()
+async def kb_graph_search(
+    query: str,
+    node_type: str = None,
+    limit: int = 20
+) -> str:
+    """Search for nodes in the knowledge graph by label."""
+    client_id, project_id = _resolve_scope("auto")
+    params = {"query": query, "clientId": client_id, "limit": limit}
+    if project_id:
+        params["projectId"] = project_id
+    if node_type:
+        params["nodeType"] = node_type
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{KB_URL}/graph/search", params=params)
+        nodes = resp.json()
+        if not nodes:
+            return f"No graph nodes matching '{query}'."
+        return "\n".join(
+            f"[{n.get('type','?')}] {n.get('label','?')} (key={n.get('key','?')})"
+            for n in nodes
+        )
+
+@app.tool()
+async def kb_get_evidence(node_key: str) -> str:
+    """Get RAG chunks that support a specific knowledge graph node."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{KB_URL}/graph/node/{node_key}/evidence",
+            params={"clientId": CLIENT_ID}
+        )
+        data = resp.json()
+        chunks = data.get("chunks", [])
+        if not chunks:
+            return f"No evidence found for node '{node_key}'."
+        return "\n---\n".join(
+            f"{c.get('sourceUrn', '?')}: {c.get('content', '')[:500]}"
+            for c in chunks
+        )
+
+@app.tool()
+async def kb_resolve_alias(alias: str) -> str:
+    """Resolve an entity alias to its canonical key.
+
+    Use this when you encounter different names for possibly the same entity.
+    Example: 'UserSvc' → 'UserService', 'auth module' → 'authentication-service'
+    """
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            f"{KB_URL}/alias/resolve",
+            params={"alias": alias, "clientId": CLIENT_ID}
+        )
+        data = resp.json()
+        return f"'{data.get('alias')}' → canonical: '{data.get('canonical')}'"
+
+@app.tool()
+async def kb_store(
+    content: str,
+    kind: str = "finding",
+    source_urn: str = "agent://coding-agent",
+    metadata: str = "{}"
+) -> str:
+    """Store new knowledge in the Knowledge Base.
+
+    Use sparingly – only for genuinely useful findings discovered during coding.
+
+    Args:
+        content: The knowledge content to store
+        kind: Type of knowledge ("finding", "decision", "pattern", "bug", "convention")
+        source_urn: Source identifier (auto-set to agent URI)
+        metadata: Additional metadata as JSON string
+    """
+    client_id, project_id = _resolve_scope("auto")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{KB_URL}/ingest", json={
+            "clientId": client_id,
+            "projectId": project_id,
+            "sourceUrn": source_urn,
+            "kind": kind,
+            "content": content,
+            "metadata": json.loads(metadata) if metadata else {}
+        })
+        data = resp.json()
+        return f"Stored: {data.get('status', 'ok')} (chunks: {data.get('chunksCreated', '?')})"
+
+# Entry point
+async def main():
+    async with stdio_server() as (read_stream, write_stream):
+        await app.run(read_stream, write_stream)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+### 16.7 Integrace s coding agenty
+
+#### Claude Code (nativní MCP):
+
+```json
+// .claude/mcp.json – generován serverem pro každý workspace
+{
+  "mcpServers": {
+    "jervis-kb": {
+      "command": "python",
+      "args": ["/opt/jervis/mcp/kb-server.py"],
+      "env": {
+        "CLIENT_ID": "{{clientId}}",
+        "PROJECT_ID": "{{projectId}}",
+        "KB_URL": "http://jervis-knowledgebase:8100"
+      }
+    }
+  }
+}
+```
+
+Claude Code automaticky detekuje MCP tools a může je volat v průběhu práce.
+
+#### Aider (přes custom commands / .aider.conf.yml):
+
+```yaml
+# .aider.conf.yml – generován serverem
+# Aider nemá nativní MCP, ale lze použít:
+# 1) --read flag pro kontext soubory (server pre-fetches KB results)
+# 2) Custom lint/test command pro KB queries
+# 3) Wrapper script přes model-metadata
+
+# Preferovaný přístup: Server pre-fetches KB kontext a přidá do instructions
+```
+
+Pro Aider je nejpraktičtější **pre-fetch přístup**: orchestrator dotáže KB a relevantní kontext vloží přímo do `CodingRequest.instructions`.
+
+#### OpenHands (přes custom actions):
+
+OpenHands podporuje custom actions – MCP server se dá volat přes HTTP wrapper.
+
+```python
+# OpenHands custom action (registrovaná v workspace)
+import subprocess
+def search_kb(query: str) -> str:
+    result = subprocess.run(
+        ["python", "/opt/jervis/mcp/kb-client.py", "search", query],
+        capture_output=True, text=True
+    )
+    return result.stdout
+```
+
+#### Junie (JetBrains IDE integration):
+
+Junie pracuje v IDE kontextu – MCP tools se dají mapovat jako IDE plugins nebo external tools.
+
+### 16.8 Hybrid přístup: Pre-fetch + Runtime MCP
+
+Protože ne všichni agenti mají nativní MCP podporu, doporučuji **dvou-vrstvý přístup**:
+
+```
+Layer 1: PRE-FETCH (všichni agenti)
+  Orchestrator před spuštěním coding agenta:
+  1. Dotáže KB na relevantní kontext pro daný task
+  2. Vloží výsledky do CodingRequest.instructions jako "Context from Knowledge Base:"
+  3. Agent má kontext k dispozici od začátku
+
+Layer 2: RUNTIME MCP (Claude Code, budoucí agenti)
+  Pro agenty s MCP podporou:
+  1. MCP server běží jako sidecar/stdio process
+  2. Agent může dynamicky dotazovat KB během práce
+  3. Může uložit nové poznatky zpět do KB
+```
+
+```
+┌─────────────┐       ┌───────────────┐      ┌────────────┐
+│ Orchestrator │──(1)──│ KB Service    │      │ KB MCP     │
+│ (Python)     │       │ (FastAPI)     │      │ Server     │
+│              │       │               │      │ (stdio)    │
+│ pre-fetch KB │       │ /retrieve     │      │            │
+│ context      │       │ /traverse     │      │ runtime    │
+└──────┬───────┘       └───────────────┘      │ queries    │
+       │                       ▲               └─────┬──────┘
+       │ CodingRequest         │ HTTP                │ MCP
+       │ .instructions         │                     │
+       │ includes KB context   │                     │
+       ▼                       │                     │
+┌──────────────────────────────┴─────────────────────┘
+│              Coding Agent Container                  │
+│                                                      │
+│  instructions = "... Context from KB: ..."           │
+│  + MCP tools pro runtime dotazy (Claude Code)        │
+└──────────────────────────────────────────────────────┘
+```
+
+### 16.9 Write access – bezpečnostní model
+
+Zápis do KB od coding agentů musí být kontrolovaný:
+
+| Akce | Povolení | Podmínka |
+|------|----------|----------|
+| `kb_search` | Vždy | – |
+| `kb_traverse` | Vždy | – |
+| `kb_store(kind="finding")` | Auto | Pouze do aktuálního project scope |
+| `kb_store(kind="decision")` | Vyžaduje approval | Architektonická rozhodnutí musí potvrdit uživatel |
+| `kb_store(kind="convention")` | Vyžaduje approval | Nové konvence mění budoucí chování |
+| Zápis do cizího clientId/projectId | **ZAKÁZÁNO** | Hard block – MCP server nemá jiný scope |
+
+**Implementace:**
+- MCP server **nemůže** zapsat do jiného scope než má v env – fyzická izolace
+- Write tools s `kind="decision"` nebo `kind="convention"` vrátí status `PENDING_APPROVAL`
+- Orchestrator pak vytvoří approval request v UI (viz sekce 8)
+
+### 16.10 Deployment
+
+```
+Varianta A: Sidecar v každém coding agent podu
+  + Nízká latence (localhost)
+  + Izolace scope per pod
+  - Duplikovaný kód ve 4 podech
+
+Varianta B: Standalone MCP server jako stdio process ← DOPORUČENO
+  + MCP server je jen Python skript (~200 řádků)
+  + Spouští se per-task s env vars pro scope
+  + Claude Code nativně volá přes stdio
+  + Pro ostatní agenty: orchestrator pre-fetches
+
+Varianta C: Centrální MCP server jako K8s Deployment
+  + Jeden deployment
+  - Musí řešit multi-tenant routing per request
+  - Komplikovanější autentizace
+```
+
+**Doporučení:** Varianta B – MCP skript se bundluje do Docker image každého agenta, spouští se per-task s CLIENT_ID a PROJECT_ID jako env variables. Pro Claude Code jako nativní MCP, pro ostatní jako pre-fetch.
+
+### 16.11 Příprava dat – co by mělo být v KB pro coding agenty
+
+| Kategorie | Příklad | Scope |
+|-----------|---------|-------|
+| **Coding conventions** | "Kotlin: use sealed interface, not sealed class" | Client |
+| **Architecture decisions** | "We use CQRS pattern for order service" | Project |
+| **API contracts** | "UserService.getUser() returns nullable" | Project |
+| **Bug patterns** | "ConcurrentModificationException in cache layer" | Project |
+| **Framework rules** | "Compose: never use mutableStateOf in loops" | Global |
+| **Project structure** | "Module boundaries: domain cannot import infra" | Project |
+| **Previous review findings** | "Always validate input at controller layer" | Client |
+
+---
+
+## 17. Claude CLI Agent – analýza aktuální implementace a vylepšení {#17-claude-cli-agent}
+
+### 17.1 Aktuální implementace (po pull master)
+
+Claude Code je nyní **4. coding agent** v Jervis, implementovaný jako:
+
+```
+backend/service-claude/
+├── Dockerfile                          # Java 21 + Node.js 20 + @anthropic-ai/claude-code
+├── build.gradle.kts
+└── src/main/kotlin/com/jervis/claude/
+    ├── ClaudeApplication.kt            # Ktor + kRPC server na portu 3400
+    └── service/ClaudeServiceImpl.kt    # ICodingClient implementace → claude --print CLI
+```
+
+**Klíčové charakteristiky:**
+
+| Aspekt | Detail |
+|--------|--------|
+| **Interface** | `ICodingClient` (sdílený se všemi coding agenty) |
+| **Komunikace** | kRPC WebSocket (port 3400) |
+| **CLI volání** | `claude --print --dangerously-skip-permissions <instructions>` |
+| **Auth** | Setup token (Max/Pro) > API key > env vars |
+| **Timeout** | `maxIterations × 5min`, max 45 min |
+| **Workspace** | `/opt/jervis/data` (shared PVC) |
+| **Docker** | Java 21 JRE + Node.js 20 + `npm install -g @anthropic-ai/claude-code` |
+| **K8s** | Deployment replicas:1, Service port 3400 |
+
+### 17.2 Integrace v CodingTools
+
+```kotlin
+// CodingTools.kt – nový tool executeClaude()
+@Tool
+suspend fun executeClaude(
+    instructions: String,
+    files: List<String> = emptyList(),
+    verifyCommand: String? = null,
+): String
+
+// execute() s AUTO strategií – Claude je nový default pro komplexní tasky:
+// files.isEmpty() || files.size > 3 → executeClaude() (dříve OpenHands)
+```
+
+Claude Code je nyní v `execute(strategy="AUTO")` **preferovaný pro komplexní tasky** (mnoho souborů nebo nespecifikované soubory).
+
+### 17.3 Identifikované problémy a slabiny
+
+#### P0 – Kritické
+
+**P0.1 – `--print` mode omezuje agentní chování**
+```kotlin
+// ClaudeServiceImpl.kt:66-67
+add("claude")
+add("--print")
+add("--dangerously-skip-permissions")
+```
+`--print` mode je **single-turn** – Claude dostane prompt, odpoví a skončí. Nezíská možnost:
+- Iterovat přes chyby (compile error → fix → retry)
+- Použít tools (file search, grep, test execution)
+- Self-correct na základě test results
+
+**Doporučení:** Přejít na `claude --json` nebo Claude Agent SDK (Python) pro plné agentní chování s tool use.
+
+#### P0.2 – Žádný streaming výstupu
+```kotlin
+// ClaudeServiceImpl.kt:152-158
+val readerThread = Thread {
+    reader.forEachLine { line ->
+        output.appendLine(line)  // Sbírá se do StringBuilderu, nikam se nestreamuje
+    }
+}
+```
+Výstup se sbírá do paměti a vrací se až po dokončení. Uživatel nevidí průběh.
+
+**Doporučení:** Napojit reader na SSE/WebSocket stream (viz sekce 7).
+
+#### P0.3 – Files se předávají v instructions, ne jako context
+```kotlin
+// ClaudeServiceImpl.kt:69-71
+if (req.files.isNotEmpty()) {
+    val filesContext = req.files.joinToString("\n") { "File: $it" }
+    add("$filesContext\n\n${req.instructions}")
+}
+```
+Soubory se předávají jako text v instructions. Claude Code CLI podporuje `--allowedTools`, `--context` a jiné parametry pro strukturovanější předání kontextu.
+
+#### P1 – Vysoká priorita
+
+**P1.1 – Chybí MCP konfigurace pro KB**
+Agent nemá přístup ke Knowledge Base (viz sekce 16). Claude Code nativně podporuje MCP – stačí přidat `.claude/mcp.json` do workspace.
+
+**P1.2 – Chybí CLAUDE.md pro workspace kontext**
+Claude Code automaticky čte `CLAUDE.md` z workspace root. Orchestrator by měl generovat projekt-specifický CLAUDE.md s:
+- Coding conventions (z KB)
+- Architecture decisions
+- Allowed/forbidden patterns
+- Test commands
+
+**P1.3 – Jednoduchý error handling**
+```kotlin
+// ClaudeServiceImpl.kt:188-194
+private fun extractErrorSummary(output: String): String {
+    val lines = output.lines().filter { it.isNotBlank() }.takeLast(3)
+    ...
+}
+```
+Pouze poslední 3 řádky. Chybí:
+- Parsování strukturovaného výstupu (JSON mode)
+- Rozlišení typů chyb (auth failure vs timeout vs code error)
+- Retry logika pro transient failures
+
+**P1.4 – Chybí model selection**
+```kotlin
+// Aktuálně: žádný --model parametr → CLI default
+```
+Nelze ovlivnit jaký model Claude Code použije. V configmap je `claude-sonnet-4-20250514`, ale to se nikam nepředává.
+
+### 17.4 Vylepšení – short term (kompatibilní s aktuální architekturou)
+
+```
+1. Přidat --model parametr:
+   add("--model"); add(req.model ?: System.getenv("CLAUDE_MODEL") ?: "claude-sonnet-4-5-20250929")
+
+2. Přidat --output-format json pro parsovatelný výstup:
+   add("--output-format"); add("json")
+
+3. Generovat .claude/mcp.json pro KB přístup (viz sekce 16):
+   - Před spuštěním claude CLI zapsat MCP config do workspace
+
+4. Generovat CLAUDE.md s projekt kontextem:
+   - Coding conventions z KB
+   - Architecture rules
+   - Test/build commands
+
+5. Streaming přes --json + stream parsing:
+   - Každý řádek JSON output → parsovat → posílat přes kRPC stream
+```
+
+### 17.5 Vylepšení – long term (Python rewrite)
+
+V kontextu migrace orchestratoru na Python (sekce 4, 9) se nabízí přepsat i Claude agenta:
+
+```python
+# Varianta A: Claude Agent SDK (Python) – DOPORUČENO
+from claude_code import Agent, Permission
+
+async def execute_claude(request: CodingRequest) -> CodingResult:
+    agent = Agent(
+        model=request.model or "claude-sonnet-4-5-20250929",
+        working_directory=f"/opt/jervis/data/{request.workspace}",
+        permissions=[Permission.READ, Permission.WRITE, Permission.EXECUTE],
+        mcp_servers={
+            "jervis-kb": {
+                "command": "python",
+                "args": ["/opt/jervis/mcp/kb-server.py"],
+                "env": {
+                    "CLIENT_ID": request.client_id,
+                    "PROJECT_ID": request.project_id,
+                }
+            }
+        },
+        max_turns=request.max_iterations * 5,
+    )
+
+    # Streaming execution
+    async for event in agent.stream(request.instructions):
+        if event.type == "text":
+            yield StreamEvent(type="output", content=event.content)
+        elif event.type == "tool_use":
+            yield StreamEvent(type="tool", name=event.tool, input=event.input)
+        elif event.type == "result":
+            yield StreamEvent(type="complete", content=event.result)
+```
+
+```python
+# Varianta B: claude CLI s --json output + stream parsing
+import subprocess
+import json
+
+async def execute_claude_cli(request: CodingRequest):
+    process = await asyncio.create_subprocess_exec(
+        "claude", "--json", "--dangerously-skip-permissions",
+        "--model", request.model or "claude-sonnet-4-5-20250929",
+        request.instructions,
+        cwd=f"/opt/jervis/data/{request.workspace}",
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={
+            **os.environ,
+            "CLIENT_ID": request.client_id,
+            "PROJECT_ID": request.project_id,
+        }
+    )
+
+    async for line in process.stdout:
+        event = json.loads(line)
+        yield StreamEvent.from_claude_json(event)
+```
+
+### 17.6 Porovnání coding agentů (aktualizované)
+
+| Aspekt | Aider | OpenHands | Claude Code | Junie |
+|--------|-------|-----------|-------------|-------|
+| **Typ** | CLI tool | Autonomous agent | Agentic CLI | IDE agent |
+| **Best for** | 1-3 soubory, quick fixes | Multi-file refactoring | Reasoning, architecture | Premium, complex |
+| **Cena** | Ollama (free) / API | Ollama (free) / API | Anthropic API (paid) | JetBrains (paid) |
+| **Speed** | Rychlý (seconds) | Pomalý (minutes) | Střední (30s-5min) | Rychlý |
+| **MCP support** | Ne (pre-fetch only) | Custom actions | **Nativní** | Plugin API |
+| **Streaming** | Ano (CLI output) | Ano (WebSocket) | Ano (--json) | Ano (IDE) |
+| **Self-correction** | Omezená | Ano | **Ano (plně agentní)** | Ano |
+| **Max iterations** | 3 | 10 | 10 (× 5 min = 50 min) | 5 |
+| **Auth** | API key | API key | Setup token / API key | API key |
+| **K8s port** | 3100 | 3200 | 3400 | 3300 |
+
+### 17.7 Doporučená strategie výběru agenta (aktualizovaná)
+
+```
+Task complexity assessment:
+  ├─ SIMPLE (1-3 files, clear instructions)
+  │    → Aider (fast, free with Ollama)
+  │
+  ├─ MEDIUM (3-10 files, some dependencies)
+  │    → Claude Code (good reasoning, moderate cost)
+  │
+  ├─ COMPLEX (10+ files, architectural changes)
+  │    → OpenHands (thorough exploration)
+  │    → fallback: Claude Code
+  │
+  ├─ REASONING-HEAVY (design decisions, patterns)
+  │    → Claude Code (best reasoning)
+  │
+  └─ CRITICAL / LAST RESORT
+       → Junie (premium, expensive)
+
+Escalation path:
+  Aider fail → Claude Code → OpenHands → Junie
+```
