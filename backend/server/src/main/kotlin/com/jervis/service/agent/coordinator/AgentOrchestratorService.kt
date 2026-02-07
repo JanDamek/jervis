@@ -244,8 +244,8 @@ class AgentOrchestratorService(
         }
 
         val request = OrchestrateRequestDto(
-            taskId = task.correlationId ?: ObjectId().toString(),
-            clientId = task.clientId?.toString() ?: "",
+            taskId = task.correlationId,
+            clientId = task.clientId.toString(),
             projectId = task.projectId?.toString(),
             workspacePath = resolveWorkspacePath(task),
             query = userInput,
@@ -356,7 +356,7 @@ class AgentOrchestratorService(
      * Resolve workspace path for a task based on client/project.
      */
     private fun resolveWorkspacePath(task: TaskDocument): String {
-        val clientId = task.clientId?.toString() ?: "default"
+        val clientId = task.clientId.toString()
         val projectId = task.projectId?.toString() ?: "default"
         return "clients/$clientId/$projectId"
     }

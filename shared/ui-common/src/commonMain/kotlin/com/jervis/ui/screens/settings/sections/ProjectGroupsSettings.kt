@@ -2,6 +2,8 @@ package com.jervis.ui.screens.settings.sections
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -172,7 +174,7 @@ private fun ProjectGroupEditForm(
 
     LaunchedEffect(group.clientId) {
         try {
-            val client = repository.clients.getClientById(group.clientId)
+            val client = repository.clients.getClientById(group.clientId) ?: return@LaunchedEffect
             val allConnections = repository.connections.getAllConnections()
             clientConnections = allConnections.filter { conn ->
                 client.connectionIds.contains(conn.id)
@@ -402,7 +404,7 @@ private fun AddGroupResourceDialog(
                 )
                 Spacer(Modifier.height(8.dp))
 
-                androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     clientConnections.forEach { connection ->
                         connection.capabilities.forEach { capability ->
                             val key = Pair(connection.id, capability)
@@ -440,7 +442,7 @@ private fun AddGroupResourceDialog(
                                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                     )
                                 }
-                                androidx.compose.foundation.lazy.items(filteredResources) { resource ->
+                                items(filteredResources) { resource ->
                                     val alreadyAdded = existingResources.any {
                                         it.connectionId == connection.id &&
                                             it.capability == capability &&

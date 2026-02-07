@@ -33,7 +33,7 @@ class EnvironmentService(
         }
 
     suspend fun getEnvironmentByIdOrNull(id: EnvironmentId): EnvironmentDocument? =
-        environmentRepository.findAll().toList().find { it.id == id }
+        environmentRepository.findById(id)
 
     suspend fun saveEnvironment(env: EnvironmentDocument): EnvironmentDocument {
         val existing = getEnvironmentByIdOrNull(env.id)
@@ -78,11 +78,10 @@ class EnvironmentService(
         if (projectEnv != null) return projectEnv
 
         // 2. Check group-level environment (if project has a group)
-        val project = projectRepository.findAll().toList().find { it.id == projectId }
-            ?: return null
+        val project = projectRepository.findById(projectId) ?: return null
 
         if (project.groupId != null) {
-            val groupEnv = environmentRepository.findByGroupId(project.groupId!!)
+            val groupEnv = environmentRepository.findByGroupId(project.groupId)
             if (groupEnv != null) return groupEnv
         }
 
