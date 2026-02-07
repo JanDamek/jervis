@@ -46,12 +46,13 @@ class ClaudeServiceImpl : ICodingClient {
     ): CodingResult {
         logger.info { "CLAUDE_EXECUTE: jobId=$jobId, instructions=${req.instructions.take(50)}..." }
 
-        val apiKey = System.getenv("ANTHROPIC_API_KEY")
+        // Use API key from request (server settings) with env var fallback
+        val apiKey = req.apiKey?.takeIf { it.isNotBlank() } ?: System.getenv("ANTHROPIC_API_KEY")
         if (apiKey.isNullOrBlank()) {
             logger.error { "CLAUDE_NO_API_KEY: jobId=$jobId" }
             return CodingResult(
                 success = false,
-                summary = "ANTHROPIC_API_KEY environment variable is not set.",
+                summary = "ANTHROPIC_API_KEY is not set. Configure it in Settings > Coding Agenti or set the environment variable.",
                 errorMessage = "Missing API key",
             )
         }
@@ -77,7 +78,9 @@ class ClaudeServiceImpl : ICodingClient {
         val maxIterations = req.maxIterations.coerceIn(1, 10)
         val timeoutMinutes = (maxIterations * 5).toLong().coerceAtMost(45)
 
-        val result = executeProcess(command, File(dataRoot), timeoutMinutes)
+        // Pass the API key via environment so the CLI picks it up
+        val extraEnv = mapOf("ANTHROPIC_API_KEY" to apiKey)
+        val result = executeProcess(command, File(dataRoot), timeoutMinutes, extraEnv)
 
         // Execute verification if requested
         val verifyCmd = req.verifyCommand
@@ -126,6 +129,7 @@ class ClaudeServiceImpl : ICodingClient {
         command: List<String>,
         workingDir: File,
         timeoutMinutes: Long = 30,
+        extraEnv: Map<String, String> = emptyMap(),
     ): ProcessResult {
         val process =
             ProcessBuilder(command)
@@ -133,6 +137,7 @@ class ClaudeServiceImpl : ICodingClient {
                     directory(workingDir)
                     redirectErrorStream(true)
                     environment().putAll(System.getenv())
+                    environment().putAll(extraEnv)
                 }.start()
 
         val output = StringBuilder()

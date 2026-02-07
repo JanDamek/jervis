@@ -4,6 +4,8 @@ import com.jervis.configuration.properties.CodingToolsProperties
 import com.jervis.dto.coding.CodingAgentApiKeyUpdateDto
 import com.jervis.dto.coding.CodingAgentConfigDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
+import com.jervis.entity.CodingAgentSettingsDocument
+import com.jervis.repository.CodingAgentSettingsRepository
 import com.jervis.service.ICodingAgentSettingsService
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -11,20 +13,24 @@ import org.springframework.stereotype.Component
 @Component
 class CodingAgentSettingsRpcImpl(
     private val codingToolsProperties: CodingToolsProperties,
+    private val settingsRepository: CodingAgentSettingsRepository,
 ) : ICodingAgentSettingsService {
     private val logger = KotlinLogging.logger {}
 
-    // In-memory store for API keys (in production, these should be persisted to a secrets store)
-    private val apiKeys = mutableMapOf<String, String>()
-
     override suspend fun getSettings(): CodingAgentSettingsDto {
+        val storedKeys = mutableMapOf<String, Boolean>()
+        listOf("claude", "junie", "aider", "openhands").forEach { name ->
+            val doc = settingsRepository.findByAgentName(name)
+            storedKeys[name] = doc?.apiKey?.isNotBlank() == true
+        }
+
         val agents =
             listOf(
                 CodingAgentConfigDto(
                     name = "claude",
                     displayName = "Claude (Anthropic)",
                     enabled = true,
-                    apiKeySet = System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true || apiKeys.containsKey("claude"),
+                    apiKeySet = storedKeys["claude"] == true || System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true,
                     provider = codingToolsProperties.claude.defaultProvider,
                     model = codingToolsProperties.claude.defaultModel,
                 ),
@@ -32,7 +38,7 @@ class CodingAgentSettingsRpcImpl(
                     name = "junie",
                     displayName = "Junie (JetBrains)",
                     enabled = true,
-                    apiKeySet = System.getenv("JUNIE_API_KEY")?.isNotBlank() == true || apiKeys.containsKey("junie"),
+                    apiKeySet = storedKeys["junie"] == true || System.getenv("JUNIE_API_KEY")?.isNotBlank() == true,
                     provider = codingToolsProperties.junie.defaultProvider,
                     model = codingToolsProperties.junie.defaultModel,
                 ),
@@ -59,7 +65,27 @@ class CodingAgentSettingsRpcImpl(
 
     override suspend fun updateApiKey(request: CodingAgentApiKeyUpdateDto): CodingAgentSettingsDto {
         logger.info { "Updating API key for agent: ${request.agentName}" }
-        apiKeys[request.agentName] = request.apiKey
+
+        val existing = settingsRepository.findByAgentName(request.agentName)
+        if (existing != null) {
+            settingsRepository.save(existing.copy(apiKey = request.apiKey))
+        } else {
+            settingsRepository.save(
+                CodingAgentSettingsDocument(
+                    agentName = request.agentName,
+                    apiKey = request.apiKey,
+                ),
+            )
+        }
+
         return getSettings()
+    }
+
+    /**
+     * Get stored API key for a specific agent. Used by CodingTools to inject keys into requests.
+     */
+    suspend fun getApiKey(agentName: String): String? {
+        val doc = settingsRepository.findByAgentName(agentName)
+        return doc?.apiKey?.takeIf { it.isNotBlank() }
     }
 }

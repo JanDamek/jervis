@@ -28,6 +28,7 @@ class CodingTools(
     @Qualifier("junieClient") private val junieClient: ICodingClient,
     @Qualifier("claudeClient") private val claudeClient: ICodingClient,
     private val reconnectHandler: com.jervis.configuration.RpcReconnectHandler,
+    private val codingAgentSettings: com.jervis.rpc.CodingAgentSettingsRpcImpl,
 ) : ToolSet {
     private val logger = KotlinLogging.logger {}
 
@@ -65,6 +66,7 @@ class CodingTools(
                     files = files,
                     verifyCommand = verifyCommand,
                     maxIterations = 3,
+                    apiKey = codingAgentSettings.getApiKey("aider"),
                 )
 
             val result = aiderClient.execute(request)
@@ -150,6 +152,7 @@ class CodingTools(
                     files = emptyList(), // OpenHands explores the project itself
                     verifyCommand = verifyCommand,
                     maxIterations = 10, // OpenHands can iterate more
+                    apiKey = codingAgentSettings.getApiKey("openhands"),
                 )
 
             val result =
@@ -245,6 +248,7 @@ class CodingTools(
                     files = emptyList(), // Junie explores the project itself
                     verifyCommand = verifyCommand,
                     maxIterations = 5,
+                    apiKey = codingAgentSettings.getApiKey("junie"),
                 )
 
             val result = junieClient.execute(request)
@@ -330,6 +334,7 @@ class CodingTools(
                     files = files,
                     verifyCommand = verifyCommand,
                     maxIterations = 5,
+                    apiKey = codingAgentSettings.getApiKey("claude"),
                 )
 
             val result =
