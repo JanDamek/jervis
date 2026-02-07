@@ -50,6 +50,25 @@ write_result() {
     local success=$1
     local summary=$2
     mkdir -p "$(dirname "$RESULT_FILE")"
+
+    # Capture changed files via git diff (if git repo)
+    local changed_files="[]"
+    if [ -d ".git" ]; then
+        changed_files=$(python3 -c "
+import json, subprocess
+try:
+    out = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD'], text=True, stderr=subprocess.DEVNULL)
+    staged = subprocess.check_output(['git', 'diff', '--name-only', '--cached'], text=True, stderr=subprocess.DEVNULL)
+    untracked = subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], text=True, stderr=subprocess.DEVNULL)
+    files = set(filter(None, (out + staged + untracked).splitlines()))
+    # Exclude .jervis/ internal files
+    files = [f for f in files if not f.startswith('.jervis/')]
+    print(json.dumps(sorted(files)))
+except:
+    print('[]')
+" 2>/dev/null || echo "[]")
+    fi
+
     python3 -c "
 import json, datetime
 result = {
@@ -57,6 +76,7 @@ result = {
     'success': $success,
     'summary': '''$summary''',
     'agentType': '$AGENT_TYPE',
+    'changedFiles': $changed_files,
     'timestamp': datetime.datetime.now().isoformat()
 }
 with open('$RESULT_FILE', 'w') as f:
