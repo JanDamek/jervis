@@ -4122,48 +4122,78 @@ class CodingWorkflow:
         )
 
     async def git_operations(self, task, branch, results):
-        """Orchestrator řídí VŠECHNY git operace."""
+        """Orchestrator ROZHODUJE o git operacích, ale PROVEDENÍ deleguje na agenta.
+
+        Coding agenti umí git nejlíp – správný staging, smysluplné commit messages,
+        řešení konfliktů. Orchestrator jen určuje KDY a ZA JAKÝCH PODMÍNEK.
+        """
 
         diff = await self.git_diff(task.workspace)
         if not diff:
             return  # Žádné změny
 
-        # COMMIT – orchestrator rozhodne
+        # COMMIT – orchestrator rozhodne zda commitovat
         if self.rules.require_approval_commit:
             approved = await self.request_approval(
                 task, action="commit",
-                description=f"Commit {len(results)} changes to branch {branch}",
+                description=f"Commit changes to branch {branch}",
                 diff=diff,
             )
             if not approved:
                 return  # Uživatel zamítl
 
-        commit_msg = self.format_commit_message(task, results)
-        await self.git_commit(task.workspace, commit_msg)
+        # Deleguj commit na coding agenta – umí to líp než subprocess
+        await self.delegate_git_to_agent(
+            task=task,
+            instructions=f"""Commit all current changes on branch '{branch}'.
+Rules:
+- Commit message prefix: {self.rules.commit_prefix.format(taskId=task.id)}
+- Write a clear, descriptive commit message
+- Stage only relevant files (not .jervis/ directory)
+- Do NOT push""",
+            agent_type="claude",  # Claude je nejlepší na git operace
+        )
 
-        # PUSH – orchestrator rozhodne
-        if self.rules.auto_push or self.rules.require_approval_push:
-            if self.rules.require_approval_push:
-                approved = await self.request_approval(
-                    task, action="push",
-                    description=f"Push branch {branch} to remote",
-                )
-                if not approved:
-                    return  # Uživatel zamítl – commit zůstane lokální
+        # PUSH – orchestrator rozhodne zda pushovat
+        if self.rules.require_approval_push:
+            approved = await self.request_approval(
+                task, action="push",
+                description=f"Push branch {branch} to remote",
+            )
+            if not approved:
+                return  # Uživatel zamítl – commit zůstane lokální
 
-            await self.git_push(task.workspace, branch)
+        if self.rules.auto_push or approved:
+            await self.delegate_git_to_agent(
+                task=task,
+                instructions=f"Push branch '{branch}' to origin. Do NOT force push.",
+                agent_type="claude",
+            )
 
-    def format_commit_message(self, task, results):
-        """Commit message podle pravidel projektu."""
-        prefix = self.rules.commit_prefix.format(taskId=task.id)
-        summary = results[-1].summary if results else "automated changes"
-        return f"{prefix} {summary}"
+    async def delegate_git_to_agent(self, task, instructions, agent_type="claude"):
+        """Deleguj git operaci na coding agenta.
+
+        Proč agent a ne subprocess:
+        - Agent umí napsat smysluplnou commit message
+        - Agent správně stageuje soubory (ne blindly git add -A)
+        - Agent řeší merge konflikty
+        - Agent rozumí kontextu změn
+        """
+        return await self.k8s.run_coding_agent(
+            task_id=f"{task.id}-git",
+            agent_type=agent_type,
+            workspace_path=task.workspace,
+            instructions=instructions,
+            allow_git=True,  # Tento konkrétní Job MÁ povolení pro git
+            on_log_line=self.stream_to_ui,
+        )
 ```
 
-### 18.8 Entrypoint – agent je tupý vykonavatel
+### 18.8 Entrypoint – agent jako vykonavatel
 
-Agent dostane **konkrétní krok**, provede ho a skončí. Žádné git operace,
-žádné rozhodování o strategii. Git řídí orchestrator.
+Agent dostane konkrétní krok a provede ho. Orchestrator rozhoduje co a kdy.
+Git operace jsou ve výchozím stavu zakázané – orchestrator je povolí
+explicitně přes env `ALLOW_GIT=true` když deleguje commit/push na agenta.
 
 ```bash
 #!/bin/bash
@@ -4196,10 +4226,16 @@ write_result() {
 RESULT_EOF
 }
 
+# ALLOW_GIT – orchestrator explicitně povolí pro git operace
+ALLOW_GIT="${ALLOW_GIT:-false}"
+
 case "$AGENT_TYPE" in
   aider)
-    # --no-auto-commits: Aider NESMÍ commitovat – to řídí orchestrator
-    CMD="aider --yes --no-auto-commits --message \"$INSTRUCTIONS\""
+    if [ "$ALLOW_GIT" = "true" ]; then
+      CMD="aider --yes --message \"$INSTRUCTIONS\""
+    else
+      CMD="aider --yes --no-auto-commits --message \"$INSTRUCTIONS\""
+    fi
     if [ -n "$FILES" ]; then CMD="$CMD $FILES"; fi
     if [ -f ".jervis/kb-context.md" ]; then CMD="$CMD --read .jervis/kb-context.md"; fi
     ;;
@@ -4207,10 +4243,10 @@ case "$AGENT_TYPE" in
     CMD="python3 -m openhands.core.main --task \"$INSTRUCTIONS\" --max-iterations 10"
     ;;
   claude)
-    # Claude Code: MCP pro KB, ale git operace ZAKÁZANÉ
     CMD="claude --dangerously-skip-permissions --output-format json"
     if [ -n "${CLAUDE_MODEL:-}" ]; then CMD="$CMD --model $CLAUDE_MODEL"; fi
     CMD="$CMD \"$INSTRUCTIONS\""
+    # CLAUDE.md řídí pravidla – git povolení se předá v instrukcích
     ;;
   junie)
     CMD="junie \"$INSTRUCTIONS\""
@@ -4234,50 +4270,62 @@ fi
 echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID ==="
 ```
 
-#### Blokování git operací u agentů:
+#### Git povolení – dva režimy:
 
-| Agent | Jak zablokovat git | Poznámka |
-|-------|-------------------|----------|
-| **Aider** | `--no-auto-commits` | Aider má flag přímo na to |
-| **Claude Code** | `CLAUDE.md` s pravidly: "NEVER run git commands" | + hooks/deny-list |
-| **OpenHands** | Stávající `SecurityException` na git commands | Již implementováno v `CodingEngineServiceImpl.kt` |
-| **Junie** | Konfigurace Junie CLI | Omezení přes nastavení |
+```
+REŽIM 1: CODING (default, ALLOW_GIT=false)
+  Agent mění kód, NESMÍ dělat git operace.
+  Orchestrator zkontroluje diff a pak deleguje commit/push zvlášť.
 
-Pro Claude Code orchestrator zapíše do `CLAUDE.md`:
+REŽIM 2: GIT DELEGACE (ALLOW_GIT=true)
+  Orchestrator explicitně pověří agenta git operací.
+  Agent dostane konkrétní instrukci: "commitni s prefixem X" nebo "pushni branch Y".
+  Orchestrator už předtím získal approval od uživatele.
+```
+
+| Agent | CODING mode (default) | GIT DELEGACE mode |
+|-------|----------------------|-------------------|
+| **Aider** | `--no-auto-commits` | normální režim (commituje) |
+| **Claude Code** | `CLAUDE.md`: "no git commands" | instrukce explicitně povolí git |
+| **OpenHands** | `SecurityException` na git | dočasně whitelist git commands |
+| **Junie** | Konfigurace CLI | povolení přes nastavení |
+
+Pro Claude Code orchestrator generuje `CLAUDE.md` podle režimu:
 
 ```markdown
-# STRICT RULES – auto-generated by Jervis
-
+# CODING mode (default):
 ## FORBIDDEN ACTIONS
 - NEVER run git commands (commit, push, branch, checkout, merge, rebase)
-- NEVER modify files outside your task scope
-- Git operations are managed by the orchestrator, not by you
-
-## YOUR ROLE
-- You are an executor. Follow the instructions exactly.
 - Make the requested code changes and exit.
-- Do NOT make additional changes beyond what is requested.
+
+# GIT DELEGACE mode (orchestrator povolil):
+## ALLOWED GIT ACTIONS
+- You may run git commands as specified in the instructions.
+- Follow the instructions exactly – do not add extra git operations.
 ```
 
 **Životní cyklus (centrálně řízený):**
 ```
 Orchestrator:
   1. Načte pravidla klienta/projektu z DB
-  2. Naplánuje kroky (PlannerAgent)
-  3. Vytvoří branch (orchestrator, ne agent!)
+  2. Naplánuje kroky (může použít agenta pro analýzu/plánování)
+  3. Deleguje na agenta: vytvoř branch
      │
      ├─ Pro každý krok:
      │   4. Zapíše instrukce do .jervis/instructions.md
-     │   5. Spustí K8s Job (coding agent)
-     │   6. Agent provede KROK a skončí (žádný git!)
+     │   5. Spustí K8s Job (coding agent, ALLOW_GIT=false)
+     │   6. Agent provede KÓD změny a skončí (žádný git!)
      │   7. Orchestrator zkontroluje diff
-     │   8. Pokud require_review → ReviewerAgent
+     │   8. Pokud require_review → deleguje review na agenta
      │   9. Pokud fail → retry s jiným agentem
      │
-  10. Orchestrator udělá git add + commit
+  10. Orchestrator ROZHODNE o commitu:
       → pokud require_approval_commit → čeká na uživatele
-  11. Orchestrator udělá git push
+      → deleguje commit na agenta (ALLOW_GIT=true)
+      → agent napíše commit message, stageuje, commitne
+  11. Orchestrator ROZHODNE o push:
       → pokud require_approval_push → čeká na uživatele
+      → deleguje push na agenta (ALLOW_GIT=true)
   12. Cleanup, reportuje výsledek do UI
 ```
 
@@ -4620,11 +4668,14 @@ async def prefetch_kb_context(
    │  ├── kubectl logs -f → SSE → Kotlin server → UI chat
    │  └── activeDeadlineSeconds jako safety timeout
    │
-8. Po dokončení všech kroků – GIT operace (orchestrator!):
-   │  ├── git add + commit (podle pravidel projektu)
+8. Po dokončení kroků – GIT (orchestrator rozhodne, agent provede):
+   │  ├── orchestrator rozhodne: je čas commitovat?
    │  │   └── pokud require_approval_commit → čeká na uživatele
-   │  ├── git push
+   │  ├── deleguje commit na agenta (ALLOW_GIT=true)
+   │  │   └── agent napíše commit msg, stageuje, commitne
+   │  ├── orchestrator rozhodne: pushovat?
    │  │   └── pokud require_approval_push → čeká na uživatele
+   │  ├── deleguje push na agenta (ALLOW_GIT=true)
    │  └── cleanup .jervis/ soubory
    │
 9. Orchestrator reportuje výsledek:
