@@ -17,9 +17,11 @@
 |----------|---------------|
 | `docs/ui-design.md` | **SSOT** – adaptive layout architecture, all component signatures, ASCII diagrams, dialog patterns, typography, spacing, migration checklist, forbidden patterns |
 | `docs/guidelines.md` § "UI Design System" | Quick-reference with **5 inline code patterns** (category nav, list→detail, edit form, flat list, expandable card), decision tree, source file locations |
-| `docs/structures.md` | DTO definitions and data model |
+| `docs/structures.md` | Data processing pipeline, CPU/GPU routing, BackgroundEngine, qualifier tools |
 | `docs/architecture.md` | System architecture and module boundaries |
 | `docs/implementation.md` | Implementation details and conventions |
+| `docs/knowledge-base.md` | Knowledge Base SSOT – graph schema, RAG, ingest, normalization, indexers |
+| `docs/orchestrator-final-spec.md` | Python Orchestrator spec – async dispatch, approval flow, concurrency |
 
 ## Workflow Rules
 
@@ -28,7 +30,8 @@
 **After every code change, update relevant docs before committing:**
 
 - New UI component or pattern → update `docs/ui-design.md` (SSOT) + `docs/guidelines.md` (inline examples)
-- DTO field change → update `docs/structures.md`
+- Data processing / routing change → update `docs/structures.md`
+- KB / graph schema change → update `docs/knowledge-base.md`
 - Architecture change → update `docs/architecture.md`
 - Never commit code changes without updating affected docs
 

@@ -34,6 +34,8 @@ The Jervis system is built on several key architectural patterns:
 
 ## Koog Agent Framework
 
+> For complete Koog reference see [koog.md](koog.md).
+
 ### Core Libraries & Components
 
 #### `agents-core-jvm` - Core Agent Framework
@@ -141,6 +143,8 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
 ---
 
 ## Knowledge Graph Design
+
+> Full KB reference: [knowledge-base.md](knowledge-base.md). Data processing pipeline: [structures.md](structures.md).
 
 ### ArangoDB Schema - "Two-Collection" Approach
 
@@ -409,6 +413,8 @@ Each agent has its own build script in `k8s/build_<name>.sh` which calls the gen
 ---
 
 ## Python Orchestrator
+
+> Authoritative spec: [orchestrator-final-spec.md](orchestrator-final-spec.md).
 
 ### Overview
 

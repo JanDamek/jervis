@@ -685,6 +685,8 @@ connection:
 
 ## Python Orchestrator Implementation
 
+> Authoritative spec: [orchestrator-final-spec.md](orchestrator-final-spec.md).
+
 ### State Persistence Design Decision
 
 **Problem**: MemorySaver (in-memory) loses all graph state on Python restart.
