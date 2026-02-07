@@ -1,10 +1,12 @@
 fastapi>=0.115.0
 uvicorn>=0.34.0
 langgraph>=0.4.0
+langgraph-checkpoint-mongodb>=2.0.0
 langchain-core>=0.3.0
 litellm>=1.60.0
 httpx>=0.28.0
 kubernetes>=31.0.0
+motor>=3.6.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 sse-starlette>=2.2.0

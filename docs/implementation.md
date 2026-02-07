@@ -12,6 +12,7 @@
 3. [Security Implementation](#security-implementation)
 4. [OAuth2 Implementation & Connection Testing](#oauth2-implementation--connection-testing)
 5. [Troubleshooting Guide](#troubleshooting-guide)
+6. [Python Orchestrator Implementation](#python-orchestrator-implementation)
 
 ---
 
@@ -679,6 +680,57 @@ connection:
 - **No secrets masking in UI:** passwords, tokens, keys always visible
 - **DocumentDB storage:** nothing encrypted - store in plain text
 - **Fail-fast in UI:** errors displayed openly via `JErrorState`, don't hide
+
+---
+
+## Python Orchestrator Implementation
+
+### State Persistence Design Decision
+
+**Problem**: MemorySaver (in-memory) loses all graph state on Python restart.
+
+**Solution**: `AsyncMongoDBSaver` from `langgraph-checkpoint-mongodb`.
+
+**Rationale**:
+- Same MongoDB instance as Kotlin server (no new infrastructure)
+- LangGraph manages serialization/deserialization automatically
+- Thread ID links TaskDocument (Kotlin) ↔ LangGraph checkpoint (Python)
+- Supports interrupt/resume across process restarts
+
+### Fire-and-Forget Dispatch Pattern
+
+**Problem**: Original `delegateToPythonOrchestrator()` was blocking (5min timeout),
+freezing the entire BackgroundEngine execution loop.
+
+**Solution**: Async dispatch with separate result polling loop.
+
+1. `POST /orchestrate/stream` returns `thread_id` immediately (non-blocking)
+2. Task state → `PYTHON_ORCHESTRATING`, execution slot released
+3. `runOrchestratorResultLoop()` polls `GET /status/{thread_id}` every 5s
+4. Results handled asynchronously without blocking other tasks
+
+### USER_TASK Integration
+
+**Problem**: Interrupt handling was not using `UserTaskService`, missing notifications and type change.
+
+**Solution**: `BackgroundEngine.checkOrchestratorTaskStatus()` calls
+`userTaskService.failAndEscalateToUserTask()` for interrupts, which:
+- Changes `state` to `USER_TASK` and `type` to `USER_TASK`
+- Sends UI notification via `notificationRpc.emitUserTaskCreated()`
+- Sets `pendingUserQuestion` and `userQuestionContext`
+
+**Resume path**: When user responds via `sendToAgent()`:
+- `task.content` is updated to user's response (line 105 of UserTaskRpcImpl.kt)
+- `orchestratorThreadId` is preserved through USER_TASK cycle
+- BackgroundEngine picks up task → `resumePythonOrchestrator()` → `POST /approve/{thread_id}`
+- LangGraph resumes from MongoDB checkpoint with user's approval
+
+### Key Technical Details
+
+- `TaskStateEnum.PYTHON_ORCHESTRATING`: New state for dispatched tasks
+- `TaskDocument.orchestratorThreadId`: Links to LangGraph checkpoint
+- MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument)
+- K8s env: `MONGODB_URL` in `k8s/app_orchestrator.yaml` (from secrets)
 
 ---
 

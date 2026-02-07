@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8090
 
+    # MongoDB (persistent checkpointer – same instance as Kotlin server)
+    mongodb_url: str = os.getenv(
+        "MONGODB_URL",
+        "mongodb://root:qusre5-mYfpox-dikpef@192.168.100.117:27017/jervis?authSource=admin",
+    )
+
     # Kotlin Server (internal API)
     kotlin_server_url: str = os.getenv(
         "KOTLIN_SERVER_URL", "http://jervis-server:8080"

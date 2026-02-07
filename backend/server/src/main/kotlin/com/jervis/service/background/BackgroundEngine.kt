@@ -1,5 +1,6 @@
 package com.jervis.service.background
 
+import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
@@ -66,6 +67,7 @@ class BackgroundEngine(
     private val agentOrchestratorRpc: com.jervis.rpc.AgentOrchestratorRpcImpl,
     private val projectService: com.jervis.service.project.ProjectService,
     private val taskRepository: com.jervis.repository.TaskRepository,
+    private val pythonOrchestratorClient: PythonOrchestratorClient,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -74,6 +76,7 @@ class BackgroundEngine(
     private var qualificationJob: Job? = null
     private var executionJob: Job? = null
     private var schedulerJob: Job? = null
+    private var orchestratorResultJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
     private val schedulerAdvance = Duration.ofMinutes(10)
@@ -115,7 +118,17 @@ class BackgroundEngine(
                 }
             }
 
-        logger.info { "BackgroundEngine initialization complete - all three loops launched with singleton guarantee" }
+        orchestratorResultJob =
+            scope.launch {
+                try {
+                    logger.info { "Orchestrator result loop STARTED (polls Python orchestrator)" }
+                    runOrchestratorResultLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Orchestrator result loop FAILED to start!" }
+                }
+            }
+
+        logger.info { "BackgroundEngine initialization complete - all loops launched with singleton guarantee" }
     }
 
     @PreDestroy
@@ -125,6 +138,7 @@ class BackgroundEngine(
         qualificationJob?.cancel()
         executionJob?.cancel()
         schedulerJob?.cancel()
+        orchestratorResultJob?.cancel()
         supervisor.cancel(CancellationException("Application shutdown"))
 
         try {
@@ -133,6 +147,7 @@ class BackgroundEngine(
                     qualificationJob?.join()
                     executionJob?.join()
                     schedulerJob?.join()
+                    orchestratorResultJob?.join()
                 }
             }
         } catch (_: Exception) {
@@ -257,6 +272,16 @@ class BackgroundEngine(
                     }
 
                     val finalResponse = agentOrchestrator.run(task, task.content, onProgress)
+
+                    // Check if task was dispatched to Python orchestrator (fire-and-forget)
+                    val freshTask = taskRepository.findById(task.id)
+                    if (freshTask?.state == TaskStateEnum.PYTHON_ORCHESTRATING) {
+                        logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
+                        taskService.setRunningTask(null)
+                        emitQueueStatus(null)
+                        return@launch
+                    }
+
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     // Emit final response to chat stream for FOREGROUND tasks
@@ -464,6 +489,141 @@ class BackgroundEngine(
             // If runningTask is null, the initial queue status from subscribeToQueueStatus() will handle it
         } catch (e: Exception) {
             logger.error(e) { "Failed to emit queue status" }
+        }
+    }
+
+    /**
+     * Orchestrator result loop – polls Python orchestrator for tasks in PYTHON_ORCHESTRATING state.
+     *
+     * Runs independently from execution loop. Checks every 5s for tasks dispatched
+     * to the Python orchestrator and handles their results:
+     * - "running" → skip (still working)
+     * - "interrupted" → escalate to USER_TASK (approval required)
+     * - "done" → emit result, update state to DISPATCHED_GPU
+     * - "error" → mark ERROR, escalate
+     * - Python unreachable → skip (retry on next cycle)
+     */
+    private suspend fun runOrchestratorResultLoop() {
+        delay(backgroundProperties.waitOnStartup)
+
+        while (scope.isActive) {
+            try {
+                val orchestratingTasks = taskRepository
+                    .findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+
+                kotlinx.coroutines.flow.collect(orchestratingTasks) { task ->
+                    try {
+                        checkOrchestratorTaskStatus(task)
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to check orchestrator status for task ${task.id}" }
+                    }
+                }
+
+                delay(5_000)  // Poll every 5 seconds
+            } catch (e: CancellationException) {
+                logger.info { "Orchestrator result loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error in orchestrator result loop" }
+                delay(10_000)
+            }
+        }
+    }
+
+    /**
+     * Check the status of a single Python-orchestrated task.
+     */
+    private suspend fun checkOrchestratorTaskStatus(task: TaskDocument) {
+        val threadId = task.orchestratorThreadId ?: return
+
+        val status = try {
+            pythonOrchestratorClient.getStatus(threadId)
+        } catch (e: Exception) {
+            logger.debug { "Python orchestrator unreachable for thread $threadId: ${e.message}" }
+            return  // Skip, retry on next cycle
+        }
+
+        val state = status["status"] ?: "unknown"
+
+        when (state) {
+            "running" -> {
+                // Still working – skip
+            }
+            "interrupted" -> {
+                // Approval required → escalate to USER_TASK via UserTaskService
+                // This properly: changes type to USER_TASK, sends notification, updates content
+                val interruptAction = status["interrupt_action"] ?: "unknown"
+                val interruptDescription = status["interrupt_description"] ?: "Schválení vyžadováno"
+
+                userTaskService.failAndEscalateToUserTask(
+                    task = task,
+                    reason = "ORCHESTRATOR_INTERRUPT",
+                    pendingQuestion = "Schválení: $interruptAction – $interruptDescription",
+                    questionContext = "Python orchestrátor potřebuje schválení pro: $interruptAction",
+                )
+
+                // Also emit progress to chat for FOREGROUND tasks
+                if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+                    try {
+                        agentOrchestratorRpc.emitProgress(
+                            clientId = task.clientId.toString(),
+                            projectId = task.projectId?.toString(),
+                            message = "Orchestrátor potřebuje schválení: $interruptAction",
+                            metadata = mapOf("phase" to "approval", "action" to interruptAction),
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to emit approval notification for task ${task.id}" }
+                    }
+                }
+
+                logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$interruptAction → USER_TASK" }
+            }
+            "done" -> {
+                // Completed → fetch full result and handle
+                val result = try {
+                    pythonOrchestratorClient.getStatus(threadId)
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to fetch orchestrator result for thread $threadId" }
+                    return
+                }
+
+                val updatedTask = task.copy(
+                    state = TaskStateEnum.DISPATCHED_GPU,
+                    orchestratorThreadId = null,
+                )
+                taskRepository.save(updatedTask)
+
+                // Emit final response for FOREGROUND tasks
+                if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+                    val summary = result["summary"] ?: "Orchestrace dokončena"
+                    try {
+                        agentOrchestratorRpc.emitToChatStream(
+                            clientId = task.clientId.toString(),
+                            projectId = task.projectId?.toString(),
+                            response = com.jervis.dto.ChatResponseDto(summary),
+                        )
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to emit orchestrator result for task ${task.id}" }
+                    }
+                }
+
+                // Background tasks: delete after completion
+                if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
+                    taskRepository.delete(updatedTask)
+                }
+
+                logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id}" }
+            }
+            "error" -> {
+                val errorMsg = status["error"] ?: "Unknown orchestrator error"
+                logger.error { "ORCHESTRATOR_ERROR: taskId=${task.id} error=$errorMsg" }
+
+                userTaskService.failAndEscalateToUserTask(
+                    task = task,
+                    reason = "PYTHON_ORCHESTRATOR_ERROR",
+                )
+                taskService.updateState(task, TaskStateEnum.ERROR)
+            }
         }
     }
 

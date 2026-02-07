@@ -27,6 +27,8 @@ from app.graph.orchestrator import (
     run_orchestration_streaming,
     resume_orchestration,
     get_graph_state,
+    init_checkpointer,
+    close_checkpointer,
 )
 from app.models import (
     ApprovalResponse,
@@ -50,8 +52,12 @@ _active_streams: dict[str, asyncio.Queue] = {}
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Orchestrator starting on port %d", settings.port)
+    # Initialize persistent MongoDB checkpointer for LangGraph state
+    await init_checkpointer()
+    logger.info("MongoDB checkpointer ready (state survives restarts)")
     yield
     # Cleanup
+    await close_checkpointer()
     await kotlin_client.close()
     logger.info("Orchestrator stopped")
 
@@ -68,6 +74,65 @@ app = FastAPI(
 async def health():
     """Health check endpoint."""
     return {"status": "ok", "service": "orchestrator"}
+
+
+@app.get("/status/{thread_id}")
+async def status(thread_id: str):
+    """Get the current status of an orchestration thread.
+
+    Polled by Kotlin server's BackgroundEngine.runOrchestratorResultLoop()
+    to check on dispatched tasks.
+
+    Returns:
+        status: "running" | "interrupted" | "done" | "error" | "unknown"
+        Plus additional fields depending on status.
+    """
+    graph_state = await get_graph_state(thread_id)
+
+    if graph_state is None:
+        return {"status": "unknown", "thread_id": thread_id}
+
+    # Check if graph has pending next nodes (still running or interrupted)
+    if graph_state.next:
+        # Graph is paused – check if it's an interrupt
+        interrupt_data = None
+        if graph_state.tasks:
+            for task in graph_state.tasks:
+                if hasattr(task, "interrupts") and task.interrupts:
+                    interrupt_data = task.interrupts[0].value
+                    break
+
+        if interrupt_data:
+            return {
+                "status": "interrupted",
+                "thread_id": thread_id,
+                "interrupt_action": interrupt_data.get("action", "unknown"),
+                "interrupt_description": interrupt_data.get("description", ""),
+            }
+        else:
+            return {"status": "running", "thread_id": thread_id}
+
+    # Graph has no next nodes – check if completed or errored
+    values = graph_state.values or {}
+    error = values.get("error")
+    if error:
+        return {"status": "error", "thread_id": thread_id, "error": error}
+
+    final_result = values.get("final_result")
+    if final_result:
+        return {
+            "status": "done",
+            "thread_id": thread_id,
+            "summary": final_result,
+            "branch": values.get("branch"),
+            "artifacts": values.get("artifacts", []),
+        }
+
+    # Check if there's an active stream (still running)
+    if thread_id in _active_streams:
+        return {"status": "running", "thread_id": thread_id}
+
+    return {"status": "unknown", "thread_id": thread_id}
 
 
 @app.post("/orchestrate")

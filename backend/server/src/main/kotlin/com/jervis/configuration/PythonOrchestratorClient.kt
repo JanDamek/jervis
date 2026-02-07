@@ -103,6 +103,21 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
+     * Get the status of an orchestration thread.
+     * Polled by BackgroundEngine.runOrchestratorResultLoop().
+     *
+     * Returns a map with "status" key: running, interrupted, done, error, unknown.
+     */
+    suspend fun getStatus(threadId: String): Map<String, String> {
+        return try {
+            client.get("$apiBaseUrl/status/$threadId").body()
+        } catch (e: Exception) {
+            logger.warn { "PYTHON_ORCHESTRATOR_STATUS_FAIL: threadId=$threadId ${e.message}" }
+            throw e
+        }
+    }
+
+    /**
      * Health check.
      */
     suspend fun isHealthy(): Boolean {

@@ -80,12 +80,21 @@ coding workflow, streamuje progress přes SSE.
 
 **API endpointy:**
 ```
-POST /orchestrate            # Spustí orchestraci (z Kotlin serveru)
-POST /resume/{thread_id}     # Resume po approval
+POST /orchestrate            # Spustí orchestraci (blocking – čeká na výsledek)
+POST /orchestrate/stream     # Spustí orchestraci (fire-and-forget – vrátí thread_id ihned)
+GET  /status/{thread_id}     # Status polling (running/interrupted/done/error)
 GET  /stream/{thread_id}     # SSE stream progress
-POST /approve/{thread_id}    # Approval response od uživatele
+POST /approve/{thread_id}    # Approval response od uživatele (resume z interrupt)
 GET  /health                 # Health check
 ```
+
+**Komunikační model (full request, no callbacks):**
+- Kotlin → Python: `POST /orchestrate/stream` s kompletním `OrchestrateRequest`
+  (rules, workspace, task info – vše upfront)
+- Python → UI: SSE `/stream/{thread_id}` pro progress
+- Kotlin polls: `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()`
+- Approval: interrupt → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
+- **Žádné Python → Kotlin callbacky** (kotlin_client.py je minimální)
 
 **LangGraph StateGraph:**
 ```
@@ -265,11 +274,14 @@ class ApprovalRequest(BaseModel):
 fastapi>=0.115.0
 uvicorn>=0.34.0
 langgraph>=0.4.0
+langgraph-checkpoint-mongodb>=2.0.0
 langchain-core>=0.3.0
 litellm>=1.60.0
 httpx>=0.28.0
 kubernetes>=31.0.0
+motor>=3.6.0
 pydantic>=2.10.0
+pydantic-settings>=2.7.0
 sse-starlette>=2.2.0
 
 # requirements.txt (service-kb-mcp)
@@ -295,3 +307,143 @@ Orchestrator potřebuje přístup k K8s API pro Jobs:
   resources: ["configmaps"]
   verbs: ["create", "delete"]
 ```
+
+---
+
+## 8. State persistence a restart resilience
+
+### 8.1 Zdroj pravdy (SSOT)
+
+**TaskDocument v MongoDB (Kotlin server)** zůstává SSOT pro:
+- Lifecycle stav tasku (`TaskStateEnum`)
+- `orchestratorThreadId` – link na LangGraph checkpoint
+- `pendingUserQuestion` / `userQuestionContext` – USER_TASK kontext
+- `agentCheckpointJson` – stav Koog agentů (Python orchestrátor tento field nepoužívá)
+
+**LangGraph checkpoints v MongoDB** (Python orchestrátor, kolekce `checkpoints`):
+- Interní stav grafu (goals, steps, step_results, evaluation)
+- Uloženy automaticky po každém node
+- Použity pro resume z interrupt() (approval flow)
+- Přežijí restart Python procesu
+
+### 8.2 Persistent checkpointer
+
+```python
+# orchestrator.py
+from langgraph.checkpoint.mongodb.aio import AsyncMongoDBSaver
+
+# Inicializace v main.py lifespan:
+checkpointer = AsyncMongoDBSaver.from_conn_string(settings.mongodb_url)
+await checkpointer.setup()
+
+# Kompilace grafu s checkpointerem:
+graph = build_orchestrator_graph().compile(checkpointer=checkpointer)
+```
+
+MongoDB je **stejná instance** jako Kotlin server → žádná nová infrastruktura.
+
+### 8.3 Restart scénáře
+
+| Restart | Dopad | Obnova |
+|---------|-------|--------|
+| Python restart | Checkpoints v MongoDB přežijí | Kotlin polling najde thread_id v TaskDocument, Python obnoví graf z checkpointu |
+| Kotlin restart | TaskDocument v MongoDB přežije | BackgroundEngine restartuje, runOrchestratorResultLoop() najde PYTHON_ORCHESTRATING tasky |
+| Oba restart | Oba stavy v MongoDB | Plná obnova – thread_id propojí TaskDocument ↔ LangGraph checkpoint |
+
+---
+
+## 9. Async dispatch + result polling architektura
+
+### 9.1 Fire-and-forget dispatch
+
+"Fire-and-forget" znamená: Kotlin volá Python, dostane zpět `thread_id` **ihned** (neblokuje),
+Python pokračuje na pozadí. Kotlin uvolní execution slot pro další tasky.
+
+```
+BackgroundEngine.executeTask(task)
+  → agentOrchestrator.run(task, task.content, onProgress)
+    → shouldUsePythonOrchestrator(userInput) = true
+    → dispatchToPythonOrchestrator():
+        POST /orchestrate/stream → {thread_id, stream_url}   // NEBLOKUJE
+        task.state = PYTHON_ORCHESTRATING
+        task.orchestratorThreadId = thread_id
+        taskRepository.save(updatedTask)
+        return true
+    → return ChatResponseDto("")   // Prázdná odpověď = dispatch signál
+  → freshTask.state == PYTHON_ORCHESTRATING
+  → uvolní execution slot, return
+```
+
+### 9.2 Result polling loop
+
+`BackgroundEngine.runOrchestratorResultLoop()` – nezávislý loop, běží každých 5s:
+
+```
+findByStateOrderByCreatedAtAsc(PYTHON_ORCHESTRATING)
+  → pro každý task:
+      GET /status/{thread_id}
+      "running"     → skip
+      "interrupted" → userTaskService.failAndEscalateToUserTask() + notifikace
+      "done"        → emit výsledek + state=DISPATCHED_GPU (nebo delete pro BACKGROUND)
+      "error"       → failAndEscalateToUserTask() + state=ERROR
+      Python nedostupný → skip, retry next cycle
+```
+
+### 9.3 Stavový diagram tasku s orchestrátorem
+
+```
+READY_FOR_GPU
+  │
+  ├─── dispatchToPythonOrchestrator()
+  │    │
+  │    ▼
+  │  PYTHON_ORCHESTRATING  ←─── resumePythonOrchestrator()
+  │    │                          ▲
+  │    ├── "done" ──────────► DISPATCHED_GPU (FOREGROUND) / DELETE (BACKGROUND)
+  │    ├── "error" ─────────► ERROR → USER_TASK
+  │    └── "interrupted" ───► USER_TASK
+  │                             │
+  │                             │  uživatel odpoví (sendToAgent)
+  │                             │  task.content = odpověď uživatele
+  │                             ▼
+  │                          READY_FOR_GPU (orchestratorThreadId zachován)
+  │                             │
+  │                             └── BackgroundEngine pickup
+  │                                 → agentOrchestrator.run()
+  │                                 → Path 1: resumePythonOrchestrator()
+  │                                 → POST /approve/{thread_id}
+  │                                 → PYTHON_ORCHESTRATING (opakuje se)
+  │
+  └─── Koog agent (blocking, stávající flow)
+```
+
+---
+
+## 10. USER_TASK approval flow
+
+### 10.1 Průběh schvalování (commit/push)
+
+1. LangGraph dosáhne `git_operations` → `interrupt()` (commit approval)
+2. Checkpoint uložen do MongoDB
+3. `runOrchestratorResultLoop()` detekuje `status=interrupted`
+4. `userTaskService.failAndEscalateToUserTask(task, pendingQuestion="Schválení: commit...", ...)`
+   - state = USER_TASK, type = USER_TASK
+   - `notificationRpc.emitUserTaskCreated()` – UI notifikace
+5. Uživatel vidí USER_TASK v UI, odpoví "ano, schvaluji"
+6. `UserTaskRpcImpl.sendToAgent()`:
+   - `task.content = "ano, schvaluji"` (odpověď uživatele)
+   - state = READY_FOR_GPU, pendingUserQuestion = null
+7. BackgroundEngine pickup → `agentOrchestrator.run(task, "ano, schvaluji", ...)`
+8. Path 1: `task.orchestratorThreadId != null` → `resumePythonOrchestrator()`
+   - Parsuje odpověď: "ano" → approved=true
+   - `POST /approve/{thread_id}` s `{approved: true, reason: "ano, schvaluji"}`
+   - state = PYTHON_ORCHESTRATING
+9. Python obnoví graf z MongoDB checkpointu → pokračuje z interrupt bodu
+10. Commit vykonán → možný další interrupt pro push → opakuje se od kroku 2
+
+### 10.2 Klíčové invarianty
+
+- **orchestratorThreadId** přežívá USER_TASK cyklus (není clearován)
+- **task.content** po sendToAgent() = odpověď uživatele (ne původní task popis)
+- **UserTaskService** zajistí notifikace + správný type + state
+- **Checkpoint v MongoDB** zachová plný stav grafu včetně step_results, branch, atd.

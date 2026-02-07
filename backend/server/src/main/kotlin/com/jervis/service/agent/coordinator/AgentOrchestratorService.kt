@@ -4,7 +4,6 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.OrchestrateRequestDto
-import com.jervis.configuration.OrchestrateResponseDto
 import com.jervis.configuration.ProjectRulesDto
 import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.domain.atlassian.AttachmentMetadata
@@ -13,6 +12,7 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
+import com.jervis.repository.TaskRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
@@ -37,6 +37,7 @@ class AgentOrchestratorService(
     private val preferenceService: PreferenceService,
     private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
     private val taskService: TaskService,
+    private val taskRepository: TaskRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -122,8 +123,14 @@ class AgentOrchestratorService(
     /**
      * Run agent workflow for the given taskContext and user input.
      *
-     * Tries Python orchestrator first for coding tasks. Falls back to Koog agent
-     * if Python orchestrator is unavailable or for non-coding queries.
+     * Three paths:
+     * 1. Task has orchestratorThreadId → resume from Python orchestrator (approval flow)
+     * 2. New coding task → fire-and-forget dispatch to Python orchestrator
+     * 3. Non-coding / Python unavailable → Koog agent (blocking)
+     *
+     * For Python orchestrator path, this method dispatches asynchronously:
+     * sets task.state = PYTHON_ORCHESTRATING and returns immediately.
+     * BackgroundEngine.runOrchestratorResultLoop() handles results.
      *
      * @param onProgress Callback for sending progress updates to client
      */
@@ -134,13 +141,26 @@ class AgentOrchestratorService(
     ): ChatResponseDto {
         logger.info { "AGENT_ORCHESTRATOR_START: correlationId=${task.correlationId}" }
 
-        // Try Python orchestrator for coding tasks
+        // Path 1: Resume from Python orchestrator (approval flow)
+        if (task.orchestratorThreadId != null) {
+            try {
+                val dispatched = resumePythonOrchestrator(task, userInput, onProgress)
+                if (dispatched) {
+                    logger.info { "AGENT_ORCHESTRATOR_RESUMED (python): correlationId=${task.correlationId} threadId=${task.orchestratorThreadId}" }
+                    return ChatResponseDto("")  // Empty = dispatched, result via resultLoop
+                }
+            } catch (e: Exception) {
+                logger.warn(e) { "Python orchestrator resume failed: ${e.message}" }
+            }
+        }
+
+        // Path 2: New coding task → fire-and-forget dispatch
         if (shouldUsePythonOrchestrator(userInput)) {
             try {
-                val pythonResponse = delegateToPythonOrchestrator(task, userInput, onProgress)
-                if (pythonResponse != null) {
-                    logger.info { "AGENT_ORCHESTRATOR_COMPLETE (python): correlationId=${task.correlationId}" }
-                    return pythonResponse
+                val dispatched = dispatchToPythonOrchestrator(task, userInput, onProgress)
+                if (dispatched) {
+                    logger.info { "AGENT_ORCHESTRATOR_DISPATCHED (python): correlationId=${task.correlationId}" }
+                    return ChatResponseDto("")  // Empty = dispatched, result via resultLoop
                 }
             } catch (e: Exception) {
                 logger.warn(e) { "Python orchestrator failed, falling back to Koog: ${e.message}" }
@@ -148,7 +168,7 @@ class AgentOrchestratorService(
             }
         }
 
-        // Fallback: Koog agent for conversational/non-coding tasks
+        // Path 3: Koog agent for conversational/non-coding tasks (blocking)
         val response = koogWorkflowService.run(task, userInput, onProgress)
 
         logger.info { "AGENT_ORCHESTRATOR_COMPLETE (koog): correlationId=${task.correlationId}" }
@@ -177,26 +197,22 @@ class AgentOrchestratorService(
     }
 
     /**
-     * Delegate a coding task to the Python orchestrator.
+     * Fire-and-forget dispatch to Python orchestrator.
      *
-     * The Python orchestrator (LangGraph) handles:
-     * 1. Task decomposition → goal planning
-     * 2. Coding agent execution via K8s Jobs
-     * 3. Result evaluation
-     * 4. Git operations (commit/push with approval via interrupt)
+     * Calls POST /orchestrate/stream → gets thread_id immediately.
+     * Stores thread_id in TaskDocument, changes state to PYTHON_ORCHESTRATING.
+     * BackgroundEngine.runOrchestratorResultLoop() polls for results.
      *
-     * If the graph hits an interrupt (approval required), this method
-     * auto-approves for now (TODO: wire to UI approval dialog).
+     * @return true if dispatched successfully, false if unavailable
      */
-    private suspend fun delegateToPythonOrchestrator(
+    private suspend fun dispatchToPythonOrchestrator(
         task: TaskDocument,
         userInput: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
-    ): ChatResponseDto? {
-        // Check if Python orchestrator is available
+    ): Boolean {
         if (!pythonOrchestratorClient.isHealthy()) {
             logger.info { "Python orchestrator not healthy, skipping" }
-            return null
+            return false
         }
 
         onProgress("Spouštím Python orchestrator...", mapOf("phase" to "python_orchestrator"))
@@ -212,28 +228,68 @@ class AgentOrchestratorService(
             rules = rules,
         )
 
-        var response = pythonOrchestratorClient.orchestrate(request)
+        // Fire-and-forget: get thread_id immediately, Python runs in background
+        val streamResponse = pythonOrchestratorClient.orchestrateStream(request)
 
-        // Handle interrupt loop (commit approval → push approval)
-        while (response.isInterrupted) {
-            val interruptAction = response.interrupt?.get("action")?.toString()?.trim('"') ?: "unknown"
-            logger.info { "Orchestrator interrupted: action=$interruptAction threadId=${response.threadId}" }
-            onProgress(
-                "Čekám na schválení: $interruptAction",
-                mapOf("phase" to "approval", "action" to interruptAction),
-            )
+        // Store thread_id and change state to PYTHON_ORCHESTRATING
+        val updatedTask = task.copy(
+            state = TaskStateEnum.PYTHON_ORCHESTRATING,
+            orchestratorThreadId = streamResponse.threadId,
+        )
+        taskRepository.save(updatedTask)
 
-            // TODO: Wire to UI approval dialog via notification service.
-            // For now, auto-approve commit, reject push (safe default).
-            val autoApprove = interruptAction == "commit"
-            response = pythonOrchestratorClient.approve(
-                threadId = response.threadId ?: break,
-                approved = autoApprove,
-                reason = if (autoApprove) "auto-approved" else "auto-push disabled",
-            )
+        logger.info {
+            "PYTHON_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}"
         }
 
-        return formatOrchestratorResponse(response)
+        onProgress(
+            "Orchestrátor zpracovává úkol na pozadí...",
+            mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),
+        )
+
+        return true
+    }
+
+    /**
+     * Resume Python orchestrator after approval (USER_TASK → READY_FOR_GPU with answer).
+     *
+     * Calls POST /approve/{thread_id} with user's response.
+     * Result handled by BackgroundEngine.runOrchestratorResultLoop().
+     *
+     * @return true if dispatched successfully
+     */
+    private suspend fun resumePythonOrchestrator(
+        task: TaskDocument,
+        userInput: String,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
+    ): Boolean {
+        val threadId = task.orchestratorThreadId ?: return false
+
+        if (!pythonOrchestratorClient.isHealthy()) {
+            logger.info { "Python orchestrator not healthy for resume" }
+            return false
+        }
+
+        onProgress("Pokračuji v orchestraci...", mapOf("phase" to "python_resume"))
+
+        // User input contains the approval response (e.g., "ano", "approve", etc.)
+        val approved = userInput.lowercase().let {
+            it.contains("ano") || it.contains("yes") || it.contains("approve") || it.contains("schval")
+        }
+
+        pythonOrchestratorClient.approve(
+            threadId = threadId,
+            approved = approved,
+            reason = userInput,
+        )
+
+        // Update state back to PYTHON_ORCHESTRATING (graph is running again)
+        val updatedTask = task.copy(state = TaskStateEnum.PYTHON_ORCHESTRATING)
+        taskRepository.save(updatedTask)
+
+        logger.info { "PYTHON_RESUMED: taskId=${task.id} threadId=$threadId approved=$approved" }
+
+        return true
     }
 
     /**
@@ -263,33 +319,6 @@ class AgentOrchestratorService(
             maxChangedFiles = prefs["orchestrator.max_changed_files"]?.toIntOrNull() ?: 20,
             autoPush = prefs["orchestrator.auto_push"]?.toBoolean() ?: false,
         )
-    }
-
-    /**
-     * Format Python orchestrator response into a ChatResponseDto.
-     */
-    private fun formatOrchestratorResponse(response: OrchestrateResponseDto): ChatResponseDto {
-        val resultText = buildString {
-            appendLine(response.summary)
-            if (response.branch != null) {
-                appendLine()
-                appendLine("**Branch:** `${response.branch}`")
-            }
-            if (response.artifacts.isNotEmpty()) {
-                appendLine()
-                appendLine("**Změněné soubory:**")
-                response.artifacts.forEach { appendLine("- `$it`") }
-            }
-            if (response.stepResults.isNotEmpty()) {
-                appendLine()
-                appendLine("**Kroky:**")
-                response.stepResults.forEach { step ->
-                    val status = if (step.success) "✓" else "✗"
-                    appendLine("$status ${step.summary} (${step.agentType})")
-                }
-            }
-        }
-        return ChatResponseDto(resultText)
     }
 
     /**

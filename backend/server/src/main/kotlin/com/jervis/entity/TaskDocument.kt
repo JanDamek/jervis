@@ -90,6 +90,7 @@ import java.time.Instant
  * @property scheduledAt When task should run (for scheduled tasks)
  * @property cronExpression Cron expression (for recurring tasks)
  * @property agentCheckpointJson Serialized Koog agent state for continuity (reused across messages)
+ * @property orchestratorThreadId LangGraph thread ID when task is dispatched to Python orchestrator
  */
 @Document(collection = "tasks")
 data class TaskDocument(
@@ -118,6 +119,8 @@ data class TaskDocument(
     val cronExpression: String? = null,
     // NEW: Agent session persistence for continuous conversation
     val agentCheckpointJson: String? = null,
+    // Python orchestrator thread ID for async dispatch (state = PYTHON_ORCHESTRATING)
+    val orchestratorThreadId: String? = null,
     // NEW (2026-01): User interaction state for async USER_TASK workflow
     /**
      * Question agent is waiting for user to answer (when state = USER_TASK).

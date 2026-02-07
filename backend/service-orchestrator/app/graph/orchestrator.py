@@ -8,10 +8,13 @@ Flow:
                                       ↓ (all done)
                                git_operations → report
 
-Supports:
-    - In-memory checkpointing for pause/resume (approval flow)
-    - SSE streaming of node execution events
-    - Thread-based execution for concurrent orchestrations
+State persistence:
+    Uses AsyncMongoDBSaver for persistent checkpointing.
+    All graph state is stored in MongoDB (same instance as Kotlin server).
+    This ensures:
+    - Restart resilience: state survives Python process restarts
+    - Interrupt/resume: approval flow works across restarts
+    - Thread ID links TaskDocument ↔ LangGraph checkpoint
 """
 
 from __future__ import annotations
@@ -19,10 +22,11 @@ from __future__ import annotations
 import logging
 from typing import Any, AsyncIterator
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.mongodb.aio import AsyncMongoDBSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 
+from app.config import settings
 from app.graph.nodes import (
     advance_step,
     decompose,
@@ -37,11 +41,34 @@ from app.models import CodingTask, OrchestrateRequest, ProjectRules
 
 logger = logging.getLogger(__name__)
 
-# In-memory checkpointer (can be replaced with PostgreSQL for persistence)
-_checkpointer = MemorySaver()
+# MongoDB checkpointer – initialized in main.py lifespan
+_checkpointer: AsyncMongoDBSaver | None = None
+
+# Compiled graph (singleton, rebuilt when checkpointer changes)
+_compiled_graph = None
 
 
-def get_checkpointer() -> MemorySaver:
+async def init_checkpointer() -> AsyncMongoDBSaver:
+    """Initialize the MongoDB checkpointer. Called from main.py lifespan."""
+    global _checkpointer, _compiled_graph
+
+    _checkpointer = AsyncMongoDBSaver.from_conn_string(settings.mongodb_url)
+    await _checkpointer.setup()
+    _compiled_graph = None  # Force rebuild with new checkpointer
+    logger.info("MongoDB checkpointer initialized (persistent state)")
+    return _checkpointer
+
+
+async def close_checkpointer():
+    """Close the MongoDB checkpointer. Called from main.py lifespan."""
+    global _checkpointer, _compiled_graph
+    # AsyncMongoDBSaver doesn't require explicit close – motor client handles it
+    _checkpointer = None
+    _compiled_graph = None
+    logger.info("MongoDB checkpointer closed")
+
+
+def get_checkpointer() -> AsyncMongoDBSaver | None:
     """Get the global checkpointer instance."""
     return _checkpointer
 
@@ -96,14 +123,14 @@ def build_orchestrator_graph() -> StateGraph:
     return graph
 
 
-# Compiled graph (singleton)
-_compiled_graph = None
-
-
 def get_orchestrator_graph():
     """Get compiled orchestrator graph with checkpointing (lazy singleton)."""
     global _compiled_graph
     if _compiled_graph is None:
+        if _checkpointer is None:
+            raise RuntimeError(
+                "Checkpointer not initialized. Call init_checkpointer() first."
+            )
         graph = build_orchestrator_graph()
         _compiled_graph = graph.compile(checkpointer=_checkpointer)
     return _compiled_graph
@@ -210,6 +237,9 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict
 
     Uses LangGraph Command(resume=...) to pass the user's response
     back to the interrupted node (e.g., approval response).
+
+    The checkpoint is stored in MongoDB, so this works even after
+    Python restart – the graph state is fully reconstructed.
 
     Args:
         thread_id: Thread ID to resume.
