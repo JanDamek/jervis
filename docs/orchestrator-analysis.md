@@ -1,8 +1,8 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07
+**Datum:** 2026-02-07 (rev.2)
 **Autor:** Automatizovaná analýza
-**Rozsah:** OrchestratorAgent, GoalExecutor, 11 sub-agentů, tools, models, koog integrace
+**Rozsah:** OrchestratorAgent, GoalExecutor, 11 sub-agentů, tools, models, koog integrace, streaming, approval flow
 
 ---
 
@@ -14,6 +14,10 @@
 4. [Python microservice varianta – analýza](#4-python-microservice-varianta)
 5. [Plán vylepšení – 3 varianty](#5-plán-vylepšení)
 6. [Doporučená varianta a roadmapa](#6-doporučená-varianta-a-roadmapa)
+7. [Streaming & Live Process Visibility](#7-streaming--live-process-visibility)
+8. [Approval Flow – Risky Step Protection](#8-approval-flow--risky-step-protection)
+9. [Tool Migration – kompletní plán přesunu do Pythonu](#9-tool-migration--kompletní-plán-přesunu-do-pythonu)
+10. [Komunikační architektura Python ↔ Kotlin ↔ UI](#10-komunikační-architektura)
 
 ---
 
@@ -784,4 +788,661 @@ result = await app.ainvoke({"user_query": "..."}, config={"thread_id": "..."})
 from langgraph.prebuilt import interrupt
 answer = interrupt({"question": "What do you prefer?"})
 # Runtime automaticky pausne graph a resumne po odpovědi uživatele
+```
+
+---
+
+## 7. Streaming & Live Process Visibility
+
+### 7.1 Současný stav (co nefunguje)
+
+**Aktuální streaming v Kotlin serveru:**
+
+```
+AgentOrchestratorRpcImpl.emitProgress(clientId, projectId, message, metadata)
+  → MutableSharedFlow<ChatResponseDto> (buffer=100, DROP_OLDEST)
+  → UI přes kRPC WebSocket (subscribeToChat)
+```
+
+**Problémy:**
+1. **Pouze textové statusy** – "processing", "planning", "executing" – žádný detail
+2. **Coding agenti (Aider/OpenHands/Junie) jsou black box** – volání `ICodingClient.execute(request)` je synchronní RPC, UI nevidí průběh
+3. **Žádný přehled běžících procesů** – `subscribeToQueueStatus()` vrací jen `queueSize` + `runningTaskPreview`, ne co agent DĚLÁ
+4. **Koog nepodporuje token streaming** – `AIAgent.run()` vrátí kompletní výsledek, žádné partial chunks
+
+### 7.2 Cílový stav
+
+UI chat by měl ukazovat:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Chat                                                            │
+│                                                                  │
+│  User: Refaktoruj authentication modul na JWT                    │
+│                                                                  │
+│  ┌── Orchestrator ──────────────────────────────────────────┐   │
+│  │ ✅ Decomposition: 3 goals identified                     │   │
+│  │ ✅ Goal 1: Research current auth implementation           │   │
+│  │   └─ Found: SessionService.kt, AuthFilter.kt, 3 tests   │   │
+│  │ 🔄 Goal 2: Implement JWT authentication                  │   │
+│  │   ├─ Plan: 5 steps                                       │   │
+│  │   └─ ┌── Aider (running) ──────────────────────────┐    │   │
+│  │      │ Modifying AuthService.kt...                   │    │   │
+│  │      │ Adding JwtTokenProvider.kt...                 │    │   │
+│  │      │ ▌ (live output stream)                        │    │   │
+│  │      └──────────────────────────────────────────────┘    │   │
+│  │ ⏳ Goal 3: Update tests (waiting for Goal 2)             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌── Running Processes ─────────────────────────────────────┐   │
+│  │ 🟢 Orchestrator: Goal 2/3 – JWT implementation           │   │
+│  │ 🟡 Aider: Modifying 2 files (AuthService.kt, JWT...)     │   │
+│  │ 🔵 Background: Indexing 12 new Jira tickets               │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 7.3 Architektura streamingu v Python orchestrátoru
+
+```
+Python Orchestrator (LangGraph)
+  │
+  │  astream_events() → Server-Sent Events (SSE)
+  │
+  ▼
+┌─────────────────────────────────────────────────────────────┐
+│  SSE Event Stream (Python → Kotlin)                          │
+│                                                               │
+│  Event types:                                                 │
+│  ├── orchestrator.phase_start   {phase: "decomposition"}     │
+│  ├── orchestrator.phase_end     {phase: "decomposition", result: {...}} │
+│  ├── orchestrator.goal_start    {goalId: "g1", title: "..."}│
+│  ├── orchestrator.goal_progress {goalId: "g1", step: 2/5}   │
+│  ├── orchestrator.goal_end      {goalId: "g1", success: true}│
+│  ├── orchestrator.llm_chunk     {token: "partial text..."}   │
+│  ├── orchestrator.tool_call     {tool: "search_kb", args: {...}} │
+│  ├── orchestrator.tool_result   {tool: "search_kb", result: "..."} │
+│  ├── orchestrator.approval_req  {action: "code_change", details: {...}} │
+│  ├── coding.agent_start         {agent: "aider", task: "..."} │
+│  ├── coding.agent_progress      {agent: "aider", output: "line..."} │
+│  ├── coding.agent_end           {agent: "aider", success: true} │
+│  └── orchestrator.final         {result: "...", artifacts: [...]} │
+└─────────────────────────────────────────────────────────────┘
+  │
+  ▼
+Kotlin Server (Spring Boot)
+  │  Přijímá SSE stream z Python orchestrátoru
+  │  Transformuje → ChatResponseDto
+  │  Emituje → MutableSharedFlow
+  │
+  ▼
+UI (kRPC WebSocket → subscribeToChat)
+  │  Renderuje structured progress
+  │  Zobrazuje live output z coding agentů
+  │  Ukazuje Running Processes panel
+```
+
+### 7.4 Streaming z coding agentů
+
+**Současný problém:** `ICodingClient.execute(request)` je request-response RPC. Výsledek přijde až po dokončení celého coding tasku (může trvat minuty).
+
+**Řešení:** Python orchestrátor komunikuje přímo s coding servisy přes WebSocket/SSE:
+
+```python
+# Python orchestrátor – tool pro coding s live streamingem
+async def execute_coding_with_stream(
+    agent: str,  # "aider" | "openhands" | "junie"
+    instructions: str,
+    files: list[str],
+) -> AsyncGenerator[CodingEvent, None]:
+    """Volá coding service a streamuje průběh."""
+
+    async with websockets.connect(f"ws://{agent_url}/ws/execute") as ws:
+        await ws.send(json.dumps({
+            "instructions": instructions,
+            "files": files,
+        }))
+
+        async for message in ws:
+            event = json.loads(message)
+            # Emitovat jako SSE event pro Kotlin server
+            yield CodingEvent(
+                agent=agent,
+                type=event["type"],  # "progress" | "file_changed" | "error" | "done"
+                output=event.get("output", ""),
+                file_path=event.get("file"),
+            )
+```
+
+**Změny v coding microservicích (service-aider, service-coding-engine, service-junie):**
+
+Tyto služby musí přidat WebSocket/SSE endpoint pro live streaming outputu:
+
+```
+Současný interface:
+  POST /execute → CodingResult (synchronní, celý výsledek najednou)
+
+Nový interface (přidaný):
+  WS /ws/execute → stream CodingEvent[] (live output, file changes, progress)
+
+  CodingEvent:
+    type: "started" | "progress" | "file_read" | "file_write" | "command_run" | "error" | "done"
+    output: string      # stdout/stderr line
+    file_path: string?  # affected file
+    timestamp: instant
+```
+
+### 7.5 Running Processes panel (UI)
+
+**Nový kRPC endpoint:**
+
+```kotlin
+// IAgentOrchestratorService – rozšíření
+fun subscribeToProcesses(clientId: String): Flow<ProcessStatusDto>
+
+data class ProcessStatusDto(
+    val processes: List<ProcessInfo>,
+)
+
+data class ProcessInfo(
+    val id: String,
+    val type: String,           // "orchestrator" | "coding" | "background" | "qualifier"
+    val status: String,         // "running" | "waiting_approval" | "paused"
+    val title: String,          // "JWT implementation – Goal 2/3"
+    val agent: String?,         // "aider" | "openhands" | "junie" | null
+    val progress: Float?,       // 0.0-1.0 if known
+    val currentAction: String?, // "Modifying AuthService.kt..."
+    val startedAt: Instant,
+    val projectId: String?,
+)
+```
+
+**Python orchestrátor emituje process updates jako součást SSE streamu.** Kotlin server agreguje procesy z:
+1. Python orchestrátor (hlavní flow)
+2. Coding agenti (sub-procesy)
+3. BackgroundEngine (qualifier, background tasks)
+
+---
+
+## 8. Approval Flow – Risky Step Protection
+
+### 8.1 Současný stav
+
+Aktuální `UserInteractionTools` má:
+- `askUser(question)` – BLOCKING, pausne celý agent
+- `createUserTask(title)` – NON-BLOCKING, ale taky pausne agent (bug: oba volají `failAndEscalateToUserTask`)
+- `requestCloudSpendApproval()` – vytvoří user task pro schválení
+
+**Problémy:**
+1. **Žádná approval policy** – Agent se sám rozhoduje kdy se zeptat, nemá pravidla co je "risky"
+2. **askUser() zabije celý orchestrátor** – Po `failAndEscalateToUserTask()` se celý task přesune do USER_TASK stavu. Checkpoint je mrtvý (viz P0 2.3), takže po schválení se musí začít znova
+3. **Background procesy nemají approval** – Qualifier/workflow agenti v BackgroundEngine nemají žádný mechanismus pro schválení riskantních kroků
+
+### 8.2 Cílový stav
+
+#### Pravidla pro approval (RiskyActionPolicy)
+
+| Akce | Typ | Approval v chatu | Approval v background |
+|------|-----|-----------------|----------------------|
+| **Code change** (Aider/OpenHands/Junie) | RISKY | Chat dialog: "Chystám se změnit 3 soubory. Potvrdíte?" | Task state → WAITING_APPROVAL |
+| **Jira ticket transition** | RISKY | Chat dialog | Task state → WAITING_APPROVAL |
+| **Email send** | RISKY | Chat dialog | Task state → WAITING_APPROVAL |
+| **Cloud model spend > $X** | RISKY | Chat dialog | Task state → WAITING_APPROVAL |
+| **Delete operation** (graph node, file, etc.) | RISKY | Chat dialog | Task state → WAITING_APPROVAL |
+| **RAG search** | SAFE | No approval | No approval |
+| **Knowledge read** | SAFE | No approval | No approval |
+| **Code analysis (Joern)** | SAFE | No approval | No approval |
+| **Plan creation** | SAFE | No approval | No approval |
+
+#### Approval v chatu (FOREGROUND tasks)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Chat                                                         │
+│                                                              │
+│ Orchestrator: Plán vyžaduje změnu 3 souborů:                │
+│ • AuthService.kt – přidat JWT validaci                      │
+│ • SecurityConfig.kt – přepnout z session na JWT             │
+│ • build.gradle.kts – přidat jwt dependency                  │
+│                                                              │
+│ Odhadovaný dopad: MEDIUM (existující testy pokrývají 60%)   │
+│                                                              │
+│ ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
+│ │ ✅ Schválit  │  │ ❌ Odmítnout │  │ 📝 Upravit plán  │    │
+│ └─────────────┘  └──────────────┘  └──────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Approval v background procesech (BACKGROUND tasks)
+
+```
+Background task flow:
+  1. Agent identifikuje risky action
+  2. Task state: DISPATCHED_GPU → WAITING_APPROVAL
+  3. UI notifikace: "Background task XY čeká na schválení"
+  4. User v UI vidí detail + approve/reject
+  5. Approve → Task state: WAITING_APPROVAL → DISPATCHED_GPU (resume)
+  6. Reject → Task state: WAITING_APPROVAL → DONE (with rejection note)
+```
+
+### 8.3 Implementace v Python orchestrátoru (LangGraph)
+
+```python
+from langgraph.prebuilt import interrupt
+from pydantic import BaseModel
+
+class ApprovalRequest(BaseModel):
+    action_type: str          # "code_change" | "jira_transition" | "email_send" | ...
+    description: str          # Human-readable summary
+    details: dict             # Structured data (files, ticket key, etc.)
+    risk_level: str           # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    estimated_impact: str     # "3 files modified, 60% test coverage"
+    reversible: bool          # Can this be undone?
+
+class ApprovalResponse(BaseModel):
+    approved: bool
+    modification: str | None  # User can modify the plan
+    reason: str | None        # Why rejected
+
+# V orchestrátor grafu – node pro risky action
+def execute_with_approval(state: OrchestratorState) -> OrchestratorState:
+    action = state.pending_action
+
+    if is_risky(action):
+        # LangGraph interrupt = pausne graph, čeká na user input
+        response: ApprovalResponse = interrupt(ApprovalRequest(
+            action_type=action.type,
+            description=f"Chystám se: {action.summary}",
+            details=action.to_dict(),
+            risk_level=assess_risk(action),
+            estimated_impact=action.impact_summary,
+            reversible=action.is_reversible,
+        ))
+
+        if not response.approved:
+            return {**state, "action_rejected": True, "rejection_reason": response.reason}
+
+        if response.modification:
+            action = modify_action(action, response.modification)
+
+    # Execute the action
+    result = execute_action(action)
+    return {**state, "action_result": result}
+
+# Risk assessment
+def is_risky(action) -> bool:
+    RISKY_TYPES = {
+        "code_change", "jira_transition", "email_send",
+        "cloud_spend", "delete_operation", "git_push",
+    }
+    return action.type in RISKY_TYPES
+
+def assess_risk(action) -> str:
+    if action.type == "delete_operation":
+        return "CRITICAL"
+    if action.type == "code_change" and action.file_count > 5:
+        return "HIGH"
+    if action.type == "cloud_spend" and action.estimated_cost > 1.0:
+        return "HIGH"
+    return "MEDIUM"
+```
+
+### 8.4 Kotlin server – zprostředkování approval
+
+```kotlin
+// Nový task stav
+enum class TaskStateEnum {
+    // ... existující stavy ...
+    WAITING_APPROVAL,  // ← NOVÝ: čeká na schválení uživatelem
+}
+
+// Nový RPC endpoint pro UI
+suspend fun approveAction(
+    taskId: String,
+    approved: Boolean,
+    modification: String? = null,
+    reason: String? = null,
+): ApprovalResultDto
+
+// Flow:
+// 1. Python orchestrátor → SSE event: "approval_required" s ApprovalRequest
+// 2. Kotlin server → uloží do TaskDocument.pendingApproval
+// 3. Kotlin server → změní stav na WAITING_APPROVAL
+// 4. Kotlin server → emituje do UI streamu
+// 5. UI zobrazí approval dialog
+// 6. User approve/reject → Kotlin server → POST do Python orchestrátoru
+// 7. Python orchestrátor → LangGraph resume s ApprovalResponse
+// 8. Pokračuje execution
+```
+
+### 8.5 Rozdíl mezi chat a background approval
+
+| Aspekt | Chat (FOREGROUND) | Background |
+|--------|-------------------|------------|
+| **UI** | Inline v chatu – tlačítka approve/reject | Notifikace + detail v task panelu |
+| **Timeout** | Žádný – čeká dokud user neodpoví | Konfigurovatelný (např. 24h) |
+| **Default** | Žádný default | Reject po timeout (bezpečné) |
+| **Resume** | Okamžitý – graph pokračuje | Vrátí se do execution queue |
+| **Stav tasku** | Zůstává DISPATCHED_GPU (jen graph je paused) | Přechází na WAITING_APPROVAL |
+
+---
+
+## 9. Tool Migration – kompletní plán přesunu do Pythonu
+
+### 9.1 Princip: Všechny tools které orchestrátor potřebuje žijí v Pythonu
+
+Současný stav je nepřehledný – tools jsou roztroušené přes Kotlin server, registrované v Koog, wrappované v InternalAgentTools. V nové architektuře Python orchestrátor vlastní VŠECHNY tools.
+
+### 9.2 Kompletní seznam tools a kam se přesunou
+
+#### Skupina A: Přímo v Pythonu (nativní implementace)
+
+| Tool | Důvod | Implementace |
+|------|-------|-------------|
+| **ExecutionMemoryTools** | LangGraph state = nativní | `state["memory"]` – nepotřeba tool |
+| **ChatHistoryTools** | LangGraph memory = nativní | `state["messages"]` – nepotřeba tool |
+| **ValidationTools** | Pure logic, žádná závislost | Python funkce |
+| **InternalAgentTools** | Sub-agenti = LangGraph sub-grafy | Sub-grafy, ne wrappery |
+| **ProgramManager** | Pure logic (no LLM) | Python funkce |
+| **CodingRules** | Prompt constants | Python constants |
+
+#### Skupina B: Python tool s přímým přístupem k existujícím Python službám
+
+| Tool | Cílová služba | Komunikace |
+|------|--------------|------------|
+| **KnowledgeStorageTools** | service-knowledgebase (Python!) | Přímý Python import NEBO HTTP localhost |
+| **JoernTools** | service-joern | REST API (existující) |
+
+#### Skupina C: Python tool volající Kotlin server přes REST
+
+| Tool | Kotlin endpoint | Poznámka |
+|------|----------------|----------|
+| **BugTrackerReadTools** | `/api/internal/bugtracker/*` | Read-only, jednoduché |
+| **IssueTrackerTool** | `/api/internal/bugtracker/write/*` | Write ops = RISKY → approval |
+| **WikiReadTools** | `/api/internal/wiki/*` | Read-only |
+| **EmailReadTools** | `/api/internal/email/*` | Read-only |
+| **ProjectStructureTools** | `/api/internal/project/*` | Read-only |
+| **SchedulerTools** | `/api/internal/scheduler/*` | Write = approval |
+| **PreferenceTools** | `/api/internal/preferences/*` | Read/Write |
+| **LearningTools** | `/api/internal/learning/*` | Write (safe – internal) |
+| **LogSearchTools** | `/api/internal/logs/*` | Read-only |
+
+#### Skupina D: Python tool volající coding microservisy přímo (s streamingem)
+
+| Tool | Cílová služba | Komunikace |
+|------|--------------|------------|
+| **CodingTools.executeAider** | service-aider | WebSocket (live stream) |
+| **CodingTools.executeOpenHands** | service-coding-engine | WebSocket (live stream) |
+| **CodingTools.executeJunie** | service-junie | WebSocket (live stream) |
+
+#### Skupina E: Python nativní náhrada (UserInteraction → LangGraph interrupt)
+
+| Tool | LangGraph ekvivalent |
+|------|---------------------|
+| **UserInteractionTools.askUser** | `interrupt(question)` → nativní pause/resume |
+| **UserInteractionTools.createUserTask** | `interrupt(task_request)` s metadata `{blocking: false}` |
+| **UserInteractionTools.requestCloudSpendApproval** | `interrupt(approval_request)` s metadata `{type: "cost"}` |
+| **CommunicationTools.sendEmail** | `interrupt(approval)` → po schválení REST call |
+
+### 9.3 Kotlin server – nové internal REST API endpointy
+
+Kotlin server musí vystavit REST API pro Python orchestrátor. Tyto endpointy NEEXISTUJÍ na public API – jsou interní (no security headers, internal network only).
+
+```yaml
+# Nový controller: InternalToolsController.kt
+
+# Bug Tracker
+GET    /api/internal/bugtracker/{clientId}/search?query=...&project=...
+GET    /api/internal/bugtracker/{clientId}/issue/{key}
+GET    /api/internal/bugtracker/{clientId}/issue/{key}/comments
+POST   /api/internal/bugtracker/{clientId}/issue/{key}/comment    # WRITE
+POST   /api/internal/bugtracker/{clientId}/issue/{key}/transition # WRITE
+
+# Wiki
+GET    /api/internal/wiki/{clientId}/search?query=...
+GET    /api/internal/wiki/{clientId}/page/{id}
+GET    /api/internal/wiki/{clientId}/spaces
+
+# Email
+GET    /api/internal/email/{clientId}/search?query=...
+GET    /api/internal/email/{clientId}/message/{id}
+GET    /api/internal/email/{clientId}/thread/{id}
+
+# Project
+GET    /api/internal/project/{projectId}/info
+GET    /api/internal/project/{projectId}/git-path
+GET    /api/internal/project/{projectId}/structure
+
+# Scheduler
+POST   /api/internal/scheduler/schedule    # WRITE
+GET    /api/internal/scheduler/tasks
+
+# Preferences
+GET    /api/internal/preferences/{clientId}?scope=...&key=...
+POST   /api/internal/preferences/{clientId}  # WRITE
+
+# Learning
+POST   /api/internal/learning/store
+GET    /api/internal/learning/retrieve?category=...
+
+# Logs
+GET    /api/internal/logs/search?query=...&regex=...
+GET    /api/internal/logs/tail?lines=...
+
+# Chat (pro orchestrátor → zobrazení v UI)
+POST   /api/internal/chat/{clientId}/{projectId}/emit   # Emit message to chat stream
+POST   /api/internal/chat/{clientId}/{projectId}/approval  # Emit approval request
+
+# Process tracking
+POST   /api/internal/processes/update   # Update running process status
+```
+
+### 9.4 Python tool base class
+
+```python
+from abc import ABC, abstractmethod
+from httpx import AsyncClient
+from langchain_core.tools import tool
+
+class KotlinServerClient:
+    """Base HTTP client for Kotlin server internal API."""
+
+    def __init__(self, base_url: str = "http://jervis-server:8080"):
+        self.client = AsyncClient(base_url=base_url, timeout=30.0)
+
+    async def get(self, path: str, **params) -> dict:
+        resp = await self.client.get(f"/api/internal{path}", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def post(self, path: str, data: dict) -> dict:
+        resp = await self.client.post(f"/api/internal{path}", json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+# Příklad tool implementace
+kotlin_client = KotlinServerClient()
+
+@tool
+async def search_issues(
+    client_id: str,
+    query: str,
+    project: str | None = None,
+) -> str:
+    """Search bug tracker issues (Jira/GitHub/GitLab)."""
+    result = await kotlin_client.get(
+        f"/bugtracker/{client_id}/search",
+        query=query,
+        project=project,
+    )
+    return json.dumps(result, indent=2)
+
+@tool
+async def transition_issue(
+    client_id: str,
+    issue_key: str,
+    target_status: str,
+) -> str:
+    """Transition a bug tracker issue to new status. REQUIRES APPROVAL."""
+    # Approval je handled na úrovni orchestrátor grafu (viz sekce 8)
+    result = await kotlin_client.post(
+        f"/bugtracker/{client_id}/issue/{issue_key}/transition",
+        data={"targetStatus": target_status},
+    )
+    return json.dumps(result, indent=2)
+```
+
+---
+
+## 10. Komunikační architektura
+
+### 10.1 Celkový diagram
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              UI (Desktop/Mobile)                            │
+│                                                                             │
+│  ┌─────────────┐  ┌──────────────────┐  ┌──────────────────────────────┐  │
+│  │   Chat       │  │ Running Processes │  │ Approval Dialogs             │  │
+│  │  (messages,  │  │ (live status of   │  │ (approve/reject risky       │  │
+│  │   streaming, │  │  all agents and   │  │  actions inline in chat     │  │
+│  │   progress)  │  │  background jobs) │  │  or in task panel)          │  │
+│  └──────┬───────┘  └────────┬─────────┘  └──────────────┬───────────────┘  │
+│         │ kRPC/WS           │ kRPC/WS                   │ kRPC/WS          │
+└─────────┼───────────────────┼───────────────────────────┼──────────────────┘
+          │                   │                           │
+          ▼                   ▼                           ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         Kotlin Server (Spring Boot)                         │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  AgentOrchestratorRpcImpl                                           │   │
+│  │  • subscribeToChat() → Flow<ChatResponseDto>                        │   │
+│  │  • subscribeToProcesses() → Flow<ProcessStatusDto>                  │   │
+│  │  • sendMessage() → POST do Python orchestrátoru                     │   │
+│  │  • approveAction() → POST do Python orchestrátoru                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  InternalToolsController (REST, internal-only)                      │   │
+│  │  • /api/internal/bugtracker/*                                       │   │
+│  │  • /api/internal/wiki/*                                             │   │
+│  │  • /api/internal/email/*                                            │   │
+│  │  • /api/internal/project/*                                          │   │
+│  │  • /api/internal/chat/*/emit  (orchestrátor → UI)                   │   │
+│  │  • /api/internal/processes/update                                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────┐  ┌────────────────────────────────────────┐  │
+│  │  BackgroundEngine        │  │  MongoDB, Weaviate, ArangoDB access    │  │
+│  │  (qualifier loop,        │  │  (repositorie, embeddings, graph)      │  │
+│  │   scheduler loop)        │  │                                        │  │
+│  └─────────────────────────┘  └────────────────────────────────────────┘  │
+└──────────────────────┬─────────────────────────────────────────────────────┘
+                       │
+          ┌────────────┼────────────────────────────────┐
+          │            │ REST/SSE                        │
+          ▼            ▼                                 ▼
+┌──────────────────────────────┐    ┌──────────────────────────────────────┐
+│  Python Orchestrator Service  │    │  Coding Microservices                 │
+│  (FastAPI + LangGraph)        │    │                                       │
+│                               │    │  ┌────────────┐  ┌────────────────┐  │
+│  REST API:                    │    │  │ Aider       │  │ OpenHands      │  │
+│  POST /orchestrate            │    │  │ (WS stream) │  │ (WS stream)    │  │
+│  POST /resume                 │    │  └────────────┘  └────────────────┘  │
+│  GET  /stream/{thread_id} SSE │    │                                       │
+│  POST /approve/{thread_id}    │    │  ┌────────────┐                      │
+│                               │    │  │ Junie       │                      │
+│  Volá:                        │    │  │ (WS stream) │                      │
+│  • Kotlin server tools (REST) │    │  └────────────┘                      │
+│  • service-kb (Python, přímé) │    └──────────────────────────────────────┘
+│  • Coding services (WebSocket)│
+│  • LLM providers (litellm)    │
+└──────────────────────────────┘
+```
+
+### 10.2 Sekvence: User message → streamed response s approval
+
+```
+UI                 Kotlin Server         Python Orchestrator    Aider Service
+ │                      │                       │                    │
+ │──sendMessage()──────>│                       │                    │
+ │                      │──POST /orchestrate───>│                    │
+ │                      │                       │                    │
+ │                      │<─SSE: phase_start─────│ (decomposition)    │
+ │<─subscribeToChat()───│                       │                    │
+ │  "Analyzing request" │                       │                    │
+ │                      │<─SSE: goal_start──────│ (goal 1: research) │
+ │<─"Researching..."────│                       │                    │
+ │                      │<─SSE: tool_call───────│ (search_kb)        │
+ │                      │                       │──GET /internal/kb──>│
+ │                      │                       │<─results────────────│
+ │                      │<─SSE: tool_result─────│                    │
+ │                      │                       │                    │
+ │                      │<─SSE: approval_req────│ (code change!)     │
+ │<─approval dialog─────│                       │                    │
+ │                      │                       │ [PAUSED - interrupt]│
+ │──approveAction(yes)─>│                       │                    │
+ │                      │──POST /approve────────>│                    │
+ │                      │                       │ [RESUMED]           │
+ │                      │                       │──WS: execute───────>│
+ │                      │<─SSE: coding.progress─│<─WS: progress──────│
+ │<─"Aider: editing..." │                       │<─WS: progress──────│
+ │<─"Aider: editing..." │                       │<─WS: done──────────│
+ │                      │<─SSE: coding.done─────│                    │
+ │                      │<─SSE: goal_end────────│                    │
+ │                      │<─SSE: final───────────│                    │
+ │<─final response──────│                       │                    │
+```
+
+### 10.3 Jak Python orchestrátor komunikuje s Kotlin serverem
+
+**Dva kanály:**
+
+1. **Python → Kotlin (tool calls):** REST HTTP. Python volá `/api/internal/*` endpointy pro čtení dat (bugtracker, wiki, email, project info) a zápis (chat emit, process update).
+
+2. **Kotlin → Python (orchestration requests):** REST HTTP. Kotlin server volá Python `/orchestrate` endpoint když přijde user message. Python odpoví SSE streamem.
+
+**Proč ne gRPC?** REST je jednodušší, debugging přes curl, žádná code-gen závislost. Performance difference je zanedbatelná pro tyto use-case (orchestrátor volá tools řádově 10-50x za request, ne tisíce).
+
+### 10.4 K8s deployment
+
+```yaml
+# k8s/app_orchestrator.yaml (nový)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-orchestrator
+  namespace: jervis
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: orchestrator
+          image: ghcr.io/jandamek/jervis-orchestrator:latest
+          ports:
+            - containerPort: 8090
+          env:
+            - name: KOTLIN_SERVER_URL
+              value: "http://jervis-server:8080"
+            - name: KNOWLEDGEBASE_URL
+              value: "http://jervis-knowledgebase:8000"
+            - name: AIDER_WS_URL
+              value: "ws://jervis-aider:8080"
+            - name: CODING_ENGINE_WS_URL
+              value: "ws://jervis-coding-engine:8080"
+            - name: JUNIE_WS_URL
+              value: "ws://jervis-junie:8080"
+            - name: OLLAMA_URL
+              value: "http://192.168.100.117:11434"
+            - name: POSTGRES_URL  # Pro LangGraph checkpointer
+              value: "postgresql://jervis:pass@postgres:5432/orchestrator"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
 ```
