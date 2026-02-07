@@ -16,6 +16,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -38,6 +39,7 @@ import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JSection
+import com.jervis.ui.util.openUrlInBrowser
 import kotlinx.coroutines.launch
 
 @Composable
@@ -138,35 +140,63 @@ private fun CodingAgentCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(Modifier.height(12.dp))
+            if (agent.requiresApiKey) {
+                Spacer(Modifier.height(12.dp))
 
-            JSection(title = "API klic") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    OutlinedTextField(
-                        value = apiKeyInput,
-                        onValueChange = { apiKeyInput = it },
-                        label = { Text("API Key") },
-                        placeholder = {
-                            Text(if (agent.apiKeySet) "Zadejte novy klic pro zmenu" else "Zadejte API klic")
-                        },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    JPrimaryButton(
-                        onClick = {
-                            onSaveApiKey(apiKeyInput)
-                            apiKeyInput = ""
-                        },
-                        enabled = apiKeyInput.isNotBlank(),
+                JSection(title = "API klic") {
+                    // "Ziskat API klic" button - opens provider console in browser
+                    if (agent.consoleUrl.isNotBlank()) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { openUrlInBrowser(agent.consoleUrl) },
+                            ) {
+                                Text("Ziskat API klic")
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Otevre ${agent.consoleUrl.substringAfter("://").substringBefore("/")} v prohlizeci",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Ulozit")
+                        OutlinedTextField(
+                            value = apiKeyInput,
+                            onValueChange = { apiKeyInput = it },
+                            label = { Text("API Key") },
+                            placeholder = {
+                                Text(if (agent.apiKeySet) "Zadejte novy klic pro zmenu" else "Zadejte API klic")
+                            },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        JPrimaryButton(
+                            onClick = {
+                                onSaveApiKey(apiKeyInput)
+                                apiKeyInput = ""
+                            },
+                            enabled = apiKeyInput.isNotBlank(),
+                        ) {
+                            Text("Ulozit")
+                        }
                     }
                 }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Pouziva lokalni Ollama - API klic neni potreba",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

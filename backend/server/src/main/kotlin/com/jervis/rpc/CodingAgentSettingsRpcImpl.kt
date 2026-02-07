@@ -33,6 +33,8 @@ class CodingAgentSettingsRpcImpl(
                     apiKeySet = storedKeys["claude"] == true || System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true,
                     provider = codingToolsProperties.claude.defaultProvider,
                     model = codingToolsProperties.claude.defaultModel,
+                    consoleUrl = "https://console.anthropic.com/settings/keys",
+                    requiresApiKey = true,
                 ),
                 CodingAgentConfigDto(
                     name = "junie",
@@ -41,22 +43,28 @@ class CodingAgentSettingsRpcImpl(
                     apiKeySet = storedKeys["junie"] == true || System.getenv("JUNIE_API_KEY")?.isNotBlank() == true,
                     provider = codingToolsProperties.junie.defaultProvider,
                     model = codingToolsProperties.junie.defaultModel,
+                    consoleUrl = "https://account.jetbrains.com",
+                    requiresApiKey = true,
                 ),
                 CodingAgentConfigDto(
                     name = "aider",
                     displayName = "Aider",
                     enabled = true,
-                    apiKeySet = true, // Aider uses Ollama by default, no API key needed
+                    apiKeySet = true,
                     provider = codingToolsProperties.aider.defaultProvider,
                     model = codingToolsProperties.aider.defaultModel,
+                    consoleUrl = "",
+                    requiresApiKey = false,
                 ),
                 CodingAgentConfigDto(
                     name = "openhands",
                     displayName = "OpenHands",
                     enabled = true,
-                    apiKeySet = true, // OpenHands uses Ollama by default
+                    apiKeySet = true,
                     provider = codingToolsProperties.openhands.defaultProvider,
                     model = codingToolsProperties.openhands.defaultModel,
+                    consoleUrl = "",
+                    requiresApiKey = false,
                 ),
             )
 

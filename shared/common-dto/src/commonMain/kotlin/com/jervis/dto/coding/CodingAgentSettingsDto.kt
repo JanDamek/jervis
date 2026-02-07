@@ -15,6 +15,10 @@ data class CodingAgentConfigDto(
     val apiKeySet: Boolean = false,
     val provider: String = "",
     val model: String = "",
+    /** URL to the provider's console where user can create/manage API keys. */
+    val consoleUrl: String = "",
+    /** Whether this agent requires an API key (false for agents using local Ollama). */
+    val requiresApiKey: Boolean = true,
 )
 
 @Serializable
