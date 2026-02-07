@@ -1,6 +1,6 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07 (rev.4)
+**Datum:** 2026-02-07 (rev.5)
 **Autor:** Automatizovaná analýza
 **Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling
 
@@ -22,6 +22,7 @@
 12. [Hybridní model routing – lokální + placené modely](#12-hybridní-model-routing--lokální--placené-modely)
 13. [Unified Agent Interface – Claude Code jako 4. coding agent](#13-unified-agent-interface--claude-code-jako-4-coding-agent)
 14. [Agent Settings UI & K8s Dynamic Scaling](#14-agent-settings-ui--k8s-dynamic-scaling)
+15. [K8s Strategie – Job vs Deployment vs Hybrid (revidovaná)](#15-k8s-strategie--job-vs-deployment-vs-hybrid-revidovaná)
 
 ---
 
@@ -2579,3 +2580,279 @@ data class ActiveTaskDto(
     val currentAction: String?,
 )
 ```
+
+---
+
+## 15. K8s Strategie – Job vs Deployment vs Hybrid (revidovaná)
+
+### 15.1 Proč čisté K8s Jobs NEJSOU ideální pro coding agenty
+
+Při bližší analýze jsou problémy:
+
+| Problém | Detail |
+|---------|--------|
+| **kRPC WebSocket** | Služby komunikují přes persistent WebSocket (`ICodingClient.execute()`). Job nemá stabilní Service endpoint před spuštěním |
+| **Sdílený PVC** | `jervis-data-pvc` (ReadWriteMany) – dva Aider Joby na stejném git repo = merge conflict |
+| **Cold start** | Každý Job = pull image + start container + init = 15-45s. Pro Aider task co trvá 30s je to 50% overhead |
+| **Callback pattern** | Musel by se přepsat ICodingClient z request/response na async callback – velký refactor |
+| **Log streaming** | Job pody nemají stabilní název – komplikuje `kubectl logs -f` i programatický streaming |
+
+### 15.2 Tři reálné strategie
+
+#### Strategie A: Deployment s `replicas: 0` + dynamický scale (DOPORUČENÁ)
+
+```
+Normální stav:     replicas: 0  → žádný pod běží, nulová spotřeba
+Task přijde:       orchestrátor → PATCH replicas: 1 → pod nastartuje
+Task dokončen:     orchestrátor → PATCH replicas: 0 → pod se uklidí
+Více tasků:        orchestrátor → PATCH replicas: N (do maxInstances)
+```
+
+**Implementace:**
+
+```python
+# service-orchestrator/app/k8s/agent_scaler.py
+
+from kubernetes import client, config
+
+class AgentScaler:
+    """Scale coding agent Deployments 0↔N dle potřeby."""
+
+    def __init__(self):
+        config.load_incluster_config()
+        self.apps_v1 = client.AppsV1Api()
+
+    DEPLOYMENT_MAP = {
+        "aider":       "jervis-aider",
+        "openhands":   "jervis-coding-engine",
+        "junie":       "jervis-junie",
+        "claude-code": "jervis-claude-code",
+    }
+
+    async def ensure_running(self, agent: str, desired_replicas: int = 1):
+        """Zajistí že agent má alespoň desired_replicas podů."""
+        deployment_name = self.DEPLOYMENT_MAP[agent]
+        current = self._get_replicas(deployment_name)
+
+        if current < desired_replicas:
+            self._scale(deployment_name, desired_replicas)
+            await self._wait_ready(deployment_name, timeout=60)
+
+    async def scale_down(self, agent: str):
+        """Scale na 0 po dokončení všech tasků."""
+        deployment_name = self.DEPLOYMENT_MAP[agent]
+        active_tasks = await self._count_active_tasks(agent)
+
+        if active_tasks == 0:
+            self._scale(deployment_name, 0)
+
+    async def scale_down_idle(self, idle_timeout_seconds: int = 300):
+        """Periodicky: scale down agenty co jsou idle > timeout."""
+        for agent, deployment in self.DEPLOYMENT_MAP.items():
+            current = self._get_replicas(deployment)
+            if current > 0:
+                last_activity = await self._get_last_activity(agent)
+                if last_activity and (now() - last_activity).seconds > idle_timeout_seconds:
+                    self._scale(deployment, 0)
+
+    def _scale(self, deployment_name: str, replicas: int):
+        self.apps_v1.patch_namespaced_deployment_scale(
+            deployment_name, "jervis",
+            body={"spec": {"replicas": replicas}},
+        )
+
+    def _get_replicas(self, deployment_name: str) -> int:
+        dep = self.apps_v1.read_namespaced_deployment(deployment_name, "jervis")
+        return dep.spec.replicas or 0
+```
+
+**Výhody:**
+- **Zachová kRPC WebSocket** – žádná změna komunikace, `ICodingClient.execute()` funguje beze změny
+- **Zachová Service endpoint** – `jervis-aider:3100` existuje vždy, jen se čeká na ready pod
+- **Scale-to-zero** – `replicas: 0` = nulové resources
+- **Známý cold start** – image cached na node, start = 10-20s (ne pull)
+- **Jednoduchá implementace** – jen `kubectl scale` / K8s API patch
+
+**Nevýhody:**
+- Startup stále 10-20s (ale to je přijatelné)
+- Orchestrátor potřebuje K8s API přístup (ServiceAccount + RBAC)
+
+#### Strategie B: Deployment `replicas: 1` + fronty (AKTUÁLNÍ)
+
+Současný stav – služba běží stále, přijímá tasky sekvenčně.
+
+**Pro:** Nulový cold start, jednoduchý.
+**Proti:** 4 Deploymenty × 256MB RAM = 1 GB zbytečně alokovaných resources i když nic nedělají.
+
+#### Strategie C: K8s Jobs pro izolované workspace tasky
+
+Vhodné JEN pokud se přepíše komunikační pattern na async callback a každý Job dostane vlastní workspace (ne sdílený PVC). To je velký refactor pro malý benefit v aktuálním scale.
+
+### 15.3 Doporučení: Strategie A s workspace izolací
+
+```
+┌─ Orchestrátor rozhodne: potřebuji Aider ─┐
+│                                            │
+│  1. Zkontroluj AgentConfigDto.maxInstances │
+│  2. Zkontroluj kolik tasků již běží        │
+│  3. Scale Deployment na potřebný počet     │
+│  4. Počkej na ready pod (max 60s)          │
+│  5. Pošli task přes kRPC WebSocket         │
+│  6. Streamuj výsledky do UI                │
+│  7. Po dokončení: scale down po idle       │
+└────────────────────────────────────────────┘
+```
+
+### 15.4 Workspace model (sdílený disk, per-task branch)
+
+**Aktuální stav:** Server připraví codebase na sdíleném PVC (`jervis-data-pvc`). Coding agenti si jen vytvoří branch a pracují na ní.
+
+**Problém s multiple replicas:** Dva agenti na stejném repo checkout = git lock conflict (`index.lock`).
+
+**Řešení: Git worktrees na sdíleném disku**
+
+```
+/opt/jervis/data/projects/my-project/             ← hlavní repo (připravený serverem)
+/opt/jervis/data/projects/my-project/.worktrees/   ← worktree root
+  task-abc123/                                     ← worktree pro task 1 (branch: task-abc123)
+  task-def456/                                     ← worktree pro task 2 (branch: task-def456)
+```
+
+Git worktrees sdílejí `.git` objects ale mají vlastní index – dva agenti mohou pracovat SOUČASNĚ bez konfliktu.
+
+**Flow:**
+1. Orchestrátor: `git worktree add .worktrees/task-{id} -b task/{id}`
+2. Coding agent dostane path: `.worktrees/task-{id}` (ne root repo)
+3. Agent pracuje normálně (commit, edit) – izolovaný od ostatních
+4. Po dokončení: orchestrátor mergnue branch (nebo vytvoří PR), `git worktree remove`
+
+**Cleanup:** Worktree co visí > 2h bez aktivity → automatic remove (cron/orchestrátor)
+
+### 15.5 Max instances – pravidla
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Settings > Agenti > Coding Agents                             │
+│                                                               │
+│  Globální limit concurrent coding tasků: [ 3 ▾]              │
+│  ⚠️ Omezeno sdíleným PVC a git worktrees                     │
+│                                                               │
+│  Agent           Enabled  Max ▾   Pozn.                       │
+│  ─────────────   ──────   ─────   ──────────────────────────  │
+│  Aider           [✓]      [ 2 ]   Rychlý, lokální model      │
+│  OpenHands       [✓]      [ 1 ]   Pomalý, těžký na resources  │
+│  Junie           [✓]      [ 1 ]   Placený (Anthropic)         │
+│  Claude Code     [✓]      [ 1 ]   Placený (Anthropic)         │
+│                                                               │
+│  ℹ️ Globální limit = max(aider) + max(openhands) + ... ale    │
+│    skutečně poběží maximálně "globální limit" naráz.          │
+│    Zbytek čeká ve frontě.                                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Logika v orchestrátoru:**
+
+```python
+class CodingTaskQueue:
+    """Fronta coding tasků s limity z AgentConfigDto."""
+
+    async def submit(self, agent: str, task: CodingTask) -> str:
+        config = await self.get_agent_config()
+
+        # 1. Agent enabled?
+        agent_config = config.get_agent(agent)
+        if not agent_config.enabled:
+            raise AgentDisabledError(f"{agent} je vypnutý v Settings")
+
+        # 2. Globální limit
+        total_running = await self.count_all_running()
+        if total_running >= config.max_concurrent_coding_agents:
+            return await self.enqueue(agent, task)  # Čeká ve frontě
+
+        # 3. Per-agent limit
+        agent_running = await self.count_running(agent)
+        if agent_running >= agent_config.max_instances:
+            return await self.enqueue(agent, task)  # Čeká ve frontě
+
+        # 4. Scale up + spustit
+        await self.scaler.ensure_running(agent, agent_running + 1)
+        worktree = await self.create_worktree(task)
+        return await self.execute(agent, task, worktree)
+
+    async def on_task_complete(self, agent: str, task_id: str):
+        """Po dokončení tasku: zpracuj frontu, scale down."""
+        await self.cleanup_worktree(task_id)
+
+        # Další task ve frontě?
+        next_task = await self.dequeue(agent)
+        if next_task:
+            worktree = await self.create_worktree(next_task)
+            await self.execute(agent, next_task, worktree)
+        else:
+            # Nic ve frontě → scale down po idle timeout
+            await self.scaler.schedule_scale_down(agent, delay=300)
+```
+
+### 15.6 RBAC pro orchestrátor – K8s API přístup
+
+```yaml
+# k8s/orchestrator-rbac.yaml (nový)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jervis-orchestrator
+  namespace: jervis
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jervis-orchestrator-role
+  namespace: jervis
+rules:
+  # Scale deployments (coding agents)
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "deployments"]
+    verbs: ["get", "patch"]
+  # Read pod status (pro Running Processes panel)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # Read pod logs (streaming do UI)
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jervis-orchestrator-binding
+  namespace: jervis
+subjects:
+  - kind: ServiceAccount
+    name: jervis-orchestrator
+    namespace: jervis
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jervis-orchestrator-role
+```
+
+### 15.7 Aktualizovaný K8s přehled
+
+| Služba | K8s typ | Replicas (idle) | Replicas (active) | Scaling |
+|--------|---------|-----------------|-------------------|---------|
+| **Kotlin Server** | Deployment | 1 | 1 | Statický |
+| **Python Orchestrator** | Deployment | 1 | 1 | Statický |
+| **Knowledgebase** | Deployment | 1 | 1 | Statický |
+| **Aider** | Deployment | **0** | 1-2 | Dynamický (AgentScaler) |
+| **OpenHands** | Deployment | **0** | 1 | Dynamický |
+| **Junie** | Deployment | **0** | 1 | Dynamický |
+| **Claude Code** | Deployment | **0** | 1 | Dynamický |
+| **Joern** | Deployment | 1 | 1 | Statický |
+| **Tika** | Deployment | 1 | 1 | Statický |
+| **Whisper** | Deployment | 1 | 1 | Statický |
+| **GitHub/GitLab/Atlassian** | Deployment | 1 | 1 | Statický |
+
+**Resource savings vs aktuální stav:**
+- Idle: 4 coding Deploymenty × ~256MB = **1 GB RAM ušetřeno** když nic neběží
+- GPU: Coding agenti nepoužívají GPU (volají Ollama/Anthropic API) → RAM only
