@@ -23,18 +23,17 @@ import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 
 /**
- * AgentOrchestratorService – routes requests to either:
- * 1. Python orchestrator (LangGraph) – for coding tasks requiring K8s Jobs, KB access, git ops
- * 2. KoogWorkflowService – for conversational queries, analysis, non-coding tasks
+ * AgentOrchestratorService – routes ALL requests to the Python orchestrator (LangGraph).
  *
- * The Python orchestrator is the brain for coding workflows:
- * - Decomposes tasks into goals → plans steps → delegates to coding agents (K8s Jobs)
- * - Evaluates results → handles git operations (commit/push with approval)
- * - Streams progress via SSE
+ * The Python orchestrator handles everything:
+ * - Coding tasks (K8s Jobs, git operations, approval flow)
+ * - Conversational queries, analysis, advice
+ * - Multi-goal decomposition and execution
+ *
+ * Kotlin server is a thin proxy: enqueue tasks, dispatch to Python, poll for results.
  */
 @Service
 class AgentOrchestratorService(
-    private val koogWorkflowService: KoogWorkflowService,
     private val pythonOrchestratorClient: PythonOrchestratorClient,
     private val preferenceService: PreferenceService,
     private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
@@ -46,9 +45,6 @@ class AgentOrchestratorService(
 
     /**
      * Enqueue a chat message for background processing.
-     *
-     * NOTE: This creates a NEW TaskDocument each time.
-     * For chat continuation, the RPC layer should find/reuse existing TaskDocument instead.
      */
     suspend fun enqueueChatTask(
         text: String,
@@ -58,7 +54,6 @@ class AgentOrchestratorService(
     ): TaskDocument {
         val normalizedText = czechKeyboardNormalizer.convertIfMistyped(text)
 
-        // Create TaskDocument - this is the single source of truth
         return taskService.createTask(
             taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
             content = normalizedText,
@@ -72,10 +67,7 @@ class AgentOrchestratorService(
     }
 
     /**
-     * Handle incoming chat request by creating a TaskContext and running appropriate workflow.
-     * This is the main entry point used by controllers.
-     *
-     * Routes to Python orchestrator for coding tasks, or Koog agent for conversational tasks.
+     * Handle incoming chat request by dispatching to Python orchestrator.
      *
      * @param onProgress Callback for sending progress updates to client
      */
@@ -116,7 +108,6 @@ class AgentOrchestratorService(
                 sourceUrn = SourceUrn.chat(clientIdTyped),
             )
 
-        // Run workflow with progress callback
         val response = run(taskContext, normalizedText, onProgress)
 
         logger.info { "AGENT_HANDLE_COMPLETE: correlationId=${taskContext.correlationId}" }
@@ -124,16 +115,13 @@ class AgentOrchestratorService(
     }
 
     /**
-     * Run agent workflow for the given taskContext and user input.
+     * Run agent workflow for the given task and user input.
      *
+     * All requests go to the Python orchestrator (LangGraph).
      * Three paths:
      * 1. Task has orchestratorThreadId → resume from Python orchestrator (approval flow)
-     * 2. New coding task → fire-and-forget dispatch to Python orchestrator
-     * 3. Non-coding / Python unavailable → Koog agent (blocking)
-     *
-     * For Python orchestrator path, this method dispatches asynchronously:
-     * sets task.state = PYTHON_ORCHESTRATING and returns immediately.
-     * BackgroundEngine.runOrchestratorResultLoop() handles results.
+     * 2. New task → fire-and-forget dispatch to Python orchestrator
+     * 3. Python unavailable → return error (no local fallback)
      *
      * @param onProgress Callback for sending progress updates to client
      */
@@ -157,58 +145,24 @@ class AgentOrchestratorService(
             }
         }
 
-        // Path 2: New coding task → fire-and-forget dispatch
-        if (shouldUsePythonOrchestrator(userInput)) {
-            try {
-                val dispatched = dispatchToPythonOrchestrator(task, userInput, onProgress)
-                if (dispatched) {
-                    logger.info { "AGENT_ORCHESTRATOR_DISPATCHED (python): correlationId=${task.correlationId}" }
-                    return ChatResponseDto("")  // Empty = dispatched, result via resultLoop
-                }
-            } catch (e: Exception) {
-                logger.warn(e) { "Python orchestrator failed, falling back to Koog: ${e.message}" }
-                onProgress("Python orchestrator nedostupný, používám Koog agenta...", emptyMap())
+        // Path 2: Dispatch to Python orchestrator
+        try {
+            val dispatched = dispatchToPythonOrchestrator(task, userInput, onProgress)
+            if (dispatched) {
+                logger.info { "AGENT_ORCHESTRATOR_DISPATCHED (python): correlationId=${task.correlationId}" }
+                return ChatResponseDto("")  // Empty = dispatched, result via resultLoop
             }
+        } catch (e: Exception) {
+            logger.error(e) { "Python orchestrator dispatch failed: ${e.message}" }
         }
 
-        // Path 3: Koog agent for conversational/non-coding tasks (blocking)
-        val response = koogWorkflowService.run(task, userInput, onProgress)
-
-        logger.info { "AGENT_ORCHESTRATOR_COMPLETE (koog): correlationId=${task.correlationId}" }
-        return response
-    }
-
-    /**
-     * Determine if the request should be routed to the Python orchestrator.
-     *
-     * Python orchestrator handles coding tasks that need:
-     * - Code generation/modification
-     * - Multi-file refactoring
-     * - K8s Job execution
-     * - Git operations with approval
-     */
-    private fun shouldUsePythonOrchestrator(userInput: String): Boolean {
-        val codingKeywords = listOf(
-            "implementuj", "implement", "naprogramuj", "code", "kód",
-            "oprav", "fix", "bug", "refactor", "refaktor",
-            "přidej", "add feature", "vytvoř", "create",
-            "uprav", "modify", "změn", "change",
-            "napiš", "write code", "generate",
-        )
-        val lowerInput = userInput.lowercase()
-        return codingKeywords.any { lowerInput.contains(it) }
+        // Path 3: Python orchestrator unavailable → return error
+        logger.error { "ORCHESTRATOR_UNAVAILABLE: correlationId=${task.correlationId}" }
+        return ChatResponseDto("Orchestrátor není momentálně dostupný. Zkuste to prosím později.")
     }
 
     /**
      * Fire-and-forget dispatch to Python orchestrator.
-     *
-     * Calls POST /orchestrate/stream → gets thread_id immediately.
-     * Stores thread_id in TaskDocument, changes state to PYTHON_ORCHESTRATING.
-     * BackgroundEngine.runOrchestratorResultLoop() polls for results.
-     *
-     * Concurrency control (two layers):
-     * 1. Kotlin: checks count of PYTHON_ORCHESTRATING tasks in DB (early guard)
-     * 2. Python: asyncio.Semaphore(1) → returns HTTP 429 if busy
      *
      * @return true if dispatched successfully, false if unavailable/busy
      */
@@ -229,11 +183,10 @@ class AgentOrchestratorService(
             return false
         }
 
-        onProgress("Spouštím Python orchestrator...", mapOf("phase" to "python_orchestrator"))
+        onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrator"))
 
         val rules = loadProjectRules(task.clientId, task.projectId)
 
-        // Resolve environment context for the project (if any)
         val environmentJson = task.projectId?.let { pid ->
             try {
                 environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
@@ -253,27 +206,22 @@ class AgentOrchestratorService(
             environment = environmentJson,
         )
 
-        // Fire-and-forget: get thread_id immediately, Python runs in background
-        // Returns null if Python is busy (HTTP 429)
         val streamResponse = pythonOrchestratorClient.orchestrateStream(request)
         if (streamResponse == null) {
             logger.info { "PYTHON_DISPATCH_BUSY: orchestrator returned 429, skipping" }
             return false
         }
 
-        // Store thread_id and change state to PYTHON_ORCHESTRATING
         val updatedTask = task.copy(
             state = TaskStateEnum.PYTHON_ORCHESTRATING,
             orchestratorThreadId = streamResponse.threadId,
         )
         taskRepository.save(updatedTask)
 
-        logger.info {
-            "PYTHON_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}"
-        }
+        logger.info { "PYTHON_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}" }
 
         onProgress(
-            "Orchestrátor zpracovává úkol na pozadí...",
+            "Orchestrátor zpracovává úkol...",
             mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),
         )
 
@@ -282,10 +230,6 @@ class AgentOrchestratorService(
 
     /**
      * Resume Python orchestrator after approval (USER_TASK → READY_FOR_GPU with answer).
-     *
-     * Calls POST /approve/{thread_id} with user's response (fire-and-forget).
-     * Python resumes the graph in background with asyncio.Semaphore concurrency control.
-     * Result handled by BackgroundEngine.runOrchestratorResultLoop() polling GET /status.
      *
      * @return true if dispatched successfully
      */
@@ -303,7 +247,6 @@ class AgentOrchestratorService(
 
         onProgress("Pokračuji v orchestraci...", mapOf("phase" to "python_resume"))
 
-        // User input contains the approval response (e.g., "ano", "approve", etc.)
         val approved = userInput.lowercase().let {
             it.contains("ano") || it.contains("yes") || it.contains("approve") || it.contains("schval")
         }
@@ -314,7 +257,6 @@ class AgentOrchestratorService(
             reason = userInput,
         )
 
-        // Update state back to PYTHON_ORCHESTRATING (graph is running again)
         val updatedTask = task.copy(state = TaskStateEnum.PYTHON_ORCHESTRATING)
         taskRepository.save(updatedTask)
 

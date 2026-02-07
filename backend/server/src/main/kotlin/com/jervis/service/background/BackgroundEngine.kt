@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
  *    - Only runs when no active user requests (checked via LlmLoadMonitor)
- *    - Process READY_FOR_GPU tasks through KoogWorkflowAgent
+ *    - Process READY_FOR_GPU tasks through Python orchestrator
  *    - Loads TaskMemory context from Qualifier for efficient execution
  *    - Preemption: Interrupted immediately when a user request arrives
  *

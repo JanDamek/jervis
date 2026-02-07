@@ -5,8 +5,7 @@ logging:
     io.ktor: INFO
     org.springframework: INFO
     com.arangodb.internal.serde.SerdeUtils: INFO
-    ai.koog: INFO
-    com.jervis.koog: INFO
+    com.jervis.qualifier: INFO
     org.springframework.web: WARN
     org.springframework.web.reactive.socket: WARN
     org.springframework.web.reactive.handler: WARN
@@ -100,11 +99,10 @@ jervis:
       client-id: ${ATLASSIAN_CLIENT_ID}
       client-secret: ${ATLASSIAN_CLIENT_SECRET}
       scopes: read:jira-work,read:jira-user,read:confluence-space.summary,read:confluence-content.all
-  koog:
-    max-iterations: 50
-    qualifier-max-retries: 5
-    data-dir: /Users/damekjan/git/jervis/data
-    request-timeout-ms: 0
+  qualifier:
+    max-retries: 5
+    initial-backoff-ms: 1000
+    max-backoff-ms: 300000
   background:
     wait-on-startup: 10s
     wait-on-error: 1m

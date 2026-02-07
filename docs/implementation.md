@@ -16,10 +16,15 @@
 
 ---
 
-## Step 2 Verification Checklist
+## Step 2 Verification Checklist (REMOVED)
 
-**Status:** Production Documentation
-**Last updated:** 2026-02-04
+> **HISTORICAL** - This section documented Koog qualifier pipeline verification.
+> Koog framework was removed on 2026-02-07. All orchestration now uses Python orchestrator (LangGraph).
+> Qualifier simplified to `SimpleQualifierAgent` that calls KB microservice directly.
+> See `docs/koog-audit.md` for removal details.
+
+~~**Status:** Production Documentation~~
+~~**Last updated:** 2026-02-04~~
 
 ### 1. Compilation Check
 

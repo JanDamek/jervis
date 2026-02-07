@@ -38,7 +38,7 @@ private val logger = KotlinLogging.logger {}
  *   1. Reads NEW documents from MongoDB
  *   2. Fetches COMPLETE issue details from provider-specific API
  *   3. Creates BUGTRACKER_PROCESSING PendingTask with full content
- * - KoogQualifierAgent (CPU) handles ALL structuring
+ * - Qualifier (CPU) handles ALL structuring
  *
  * Provider-specific logic:
  * - Atlassian: fetches full issue details + attachments via IAtlassianClient

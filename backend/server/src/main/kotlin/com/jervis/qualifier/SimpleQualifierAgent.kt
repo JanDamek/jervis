@@ -1,4 +1,4 @@
-package com.jervis.koog.qualifier
+package com.jervis.qualifier
 
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
@@ -154,27 +154,6 @@ class SimpleQualifierAgent(
         }
     }
 
-    private fun guessContentType(filename: String): String {
-        val ext = filename.substringAfterLast('.', "").lowercase()
-        return when (ext) {
-            "png" -> "image/png"
-            "jpg", "jpeg" -> "image/jpeg"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "bmp" -> "image/bmp"
-            "pdf" -> "application/pdf"
-            "doc" -> "application/msword"
-            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            "xls" -> "application/vnd.ms-excel"
-            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            "txt" -> "text/plain"
-            "html", "htm" -> "text/html"
-            "json" -> "application/json"
-            "xml" -> "application/xml"
-            else -> "application/octet-stream"
-        }
-    }
-
     private fun mapTaskTypeToSourceType(taskType: TaskTypeEnum): String {
         return when (taskType) {
             TaskTypeEnum.EMAIL_PROCESSING -> "email"
@@ -189,7 +168,6 @@ class SimpleQualifierAgent(
     }
 
     private fun extractSubject(task: TaskDocument): String? {
-        // Try to extract subject from first line or metadata
         return task.content.lineSequence().firstOrNull()?.take(200)
     }
 

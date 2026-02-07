@@ -49,9 +49,6 @@ kotlin {
             implementation(libs.kotlinx.rpc.krpc.ktor.client)
             implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
 
-            // Koog A2A
-            api(libs.koog.a2a.client)
-            api(libs.koog.a2a.transport.client.jsonrpc.http)
         }
 
         jvmMain.dependencies {

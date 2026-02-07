@@ -14,8 +14,7 @@ data:
         io.ktor: INFO
         org.springframework: INFO
         com.arangodb.internal.serde.SerdeUtils: INFO
-        ai.koog: INFO
-        com.jervis.koog: INFO
+        com.jervis.qualifier: INFO
         org.springframework.web: WARN
         org.springframework.web.reactive.socket: WARN
         org.springframework.web.reactive.handler: WARN
@@ -91,9 +90,10 @@ data:
     jervis:
       security:
         client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
-      koog:
-        max-iterations: 100
-        qualifier-max-retries: 5
+      qualifier:
+        max-retries: 5
+        initial-backoff-ms: 1000
+        max-backoff-ms: 300000
       background:
         wait-on-startup: 10s
         wait-on-error: 1m

@@ -369,7 +369,7 @@ ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token pro Claude CLI + Aide
 - Lifecycle stav tasku (`TaskStateEnum`)
 - `orchestratorThreadId` – link na LangGraph checkpoint
 - `pendingUserQuestion` / `userQuestionContext` – USER_TASK kontext
-- `agentCheckpointJson` – stav Koog agentů (Python orchestrátor tento field nepoužívá)
+- `agentCheckpointJson` – legacy field (Koog removed, unused)
 
 **LangGraph checkpoints v MongoDB** (Python orchestrátor, kolekce `checkpoints`):
 - Interní stav grafu (goals, steps, step_results, evaluation)
@@ -465,7 +465,7 @@ READY_FOR_GPU
   │                                 → POST /approve/{thread_id}
   │                                 → PYTHON_ORCHESTRATING (opakuje se)
   │
-  └─── Koog agent (blocking, stávající flow)
+  └─── Error: orchestrátor nedostupný
 ```
 
 ---

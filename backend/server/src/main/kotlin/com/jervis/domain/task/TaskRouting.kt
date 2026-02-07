@@ -1,11 +1,11 @@
 package com.jervis.domain.task
 
 /**
- * Task routing decision from KoogQualifierAgent (CPU).
+ * Task routing decision from qualifier (CPU).
  *
  * Graph-Based Routing Architecture:
  * - DONE: Simple document, no further analysis needed (RAG + Graph already created)
- * - READY_FOR_GPU: Complex analysis needed, route to KoogWorkflowAgent (GPU)
+ * - READY_FOR_GPU: Complex analysis needed, route to Python orchestrator
  */
 data class TaskRouting(
     /** Routing decision: DONE or READY_FOR_GPU */

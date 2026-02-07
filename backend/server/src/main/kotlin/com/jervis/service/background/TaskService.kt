@@ -9,7 +9,7 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
-import com.jervis.configuration.properties.KoogProperties
+import com.jervis.configuration.properties.QualifierProperties
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
@@ -26,7 +26,7 @@ import java.time.Instant
 class TaskService(
     private val taskRepository: TaskRepository,
     private val tikaTextExtractionService: TikaTextExtractionService,
-    private val koogProperties: KoogProperties,
+    private val qualifierProperties: QualifierProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -209,8 +209,8 @@ class TaskService(
 
         // Exponential backoff: min(initialMs * 2^(retry-1), maxMs)
         val backoffMs = minOf(
-            koogProperties.qualifierInitialBackoffMs * (1L shl minOf(newRetryCount - 1, 30)),
-            koogProperties.qualifierMaxBackoffMs,
+            qualifierProperties.initialBackoffMs * (1L shl minOf(newRetryCount - 1, 30)),
+            qualifierProperties.maxBackoffMs,
         )
         val nextRetryAt = Instant.now().plusMillis(backoffMs)
 
