@@ -31,7 +31,7 @@ app = Server("jervis-kb")
 # Tenant context from environment
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
 PROJECT_ID = os.environ.get("PROJECT_ID") or None
-KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8100")
+KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8080")
 
 
 def _resolve_scope(scope: str = "auto") -> tuple[str, str | None]:

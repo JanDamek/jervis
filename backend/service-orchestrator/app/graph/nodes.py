@@ -2,10 +2,19 @@
 
 Each function takes OrchestratorState and returns a partial state update.
 Orchestrator is the brain – agent is just the executor.
+
+Flow:
+    decompose → select_goal → plan_steps → execute_step → evaluate → next_step
+                    ↑                                              │
+                    └──── advance_goal ←── (more goals) ───────────┘
+                                           │
+                                           ↓ (all goals done)
+                                    git_operations → report
 """
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 from typing import Any
@@ -15,7 +24,6 @@ from langgraph.types import interrupt
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
-from app.kb.prefetch import prefetch_kb_context
 from app.llm.provider import llm_provider
 from app.models import (
     AgentType,
@@ -104,6 +112,29 @@ async def decompose(state: dict) -> dict:
     }
 
 
+# --- Node: select_goal ---
+
+def select_goal(state: dict) -> dict:
+    """Select the current goal for processing.
+
+    Logs the current goal and validates the index. No state mutation needed –
+    the goal is already selected by current_goal_index.
+    """
+    goals = [Goal(**g) for g in state["goals"]]
+    idx = state["current_goal_index"]
+
+    if idx >= len(goals):
+        logger.error("Goal index %d out of range (%d goals)", idx, len(goals))
+        return {"error": f"Goal index {idx} out of range ({len(goals)} goals)"}
+
+    goal = goals[idx]
+    logger.info(
+        "Selected goal %d/%d: %s (complexity=%s)",
+        idx + 1, len(goals), goal.title, goal.complexity,
+    )
+    return {}
+
+
 # --- Node: plan_steps ---
 
 async def plan_steps(state: dict) -> dict:
@@ -171,7 +202,7 @@ async def execute_step(state: dict) -> dict:
     step = steps[idx]
 
     # Pre-fetch KB context
-    kb_context = await prefetch_kb_context(
+    kb_context = await _prefetch_kb_safe(
         task_description=step.instructions,
         client_id=task.client_id,
         project_id=task.project_id,
@@ -208,10 +239,31 @@ async def execute_step(state: dict) -> dict:
     )
 
     # Append to results
-    existing_results = state.get("step_results", [])
+    existing_results = list(state.get("step_results", []))
     existing_results.append(step_result.model_dump())
 
     return {"step_results": existing_results}
+
+
+async def _prefetch_kb_safe(
+    task_description: str,
+    client_id: str,
+    project_id: str | None,
+    files: list[str],
+) -> str:
+    """Pre-fetch KB context with error handling."""
+    try:
+        from app.kb.prefetch import prefetch_kb_context
+
+        return await prefetch_kb_context(
+            task_description=task_description,
+            client_id=client_id,
+            project_id=project_id,
+            files=files,
+        )
+    except Exception as e:
+        logger.warning("KB pre-fetch failed, continuing without context: %s", e)
+        return ""
 
 
 # --- Node: evaluate ---
@@ -231,14 +283,10 @@ async def evaluate(state: dict) -> dict:
     if not last_result.success:
         checks.append(f"FAILED: Step {last_result.step_index} failed: {last_result.summary}")
 
-    # Check forbidden files
+    # Check forbidden files using fnmatch
     for f in last_result.changed_files:
         for pattern in rules.forbidden_files:
-            # Simple glob matching
-            if pattern.startswith("*"):
-                if f.endswith(pattern[1:]):
-                    checks.append(f"BLOCKED: Changed forbidden file: {f}")
-            elif f.startswith(pattern.rstrip("*")):
+            if fnmatch.fnmatch(f, pattern):
                 checks.append(f"BLOCKED: Changed forbidden file: {f}")
 
     # Check max file count
@@ -261,29 +309,47 @@ async def evaluate(state: dict) -> dict:
     return {"evaluation": evaluation.model_dump()}
 
 
-# --- Node: next_step ---
+# --- Node: next_step (conditional router) ---
 
 def next_step(state: dict) -> str:
-    """Route to next step or git operations."""
+    """Route to next step, next goal, git operations, or report.
+
+    Returns:
+        "execute_step" — more steps in current goal
+        "advance_goal" — current goal done, more goals remain
+        "git_operations" — all goals done, proceed to git
+        "report" — evaluation failed, skip to report
+    """
     steps = state.get("steps", [])
-    current_idx = state.get("current_step_index", 0)
+    current_step = state.get("current_step_index", 0)
+    goals = state.get("goals", [])
+    current_goal = state.get("current_goal_index", 0)
     evaluation = state.get("evaluation", {})
 
     # If evaluation failed, go to report (skip remaining steps)
     if evaluation and not evaluation.get("acceptable", True):
         return "report"
 
-    # More steps?
-    if current_idx + 1 < len(steps):
+    # More steps in current goal?
+    if current_step + 1 < len(steps):
         return "execute_step"
 
-    # All steps done – proceed to git
+    # More goals?
+    if current_goal + 1 < len(goals):
+        return "advance_goal"
+
+    # All goals done – proceed to git
     return "git_operations"
 
 
 def advance_step(state: dict) -> dict:
     """Advance to next step index."""
     return {"current_step_index": state.get("current_step_index", 0) + 1}
+
+
+def advance_goal(state: dict) -> dict:
+    """Advance to next goal index."""
+    return {"current_goal_index": state.get("current_goal_index", 0) + 1}
 
 
 # --- Node: git_operations ---
@@ -313,6 +379,8 @@ async def git_operations(state: dict) -> dict:
     for r in step_results:
         changed_files.extend(StepResult(**r).changed_files)
 
+    workspace_path = f"{settings.data_root}/{task.workspace_path}"
+
     # --- COMMIT approval gate ---
     if rules.require_approval_commit:
         approval = interrupt({
@@ -329,6 +397,13 @@ async def git_operations(state: dict) -> dict:
             )
             return {"branch": None}
 
+    # Prepare workspace for git delegation mode
+    workspace_manager.prepare_git_workspace(
+        workspace_path=workspace_path,
+        client_id=task.client_id,
+        project_id=task.project_id,
+    )
+
     # Delegate commit to coding agent (ALLOW_GIT=true)
     commit_instructions = (
         f"Commit all current changes on branch '{branch}'.\n"
@@ -344,7 +419,7 @@ async def git_operations(state: dict) -> dict:
         agent_type=AgentType.CLAUDE.value,
         client_id=task.client_id,
         project_id=task.project_id,
-        workspace_path=f"{settings.data_root}/{task.workspace_path}",
+        workspace_path=workspace_path,
         allow_git=True,
         instructions_override=commit_instructions,
     )
@@ -373,7 +448,7 @@ async def git_operations(state: dict) -> dict:
             agent_type=AgentType.CLAUDE.value,
             client_id=task.client_id,
             project_id=task.project_id,
-            workspace_path=f"{settings.data_root}/{task.workspace_path}",
+            workspace_path=workspace_path,
             allow_git=True,
             instructions_override=push_instructions,
         )

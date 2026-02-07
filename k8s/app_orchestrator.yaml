@@ -48,6 +48,12 @@ spec:
                   name: jervis-secrets
                   key: ANTHROPIC_API_KEY
                   optional: true
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: GOOGLE_API_KEY
+                  optional: true
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data

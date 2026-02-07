@@ -1,12 +1,12 @@
 """LangGraph StateGraph – main orchestrator workflow.
 
 Flow:
-    decompose → plan_steps → execute_step → evaluate → next_step
-                    ↑                                      │
-                    └──────────── (more steps) ────────────┘
-                                      │
-                                      ↓ (all done)
-                               git_operations → report
+    decompose → select_goal → plan_steps → execute_step → evaluate → next_step
+                    ↑                                              │
+                    └──── advance_goal ←── (more goals) ───────────┘
+                                           │
+                                           ↓ (all goals done)
+                                    git_operations → report
 
 State persistence:
     Uses AsyncMongoDBSaver for persistent checkpointing.
@@ -28,6 +28,7 @@ from langgraph.types import Command
 
 from app.config import settings
 from app.graph.nodes import (
+    advance_goal,
     advance_step,
     decompose,
     evaluate,
@@ -36,6 +37,7 @@ from app.graph.nodes import (
     next_step,
     plan_steps,
     report,
+    select_goal,
 )
 from app.models import CodingTask, OrchestrateRequest, ProjectRules
 
@@ -80,15 +82,28 @@ def build_orchestrator_graph() -> StateGraph:
     - Orchestrator is the brain (decides what, when, conditions)
     - Coding agents are hands (execute specific steps)
     - Git operations: orchestrator DECIDES, agent EXECUTES
+
+    Nodes (9):
+        decompose     — break user query into goals
+        select_goal   — pick current goal by index
+        plan_steps    — create execution steps for current goal
+        execute_step  — run one coding step via K8s Job
+        evaluate      — check step result against rules
+        advance_step  — increment step index
+        advance_goal  — increment goal index
+        git_operations — commit/push with approval gates
+        report        — generate final summary
     """
     graph = StateGraph(dict)
 
     # Add nodes
     graph.add_node("decompose", decompose)
+    graph.add_node("select_goal", select_goal)
     graph.add_node("plan_steps", plan_steps)
     graph.add_node("execute_step", execute_step)
     graph.add_node("evaluate", evaluate)
     graph.add_node("advance_step", advance_step)
+    graph.add_node("advance_goal", advance_goal)
     graph.add_node("git_operations", git_operations)
     graph.add_node("report", report)
 
@@ -96,7 +111,8 @@ def build_orchestrator_graph() -> StateGraph:
     graph.set_entry_point("decompose")
 
     # Linear edges
-    graph.add_edge("decompose", "plan_steps")
+    graph.add_edge("decompose", "select_goal")
+    graph.add_edge("select_goal", "plan_steps")
     graph.add_edge("plan_steps", "execute_step")
     graph.add_edge("execute_step", "evaluate")
 
@@ -106,6 +122,7 @@ def build_orchestrator_graph() -> StateGraph:
         next_step,
         {
             "execute_step": "advance_step",
+            "advance_goal": "advance_goal",
             "git_operations": "git_operations",
             "report": "report",
         },
@@ -113,6 +130,9 @@ def build_orchestrator_graph() -> StateGraph:
 
     # Advance step -> execute next step
     graph.add_edge("advance_step", "execute_step")
+
+    # Advance goal -> select next goal -> plan new steps
+    graph.add_edge("advance_goal", "select_goal")
 
     # Git operations -> report
     graph.add_edge("git_operations", "report")
@@ -210,7 +230,7 @@ async def run_orchestration_streaming(
         name = event.get("name", "")
 
         if kind == "on_chain_start" and name in (
-            "decompose", "plan_steps", "execute_step",
+            "decompose", "select_goal", "plan_steps", "execute_step",
             "evaluate", "git_operations", "report",
         ):
             yield {
@@ -220,7 +240,7 @@ async def run_orchestration_streaming(
             }
 
         elif kind == "on_chain_end" and name in (
-            "decompose", "plan_steps", "execute_step",
+            "decompose", "select_goal", "plan_steps", "execute_step",
             "evaluate", "git_operations", "report",
         ):
             output = event.get("data", {}).get("output", {})

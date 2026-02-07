@@ -96,14 +96,18 @@ GET  /health                 # Health check
 - Approval: interrupt → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
 - **Žádné Python → Kotlin callbacky** (kotlin_client.py je minimální)
 
-**LangGraph StateGraph:**
+**LangGraph StateGraph (9 nodes):**
 ```
 [decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
-                    ↑                                              │
-                    └──────────── [next_step] ←────────────────────┘
-                                      │
-                                      ↓ (all done)
-                               [git_operations] → [report]
+                    ↑                               ↑                │
+                    │                               │           [next_step]
+                    │                               │                │
+                    └── [advance_goal] ←── more goals ───────────────┤
+                                                    │                │
+                                           [advance_step] ← more steps
+                                                                     │
+                                                                     ↓ (all done)
+                                                              [git_operations] → [report]
 ```
 
 **State model:**
@@ -126,13 +130,14 @@ class OrchestratorState(TypedDict):
     current_step_index: int
     step_results: list[StepResult]
 
+    # Evaluation
+    evaluation: dict | None
+
     # Output
     branch: str | None
     final_result: str | None
     artifacts: list[str]
-
-    # Streaming
-    messages: Annotated[list, add_messages]
+    error: str | None
 ```
 
 #### B. K8s Job Runner (`agents/job_runner.py`)
@@ -152,8 +157,10 @@ Doplní instrukce, KB kontext a agent-specifickou konfiguraci do existujícího 
 
 **Klíčové funkce:**
 - `prepare_workspace(task_id, client_id, project_id, workspace, instructions, agent_type, kb_context)`
-- `setup_claude_workspace(workspace, client_id, project_id, kb_context)` – MCP + CLAUDE.md
-- `setup_aider_workspace(workspace, files, kb_context)` – .aider.conf.yml
+- `prepare_git_workspace(workspace_path, client_id, project_id)` – CLAUDE.md pro git delegaci
+- `_setup_claude_workspace(workspace, client_id, project_id, kb_context)` – MCP + CLAUDE.md (FORBID git)
+- `_setup_claude_git_workspace(workspace, client_id, project_id)` – CLAUDE.md pro ALLOW_GIT=true
+- `_setup_aider_workspace(workspace, files, kb_context)` – .aider.conf.yml
 - `cleanup_workspace(workspace)` – smaže .jervis/ soubory
 
 #### D. MCP Server pro KB (`service-kb-mcp/`)
@@ -253,7 +260,7 @@ class ApprovalRequest(BaseModel):
 
 ### Fáze 2: Core workflow
 5. `graph/orchestrator.py` – LangGraph StateGraph
-6. `graph/nodes.py` – decompose, plan, execute_step, evaluate, git_operations
+6. `graph/nodes.py` – decompose, select_goal, plan, execute_step, evaluate, advance_step, advance_goal, git_operations, report
 7. `agents/workspace_manager.py` – příprava workspace
 8. `agents/job_runner.py` – K8s Job CRUD + log streaming
 
@@ -320,29 +327,35 @@ KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB service (http://jervis-knowledge
 K8S_NAMESPACE         app_orchestrator.yaml  Namespace pro K8s Jobs (jervis)
 DATA_ROOT             app_orchestrator.yaml  Sdílený PVC (/opt/jervis/data)
 OLLAMA_URL            app_orchestrator.yaml  Lokální LLM (http://192.168.100.117:11434)
-ANTHROPIC_API_KEY     jervis-secrets         Fallback LLM (orchestrátor) + fallback auth (Jobs)
+ANTHROPIC_API_KEY     jervis-secrets         Cloud LLM pro orchestrátor (critical/complex tasks)
+GOOGLE_API_KEY        jervis-secrets         Gemini pro ultra-large context (>49k tokenů, až 1M)
 CONTAINER_REGISTRY    app_orchestrator.yaml  Registry pro Job images
 
 Jobs (injektované z jervis-secrets do K8s Jobs, NE do orchestrátoru):
 CLAUDE_CODE_OAUTH_TOKEN  jervis-secrets      Max účet OAuth – Claude Code CLI preferuje tento
-ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token fallback pro Claude CLI + Aider/OpenHands
+ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token pro Claude CLI + Aider/OpenHands
 ```
 
-**Autentizace – dva klíče, různé účely:**
+**Autentizace – tři klíče, různé účely:**
 
 | Secret | Co to je | Kdo ho používá |
 |--------|----------|----------------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | **Max účet** (OAuth) | Claude Code CLI v K8s Jobs – preferovaný auth |
-| `ANTHROPIC_API_KEY` | **API klíč** (pay-per-token) | Orchestrátor fallback + Job fallback pokud chybí OAuth |
+| `ANTHROPIC_API_KEY` | **API klíč** (pay-per-token) | Orchestrátor (cloud tiers) + Job auth pokud chybí OAuth |
+| `GOOGLE_API_KEY` | **Gemini API** | Orchestrátor – CLOUD_LARGE_CONTEXT tier (>49k tokenů) |
 
 **Orchestrátorova vlastní logika** (`llm/provider.py`):
-- Decompose + plan běží na **Ollama** (LOCAL_FAST / LOCAL_STANDARD)
-- Na Anthropic API eskaluje JEN jako fallback: 2× selhání lokálního modelu,
-  >32k context, nebo user preference "quality"
-- V praxi orchestrátor **skoro nikdy** nevolá Anthropic API
+- Decompose + plan běží na **Ollama** (LOCAL_FAST / LOCAL_STANDARD / LOCAL_LARGE)
+- Cloud modely **NEJSOU failure fallback** pro lokální modely
+- Cloud se použije JEN pro legitimní potřeby:
+  - Ultra-large context (>49k tokenů) → **Gemini** (CLOUD_LARGE_CONTEXT, až 1M tokenů)
+  - Critical architecture/design → **Anthropic** (CLOUD_REASONING / CLOUD_PREMIUM)
+  - Critical code changes → **Anthropic** (CLOUD_CODING)
+  - Explicitní user preference "quality" → CLOUD_REASONING
+- Gemini je **naprostá nezbytnost** – jen když lokální kontext nestačí
 
 **K8s Jobs pro coding agenty** (`agents/job_runner.py`):
-- Job runner injektuje OBA klíče z `jervis-secrets` (ne z vlastního env)
+- Job runner injektuje `ANTHROPIC_API_KEY` a `CLAUDE_CODE_OAUTH_TOKEN` z `jervis-secrets`
 - Claude Code CLI preferuje `CLAUDE_CODE_OAUTH_TOKEN` (Max) → API key je fallback
 - Aider/OpenHands/Junie používají `ANTHROPIC_API_KEY` přímo (nemají OAuth)
 

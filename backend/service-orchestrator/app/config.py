@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # LLM providers
     ollama_url: str = os.getenv("OLLAMA_URL", "http://192.168.100.117:11434")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
 
     # K8s
     k8s_namespace: str = os.getenv("K8S_NAMESPACE", "jervis")
@@ -49,6 +50,9 @@ class Settings(BaseSettings):
     )
     default_premium_model: str = os.getenv(
         "DEFAULT_PREMIUM_MODEL", "claude-opus-4-6"
+    )
+    default_large_context_model: str = os.getenv(
+        "DEFAULT_LARGE_CONTEXT_MODEL", "gemini-2.5-pro"
     )
 
     # Agent timeouts (seconds)

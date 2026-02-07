@@ -1,7 +1,14 @@
 """LLM provider abstraction using litellm.
 
-Supports local Ollama models and cloud providers (Anthropic, OpenAI).
-Implements EscalationPolicy for automatic tier selection.
+Supports local Ollama models and cloud providers (Anthropic, Google).
+Implements EscalationPolicy for tier selection.
+
+IMPORTANT – Cloud models are NOT failure fallbacks.
+Cloud tiers exist only for legitimate capability needs:
+- Ultra-large context (>49k tokens → Gemini 1M)
+- Critical architecture/design decisions
+- Explicit user preference for quality
+Local model failures are NEVER escalated to cloud.
 """
 
 from __future__ import annotations
@@ -42,51 +49,59 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.CLOUD_PREMIUM: {
         "model": f"anthropic/{settings.default_premium_model}",
     },
+    ModelTier.CLOUD_LARGE_CONTEXT: {
+        "model": f"google/{settings.default_large_context_model}",
+    },
 }
 
 
 class EscalationPolicy:
-    """Decides when to escalate from local to cloud model."""
+    """Decides when to use cloud models instead of local.
+
+    RULES (invariant):
+    - Local models (Ollama) are the DEFAULT – always used when sufficient
+    - Cloud models are NEVER failure fallbacks for local models
+    - Cloud is used ONLY for legitimate capability needs:
+      1. Ultra-large context (>49k tokens) → CLOUD_LARGE_CONTEXT (Gemini, 1M)
+      2. Critical architecture/design → CLOUD_REASONING / CLOUD_PREMIUM
+      3. Critical code changes → CLOUD_CODING
+      4. Explicit user preference "quality" → CLOUD_REASONING
+    - Gemini is ONLY for context that exceeds local capacity (absolute necessity)
+    """
 
     def select_tier(
         self,
         task_type: str,
         complexity: Complexity,
-        context_tokens: int,
-        local_failures: int = 0,
+        context_tokens: int = 0,
         user_preference: str = "balanced",
     ) -> ModelTier:
-        # User explicitly wants quality
+        # 1. Ultra-large context → Gemini (only when absolutely necessary)
+        if context_tokens > 49_000:
+            return ModelTier.CLOUD_LARGE_CONTEXT
+
+        # 2. User explicitly wants quality → cloud reasoning
         if user_preference == "quality":
             return ModelTier.CLOUD_REASONING
 
-        # Local model failed 2x -> escalate
-        if local_failures >= 2:
-            return ModelTier.CLOUD_REASONING
-
-        # Large context -> cloud (200k+ context)
-        if context_tokens > 32_000:
-            if user_preference == "economy":
-                return ModelTier.LOCAL_LARGE
-            return ModelTier.CLOUD_REASONING
-
-        # Complex coding -> cloud
-        if task_type == "code_change" and complexity in (
-            Complexity.COMPLEX,
-            Complexity.CRITICAL,
-        ):
+        # 3. Critical complexity → cloud
+        if complexity == Complexity.CRITICAL:
+            if task_type in ("architecture", "design_review"):
+                return ModelTier.CLOUD_PREMIUM
             return ModelTier.CLOUD_CODING
 
-        # Architectural decision -> cloud reasoning
-        if task_type in ("architecture", "design_review") and complexity != Complexity.SIMPLE:
+        # 4. Complex architecture → cloud reasoning
+        if task_type in ("architecture", "design_review") and complexity == Complexity.COMPLEX:
             return ModelTier.CLOUD_REASONING
 
-        # Critical -> premium
-        if complexity == Complexity.CRITICAL:
-            return ModelTier.CLOUD_PREMIUM
+        # 5. Complex code changes → cloud coding
+        if task_type == "code_change" and complexity == Complexity.COMPLEX:
+            return ModelTier.CLOUD_CODING
 
-        # Default: local
-        if context_tokens > 16_000:
+        # 6. Default: local tiers based on context size
+        if context_tokens > 32_000:
+            return ModelTier.LOCAL_LARGE
+        if context_tokens > 8_000:
             return ModelTier.LOCAL_STANDARD
         return ModelTier.LOCAL_FAST
 
@@ -117,6 +132,8 @@ class LLMProvider:
 
         if config.get("api_base"):
             kwargs["api_base"] = config["api_base"]
+        if config.get("num_ctx"):
+            kwargs["num_ctx"] = config["num_ctx"]
         if tools:
             kwargs["tools"] = tools
 
@@ -144,6 +161,8 @@ class LLMProvider:
 
         if config.get("api_base"):
             kwargs["api_base"] = config["api_base"]
+        if config.get("num_ctx"):
+            kwargs["num_ctx"] = config["num_ctx"]
 
         response = await litellm.acompletion(**kwargs)
         return response
@@ -153,7 +172,6 @@ class LLMProvider:
         task_type: str = "general",
         complexity: Complexity = Complexity.MEDIUM,
         context_tokens: int = 0,
-        local_failures: int = 0,
         user_preference: str = "balanced",
     ) -> ModelTier:
         """Select model tier based on task characteristics."""
@@ -161,7 +179,6 @@ class LLMProvider:
             task_type=task_type,
             complexity=complexity,
             context_tokens=context_tokens,
-            local_failures=local_failures,
             user_preference=user_preference,
         )
 

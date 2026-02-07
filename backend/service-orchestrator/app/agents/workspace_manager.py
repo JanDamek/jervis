@@ -196,6 +196,27 @@ class WorkspaceManager:
 
         (workspace / ".aider.conf.yml").write_text("\n".join(config_lines))
 
+    def prepare_git_workspace(
+        self,
+        workspace_path: str,
+        client_id: str,
+        project_id: str | None,
+    ):
+        """Prepare workspace for git delegation mode (ALLOW_GIT=true).
+
+        Overwrites CLAUDE.md with git-specific instructions that ALLOW git
+        operations. Called from git_operations node before running the
+        git commit/push Job.
+
+        Args:
+            workspace_path: Absolute path to workspace on PVC.
+            client_id: Client ID for scoping.
+            project_id: Project ID (optional).
+        """
+        workspace = Path(workspace_path)
+        self._setup_claude_git_workspace(workspace, client_id, project_id)
+        logger.info("Workspace prepared for git delegation: %s", workspace)
+
     async def cleanup_workspace(self, project_path: str):
         """Remove .jervis/ files after task completion."""
         workspace = self.data_root / project_path

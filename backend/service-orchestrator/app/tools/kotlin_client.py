@@ -1,13 +1,18 @@
 """REST client for Kotlin server internal API.
 
-Minimal client – only used for operations that genuinely require
-server-side data not available in OrchestrateRequest.
+Intentionally minimal – the architecture uses a "full request" model
+where Kotlin sends everything upfront in OrchestrateRequest.
 
-Most data flows are handled differently:
-- Project rules/info → sent in OrchestrateRequest upfront
-- Progress updates → SSE streaming directly from Python
-- Approval flow → LangGraph interrupt() + SSE + POST /approve
-- KB data → direct call to KB service
+Communication model:
+- Kotlin → Python: POST /orchestrate/stream (fire-and-forget)
+- Python → UI: SSE streaming
+- Kotlin → Python: GET /status/{thread_id} (polling)
+- Kotlin → Python: POST /approve/{thread_id}
+- NO Python → Kotlin callbacks
+
+This client exists for:
+1. Lifecycle management (httpx.AsyncClient cleanup in lifespan)
+2. Optional task status reporting (error conditions polling can't detect)
 """
 
 from __future__ import annotations
@@ -24,8 +29,8 @@ logger = logging.getLogger(__name__)
 class KotlinServerClient:
     """HTTP client for Kotlin server.
 
-    Currently minimal – most communication uses the "full request" model
-    where Kotlin sends everything upfront in OrchestrateRequest.
+    Minimal by design – most communication uses the polling model
+    where Kotlin asks Python via GET /status/{thread_id}.
     """
 
     def __init__(self, base_url: str | None = None):
@@ -39,6 +44,26 @@ class KotlinServerClient:
                 timeout=30.0,
             )
         return self._client
+
+    async def report_task_error(self, task_id: str, error: str) -> bool:
+        """Report a critical task error to Kotlin server.
+
+        Only used for errors that the polling loop might not detect
+        (e.g., graph construction failure before any state is saved).
+        Normal errors are detected via GET /status/{thread_id}.
+
+        Returns True if successfully reported, False otherwise.
+        """
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/api/internal/orchestrator/error",
+                json={"taskId": task_id, "error": error},
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Failed to report error to Kotlin: %s", e)
+            return False
 
     async def close(self):
         if self._client and not self._client.is_closed:

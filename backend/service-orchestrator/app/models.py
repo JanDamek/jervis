@@ -26,12 +26,20 @@ class Complexity(str, Enum):
 
 
 class ModelTier(str, Enum):
-    LOCAL_FAST = "local_fast"
-    LOCAL_STANDARD = "local_standard"
-    LOCAL_LARGE = "local_large"
-    CLOUD_REASONING = "cloud_reasoning"
-    CLOUD_CODING = "cloud_coding"
-    CLOUD_PREMIUM = "cloud_premium"
+    """LLM tier hierarchy.
+
+    Local tiers (Ollama) — default, free, always used when sufficient.
+    Cloud tiers — only when genuinely needed (large context, critical tasks).
+    Never used as failure fallback for local models.
+    """
+
+    LOCAL_FAST = "local_fast"           # Ollama, 8k ctx — decompose, simple plan
+    LOCAL_STANDARD = "local_standard"   # Ollama, 32k ctx — standard tasks
+    LOCAL_LARGE = "local_large"         # Ollama, 49k ctx — max local context
+    CLOUD_REASONING = "cloud_reasoning"     # Anthropic — critical architecture/design
+    CLOUD_CODING = "cloud_coding"           # Anthropic — critical code changes
+    CLOUD_PREMIUM = "cloud_premium"         # Anthropic Opus — last resort, critical
+    CLOUD_LARGE_CONTEXT = "cloud_large_context"  # Gemini — ultra-large context (1M tokens)
 
 
 class RiskLevel(str, Enum):
@@ -172,6 +180,7 @@ class OrchestratorState(dict):
         steps: list[CodingStep]
         current_step_index: int
         step_results: list[StepResult]
+        evaluation: dict | None
         branch: str | None
         final_result: str | None
         artifacts: list[str]
