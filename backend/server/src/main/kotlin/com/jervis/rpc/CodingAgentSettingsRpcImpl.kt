@@ -3,6 +3,7 @@ package com.jervis.rpc
 import com.jervis.configuration.properties.CodingToolsProperties
 import com.jervis.dto.coding.CodingAgentApiKeyUpdateDto
 import com.jervis.dto.coding.CodingAgentConfigDto
+import com.jervis.dto.coding.CodingAgentOAuthUpdateDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.entity.CodingAgentSettingsDocument
 import com.jervis.repository.CodingAgentSettingsRepository
@@ -18,10 +19,9 @@ class CodingAgentSettingsRpcImpl(
     private val logger = KotlinLogging.logger {}
 
     override suspend fun getSettings(): CodingAgentSettingsDto {
-        val storedKeys = mutableMapOf<String, Boolean>()
+        val storedDocs = mutableMapOf<String, CodingAgentSettingsDocument?>()
         listOf("claude", "junie", "aider", "openhands").forEach { name ->
-            val doc = settingsRepository.findByAgentName(name)
-            storedKeys[name] = doc?.apiKey?.isNotBlank() == true
+            storedDocs[name] = settingsRepository.findByAgentName(name)
         }
 
         val agents =
@@ -30,17 +30,21 @@ class CodingAgentSettingsRpcImpl(
                     name = "claude",
                     displayName = "Claude (Anthropic)",
                     enabled = true,
-                    apiKeySet = storedKeys["claude"] == true || System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true,
+                    apiKeySet = storedDocs["claude"]?.apiKey?.isNotBlank() == true ||
+                        System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true,
+                    oauthConfigured = storedDocs["claude"]?.oauthCredentialsJson?.isNotBlank() == true,
                     provider = codingToolsProperties.claude.defaultProvider,
                     model = codingToolsProperties.claude.defaultModel,
                     consoleUrl = "https://console.anthropic.com/settings/keys",
                     requiresApiKey = true,
+                    supportsOAuth = true,
                 ),
                 CodingAgentConfigDto(
                     name = "junie",
                     displayName = "Junie (JetBrains)",
                     enabled = true,
-                    apiKeySet = storedKeys["junie"] == true || System.getenv("JUNIE_API_KEY")?.isNotBlank() == true,
+                    apiKeySet = storedDocs["junie"]?.apiKey?.isNotBlank() == true ||
+                        System.getenv("JUNIE_API_KEY")?.isNotBlank() == true,
                     provider = codingToolsProperties.junie.defaultProvider,
                     model = codingToolsProperties.junie.defaultModel,
                     consoleUrl = "https://account.jetbrains.com",
@@ -53,7 +57,6 @@ class CodingAgentSettingsRpcImpl(
                     apiKeySet = true,
                     provider = codingToolsProperties.aider.defaultProvider,
                     model = codingToolsProperties.aider.defaultModel,
-                    consoleUrl = "",
                     requiresApiKey = false,
                 ),
                 CodingAgentConfigDto(
@@ -63,7 +66,6 @@ class CodingAgentSettingsRpcImpl(
                     apiKeySet = true,
                     provider = codingToolsProperties.openhands.defaultProvider,
                     model = codingToolsProperties.openhands.defaultModel,
-                    consoleUrl = "",
                     requiresApiKey = false,
                 ),
             )
@@ -73,19 +75,13 @@ class CodingAgentSettingsRpcImpl(
 
     override suspend fun updateApiKey(request: CodingAgentApiKeyUpdateDto): CodingAgentSettingsDto {
         logger.info { "Updating API key for agent: ${request.agentName}" }
+        upsertField(request.agentName) { it.copy(apiKey = request.apiKey) }
+        return getSettings()
+    }
 
-        val existing = settingsRepository.findByAgentName(request.agentName)
-        if (existing != null) {
-            settingsRepository.save(existing.copy(apiKey = request.apiKey))
-        } else {
-            settingsRepository.save(
-                CodingAgentSettingsDocument(
-                    agentName = request.agentName,
-                    apiKey = request.apiKey,
-                ),
-            )
-        }
-
+    override suspend fun updateOAuthCredentials(request: CodingAgentOAuthUpdateDto): CodingAgentSettingsDto {
+        logger.info { "Updating OAuth credentials for agent: ${request.agentName}" }
+        upsertField(request.agentName) { it.copy(oauthCredentialsJson = request.credentialsJson) }
         return getSettings()
     }
 
@@ -95,5 +91,25 @@ class CodingAgentSettingsRpcImpl(
     suspend fun getApiKey(agentName: String): String? {
         val doc = settingsRepository.findByAgentName(agentName)
         return doc?.apiKey?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Get stored OAuth credentials JSON for a specific agent (Claude).
+     */
+    suspend fun getOAuthCredentialsJson(agentName: String): String? {
+        val doc = settingsRepository.findByAgentName(agentName)
+        return doc?.oauthCredentialsJson?.takeIf { it.isNotBlank() }
+    }
+
+    private suspend fun upsertField(
+        agentName: String,
+        updater: (CodingAgentSettingsDocument) -> CodingAgentSettingsDocument,
+    ) {
+        val existing = settingsRepository.findByAgentName(agentName)
+        if (existing != null) {
+            settingsRepository.save(updater(existing))
+        } else {
+            settingsRepository.save(updater(CodingAgentSettingsDocument(agentName = agentName)))
+        }
     }
 }

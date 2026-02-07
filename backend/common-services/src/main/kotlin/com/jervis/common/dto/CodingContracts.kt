@@ -373,4 +373,9 @@ data class CodingRequest(
      * Passed from server settings. Falls back to service-level env var if empty.
      */
     val apiKey: String? = null,
+    /**
+     * Optional OAuth credentials JSON for Claude Max/Pro accounts.
+     * Content of ~/.claude/.credentials.json - written to disk before CLI execution.
+     */
+    val oauthCredentialsJson: String? = null,
 )

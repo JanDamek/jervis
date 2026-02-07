@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.coding.CodingAgentApiKeyUpdateDto
 import com.jervis.dto.coding.CodingAgentConfigDto
+import com.jervis.dto.coding.CodingAgentOAuthUpdateDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JPrimaryButton
@@ -90,6 +91,22 @@ fun CodingAgentsSettings(repository: JervisRepository) {
                                 }
                             }
                         },
+                        onSaveOAuthCredentials = { credentialsJson ->
+                            scope.launch {
+                                try {
+                                    val updated = repository.codingAgents.updateOAuthCredentials(
+                                        CodingAgentOAuthUpdateDto(
+                                            agentName = agent.name,
+                                            credentialsJson = credentialsJson,
+                                        ),
+                                    )
+                                    settings = updated
+                                    snackbarHostState.showSnackbar("Max/Pro ucet propojen pro ${agent.displayName}")
+                                } catch (e: Exception) {
+                                    snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -106,8 +123,10 @@ fun CodingAgentsSettings(repository: JervisRepository) {
 private fun CodingAgentCard(
     agent: CodingAgentConfigDto,
     onSaveApiKey: (String) -> Unit,
+    onSaveOAuthCredentials: (String) -> Unit,
 ) {
     var apiKeyInput by remember { mutableStateOf("") }
+    var oauthInput by remember { mutableStateOf("") }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -117,13 +136,20 @@ private fun CodingAgentCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(agent.displayName, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(8.dp))
+                // Status chip for API key / OAuth
+                val isAuthenticated = agent.apiKeySet || agent.oauthConfigured
                 SuggestionChip(
                     onClick = {},
                     label = {
+                        val statusText = when {
+                            agent.oauthConfigured -> "Max/Pro ucet"
+                            agent.apiKeySet -> "API klic"
+                            else -> "Nenastaveno"
+                        }
                         Text(
-                            if (agent.apiKeySet) "Aktivni" else "Nenastaveno",
+                            statusText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (agent.apiKeySet) {
+                            color = if (isAuthenticated) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.error
@@ -141,9 +167,58 @@ private fun CodingAgentCard(
             )
 
             if (agent.requiresApiKey) {
+                // OAuth / Max/Pro account section (only for agents that support it)
+                if (agent.supportsOAuth) {
+                    Spacer(Modifier.height(12.dp))
+
+                    JSection(title = "Max/Pro ucet (doporuceno)") {
+                        Text(
+                            text = "Propojte svuj Max/Pro ucet. Spustte lokalne 'claude login' a vlozite obsah souboru ~/.claude/.credentials.json",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedTextField(
+                                value = oauthInput,
+                                onValueChange = { oauthInput = it },
+                                label = { Text("Credentials JSON") },
+                                placeholder = {
+                                    Text(
+                                        if (agent.oauthConfigured) {
+                                            "Ucet propojen - vlozit novy JSON pro zmenu"
+                                        } else {
+                                            "{\"claudeAiOauth\":{\"accessToken\":...}}"
+                                        },
+                                    )
+                                },
+                                singleLine = false,
+                                minLines = 2,
+                                maxLines = 4,
+                                visualTransformation = PasswordVisualTransformation(),
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            JPrimaryButton(
+                                onClick = {
+                                    onSaveOAuthCredentials(oauthInput)
+                                    oauthInput = ""
+                                },
+                                enabled = oauthInput.isNotBlank(),
+                            ) {
+                                Text("Propojit")
+                            }
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(12.dp))
 
-                JSection(title = "API klic") {
+                JSection(title = if (agent.supportsOAuth) "API klic (alternativa)" else "API klic") {
                     // "Ziskat API klic" button - opens provider console in browser
                     if (agent.consoleUrl.isNotBlank()) {
                         Row(modifier = Modifier.fillMaxWidth()) {

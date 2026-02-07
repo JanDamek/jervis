@@ -335,6 +335,7 @@ class CodingTools(
                     verifyCommand = verifyCommand,
                     maxIterations = 5,
                     apiKey = codingAgentSettings.getApiKey("claude"),
+                    oauthCredentialsJson = codingAgentSettings.getOAuthCredentialsJson("claude"),
                 )
 
             val result =

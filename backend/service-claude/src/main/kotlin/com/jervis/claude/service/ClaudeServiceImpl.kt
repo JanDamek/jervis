@@ -46,15 +46,23 @@ class ClaudeServiceImpl : ICodingClient {
     ): CodingResult {
         logger.info { "CLAUDE_EXECUTE: jobId=$jobId, instructions=${req.instructions.take(50)}..." }
 
-        // Use API key from request (server settings) with env var fallback
+        // Auth priority: 1) OAuth credentials (Max/Pro account), 2) API key, 3) env var
+        val oauthJson = req.oauthCredentialsJson?.takeIf { it.isNotBlank() }
         val apiKey = req.apiKey?.takeIf { it.isNotBlank() } ?: System.getenv("ANTHROPIC_API_KEY")
-        if (apiKey.isNullOrBlank()) {
-            logger.error { "CLAUDE_NO_API_KEY: jobId=$jobId" }
+
+        if (oauthJson == null && apiKey.isNullOrBlank()) {
+            logger.error { "CLAUDE_NO_AUTH: jobId=$jobId" }
             return CodingResult(
                 success = false,
-                summary = "ANTHROPIC_API_KEY is not set. Configure it in Settings > Coding Agenti or set the environment variable.",
-                errorMessage = "Missing API key",
+                summary = "No authentication configured. Set up your Max/Pro account credentials or API key in Settings > Coding Agenti.",
+                errorMessage = "Missing authentication",
             )
+        }
+
+        // If OAuth credentials are provided, write them to ~/.claude/.credentials.json
+        if (oauthJson != null) {
+            writeOAuthCredentials(oauthJson)
+            logger.info { "CLAUDE_OAUTH: jobId=$jobId, credentials written to ~/.claude/.credentials.json" }
         }
 
         // Build claude CLI command
@@ -78,8 +86,10 @@ class ClaudeServiceImpl : ICodingClient {
         val maxIterations = req.maxIterations.coerceIn(1, 10)
         val timeoutMinutes = (maxIterations * 5).toLong().coerceAtMost(45)
 
-        // Pass the API key via environment so the CLI picks it up
-        val extraEnv = mapOf("ANTHROPIC_API_KEY" to apiKey)
+        // Pass the API key via environment so the CLI picks it up (ignored if OAuth is used)
+        val extraEnv = buildMap {
+            if (apiKey != null) put("ANTHROPIC_API_KEY", apiKey)
+        }
         val result = executeProcess(command, File(dataRoot), timeoutMinutes, extraEnv)
 
         // Execute verification if requested
@@ -177,6 +187,18 @@ class ClaudeServiceImpl : ICodingClient {
             output = result.output.takeLast(500),
             exitCode = result.exitCode ?: -1,
         )
+    }
+
+    /**
+     * Write OAuth credentials JSON to ~/.claude/.credentials.json so the CLI picks them up.
+     * This is the same file format that `claude login` produces locally.
+     */
+    private fun writeOAuthCredentials(json: String) {
+        val claudeDir = File(System.getProperty("user.home"), ".claude")
+        claudeDir.mkdirs()
+        val credFile = File(claudeDir, ".credentials.json")
+        credFile.writeText(json)
+        logger.info { "OAuth credentials written to ${credFile.absolutePath}" }
     }
 
     private fun extractErrorSummary(output: String): String {
