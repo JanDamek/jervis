@@ -374,8 +374,8 @@ data class CodingRequest(
      */
     val apiKey: String? = null,
     /**
-     * Optional OAuth credentials JSON for Claude Max/Pro accounts.
-     * Content of ~/.claude/.credentials.json - written to disk before CLI execution.
+     * Optional setup token for Claude Max/Pro subscription accounts.
+     * Generated via `claude setup-token`, passed as CLAUDE_CODE_OAUTH_TOKEN env var.
      */
-    val oauthCredentialsJson: String? = null,
+    val setupToken: String? = null,
 )

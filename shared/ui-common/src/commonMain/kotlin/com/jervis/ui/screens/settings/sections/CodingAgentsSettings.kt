@@ -35,7 +35,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.coding.CodingAgentApiKeyUpdateDto
 import com.jervis.dto.coding.CodingAgentConfigDto
-import com.jervis.dto.coding.CodingAgentOAuthUpdateDto
+import com.jervis.dto.coding.CodingAgentSetupTokenUpdateDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JPrimaryButton
@@ -91,17 +91,17 @@ fun CodingAgentsSettings(repository: JervisRepository) {
                                 }
                             }
                         },
-                        onSaveOAuthCredentials = { credentialsJson ->
+                        onSaveSetupToken = { token ->
                             scope.launch {
                                 try {
-                                    val updated = repository.codingAgents.updateOAuthCredentials(
-                                        CodingAgentOAuthUpdateDto(
+                                    val updated = repository.codingAgents.updateSetupToken(
+                                        CodingAgentSetupTokenUpdateDto(
                                             agentName = agent.name,
-                                            credentialsJson = credentialsJson,
+                                            token = token,
                                         ),
                                     )
                                     settings = updated
-                                    snackbarHostState.showSnackbar("Max/Pro ucet propojen pro ${agent.displayName}")
+                                    snackbarHostState.showSnackbar("Setup token ulozen pro ${agent.displayName}")
                                 } catch (e: Exception) {
                                     snackbarHostState.showSnackbar("Chyba: ${e.message}")
                                 }
@@ -123,10 +123,10 @@ fun CodingAgentsSettings(repository: JervisRepository) {
 private fun CodingAgentCard(
     agent: CodingAgentConfigDto,
     onSaveApiKey: (String) -> Unit,
-    onSaveOAuthCredentials: (String) -> Unit,
+    onSaveSetupToken: (String) -> Unit,
 ) {
     var apiKeyInput by remember { mutableStateOf("") }
-    var oauthInput by remember { mutableStateOf("") }
+    var setupTokenInput by remember { mutableStateOf("") }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -136,13 +136,12 @@ private fun CodingAgentCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(agent.displayName, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(8.dp))
-                // Status chip for API key / OAuth
-                val isAuthenticated = agent.apiKeySet || agent.oauthConfigured
+                val isAuthenticated = agent.apiKeySet || agent.setupTokenConfigured
                 SuggestionChip(
                     onClick = {},
                     label = {
                         val statusText = when {
-                            agent.oauthConfigured -> "Max/Pro ucet"
+                            agent.setupTokenConfigured -> "Max/Pro ucet"
                             agent.apiKeySet -> "API klic"
                             else -> "Nenastaveno"
                         }
@@ -167,13 +166,13 @@ private fun CodingAgentCard(
             )
 
             if (agent.requiresApiKey) {
-                // OAuth / Max/Pro account section (only for agents that support it)
-                if (agent.supportsOAuth) {
+                // Setup token section for Max/Pro subscription accounts
+                if (agent.supportsSetupToken) {
                     Spacer(Modifier.height(12.dp))
 
-                    JSection(title = "Max/Pro ucet (doporuceno)") {
+                    JSection(title = "Max/Pro predplatne (doporuceno)") {
                         Text(
-                            text = "Propojte svuj Max/Pro ucet. Spustte lokalne 'claude login' a vlozite obsah souboru ~/.claude/.credentials.json",
+                            text = "Spustte lokalne 'claude setup-token', dokoncete prihlaseni v prohlizeci a vlozite vygenerovany token.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -184,33 +183,31 @@ private fun CodingAgentCard(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             OutlinedTextField(
-                                value = oauthInput,
-                                onValueChange = { oauthInput = it },
-                                label = { Text("Credentials JSON") },
+                                value = setupTokenInput,
+                                onValueChange = { setupTokenInput = it },
+                                label = { Text("Setup Token") },
                                 placeholder = {
                                     Text(
-                                        if (agent.oauthConfigured) {
-                                            "Ucet propojen - vlozit novy JSON pro zmenu"
+                                        if (agent.setupTokenConfigured) {
+                                            "Token nastaven - vlozit novy pro zmenu"
                                         } else {
-                                            "{\"claudeAiOauth\":{\"accessToken\":...}}"
+                                            "sk-ant-oat01-..."
                                         },
                                     )
                                 },
-                                singleLine = false,
-                                minLines = 2,
-                                maxLines = 4,
+                                singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(12.dp))
                             JPrimaryButton(
                                 onClick = {
-                                    onSaveOAuthCredentials(oauthInput)
-                                    oauthInput = ""
+                                    onSaveSetupToken(setupTokenInput)
+                                    setupTokenInput = ""
                                 },
-                                enabled = oauthInput.isNotBlank(),
+                                enabled = setupTokenInput.isNotBlank(),
                             ) {
-                                Text("Propojit")
+                                Text("Ulozit")
                             }
                         }
                     }
@@ -218,7 +215,7 @@ private fun CodingAgentCard(
 
                 Spacer(Modifier.height(12.dp))
 
-                JSection(title = if (agent.supportsOAuth) "API klic (alternativa)" else "API klic") {
+                JSection(title = if (agent.supportsSetupToken) "API klic (alternativa)" else "API klic") {
                     // "Ziskat API klic" button - opens provider console in browser
                     if (agent.consoleUrl.isNotBlank()) {
                         Row(modifier = Modifier.fillMaxWidth()) {

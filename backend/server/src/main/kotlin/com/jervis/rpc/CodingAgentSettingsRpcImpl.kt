@@ -3,7 +3,7 @@ package com.jervis.rpc
 import com.jervis.configuration.properties.CodingToolsProperties
 import com.jervis.dto.coding.CodingAgentApiKeyUpdateDto
 import com.jervis.dto.coding.CodingAgentConfigDto
-import com.jervis.dto.coding.CodingAgentOAuthUpdateDto
+import com.jervis.dto.coding.CodingAgentSetupTokenUpdateDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.entity.CodingAgentSettingsDocument
 import com.jervis.repository.CodingAgentSettingsRepository
@@ -32,12 +32,13 @@ class CodingAgentSettingsRpcImpl(
                     enabled = true,
                     apiKeySet = storedDocs["claude"]?.apiKey?.isNotBlank() == true ||
                         System.getenv("ANTHROPIC_API_KEY")?.isNotBlank() == true,
-                    oauthConfigured = storedDocs["claude"]?.oauthCredentialsJson?.isNotBlank() == true,
+                    setupTokenConfigured = storedDocs["claude"]?.setupToken?.isNotBlank() == true ||
+                        System.getenv("CLAUDE_CODE_OAUTH_TOKEN")?.isNotBlank() == true,
                     provider = codingToolsProperties.claude.defaultProvider,
                     model = codingToolsProperties.claude.defaultModel,
                     consoleUrl = "https://console.anthropic.com/settings/keys",
                     requiresApiKey = true,
-                    supportsOAuth = true,
+                    supportsSetupToken = true,
                 ),
                 CodingAgentConfigDto(
                     name = "junie",
@@ -79,9 +80,9 @@ class CodingAgentSettingsRpcImpl(
         return getSettings()
     }
 
-    override suspend fun updateOAuthCredentials(request: CodingAgentOAuthUpdateDto): CodingAgentSettingsDto {
-        logger.info { "Updating OAuth credentials for agent: ${request.agentName}" }
-        upsertField(request.agentName) { it.copy(oauthCredentialsJson = request.credentialsJson) }
+    override suspend fun updateSetupToken(request: CodingAgentSetupTokenUpdateDto): CodingAgentSettingsDto {
+        logger.info { "Updating setup token for agent: ${request.agentName}" }
+        upsertField(request.agentName) { it.copy(setupToken = request.token) }
         return getSettings()
     }
 
@@ -94,11 +95,12 @@ class CodingAgentSettingsRpcImpl(
     }
 
     /**
-     * Get stored OAuth credentials JSON for a specific agent (Claude).
+     * Get stored setup token for a specific agent (Claude).
+     * This is the long-lived token from `claude setup-token`.
      */
-    suspend fun getOAuthCredentialsJson(agentName: String): String? {
+    suspend fun getSetupToken(agentName: String): String? {
         val doc = settingsRepository.findByAgentName(agentName)
-        return doc?.oauthCredentialsJson?.takeIf { it.isNotBlank() }
+        return doc?.setupToken?.takeIf { it.isNotBlank() }
     }
 
     private suspend fun upsertField(

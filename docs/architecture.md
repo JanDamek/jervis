@@ -371,16 +371,23 @@ The Claude agent wraps Anthropic's `claude` CLI (`@anthropic-ai/claude-code`) as
 
 - **Dockerfile**: Eclipse Temurin 21 + Node.js 20 + `npm install -g @anthropic-ai/claude-code`
 - **CLI Flags**: `claude --print --dangerously-skip-permissions`
-- **Auth**: `ANTHROPIC_API_KEY` env var (K8s secret `jervis-secrets`)
+- **Auth** (priority order):
+  1. `CLAUDE_CODE_OAUTH_TOKEN` env var – setup token from `claude setup-token` (Max/Pro subscription)
+  2. `ANTHROPIC_API_KEY` env var – Console API key (pay-as-you-go)
 - **Timeout**: max 45 minutes (5 min per iteration, up to 10 iterations)
 - **Verification**: Optional post-execution command (`verifyCommand`)
 
 ### Credential Management
 
-API keys for coding agents (Claude `ANTHROPIC_API_KEY`, Junie `JUNIE_API_KEY`) are managed via:
+Coding agent authentication is managed via:
 
 1. **K8s Secrets**: Primary source (`jervis-secrets` secret mounted as env vars)
-2. **Settings UI**: "Coding Agenti" tab in Settings for runtime key updates via `ICodingAgentSettingsService` RPC
+2. **Settings UI**: "Coding Agenti" tab in Settings for runtime updates via `ICodingAgentSettingsService` RPC
+3. **MongoDB**: `coding_agent_settings` collection stores API keys and setup tokens per agent
+
+Claude supports two auth methods:
+- **Setup Token** (recommended for Max/Pro): User runs `claude setup-token` locally, pastes the long-lived token (`sk-ant-oat01-...`) in Settings. Stored in MongoDB, passed to the service as `CLAUDE_CODE_OAUTH_TOKEN` env var at each invocation.
+- **API Key**: Console pay-as-you-go key (`ANTHROPIC_API_KEY`).
 
 ### Build & Deploy
 

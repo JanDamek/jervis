@@ -13,16 +13,16 @@ data class CodingAgentConfigDto(
     val displayName: String,
     val enabled: Boolean = true,
     val apiKeySet: Boolean = false,
-    /** Whether OAuth credentials (Max/Pro account) are configured. */
-    val oauthConfigured: Boolean = false,
+    /** Whether a setup token (Max/Pro subscription) is configured. */
+    val setupTokenConfigured: Boolean = false,
     val provider: String = "",
     val model: String = "",
     /** URL to the provider's console where user can create/manage API keys. */
     val consoleUrl: String = "",
     /** Whether this agent requires an API key (false for agents using local Ollama). */
     val requiresApiKey: Boolean = true,
-    /** Whether this agent supports OAuth login (Max/Pro account). */
-    val supportsOAuth: Boolean = false,
+    /** Whether this agent supports `claude setup-token` for Max/Pro subscription auth. */
+    val supportsSetupToken: Boolean = false,
 )
 
 @Serializable
@@ -32,8 +32,8 @@ data class CodingAgentApiKeyUpdateDto(
 )
 
 @Serializable
-data class CodingAgentOAuthUpdateDto(
+data class CodingAgentSetupTokenUpdateDto(
     val agentName: String,
-    /** Raw JSON content of ~/.claude/.credentials.json */
-    val credentialsJson: String,
+    /** Long-lived OAuth token from `claude setup-token` (sk-ant-oat01-...). */
+    val token: String,
 )

@@ -15,6 +15,6 @@ data class CodingAgentSettingsDocument(
     @Indexed(unique = true)
     val agentName: String,
     val apiKey: String = "",
-    /** Raw JSON content of ~/.claude/.credentials.json for OAuth (Max/Pro) auth. */
-    val oauthCredentialsJson: String? = null,
+    /** Long-lived OAuth token from `claude setup-token` for Max/Pro subscription auth. */
+    val setupToken: String? = null,
 )

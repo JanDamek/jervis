@@ -46,23 +46,17 @@ class ClaudeServiceImpl : ICodingClient {
     ): CodingResult {
         logger.info { "CLAUDE_EXECUTE: jobId=$jobId, instructions=${req.instructions.take(50)}..." }
 
-        // Auth priority: 1) OAuth credentials (Max/Pro account), 2) API key, 3) env var
-        val oauthJson = req.oauthCredentialsJson?.takeIf { it.isNotBlank() }
+        // Auth priority: 1) Setup token from `claude setup-token` (Max/Pro), 2) API key, 3) env vars
+        val setupToken = req.setupToken?.takeIf { it.isNotBlank() } ?: System.getenv("CLAUDE_CODE_OAUTH_TOKEN")
         val apiKey = req.apiKey?.takeIf { it.isNotBlank() } ?: System.getenv("ANTHROPIC_API_KEY")
 
-        if (oauthJson == null && apiKey.isNullOrBlank()) {
+        if (setupToken.isNullOrBlank() && apiKey.isNullOrBlank()) {
             logger.error { "CLAUDE_NO_AUTH: jobId=$jobId" }
             return CodingResult(
                 success = false,
-                summary = "No authentication configured. Set up your Max/Pro account credentials or API key in Settings > Coding Agenti.",
+                summary = "No authentication configured. Run 'claude setup-token' for Max/Pro, or set API key in Settings > Coding Agenti.",
                 errorMessage = "Missing authentication",
             )
-        }
-
-        // If OAuth credentials are provided, write them to ~/.claude/.credentials.json
-        if (oauthJson != null) {
-            writeOAuthCredentials(oauthJson)
-            logger.info { "CLAUDE_OAUTH: jobId=$jobId, credentials written to ~/.claude/.credentials.json" }
         }
 
         // Build claude CLI command
@@ -86,8 +80,10 @@ class ClaudeServiceImpl : ICodingClient {
         val maxIterations = req.maxIterations.coerceIn(1, 10)
         val timeoutMinutes = (maxIterations * 5).toLong().coerceAtMost(45)
 
-        // Pass the API key via environment so the CLI picks it up (ignored if OAuth is used)
+        // Pass auth via environment variables - CLI picks them up automatically
+        // CLAUDE_CODE_OAUTH_TOKEN has highest priority in the CLI
         val extraEnv = buildMap {
+            if (setupToken != null) put("CLAUDE_CODE_OAUTH_TOKEN", setupToken)
             if (apiKey != null) put("ANTHROPIC_API_KEY", apiKey)
         }
         val result = executeProcess(command, File(dataRoot), timeoutMinutes, extraEnv)
@@ -187,18 +183,6 @@ class ClaudeServiceImpl : ICodingClient {
             output = result.output.takeLast(500),
             exitCode = result.exitCode ?: -1,
         )
-    }
-
-    /**
-     * Write OAuth credentials JSON to ~/.claude/.credentials.json so the CLI picks them up.
-     * This is the same file format that `claude login` produces locally.
-     */
-    private fun writeOAuthCredentials(json: String) {
-        val claudeDir = File(System.getProperty("user.home"), ".claude")
-        claudeDir.mkdirs()
-        val credFile = File(claudeDir, ".credentials.json")
-        credFile.writeText(json)
-        logger.info { "OAuth credentials written to ${credFile.absolutePath}" }
     }
 
     private fun extractErrorSummary(output: String): String {
