@@ -368,4 +368,14 @@ data class CodingRequest(
      * Default: 3
      */
     val maxIterations: Int = 3,
+    /**
+     * Optional API key for the coding agent's LLM provider.
+     * Passed from server settings. Falls back to service-level env var if empty.
+     */
+    val apiKey: String? = null,
+    /**
+     * Optional setup token for Claude Max/Pro subscription accounts.
+     * Generated via `claude setup-token`, passed as CLAUDE_CODE_OAUTH_TOKEN env var.
+     */
+    val setupToken: String? = null,
 )

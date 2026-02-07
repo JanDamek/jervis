@@ -45,6 +45,17 @@ class JunieServiceImpl : ICodingClient {
     ): CodingResult {
         logger.info { "JUNIE_EXECUTE: jobId=$jobId, instructions=${req.instructions.take(50)}..." }
 
+        // Use API key from request (server settings) with env var fallback
+        val apiKey = req.apiKey?.takeIf { it.isNotBlank() } ?: System.getenv("JUNIE_API_KEY")
+        if (apiKey.isNullOrBlank()) {
+            logger.error { "JUNIE_NO_API_KEY: jobId=$jobId" }
+            return CodingResult(
+                success = false,
+                summary = "JUNIE_API_KEY is not set. Configure it in Settings > Coding Agenti or set the environment variable.",
+                errorMessage = "Missing API key",
+            )
+        }
+
         val command =
             buildList {
                 add("junie")
@@ -54,7 +65,8 @@ class JunieServiceImpl : ICodingClient {
         logger.info { "JUNIE_COMMAND: ${command.joinToString(" ")}" }
 
         val dataRoot = System.getenv("DATA_ROOT_DIR") ?: "/opt/jervis/data"
-        val result = executeProcess(command, File(dataRoot))
+        val extraEnv = mapOf("JUNIE_API_KEY" to apiKey)
+        val result = executeProcess(command, File(dataRoot), extraEnv)
 
         // Execute verification if requested
         val verifyCmd = req.verifyCommand
@@ -102,6 +114,7 @@ class JunieServiceImpl : ICodingClient {
     private fun executeProcess(
         command: List<String>,
         workingDir: File,
+        extraEnv: Map<String, String> = emptyMap(),
     ): ProcessResult {
         val process =
             ProcessBuilder(command)
@@ -109,6 +122,7 @@ class JunieServiceImpl : ICodingClient {
                     directory(workingDir)
                     redirectErrorStream(true)
                     environment().putAll(System.getenv())
+                    environment().putAll(extraEnv)
                 }.start()
 
         val output = process.inputStream.bufferedReader().use { it.readText() }

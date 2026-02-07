@@ -20,6 +20,7 @@ data class EndpointProperties(
     val joern: Host,
     val whisper: Host,
     val junie: Host,
+    val claude: Host,
     val knowledgebase: Host,
     val providers: Map<String, String> = emptyMap(),
 ) {

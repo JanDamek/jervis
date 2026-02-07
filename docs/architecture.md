@@ -15,6 +15,7 @@
 6. [Vision Processing Pipeline](#vision-processing-pipeline)
 7. [Smart Model Selector](#smart-model-selector)
 8. [Security Architecture](#security-architecture)
+9. [Coding Agents](#coding-agents)
 
 ---
 
@@ -338,3 +339,61 @@ const val PLATFORM_DESKTOP = "Desktop"
 6. **Type safety**: Compile-time checks prevent runtime errors
 7. **Fail-fast design**: Errors propagate, no silent failures
 8. **Multi-tenancy**: Per-client isolation in all storage layers
+
+---
+
+## Coding Agents
+
+Jervis integrates four autonomous coding agents, each running as a standalone kRPC microservice. All implement the shared `ICodingClient` interface (`execute(CodingRequest): CodingResult`) and communicate with the server over WebSocket/CBOR.
+
+### Agent Overview
+
+| Agent | Service | Port | Purpose | Default Provider |
+|-------|---------|------|---------|-----------------|
+| **Aider** | `service-aider` | 3100 | Fast, localized changes (1-3 files) | Ollama (qwen3-coder-tool:30b) |
+| **OpenHands** | `service-coding-engine` | 3200 | Complex multi-file refactoring | Ollama (qwen3-coder-tool:30b) |
+| **Junie** | `service-junie` | 3300 | Premium, ultra-fast (JetBrains) | Anthropic (claude-3-5-sonnet) |
+| **Claude** | `service-claude` | 3400 | Agentic coding with strong reasoning | Anthropic (claude-sonnet-4) |
+
+### Decision Matrix (CodingTools.kt)
+
+The `execute()` tool auto-selects the agent based on strategy hints:
+
+- **FAST** -> Aider (small, localized edits)
+- **THOROUGH** -> OpenHands (deep multi-file refactoring)
+- **REASONING** -> Claude (complex reasoning and planning)
+- **PREMIUM** -> Junie (last resort, expensive, fastest)
+- **AUTO** -> Heuristic: few files -> Aider, else Claude
+
+### Claude Agent (`service-claude`)
+
+The Claude agent wraps Anthropic's `claude` CLI (`@anthropic-ai/claude-code`) as a kRPC service:
+
+- **Dockerfile**: Eclipse Temurin 21 + Node.js 20 + `npm install -g @anthropic-ai/claude-code`
+- **CLI Flags**: `claude --print --dangerously-skip-permissions`
+- **Auth** (priority order):
+  1. `CLAUDE_CODE_OAUTH_TOKEN` env var – setup token from `claude setup-token` (Max/Pro subscription)
+  2. `ANTHROPIC_API_KEY` env var – Console API key (pay-as-you-go)
+- **Timeout**: max 45 minutes (5 min per iteration, up to 10 iterations)
+- **Verification**: Optional post-execution command (`verifyCommand`)
+
+### Credential Management
+
+Coding agent authentication is managed via:
+
+1. **K8s Secrets**: Primary source (`jervis-secrets` secret mounted as env vars)
+2. **Settings UI**: "Coding Agenti" tab in Settings for runtime updates via `ICodingAgentSettingsService` RPC
+3. **MongoDB**: `coding_agent_settings` collection stores API keys and setup tokens per agent
+
+Claude supports two auth methods:
+- **Setup Token** (recommended for Max/Pro): User runs `claude setup-token` locally, pastes the long-lived token (`sk-ant-oat01-...`) in Settings. Stored in MongoDB, passed to the service as `CLAUDE_CODE_OAUTH_TOKEN` env var at each invocation.
+- **API Key**: Console pay-as-you-go key (`ANTHROPIC_API_KEY`).
+
+### Build & Deploy
+
+Each agent has its own build script in `k8s/build_<name>.sh` which calls the generic `build_service.sh` to:
+
+1. Run `./gradlew :backend:service-<name>:clean :backend:service-<name>:build -x test`
+2. Build Docker image for `linux/amd64`
+3. Push to `registry.damek-soft.eu/jandamek/jervis-<name>:latest`
+4. Apply K8s deployment and restart pods

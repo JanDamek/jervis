@@ -46,6 +46,7 @@ enum class SettingsCategory(
     CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
     PROJECTS("Projekty", "📁", "Správa projektů přiřazených klientům."),
     CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Atlassian, Git, Email)."),
+    CODING_AGENTS("Coding Agenti", "🤖", "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
     LOGS("Logy", "📜", "Chybové logy a diagnostika."),
 }
 
@@ -85,6 +86,7 @@ private fun SettingsContent(
         SettingsCategory.CLIENTS -> ClientsSettings(repository)
         SettingsCategory.PROJECTS -> ProjectsSettings(repository)
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
+        SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
         SettingsCategory.LOGS -> LogsSettings(repository)
     }
 }

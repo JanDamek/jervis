@@ -7,5 +7,6 @@ interface RpcReconnectHandler {
     suspend fun reconnectAider()
     suspend fun reconnectCodingEngine()
     suspend fun reconnectJunie()
+    suspend fun reconnectClaude()
     suspend fun reconnectKnowledgebase()
 }
