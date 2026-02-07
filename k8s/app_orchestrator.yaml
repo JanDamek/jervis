@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-orchestrator
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-orchestrator
+  template:
+    metadata:
+      labels:
+        app: jervis-orchestrator
+    spec:
+      serviceAccountName: jervis-orchestrator
+      containers:
+        - name: orchestrator
+          image: registry.damek-soft.eu/jandamek/jervis-orchestrator:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8090
+          env:
+            - name: ORCHESTRATOR_PORT
+              value: "8090"
+            - name: KOTLIN_SERVER_URL
+              value: "http://jervis-server:8080"
+            - name: KNOWLEDGEBASE_URL
+              value: "http://jervis-knowledgebase:8080"
+            - name: K8S_NAMESPACE
+              value: "jervis"
+            - name: DATA_ROOT
+              value: "/opt/jervis/data"
+            - name: OLLAMA_URL
+              value: "http://192.168.100.117:11434"
+            - name: CONTAINER_REGISTRY
+              value: "registry.damek-soft.eu/jandamek"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-orchestrator
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-orchestrator
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090

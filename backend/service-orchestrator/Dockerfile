@@ -14,10 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY app/ app/
 
-# MCP server (bundled for agent containers)
-COPY ../service-kb-mcp/server.py /opt/jervis/mcp/kb-server.py
-COPY ../service-kb-mcp/requirements.txt /opt/jervis/mcp/requirements.txt
-
 EXPOSE 8090
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]

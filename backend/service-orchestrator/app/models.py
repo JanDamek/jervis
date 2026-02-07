@@ -155,6 +155,7 @@ class OrchestrateResponse(BaseModel):
     branch: str | None = None
     artifacts: list[str] = Field(default_factory=list)
     step_results: list[StepResult] = Field(default_factory=list)
+    thread_id: str | None = None
 
 
 # --- LangGraph State ---
