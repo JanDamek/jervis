@@ -308,6 +308,36 @@ Orchestrator potřebuje přístup k K8s API pro Jobs:
   verbs: ["create", "delete"]
 ```
 
+### 7.1 Konfigurace a environment variables
+
+```
+Env var               Odkud                 K čemu
+─────────────────────────────────────────────────────────────────────────
+ORCHESTRATOR_PORT     app_orchestrator.yaml  FastAPI port (8090)
+MONGODB_URL           jervis-secrets         Persistent checkpointer (AsyncMongoDBSaver)
+KOTLIN_SERVER_URL     app_orchestrator.yaml  REST API Kotlin serveru (http://jervis-server:5500)
+KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB service (http://jervis-knowledgebase:8080)
+K8S_NAMESPACE         app_orchestrator.yaml  Namespace pro K8s Jobs (jervis)
+DATA_ROOT             app_orchestrator.yaml  Sdílený PVC (/opt/jervis/data)
+OLLAMA_URL            app_orchestrator.yaml  Lokální LLM (http://192.168.100.117:11434)
+ANTHROPIC_API_KEY     jervis-secrets         Viz níže
+CONTAINER_REGISTRY    app_orchestrator.yaml  Registry pro Job images
+```
+
+**ANTHROPIC_API_KEY se používá dvakrát:**
+
+1. **Orchestrátorova vlastní logika** (`llm/provider.py`) – litellm tiery
+   `CLOUD_REASONING`, `CLOUD_CODING`, `CLOUD_PREMIUM` volají `anthropic/claude-*`.
+   EscalationPolicy eskaluje z lokálního Ollama na Anthropic při:
+   - velkém kontextu (>32k tokenů)
+   - selhání lokálního modelu (2× fail → eskalace)
+   - složitém kódu / architektonickém rozhodnutí
+   - uživatelské preference "quality"
+
+2. **K8s Jobs pro coding agenty** (`agents/job_runner.py`) – Job runner
+   injektuje `ANTHROPIC_API_KEY` do spawnutých K8s Jobs z `jervis-secrets`
+   (ne z vlastního env – každý Job si čte secret nezávisle).
+
 ---
 
 ## 8. State persistence a restart resilience
