@@ -5,9 +5,11 @@ import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
+import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
+import com.jervis.service.IProjectGroupService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
@@ -21,6 +23,8 @@ import com.jervis.service.IUserTaskService
 class JervisRepository(
     val clients: IClientService,
     val projects: IProjectService,
+    val projectGroups: IProjectGroupService,
+    val environments: IEnvironmentService,
     val userTasks: IUserTaskService,
     val ragSearch: IRagSearchService,
     val scheduledTasks: ITaskSchedulingService,

@@ -106,7 +106,8 @@ class HybridRetriever:
                 entity_chunks = await self._fetch_entity_chunks(
                     query_entities,
                     request.clientId,
-                    request.projectId
+                    request.projectId,
+                    getattr(request, 'groupId', None)
                 )
                 for chunk in entity_chunks:
                     if chunk.chunk_id in all_chunks:
@@ -122,7 +123,8 @@ class HybridRetriever:
                     seed_nodes,
                     request.clientId,
                     request.projectId,
-                    max_graph_hops
+                    max_graph_hops,
+                    getattr(request, 'groupId', None)
                 )
                 for chunk in graph_chunks:
                     if chunk.chunk_id in all_chunks:
@@ -223,7 +225,8 @@ class HybridRetriever:
         self,
         entities: list[str],
         client_id: str,
-        project_id: str
+        project_id: str,
+        group_id: str = None
     ) -> list[ScoredChunk]:
         """
         Fetch chunks directly associated with entities.
@@ -287,7 +290,8 @@ class HybridRetriever:
         seed_nodes: list[str],
         client_id: str,
         project_id: str,
-        max_hops: int
+        max_hops: int,
+        group_id: str = None
     ) -> list[ScoredChunk]:
         """
         Expand search via graph traversal from seed nodes.
@@ -303,6 +307,7 @@ class HybridRetriever:
                 traversal_request = TraversalRequest(
                     clientId=client_id,
                     projectId=project_id,
+                    groupId=group_id,
                     startKey=seed_key,
                     spec=TraversalSpec(direction="ANY", minDepth=1, maxDepth=max_hops)
                 )

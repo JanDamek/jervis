@@ -106,6 +106,8 @@ class ConnectionManager(
                     JervisRepository(
                         clients = services!!.clientService,
                         projects = services!!.projectService,
+                        projectGroups = services!!.projectGroupService,
+                        environments = services!!.environmentService,
                         userTasks = services!!.userTaskService,
                         ragSearch = services!!.ragSearchService,
                         scheduledTasks = services!!.taskSchedulingService,

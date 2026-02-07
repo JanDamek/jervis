@@ -209,7 +209,7 @@ async def execute_step(state: dict) -> dict:
         files=step.files,
     )
 
-    # Prepare workspace (instructions, KB context, agent config)
+    # Prepare workspace (instructions, KB context, agent config, environment)
     await workspace_manager.prepare_workspace(
         task_id=f"{task.id}-step-{step.index}",
         client_id=task.client_id,
@@ -219,6 +219,7 @@ async def execute_step(state: dict) -> dict:
         files=step.files,
         agent_type=step.agent_type.value,
         kb_context=kb_context,
+        environment_context=state.get("environment"),
     )
 
     # Run coding agent as K8s Job (ALLOW_GIT=false by default)

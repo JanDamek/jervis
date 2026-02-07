@@ -96,6 +96,8 @@ fun JervisApp(
             JervisRepository(
                 clients = currentServices.clientService,
                 projects = currentServices.projectService,
+                projectGroups = currentServices.projectGroupService,
+                environments = currentServices.environmentService,
                 userTasks = currentServices.userTaskService,
                 ragSearch = currentServices.ragSearchService,
                 scheduledTasks = currentServices.taskSchedulingService,

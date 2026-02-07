@@ -31,6 +31,7 @@ class WorkspaceManager:
         files: list[str],
         agent_type: str,
         kb_context: str | None = None,
+        environment_context: dict | None = None,
     ) -> Path:
         """Add instructions and context to an existing workspace.
 
@@ -46,6 +47,7 @@ class WorkspaceManager:
             files: Specific files to modify.
             agent_type: "aider" | "openhands" | "claude" | "junie"
             kb_context: Pre-fetched KB context (markdown).
+            environment_context: Resolved environment definition (dict).
 
         Returns:
             Absolute path to workspace.
@@ -79,10 +81,19 @@ class WorkspaceManager:
         if kb_context:
             (jervis_dir / "kb-context.md").write_text(kb_context)
 
-        # 3. Agent-specific configuration
+        # 3. Environment context (resolved K8s environment definition)
+        if environment_context:
+            (jervis_dir / "environment.json").write_text(
+                json.dumps(environment_context, indent=2)
+            )
+            (jervis_dir / "environment.md").write_text(
+                self._render_environment_md(environment_context)
+            )
+
+        # 4. Agent-specific configuration
         if agent_type == "claude":
             self._setup_claude_workspace(
-                workspace, client_id, project_id, kb_context
+                workspace, client_id, project_id, kb_context, environment_context
             )
         elif agent_type == "aider":
             self._setup_aider_workspace(workspace, files, kb_context)
@@ -101,6 +112,7 @@ class WorkspaceManager:
         client_id: str,
         project_id: str | None,
         kb_context: str | None,
+        environment_context: dict | None = None,
     ):
         """Claude Code: MCP config + CLAUDE.md for runtime KB access."""
 
@@ -108,16 +120,21 @@ class WorkspaceManager:
         claude_dir = workspace / ".claude"
         claude_dir.mkdir(exist_ok=True)
 
+        mcp_env = {
+            "CLIENT_ID": client_id,
+            "PROJECT_ID": project_id or "",
+            "KB_URL": settings.knowledgebase_url,
+        }
+        # Pass group ID to MCP server for KB cross-visibility
+        if environment_context and environment_context.get("groupId"):
+            mcp_env["GROUP_ID"] = environment_context["groupId"]
+
         mcp_config = {
             "mcpServers": {
                 "jervis-kb": {
                     "command": "python",
                     "args": ["/opt/jervis/mcp/kb-server.py"],
-                    "env": {
-                        "CLIENT_ID": client_id,
-                        "PROJECT_ID": project_id or "",
-                        "KB_URL": settings.knowledgebase_url,
-                    },
+                    "env": mcp_env,
                 }
             }
         }
@@ -156,6 +173,14 @@ class WorkspaceManager:
                 ]
             )
 
+        if environment_context:
+            claude_md_parts.extend(
+                [
+                    "",
+                    self._render_environment_md(environment_context),
+                ]
+            )
+
         (workspace / "CLAUDE.md").write_text("\n".join(claude_md_parts))
 
     def _setup_claude_git_workspace(
@@ -179,6 +204,59 @@ class WorkspaceManager:
             ]
         )
         (workspace / "CLAUDE.md").write_text(claude_md)
+
+    @staticmethod
+    def _render_environment_md(env: dict) -> str:
+        """Render environment context as markdown for agents."""
+        ns = env.get("namespace", "unknown")
+        lines = [
+            f"## Environment (`{ns}`)",
+            "",
+        ]
+
+        components = env.get("components", [])
+        infra = [c for c in components if c.get("type") != "PROJECT" and c.get("autoStart")]
+        projects = [c for c in components if c.get("type") == "PROJECT"]
+
+        if infra:
+            lines.append("### Infrastructure (auto-started by server)")
+            for c in sorted(infra, key=lambda x: x.get("startOrder", 0)):
+                host = c.get("host", "")
+                ports = c.get("ports", [])
+                port_str = ", ".join(
+                    f"{p.get('service', p.get('container'))}:{p.get('name', '')}"
+                    for p in ports
+                )
+                lines.append(f"- **{c['name']}** ({c['type']}): `{host}` [{port_str}]")
+            lines.append("")
+
+        if projects:
+            lines.append("### Projects (your responsibility to build/start for testing)")
+            for c in sorted(projects, key=lambda x: x.get("startOrder", 0)):
+                env_vars = c.get("envVars", {})
+                lines.append(f"{c.get('startOrder', 0)}. **{c['name']}**")
+                if env_vars:
+                    for k, v in env_vars.items():
+                        lines.append(f"   - `{k}={v}`")
+            lines.append("")
+
+        agent_instructions = env.get("agentInstructions")
+        if agent_instructions:
+            lines.extend([
+                "### Environment Instructions",
+                agent_instructions,
+                "",
+            ])
+
+        links = env.get("componentLinks", [])
+        if links:
+            lines.append("### Component Topology")
+            for link in links:
+                desc = f" ({link['description']})" if link.get("description") else ""
+                lines.append(f"- {link['source']} → {link['target']}{desc}")
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _setup_aider_workspace(
         self,

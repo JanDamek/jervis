@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class RagSearchRequestDto(
     val clientId: String,
     val projectId: String? = null,
+    val groupId: String? = null,
     val searchText: String,
     val filterKey: String? = null,
     val filterValue: String? = null,

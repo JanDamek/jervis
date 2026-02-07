@@ -12,8 +12,10 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
+import com.jervis.mapper.toAgentContextJson
 import com.jervis.repository.TaskRepository
 import com.jervis.service.background.TaskService
+import com.jervis.service.environment.EnvironmentService
 import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
 import mu.KotlinLogging
@@ -38,6 +40,7 @@ class AgentOrchestratorService(
     private val czechKeyboardNormalizer: CzechKeyboardNormalizer,
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
+    private val environmentService: EnvironmentService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -230,6 +233,16 @@ class AgentOrchestratorService(
 
         val rules = loadProjectRules(task.clientId, task.projectId)
 
+        // Resolve environment context for the project (if any)
+        val environmentJson = task.projectId?.let { pid ->
+            try {
+                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
+            } catch (e: Exception) {
+                logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
+                null
+            }
+        }
+
         val request = OrchestrateRequestDto(
             taskId = task.correlationId ?: ObjectId().toString(),
             clientId = task.clientId?.toString() ?: "",
@@ -237,6 +250,7 @@ class AgentOrchestratorService(
             workspacePath = resolveWorkspacePath(task),
             query = userInput,
             rules = rules,
+            environment = environmentJson,
         )
 
         // Fire-and-forget: get thread_id immediately, Python runs in background

@@ -41,6 +41,7 @@ class ProjectService(
             existing?.copy(
                 name = project.name,
                 description = project.description,
+                groupId = project.groupId,
                 communicationLanguageEnum = project.communicationLanguageEnum,
                 buildConfig = project.buildConfig,
                 costPolicy = project.costPolicy,

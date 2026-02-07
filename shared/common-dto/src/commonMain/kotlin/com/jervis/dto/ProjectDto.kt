@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 data class ProjectDto(
     val id: String = Constants.GLOBAL_ID_STRING,
     val clientId: String?,
+    val groupId: String? = null,
     val name: String,
     val description: String? = null,
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),

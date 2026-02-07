@@ -170,6 +170,7 @@ data class OrchestrateRequestDto(
     val query: String,
     @SerialName("agent_preference") val agentPreference: String = "auto",
     val rules: ProjectRulesDto = ProjectRulesDto(),
+    val environment: kotlinx.serialization.json.JsonObject? = null,
 )
 
 @Serializable

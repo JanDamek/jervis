@@ -7,11 +7,13 @@ import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
+import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
+import com.jervis.service.IProjectGroupService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
@@ -200,6 +202,10 @@ object NetworkModule {
         var codingAgentSettingsService: ICodingAgentSettingsService =
             initialRpcClient.withService<ICodingAgentSettingsService>()
             private set
+        var projectGroupService: IProjectGroupService = initialRpcClient.withService<IProjectGroupService>()
+            private set
+        var environmentService: IEnvironmentService = initialRpcClient.withService<IEnvironmentService>()
+            private set
 
         fun updateFrom(rpcClient: KtorRpcClient) {
             projectService = rpcClient.withService<IProjectService>()
@@ -217,6 +223,8 @@ object NetworkModule {
             bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>()
             integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>()
+            projectGroupService = rpcClient.withService<IProjectGroupService>()
+            environmentService = rpcClient.withService<IEnvironmentService>()
         }
     }
 

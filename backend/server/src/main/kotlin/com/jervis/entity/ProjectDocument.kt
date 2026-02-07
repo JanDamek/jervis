@@ -1,6 +1,7 @@
 package com.jervis.entity
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectGroupId
 import com.jervis.common.types.ProjectId
 import com.jervis.domain.language.LanguageEnum
 import com.jervis.dto.connection.ConnectionCapability
@@ -21,6 +22,9 @@ data class ProjectDocument(
     val id: ProjectId = ProjectId.generate(),
     @Indexed
     val clientId: ClientId,
+    /** Optional group membership. Null = ungrouped project. */
+    @Indexed
+    val groupId: ProjectGroupId? = null,
     @Indexed(unique = true)
     val name: String,
     val description: String? = null,

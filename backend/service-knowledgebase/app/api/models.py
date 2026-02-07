@@ -11,11 +11,13 @@ class IngestRequest(BaseModel):
       - clientId="" (empty) = GLOBAL data, visible everywhere
       - clientId="X", projectId="" = CLIENT-LEVEL data, visible to client X
       - clientId="X", projectId="Y" = PROJECT-LEVEL data, visible only to project Y
+      - groupId="G" = GROUP-LEVEL data, visible to all projects in group G
 
     INVARIANT: projectId cannot be set without clientId (project requires client)
     """
     clientId: str = ""  # Empty = global
     projectId: Optional[str] = None  # None/empty = client-level or global
+    groupId: Optional[str] = None  # Group for cross-project KB visibility
     sourceUrn: str
     kind: str = ""
     content: str
@@ -46,12 +48,14 @@ class RetrievalRequest(BaseModel):
       - clientId="" = retrieve only GLOBAL data
       - clientId="X" = retrieve GLOBAL + CLIENT-LEVEL data for client X
       - clientId="X", projectId="Y" = retrieve GLOBAL + CLIENT-LEVEL + PROJECT data
+      - groupId="G" = also include GROUP-LEVEL data for cross-project visibility
 
     INVARIANT: projectId cannot be set without clientId
     """
     query: str
     clientId: str = ""  # Empty = only global data
     projectId: Optional[str] = None
+    groupId: Optional[str] = None  # Group for cross-project KB visibility
     asOf: Optional[datetime] = None
     minConfidence: float = 0.0
     maxResults: int = 10
@@ -94,6 +98,7 @@ class TraversalRequest(BaseModel):
     """
     clientId: str = ""
     projectId: Optional[str] = None
+    groupId: Optional[str] = None
     startKey: str
     spec: TraversalSpec
 
@@ -115,6 +120,7 @@ class CrawlRequest(BaseModel):
     allowExternalDomains: bool = False
     clientId: str = ""  # Empty = global
     projectId: Optional[str] = None
+    groupId: Optional[str] = None
 
     @model_validator(mode='after')
     def validate_tenant_hierarchy(self):
@@ -150,6 +156,7 @@ class FullIngestRequest(BaseModel):
     """
     clientId: str = ""  # Empty = global
     projectId: Optional[str] = None
+    groupId: Optional[str] = None
     sourceUrn: str
     sourceType: str = ""  # "email", "confluence", "jira", "git", etc.
     subject: Optional[str] = None  # Email subject, page title, issue key
@@ -192,6 +199,7 @@ class HybridRetrievalRequest(BaseModel):
     query: str
     clientId: str = ""
     projectId: Optional[str] = None
+    groupId: Optional[str] = None
     maxResults: int = 10
     minConfidence: float = 0.0
 
