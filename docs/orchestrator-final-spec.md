@@ -447,3 +447,52 @@ READY_FOR_GPU
 - **task.content** po sendToAgent() = odpověď uživatele (ne původní task popis)
 - **UserTaskService** zajistí notifikace + správný type + state
 - **Checkpoint v MongoDB** zachová plný stav grafu včetně step_results, branch, atd.
+
+---
+
+## 11. Concurrency control – pouze jedna orchestrace najednou
+
+### 11.1 Proč
+
+LLM (Ollama/Anthropic) nezvládá efektivně více souběžných požadavků.
+Python orchestrátor **smí zpracovávat maximálně jednu orchestraci najednou**.
+
+### 11.2 Dvě vrstvy kontroly
+
+```
+Vrstva 1: Kotlin (early guard)                    Vrstva 2: Python (definitivní)
+─────────────────────────────                      ────────────────────────────────
+dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)
+  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429 if busy
+  → return false (skip dispatch)                   POST /approve → runs in background with semaphore
+                                                   GET /health → {"busy": true/false}
+```
+
+**Kotlin vrstva** (`AgentOrchestratorService`):
+- `taskRepository.countByState(PYTHON_ORCHESTRATING)` před dispatch
+- Pokud > 0, vrátí false → task zůstane READY_FOR_GPU → BackgroundEngine retry
+- Reaguje na HTTP 429 z `orchestrateStream()` → vrátí false
+
+**Python vrstva** (`main.py`):
+- `asyncio.Semaphore(1)` – `/orchestrate/stream` a `/orchestrate` vrátí 429 pokud busy
+- `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
+- `/health` vrací `{"busy": true/false}` pro diagnostiku
+
+### 11.3 Resume po approval (fire-and-forget)
+
+```
+POST /approve/{thread_id} {approved, reason}
+  → Python: asyncio.create_task(_resume_in_background())
+  → vrátí {"status": "resuming"} IHNED (neblokuje Kotlin)
+  → _resume_in_background() čeká na semaphore, pak resume_orchestration()
+  → BackgroundEngine.runOrchestratorResultLoop() poluje GET /status
+```
+
+### 11.4 Časování
+
+| Situace | Chování |
+|---------|---------|
+| Nový task, orchestrátor volný | Dispatch OK, PYTHON_ORCHESTRATING |
+| Nový task, orchestrátor busy | Kotlin: count > 0 → skip. Python: 429 (fallback) |
+| Approval, orchestrátor busy (jiný task) | POST /approve OK, _resume čeká na semaphore |
+| Approval, orchestrátor volný | POST /approve OK, resume okamžitě |

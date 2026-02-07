@@ -462,14 +462,24 @@ READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
 6. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
 7. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
 
+### Concurrency Control
+
+Only **one orchestration at a time** (LLM cannot handle concurrent requests efficiently).
+
+Two layers:
+1. **Kotlin** (early guard): `countByState(PYTHON_ORCHESTRATING) > 0` → skip dispatch
+2. **Python** (definitive): `asyncio.Semaphore(1)` → HTTP 429 if busy
+
+`/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background with semaphore.
+
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, MongoDB lifecycle |
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency (Semaphore), MongoDB lifecycle |
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, checkpointing |
 | `backend/service-orchestrator/app/graph/nodes.py` | Node functions: decompose, plan, execute, evaluate, git_ops |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
-| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic (Kotlin side) |
+| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
 | `backend/server/.../BackgroundEngine.kt` | Result polling loop, USER_TASK escalation |
-| `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator |
+| `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |

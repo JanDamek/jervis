@@ -725,6 +725,22 @@ freezing the entire BackgroundEngine execution loop.
 - BackgroundEngine picks up task → `resumePythonOrchestrator()` → `POST /approve/{thread_id}`
 - LangGraph resumes from MongoDB checkpoint with user's approval
 
+### Concurrency Control
+
+Only one Python orchestration runs at a time:
+
+1. **Kotlin guard** (`AgentOrchestratorService.dispatchToPythonOrchestrator()`):
+   - `taskRepository.countByState(PYTHON_ORCHESTRATING) > 0` → return false, skip dispatch
+   - Handles HTTP 429 from `orchestrateStream()` → return false
+
+2. **Python guard** (`main.py`):
+   - `asyncio.Semaphore(1)` – `/orchestrate/stream` returns 429 if busy
+   - `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
+   - `/health` returns `{"busy": true/false}` for diagnostics
+
+3. **`PythonOrchestratorClient.approve()`** is now fire-and-forget (returns `Unit`).
+   Python returns `{"status": "resuming"}` immediately. Result polled via GET /status.
+
 ### Key Technical Details
 
 - `TaskStateEnum.PYTHON_ORCHESTRATING`: New state for dispatched tasks

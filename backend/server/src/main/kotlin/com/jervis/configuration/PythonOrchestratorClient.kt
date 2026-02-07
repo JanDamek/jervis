@@ -69,27 +69,36 @@ class PythonOrchestratorClient(baseUrl: String) {
     /**
      * Start orchestration with SSE streaming.
      * Returns thread_id for subscribing to /stream/{thread_id}.
+     *
+     * Returns null if Python orchestrator is busy (HTTP 429).
+     * The caller should skip dispatch and let BackgroundEngine retry later.
      */
-    suspend fun orchestrateStream(request: OrchestrateRequestDto): StreamStartResponseDto {
+    suspend fun orchestrateStream(request: OrchestrateRequestDto): StreamStartResponseDto? {
         logger.info { "PYTHON_ORCHESTRATOR_STREAM_START: taskId=${request.taskId}" }
-        return client.post("$apiBaseUrl/orchestrate/stream") {
+        val response = client.post("$apiBaseUrl/orchestrate/stream") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }.body()
+        }
+        if (response.status.value == 429) {
+            logger.info { "PYTHON_ORCHESTRATOR_BUSY: orchestrator returned 429, skipping dispatch" }
+            return null
+        }
+        return response.body()
     }
 
     /**
-     * Send approval response and resume graph.
+     * Send approval response and resume graph (fire-and-forget).
      *
-     * Returns the orchestration result, which may be another interrupt
-     * (e.g., commit approved → push approval required).
+     * Python endpoint returns immediately with {"status": "resuming"}.
+     * The graph resumes in the background – result polled via GET /status/{thread_id}.
      */
-    suspend fun approve(threadId: String, approved: Boolean, reason: String? = null): OrchestrateResponseDto {
+    suspend fun approve(threadId: String, approved: Boolean, reason: String? = null) {
         logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved" }
-        return client.post("$apiBaseUrl/approve/$threadId") {
+        val response = client.post("$apiBaseUrl/approve/$threadId") {
             contentType(ContentType.Application.Json)
             setBody(ApprovalResponseDto(approved = approved, reason = reason))
-        }.body()
+        }
+        logger.info { "PYTHON_ORCHESTRATOR_APPROVE_SENT: threadId=$threadId status=${response.status}" }
     }
 
     /**
@@ -122,11 +131,25 @@ class PythonOrchestratorClient(baseUrl: String) {
      */
     suspend fun isHealthy(): Boolean {
         return try {
-            val response: Map<String, String> = client.get("$apiBaseUrl/health").body()
-            response["status"] == "ok"
+            val response: JsonObject = client.get("$apiBaseUrl/health").body()
+            response["status"]?.toString()?.trim('"') == "ok"
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_HEALTH_FAIL: ${e.message}" }
             false
+        }
+    }
+
+    /**
+     * Check if the Python orchestrator is currently busy (running an orchestration).
+     * Uses the "busy" field from /health endpoint.
+     */
+    suspend fun isBusy(): Boolean {
+        return try {
+            val response: JsonObject = client.get("$apiBaseUrl/health").body()
+            response["busy"]?.toString() == "true"
+        } catch (e: Exception) {
+            logger.warn { "PYTHON_ORCHESTRATOR_BUSY_CHECK_FAIL: ${e.message}" }
+            false  // Can't reach → not busy (health check will catch this)
         }
     }
 

@@ -203,13 +203,24 @@ class AgentOrchestratorService(
      * Stores thread_id in TaskDocument, changes state to PYTHON_ORCHESTRATING.
      * BackgroundEngine.runOrchestratorResultLoop() polls for results.
      *
-     * @return true if dispatched successfully, false if unavailable
+     * Concurrency control (two layers):
+     * 1. Kotlin: checks count of PYTHON_ORCHESTRATING tasks in DB (early guard)
+     * 2. Python: asyncio.Semaphore(1) → returns HTTP 429 if busy
+     *
+     * @return true if dispatched successfully, false if unavailable/busy
      */
     private suspend fun dispatchToPythonOrchestrator(
         task: TaskDocument,
         userInput: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): Boolean {
+        // Early guard: only one task can be PYTHON_ORCHESTRATING at a time
+        val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+        if (orchestratingCount > 0) {
+            logger.info { "PYTHON_DISPATCH_SKIP: $orchestratingCount task(s) already PYTHON_ORCHESTRATING" }
+            return false
+        }
+
         if (!pythonOrchestratorClient.isHealthy()) {
             logger.info { "Python orchestrator not healthy, skipping" }
             return false
@@ -229,7 +240,12 @@ class AgentOrchestratorService(
         )
 
         // Fire-and-forget: get thread_id immediately, Python runs in background
+        // Returns null if Python is busy (HTTP 429)
         val streamResponse = pythonOrchestratorClient.orchestrateStream(request)
+        if (streamResponse == null) {
+            logger.info { "PYTHON_DISPATCH_BUSY: orchestrator returned 429, skipping" }
+            return false
+        }
 
         // Store thread_id and change state to PYTHON_ORCHESTRATING
         val updatedTask = task.copy(
@@ -253,8 +269,9 @@ class AgentOrchestratorService(
     /**
      * Resume Python orchestrator after approval (USER_TASK → READY_FOR_GPU with answer).
      *
-     * Calls POST /approve/{thread_id} with user's response.
-     * Result handled by BackgroundEngine.runOrchestratorResultLoop().
+     * Calls POST /approve/{thread_id} with user's response (fire-and-forget).
+     * Python resumes the graph in background with asyncio.Semaphore concurrency control.
+     * Result handled by BackgroundEngine.runOrchestratorResultLoop() polling GET /status.
      *
      * @return true if dispatched successfully
      */
