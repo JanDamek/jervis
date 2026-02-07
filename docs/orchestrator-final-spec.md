@@ -320,23 +320,31 @@ KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB service (http://jervis-knowledge
 K8S_NAMESPACE         app_orchestrator.yaml  Namespace pro K8s Jobs (jervis)
 DATA_ROOT             app_orchestrator.yaml  Sdílený PVC (/opt/jervis/data)
 OLLAMA_URL            app_orchestrator.yaml  Lokální LLM (http://192.168.100.117:11434)
-ANTHROPIC_API_KEY     jervis-secrets         Viz níže
+ANTHROPIC_API_KEY     jervis-secrets         Fallback LLM (orchestrátor) + fallback auth (Jobs)
 CONTAINER_REGISTRY    app_orchestrator.yaml  Registry pro Job images
+
+Jobs (injektované z jervis-secrets do K8s Jobs, NE do orchestrátoru):
+CLAUDE_CODE_OAUTH_TOKEN  jervis-secrets      Max účet OAuth – Claude Code CLI preferuje tento
+ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token fallback pro Claude CLI + Aider/OpenHands
 ```
 
-**ANTHROPIC_API_KEY se používá dvakrát:**
+**Autentizace – dva klíče, různé účely:**
 
-1. **Orchestrátorova vlastní logika** (`llm/provider.py`) – litellm tiery
-   `CLOUD_REASONING`, `CLOUD_CODING`, `CLOUD_PREMIUM` volají `anthropic/claude-*`.
-   EscalationPolicy eskaluje z lokálního Ollama na Anthropic při:
-   - velkém kontextu (>32k tokenů)
-   - selhání lokálního modelu (2× fail → eskalace)
-   - složitém kódu / architektonickém rozhodnutí
-   - uživatelské preference "quality"
+| Secret | Co to je | Kdo ho používá |
+|--------|----------|----------------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | **Max účet** (OAuth) | Claude Code CLI v K8s Jobs – preferovaný auth |
+| `ANTHROPIC_API_KEY` | **API klíč** (pay-per-token) | Orchestrátor fallback + Job fallback pokud chybí OAuth |
 
-2. **K8s Jobs pro coding agenty** (`agents/job_runner.py`) – Job runner
-   injektuje `ANTHROPIC_API_KEY` do spawnutých K8s Jobs z `jervis-secrets`
-   (ne z vlastního env – každý Job si čte secret nezávisle).
+**Orchestrátorova vlastní logika** (`llm/provider.py`):
+- Decompose + plan běží na **Ollama** (LOCAL_FAST / LOCAL_STANDARD)
+- Na Anthropic API eskaluje JEN jako fallback: 2× selhání lokálního modelu,
+  >32k context, nebo user preference "quality"
+- V praxi orchestrátor **skoro nikdy** nevolá Anthropic API
+
+**K8s Jobs pro coding agenty** (`agents/job_runner.py`):
+- Job runner injektuje OBA klíče z `jervis-secrets` (ne z vlastního env)
+- Claude Code CLI preferuje `CLAUDE_CODE_OAUTH_TOKEN` (Max) → API key je fallback
+- Aider/OpenHands/Junie používají `ANTHROPIC_API_KEY` přímo (nemají OAuth)
 
 ---
 
