@@ -1,8 +1,8 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07 (rev.6)
+**Datum:** 2026-02-07 (rev.7)
 **Autor:** Automatizovaná analýza
-**Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling, MCP KB, Claude CLI
+**Rozsah:** Kompletní redesign – architektura, agenti, tools, GPU, streaming, approval, UI settings, K8s scaling, MCP KB, Claude CLI, Jobs
 
 ---
 
@@ -25,6 +25,7 @@
 15. [K8s Strategie – Job vs Deployment vs Hybrid (revidovaná)](#15-k8s-strategie--job-vs-deployment-vs-hybrid-revidovaná)
 16. [MCP Server pro Knowledge Base – přístup coding agentů ke KB](#16-mcp-server-pro-knowledge-base)
 17. [Claude CLI Agent – analýza aktuální implementace a vylepšení](#17-claude-cli-agent)
+18. [Cílová architektura – Python orchestrator, K8s Jobs, univerzální KB přístup](#18-cílová-architektura)
 
 ---
 
@@ -3620,3 +3621,822 @@ Task complexity assessment:
 Escalation path:
   Aider fail → Claude Code → OpenHands → Junie
 ```
+
+---
+
+## 18. Cílová architektura – Python orchestrator, K8s Jobs, univerzální KB přístup {#18-cílová-architektura}
+
+Tato sekce shrnuje **finální cílový stav** po migraci. Klíčové principy:
+1. **Python orchestrator** jako hlavní mozek (LangGraph)
+2. **Coding agenti jako K8s Jobs** – ephemeral, na vyžádání
+3. **MCP nativně pro Claude Code**, pre-fetch pro ostatní
+4. **Sdílený disk** (PVC) s git worktrees pro izolaci
+
+### 18.1 Celkový pohled
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Kotlin Server                               │
+│  (Spring Boot – API gateway, auth, kRPC hub, UI WebSocket)         │
+│                                                                     │
+│  Zodpovědnosti:                                                     │
+│    - REST/kRPC API pro UI                                           │
+│    - Správa uživatelů, projektů, klientů                           │
+│    - Task management (vytvoření, stav, approval)                   │
+│    - SSE bridge: přeposílá streaming z orchestratoru do UI          │
+│    - Spouštění coding agent K8s Jobs                               │
+│    - KB kontext pre-fetch pro agenty bez MCP                       │
+└────────┬──────────────────────────────────────┬─────────────────────┘
+         │ gRPC / REST                          │ K8s API
+         ▼                                      ▼
+┌─────────────────────┐              ┌─────────────────────────────┐
+│  Python Orchestrator │              │  K8s Jobs (coding agenti)   │
+│  (LangGraph)         │              │                             │
+│                      │              │  Job: jervis-aider-{id}     │
+│  - StateGraph        │              │  Job: jervis-openhands-{id} │
+│  - Sub-agenti        │              │  Job: jervis-claude-{id}    │
+│  - Tool execution    │              │  Job: jervis-junie-{id}     │
+│  - Streaming SSE     │              │                             │
+│  - Checkpoint        │              │  Každý Job:                 │
+│  - Approval flow     │              │    - Shared PVC mount       │
+│                      │              │    - Git worktree            │
+│  Deployment (stálý)  │              │    - env: CLIENT_ID,        │
+└─────────┬────────────┘              │          PROJECT_ID,        │
+          │                           │          TASK_ID            │
+          │ HTTP REST                 │    - TTL: auto-cleanup      │
+          ▼                           └──────────────┬──────────────┘
+┌─────────────────────┐                              │
+│  Knowledge Base      │                              │
+│  (FastAPI)           │◄─────────────────────────────┘
+│                      │  HTTP (pre-fetch i runtime MCP)
+│  Weaviate + ArangoDB │
+│  Deployment (stálý)  │
+└──────────────────────┘
+```
+
+### 18.2 Proč K8s Jobs místo Deploymentů
+
+Sekce 15 navrhovala Deployment s `replicas: 0` + AgentScaler. Po přehodnocení je **K8s Job lepší volba**:
+
+| Aspekt | Deployment replicas:0 | K8s Job |
+|--------|----------------------|---------|
+| **Životní cyklus** | Scale up → idle → scale down | Spustí se → dokončí → smaže se |
+| **Izolace** | Shared pod, musí řešit concurrency | Každý task = vlastní pod |
+| **Env variables** | Musí se dynamicky měnit | Nastaví se při vytvoření |
+| **Cleanup** | Manuální scale-down logika | `ttlSecondsAfterFinished` |
+| **Monitoring** | Musí sledovat idle stav | Job status = task status |
+| **kRPC** | Vyžaduje persistent WebSocket | **Nepotřebuje** – viz 18.3 |
+| **Paralelismus** | Omezený počtem replik | N jobů = N paralelních tasků |
+| **Resource control** | Statické limity | Per-job limity |
+
+**Klíčový rozdíl:** Přechodem na Python orchestrator odpadá potřeba kRPC WebSocket. Orchestrator komunikuje s coding agenty jinak.
+
+### 18.3 Komunikace: Jak Python orchestrator spouští coding agenty
+
+Aktuálně Kotlin server volá coding agenty přes **kRPC WebSocket** (`ICodingClient.execute()`). To vyžaduje stálé spojení = Deployment.
+
+V nové architektuře Python orchestrator **nevolá agenty přes RPC**. Místo toho:
+
+```
+Python Orchestrator                    K8s Job (coding agent)
+─────────────────                     ─────────────────────
+1. Připraví workspace:
+   - git worktree create
+   - zapíše instructions.md
+   - zapíše .jervis/kb-context.md
+   - zapíše .claude/mcp.json (Claude)
+   - zapíše CLAUDE.md (Claude)
+
+2. Vytvoří K8s Job:                   3. Job se spustí:
+   kubectl create job                    - přečte instructions.md
+   --env TASK_ID=xxx                     - spustí CLI (aider/claude/...)
+   --env CLIENT_ID=yyy                   - pracuje na git worktree
+   --env PROJECT_ID=zzz                  - (Claude: MCP pro KB)
+   --env WORKSPACE=/data/wt-xxx         - commitne výsledek
+                                         - zapíše result.json
+
+4. Sleduje Job status:               5. Job dokončí:
+   kubectl get job                       - exit code 0/1
+   + čte result.json                     - result.json s summary
+   + streamuje log:                      - git branch s výsledkem
+     kubectl logs -f                     - TTL auto-cleanup
+```
+
+**Výhody:**
+- Žádné WebSocket/RPC – jen filesystem + K8s API
+- Job si přečte instrukce z disku, výsledek zapíše na disk
+- Orchestrator sleduje průběh přes `kubectl logs -f` (streaming)
+- Výsledek = git branch + result.json na shared PVC
+
+### 18.4 Workspace setup – co orchestrator připraví před Job spuštěním
+
+```python
+# Python orchestrator – workspace_manager.py
+
+import subprocess
+import json
+import os
+from pathlib import Path
+
+DATA_ROOT = Path("/opt/jervis/data")
+
+async def prepare_workspace(
+    task_id: str,
+    client_id: str,
+    project_id: str | None,
+    project_path: str,          # e.g. "clients/acme/web-app"
+    instructions: str,
+    files: list[str],
+    agent_type: str,            # "aider" | "openhands" | "claude" | "junie"
+    kb_context: str | None,     # pre-fetched KB kontext
+) -> Path:
+    """Připraví izolovaný workspace pro coding agent Job."""
+
+    project_root = DATA_ROOT / project_path
+    worktree_path = DATA_ROOT / "worktrees" / task_id
+
+    # 1. Vytvořit git worktree pro izolaci
+    branch_name = f"task/{task_id}"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", branch_name,
+         str(worktree_path), "HEAD"],
+        cwd=project_root, check=True
+    )
+
+    # 2. Zapsat instrukce
+    jervis_dir = worktree_path / ".jervis"
+    jervis_dir.mkdir(exist_ok=True)
+
+    (jervis_dir / "instructions.md").write_text(instructions)
+    (jervis_dir / "task.json").write_text(json.dumps({
+        "taskId": task_id,
+        "clientId": client_id,
+        "projectId": project_id,
+        "agentType": agent_type,
+        "files": files,
+    }))
+
+    # 3. KB kontext – PRE-FETCH (funguje pro VŠECHNY agenty)
+    if kb_context:
+        (jervis_dir / "kb-context.md").write_text(kb_context)
+
+    # 4. Agent-specifická konfigurace
+    if agent_type == "claude":
+        _setup_claude_workspace(worktree_path, client_id, project_id, kb_context)
+    elif agent_type == "aider":
+        _setup_aider_workspace(worktree_path, files, kb_context)
+
+    return worktree_path
+
+
+def _setup_claude_workspace(
+    workspace: Path,
+    client_id: str,
+    project_id: str | None,
+    kb_context: str | None,
+):
+    """Claude Code: MCP config + CLAUDE.md"""
+
+    # MCP pro runtime KB přístup
+    claude_dir = workspace / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+
+    mcp_config = {
+        "mcpServers": {
+            "jervis-kb": {
+                "command": "python",
+                "args": ["/opt/jervis/mcp/kb-server.py"],
+                "env": {
+                    "CLIENT_ID": client_id,
+                    "PROJECT_ID": project_id or "",
+                    "KB_URL": "http://jervis-knowledgebase:8100"
+                }
+            }
+        }
+    }
+    (claude_dir / "mcp.json").write_text(json.dumps(mcp_config, indent=2))
+
+    # CLAUDE.md s projekt kontextem
+    claude_md_parts = [
+        "# Project Context (auto-generated by Jervis)",
+        "",
+        "## Instructions",
+        f"Read `.jervis/instructions.md` for your task.",
+        "",
+        "## Knowledge Base",
+        "You have access to the `jervis-kb` MCP server with these tools:",
+        "- `kb_search(query)` – hybrid search (RAG + graph)",
+        "- `kb_traverse(start_node)` – graph traversal",
+        "- `kb_graph_search(query)` – search graph nodes",
+        "- `kb_store(content, kind)` – store findings (use sparingly)",
+        "",
+        "Use KB to look up coding conventions, architecture decisions,",
+        "and previous findings before making changes.",
+    ]
+
+    if kb_context:
+        claude_md_parts.extend([
+            "",
+            "## Pre-fetched KB Context",
+            kb_context,
+        ])
+
+    (workspace / "CLAUDE.md").write_text("\n".join(claude_md_parts))
+
+
+def _setup_aider_workspace(
+    workspace: Path,
+    files: list[str],
+    kb_context: str | None,
+):
+    """Aider: .aider.conf.yml + kontext soubory"""
+
+    config_lines = ["yes: true"]  # --yes mode
+
+    # Aider --read flag pro read-only kontext soubory
+    if kb_context:
+        kb_file = workspace / ".jervis" / "kb-context.md"
+        config_lines.append(f"read: [{kb_file}]")
+
+    (workspace / ".aider.conf.yml").write_text("\n".join(config_lines))
+```
+
+### 18.5 K8s Job šablona
+
+```yaml
+# Template pro coding agent Job – generuje Python orchestrator
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jervis-{{agentType}}-{{taskId}}
+  namespace: jervis
+  labels:
+    app: jervis-coding-agent
+    agent-type: "{{agentType}}"    # aider | openhands | claude | junie
+    task-id: "{{taskId}}"
+    client-id: "{{clientId}}"
+spec:
+  ttlSecondsAfterFinished: 300     # Auto-cleanup po 5 minutách
+  backoffLimit: 0                   # Bez retry – orchestrator řeší escalation
+  activeDeadlineSeconds: 2700       # Hard timeout 45 min
+  template:
+    metadata:
+      labels:
+        app: jervis-coding-agent
+        agent-type: "{{agentType}}"
+        task-id: "{{taskId}}"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: agent
+          image: "registry.damek-soft.eu/jandamek/jervis-{{agentType}}:latest"
+          # Entrypoint se mění – místo kRPC serveru spustí agenta rovnou
+          command: ["/opt/jervis/entrypoint-job.sh"]
+          env:
+            - name: TASK_ID
+              value: "{{taskId}}"
+            - name: CLIENT_ID
+              value: "{{clientId}}"
+            - name: PROJECT_ID
+              value: "{{projectId}}"
+            - name: WORKSPACE
+              value: "/opt/jervis/data/worktrees/{{taskId}}"
+            - name: AGENT_TYPE
+              value: "{{agentType}}"
+            # Auth – z K8s secrets
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+                  optional: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+```
+
+### 18.6 Entrypoint pro Job mode
+
+```bash
+#!/bin/bash
+# /opt/jervis/entrypoint-job.sh – společný pro všechny agenty
+set -euo pipefail
+
+WORKSPACE="${WORKSPACE:?WORKSPACE env is required}"
+TASK_ID="${TASK_ID:?TASK_ID env is required}"
+AGENT_TYPE="${AGENT_TYPE:?AGENT_TYPE env is required}"
+RESULT_FILE="$WORKSPACE/.jervis/result.json"
+
+cd "$WORKSPACE"
+
+# Přečti instrukce
+INSTRUCTIONS=$(cat .jervis/instructions.md)
+TASK_JSON=$(cat .jervis/task.json)
+FILES=$(echo "$TASK_JSON" | python3 -c "import sys,json; print(' '.join(json.load(sys.stdin).get('files',[])))")
+
+write_result() {
+    local success=$1 summary=$2
+    cat > "$RESULT_FILE" <<RESULT_EOF
+{
+  "taskId": "$TASK_ID",
+  "success": $success,
+  "summary": "$(echo "$summary" | sed 's/"/\\"/g' | tr '\n' ' ')",
+  "agentType": "$AGENT_TYPE",
+  "timestamp": "$(date -Iseconds)"
+}
+RESULT_EOF
+}
+
+case "$AGENT_TYPE" in
+  aider)
+    # Aider: file-focused, rychlý
+    CMD="aider --yes --message \"$INSTRUCTIONS\""
+    if [ -n "$FILES" ]; then
+      CMD="$CMD $FILES"
+    fi
+    if [ -f ".jervis/kb-context.md" ]; then
+      CMD="$CMD --read .jervis/kb-context.md"
+    fi
+    ;;
+
+  openhands)
+    CMD="python3 -m openhands.core.main --task \"$INSTRUCTIONS\" --max-iterations 10"
+    ;;
+
+  claude)
+    # Claude Code: plné agentní chování (ne --print!)
+    CMD="claude --dangerously-skip-permissions --output-format json"
+    if [ -n "${CLAUDE_MODEL:-}" ]; then
+      CMD="$CMD --model $CLAUDE_MODEL"
+    fi
+    CMD="$CMD \"$INSTRUCTIONS\""
+    ;;
+
+  junie)
+    CMD="junie \"$INSTRUCTIONS\""
+    ;;
+
+  *)
+    write_result false "Unknown agent type: $AGENT_TYPE"
+    exit 1
+    ;;
+esac
+
+echo "=== JERVIS AGENT START: $AGENT_TYPE / $TASK_ID ==="
+echo "=== WORKSPACE: $WORKSPACE ==="
+echo "=== COMMAND: $CMD ==="
+
+# Spusť agenta
+if eval "$CMD" 2>&1; then
+    # Úspěch – commitni změny
+    git add -A
+    if git diff --cached --quiet; then
+        write_result true "No changes were needed."
+    else
+        git commit -m "task($TASK_ID): automated changes by $AGENT_TYPE"
+        write_result true "Changes committed successfully."
+    fi
+else
+    EXIT_CODE=$?
+    write_result false "Agent exited with code $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID ==="
+```
+
+### 18.7 Python orchestrator – spouštění a sledování Jobs
+
+```python
+# Python orchestrator – job_runner.py
+
+from kubernetes import client, config, watch
+import asyncio
+import json
+from pathlib import Path
+
+config.load_incluster_config()  # Běží v K8s clusteru
+batch_v1 = client.BatchV1Api()
+core_v1 = client.CoreV1Api()
+
+# Max souběžných agentů per typ – z nastavení (sekce 14)
+MAX_CONCURRENT = {
+    "aider": 3,
+    "openhands": 2,
+    "claude": 2,
+    "junie": 1,
+}
+
+async def run_coding_agent(
+    task_id: str,
+    agent_type: str,
+    client_id: str,
+    project_id: str | None,
+    workspace_path: str,
+    on_log_line: callable = None,     # streaming callback
+) -> dict:
+    """Spustí coding agent jako K8s Job a sleduje průběh."""
+
+    # 1. Kontrola limitu souběžných agentů
+    running = _count_running_jobs(agent_type)
+    if running >= MAX_CONCURRENT.get(agent_type, 1):
+        raise AgentCapacityError(
+            f"{agent_type} has {running}/{MAX_CONCURRENT[agent_type]} running jobs. "
+            f"Wait or increase limit in Settings."
+        )
+
+    # 2. Vytvoř Job
+    job_name = f"jervis-{agent_type}-{task_id[:8]}"
+    job = _build_job_manifest(
+        job_name=job_name,
+        agent_type=agent_type,
+        task_id=task_id,
+        client_id=client_id,
+        project_id=project_id or "",
+        workspace_path=workspace_path,
+    )
+
+    batch_v1.create_namespaced_job(namespace="jervis", body=job)
+
+    # 3. Sleduj logy (streaming do UI)
+    log_task = asyncio.create_task(
+        _stream_job_logs(job_name, on_log_line)
+    )
+
+    # 4. Čekej na dokončení
+    result = await _wait_for_job(job_name, timeout_seconds=2700)
+
+    log_task.cancel()
+
+    # 5. Přečti result.json z workspace
+    result_file = Path(workspace_path) / ".jervis" / "result.json"
+    if result_file.exists():
+        return json.loads(result_file.read_text())
+    else:
+        return {
+            "taskId": task_id,
+            "success": result["succeeded"],
+            "summary": f"Job finished with status: {result['status']}",
+            "agentType": agent_type,
+        }
+
+
+def _count_running_jobs(agent_type: str) -> int:
+    """Spočítá aktivní Jobs pro daný typ agenta."""
+    jobs = batch_v1.list_namespaced_job(
+        namespace="jervis",
+        label_selector=f"agent-type={agent_type},app=jervis-coding-agent"
+    )
+    return sum(
+        1 for j in jobs.items
+        if j.status.active and j.status.active > 0
+    )
+
+
+async def _stream_job_logs(job_name: str, callback: callable):
+    """Streamuje logy z Job podu do UI přes callback."""
+    # Počkat až pod existuje
+    for _ in range(60):
+        pods = core_v1.list_namespaced_pod(
+            namespace="jervis",
+            label_selector=f"job-name={job_name}"
+        )
+        if pods.items:
+            pod_name = pods.items[0].metadata.name
+            # Počkat na Running stav
+            if pods.items[0].status.phase in ("Running", "Succeeded", "Failed"):
+                break
+        await asyncio.sleep(2)
+    else:
+        return  # Pod se nespustil
+
+    # Stream logy
+    w = watch.Watch()
+    try:
+        for line in w.stream(
+            core_v1.read_namespaced_pod_log,
+            name=pod_name,
+            namespace="jervis",
+            follow=True,
+        ):
+            if callback:
+                await callback(line)
+    except Exception:
+        pass  # Pod skončil
+
+
+async def _wait_for_job(job_name: str, timeout_seconds: int = 2700) -> dict:
+    """Čeká na dokončení K8s Job."""
+    deadline = asyncio.get_event_loop().time() + timeout_seconds
+
+    while asyncio.get_event_loop().time() < deadline:
+        job = batch_v1.read_namespaced_job(name=job_name, namespace="jervis")
+
+        if job.status.succeeded and job.status.succeeded > 0:
+            return {"status": "succeeded", "succeeded": True}
+
+        if job.status.failed and job.status.failed > 0:
+            return {"status": "failed", "succeeded": False}
+
+        await asyncio.sleep(5)
+
+    return {"status": "timeout", "succeeded": False}
+
+
+def _build_job_manifest(
+    job_name: str,
+    agent_type: str,
+    task_id: str,
+    client_id: str,
+    project_id: str,
+    workspace_path: str,
+) -> client.V1Job:
+    """Sestaví K8s Job manifest."""
+    return client.V1Job(
+        metadata=client.V1ObjectMeta(
+            name=job_name,
+            namespace="jervis",
+            labels={
+                "app": "jervis-coding-agent",
+                "agent-type": agent_type,
+                "task-id": task_id,
+            },
+        ),
+        spec=client.V1JobSpec(
+            ttl_seconds_after_finished=300,
+            backoff_limit=0,
+            active_deadline_seconds=2700,
+            template=client.V1PodTemplateSpec(
+                metadata=client.V1ObjectMeta(labels={
+                    "app": "jervis-coding-agent",
+                    "agent-type": agent_type,
+                    "task-id": task_id,
+                }),
+                spec=client.V1PodSpec(
+                    restart_policy="Never",
+                    containers=[
+                        client.V1Container(
+                            name="agent",
+                            image=f"registry.damek-soft.eu/jandamek/jervis-{agent_type}:latest",
+                            command=["/opt/jervis/entrypoint-job.sh"],
+                            env=[
+                                client.V1EnvVar(name="TASK_ID", value=task_id),
+                                client.V1EnvVar(name="CLIENT_ID", value=client_id),
+                                client.V1EnvVar(name="PROJECT_ID", value=project_id),
+                                client.V1EnvVar(name="WORKSPACE", value=workspace_path),
+                                client.V1EnvVar(name="AGENT_TYPE", value=agent_type),
+                                client.V1EnvVar(
+                                    name="ANTHROPIC_API_KEY",
+                                    value_from=client.V1EnvVarSource(
+                                        secret_key_ref=client.V1SecretKeySelector(
+                                            name="jervis-secrets",
+                                            key="ANTHROPIC_API_KEY",
+                                            optional=True,
+                                        )
+                                    ),
+                                ),
+                            ],
+                            resources=client.V1ResourceRequirements(
+                                requests={"memory": "256Mi", "cpu": "250m"},
+                                limits={"memory": "1Gi", "cpu": "1000m"},
+                            ),
+                            volume_mounts=[
+                                client.V1VolumeMount(
+                                    name="jervis-data",
+                                    mount_path="/opt/jervis/data",
+                                )
+                            ],
+                        )
+                    ],
+                    volumes=[
+                        client.V1Volume(
+                            name="jervis-data",
+                            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                claim_name="jervis-data-pvc",
+                            ),
+                        )
+                    ],
+                ),
+            ),
+        ),
+    )
+```
+
+### 18.8 KB přístup – univerzální pro všechny agenty
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                  KB Access Strategy per Agent                      │
+├──────────┬────────────────────────┬───────────────────────────────┤
+│ Agent    │ Layer 1: PRE-FETCH     │ Layer 2: RUNTIME MCP          │
+│          │ (orchestrator dělá     │ (agent sám volá KB            │
+│          │  před Job spuštěním)   │  za běhu)                     │
+├──────────┼────────────────────────┼───────────────────────────────┤
+│ Claude   │ ✅ .jervis/kb-context  │ ✅ .claude/mcp.json           │
+│ Code     │    + CLAUDE.md         │    nativní MCP podpora        │
+│          │                        │    → plný runtime přístup     │
+├──────────┼────────────────────────┼───────────────────────────────┤
+│ Aider    │ ✅ .jervis/kb-context  │ ❌ nemá tool interface        │
+│          │    + --read flag       │    Workaround: kb-context     │
+│          │    v .aider.conf.yml   │    jako read-only soubor      │
+├──────────┼────────────────────────┼───────────────────────────────┤
+│ OpenHands│ ✅ .jervis/kb-context  │ ⚠️ možné přes custom action  │
+│          │    v instrukcích       │    ale komplexní setup         │
+│          │                        │    → pre-fetch stačí          │
+├──────────┼────────────────────────┼───────────────────────────────┤
+│ Junie    │ ✅ .jervis/kb-context  │ ❌ uzavřený binary            │
+│          │    v instrukcích       │    → pre-fetch only           │
+└──────────┴────────────────────────┴───────────────────────────────┘
+```
+
+#### Pre-fetch flow (všichni agenti):
+
+```python
+# Python orchestrator – kb_prefetch.py
+
+async def prefetch_kb_context(
+    task_description: str,
+    client_id: str,
+    project_id: str | None,
+    files: list[str],
+) -> str:
+    """Dotáže KB a vrátí kontext relevantní pro task."""
+
+    kb_url = "http://jervis-knowledgebase:8100"
+    sections = []
+
+    async with httpx.AsyncClient(timeout=15) as http:
+
+        # 1. Hledej relevantní znalosti pro task
+        resp = await http.post(f"{kb_url}/retrieve", json={
+            "query": task_description,
+            "clientId": client_id,
+            "projectId": project_id,
+            "maxResults": 5,
+            "minConfidence": 0.7,
+            "expandGraph": True,
+        })
+        results = resp.json().get("items", [])
+        if results:
+            sections.append("## Relevant Knowledge")
+            for item in results:
+                source = item.get("sourceUrn", "?")
+                content = item.get("content", "")[:300]
+                sections.append(f"- **{source}**: {content}")
+
+        # 2. Hledej coding conventions pro klienta
+        resp = await http.post(f"{kb_url}/retrieve/simple", json={
+            "query": "coding conventions style guide rules",
+            "clientId": client_id,
+            "projectId": "",  # Client-level only
+            "maxResults": 3,
+        })
+        conventions = resp.json().get("items", [])
+        if conventions:
+            sections.append("\n## Coding Conventions")
+            for item in conventions:
+                sections.append(f"- {item.get('content', '')[:200]}")
+
+        # 3. Hledej architecture decisions pro projekt
+        if project_id:
+            resp = await http.post(f"{kb_url}/retrieve/simple", json={
+                "query": "architecture decisions design patterns",
+                "clientId": client_id,
+                "projectId": project_id,
+                "maxResults": 3,
+            })
+            arch = resp.json().get("items", [])
+            if arch:
+                sections.append("\n## Architecture Decisions")
+                for item in arch:
+                    sections.append(f"- {item.get('content', '')[:200]}")
+
+        # 4. Pokud máme konkrétní soubory, hledej related znalosti
+        for file_path in files[:3]:  # Max 3 souborů
+            resp = await http.post(f"{kb_url}/retrieve/simple", json={
+                "query": f"file {file_path} implementation notes",
+                "clientId": client_id,
+                "projectId": project_id,
+                "maxResults": 2,
+            })
+            file_results = resp.json().get("items", [])
+            if file_results:
+                sections.append(f"\n## Notes for `{file_path}`")
+                for item in file_results:
+                    sections.append(f"- {item.get('content', '')[:200]}")
+
+    return "\n".join(sections) if sections else ""
+```
+
+### 18.9 Kompletní flow – od tasku po výsledek
+
+```
+1. Uživatel vytvoří task v UI (nebo orchestrator rozhodne o coding tasku)
+   │
+2. Python orchestrator rozhodne o agentovi (sekce 17.7):
+   │  SIMPLE → Aider, MEDIUM → Claude, COMPLEX → OpenHands, CRITICAL → Junie
+   │
+3. Orchestrator pre-fetchne KB kontext:
+   │  kb_prefetch.py → kb-context.md
+   │
+4. Orchestrator připraví workspace:
+   │  workspace_manager.py:
+   │  ├── git worktree create /data/worktrees/{taskId}
+   │  ├── .jervis/instructions.md
+   │  ├── .jervis/task.json
+   │  ├── .jervis/kb-context.md
+   │  ├── .claude/mcp.json       (Claude only)
+   │  ├── CLAUDE.md               (Claude only)
+   │  └── .aider.conf.yml         (Aider only)
+   │
+5. Orchestrator vytvoří K8s Job:
+   │  job_runner.py → kubectl create job
+   │
+6. Job se spustí:
+   │  entrypoint-job.sh:
+   │  ├── cd $WORKSPACE
+   │  ├── přečte instructions.md
+   │  ├── spustí agenta (aider/claude/openhands/junie)
+   │  │   └── Claude: MCP tools pro KB (runtime dotazy)
+   │  ├── agent pracuje...
+   │  ├── git add + commit
+   │  └── zapíše result.json
+   │
+7. Orchestrator sleduje průběh:
+   │  ├── kubectl logs -f → SSE → Kotlin server → UI chat
+   │  └── čeká na Job completion
+   │
+8. Job dokončí:
+   │  ├── orchestrator přečte result.json
+   │  ├── orchestrator přečte git diff (branch task/{taskId} vs HEAD)
+   │  └── git worktree remove (cleanup)
+   │
+9. Orchestrator reportuje výsledek:
+   │  ├── Kotlin server → UI (summary, diff, status)
+   │  └── Pokud fail → escalation (jiný agent / user approval)
+   │
+10. (Volitelně) ReviewerAgent zkontroluje diff
+    └── Approval / merge / další iterace
+```
+
+### 18.10 Migrace Docker images – dual-mode support
+
+Během přechodu budou Docker images podporovat **dva režimy**:
+
+```dockerfile
+# Příklad: service-claude/Dockerfile (dual-mode)
+FROM eclipse-temurin:21-jre-jammy
+# ... install Node.js, Claude CLI, Python, MCP server ...
+
+# Oba entrypointy v image
+COPY entrypoint-rpc.sh /opt/jervis/entrypoint-rpc.sh    # Stávající kRPC server
+COPY entrypoint-job.sh /opt/jervis/entrypoint-job.sh    # Nový Job mode
+COPY mcp/kb-server.py  /opt/jervis/mcp/kb-server.py     # KB MCP server
+
+# Default = RPC (zpětná kompatibilita)
+ENTRYPOINT ["/opt/jervis/entrypoint-rpc.sh"]
+# Job mode: přepíše se command v K8s Job spec
+```
+
+**Migrační plán:**
+1. **Fáze 1**: Přidat `entrypoint-job.sh` + MCP server do všech images (obojí funguje)
+2. **Fáze 2**: Python orchestrator spouští Jobs, Kotlin server stále má Deploymenty jako fallback
+3. **Fáze 3**: Odstranit kRPC Deploymenty, jen Jobs
+
+### 18.11 Revize K8s přehledu (finální stav)
+
+| Služba | K8s typ | Stav | Poznámka |
+|--------|---------|------|----------|
+| **Kotlin Server** | Deployment | Stálý (1 replika) | API gateway, UI WebSocket, K8s Job launcher |
+| **Python Orchestrator** | Deployment | Stálý (1 replika) | LangGraph, streaming SSE |
+| **Knowledge Base** | Deployment | Stálý (1 replika) | FastAPI, Weaviate, ArangoDB |
+| **Aider** | **Job** | On-demand | Max 3 souběžné (nastavitelné) |
+| **OpenHands** | **Job** | On-demand | Max 2 souběžné |
+| **Claude Code** | **Job** | On-demand | Max 2 souběžné, MCP pro KB |
+| **Junie** | **Job** | On-demand | Max 1 souběžný (drahý) |
+| **Joern** | Deployment | Stálý | Code analysis |
+| **Tika** | Deployment | Stálý | Document parsing |
+| **Whisper** | Deployment | Stálý | Speech-to-text |
+| **GitHub/GitLab/Atlassian** | Deployment | Stálý | Provider API clients |
+
+**Resource model:**
+- Stálé služby: ~4 GB RAM (server + orchestrator + KB + support)
+- Coding Jobs: 256MB-1GB per Job, 0 v idle
+- GPU: Jen pro Ollama (P40) – coding agenti nepoužívají GPU
