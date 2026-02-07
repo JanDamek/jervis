@@ -369,7 +369,7 @@ ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token pro Claude CLI + Aide
 - Lifecycle stav tasku (`TaskStateEnum`)
 - `orchestratorThreadId` – link na LangGraph checkpoint
 - `pendingUserQuestion` / `userQuestionContext` – USER_TASK kontext
-- `agentCheckpointJson` – legacy field (Koog removed, unused)
+- `agentCheckpointJson` – legacy field (unused, kept for backward compatibility)
 
 **LangGraph checkpoints v MongoDB** (Python orchestrátor, kolekce `checkpoints`):
 - Interní stav grafu (goals, steps, step_results, evaluation)
