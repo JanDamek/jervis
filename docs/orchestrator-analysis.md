@@ -1,8 +1,8 @@
 # Orchestrator Agent – Kompletní analýza a plán vylepšení
 
-**Datum:** 2026-02-07 (rev.2)
+**Datum:** 2026-02-07 (rev.3)
 **Autor:** Automatizovaná analýza
-**Rozsah:** OrchestratorAgent, GoalExecutor, 11 sub-agentů, tools, models, koog integrace, streaming, approval flow
+**Rozsah:** OrchestratorAgent, GoalExecutor, 11 sub-agentů, tools, models, koog integrace, streaming, approval flow, GPU budget, hybrid routing, unified coding agents
 
 ---
 
@@ -18,6 +18,9 @@
 8. [Approval Flow – Risky Step Protection](#8-approval-flow--risky-step-protection)
 9. [Tool Migration – kompletní plán přesunu do Pythonu](#9-tool-migration--kompletní-plán-přesunu-do-pythonu)
 10. [Komunikační architektura Python ↔ Kotlin ↔ UI](#10-komunikační-architektura)
+11. [Model Strategy – P40 GPU, VRAM budget, hybridní routing](#11-model-strategy--p40-gpu-vram-budget-hybridní-routing)
+12. [Hybridní model routing – lokální + placené modely](#12-hybridní-model-routing--lokální--placené-modely)
+13. [Unified Agent Interface – Claude Code jako 4. coding agent](#13-unified-agent-interface--claude-code-jako-4-coding-agent)
 
 ---
 
@@ -1445,4 +1448,584 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "2000m"
+```
+
+---
+
+## 11. Model Strategy – P40 GPU, VRAM budget, hybridní routing
+
+### 11.1 Stav hardware
+
+| Parametr | Hodnota |
+|----------|---------|
+| GPU | NVIDIA Tesla P40 |
+| VRAM | 24 GB GDDR5 |
+| Bandwidth | 346 GB/s (3x pomalejší než RTX 4090) |
+| FP16 | ~12 TFLOPS (žádné Tensor Cores) |
+| INT8 | 47 TOPS |
+
+### 11.2 Co běží na P40 současně
+
+| Proces | Model | VRAM | Poznámka |
+|--------|-------|------|----------|
+| **Orchestrator agent** | qwen3-coder-tool:30b Q4_K_M | ~18.6 GB | Hlavní agent |
+| **KB ingest (qualifier)** | qwen3-coder-tool:30b (qualifier instance) | ~18.6 GB | Běží na OLLAMA_QUALIFIER (port 11435) |
+| **Embedding** | qwen3-embedding:8b | ~5 GB | Běží na OLLAMA_EMBEDDING (port 11436) |
+
+**PROBLÉM:** 18.6 + 18.6 + 5 = **42.2 GB** – to se nevejde do 24 GB. Současný setup funguje díky tomu, že Ollama swapuje modely (unload/load). Ale to znamená:
+- Přepnutí mezi qualifier a orchestrátorem trvá **10-30 sekund** (model load)
+- Keep-alive `1h` = model zůstane v VRAM hodinu po posledním požadavku
+- Dvě Ollama instance (primary + qualifier) musí čekat dokud ta druhá uvolní VRAM
+
+### 11.3 VRAM budget – realistické scénáře
+
+#### Scénář A: Qwen3-Coder-30B-A3B (MoE) – AKTUÁLNÍ
+
+```
+Qwen3-Coder-30B-A3B (Q4_K_M):    ~18.6 GB model weights
+KV cache 48k (FP16):               ~4.5 GB
+CUDA overhead:                     ~1.0 GB
+────────────────────────────────────────────
+CELKEM:                            ~24.1 GB  ← NA HRANĚ, spilluje do RAM
+```
+
+**Speed:** ~5-12 tok/s na P40 (bandwidth limited)
+**Aktivní parametry:** pouze 3.3B z 30B (MoE – 128 expertů, 8 aktivních)
+**Kvalita:** Excelentní pro coding (69.6% SWE-Bench), solidní reasoning
+
+**Optimalizace KV cache:**
+- `--ctk q8_0 --ctv q4_0` → KV cache 48k = ~1.7 GB místo 4.5 GB
+- S touto optimalizací: 18.6 + 1.7 + 1.0 = **21.3 GB** – vejde se s 2.7 GB rezervou
+
+#### Scénář B: Menší model pro orchestrátor, velký jen pro coding
+
+```
+Orchestrator: Qwen3-14B (Q4_K_M)  ~8.5 GB
++ KV cache 48k:                    ~3.0 GB
++ CUDA overhead:                   ~0.5 GB
+────────────────────────────────────────────
+CELKEM orchestrator:               ~12.0 GB
+
+Zbývá pro embedding:               ~5.0 GB  → qwen3-embedding:8b se vejde
+Zbývá pro coding (když neběží):    ~12.0 GB → nebude sdílet
+```
+
+**Pro:** Orchestrátor a embedding běží SOUČASNĚ. Coding model se loadne jen když je potřeba.
+**Proti:** Qwen3-14B je výrazně slabší než 30B pro coding/reasoning.
+
+#### Scénář C: Qwen3-30B-A3B pro vše, ale optimalizovaný (DOPORUČENÝ)
+
+```
+Qwen3-Coder-30B-A3B (Q4_K_M):     ~18.6 GB
++ KV cache 32k (Q8_0/Q4_0):        ~1.1 GB
++ CUDA overhead:                    ~0.5 GB
+────────────────────────────────────────────
+CELKEM:                             ~20.2 GB
+
+Zbývá v VRAM:                       ~3.8 GB
+```
+
+**Klíč:** Snížit kontext na **32k** s kvantizovaným KV cache. Pro orchestrátor je 32k dostatečné – většina promptů je pod 16k. Při větších úlohách eskalovat na cloud model.
+
+### 11.4 Doporučená konfigurace pro P40
+
+```yaml
+# Jediná Ollama instance (sloučit primary + qualifier)
+ollama:
+  models:
+    orchestrator:
+      model: qwen3-coder-tool-32k:30b   # 32k default
+      quantization: Q4_K_M
+      kv_cache: q8_0/q4_0               # Kvantizovaný KV cache
+      keep_alive: 30m                    # Kratší keep-alive
+      gpu_layers: all                    # Vše na GPU
+
+    qualifier:                           # SDÍLÍ STEJNÝ MODEL
+      model: qwen3-coder-tool-8k:30b    # Malý kontext pro klasifikaci
+      keep_alive: 5m                     # Rychle uvolnit
+
+    embedding:
+      model: qwen3-embedding:8b
+      gpu_layers: 0                      # CPU ONLY – uvolnit VRAM pro hlavní model
+      concurrent_requests: 6
+
+  # Alternativa: embedding na CPU, 30B model drží GPU
+  num_parallel: 1                        # Jen 1 concurrent request
+```
+
+**Klíčové změny:**
+1. **Sloučit 2 Ollama instance do 1** – qualifier a orchestrátor sdílejí stejný model, jen jiný context size
+2. **Embedding na CPU** – qwen3-embedding:8b je dostatečně rychlý na CPU, uvolní ~5 GB VRAM
+3. **KV cache kvantizace** – Q8_0 keys + Q4_0 values = 3x menší KV cache
+4. **Kratší keep-alive** – 30 minut místo 1 hodiny, rychlejší model swap
+
+---
+
+## 12. Hybridní model routing – lokální + placené modely
+
+### 12.1 Princip: "Přemýšlení" na cloud, "práce" lokálně
+
+Agent pro většinu práce používá lokální Qwen3-30B. Ale když:
+- Potřebuje **složitý reasoning** (architektura, complex debug)
+- Lokální model **selže** 2x na stejném tasku
+- Úloha vyžaduje **velký context** (> 32k tokenů)
+- Uživatel explicitně požaduje **vyšší kvalitu**
+
+...eskaluje na placený cloud model.
+
+### 12.2 Model tiers
+
+| Tier | Model | Provider | Použití | Cena (approx) |
+|------|-------|----------|---------|----------------|
+| **LOCAL_FAST** | qwen3-coder-30b-a3b Q4_K_M (8k) | Ollama | Klasifikace, jednoduché queries | $0 |
+| **LOCAL_STANDARD** | qwen3-coder-30b-a3b Q4_K_M (32k) | Ollama | Orchestrace, plánování, research | $0 |
+| **LOCAL_LARGE** | qwen3-coder-30b-a3b Q4_K_M (48k) | Ollama | Velké dokumenty (spill to RAM) | $0 |
+| **CLOUD_REASONING** | Claude Sonnet 4.5 | Anthropic | Složitý reasoning, architectural decisions | ~$3/1M in + $15/1M out |
+| **CLOUD_CODING** | Claude Sonnet 4.5 | Anthropic | Coding agent (Claude Code SDK) | ~$3/1M in + $15/1M out |
+| **CLOUD_PREMIUM** | Claude Opus 4 | Anthropic | Kritické rozhodnutí, review | ~$15/1M in + $75/1M out |
+
+### 12.3 Kdy eskalovat na cloud (EscalationPolicy)
+
+```python
+from pydantic import BaseModel
+from enum import Enum
+
+class ModelTier(str, Enum):
+    LOCAL_FAST = "local_fast"
+    LOCAL_STANDARD = "local_standard"
+    LOCAL_LARGE = "local_large"
+    CLOUD_REASONING = "cloud_reasoning"
+    CLOUD_CODING = "cloud_coding"
+    CLOUD_PREMIUM = "cloud_premium"
+
+class EscalationPolicy:
+    """Rozhoduje kdy eskalovat na placený model."""
+
+    def select_tier(
+        self,
+        task_type: str,
+        complexity: str,        # "simple" | "medium" | "complex" | "critical"
+        context_tokens: int,
+        local_failures: int,    # Kolikrát lokální model selhal na tomto tasku
+        user_preference: str,   # "economy" | "balanced" | "quality"
+    ) -> ModelTier:
+
+        # Pravidlo 1: Uživatel explicitně chce kvalitu
+        if user_preference == "quality":
+            return ModelTier.CLOUD_REASONING
+
+        # Pravidlo 2: Lokální model selhal 2x → eskalovat
+        if local_failures >= 2:
+            return ModelTier.CLOUD_REASONING
+
+        # Pravidlo 3: Velký kontext → cloud (má 200k+ context)
+        if context_tokens > 32_000:
+            if user_preference == "economy":
+                return ModelTier.LOCAL_LARGE  # Spill to RAM, ale zadarmo
+            return ModelTier.CLOUD_REASONING
+
+        # Pravidlo 4: Coding task → cloud coding agent
+        if task_type == "code_change" and complexity in ("complex", "critical"):
+            return ModelTier.CLOUD_CODING  # Claude Code SDK
+
+        # Pravidlo 5: Architectural decision → cloud reasoning
+        if task_type in ("architecture", "design_review") and complexity != "simple":
+            return ModelTier.CLOUD_REASONING
+
+        # Pravidlo 6: Kritické rozhodnutí → premium
+        if complexity == "critical":
+            return ModelTier.CLOUD_PREMIUM
+
+        # Default: lokální model
+        if context_tokens > 16_000:
+            return ModelTier.LOCAL_STANDARD
+        return ModelTier.LOCAL_FAST
+```
+
+### 12.4 litellm integrace
+
+```python
+import litellm
+
+# Konfigurace providerů
+TIER_CONFIG = {
+    ModelTier.LOCAL_FAST: {
+        "model": "ollama/qwen3-coder-tool-8k:30b",
+        "api_base": "http://192.168.100.117:11434",
+    },
+    ModelTier.LOCAL_STANDARD: {
+        "model": "ollama/qwen3-coder-tool-32k:30b",
+        "api_base": "http://192.168.100.117:11434",
+    },
+    ModelTier.LOCAL_LARGE: {
+        "model": "ollama/qwen3-coder-tool-48k:30b",
+        "api_base": "http://192.168.100.117:11434",
+    },
+    ModelTier.CLOUD_REASONING: {
+        "model": "anthropic/claude-sonnet-4-5-20250929",
+    },
+    ModelTier.CLOUD_CODING: {
+        "model": "anthropic/claude-sonnet-4-5-20250929",
+        # Pro coding: Claude Code SDK, ne přímé LLM volání
+    },
+    ModelTier.CLOUD_PREMIUM: {
+        "model": "anthropic/claude-opus-4-6",
+    },
+}
+
+async def call_llm(tier: ModelTier, messages: list, tools: list = None):
+    """Unified LLM call přes litellm."""
+    config = TIER_CONFIG[tier]
+
+    response = await litellm.acompletion(
+        model=config["model"],
+        messages=messages,
+        tools=tools,
+        api_base=config.get("api_base"),
+        stream=True,  # Vždy streamovat
+    )
+
+    return response
+```
+
+### 12.5 Cost tracking a budget
+
+```python
+class CostTracker:
+    """Per-task a per-client cost tracking."""
+
+    async def track_call(self, client_id: str, tier: ModelTier, usage: dict):
+        cost = litellm.completion_cost(
+            model=TIER_CONFIG[tier]["model"],
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+        )
+
+        await self.db.save({
+            "client_id": client_id,
+            "tier": tier,
+            "model": TIER_CONFIG[tier]["model"],
+            "prompt_tokens": usage["prompt_tokens"],
+            "completion_tokens": usage["completion_tokens"],
+            "cost_usd": cost,
+            "timestamp": datetime.utcnow(),
+        })
+
+    async def get_budget_remaining(self, client_id: str) -> float:
+        """Kolik z měsíčního budgetu zbývá."""
+        spent = await self.db.sum_cost_this_month(client_id)
+        budget = await self.get_client_budget(client_id)
+        return budget - spent
+
+    async def check_budget(self, client_id: str, estimated_cost: float) -> bool:
+        """Lze provést tuto operaci v rámci budgetu?"""
+        remaining = await self.get_budget_remaining(client_id)
+        if estimated_cost > remaining:
+            return False  # → approval request
+        return True
+```
+
+---
+
+## 13. Unified Agent Interface – Claude Code jako 4. coding agent
+
+### 13.1 Současní coding agenti
+
+| Agent | Typ | Model | Silné stránky |
+|-------|-----|-------|---------------|
+| **Aider** | Open-source CLI | Lokální Qwen3 / Cloud Claude | Rychlý, 1-3 soubory |
+| **OpenHands** | Open-source platform | Lokální Qwen3 / Cloud Claude | Komplexní refactoring |
+| **Junie** | JetBrains (placený) | Cloud (vždy placený) | Premium kvalita |
+| **Claude Code** 🆕 | Anthropic CLI/SDK | Cloud (vždy Anthropic) | Nejlepší reasoning, autonomní |
+
+### 13.2 Přidání Claude Code jako service-claude-code
+
+```
+backend/
+  service-claude-code/        ← NOVÝ Python microservice
+    app/
+      main.py                 # FastAPI + WebSocket
+      agent.py                # Claude Agent SDK wrapper
+      streaming.py            # Live output streaming
+    Dockerfile
+    requirements.txt
+```
+
+#### Implementace
+
+```python
+# service-claude-code/app/agent.py
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+async def execute_coding_task(
+    instructions: str,
+    project_path: str,
+    files: list[str] = None,
+    verify_command: str = None,
+) -> AsyncGenerator[dict, None]:
+    """Execute coding task via Claude Code SDK with live streaming."""
+
+    options = ClaudeAgentOptions(
+        model="sonnet",  # claude-sonnet-4-5 (default, cost-effective)
+        permission_mode="bypassPermissions",  # Headless mode
+        allowed_tools=[
+            "Read", "Write", "Edit", "Bash",
+            "Grep", "Glob", "Task",  # Sub-agenti
+        ],
+        cwd=project_path,
+        system_prompt=f"""You are working on the Jervis project.
+        Focus on: {instructions}
+        Files to modify: {', '.join(files or ['auto-detect'])}
+        After changes, verify with: {verify_command or 'N/A'}
+        """,
+        max_turns=50,
+    )
+
+    # Stream events z Claude Code
+    async for event in query(prompt=instructions, options=options):
+        if event.type == "assistant":
+            yield {
+                "type": "progress",
+                "output": event.content,
+                "agent": "claude-code",
+            }
+        elif event.type == "tool_use":
+            yield {
+                "type": "tool_call",
+                "tool": event.tool_name,
+                "input": event.tool_input,
+                "agent": "claude-code",
+            }
+        elif event.type == "tool_result":
+            yield {
+                "type": "tool_result",
+                "output": str(event.content)[:500],
+                "agent": "claude-code",
+            }
+
+    # Verifikace
+    if verify_command:
+        yield {"type": "verification", "command": verify_command}
+        # Run verify...
+
+    yield {"type": "done", "success": True, "agent": "claude-code"}
+```
+
+#### WebSocket endpoint pro streaming
+
+```python
+# service-claude-code/app/main.py
+from fastapi import FastAPI, WebSocket
+from .agent import execute_coding_task
+
+app = FastAPI()
+
+@app.websocket("/ws/execute")
+async def ws_execute(ws: WebSocket):
+    await ws.accept()
+    request = await ws.receive_json()
+
+    async for event in execute_coding_task(
+        instructions=request["instructions"],
+        project_path=request["project_path"],
+        files=request.get("files"),
+        verify_command=request.get("verify_command"),
+    ):
+        await ws.send_json(event)
+
+    await ws.close()
+```
+
+### 13.3 Unified CodingAgent interface v Python orchestrátoru
+
+```python
+from abc import ABC, abstractmethod
+from typing import AsyncGenerator
+
+class CodingAgent(ABC):
+    """Společný interface pro všechny coding agenty."""
+
+    @abstractmethod
+    async def execute(
+        self,
+        instructions: str,
+        project_path: str,
+        files: list[str] = None,
+        verify_command: str = None,
+    ) -> AsyncGenerator[CodingEvent, None]:
+        """Execute coding task s live streamingem."""
+        ...
+
+    @property
+    @abstractmethod
+    def name(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def cost_tier(self) -> str: ...  # "free" | "paid" | "premium"
+
+class AiderAgent(CodingAgent):
+    """Aider – rychlý, 1-3 soubory, lokální model."""
+    name = "aider"
+    cost_tier = "free"  # Když běží s lokálním modelem
+
+    async def execute(self, instructions, project_path, files=None, verify_command=None):
+        async with websockets.connect(f"ws://{AIDER_URL}/ws/execute") as ws:
+            await ws.send(json.dumps({...}))
+            async for msg in ws:
+                yield CodingEvent.from_json(msg)
+
+class OpenHandsAgent(CodingAgent):
+    """OpenHands – komplexní refactoring, autonomní."""
+    name = "openhands"
+    cost_tier = "free"
+
+class JunieAgent(CodingAgent):
+    """Junie – JetBrains premium, vždy placený."""
+    name = "junie"
+    cost_tier = "premium"
+
+class ClaudeCodeAgent(CodingAgent):
+    """Claude Code – Anthropic, nejlepší reasoning."""
+    name = "claude-code"
+    cost_tier = "paid"
+
+    async def execute(self, instructions, project_path, files=None, verify_command=None):
+        async with websockets.connect(f"ws://{CLAUDE_CODE_URL}/ws/execute") as ws:
+            await ws.send(json.dumps({
+                "instructions": instructions,
+                "project_path": project_path,
+                "files": files,
+                "verify_command": verify_command,
+            }))
+            async for msg in ws:
+                yield CodingEvent.from_json(msg)
+```
+
+### 13.4 Smart Agent Selector
+
+```python
+class SmartAgentSelector:
+    """Automatický výběr coding agenta na základě úlohy."""
+
+    def select(
+        self,
+        task_complexity: str,     # "trivial" | "simple" | "complex" | "critical"
+        file_count: int,
+        budget_remaining: float,  # USD
+        user_preference: str,     # "economy" | "balanced" | "quality"
+        previous_failures: dict,  # {agent_name: failure_count}
+    ) -> list[CodingAgent]:
+        """Vrátí seřazený seznam agentů k vyzkoušení (failover chain)."""
+
+        if user_preference == "quality" or task_complexity == "critical":
+            return [ClaudeCodeAgent(), JunieAgent(), OpenHandsAgent()]
+
+        if task_complexity == "trivial" or (file_count <= 3):
+            return [AiderAgent(), OpenHandsAgent(), ClaudeCodeAgent()]
+
+        if task_complexity == "complex":
+            if budget_remaining > 1.0:
+                return [OpenHandsAgent(), ClaudeCodeAgent(), JunieAgent()]
+            else:
+                return [OpenHandsAgent(), AiderAgent()]
+
+        # Default: balanced
+        return [AiderAgent(), OpenHandsAgent(), ClaudeCodeAgent()]
+```
+
+### 13.5 K8s deployment – service-claude-code
+
+```yaml
+# k8s/app_claude_code.yaml (nový)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-claude-code
+  namespace: jervis
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: claude-code
+          image: ghcr.io/jandamek/jervis-claude-code:latest
+          ports:
+            - containerPort: 3400
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: anthropic-api-key
+            - name: PROJECT_ROOT
+              value: "/workspace"  # Mounted git repo
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: jervis-workspace
+```
+
+### 13.6 Rozšíření CodingTools – orchestrátor routing
+
+V Python orchestrátoru bude coding tool vypadat takto:
+
+```python
+@tool
+async def execute_code_change(
+    instructions: str,
+    files: list[str] = None,
+    verify_command: str = None,
+    preferred_agent: str = "auto",  # "auto" | "aider" | "openhands" | "junie" | "claude-code"
+) -> str:
+    """Execute code change with automatic agent selection and failover.
+
+    IMPORTANT: This is a RISKY action that requires user approval.
+    The orchestrator will pause and ask for approval before executing.
+
+    Args:
+        instructions: What code changes to make
+        files: Specific files to modify (helps select agent)
+        verify_command: Command to verify changes (e.g., 'pytest')
+        preferred_agent: Which agent to use, or 'auto' for smart selection
+    """
+    # 1. Select agent(s)
+    if preferred_agent == "auto":
+        agents = smart_selector.select(
+            task_complexity=assess_complexity(instructions),
+            file_count=len(files or []),
+            budget_remaining=await cost_tracker.get_budget_remaining(client_id),
+            user_preference=await preferences.get("coding_preference", "balanced"),
+            previous_failures={},
+        )
+    else:
+        agents = [AGENT_MAP[preferred_agent]]
+
+    # 2. Execute with failover
+    for agent in agents:
+        try:
+            result_chunks = []
+            async for event in agent.execute(instructions, project_path, files, verify_command):
+                # Stream event to UI
+                await emit_coding_event(event)
+                result_chunks.append(event)
+
+            final = result_chunks[-1]
+            if final.get("success"):
+                return format_success(agent.name, result_chunks)
+        except Exception as e:
+            logger.warning(f"Agent {agent.name} failed: {e}, trying next...")
+            continue
+
+    return "All coding agents failed. Manual intervention required."
 ```
