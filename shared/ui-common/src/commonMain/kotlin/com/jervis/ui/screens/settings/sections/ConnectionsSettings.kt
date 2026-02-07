@@ -62,7 +62,11 @@ import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.components.StatusIndicator
+import com.jervis.ui.design.JActionBar
+import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JervisSpacing
 import kotlinx.coroutines.launch
 import com.jervis.ui.util.openUrlInBrowser
 
@@ -110,10 +114,7 @@ fun ConnectionsSettings(repository: JervisRepository) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
+            JActionBar {
                 JPrimaryButton(onClick = { showCreateDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -121,10 +122,12 @@ fun ConnectionsSettings(repository: JervisRepository) {
                 }
             }
 
+            Spacer(Modifier.height(JervisSpacing.itemGap))
+
             if (connections.isEmpty() && isLoading) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                JCenteredLoading()
+            } else if (connections.isEmpty() && !isLoading) {
+                JEmptyState(message = "Žádná připojení nenalezena", icon = "🔌")
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -265,70 +268,79 @@ private fun ConnectionItemCard(
         border = CardDefaults.outlinedCardBorder(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(connection.name, style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.width(8.dp))
-                        SuggestionChip(
-                            onClick = {},
-                            label = { Text(connection.provider.name, style = MaterialTheme.typography.labelSmall) },
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        StatusIndicator(connection.state.name)
-                    }
-                    Text(
-                        text = connection.displayUrl,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (assignedClient != null) {
-                        Text(
-                            text = "Používá: ${assignedClient.name}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-
-                Row {
-                    JPrimaryButton(onClick = onTest) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Test")
-                        Spacer(Modifier.width(4.dp))
-                        Text("Test")
-                    }
-                    if (connection.authType == AuthTypeEnum.OAUTH2) {
-                        Spacer(Modifier.width(8.dp))
-                        JPrimaryButton(onClick = onReauthorize) {
-                            Text("Re-auth")
-                        }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    JPrimaryButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "Upravit")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onDelete,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Smazat")
-                    }
-                }
+            // Header: name + status
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(connection.name, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(8.dp))
+                SuggestionChip(
+                    onClick = {},
+                    label = { Text(connection.provider.name, style = MaterialTheme.typography.labelSmall) },
+                )
+                Spacer(Modifier.width(8.dp))
+                StatusIndicator(connection.state.name)
             }
 
+            // URL and client info
+            Text(
+                text = connection.displayUrl,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (assignedClient != null) {
+                Text(
+                    text = "Používá: ${assignedClient.name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // Capabilities
             if (connection.capabilities.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         "Funkce: ",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     connection.capabilities.forEach { capability ->
-                        Spacer(Modifier.width(4.dp))
                         CapabilityChip(capability)
                     }
+                }
+            }
+
+            // Action buttons - wrapped in a flow-like row for mobile
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                JPrimaryButton(onClick = onTest) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Test")
+                    Spacer(Modifier.width(4.dp))
+                    Text("Test")
+                }
+                if (connection.authType == AuthTypeEnum.OAUTH2) {
+                    JPrimaryButton(onClick = onReauthorize) {
+                        Text("Re-auth")
+                    }
+                }
+                JPrimaryButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "Upravit")
+                }
+                Button(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Smazat")
                 }
             }
         }
