@@ -3,18 +3,20 @@ package com.jervis.ui.screens.settings.sections
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
-import com.jervis.ui.design.JTableRowCard
+import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
@@ -29,7 +31,7 @@ fun LogsSettings(repository: JervisRepository) {
             isLoading = true
             try {
                 logs = repository.errorLogs.listAll(100)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
             } finally {
                 isLoading = false
             }
@@ -43,33 +45,45 @@ fun LogsSettings(repository: JervisRepository) {
             RefreshIconButton(onClick = { loadData() })
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(JervisSpacing.itemGap))
 
         if (isLoading && logs.isEmpty()) {
             JCenteredLoading()
         } else if (logs.isEmpty()) {
-            JEmptyState(message = "Žádné chybové logy nenalezeny")
+            JEmptyState(message = "Žádné chybové logy nenalezeny", icon = "📜")
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                modifier = Modifier.fillMaxSize(),
+            ) {
                 items(logs) { log ->
-                    JTableRowCard(selected = false) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                log.createdAt,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            log.causeType?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        border = CardDefaults.outlinedCardBorder(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .heightIn(min = JervisSpacing.touchTarget),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    it.substringAfterLast('.'),
+                                    log.createdAt,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                Spacer(Modifier.width(8.dp))
+                                log.causeType?.let {
+                                    Text(
+                                        it.substringAfterLast('.'),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
+                            Spacer(Modifier.height(4.dp))
+                            Text(log.message, style = MaterialTheme.typography.bodyMedium)
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(log.message, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }

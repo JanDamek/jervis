@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-05
+**Last updated:** 2026-02-07
 **Status:** Production Documentation
 
 This document is the single source of truth (SSOT) for UI guidelines and shared components.
@@ -63,10 +63,16 @@ This document is the single source of truth (SSOT) for UI guidelines and shared 
 - Desktop is the primary platform; mobile is a port of shared screens.
 - Code, comments, and logs in English.
 
-### Mobile-first and Shared Screens (Desktop + iPhone)
-- All screens are defined in `shared/ui-common` and must work on both desktop and iPhone (Compose Multiplatform).
+### Adaptive Layout (Phone / Tablet / Desktop)
+- All screens are defined in `shared/ui-common` and must work on all platforms (Compose Multiplatform).
+- **Breakpoint**: `COMPACT_BREAKPOINT_DP = 600` separates compact (phone) from expanded (tablet/desktop).
+- **Compact** (< 600dp): category list → tap → full-screen section with back navigation (JTopBar).
+- **Expanded** (≥ 600dp): sidebar + content side-by-side layout.
+- Use `JAdaptiveSidebarLayout` for settings-like screens with category navigation.
+- Use `JListDetailLayout` for entity list → detail navigation (clients, projects).
+- Use `JDetailScreen` for edit forms with consistent back + save/cancel action bar.
 - No fixed widths; use `Modifier.fillMaxWidth()` and scrolling (`LazyColumn` / `verticalScroll`).
-- Touch targets on mobile ≥ 44dp, texts and labels must be readable on small displays.
+- Touch targets on mobile ≥ 44dp (`JervisSpacing.touchTarget`), texts and labels must be readable on small displays.
 - Design dialogs and forms with wrapping into columns for narrow displays.
 
 ### Development Mode (UI Rules)
@@ -90,6 +96,11 @@ This document is the single source of truth (SSOT) for UI guidelines and shared 
   - `ConfirmDialog(visible, title, message, confirmText, onConfirm, onDismiss, isDestructive)` – Confirmation dialog.
   - `RefreshIconButton(onClick)` / `DeleteIconButton(onClick)` / `EditIconButton(onClick)` – Standardized buttons with emoji icons.
   - `CopyableTextCard(text, label)` – Card with text that can be copied on click.
+- Adaptive layouts:
+  - `JAdaptiveSidebarLayout(categories, selectedIndex, onSelect, onBack, title, ...)` – Sidebar (expanded) / list (compact) navigation.
+  - `JListDetailLayout(items, selectedItem, isLoading, ...)` – List with detail view navigation.
+  - `JDetailScreen(title, onBack, onSave, ...)` – Full-screen detail/edit form with consistent back + action bar.
+  - `JNavigationRow(icon, title, subtitle, onClick)` – Touch-friendly navigation row (≥ 44dp height).
 
 ## 3) Example Usage
 Top bar:
@@ -101,6 +112,51 @@ JTopBar(
         RefreshIconButton(onClick = ::reload)
     }
 )
+```
+
+Adaptive settings screen:
+```kotlin
+JAdaptiveSidebarLayout(
+    categories = SettingsCategory.entries.toList(),
+    selectedIndex = selectedIndex,
+    onSelect = { selectedIndex = it },
+    onBack = onBack,
+    title = "Nastavení",
+    categoryIcon = { it.icon },
+    categoryTitle = { it.title },
+    categoryDescription = { it.description },
+    content = { category -> SettingsContent(category, repository) },
+)
+```
+
+List-detail pattern:
+```kotlin
+JListDetailLayout(
+    items = clients,
+    selectedItem = selectedClient,
+    isLoading = isLoading,
+    onItemSelected = { selectedClient = it },
+    emptyMessage = "Žádní klienti nenalezeni",
+    emptyIcon = "🏢",
+    listHeader = { JActionBar { RefreshIconButton(onClick = ::load) } },
+    listItem = { client -> Card(...) { ... } },
+    detailContent = { client -> ClientEditForm(client, ...) },
+)
+```
+
+Detail screen with save:
+```kotlin
+JDetailScreen(
+    title = client.name,
+    onBack = onCancel,
+    onSave = { onSave(updatedClient) },
+    saveEnabled = name.isNotBlank(),
+) {
+    Column(modifier = Modifier.weight(1f).verticalScroll(scrollState)) {
+        JSection(title = "Základní údaje") { ... }
+        JSection(title = "Připojení") { ... }
+    }
+}
 ```
 
 Delete with confirmation:
@@ -142,10 +198,19 @@ if (isLoading) {
 - Use `JSection` for forms and sections in settings.
 - Use `JActionBar` for actions below forms.
 - Don't add new parameters/side-effects to shared components without agreement.
+- Use `Card` with `CardDefaults.outlinedCardBorder()` for all list items (consistent across all settings).
+- Use `JDetailScreen` for edit forms – provides consistent back navigation and save/cancel.
+- Use `JListDetailLayout` for entity management screens.
+- Use `JAdaptiveSidebarLayout` for category-based settings screens.
+- Ensure all interactive elements have minimum `JervisSpacing.touchTarget` (44dp) height.
+- Use shared `GitCommitConfigFields(...)` for git configuration in both Client and Project forms.
+- Use shared `getCapabilityLabel()` / `getIndexAllLabel()` from `ClientsSettings.kt` (internal visibility).
 
 ## 5) Spacing and Style
 - Use shared spacing constants from `JervisSpacing`:
   - `outerPadding` (10.dp) – outer margin.
   - `sectionPadding` (12.dp) – inner padding of section.
   - `itemGap` (8.dp) – gap between items.
+  - `touchTarget` (44.dp) – minimum touch target size for mobile.
 - Maintain consistent spacing between sections and inner elements.
+- `COMPACT_BREAKPOINT_DP` (600) – breakpoint for compact vs expanded layout.

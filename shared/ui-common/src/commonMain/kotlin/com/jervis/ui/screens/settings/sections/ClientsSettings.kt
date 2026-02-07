@@ -41,8 +41,7 @@ fun ClientsSettings(repository: JervisRepository) {
             isLoading = true
             try {
                 clients = repository.clients.getAllClients()
-            } catch (e: Exception) {
-                // Error handling can be added here
+            } catch (_: Exception) {
             } finally {
                 isLoading = false
             }
@@ -51,62 +50,66 @@ fun ClientsSettings(repository: JervisRepository) {
 
     LaunchedEffect(Unit) { loadClients() }
 
-    if (selectedClient != null) {
-        ClientEditForm(
-            client = selectedClient!!,
-            repository = repository,
-            onSave = { updated ->
-                scope.launch {
-                    try {
-                        repository.clients.updateClient(updated.id, updated)
-                        selectedClient = null
-                        loadClients()
-                    } catch (e: Exception) {
-                    }
-                }
-            },
-            onCancel = { selectedClient = null }
-        )
-    } else {
-        Column(modifier = Modifier.fillMaxSize()) {
+    JListDetailLayout(
+        items = clients,
+        selectedItem = selectedClient,
+        isLoading = isLoading,
+        onItemSelected = { selectedClient = it },
+        emptyMessage = "Žádní klienti nenalezeni",
+        emptyIcon = "🏢",
+        listHeader = {
             JActionBar {
                 RefreshIconButton(onClick = { loadClients() })
-                Button(onClick = { /* New client */ }) {
+                JPrimaryButton(onClick = { /* New client */ }) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Přidat klienta")
                 }
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            if (isLoading && clients.isEmpty()) {
-                JCenteredLoading()
-            } else if (clients.isEmpty()) {
-                JEmptyState(message = "Žádní klienti nenalezeni", icon = "🏢")
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(clients) { client ->
-                        JTableRowCard(
-                            selected = false,
-                            modifier = Modifier.clickable { selectedClient = client }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(client.name, style = MaterialTheme.typography.titleMedium)
-                                    Text("ID: ${client.id}", style = MaterialTheme.typography.bodySmall)
-                                }
-                                Icon(imageVector = Icons.Default.KeyboardArrowRight, contentDescription = null)
-                            }
-                        }
+        },
+        listItem = { client ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { selectedClient = client },
+                border = CardDefaults.outlinedCardBorder(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .heightIn(min = JervisSpacing.touchTarget),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(client.name, style = MaterialTheme.typography.titleMedium)
+                        Text("ID: ${client.id}", style = MaterialTheme.typography.bodySmall)
                     }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-        }
-    }
+        },
+        detailContent = { client ->
+            ClientEditForm(
+                client = client,
+                repository = repository,
+                onSave = { updated ->
+                    scope.launch {
+                        try {
+                            repository.clients.updateClient(updated.id, updated)
+                            selectedClient = null
+                            loadClients()
+                        } catch (_: Exception) {
+                        }
+                    }
+                },
+                onCancel = { selectedClient = null },
+            )
+        },
+    )
 }
 
 @Composable
@@ -114,7 +117,7 @@ private fun ClientEditForm(
     client: ClientDto,
     repository: JervisRepository,
     onSave: (ClientDto) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     var name by remember { mutableStateOf(client.name) }
     var description by remember { mutableStateOf(client.description ?: "") }
@@ -152,8 +155,7 @@ private fun ClientEditForm(
         scope.launch {
             try {
                 availableConnections = repository.connections.getAllConnections()
-            } catch (e: Exception) {
-                // Error handling
+            } catch (_: Exception) {
             }
         }
     }
@@ -162,8 +164,7 @@ private fun ClientEditForm(
         scope.launch {
             try {
                 projects = repository.projects.listProjectsForClient(client.id)
-            } catch (e: Exception) {
-                // Error handling
+            } catch (_: Exception) {
             }
         }
     }
@@ -177,8 +178,7 @@ private fun ClientEditForm(
             try {
                 val resources = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to resources)
-            } catch (e: Exception) {
-                // Error handling - just leave empty
+            } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
             } finally {
                 loadingResources = loadingResources - key
@@ -208,7 +208,6 @@ private fun ClientEditForm(
         loadProjects()
     }
 
-    // Eager-load resources for all assigned connections when connections become available
     LaunchedEffect(availableConnections, selectedConnectionIds.size) {
         selectedConnectionIds.forEach { connId ->
             val connection = availableConnections.firstOrNull { it.id == connId }
@@ -228,43 +227,67 @@ private fun ClientEditForm(
         }
     }
 
-    val scrollState = androidx.compose.foundation.rememberScrollState()
+    JDetailScreen(
+        title = client.name,
+        onBack = onCancel,
+        onSave = {
+            onSave(
+                client.copy(
+                    name = name,
+                    description = description.ifBlank { null },
+                    connectionIds = selectedConnectionIds.toList(),
+                    connectionCapabilities = connectionCapabilities,
+                    gitCommitMessageFormat = gitCommitMessageFormat.ifBlank { null },
+                    gitCommitAuthorName = gitCommitAuthorName.ifBlank { null },
+                    gitCommitAuthorEmail = gitCommitAuthorEmail.ifBlank { null },
+                    gitCommitCommitterName = gitCommitCommitterName.ifBlank { null },
+                    gitCommitCommitterEmail = gitCommitCommitterEmail.ifBlank { null },
+                    gitCommitGpgSign = gitCommitGpgSign,
+                    gitCommitGpgKeyId = gitCommitGpgKeyId.ifBlank { null },
+                ),
+            )
+        },
+        saveEnabled = name.isNotBlank(),
+    ) {
+        val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(end = 16.dp)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             JSection(title = "Základní údaje") {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Název klienta") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(JervisSpacing.itemGap))
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Popis") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    minLines = 2,
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             JSection(title = "Připojení klienta") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "Přiřaďte connections tomuto klientovi",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
-                    Button(onClick = { showConnectionsDialog = true }) {
-                        Text("+ Přidat connection")
+                    JPrimaryButton(onClick = { showConnectionsDialog = true }) {
+                        Text("+ Přidat")
                     }
                 }
 
@@ -274,34 +297,35 @@ private fun ClientEditForm(
                     Text(
                         "Žádná připojení nejsou přiřazena.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 } else {
                     selectedConnectionIds.forEach { connId ->
                         val connection = availableConnections.firstOrNull { it.id == connId }
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            border = CardDefaults.outlinedCardBorder(),
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .heightIn(min = JervisSpacing.touchTarget),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         connection?.name ?: "Unknown",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
                                         connection?.protocol?.name ?: "",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                                 IconButton(
                                     onClick = { selectedConnectionIds.remove(connId) },
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(JervisSpacing.touchTarget),
                                 ) {
                                     Text("✕", style = MaterialTheme.typography.titleSmall)
                                 }
@@ -325,8 +349,9 @@ private fun ClientEditForm(
                                             selectedConnectionIds.add(conn.id)
                                             showConnectionsDialog = false
                                         }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(12.dp)
+                                        .heightIn(min = JervisSpacing.touchTarget),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(conn.name, style = MaterialTheme.typography.bodyMedium)
@@ -341,18 +366,16 @@ private fun ClientEditForm(
                         TextButton(onClick = { showConnectionsDialog = false }) {
                             Text("Zavřít")
                         }
-                    }
+                    },
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             // Capability configuration section
             JSection(title = "Konfigurace schopností") {
                 Text(
                     "Nastavte, které zdroje z připojení se mají indexovat pro tohoto klienta.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -361,7 +384,7 @@ private fun ClientEditForm(
                     Text(
                         "Nejprve přiřaďte alespoň jedno připojení.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     selectedConnectionIds.forEach { connId ->
@@ -375,21 +398,19 @@ private fun ClientEditForm(
                                 onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
                                 onUpdateConfig = { config -> updateCapabilityConfig(config) },
                                 onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
-                                getConfig = { capability -> getCapabilityConfig(connId, capability) }
+                                getConfig = { capability -> getCapabilityConfig(connId, capability) },
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Provider resources → project creation section
             JSection(title = "Dostupné zdroje z providerů") {
                 Text(
                     "Zdroje z připojených služeb. Můžete vytvořit projekt propojený s daným zdrojem.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -398,7 +419,7 @@ private fun ClientEditForm(
                     Text(
                         "Nejprve přiřaďte alespoň jedno připojení.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     selectedConnectionIds.forEach { connId ->
@@ -449,21 +470,19 @@ private fun ClientEditForm(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             JSection(title = "Projekty klienta") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "Projekty přiřazené tomuto klientovi",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
-                    Button(onClick = { showCreateProjectDialog = true }) {
+                    JPrimaryButton(onClick = { showCreateProjectDialog = true }) {
                         Text("+ Vytvořit projekt")
                     }
                 }
@@ -474,38 +493,42 @@ private fun ClientEditForm(
                     Text(
                         "Žádné projekty nejsou vytvořeny.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     projects.forEach { project ->
                         Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
-                                // TODO: Navigate to project detail
-                            },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    // TODO: Navigate to project detail
+                                },
+                            border = CardDefaults.outlinedCardBorder(),
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .heightIn(min = JervisSpacing.touchTarget),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         project.name,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     project.description?.let {
                                         Text(
                                             it,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowRight,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -526,7 +549,7 @@ private fun ClientEditForm(
                                 value = newProjectName,
                                 onValueChange = { newProjectName = it },
                                 label = { Text("Název projektu") },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(Modifier.height(8.dp))
                             OutlinedTextField(
@@ -534,7 +557,7 @@ private fun ClientEditForm(
                                 onValueChange = { newProjectDescription = it },
                                 label = { Text("Popis (volitelné)") },
                                 modifier = Modifier.fillMaxWidth(),
-                                minLines = 2
+                                minLines = 2,
                             )
                         }
                     },
@@ -548,16 +571,15 @@ private fun ClientEditForm(
                                                 name = newProjectName,
                                                 description = newProjectDescription.ifBlank { null },
                                                 clientId = client.id,
-                                            )
+                                            ),
                                         )
                                         loadProjects()
                                         showCreateProjectDialog = false
-                                    } catch (e: Exception) {
-                                        // Error handling
+                                    } catch (_: Exception) {
                                     }
                                 }
                             },
-                            enabled = newProjectName.isNotBlank()
+                            enabled = newProjectName.isNotBlank(),
                         ) {
                             Text("Vytvořit")
                         }
@@ -566,127 +588,39 @@ private fun ClientEditForm(
                         TextButton(onClick = { showCreateProjectDialog = false }) {
                             Text("Zrušit")
                         }
-                    }
+                    },
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             JSection(title = "Výchozí Git Commit Konfigurace") {
                 Text(
                     "Tato konfigurace bude použita pro všechny projekty klienta (pokud projekt nepřepíše).",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = gitCommitMessageFormat,
-                    onValueChange = { gitCommitMessageFormat = it },
-                    label = { Text("Formát commit message (volitelné)") },
-                    placeholder = { Text("[{project}] {message}") },
-                    modifier = Modifier.fillMaxWidth()
+                GitCommitConfigFields(
+                    messageFormat = gitCommitMessageFormat,
+                    onMessageFormatChange = { gitCommitMessageFormat = it },
+                    authorName = gitCommitAuthorName,
+                    onAuthorNameChange = { gitCommitAuthorName = it },
+                    authorEmail = gitCommitAuthorEmail,
+                    onAuthorEmailChange = { gitCommitAuthorEmail = it },
+                    committerName = gitCommitCommitterName,
+                    onCommitterNameChange = { gitCommitCommitterName = it },
+                    committerEmail = gitCommitCommitterEmail,
+                    onCommitterEmailChange = { gitCommitCommitterEmail = it },
+                    gpgSign = gitCommitGpgSign,
+                    onGpgSignChange = { gitCommitGpgSign = it },
+                    gpgKeyId = gitCommitGpgKeyId,
+                    onGpgKeyIdChange = { gitCommitGpgKeyId = it },
                 )
-
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = gitCommitAuthorName,
-                    onValueChange = { gitCommitAuthorName = it },
-                    label = { Text("Jméno autora") },
-                    placeholder = { Text("Agent Name") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = gitCommitAuthorEmail,
-                    onValueChange = { gitCommitAuthorEmail = it },
-                    label = { Text("Email autora") },
-                    placeholder = { Text("agent@example.com") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    "Committer (ponechte prázdné pro použití autora)",
-                    style = MaterialTheme.typography.labelMedium
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = gitCommitCommitterName,
-                    onValueChange = { gitCommitCommitterName = it },
-                    label = { Text("Jméno committera (volitelné)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = gitCommitCommitterEmail,
-                    onValueChange = { gitCommitCommitterEmail = it },
-                    label = { Text("Email committera (volitelné)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = gitCommitGpgSign,
-                        onCheckedChange = { gitCommitGpgSign = it }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("GPG podpis commitů")
-                }
-
-                if (gitCommitGpgSign) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = gitCommitGpgKeyId,
-                        onValueChange = { gitCommitGpgKeyId = it },
-                        label = { Text("GPG Key ID") },
-                        placeholder = { Text("např. ABCD1234") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
-        }
 
-        JActionBar {
-            TextButton(onClick = onCancel) {
-                Text("Zrušit")
-            }
-            Button(
-                onClick = {
-                    onSave(
-                        client.copy(
-                            name = name,
-                            description = description.ifBlank { null },
-                            connectionIds = selectedConnectionIds.toList(),
-                            connectionCapabilities = connectionCapabilities,
-                            gitCommitMessageFormat = gitCommitMessageFormat.ifBlank { null },
-                            gitCommitAuthorName = gitCommitAuthorName.ifBlank { null },
-                            gitCommitAuthorEmail = gitCommitAuthorEmail.ifBlank { null },
-                            gitCommitCommitterName = gitCommitCommitterName.ifBlank { null },
-                            gitCommitCommitterEmail = gitCommitCommitterEmail.ifBlank { null },
-                            gitCommitGpgSign = gitCommitGpgSign,
-                            gitCommitGpgKeyId = gitCommitGpgKeyId.ifBlank { null }
-                        )
-                    )
-                },
-                enabled = name.isNotBlank()
-            ) {
-                Text("Uložit")
-            }
+            // Bottom spacing
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -700,18 +634,21 @@ private fun ConnectionCapabilityCard(
     onLoadResources: (ConnectionCapability) -> Unit,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
     onRemoveConfig: (ConnectionCapability) -> Unit,
-    getConfig: (ConnectionCapability) -> ClientConnectionCapabilityDto?
+    getConfig: (ConnectionCapability) -> ClientConnectionCapabilityDto?,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        border = CardDefaults.outlinedCardBorder(),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .heightIn(min = JervisSpacing.touchTarget),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("📌", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(8.dp))
@@ -719,18 +656,17 @@ private fun ConnectionCapabilityCard(
                     Text(
                         connection.name,
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         connection.capabilities.joinToString(", ") { it.name },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -748,7 +684,7 @@ private fun ConnectionCapabilityCard(
                         isLoadingResources = Pair(connection.id, capability) in loadingResources,
                         onLoadResources = { onLoadResources(capability) },
                         onUpdateConfig = onUpdateConfig,
-                        onRemoveConfig = { onRemoveConfig(capability) }
+                        onRemoveConfig = { onRemoveConfig(capability) },
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -766,13 +702,12 @@ private fun CapabilityConfigItem(
     isLoadingResources: Boolean,
     onLoadResources: () -> Unit,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
-    onRemoveConfig: () -> Unit
+    onRemoveConfig: () -> Unit,
 ) {
     val isEnabled = config?.enabled ?: false
     val indexAllResources = config?.indexAllResources ?: true
     val selectedResources = config?.selectedResources ?: emptyList()
 
-    // Load resources when expanding specific resources option
     LaunchedEffect(isEnabled, indexAllResources) {
         if (isEnabled && !indexAllResources && resources.isEmpty()) {
             onLoadResources()
@@ -781,8 +716,10 @@ private fun CapabilityConfigItem(
 
     Column {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(
                 checked = isEnabled,
@@ -794,18 +731,18 @@ private fun CapabilityConfigItem(
                                 capability = capability,
                                 enabled = true,
                                 indexAllResources = true,
-                                selectedResources = emptyList()
-                            )
+                                selectedResources = emptyList(),
+                            ),
                         )
                     } else {
                         onRemoveConfig()
                     }
-                }
+                },
             )
             Spacer(Modifier.width(4.dp))
             Text(
                 getCapabilityLabel(capability),
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
 
@@ -813,17 +750,19 @@ private fun CapabilityConfigItem(
             Column(modifier = Modifier.padding(start = 40.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable {
-                        onUpdateConfig(
-                            ClientConnectionCapabilityDto(
-                                connectionId = connectionId,
-                                capability = capability,
-                                enabled = true,
-                                indexAllResources = true,
-                                selectedResources = emptyList()
+                    modifier = Modifier
+                        .heightIn(min = JervisSpacing.touchTarget)
+                        .clickable {
+                            onUpdateConfig(
+                                ClientConnectionCapabilityDto(
+                                    connectionId = connectionId,
+                                    capability = capability,
+                                    enabled = true,
+                                    indexAllResources = true,
+                                    selectedResources = emptyList(),
+                                ),
                             )
-                        )
-                    }
+                        },
                 ) {
                     RadioButton(
                         selected = indexAllResources,
@@ -834,32 +773,34 @@ private fun CapabilityConfigItem(
                                     capability = capability,
                                     enabled = true,
                                     indexAllResources = true,
-                                    selectedResources = emptyList()
-                                )
+                                    selectedResources = emptyList(),
+                                ),
                             )
-                        }
+                        },
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         getIndexAllLabel(capability),
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable {
-                        onUpdateConfig(
-                            ClientConnectionCapabilityDto(
-                                connectionId = connectionId,
-                                capability = capability,
-                                enabled = true,
-                                indexAllResources = false,
-                                selectedResources = selectedResources
+                    modifier = Modifier
+                        .heightIn(min = JervisSpacing.touchTarget)
+                        .clickable {
+                            onUpdateConfig(
+                                ClientConnectionCapabilityDto(
+                                    connectionId = connectionId,
+                                    capability = capability,
+                                    enabled = true,
+                                    indexAllResources = false,
+                                    selectedResources = selectedResources,
+                                ),
                             )
-                        )
-                        onLoadResources()
-                    }
+                            onLoadResources()
+                        },
                 ) {
                     RadioButton(
                         selected = !indexAllResources,
@@ -870,16 +811,16 @@ private fun CapabilityConfigItem(
                                     capability = capability,
                                     enabled = true,
                                     indexAllResources = false,
-                                    selectedResources = selectedResources
-                                )
+                                    selectedResources = selectedResources,
+                                ),
                             )
                             onLoadResources()
-                        }
+                        },
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         "Pouze vybrané:",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
 
@@ -891,20 +832,20 @@ private fun CapabilityConfigItem(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
+                                    strokeWidth = 2.dp,
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     "Načítám dostupné zdroje...",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         } else if (resources.isEmpty()) {
                             Text(
                                 "Žádné zdroje k dispozici.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
                             if (resources.size > 5) {
@@ -930,7 +871,10 @@ private fun CapabilityConfigItem(
                             sortedFiltered.forEach { resource ->
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                        .heightIn(min = JervisSpacing.touchTarget),
                                 ) {
                                     Checkbox(
                                         checked = resource.id in selectedResources,
@@ -946,23 +890,22 @@ private fun CapabilityConfigItem(
                                                     capability = capability,
                                                     enabled = true,
                                                     indexAllResources = false,
-                                                    selectedResources = newSelected
-                                                )
+                                                    selectedResources = newSelected,
+                                                ),
                                             )
                                         },
-                                        modifier = Modifier.size(24.dp)
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Column {
                                         Text(
                                             resource.name,
-                                            style = MaterialTheme.typography.bodySmall
+                                            style = MaterialTheme.typography.bodySmall,
                                         )
                                         resource.description?.let { desc ->
                                             Text(
                                                 desc,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                     }
@@ -995,23 +938,25 @@ private fun ProviderResourcesCard(
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = CardDefaults.outlinedCardBorder(),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .heightIn(min = JervisSpacing.touchTarget),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         connection.name,
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${connection.provider.name} · $totalResources zdrojů",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (isAnyLoading) {
@@ -1101,13 +1046,15 @@ private fun ProviderResourceRow(
 ) {
     var isCreating by remember { mutableStateOf(false) }
 
-    // Reset creating state when project gets linked
     LaunchedEffect(linkedProject) {
         if (linkedProject != null) isCreating = false
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 8.dp)
+            .heightIn(min = JervisSpacing.touchTarget),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -1115,7 +1062,7 @@ private fun ProviderResourceRow(
             Text(
                 resource.id + (resource.description?.let { " · $it" } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
         }
@@ -1134,7 +1081,7 @@ private fun ProviderResourceRow(
                 },
                 enabled = !isCreating,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp),
+                modifier = Modifier.height(36.dp),
             ) {
                 if (isCreating) {
                     CircularProgressIndicator(
@@ -1150,7 +1097,9 @@ private fun ProviderResourceRow(
     }
 }
 
-private fun getCapabilityLabel(capability: ConnectionCapability): String {
+// ── Shared helpers ──────────────────────────────────────────────────────────────
+
+internal fun getCapabilityLabel(capability: ConnectionCapability): String {
     return when (capability) {
         ConnectionCapability.BUGTRACKER -> "Bug Tracker"
         ConnectionCapability.WIKI -> "Wiki"
@@ -1160,7 +1109,7 @@ private fun getCapabilityLabel(capability: ConnectionCapability): String {
     }
 }
 
-private fun getIndexAllLabel(capability: ConnectionCapability): String {
+internal fun getIndexAllLabel(capability: ConnectionCapability): String {
     return when (capability) {
         ConnectionCapability.BUGTRACKER -> "Indexovat všechny projekty"
         ConnectionCapability.WIKI -> "Indexovat všechny prostory"
@@ -1170,3 +1119,104 @@ private fun getIndexAllLabel(capability: ConnectionCapability): String {
     }
 }
 
+/**
+ * Shared Git commit configuration form fields.
+ * Used by both ClientEditForm and ProjectEditForm to avoid duplication.
+ */
+@Composable
+internal fun GitCommitConfigFields(
+    messageFormat: String,
+    onMessageFormatChange: (String) -> Unit,
+    authorName: String,
+    onAuthorNameChange: (String) -> Unit,
+    authorEmail: String,
+    onAuthorEmailChange: (String) -> Unit,
+    committerName: String,
+    onCommitterNameChange: (String) -> Unit,
+    committerEmail: String,
+    onCommitterEmailChange: (String) -> Unit,
+    gpgSign: Boolean,
+    onGpgSignChange: (Boolean) -> Unit,
+    gpgKeyId: String,
+    onGpgKeyIdChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = messageFormat,
+        onValueChange = onMessageFormatChange,
+        label = { Text("Formát commit message (volitelné)") },
+        placeholder = { Text("[{project}] {message}") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    OutlinedTextField(
+        value = authorName,
+        onValueChange = onAuthorNameChange,
+        label = { Text("Jméno autora") },
+        placeholder = { Text("Agent Name") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    OutlinedTextField(
+        value = authorEmail,
+        onValueChange = onAuthorEmailChange,
+        label = { Text("Email autora") },
+        placeholder = { Text("agent@example.com") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(12.dp))
+
+    Text(
+        "Committer (ponechte prázdné pro použití autora)",
+        style = MaterialTheme.typography.labelMedium,
+    )
+
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    OutlinedTextField(
+        value = committerName,
+        onValueChange = onCommitterNameChange,
+        label = { Text("Jméno committera (volitelné)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    OutlinedTextField(
+        value = committerEmail,
+        onValueChange = onCommitterEmailChange,
+        label = { Text("Email committera (volitelné)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(12.dp))
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = JervisSpacing.touchTarget),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = gpgSign,
+            onCheckedChange = onGpgSignChange,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text("GPG podpis commitů")
+    }
+
+    if (gpgSign) {
+        Spacer(Modifier.height(JervisSpacing.itemGap))
+        OutlinedTextField(
+            value = gpgKeyId,
+            onValueChange = onGpgKeyIdChange,
+            label = { Text("GPG Key ID") },
+            placeholder = { Text("např. ABCD1234") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
