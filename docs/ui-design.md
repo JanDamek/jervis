@@ -18,6 +18,8 @@ All new UI work MUST follow these patterns to keep the app visually and ergonomi
 
 2. **Client** – Organization/team
    - **Has assigned Connections** (`connectionIds`) - e.g., GitHub org, Jira workspace
+   - **Contains Project Groups** (`ProjectGroupDocument`) - logical grouping of projects
+   - **Contains Environments** (`EnvironmentDocument`) - K8s namespace definitions
    - **Has connectionCapabilities** - default capability configuration for all projects:
      ```kotlin
      data class ClientConnectionCapabilityDto(
@@ -31,7 +33,13 @@ All new UI work MUST follow these patterns to keep the app visually and ergonomi
      ```
    - **Has default Git commit configuration** for all its projects
 
-3. **Project** – Specific project within a client
+3. **Project Group** – Logical grouping of projects within a client
+   - **Has shared resources** (`ProjectResource`, `ResourceLink`)
+   - **KB cross-visibility**: All projects in a group share KB data
+   - **Environment inheritance**: Group-level environments apply to all projects in group
+
+4. **Project** – Specific project within a client
+   - **Belongs to optional group** (`groupId: ProjectGroupId?`)
    - **Has connectionCapabilities** - overrides client's defaults when set:
      ```kotlin
      data class ProjectConnectionCapabilityDto(
@@ -311,6 +319,9 @@ enum class SettingsCategory(
 ) {
     GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
     CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
+    PROJECTS("Projekty", "📁", "Správa projektů a přiřazení ke klientům."),
+    PROJECT_GROUPS("Skupiny projektů", "📦", "Logické seskupení projektů."),
+    ENVIRONMENTS("Prostředí", "🏗️", "K8s namespace definice pro testování."),
     // ...
 }
 
@@ -710,7 +721,9 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │   ├── SettingsScreen.kt        ← JAdaptiveSidebarLayout + categories
 │   │   └── sections/
 │   │       ├── ClientsSettings.kt   ← JListDetailLayout + shared helpers
-│   │       ├── ProjectsSettings.kt  ← JListDetailLayout + JDetailScreen
+│   │       ├── ProjectsSettings.kt  ← JListDetailLayout + JDetailScreen + group selector
+│   │       ├── ProjectGroupsSettings.kt ← JListDetailLayout (group CRUD + shared resources)
+│   │       ├── EnvironmentsSettings.kt  ← JListDetailLayout (environment CRUD + components)
 │   │       ├── ConnectionsSettings.kt ← Flat list + per-card actions
 │   │       ├── LogsSettings.kt      ← Flat list of error logs
 │   │       ├── GitSettings.kt       ← (standalone git config)

@@ -1,6 +1,7 @@
 package com.jervis.mapper
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectGroupId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
@@ -17,6 +18,7 @@ fun ProjectDocument.toDto(): ProjectDto =
     ProjectDto(
         id = this.id.toString(),
         clientId = this.clientId.toString(),
+        groupId = this.groupId?.toString(),
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
@@ -56,6 +58,7 @@ fun ProjectDto.toDocument(): ProjectDocument {
     return ProjectDocument(
         id = ProjectId(resolvedId),
         clientId = ClientId(ObjectId(resolvedClientId)),
+        groupId = this.groupId?.let { ProjectGroupId(ObjectId(it)) },
         name = this.name,
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,

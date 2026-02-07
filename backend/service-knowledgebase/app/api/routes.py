@@ -25,16 +25,18 @@ async def ingest_file(
     file: UploadFile = File(...),
     clientId: str = Form(...),
     projectId: str = Form(None),
+    groupId: str = Form(None),
     sourceUrn: str = Form(None),
     kind: str = Form("file"),
     metadata: str = Form("{}")
 ):
     try:
         meta = json.loads(metadata)
-        
+
         request = IngestRequest(
             clientId=clientId,
             projectId=projectId,
+            groupId=groupId,
             sourceUrn=sourceUrn or file.filename,
             kind=kind,
             content="", # Will be filled by Tika
@@ -101,6 +103,7 @@ async def retrieve_hybrid(request: HybridRetrievalRequest):
                 query=request.query,
                 clientId=request.clientId,
                 projectId=request.projectId,
+                groupId=request.groupId,
                 maxResults=request.maxResults,
                 minConfidence=request.minConfidence,
                 expandGraph=request.expandGraph
@@ -136,11 +139,12 @@ async def analyze_code(query: str, projectZipBase64: str = None):
 async def get_graph_node(
     node_key: str,
     clientId: str = "",
-    projectId: str = None
+    projectId: str = None,
+    groupId: str = None
 ):
     """Get a single graph node by key with multi-tenant filtering."""
     try:
-        return await service.graph_service.get_node(node_key, clientId, projectId)
+        return await service.graph_service.get_node(node_key, clientId, projectId, groupId)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -150,6 +154,7 @@ async def search_graph_nodes(
     query: str,
     clientId: str = "",
     projectId: str = None,
+    groupId: str = None,
     nodeType: str = None,
     limit: int = 20
 ):
@@ -159,6 +164,7 @@ async def search_graph_nodes(
             query=query,
             client_id=clientId,
             project_id=projectId,
+            group_id=groupId,
             node_type=nodeType,
             limit=limit
         )
@@ -279,9 +285,11 @@ async def ingest_full(
     subject: str = Form(None),
     content: str = Form(""),
     projectId: str = Form(None),
+    groupId: str = Form(None),
     metadata: str = Form("{}"),
     attachments: List[UploadFile] = File(default=[])
 ):
+
     """
     Full document ingestion with attachments.
 
@@ -297,6 +305,7 @@ async def ingest_full(
         request = FullIngestRequest(
             clientId=clientId,
             projectId=projectId,
+            groupId=groupId,
             sourceUrn=sourceUrn,
             sourceType=sourceType,
             subject=subject,

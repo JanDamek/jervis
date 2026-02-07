@@ -178,6 +178,7 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "artifacts": [],
         "error": None,
         "evaluation": None,
+        "environment": request.environment,
     }
 
 

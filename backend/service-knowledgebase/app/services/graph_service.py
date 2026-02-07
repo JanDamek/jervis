@@ -190,6 +190,7 @@ Text: {text}
                     "description": node.get('description', ''),
                     "clientId": request.clientId,
                     "projectId": request.projectId or "",
+                    "groupId": request.groupId or "",
                     "ragChunks": chunk_ids or [],
                 }
                 try:
@@ -324,8 +325,18 @@ Text: {text}
             client_expr = "(v.clientId == '' OR v.clientId == null)"
 
         if request.projectId:
-            project_expr = "(v.projectId == '' OR v.projectId == null OR v.projectId == @projectId)"
-            bind_vars["projectId"] = request.projectId
+            if request.groupId:
+                # Group cross-visibility: include project's own data + other projects in same group
+                project_expr = (
+                    "(v.projectId == '' OR v.projectId == null "
+                    "OR v.projectId == @projectId "
+                    "OR v.groupId == @groupId)"
+                )
+                bind_vars["projectId"] = request.projectId
+                bind_vars["groupId"] = request.groupId
+            else:
+                project_expr = "(v.projectId == '' OR v.projectId == null OR v.projectId == @projectId)"
+                bind_vars["projectId"] = request.projectId
             filter_expr = f"({client_expr} AND {project_expr})"
         else:
             # No project = don't filter by project
@@ -360,7 +371,7 @@ Text: {text}
             logger.warning("Traversal failed: %s", e)
             return []
 
-    async def get_node(self, key: str, client_id: str = "", project_id: str = None) -> GraphNode | None:
+    async def get_node(self, key: str, client_id: str = "", project_id: str = None, group_id: str = None) -> GraphNode | None:
         """
         Get a single node by key with multi-tenant filtering.
 
@@ -381,8 +392,17 @@ Text: {text}
             client_expr = "(doc.clientId == '' OR doc.clientId == null)"
 
         if project_id:
-            project_expr = "(doc.projectId == '' OR doc.projectId == null OR doc.projectId == @projectId)"
-            bind_vars["projectId"] = project_id
+            if group_id:
+                project_expr = (
+                    "(doc.projectId == '' OR doc.projectId == null "
+                    "OR doc.projectId == @projectId "
+                    "OR doc.groupId == @groupId)"
+                )
+                bind_vars["projectId"] = project_id
+                bind_vars["groupId"] = group_id
+            else:
+                project_expr = "(doc.projectId == '' OR doc.projectId == null OR doc.projectId == @projectId)"
+                bind_vars["projectId"] = project_id
             filter_expr = f"({client_expr} AND {project_expr})"
         else:
             filter_expr = client_expr
@@ -414,6 +434,7 @@ Text: {text}
         query: str,
         client_id: str = "",
         project_id: str = None,
+        group_id: str = None,
         node_type: str = None,
         limit: int = 20
     ) -> list[GraphNode]:
@@ -433,8 +454,17 @@ Text: {text}
             client_expr = "(doc.clientId == '' OR doc.clientId == null)"
 
         if project_id:
-            project_expr = "(doc.projectId == '' OR doc.projectId == null OR doc.projectId == @projectId)"
-            bind_vars["projectId"] = project_id
+            if group_id:
+                project_expr = (
+                    "(doc.projectId == '' OR doc.projectId == null "
+                    "OR doc.projectId == @projectId "
+                    "OR doc.groupId == @groupId)"
+                )
+                bind_vars["projectId"] = project_id
+                bind_vars["groupId"] = group_id
+            else:
+                project_expr = "(doc.projectId == '' OR doc.projectId == null OR doc.projectId == @projectId)"
+                bind_vars["projectId"] = project_id
             filter_expr = f"({client_expr} AND {project_expr})"
         else:
             filter_expr = client_expr

@@ -6,10 +6,12 @@ Runs as stdio process – Claude Code natively supports MCP via .claude/mcp.json
 Tenant context is injected via environment variables:
     CLIENT_ID  – required, scopes data to client
     PROJECT_ID – optional, further scopes to project
+    GROUP_ID   – optional, enables cross-project KB visibility within group
     KB_URL     – Knowledge Base service URL
 
 Scope hierarchy:
     global (clientId="") → client (clientId=X) → project (clientId=X, projectId=Y)
+    Group cross-visibility: projects in same group see each other's KB data
 """
 
 from __future__ import annotations
@@ -31,17 +33,21 @@ app = Server("jervis-kb")
 # Tenant context from environment
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
 PROJECT_ID = os.environ.get("PROJECT_ID") or None
+GROUP_ID = os.environ.get("GROUP_ID") or None
 KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8080")
 
 
-def _resolve_scope(scope: str = "auto") -> tuple[str, str | None]:
-    """Resolve tenant scope based on parameter or env defaults."""
+def _resolve_scope(scope: str = "auto") -> tuple[str, str | None, str | None]:
+    """Resolve tenant scope based on parameter or env defaults.
+
+    Returns (client_id, project_id, group_id).
+    """
     if scope == "global":
-        return "", None
+        return "", None, None
     elif scope == "client":
-        return CLIENT_ID, None
+        return CLIENT_ID, None, None
     else:  # "auto" or "project"
-        return CLIENT_ID, PROJECT_ID
+        return CLIENT_ID, PROJECT_ID, GROUP_ID
 
 
 @app.tool()
@@ -62,7 +68,7 @@ async def kb_search(
         max_results: Maximum number of results (default 10)
         min_confidence: Minimum confidence threshold (0.0-1.0)
     """
-    client_id, project_id = _resolve_scope(scope)
+    client_id, project_id, group_id = _resolve_scope(scope)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{KB_URL}/retrieve",
@@ -70,6 +76,7 @@ async def kb_search(
                 "query": query,
                 "clientId": client_id,
                 "projectId": project_id,
+                "groupId": group_id,
                 "maxResults": max_results,
                 "minConfidence": min_confidence,
                 "expandGraph": True,
@@ -89,7 +96,7 @@ async def kb_search(
 @app.tool()
 async def kb_search_simple(query: str, max_results: int = 5) -> str:
     """Quick RAG-only search without graph expansion. Faster but less comprehensive."""
-    client_id, project_id = _resolve_scope("auto")
+    client_id, project_id, group_id = _resolve_scope("auto")
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"{KB_URL}/retrieve/simple",
@@ -97,6 +104,7 @@ async def kb_search_simple(query: str, max_results: int = 5) -> str:
                 "query": query,
                 "clientId": client_id,
                 "projectId": project_id,
+                "groupId": group_id,
                 "maxResults": max_results,
             },
         )
@@ -123,7 +131,7 @@ async def kb_traverse(
         direction: "outbound", "inbound", or "any"
         max_hops: Maximum traversal depth (1-3 recommended)
     """
-    client_id, project_id = _resolve_scope("auto")
+    client_id, project_id, group_id = _resolve_scope("auto")
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.post(
             f"{KB_URL}/traverse",
@@ -133,6 +141,7 @@ async def kb_traverse(
                 "maxDepth": max_hops,
                 "clientId": client_id,
                 "projectId": project_id,
+                "groupId": group_id,
             },
         )
         resp.raise_for_status()
@@ -164,10 +173,12 @@ async def kb_graph_search(
         node_type: Filter by node type (optional)
         limit: Maximum number of results
     """
-    client_id, project_id = _resolve_scope("auto")
+    client_id, project_id, group_id = _resolve_scope("auto")
     params: dict = {"query": query, "clientId": client_id, "limit": limit}
     if project_id:
         params["projectId"] = project_id
+    if group_id:
+        params["groupId"] = group_id
     if node_type:
         params["nodeType"] = node_type
     async with httpx.AsyncClient(timeout=15) as client:
@@ -242,13 +253,14 @@ async def kb_store(
         source_urn: Source identifier (auto-set to agent URI)
         metadata: Additional metadata as JSON string
     """
-    client_id, project_id = _resolve_scope("auto")
+    client_id, project_id, group_id = _resolve_scope("auto")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{KB_URL}/ingest",
             json={
                 "clientId": client_id,
                 "projectId": project_id,
+                "groupId": group_id,
                 "sourceUrn": source_urn,
                 "kind": kind,
                 "content": content,

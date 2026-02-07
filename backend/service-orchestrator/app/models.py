@@ -152,6 +152,7 @@ class OrchestrateRequest(BaseModel):
     query: str
     agent_preference: str = "auto"
     rules: ProjectRules = Field(default_factory=ProjectRules)
+    environment: dict | None = None  # Resolved environment context from server
 
 
 class OrchestrateResponse(BaseModel):
@@ -181,6 +182,7 @@ class OrchestratorState(dict):
         current_step_index: int
         step_results: list[StepResult]
         evaluation: dict | None
+        environment: dict | None
         branch: str | None
         final_result: str | None
         artifacts: list[str]

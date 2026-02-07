@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.ProjectGroupDto
 import com.jervis.dto.ProjectResourceDto
 import com.jervis.dto.ResourceLinkDto
 import com.jervis.dto.connection.ConnectionCapability
@@ -128,8 +129,10 @@ private fun ProjectEditForm(
     var name by remember { mutableStateOf(project.name) }
     var description by remember { mutableStateOf(project.description ?: "") }
 
-    // Client and connections
+    // Client, groups and connections
     var client by remember { mutableStateOf<ClientDto?>(null) }
+    var clientGroups by remember { mutableStateOf<List<ProjectGroupDto>>(emptyList()) }
+    var selectedGroupId by remember { mutableStateOf(project.groupId) }
     var clientConnections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
 
     // Multi-resource model
@@ -164,7 +167,7 @@ private fun ProjectEditForm(
 
     val scope = rememberCoroutineScope()
 
-    // Load client and connections
+    // Load client, groups and connections
     LaunchedEffect(project.clientId) {
         try {
             val cid = project.clientId
@@ -174,6 +177,7 @@ private fun ProjectEditForm(
                 clientConnections = allConnections.filter { conn ->
                     client?.connectionIds?.contains(conn.id) == true
                 }
+                clientGroups = repository.projectGroups.listGroupsForClient(cid)
             }
         } catch (_: Exception) {
         }
@@ -243,6 +247,7 @@ private fun ProjectEditForm(
                 project.copy(
                     name = name,
                     description = description.ifBlank { null },
+                    groupId = selectedGroupId,
                     resources = resources,
                     resourceLinks = resourceLinks,
                     gitCommitMessageFormat = if (useCustomGitConfig) gitCommitMessageFormat.ifBlank { null } else null,
@@ -280,6 +285,46 @@ private fun ProjectEditForm(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                 )
+
+                // Group selector
+                if (clientGroups.isNotEmpty()) {
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    var groupExpanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
+                        expanded = groupExpanded,
+                        onExpandedChange = { groupExpanded = it },
+                    ) {
+                        OutlinedTextField(
+                            value = clientGroups.find { it.id == selectedGroupId }?.name ?: "(Žádná skupina)",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Skupina projektů") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = groupExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = groupExpanded,
+                            onDismissRequest = { groupExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("(Žádná skupina)") },
+                                onClick = {
+                                    selectedGroupId = null
+                                    groupExpanded = false
+                                },
+                            )
+                            clientGroups.forEach { group ->
+                                DropdownMenuItem(
+                                    text = { Text(group.name) },
+                                    onClick = {
+                                        selectedGroupId = group.id
+                                        groupExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Resources section

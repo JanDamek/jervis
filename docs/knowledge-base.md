@@ -233,7 +233,27 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 2.  **File Ingestion**: `POST /ingest/file` supports PDF, DOCX, etc. using Tika.
 3.  **Code Analysis**: `POST /analyze/code` integrates with Joern service.
 4.  **Image Understanding**: Automatically detects images and uses `qwen-3-vl` to generate descriptions.
-5.  **Scoped Search**: Filters results by Client and Project.
+5.  **Scoped Search**: Filters results by Client, Project, and Group.
+
+### Multi-tenant Scoping (with Project Groups)
+
+KB data is scoped hierarchically:
+
+| Scope | `clientId` | `projectId` | `groupId` | Visibility |
+|-------|-----------|-------------|-----------|------------|
+| Global | `""` | `""` | `""` | Visible everywhere |
+| Client | `"X"` | `""` | `""` | Visible to client X |
+| Group | `"X"` | `""` | `"G"` | Visible to all projects in group G |
+| Project | `"X"` | `"Y"` | `"G"` | Visible only to project Y |
+
+**Group cross-visibility**: When retrieving data for a project that belongs to a group,
+the filter includes: `(projectId == "" OR projectId == myProject OR groupId == myGroup)`.
+This means all projects in the same group share KB data (RAG chunks and graph nodes).
+
+Both Weaviate (RAG) and ArangoDB (Graph) store `groupId` alongside `clientId`/`projectId`.
+
+**Re-grouping**: When a project moves between groups, its own data retains its `projectId` and
+gains immediate visibility in the new group via the updated `groupId` filter.
 
 ### Integration
 *   **Tika Service**: Used for text extraction (OCR).
@@ -454,8 +474,9 @@ EvidencePack(
 2. **Bidirectional knowledge:** RAG (semantic) + Graph (structured)
 3. **Evidence-based relationships:** Every edge has supporting evidence
 4. **Multi-tenancy:** Per-client isolation in all storage layers
-5. **Fail-fast design:** Errors propagate, no silent failures
-6. **Type safety:** Explicit input/output types throughout
+5. **Project group cross-visibility:** Projects in same group share KB data
+6. **Fail-fast design:** Errors propagate, no silent failures
+7. **Type safety:** Explicit input/output types throughout
 
 ### Benefits
 

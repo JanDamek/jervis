@@ -489,3 +489,103 @@ Two layers:
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
 | `backend/server/.../BackgroundEngine.kt` | Result polling loop, USER_TASK escalation |
 | `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |
+| `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
+
+---
+
+## Environment Definitions
+
+### Overview
+
+Environment definitions describe K8s namespace configurations for testing and debugging.
+An environment contains infrastructure components (PostgreSQL, Redis, etc.) and project
+references, with property mappings connecting them.
+
+### Data Model
+
+```
+EnvironmentDocument (MongoDB: environments)
+├── clientId: ClientId
+├── groupId: ProjectGroupId?     ← Scoped to group (optional)
+├── projectId: ProjectId?        ← Scoped to project (optional)
+├── namespace: String            ← K8s namespace
+├── components: List<EnvironmentComponent>
+│   ├── type: ComponentType      ← POSTGRESQL, REDIS, PROJECT, etc.
+│   ├── image: String?           ← Docker image (infra) or null (project)
+│   ├── ports, envVars, autoStart, startOrder
+├── componentLinks: List<ComponentLink>
+│   ├── sourceComponentId → targetComponentId
+├── propertyMappings: List<PropertyMapping>
+│   ├── projectComponentId, propertyName, targetComponentId, valueTemplate
+├── agentInstructions: String?
+└── state: EnvironmentState      ← PENDING, CREATING, RUNNING, etc.
+```
+
+### Inheritance (Client → Group → Project)
+
+- Environment at **client level** applies to all groups and projects
+- Environment at **group level** overrides/extends for that group's projects
+- Environment at **project level** is most specific
+- Resolution: query most specific first (project → group → client)
+
+### Agent Environment Context
+
+When a coding task is dispatched to the Python orchestrator:
+
+1. `AgentOrchestratorService` resolves environment via `EnvironmentService.resolveEnvironmentForProject()`
+2. `EnvironmentMapper.toAgentContextJson()` converts to `JsonObject`
+3. Passed in `OrchestrateRequestDto.environment` field
+4. Python orchestrator stores in LangGraph state as `environment` dict
+5. `workspace_manager.prepare_workspace()` writes:
+   - `.jervis/environment.json` – raw JSON for programmatic access
+   - `.jervis/environment.md` – human-readable markdown
+6. `CLAUDE.md` includes environment section with:
+   - Infrastructure endpoints (host:port)
+   - Project components with ENV vars
+   - Agent instructions
+   - Component topology
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../entity/EnvironmentDocument.kt` | MongoDB document + embedded types |
+| `backend/server/.../service/environment/EnvironmentService.kt` | CRUD + resolve inheritance |
+| `backend/server/.../service/environment/EnvironmentK8sService.kt` | K8s namespace provisioning |
+| `backend/server/.../service/environment/ComponentDefaults.kt` | Default Docker images per type |
+| `backend/server/.../mapper/EnvironmentMapper.kt` | Document ↔ DTO + toAgentContextJson() |
+| `shared/common-dto/.../dto/environment/EnvironmentDtos.kt` | Cross-platform DTOs |
+
+---
+
+## Project Groups
+
+### Overview
+
+Project Groups provide logical grouping of projects within a client. Groups enable:
+- Shared resources and connections (inherited from client, extended at group level)
+- KB cross-visibility (projects in same group share knowledge base data)
+- Environment inheritance (group-level environments apply to all projects)
+
+### Data Model
+
+```
+ProjectGroupDocument (MongoDB: project_groups)
+├── clientId: ClientId
+├── name: String (unique)
+├── description: String?
+├── connectionCapabilities: List<ProjectConnectionCapability>
+├── resources: List<ProjectResource>
+└── resourceLinks: List<ResourceLink>
+
+ProjectDocument.groupId: ProjectGroupId?  ← null = ungrouped
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../entity/ProjectGroupDocument.kt` | MongoDB document |
+| `backend/server/.../service/projectgroup/ProjectGroupService.kt` | CRUD |
+| `backend/server/.../mapper/ProjectGroupMapper.kt` | Document ↔ DTO |
+| `shared/common-dto/.../dto/ProjectGroupDto.kt` | Cross-platform DTO |

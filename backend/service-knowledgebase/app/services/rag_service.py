@@ -35,6 +35,7 @@ class RagService:
                     wvc.Property(name="projectId", data_type=wvc.DataType.TEXT),
                     wvc.Property(name="kind", data_type=wvc.DataType.TEXT),
                     # Bidirectional linking: list of graph node keys referenced in this chunk
+                    wvc.Property(name="groupId", data_type=wvc.DataType.TEXT),
                     wvc.Property(name="graphRefs", data_type=wvc.DataType.TEXT_ARRAY),
                 ]
             )
@@ -69,6 +70,7 @@ class RagService:
                         "sourceUrn": request.sourceUrn,
                         "clientId": request.clientId,
                         "projectId": request.projectId or "",
+                        "groupId": request.groupId or "",
                         "kind": request.kind or "",
                         "graphRefs": graph_refs or [],
                     },
@@ -154,7 +156,14 @@ class RagService:
             # Include global project ("") + requested project
             global_project = wvc.query.Filter.by_property("projectId").equal("")
             my_project = wvc.query.Filter.by_property("projectId").equal(request.projectId)
-            project_filter = wvc.query.Filter.any_of([global_project, my_project])
+            project_alternatives = [global_project, my_project]
+
+            # Group cross-visibility: include data from other projects in same group
+            if request.groupId:
+                my_group = wvc.query.Filter.by_property("groupId").equal(request.groupId)
+                project_alternatives.append(my_group)
+
+            project_filter = wvc.query.Filter.any_of(project_alternatives)
 
             # Combine: client AND project
             filters = wvc.query.Filter.all_of([client_filter, project_filter])
