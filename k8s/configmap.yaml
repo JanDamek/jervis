@@ -154,6 +154,8 @@ data:
         baseUrl: ws://jervis-claude:3400/
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/
+      orchestrator:
+        baseUrl: http://jervis-orchestrator:8090/
       providers:
         github: ws://jervis-github:8085/
         gitlab: ws://jervis-gitlab:8086/

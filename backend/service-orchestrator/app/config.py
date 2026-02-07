@@ -17,14 +17,14 @@ class Settings(BaseSettings):
         "mongodb://root:qusre5-mYfpox-dikpef@192.168.100.117:27017/jervis?authSource=admin",
     )
 
-    # Kotlin Server (internal API)
+    # Kotlin Server (internal API – runs on port 5500)
     kotlin_server_url: str = os.getenv(
-        "KOTLIN_SERVER_URL", "http://jervis-server:8080"
+        "KOTLIN_SERVER_URL", "http://jervis-server:5500"
     )
 
-    # Knowledge Base
+    # Knowledge Base (runs on port 8080)
     knowledgebase_url: str = os.getenv(
-        "KNOWLEDGEBASE_URL", "http://jervis-knowledgebase:8100"
+        "KNOWLEDGEBASE_URL", "http://jervis-knowledgebase:8080"
     )
 
     # LLM providers

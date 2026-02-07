@@ -40,6 +40,9 @@ echo ""
 "${K8S_DIR}/build_kb.sh"
 echo ""
 
+"${K8S_DIR}/build_orchestrator.sh"
+echo ""
+
 # Note: qualification service removed - SimpleQualifierAgent calls KB directly
 
 echo ""
