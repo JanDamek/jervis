@@ -361,8 +361,19 @@ suspend fun interpretRequest(): String {
 
 ## UI Design System
 
-> **SSOT:** Full design system documentation is in **[`docs/ui-design.md`](ui-design.md)**.
-> This section is a quick-reference summary. When in conflict, `ui-design.md` is authoritative.
+> **Full SSOT with ASCII diagrams, all patterns and complete examples:** **[`docs/ui-design.md`](ui-design.md)**
+> This section has enough detail for common tasks. For dialog patterns, expandable sections,
+> typography conventions and migration checklist see `ui-design.md`.
+
+### Source Files
+
+| What | Where |
+|------|-------|
+| All `J*` components + adaptive layouts | `shared/ui-common/.../design/DesignSystem.kt` |
+| Shared form helpers (GitCommitConfigFields, getCapabilityLabel) | `shared/ui-common/.../screens/settings/sections/ClientsSettings.kt` (internal) |
+| Icon buttons (Refresh, Delete, Edit) | `shared/ui-common/.../util/IconButtons.kt` |
+| ConfirmDialog | `shared/ui-common/.../util/ConfirmDialog.kt` |
+| StatusIndicator, SettingCard, ActionRibbon | `shared/ui-common/.../components/SettingComponents.kt` |
 
 ### Core Principles
 
@@ -371,50 +382,277 @@ suspend fun interpretRequest(): String {
 - **Fail-fast in UI:** Show errors via `JErrorState`, never hide
 - **Touch targets ≥ 44dp:** `JervisSpacing.touchTarget` – all clickable elements
 - **No secrets masking:** Passwords, tokens, keys always visible (private app)
+- **Czech UI labels:** All user-facing text in Czech, code/comments/logs in English
+
+### Adaptive Layout – How It Works
+
+Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
+
+**Compact (phone < 600dp):**
+- Category list as full-screen `JNavigationRow` items with icon, title, description, chevron
+- Tap → full-screen section with `JTopBar` back arrow
+- Entity detail replaces list entirely
+
+**Expanded (tablet/desktop ≥ 600dp):**
+- 240dp sidebar with category selection + "Zpět" button
+- Content area fills remaining width
+- Entity detail also replaces list (same behavior)
+
+### Decision Tree – Which Component to Use
+
+```
+┌─ New screen type? ─────────────────────────────────────────────────┐
+│                                                                     │
+│  Category-based navigation (settings, admin)?                       │
+│    → JAdaptiveSidebarLayout                                         │
+│    Example: SettingsScreen.kt                                       │
+│                                                                     │
+│  Entity list with CRUD (clients, projects)?                         │
+│    → JListDetailLayout (for the list)                               │
+│    → JDetailScreen (for the edit form)                              │
+│    Example: ClientsSettings.kt, ProjectsSettings.kt                │
+│                                                                     │
+│  Flat list with per-row actions (connections, logs)?                 │
+│    → LazyColumn + Card(outlinedCardBorder) + JActionBar at top      │
+│    Example: ConnectionsSettings.kt, LogsSettings.kt                │
+│                                                                     │
+│  Simple scrollable form (general settings)?                         │
+│    → Column(verticalScroll) with JSection blocks                    │
+│    Example: GeneralSettings in SettingsScreen.kt                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ### Key Adaptive Components
 
-| Component | Use when |
-|-----------|---------|
-| `JAdaptiveSidebarLayout` | Category-based navigation (settings, admin panels) |
-| `JListDetailLayout` | Entity list with create/edit/detail (clients, projects) |
-| `JDetailScreen` | Edit forms – provides consistent back nav + save/cancel bar |
-| `JNavigationRow` | Touch-friendly navigation rows in compact mode |
+| Component | Purpose | Key params |
+|-----------|---------|------------|
+| `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon`, `categoryTitle`, `categoryDescription`, `content` |
+| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
+| `JDetailScreen` | Edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
+| `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon`, `title`, `subtitle?`, `onClick`, `trailing` |
+
+### Pattern 1: Category-Based Settings
+
+```kotlin
+enum class SettingsCategory(val title: String, val icon: String, val description: String) {
+    GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
+    CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
+    // ...
+}
+
+@Composable
+fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
+    val categories = remember { SettingsCategory.entries.toList() }
+    var selectedIndex by remember { mutableIntStateOf(0) }
+
+    JAdaptiveSidebarLayout(
+        categories = categories,
+        selectedIndex = selectedIndex,
+        onSelect = { selectedIndex = it },
+        onBack = onBack,
+        title = "Nastavení",
+        categoryIcon = { it.icon },
+        categoryTitle = { it.title },
+        categoryDescription = { it.description },
+        content = { category -> SettingsContent(category, repository) },
+    )
+}
+```
+
+### Pattern 2: Entity List → Detail
+
+```kotlin
+JListDetailLayout(
+    items = clients,
+    selectedItem = selectedClient,
+    isLoading = isLoading,
+    onItemSelected = { selectedClient = it },
+    emptyMessage = "Žádní klienti nenalezeni",
+    emptyIcon = "🏢",
+    listHeader = {
+        JActionBar {
+            RefreshIconButton(onClick = { loadClients() })
+            JPrimaryButton(onClick = { /* new */ }) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Přidat klienta")
+            }
+        }
+    },
+    listItem = { client ->
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable { selectedClient = client },
+            border = CardDefaults.outlinedCardBorder(),
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp).heightIn(min = JervisSpacing.touchTarget),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(client.name, style = MaterialTheme.typography.titleMedium)
+                    Text("ID: ${client.id}", style = MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.Default.KeyboardArrowRight, null,
+                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    },
+    detailContent = { client ->
+        ClientEditForm(client, repository, onSave = { ... }, onCancel = { selectedClient = null })
+    },
+)
+```
+
+### Pattern 3: Edit Form (Detail Screen)
+
+```kotlin
+JDetailScreen(
+    title = client.name,
+    onBack = onCancel,
+    onSave = { onSave(client.copy(name = name, ...)) },
+    saveEnabled = name.isNotBlank(),
+) {
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = Modifier.weight(1f).verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        JSection(title = "Základní údaje") {
+            OutlinedTextField(value = name, onValueChange = { name = it },
+                label = { Text("Název") }, modifier = Modifier.fillMaxWidth())
+        }
+        JSection(title = "Git Commit Konfigurace") {
+            GitCommitConfigFields(  // Shared helper from ClientsSettings.kt
+                messageFormat = ..., authorName = ..., authorEmail = ...,
+                committerName = ..., committerEmail = ...,
+                gpgSign = ..., gpgKeyId = ...,
+                // + all onChange callbacks
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+```
+
+### Pattern 4: Flat List with Actions (Connections, Logs)
+
+```kotlin
+Column(modifier = Modifier.fillMaxSize()) {
+    JActionBar {
+        JPrimaryButton(onClick = { showCreateDialog = true }) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Přidat připojení")
+        }
+    }
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    if (isLoading && items.isEmpty()) JCenteredLoading()
+    else if (items.isEmpty()) JEmptyState(message = "Žádná data", icon = "📋")
+    else LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.weight(1f),
+    ) {
+        items(data) { item ->
+            Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder()) {
+                Column(Modifier.padding(16.dp)) {
+                    // ... content rows ...
+                    Row(Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        JPrimaryButton(onClick = { ... }) { Text("Akce") }
+                        Button(onClick = { ... }, colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )) { Icon(Icons.Default.Delete, contentDescription = "Smazat") }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+### Pattern 5: Expandable Card (Nested Content)
+
+```kotlin
+var expanded by remember { mutableStateOf(false) }
+
+Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+     border = CardDefaults.outlinedCardBorder()) {
+    Column(Modifier.padding(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp
+                 else Icons.Default.KeyboardArrowDown, null)
+        }
+        if (expanded) {
+            Spacer(Modifier.height(12.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
+            // ... nested content ...
+        }
+    }
+}
+```
 
 ### Shared Form Helpers
 
 | Helper | Location | Purpose |
 |--------|----------|---------|
-| `GitCommitConfigFields(...)` | `ClientsSettings.kt` (internal) | Reusable git commit config form |
-| `getCapabilityLabel(capability)` | `ClientsSettings.kt` (internal) | Human-readable capability labels |
-| `getIndexAllLabel(capability)` | `ClientsSettings.kt` (internal) | "Index all..." labels per capability |
-
-### Quick Decision Tree
-
-```
-Category-based screen?         → JAdaptiveSidebarLayout
-Entity CRUD list?              → JListDetailLayout + JDetailScreen
-Simple flat list with actions? → LazyColumn + JActionBar + state components
-Edit form?                     → JDetailScreen (provides back + save/cancel)
-```
+| `GitCommitConfigFields(...)` | `ClientsSettings.kt` (internal) | Reusable git commit config form (7 fields + GPG) |
+| `getCapabilityLabel(capability)` | `ClientsSettings.kt` (internal) | Human-readable label: BUGTRACKER→"Bug Tracker" etc. |
+| `getIndexAllLabel(capability)` | `ClientsSettings.kt` (internal) | "Indexovat všechny repozitáře" etc. |
 
 ### Card & Spacing Standards
 
-- Cards: `CardDefaults.outlinedCardBorder()` (no elevation, no surfaceVariant)
-- Spacing: `JervisSpacing.outerPadding` (10dp), `.sectionPadding` (12dp), `.itemGap` (8dp), `.touchTarget` (44dp)
-- Between form sections: `Arrangement.spacedBy(16.dp)`
+```kotlin
+// ALL list item cards:
+Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder())
+
+// Spacing constants:
+JervisSpacing.outerPadding   // 10.dp - screen margins
+JervisSpacing.sectionPadding // 12.dp - JSection internal
+JervisSpacing.itemGap        // 8.dp  - between items in LazyColumn
+JervisSpacing.touchTarget    // 44.dp - minimum clickable height
+
+COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
+
+// Between form sections: Arrangement.spacedBy(16.dp)
+// Between fields in a section: Spacer(Modifier.height(JervisSpacing.itemGap))
+```
+
+### Typography Quick Reference
+
+| Context | Style | Color |
+|---------|-------|-------|
+| Card title | `titleMedium` | default |
+| Card subtitle / ID | `bodySmall` | `onSurfaceVariant` |
+| Section title | `titleMedium` (via JSection) | `primary` |
+| Capability group label | `labelMedium` | `primary` |
+| Help text / hint | `bodySmall` | `onSurfaceVariant` |
+| Error text | `bodySmall` | `error` |
 
 ### Forbidden Patterns
 
 | Don't | Do instead |
 |-------|-----------|
-| `Card(elevation/surfaceVariant)` | `Card(border = outlinedCardBorder())` |
+| `Card(elevation = ..., colors = surfaceVariant)` | `Card(border = outlinedCardBorder())` |
 | `Box { CircularProgressIndicator() }` | `JCenteredLoading()` |
-| Inline save/cancel in form | `JDetailScreen(onSave, onBack)` |
+| Inline save/cancel below form | `JDetailScreen(onSave, onBack)` |
 | Fixed sidebar without adaptive | `JAdaptiveSidebarLayout` |
-| `IconButton` without explicit 44dp size | `IconButton(Modifier.size(touchTarget))` |
+| `IconButton` without explicit 44dp size | `IconButton(Modifier.size(JervisSpacing.touchTarget))` |
 | `TopAppBar` directly | `JTopBar(title, onBack, actions)` |
 | Duplicating `getCapabilityLabel()` | Import from `ClientsSettings.kt` |
+| Platform expect/actual for layout | `BoxWithConstraints` width check (automatic in J* components) |
+| `Row` of buttons without alignment | `JActionBar { ... }` or `Row(Arrangement.spacedBy(8.dp, Alignment.End))` |
+
+> **More patterns:** Dialog patterns (selection, multi-select, create, delete confirm),
+> screen anatomy ASCII diagrams, file structure reference → see **[`docs/ui-design.md`](ui-design.md)**
 
 ---
 
