@@ -119,7 +119,9 @@ preload:
     gpu:
       concurrency: 2
     cpu:
-      concurrency: 6
+      # CPU ingest instance: OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18
+      # 18 of 24 cores for ingest, 6 reserved for GPU Ollama + OS + other services
+      concurrency: 10
     llm:
       keep-alive: 1h
       refresh-safety-factor: 0.9

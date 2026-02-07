@@ -19,7 +19,8 @@ import org.springframework.stereotype.Service
  * - Actual indexing errors: mark as ERROR permanently (no retry)
  * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
  *
- * Concurrency: 4 parallel KB requests to improve throughput during bulk indexing.
+ * Concurrency: 10 parallel KB requests matching CPU Ollama instance (OLLAMA_NUM_PARALLEL=10).
+ * CPU instance runs on dedicated 18 cores with qwen2.5 7B/14B models.
  */
 @Service
 class TaskQualificationService(
@@ -42,7 +43,7 @@ class TaskQualificationService(
         try {
             logger.debug { "QUALIFICATION_CYCLE_START" }
 
-            val effectiveConcurrency = 4
+            val effectiveConcurrency = 10
 
             taskService
                 .findTasksForQualification()

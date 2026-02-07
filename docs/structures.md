@@ -308,6 +308,7 @@ fun loadTaskContext(): String
 - **Process:** Reads NEW documents from MongoDB, creates PendingTasks
 - **Agents:** KoogQualifierAgent with CPU model (OLLAMA_QUALIFIER)
 - **Max iterations:** 10 (for chunking loops)
+- **Concurrency:** 10 parallel KB requests (matching CPU Ollama `OLLAMA_NUM_PARALLEL=10`)
 
 ### Execution Loop (GPU)
 
@@ -330,5 +331,84 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ---
 
-**Document Version:** 3.0
+## Ollama Instance Architecture (GPU / CPU Separation)
+
+Three dedicated Ollama instances isolate interactive queries from background ingest:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       NAS Server (2×24 cores, 200GB RAM, P40 GPU)      │
+│                                                                         │
+│  ┌──────────────────────────┐  ┌──────────────────────────────────────┐ │
+│  │  GPU Instance (:11434)   │  │  CPU Ingest Instance (:11435)       │ │
+│  │  Qwen 30B on P40         │  │  Qwen2.5 7B + 14B in RAM           │ │
+│  │  OLLAMA_NUM_PARALLEL=2   │  │  OLLAMA_NUM_PARALLEL=10            │ │
+│  │  Interactive queries     │  │  OLLAMA_NUM_THREADS=18             │ │
+│  │  Python orchestrator     │  │  OLLAMA_MAX_LOADED_MODELS=2        │ │
+│  │  Coding tools            │  │  OLLAMA_FLASH_ATTENTION=1          │ │
+│  │                          │  │  OLLAMA_KV_CACHE_TYPE=q8_0         │ │
+│  │  6 cores reserved        │  │  18 cores for inference            │ │
+│  └──────────────────────────┘  └──────────────────────────────────────┘ │
+│                                                                         │
+│  ┌──────────────────────────┐                                           │
+│  │  CPU Embedding (:11436)  │                                           │
+│  │  qwen3-embedding:8b      │                                           │
+│  │  Concurrency: 50         │                                           │
+│  └──────────────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Instance Details
+
+| Instance | Port | Models | Purpose | Concurrency |
+|----------|------|--------|---------|-------------|
+| GPU Primary | 11434 | Qwen3-coder-tool:30b | Interactive chat, orchestrator, coding tools | `NUM_PARALLEL=2` |
+| CPU Ingest | 11435 | Qwen2.5:7b + Qwen2.5:14b | Qualification, summary, relevance check | `NUM_PARALLEL=10`, `NUM_THREADS=18` |
+| CPU Embedding | 11436 | qwen3-embedding:8b | Vector embeddings for RAG | Concurrency 50 |
+
+### Ingest Model Routing (CPU Instance)
+
+The CPU ingest instance runs two models simultaneously (200GB RAM allows both in memory):
+
+| Task | Model | Rationale |
+|------|-------|-----------|
+| Link relevance check | `qwen2.5:7b` (simple) | Binary classification, small context (~3k chars), speed priority |
+| Summary generation + entity extraction | `qwen2.5:14b` (complex) | Structured JSON output, entity detection, actionability routing |
+| Koog qualifier agent | Configured in Modelfile | Structuring, chunking, graph/RAG linking |
+
+### Key Configuration Values
+
+**Kotlin side** (`models-config.yaml`, `application.yml`):
+- `OLLAMA_QUALIFIER.maxConcurrentRequests: 10`
+- `preload.ollama.cpu.concurrency: 10`
+- `TaskQualificationService.effectiveConcurrency: 10`
+
+**Python KB side** (`config.py`, K8s ConfigMap):
+- `OLLAMA_INGEST_BASE_URL: http://192.168.100.117:11435`
+- `INGEST_MODEL_SIMPLE: qwen2.5:7b`
+- `INGEST_MODEL_COMPLEX: qwen2.5:14b`
+
+### Why CPU for Ingest
+
+1. **GPU stays free** for 30B interactive model (P40 VRAM nearly full)
+2. **Batch parallelism** – 10 concurrent slots process ingest queue faster than sequential GPU
+3. **No latency competition** – user queries never compete with background ingest
+4. **CPU penalty is small** for 7B/14B models – memory bandwidth bound, not compute bound
+5. **200GB RAM** holds both models with room for KV cache across all parallel slots
+
+### Ollama ENV Setup (CPU Ingest Instance)
+
+```bash
+# /etc/systemd/system/ollama-ingest.service or docker run env:
+OLLAMA_HOST=0.0.0.0:11435
+OLLAMA_NUM_PARALLEL=10
+OLLAMA_NUM_THREADS=18
+OLLAMA_MAX_LOADED_MODELS=2
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q8_0
+```
+
+---
+
+**Document Version:** 4.0
 **Last Updated:** 2026-02-07

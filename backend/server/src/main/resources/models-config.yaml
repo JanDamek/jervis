@@ -7,7 +7,8 @@ providers:
   OLLAMA_QUALIFIER:
     endpoint: ollama.qualifier
     executionMode: NONBLOCKING
-    maxConcurrentRequests: 1
+    # CPU ingest instance with OLLAMA_NUM_PARALLEL=10, matching TaskQualificationService concurrency
+    maxConcurrentRequests: 10
 
   OLLAMA_EMBEDDING:
     endpoint: ollama.embedding

@@ -268,12 +268,13 @@ class KnowledgeService:
         )
 
     async def _check_link_relevance(self, text: str, root_url: str, page_url: str) -> bool:
-        """Let LLM decide if a sub-page is relevant for indexing."""
+        """Let LLM decide if a sub-page is relevant for indexing.
+        Uses CPU ingest instance with simple (7B) model for fast classification."""
         from langchain_ollama import ChatOllama
 
         llm = ChatOllama(
-            base_url=settings.OLLAMA_BASE_URL,
-            model="qwen2.5:7b",
+            base_url=settings.OLLAMA_INGEST_BASE_URL,
+            model=settings.INGEST_MODEL_SIMPLE,
             format="json",
             temperature=0
         )
@@ -442,10 +443,10 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         from app.core.config import settings
         import json
 
-        # Use small/fast model for summary
+        # Use CPU ingest instance with complex (14B) model for accurate entity extraction
         llm = ChatOllama(
-            base_url=settings.OLLAMA_BASE_URL,
-            model="qwen2.5:7b",  # Small model for speed
+            base_url=settings.OLLAMA_INGEST_BASE_URL,
+            model=settings.INGEST_MODEL_COMPLEX,
             format="json"
         )
 
@@ -480,7 +481,8 @@ suggestedActions examples: "reply_email", "review_code", "fix_issue", "answer_qu
 Respond ONLY with valid JSON."""
 
         try:
-            logger.info("Calling LLM for summary generation model=qwen2.5:7b source_type=%s", source_type)
+            logger.info("Calling LLM for summary generation model=%s source_type=%s",
+                        settings.INGEST_MODEL_COMPLEX, source_type)
             response = await llm.ainvoke(prompt)
             result = json.loads(response.content)
             logger.info("Summary generated entities=%d actionable=%s",

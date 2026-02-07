@@ -108,7 +108,8 @@ data:
         gpu:
           concurrency: 2
         cpu:
-          concurrency: 6
+          # CPU ingest instance: OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18
+          concurrency: 10
         llm:
           keep-alive: 1h
           refresh-safety-factor: 0.9
@@ -172,6 +173,11 @@ metadata:
 data:
   OLLAMA_BASE_URL: "http://192.168.100.117:11434"
   OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11436"
+  # Dedicated CPU Ollama for ingest LLM calls (summary, relevance check).
+  # Runs with OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=2.
+  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11435"
+  INGEST_MODEL_SIMPLE: "qwen2.5:7b"
+  INGEST_MODEL_COMPLEX: "qwen2.5:14b"
   WEAVIATE_URL: "http://192.168.100.117:8080"
   WEAVIATE_GRPC_URL: "192.168.100.117:50051"
   ARANGO_URL: "http://192.168.100.117:8529"
