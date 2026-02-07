@@ -50,6 +50,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+class _HealthCheckAccessFilter(logging.Filter):
+    """Drop GET /health from uvicorn access log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "GET /health " in msg:
+            return False
+        return True
+
 # In-memory store for active SSE streams
 _active_streams: dict[str, asyncio.Queue] = {}
 
@@ -62,6 +72,7 @@ _orchestration_semaphore = asyncio.Semaphore(1)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Orchestrator starting on port %d", settings.port)
+    logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
     # Initialize persistent MongoDB checkpointer for LangGraph state
     await init_checkpointer()
     logger.info("MongoDB checkpointer ready (state survives restarts)")

@@ -9,6 +9,7 @@ import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -511,7 +512,7 @@ class BackgroundEngine(
                 val orchestratingTasks = taskRepository
                     .findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
 
-                kotlinx.coroutines.flow.collect(orchestratingTasks) { task ->
+                orchestratingTasks.collect { task ->
                     try {
                         checkOrchestratorTaskStatus(task)
                     } catch (e: Exception) {

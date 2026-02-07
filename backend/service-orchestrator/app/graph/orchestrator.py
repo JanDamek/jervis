@@ -9,7 +9,7 @@ Flow:
                                     git_operations → report
 
 State persistence:
-    Uses AsyncMongoDBSaver for persistent checkpointing.
+    Uses MongoDBSaver for persistent checkpointing.
     All graph state is stored in MongoDB (same instance as Kotlin server).
     This ensures:
     - Restart resilience: state survives Python process restarts
@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 from typing import Any, AsyncIterator
 
-from langgraph.checkpoint.mongodb.aio import AsyncMongoDBSaver
+from pymongo import MongoClient
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 
@@ -44,18 +45,18 @@ from app.models import CodingTask, OrchestrateRequest, ProjectRules
 logger = logging.getLogger(__name__)
 
 # MongoDB checkpointer – initialized in main.py lifespan
-_checkpointer: AsyncMongoDBSaver | None = None
+_checkpointer: MongoDBSaver | None = None
 
 # Compiled graph (singleton, rebuilt when checkpointer changes)
 _compiled_graph = None
 
 
-async def init_checkpointer() -> AsyncMongoDBSaver:
+async def init_checkpointer() -> MongoDBSaver:
     """Initialize the MongoDB checkpointer. Called from main.py lifespan."""
     global _checkpointer, _compiled_graph
 
-    _checkpointer = AsyncMongoDBSaver.from_conn_string(settings.mongodb_url)
-    await _checkpointer.setup()
+    client = MongoClient(settings.mongodb_url)
+    _checkpointer = MongoDBSaver(client, db_name="jervis_checkpoints")
     _compiled_graph = None  # Force rebuild with new checkpointer
     logger.info("MongoDB checkpointer initialized (persistent state)")
     return _checkpointer
@@ -64,13 +65,14 @@ async def init_checkpointer() -> AsyncMongoDBSaver:
 async def close_checkpointer():
     """Close the MongoDB checkpointer. Called from main.py lifespan."""
     global _checkpointer, _compiled_graph
-    # AsyncMongoDBSaver doesn't require explicit close – motor client handles it
+    if _checkpointer is not None:
+        _checkpointer.client.close()
     _checkpointer = None
     _compiled_graph = None
     logger.info("MongoDB checkpointer closed")
 
 
-def get_checkpointer() -> AsyncMongoDBSaver | None:
+def get_checkpointer() -> MongoDBSaver | None:
     """Get the global checkpointer instance."""
     return _checkpointer
 

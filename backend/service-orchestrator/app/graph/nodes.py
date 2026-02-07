@@ -158,7 +158,7 @@ async def plan_steps(state: dict) -> dict:
                 "You are a coding task planner. Create concrete steps for the coding agent.\n"
                 "Each step should be a single, focused change.\n"
                 "Respond with JSON: {\"steps\": [{\"index\": 0, \"instructions\": \"...\", "
-                f"\"agent_type\": \"{agent_type.value}\", \"files\": []}]}}"
+                f"\"agent_type\": \"{agent_type.value}\", \"files\": []}}]}}"
             ),
         },
         {
