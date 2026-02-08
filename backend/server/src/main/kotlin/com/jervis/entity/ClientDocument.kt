@@ -25,6 +25,7 @@ data class ClientDocument(
     @Indexed(unique = true)
     val name: String,
     val description: String? = null,
+    val archived: Boolean = false,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val lastSelectedProjectId: ProjectId? = null,
     val connectionIds: List<ObjectId> = emptyList(),
