@@ -7,6 +7,8 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.model.AgentActivityEntry
+import com.jervis.ui.model.AgentActivityLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -119,6 +121,17 @@ class MainViewModel(
     private val _runningTaskPreview = MutableStateFlow<String?>(null)
     val runningTaskPreview: StateFlow<String?> = _runningTaskPreview.asStateFlow()
 
+    private val _runningTaskType = MutableStateFlow<String?>(null)
+    val runningTaskType: StateFlow<String?> = _runningTaskType.asStateFlow()
+
+    // In-memory agent activity log (since app start, max 200 entries, no persistence)
+    val activityLog = AgentActivityLog()
+    private val _activityEntries = MutableStateFlow<List<AgentActivityEntry>>(emptyList())
+    val activityEntries: StateFlow<List<AgentActivityEntry>> = _activityEntries.asStateFlow()
+
+    // Track previous running state for transition detection
+    private var previousRunningProjectId: String? = null
+
     private var chatJob: Job? = null
     private var eventJob: Job? = null
     private var queueStatusJob: Job? = null
@@ -221,10 +234,61 @@ class MainViewModel(
                         true
                     }.collect { response ->
                         if (response.type == ChatResponseType.QUEUE_STATUS) {
-                            _queueSize.value = response.metadata["queueSize"]?.toIntOrNull() ?: 0
-                            _runningProjectId.value = response.metadata["runningProjectId"]
-                            _runningProjectName.value = response.metadata["runningProjectName"]
-                            _runningTaskPreview.value = response.metadata["runningTaskPreview"]
+                            val newRunningId = response.metadata["runningProjectId"]
+                            val newProjectName = response.metadata["runningProjectName"]
+                            val newTaskPreview = response.metadata["runningTaskPreview"]
+                            val newTaskType = response.metadata["runningTaskType"]
+                            val newQueueSize = response.metadata["queueSize"]?.toIntOrNull() ?: 0
+
+                            // Detect state transitions and log activity
+                            val wasRunning = previousRunningProjectId != null && previousRunningProjectId != "none"
+                            val isRunning = newRunningId != null && newRunningId != "none"
+
+                            if (!wasRunning && isRunning) {
+                                // Task started
+                                activityLog.add(
+                                    type = AgentActivityEntry.Type.TASK_STARTED,
+                                    description = newTaskPreview ?: "Zpracování úlohy",
+                                    projectName = newProjectName,
+                                    taskType = newTaskType,
+                                    clientId = clientId,
+                                )
+                                _activityEntries.value = activityLog.entries
+                            } else if (wasRunning && !isRunning) {
+                                // Task completed, agent idle
+                                activityLog.add(
+                                    type = AgentActivityEntry.Type.TASK_COMPLETED,
+                                    description = "Úloha dokončena",
+                                    projectName = _runningProjectName.value,
+                                    taskType = _runningTaskType.value,
+                                    clientId = clientId,
+                                )
+                                _activityEntries.value = activityLog.entries
+                            } else if (wasRunning && isRunning && previousRunningProjectId != newRunningId) {
+                                // Different task started (previous completed)
+                                activityLog.add(
+                                    type = AgentActivityEntry.Type.TASK_COMPLETED,
+                                    description = "Úloha dokončena",
+                                    projectName = _runningProjectName.value,
+                                    taskType = _runningTaskType.value,
+                                    clientId = clientId,
+                                )
+                                activityLog.add(
+                                    type = AgentActivityEntry.Type.TASK_STARTED,
+                                    description = newTaskPreview ?: "Zpracování úlohy",
+                                    projectName = newProjectName,
+                                    taskType = newTaskType,
+                                    clientId = clientId,
+                                )
+                                _activityEntries.value = activityLog.entries
+                            }
+
+                            previousRunningProjectId = newRunningId
+                            _queueSize.value = newQueueSize
+                            _runningProjectId.value = newRunningId
+                            _runningProjectName.value = newProjectName
+                            _runningTaskPreview.value = newTaskPreview
+                            _runningTaskType.value = newTaskType
                         }
                     }
             }

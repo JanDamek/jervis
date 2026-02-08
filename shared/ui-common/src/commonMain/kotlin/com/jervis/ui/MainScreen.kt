@@ -1,5 +1,7 @@
 package com.jervis.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +19,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -42,11 +48,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.JTopBar
+import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.rememberClipboardManager
 
 /**
@@ -71,11 +80,13 @@ fun MainScreenView(
     runningProjectId: String? = null,
     runningProjectName: String? = null,
     runningTaskPreview: String? = null,
+    runningTaskType: String? = null,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
+    onAgentStatusClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -180,7 +191,17 @@ fun MainScreenView(
                         .fillMaxWidth(),
             )
 
-            Divider()
+            // Agent status row – clickable, navigates to workload detail
+            AgentStatusRow(
+                runningProjectId = runningProjectId,
+                runningProjectName = runningProjectName,
+                runningTaskPreview = runningTaskPreview,
+                runningTaskType = runningTaskType,
+                queueSize = queueSize,
+                onClick = onAgentStatusClick,
+            )
+
+            HorizontalDivider()
 
             // Input area
             InputArea(
@@ -190,8 +211,6 @@ fun MainScreenView(
                 enabled = selectedClientId != null && selectedProjectId != null && !isLoading,
                 queueSize = queueSize,
                 runningProjectId = runningProjectId,
-                runningProjectName = runningProjectName,
-                runningTaskPreview = runningTaskPreview,
                 currentProjectId = selectedProjectId,
                 modifier =
                     Modifier
@@ -422,6 +441,111 @@ private fun ChatMessageItem(
     }
 }
 
+/**
+ * Clickable agent status row between chat and input.
+ * Shows current agent state (idle/running) with queue count.
+ * Click navigates to workload detail screen.
+ */
+@Composable
+private fun AgentStatusRow(
+    runningProjectId: String?,
+    runningProjectName: String?,
+    runningTaskPreview: String?,
+    runningTaskType: String?,
+    queueSize: Int,
+    onClick: () -> Unit,
+) {
+    val isRunning = runningProjectId != null && runningProjectId != "none"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(
+                if (isRunning) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                },
+            )
+            .padding(horizontal = 16.dp)
+            .heightIn(min = JervisSpacing.touchTarget),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Status indicator
+        if (isRunning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Text(
+                text = "●",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Status text
+        Column(modifier = Modifier.weight(1f)) {
+            if (isRunning) {
+                Text(
+                    text = buildString {
+                        if (runningTaskType != null && runningTaskType.isNotBlank()) {
+                            append("$runningTaskType: ")
+                        }
+                        append(runningProjectName ?: runningProjectId)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (runningTaskPreview != null && runningTaskPreview.isNotBlank()) {
+                    Text(
+                        text = runningTaskPreview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                Text(
+                    text = "Agent: Nečinný",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // Queue badge
+        if (queueSize > 0) {
+            Text(
+                text = "Fronta: $queueSize",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.tertiaryContainer)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // Chevron
+        Icon(
+            Icons.Default.KeyboardArrowRight,
+            contentDescription = "Detail",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
 @Composable
 private fun InputArea(
     inputText: String,
@@ -430,74 +554,40 @@ private fun InputArea(
     enabled: Boolean,
     queueSize: Int = 0,
     runningProjectId: String? = null,
-    runningProjectName: String? = null,
-    runningTaskPreview: String? = null,
     currentProjectId: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        // Show queue info if something is running
-        if (runningProjectId != null && runningProjectId != "none") {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Project name + task preview on single line
-                Text(
-                    text =
-                        buildString {
-                            append("⚙️ ${runningProjectName ?: runningProjectId}")
-                            if (runningTaskPreview != null) {
-                                append(": $runningTaskPreview")
-                            }
-                        },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-                if (queueSize > 0) {
-                    Text(
-                        text = "Fronta: $queueSize",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        OutlinedTextField(
+            value = inputText,
+            onValueChange = onInputChanged,
+            placeholder = { Text("Napište zprávu...") },
+            enabled = enabled,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp, max = 120.dp),
+            maxLines = 4,
+        )
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
+        val buttonText =
+            when {
+                runningProjectId == null || runningProjectId == "none" -> "Odeslat"
+                runningProjectId != currentProjectId -> "Do fronty"
+                queueSize > 0 -> "Do fronty"
+                else -> "Do fronty"
+            }
+
+        Button(
+            onClick = onSendClick,
+            enabled = enabled && inputText.isNotBlank(),
+            modifier = Modifier.height(56.dp),
         ) {
-            OutlinedTextField(
-                value = inputText,
-                onValueChange = onInputChanged,
-                placeholder = { Text("Napište zprávu...") },
-                enabled = enabled,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 56.dp, max = 120.dp),
-                maxLines = 4,
-            )
-
-            val buttonText =
-                when {
-                    runningProjectId == null || runningProjectId == "none" -> "Odeslat"
-                    runningProjectId != currentProjectId -> "Do fronty"
-                    queueSize > 0 -> "Do fronty (${queueSize + 1})"
-                    else -> "Do fronty"
-                }
-
-            Button(
-                onClick = onSendClick,
-                enabled = enabled && inputText.isNotBlank(),
-                modifier = Modifier.height(56.dp),
-            ) {
-                Text(buttonText)
-            }
+            Text(buttonText)
         }
     }
 }

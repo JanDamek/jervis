@@ -28,6 +28,7 @@ fun MainScreen(
     val runningProjectId by viewModel.runningProjectId.collectAsState()
     val runningProjectName by viewModel.runningProjectName.collectAsState()
     val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
+    val runningTaskType by viewModel.runningTaskType.collectAsState()
 
     MainScreenViewInternal(
         clients = clients,
@@ -41,10 +42,12 @@ fun MainScreen(
         runningProjectId = runningProjectId,
         runningProjectName = runningProjectName,
         runningTaskPreview = runningTaskPreview,
+        runningTaskType = runningTaskType,
         onClientSelected = viewModel::selectClient,
         onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
         onInputChanged = viewModel::updateInputText,
         onSendClick = viewModel::sendMessage,
         onNavigate = onNavigate,
+        onAgentStatusClick = { onNavigate(com.jervis.ui.navigation.Screen.AgentWorkload) },
     )
 }

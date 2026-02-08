@@ -133,6 +133,13 @@ fun App(
                 )
             }
 
+            Screen.AgentWorkload -> {
+                AgentWorkloadScreen(
+                    viewModel = viewModel,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
             // Debug console removed - server does not publish debug WebSocket
             Screen.DebugConsole -> {
                 // No debug window - navigate back to main
