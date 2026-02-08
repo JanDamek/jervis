@@ -231,6 +231,7 @@ All components live in `com.jervis.ui.design.DesignSystem.kt` unless noted other
 | `SettingCard` | Card for setting groups (used in BugTrackerSettings) |
 | `StatusIndicator` | Connection status dot (green/yellow/red) |
 | `ActionRibbon` | Save/Cancel ribbon (legacy – prefer `JDetailScreen`) |
+| `AgentStatusRow` | Clickable agent status bar in MainScreen (idle/running + queue badge + chevron) |
 
 ### 3.7) Shared Form Helpers (`com.jervis.ui.screens.settings.sections.ClientsSettings.kt`)
 
@@ -513,6 +514,34 @@ Column(modifier = Modifier.fillMaxSize()) {
 }
 ```
 
+### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`)
+
+Full-screen view accessed by clicking the `AgentStatusRow` on the main screen.
+Shows live agent status card + in-memory activity log (max 200 entries, since restart, no persistence).
+
+```
+┌─ JTopBar ("Aktivita agenta", onBack) ─────────────────┐
+│                                                         │
+│ ┌─ CurrentStatusCard ─────────────────────────────────┐ │
+│ │ [spinner/dot]  Zpracovává se / Agent je nečinný     │ │
+│ │                Chat | ProjectName                    │ │
+│ │                task preview text...        Fronta: 1 │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ Historie aktivity                                       │
+│ ┌─ LazyColumn (newest first) ────────────────────────┐  │
+│ │ 14:23:05  ▶  Chat  ProjectX   Zpracování úlohy    │  │
+│ │ 14:22:58  ✓  Wiki  ProjectY   Úloha dokončena     │  │
+│ │ 14:20:11  ▶  Wiki  ProjectY   Wiki indexing...     │  │
+│ └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Data model** (`com.jervis.ui.model.AgentActivityEntry`):
+- `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED)
+- `description`, `projectName?`, `taskType?`, `clientId?`
+- Stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
+
 ---
 
 ## 6) Expandable / Collapsible Sections
@@ -730,6 +759,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       ├── BugTrackerSettings.kt ← (standalone bug tracker config)
 │   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
 │   ├── MainScreen.kt
+│   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
 │   └── ConnectionsScreen.kt
 ├── util/
 │   ├── IconButtons.kt               ← RefreshIconButton, DeleteIconButton, EditIconButton

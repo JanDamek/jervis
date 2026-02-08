@@ -26,6 +26,9 @@ sealed class Screen {
 
     object ErrorLogs : Screen()
 
+    // Agent workload / activity log
+    object AgentWorkload : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }

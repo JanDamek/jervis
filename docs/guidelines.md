@@ -448,6 +448,10 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │  Simple scrollable form (general settings)?                         │
 │    → Column(verticalScroll) with JSection blocks                    │
 │    Example: GeneralSettings in SettingsScreen.kt                    │
+│                                                                     │
+│  Status/activity log (agent workload, live state)?                  │
+│    → Status card + LazyColumn (newest first), in-memory log         │
+│    Example: AgentWorkloadScreen.kt                                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
