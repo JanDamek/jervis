@@ -1,5 +1,17 @@
 ---
-# ConfigMap pro jervis-server
+# =============================================================================
+# Jervis Server – Production Configuration (K8s ConfigMap)
+# Mounted as /opt/jervis/config/application.yml in the server container.
+#
+# Differences from local (backend/server/src/main/resources/application.yml):
+# - K8s service names instead of localhost (e.g., ws://jervis-tika:8081/)
+# - Higher timeouts (30min request/socket vs 11min local)
+# - koog.max-iterations: 100 (vs 50 local)
+# - No data-dir or request-timeout-ms overrides
+#
+# Ollama endpoints and model routing are in models-config.yaml (not duplicated here).
+# See docs/structures.md § "Ollama Instance Architecture" for hardware layout.
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,6 +19,7 @@ metadata:
   namespace: jervis
 data:
   application.yml: |
+    # -- Logging ----------------------------------------------------------------
     logging:
       level:
         root: INFO
@@ -30,9 +43,10 @@ data:
           max-history: 7
           max-file-size: 10MB
 
+    # -- Spring / MongoDB -------------------------------------------------------
     spring:
       main:
-        web-application-type: none
+        web-application-type: none   # Non-web (RSocket + custom transport)
       mongodb:
         host: 192.168.100.117
         port: 27017
@@ -44,26 +58,28 @@ data:
         mongodb:
           auto-index-creation: false
 
+    # -- Weaviate (vector store for RAG) ----------------------------------------
     weaviate:
       host: 192.168.100.117
-      port: 8080
+      port: 8080                     # REST API
       scheme: http
-      grpc-port: 50051
+      grpc-port: 50051               # gRPC for fast vector ops
       hybrid-search:
         enabled: true
-        alpha: 0.85
+        alpha: 0.85                  # 0.85 = vector-heavy hybrid search
       auto-migrate:
         countdown-seconds: 10
 
+    # -- Ktor HTTP Client (LLM provider communication) --------------------------
     ktor:
       connection-pool:
         max-connections: 500
         max-connections-per-route: 100
         keep-alive-time-millis: 300000
       timeouts:
-        connect-timeout-millis: 60000
-        request-timeout-millis: 1800000
-        socket-timeout-millis: 1800000
+        connect-timeout-millis: 60000    # 1min connect
+        request-timeout-millis: 1800000  # 30min request (production: higher than local 11min)
+        socket-timeout-millis: 1800000   # 30min socket (production: non-zero, unlike local)
       api-versions:
         anthropic-version: "2023-06-01"
       logging:
@@ -77,8 +93,9 @@ data:
         max-backoff-millis: 30000
 
     data:
-      root-dir: /opt/jervis/data
+      root-dir: /opt/jervis/data     # Mounted PVC (jervis-data-pvc)
 
+    # -- ArangoDB (knowledge graph) ---------------------------------------------
     arango:
       scheme: http
       host: 192.168.100.117
@@ -88,16 +105,17 @@ data:
       password: ${ARANGO_PASSWORD}
       timeout-ms: 5000
 
+    # -- Jervis core settings ---------------------------------------------------
     jervis:
       security:
-        client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
+        client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002  # RSocket auth token
       koog:
-        max-iterations: 100
-        qualifier-max-retries: 5
+        max-iterations: 100          # Max agent loop iterations (production: 100 vs local 50)
+        qualifier-max-retries: 5     # Max retries for qualifier agent per task
       background:
-        wait-on-startup: 10s
-        wait-on-error: 1m
-        wait-interval: 30s
+        wait-on-startup: 10s         # Delay before BackgroundEngine starts
+        wait-on-error: 1m           # Delay after error before retrying
+        wait-interval: 30s           # Qualification loop sleep between cycles
 
     link:
       indexing:
@@ -118,9 +136,10 @@ data:
           keep-alive: 1h
           refresh-safety-factor: 0.9
 
+    # -- Coding tools (Aider, OpenHands, Claude) --------------------------------
     coding-tools:
       aider:
-        default-provider: ollama
+        default-provider: ollama     # GPU instance (:11434)
         default-model: "qwen3-coder-tool:30b"
         paid-provider: anthropic
         paid-model: "claude-3-5-sonnet-20241022"
@@ -129,59 +148,70 @@ data:
         default-model: "qwen3-coder-tool:30b"
         paid-provider: anthropic
         paid-model: "claude-3-5-sonnet-20241022"
-        ollama-base-url: http://192.168.100.117:11434
+        ollama-base-url: http://192.168.100.117:11434  # Direct Ollama URL for OpenHands
       claude:
-        default-provider: anthropic
+        default-provider: anthropic  # Claude Code always uses cloud
         default-model: "claude-sonnet-4-20250514"
         paid-provider: anthropic
         paid-model: "claude-sonnet-4-20250514"
 
+    # -- Microservice endpoints (K8s service names) -----------------------------
+    # Ollama endpoints are in models-config.yaml, not here.
     endpoints:
       searxng:
-        baseUrl: http://192.168.100.117:30053/
+        baseUrl: http://192.168.100.117:30053/       # SearXNG web search (NodePort)
       joern:
-        baseUrl: ws://jervis-joern:8082/
+        baseUrl: ws://jervis-joern:8082/             # Code analysis
       tika:
-        baseUrl: ws://jervis-tika:8081/
+        baseUrl: ws://jervis-tika:8081/              # Document extraction
       whisper:
-        baseUrl: ws://jervis-whisper:8083/
+        baseUrl: ws://jervis-whisper:8083/            # Speech-to-text
       aider:
-        baseUrl: ws://jervis-aider:3100/
+        baseUrl: ws://jervis-aider:3100/             # Aider coding agent
       coding:
-        baseUrl: ws://jervis-coding-engine:3200/
+        baseUrl: ws://jervis-coding-engine:3200/     # OpenHands coding engine
       junie:
-        baseUrl: ws://jervis-junie:3300/
+        baseUrl: ws://jervis-junie:3300/             # Junie coding agent
       claude:
-        baseUrl: ws://jervis-claude:3400/
+        baseUrl: ws://jervis-claude:3400/            # Claude Code agent
       knowledgebase:
-        baseUrl: http://jervis-knowledgebase:8080/
+        baseUrl: http://jervis-knowledgebase:8080/   # Python KB (RAG+Graph)
       orchestrator:
-        baseUrl: http://jervis-orchestrator:8090/
+        baseUrl: http://jervis-orchestrator:8090/    # Python orchestrator (LangGraph)
       providers:
-        github: ws://jervis-github:8085/
-        gitlab: ws://jervis-gitlab:8086/
-        atlassian: ws://jervis-atlassian:8084/
+        github: ws://jervis-github:8085/             # GitHub integration
+        gitlab: ws://jervis-gitlab:8086/             # GitLab integration
+        atlassian: ws://jervis-atlassian:8084/       # Atlassian (Jira/Confluence)
 
 
 ---
-# ConfigMap pro service-knowledgebase
+# =============================================================================
+# Knowledge Base Microservice – Production Configuration (K8s ConfigMap)
+# Injected as env vars via envFrom in k8s/app_knowledgebase.yaml.
+# Maps to Python Settings class in backend/service-knowledgebase/app/core/config.py.
+# See docs/structures.md § "Ollama Instance Architecture" for hardware layout.
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: jervis-knowledgebase-config
   namespace: jervis
 data:
-  OLLAMA_BASE_URL: "http://192.168.100.117:11434"
-  # Embedding + ingest LLM merged on single CPU instance (port 11435).
+  # -- Ollama endpoints -------------------------------------------------------
+  OLLAMA_BASE_URL: "http://192.168.100.117:11434"            # GPU instance (not used by KB directly)
+  # CPU instance – embedding + ingest LLM merged on single port.
   # Runs with OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3.
-  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11435"
-  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11435"
-  INGEST_MODEL_SIMPLE: "qwen2.5:7b"
-  INGEST_MODEL_COMPLEX: "qwen2.5:14b"
-  WEAVIATE_URL: "http://192.168.100.117:8080"
-  WEAVIATE_GRPC_URL: "192.168.100.117:50051"
-  ARANGO_URL: "http://192.168.100.117:8529"
+  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11435"   # CPU – qwen3-embedding:8b
+  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11435"      # CPU – qwen2.5 7B/14B
+  # -- Ingest model routing (see docs/structures.md § "Model Routing") --------
+  INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check
+  INGEST_MODEL_COMPLEX: "qwen2.5:14b"                         # Accurate: summary + entity extraction
+  # -- Storage backends -------------------------------------------------------
+  WEAVIATE_URL: "http://192.168.100.117:8080"                  # Vector store (RAG)
+  WEAVIATE_GRPC_URL: "192.168.100.117:50051"                   # Weaviate gRPC
+  ARANGO_URL: "http://192.168.100.117:8529"                    # Knowledge graph
   ARANGO_DB: "jervis"
   ARANGO_USER: "root"
-  TIKA_URL: "http://192.168.100.117:8081"
-  JOERN_URL: "http://192.168.100.117:8082"
+  # -- Microservice endpoints -------------------------------------------------
+  TIKA_URL: "http://192.168.100.117:8081"                      # Apache Tika
+  JOERN_URL: "http://192.168.100.117:8082"                     # Joern code analysis

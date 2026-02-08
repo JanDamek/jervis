@@ -26,6 +26,20 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Ollama LLM provider client with dual-endpoint routing (GPU / CPU).
+ *
+ * Routes requests to the correct Ollama instance based on [ModelTypeEnum]:
+ * - QUALIFIER → CPU instance (:11435) via qualifierHttpClient
+ * - Everything else → GPU instance (:11434) via primaryHttpClient
+ *
+ * Features:
+ * - Auto-pull: if a model isn't available, pulls it before first use
+ * - Dynamic num_ctx: calculates context window = estimatedTokens + numPredict
+ * - Streaming: returns Flow<StreamChunk> with token-by-token output
+ *
+ * See docs/structures.md § "Ollama Instance Architecture" for hardware details.
+ */
 @Service
 class OllamaClient(
     private val ktorClientFactory: KtorClientFactory,
@@ -40,7 +54,7 @@ class OllamaClient(
 
     /**
      * Select appropriate HttpClient based on ModelType from prompt config.
-     * QUALIFIER type uses separate endpoint (CPU server), others use primary (GPU server).
+     * QUALIFIER type uses CPU instance (:11435), others use GPU instance (:11434).
      */
     private fun selectHttpClient(prompt: PromptConfig): HttpClient =
         when (prompt.modelParams.modelType) {
