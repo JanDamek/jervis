@@ -15,8 +15,13 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Embedding provider client targeting dedicated Ollama embedding instance (separate port).
- * Use provider OLLAMA_EMBEDDING and endpoint key "ollama.embedding" in KtorClientFactory.
+ * Primary embedding provider client (provider: OLLAMA_EMBEDDING).
+ *
+ * Targets the CPU Ollama instance via endpoint key "ollama.embedding" (port 11435).
+ * This instance is shared with the qualifier/ingest LLM models (OLLAMA_MAX_LOADED_MODELS=3).
+ *
+ * Uses Ollama /api/embeddings endpoint for vector generation.
+ * Model auto-pull: if qwen3-embedding:8b isn't loaded, pulls it automatically.
  */
 @Service
 class OllamaEmbeddingCpuClient(

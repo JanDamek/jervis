@@ -13,6 +13,13 @@ import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
+/**
+ * Fallback embedding client using the qualifier endpoint (provider: OLLAMA).
+ *
+ * Targets the CPU qualifier instance via endpoint key "ollama.qualifier" (port 11435).
+ * Used when embedding is requested through the OLLAMA provider instead of OLLAMA_EMBEDDING.
+ * Both endpoints currently resolve to the same CPU Ollama instance.
+ */
 @Service
 class OllamaEmbeddingClient(
     private val ktorClientFactory: KtorClientFactory,

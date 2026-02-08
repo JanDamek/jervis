@@ -1,3 +1,10 @@
+# =============================================================================
+# Jervis Server – Local Development Configuration
+# Production values are in k8s/configmap.yaml (jervis-server-config).
+# Ollama endpoints and model routing are in models-config.yaml.
+# =============================================================================
+
+# -- Logging ------------------------------------------------------------------
 logging:
   level:
     root: INFO
@@ -5,7 +12,7 @@ logging:
     io.ktor: INFO
     org.springframework: INFO
     com.arangodb.internal.serde.SerdeUtils: INFO
-    com.jervis.qualifier: INFO
+    com.jervis.qualifier: INFO     # Qualifier service (replaced Koog)
     org.springframework.web: WARN
     org.springframework.web.reactive.socket: WARN
     org.springframework.web.reactive.handler: WARN
@@ -20,9 +27,10 @@ logging:
       max-history: 7
       max-file-size: 10MB
 
+# -- Spring / MongoDB ---------------------------------------------------------
 spring:
   main:
-    web-application-type: none
+    web-application-type: none     # Non-web application (RSocket + custom transport)
   mongodb:
     host: 192.168.100.117
     port: 27017
@@ -32,43 +40,49 @@ spring:
     authentication-database: admin
   data:
     mongodb:
-      auto-index-creation: false
+      auto-index-creation: false   # Indexes managed manually / by migration
 
+# -- Weaviate (vector store for RAG) ------------------------------------------
 weaviate:
   host: 192.168.100.117
-  port: 8080
+  port: 8080                       # REST API
   scheme: http
-  grpc-port: 50051
+  grpc-port: 50051                 # gRPC for fast vector operations
   hybrid-search:
     enabled: true
-    alpha: 0.85
+    alpha: 0.85                    # 0.0=BM25 only, 1.0=vector only, 0.85=vector-heavy hybrid
   auto-migrate:
-    countdown-seconds: 10
+    countdown-seconds: 10          # Delay before schema migration on startup
 
+# -- Ktor HTTP Client (LLM provider communication) ----------------------------
+# Bound to KtorClientProperties.kt. Used by KtorClientFactory for all providers.
 ktor:
   connection-pool:
-    max-connections: 500
-    max-connections-per-route: 100
-    keep-alive-time-millis: 300000
+    max-connections: 500           # Global max open connections
+    max-connections-per-route: 100 # Per-host connection limit
+    keep-alive-time-millis: 300000 # 5min keep-alive
   timeouts:
-    connect-timeout-millis: 60000
-    request-timeout-millis: 660000
-    socket-timeout-millis: 0
+    connect-timeout-millis: 60000  # 1min connect timeout
+    request-timeout-millis: 660000 # 11min request timeout (LLM generation can be slow)
+    socket-timeout-millis: 0       # 0 = no socket timeout (streaming)
   api-versions:
     anthropic-version: "2023-06-01"
   logging:
     enabled: false
     level: INFO
 
+# -- Retry (Ktor HTTP client retry on 5xx) ------------------------------------
 retry:
   ktor:
     max-attempts: 5
     initial-backoff-millis: 1000
     max-backoff-millis: 30000
 
+# -- Data directory -----------------------------------------------------------
 data:
   root-dir: /Users/damekjan/git/jervis/data
 
+# -- ArangoDB (knowledge graph) -----------------------------------------------
 arango:
   scheme: http
   host: 192.168.100.117
@@ -78,9 +92,10 @@ arango:
   password: ${ARANGO_PASSWORD}
   timeout-ms: 5000
 
+# -- Jervis core settings -----------------------------------------------------
 jervis:
   security:
-    client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002
+    client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002  # RSocket auth token
   oauth2:
     redirect-uri: https://jervis.damek-soft.eu/oauth2/callback
     github:
@@ -100,35 +115,43 @@ jervis:
       client-secret: ${ATLASSIAN_CLIENT_SECRET}
       scopes: read:jira-work,read:jira-user,read:confluence-space.summary,read:confluence-content.all
   qualifier:
-    max-retries: 5
-    initial-backoff-ms: 1000
-    max-backoff-ms: 300000
+    max-retries: 5                 # Max retries for qualifier agent per task
+    initial-backoff-ms: 1000       # Initial retry delay (1s)
+    max-backoff-ms: 300000         # Max retry delay (5min)
   background:
-    wait-on-startup: 10s
-    wait-on-error: 1m
-    wait-interval: 30s
+    wait-on-startup: 10s           # Delay before BackgroundEngine starts processing
+    wait-on-error: 1m             # Delay after error before retrying
+    wait-interval: 30s             # Qualification loop sleep between cycles
 
+# -- Link indexing -------------------------------------------------------------
 link:
   indexing:
-    skip-if-indexed-within: 30d
+    skip-if-indexed-within: 30d    # Don't re-index URLs crawled within this period
 
+# -- Ollama preload & concurrency ---------------------------------------------
+# Controls model keep-alive and concurrency limits for Ollama instances.
+# See docs/structures.md § "Ollama Instance Architecture" for full details.
 preload:
   ollama:
     gpu:
-      concurrency: 2
+      concurrency: 2              # GPU instance (:11434) – max concurrent requests
     cpu:
-      concurrency: 6
+      # CPU instance (:11435) – ingest + embedding + qualifier
+      # OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3
+      concurrency: 10
     llm:
-      keep-alive: 1h
-      refresh-safety-factor: 0.9
+      keep-alive: 1h              # Keep LLM models loaded in memory for 1h after last use
+      refresh-safety-factor: 0.9  # Refresh model before keep-alive expires (at 90% of TTL)
     embed:
-      concurrency: 6
+      concurrency: 6              # Embedding preload concurrency (model warm-up)
       keep-alive: 1h
       refresh-safety-factor: 0.9
 
+# -- Coding tools (Aider, OpenHands, Junie) ------------------------------------
+# Each tool has default (local Ollama) and paid (cloud API) provider+model pairs.
 coding-tools:
   aider:
-    default-provider: ollama
+    default-provider: ollama       # Uses GPU instance (:11434)
     default-model: qwen3-coder-tool:30b
     paid-provider: anthropic
     paid-model: claude-3-5-sonnet-20241022
@@ -137,35 +160,38 @@ coding-tools:
     default-model: qwen3-coder-tool:30b
     paid-provider: anthropic
     paid-model: claude-3-5-sonnet-20241022
-    ollama-base-url: http://192.168.100.117:11434
+    ollama-base-url: http://192.168.100.117:11434  # OpenHands needs direct Ollama URL
   junie:
-    default-provider: anthropic
+    default-provider: anthropic    # Junie always uses cloud (no local default)
     default-model: claude-3-5-sonnet-20241022
     paid-provider: anthropic
     paid-model: claude-3-5-sonnet-20241022
 
+# -- Microservice endpoints (local dev) ----------------------------------------
+# In production, these are K8s service names (see k8s/configmap.yaml).
+# Ollama endpoints are configured separately in models-config.yaml.
 endpoints:
   searxng:
-    baseUrl: http://localhost:30053/
+    baseUrl: http://localhost:30053/      # Web search (SearXNG)
   joern:
-    baseUrl: ws://localhost:8082/
+    baseUrl: ws://localhost:8082/         # Code analysis (Joern)
   tika:
-    baseUrl: ws://localhost:8081/
+    baseUrl: ws://localhost:8081/         # Document extraction (Apache Tika)
   whisper:
-    baseUrl: ws://localhost:8083/
+    baseUrl: ws://localhost:8083/         # Speech-to-text (Whisper)
   aider:
-    baseUrl: ws://localhost:3100/
+    baseUrl: ws://localhost:3100/         # Aider coding agent
   coding:
-    baseUrl: ws://localhost:3200/
+    baseUrl: ws://localhost:3200/         # Coding engine (OpenHands)
   junie:
-    baseUrl: ws://localhost:3300/
+    baseUrl: ws://localhost:3300/         # Junie coding agent
   knowledgebase:
-    baseUrl: http://localhost:8080/
+    baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph)
   claude:
-    baseUrl: ws://localhost:3400/
+    baseUrl: ws://localhost:3400/         # Claude Code agent
   orchestrator:
-    baseUrl: http://localhost:8090
+    baseUrl: http://localhost:8090        # Python orchestrator (LangGraph)
   providers:
-    github: ws://localhost:8085/
-    gitlab: ws://localhost:8086/
-    atlassian: ws://localhost:8084/
+    github: ws://localhost:8085/          # GitHub integration
+    gitlab: ws://localhost:8086/          # GitLab integration
+    atlassian: ws://localhost:8084/       # Atlassian (Jira/Confluence) integration
