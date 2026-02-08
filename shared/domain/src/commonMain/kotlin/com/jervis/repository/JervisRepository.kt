@@ -7,6 +7,7 @@ import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
+import com.jervis.service.IMeetingService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.IProjectGroupService
@@ -35,4 +36,5 @@ class JervisRepository(
     val notifications: INotificationService,
     val bugTrackerSetup: IBugTrackerSetupService,
     val codingAgents: ICodingAgentSettingsService,
+    val meetings: IMeetingService,
 )

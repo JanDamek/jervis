@@ -427,6 +427,15 @@ graphRefLocks["client-abc|user:john"] = Mutex()
 - **Purpose:** Creates DATA_PROCESSING task from Git commits
 - **Process:** Similar to other indexers
 
+### MeetingContinuousIndexer
+
+- **Purpose:** Transcribes uploaded meeting recordings and creates MEETING_PROCESSING tasks
+- **Two-stage pipeline:**
+  1. **Transcription:** Polls for UPLOADED meetings → runs Whisper (K8s Job in-cluster, subprocess locally) → TRANSCRIBED
+  2. **KB Indexing:** Polls for TRANSCRIBED meetings → builds markdown content (title, date, duration, type, full transcript with timestamps) → creates MEETING_PROCESSING task → INDEXED
+- **State machine:** RECORDING → UPLOADED → TRANSCRIBING → TRANSCRIBED → INDEXED (or FAILED at any step)
+- **sourceUrn format:** `meeting::id:{meetingId},title:{title}`
+
 ---
 
 ## RAG Integration

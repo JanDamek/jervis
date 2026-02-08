@@ -29,6 +29,9 @@ sealed class Screen {
     // Agent workload / activity log
     object AgentWorkload : Screen()
 
+    // Meetings
+    object Meetings : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }

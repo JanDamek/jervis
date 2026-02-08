@@ -138,6 +138,13 @@ fun MainScreenView(
                                 onNavigate(com.jervis.ui.navigation.Screen.Scheduler)
                             },
                         )
+                        DropdownMenuItem(
+                            text = { Text("Meetingy") },
+                            onClick = {
+                                showMenu = false
+                                onNavigate(com.jervis.ui.navigation.Screen.Meetings)
+                            },
+                        )
                         HorizontalDivider()
 
                         // Search & Logs (mirrors Desktop: RAGSearch/ErrorLogs windows)

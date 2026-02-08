@@ -164,6 +164,7 @@ class SimpleQualifierAgent(
             TaskTypeEnum.USER_TASK -> "user_task"
             TaskTypeEnum.SCHEDULED_TASK -> "scheduled"
             TaskTypeEnum.LINK_PROCESSING -> "link"
+            TaskTypeEnum.MEETING_PROCESSING -> "meeting"
         }
     }
 

@@ -6,6 +6,7 @@ enum class TaskTypeEnum {
     LINK_PROCESSING,
     WIKI_PROCESSING,
     GIT_PROCESSING,
+    MEETING_PROCESSING,
 
     // Direct input from a user
     USER_INPUT_PROCESSING,

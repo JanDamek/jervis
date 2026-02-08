@@ -108,6 +108,7 @@ fun JervisApp(
                 notifications = currentServices.notificationService,
                 bugTrackerSetup = currentServices.bugTrackerSetupService,
                 codingAgents = currentServices.codingAgentSettingsService,
+                meetings = currentServices.meetingService,
             )
         }
 

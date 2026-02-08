@@ -541,6 +541,42 @@ Shows live agent status card + in-memory activity log (max 200 entries, since re
 - `description`, `projectName?`, `taskType?`, `clientId?`
 - Stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
 
+### 5.6) Meetings Screen (`MeetingsScreen.kt`)
+
+Recording management screen accessed from the hamburger menu ("Meetingy").
+Lists meeting recordings with state indicators, supports starting new recordings and viewing transcripts.
+
+```
+Compact (<600dp):
+┌─ JTopBar ("Meetingy", onBack, [+ Nová]) ──────────┐
+│                                                     │
+│ 🔴 Nahrávání  03:42     [Zastavit]  ← only during  │
+│                                       recording     │
+│ ┌─ Card (outlinedCardBorder) ─────────────────────┐ │
+│ │ Standup tým Alfa              ✅  15:32          │ │
+│ │ 8.2.2026  •  Standup tým                        │ │
+│ └─────────────────────────────────────────────────┘ │
+│ ┌─ Card ──────────────────────────────────────────┐ │
+│ │ Sprint review                  ⏳  1:02:15       │ │
+│ │ 7.2.2026  •  Review                             │ │
+│ └─────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key components:**
+- `MeetingsScreen` – List + detail, manages setup/finalize dialogs
+- `MeetingViewModel` – State: meetings, isRecording, recordingDuration, selectedMeeting
+- `RecordingSetupDialog` – Client, project, audio device selection, system audio toggle
+- `RecordingFinalizeDialog` – Meeting type (radio buttons), optional title
+- `RecordingIndicator` – Animated red dot + elapsed time + stop button (shown during recording)
+
+**State icons:** 🔴 RECORDING, ⏳ UPLOADING/UPLOADED/TRANSCRIBING, ✅ TRANSCRIBED/INDEXED, ❌ FAILED
+
+**Audio capture:** `expect class AudioRecorder` with platform actuals:
+- Android: AudioRecord API (VOICE_RECOGNITION source)
+- Desktop: Java Sound API (TargetDataLine)
+- iOS: Stub (AVAudioEngine TODO)
+
 ---
 
 ## 6) Expandable / Collapsible Sections
