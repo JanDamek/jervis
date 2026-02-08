@@ -34,14 +34,14 @@ private val logger = KotlinLogging.logger {}
  *   1. Reads NEW documents from MongoDB
  *   2. Fetches COMPLETE page details from Confluence API (getConfluencePage)
  *   3. Creates CONFLUENCE_PROCESSING PendingTask with full content
- * - KoogQualifierAgent (CPU) handles ALL structuring:
+ * - Qualifier (CPU) handles ALL structuring:
  *   - Decides on Graph nodes (page metadata, space, creator, relations)
  *   - Decides on chunking strategy (semantic, context-aware)
  *   - Creates RAG chunks with semantic meaning
  *   - Links Graph ↔ RAG bi-directionally
  *   - Routes to GPU (READY_FOR_GPU) ONLY if complex analysis needed
  *
- * ETL Flow: MongoDB (NEW minimal) → API (full details) → CONFLUENCE_PROCESSING Task → KoogQualifierAgent → Graph + RAG
+ * ETL Flow: MongoDB (NEW minimal) → API (full details) → CONFLUENCE_PROCESSING Task → Qualifier → Graph + RAG
  */
 @Service
 @Order(10)

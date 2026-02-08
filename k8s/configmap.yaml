@@ -6,8 +6,8 @@
 # Differences from local (backend/server/src/main/resources/application.yml):
 # - K8s service names instead of localhost (e.g., ws://jervis-tika:8081/)
 # - Higher timeouts (30min request/socket vs 11min local)
-# - koog.max-iterations: 100 (vs 50 local)
-# - No data-dir or request-timeout-ms overrides
+# - qualifier.max-retries/backoff config (not in local)
+# - No data-dir overrides
 #
 # Ollama endpoints and model routing are in models-config.yaml (not duplicated here).
 # See docs/structures.md § "Ollama Instance Architecture" for hardware layout.
@@ -27,8 +27,7 @@ data:
         io.ktor: INFO
         org.springframework: INFO
         com.arangodb.internal.serde.SerdeUtils: INFO
-        ai.koog: INFO
-        com.jervis.koog: INFO
+        com.jervis.qualifier: INFO
         org.springframework.web: WARN
         org.springframework.web.reactive.socket: WARN
         org.springframework.web.reactive.handler: WARN
@@ -109,9 +108,10 @@ data:
     jervis:
       security:
         client-token: a7f3c9e2-4b8d-11ef-9a1c-0242ac120002  # RSocket auth token
-      koog:
-        max-iterations: 100          # Max agent loop iterations (production: 100 vs local 50)
-        qualifier-max-retries: 5     # Max retries for qualifier agent per task
+      qualifier:
+        max-retries: 5              # Max retries for qualifier agent per task
+        initial-backoff-ms: 1000    # Initial retry delay (1s)
+        max-backoff-ms: 300000      # Max retry delay (5min)
       background:
         wait-on-startup: 10s         # Delay before BackgroundEngine starts
         wait-on-error: 1m           # Delay after error before retrying

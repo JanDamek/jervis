@@ -41,7 +41,7 @@ class AgentOrchestratorRpcImpl(
 
     /**
      * Internal method to emit a response to a chat stream.
-     * Used by OrchestratorAgent to send updates during background processing.
+     * Used by BackgroundEngine to send updates during background processing.
      */
     suspend fun emitToChatStream(
         clientId: String,

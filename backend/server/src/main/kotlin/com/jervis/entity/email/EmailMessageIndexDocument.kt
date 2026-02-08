@@ -23,7 +23,7 @@ import java.time.Instant
  * FLOW:
  * 1. CentralPoller fetches → saves as NEW with full data
  * 2. EmailContinuousIndexer creates PendingTask → converts to INDEXED (minimal)
- * 3. KoogQualifierAgent stores to RAG/Graph with sourceUrn
+ * 3. Qualifier stores to RAG/Graph with sourceUrn
  * 4. Future lookups use sourceUrn to find original in IMAP/POP3
  *
  * MONGODB STORAGE (single instance, no INDEXING state needed):

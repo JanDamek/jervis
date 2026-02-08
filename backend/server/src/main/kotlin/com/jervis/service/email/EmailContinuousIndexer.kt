@@ -26,7 +26,7 @@ private val logger = KotlinLogging.logger {}
  * ARCHITECTURE (Graph-Based Routing):
  * - CentralPoller fetches FULL email data from IMAP/POP3 → stores in MongoDB as NEW
  * - This indexer reads NEW documents from MongoDB (NO email server calls)
- * - Creates PendingTask for KoogQualifierAgent
+ * - Creates PendingTask for Qualifier
  * - Converts to INDEXED (minimal tracking record)
  * - Email content now lives in RAG/Graph, accessible via sourceUrn
  *
