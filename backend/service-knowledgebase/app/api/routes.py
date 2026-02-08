@@ -128,9 +128,9 @@ async def traverse(request: TraversalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/analyze/code", response_model=JoernResultDto)
-async def analyze_code(query: str, projectZipBase64: str = None):
+async def analyze_code(query: str, workspacePath: str = ""):
     try:
-        return await service.analyze_code(query, projectZipBase64)
+        return await service.analyze_code(query, workspacePath)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

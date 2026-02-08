@@ -28,8 +28,6 @@ tasks.register("buildAll") {
     dependsOn(
         ":backend:common-services:build",
         ":backend:service-tika:build",
-        ":backend:service-joern:build",
-        ":backend:service-whisper:build",
         ":backend:service-aider:build",
         ":backend:service-coding-engine:build",
         ":backend:service-atlassian:build",

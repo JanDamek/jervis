@@ -32,7 +32,6 @@ class Settings(BaseSettings):
 
     # -- Microservice endpoints -------------------------------------------------
     TIKA_URL: str = "http://192.168.100.117:8081"           # Apache Tika (document extraction)
-    JOERN_URL: str = "http://192.168.100.117:8082"          # Joern (code analysis)
 
     # -- Model configuration ----------------------------------------------------
     EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (CPU instance)

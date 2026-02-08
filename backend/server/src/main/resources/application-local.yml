@@ -1,10 +1,6 @@
 endpoints:
-  joern:
-    baseUrl: ws://localhost:8082/
   tika:
     baseUrl: ws://localhost:8081/
-  whisper:
-    baseUrl: ws://localhost:8083/
   knowledgebase:
     baseUrl: http://localhost:8080/
   providers:

@@ -1,3 +1,10 @@
+# =============================================================================
+# Joern K8s Job Image
+# Runs as a K8s Job (not a persistent Deployment).
+# Contains Joern CLI + Python3 for structured JSON output.
+# No Kotlin JAR, no kRPC, no HTTP server.
+# =============================================================================
+
 # --- Joern CLI Download Stage ---
 FROM alpine:3.21 AS joern-downloader
 RUN apk add --no-cache wget unzip
@@ -11,16 +18,17 @@ RUN mkdir -p /opt/joern && \
 FROM eclipse-temurin:21-jre-jammy
 
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=joern-downloader /opt/joern /opt/joern
 ENV JOERN_HOME=/opt/joern
 ENV PATH="${JOERN_HOME}/joern-cli:${PATH}"
 
-WORKDIR /opt/jervis/joern
-COPY backend/service-joern/build/libs/service-joern-*.jar jervis-joern.jar
+WORKDIR /opt/jervis
+COPY backend/service-joern/entrypoint-joern-job.sh /opt/jervis/entrypoint-joern-job.sh
+RUN chmod +x /opt/jervis/entrypoint-joern-job.sh
 
 ENV JAVA_OPTS="-Xmx2g -Xms512m"
-EXPOSE 8082
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/joern/jervis-joern.jar"]
+ENTRYPOINT ["/opt/jervis/entrypoint-joern-job.sh"]

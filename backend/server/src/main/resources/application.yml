@@ -173,12 +173,8 @@ coding-tools:
 endpoints:
   searxng:
     baseUrl: http://localhost:30053/      # Web search (SearXNG)
-  joern:
-    baseUrl: ws://localhost:8082/         # Code analysis (Joern)
   tika:
     baseUrl: ws://localhost:8081/         # Document extraction (Apache Tika)
-  whisper:
-    baseUrl: ws://localhost:8083/         # Speech-to-text (Whisper)
   knowledgebase:
     baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph)
   orchestrator:

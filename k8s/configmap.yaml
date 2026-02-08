@@ -160,12 +160,8 @@ data:
     endpoints:
       searxng:
         baseUrl: http://192.168.100.117:30053/       # SearXNG web search (NodePort)
-      joern:
-        baseUrl: ws://jervis-joern:8082/             # Code analysis
       tika:
         baseUrl: ws://jervis-tika:8081/              # Document extraction
-      whisper:
-        baseUrl: ws://jervis-whisper:8083/            # Speech-to-text
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/   # Python KB (RAG+Graph)
       orchestrator:
@@ -206,4 +202,3 @@ data:
   ARANGO_USER: "root"
   # -- Microservice endpoints -------------------------------------------------
   TIKA_URL: "http://192.168.100.117:8081"                      # Apache Tika
-  JOERN_URL: "http://192.168.100.117:8082"                     # Joern code analysis

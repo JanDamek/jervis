@@ -2,9 +2,7 @@ package com.jervis.configuration
 
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.client.IBugTrackerClient
-import com.jervis.common.client.IJoernClient
 import com.jervis.common.client.ITikaClient
-import com.jervis.common.client.IWhisperClient
 import com.jervis.common.client.IWikiClient
 import com.jervis.common.dto.atlassian.*
 import com.jervis.common.dto.bugtracker.*
@@ -41,8 +39,6 @@ class RpcClientsConfig(
     private val endpoints: EndpointProperties,
 ) {
     private var _tikaClient: ITikaClient? = null
-    private var _joernClient: IJoernClient? = null
-    private var _whisperClient: IWhisperClient? = null
     private var _knowledgeService: KnowledgeService? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
 
@@ -75,18 +71,6 @@ class RpcClientsConfig(
     fun tikaClient(): ITikaClient =
         object : ITikaClient {
             override suspend fun process(request: com.jervis.common.dto.TikaProcessRequest) = getTika().process(request)
-        }
-
-    @Bean
-    fun joernClient(): IJoernClient =
-        object : IJoernClient {
-            override suspend fun run(request: com.jervis.common.dto.JoernQueryDto) = getJoern().run(request)
-        }
-
-    @Bean
-    fun whisperClient(): IWhisperClient =
-        object : IWhisperClient {
-            override suspend fun transcribe(request: com.jervis.common.dto.WhisperRequestDto) = getWhisper().transcribe(request)
         }
 
     @Bean
@@ -143,12 +127,6 @@ class RpcClientsConfig(
             override suspend fun reconnectTika() {
                 _tikaClient = createRpcClient(endpoints.tika.baseUrl)
             }
-            override suspend fun reconnectJoern() {
-                _joernClient = createRpcClient(endpoints.joern.baseUrl)
-            }
-            override suspend fun reconnectWhisper() {
-                _whisperClient = createRpcClient(endpoints.whisper.baseUrl)
-            }
             override suspend fun reconnectKnowledgebase() {
                 _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
             }
@@ -157,16 +135,6 @@ class RpcClientsConfig(
     private fun getTika(): ITikaClient =
         _tikaClient ?: synchronized(this) {
             _tikaClient ?: createRpcClient<ITikaClient>(endpoints.tika.baseUrl).also { _tikaClient = it }
-        }
-
-    private fun getJoern(): IJoernClient =
-        _joernClient ?: synchronized(this) {
-            _joernClient ?: createRpcClient<IJoernClient>(endpoints.joern.baseUrl).also { _joernClient = it }
-        }
-
-    private fun getWhisper(): IWhisperClient =
-        _whisperClient ?: synchronized(this) {
-            _whisperClient ?: createRpcClient<IWhisperClient>(endpoints.whisper.baseUrl).also { _whisperClient = it }
         }
 
     private fun getKnowledgeService(): KnowledgeService =

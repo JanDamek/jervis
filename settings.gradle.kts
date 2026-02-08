@@ -43,8 +43,6 @@ include(
     ":backend:common-services",
     ":backend:server",
     ":backend:service-tika",
-    ":backend:service-joern",
-    ":backend:service-whisper",
     ":backend:service-aider",
     ":backend:service-coding-engine",
     ":backend:service-atlassian",

@@ -6,14 +6,8 @@ K8S_DIR="/Users/damekjan/git/jervis/k8s"
 echo "=== Building and deploying all Jervis services ==="
 echo ""
 
-# Build all services
+# Build persistent services (Deployments)
 "${K8S_DIR}/build_tika.sh"
-echo ""
-
-"${K8S_DIR}/build_joern.sh"
-echo ""
-
-"${K8S_DIR}/build_whisper.sh"
 echo ""
 
 "${K8S_DIR}/build_atlassian.sh"
@@ -47,6 +41,13 @@ echo ""
 echo ""
 
 # Note: qualification service removed - SimpleQualifierAgent calls KB directly
+
+# Build Job-only images (no persistent Deployment)
+"${K8S_DIR}/build_joern.sh"
+echo ""
+
+"${K8S_DIR}/build_whisper.sh"
+echo ""
 
 echo ""
 echo "=== ✓ All services built and deployed successfully ==="

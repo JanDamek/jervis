@@ -12,7 +12,7 @@ from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
 from app.services.hybrid_retriever import HybridRetriever
 from app.services.clients.tika_client import TikaClient
-from app.services.clients.joern_client import JoernClient, JoernQueryDto, JoernResultDto
+from app.services.clients.joern_client import JoernClient, JoernResultDto
 from app.services.image_service import ImageService
 from app.core.config import settings
 from app.db.arango import get_arango_db
@@ -148,8 +148,8 @@ class KnowledgeService:
         request.content = text
         return await self.ingest(request)
 
-    async def analyze_code(self, query: str, project_zip_base64: str = None) -> JoernResultDto:
-        return await self.joern_client.run(query, project_zip_base64)
+    async def analyze_code(self, query: str, workspace_path: str) -> JoernResultDto:
+        return await self.joern_client.run(query, workspace_path)
 
     async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
         """

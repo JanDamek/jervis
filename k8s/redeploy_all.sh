@@ -7,7 +7,7 @@ K8S_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "=== Redeploying ALL Jervis services ==="
 echo ""
 
-SERVICES=("tika" "joern" "whisper" "atlassian" "server" "aider" "coding_engine" "junie" "github" "gitlab")
+SERVICES=("tika" "atlassian" "server" "aider" "coding_engine" "junie" "github" "gitlab")
 
 for SERVICE in "${SERVICES[@]}"; do
     "${K8S_DIR}/redeploy_service.sh" "$SERVICE"

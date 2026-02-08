@@ -1,19 +1,20 @@
-# --- Run Stage ---
-FROM eclipse-temurin:21-jre-jammy
+# =============================================================================
+# Whisper K8s Job Image
+# Runs as a K8s Job (not a persistent Deployment).
+# Pure Python: faster-whisper + ffmpeg. No JRE, no Kotlin, no kRPC.
+# =============================================================================
+FROM python:3.11-slim
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-pip ffmpeg libgomp1 ca-certificates curl \
+    ffmpeg libgomp1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv "$VIRTUAL_ENV"
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir faster-whisper
+
+RUN pip install --no-cache-dir faster-whisper
 
 WORKDIR /opt/jervis/whisper
-COPY backend/service-whisper/build/libs/service-whisper-*.jar jervis-whisper.jar
+COPY backend/service-whisper/whisper_runner.py /opt/jervis/whisper/whisper_runner.py
+COPY backend/service-whisper/entrypoint-whisper-job.sh /opt/jervis/entrypoint-whisper-job.sh
+RUN chmod +x /opt/jervis/entrypoint-whisper-job.sh
 
-ENV JAVA_OPTS="-Xmx2g -Xms512m"
-EXPOSE 8083
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/whisper/jervis-whisper.jar"]
+ENTRYPOINT ["/opt/jervis/entrypoint-whisper-job.sh"]

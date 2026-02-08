@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * and models-config.yaml (LLM providers, Ollama instances).
  *
  * Source files:
- * - application.yml → microservice URLs (tika, joern, knowledgebase, orchestrator, etc.)
+ * - application.yml → microservice URLs (tika, knowledgebase, orchestrator, etc.)
  * - models-config.yaml → LLM provider URLs + API keys (ollama, anthropic, openai, google)
  * - K8s: k8s/configmap.yaml overrides for production
  *
@@ -24,8 +24,6 @@ data class EndpointProperties(
     val lmStudio: Host,              // LM Studio (desktop dev)
     val searxng: Host,               // SearXNG web search
     val tika: Host,                  // Apache Tika document extraction (WebSocket)
-    val joern: Host,                 // Joern code analysis (WebSocket)
-    val whisper: Host,               // Whisper speech-to-text (WebSocket)
     val knowledgebase: Host,         // Python KB microservice (HTTP)
     val orchestrator: Host = Host("http://localhost:8090"),  // Python orchestrator (HTTP)
     val providers: Map<String, String> = emptyMap(),  // Git provider WebSocket URLs (github, gitlab, atlassian)
