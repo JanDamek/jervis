@@ -25,6 +25,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 WORKDIR /opt/jervis/coding-engine
 COPY backend/service-coding-engine/build/libs/service-coding-engine-*.jar jervis-coding-engine.jar
+COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
+RUN chmod +x /opt/jervis/entrypoint-job.sh
 
 ENV PORT=3200 \
     JAVA_OPTS="-Xmx2g -Xms512m" \

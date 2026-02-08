@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 WORKDIR /opt/jervis/aider
 COPY backend/service-aider/build/libs/service-aider-*.jar jervis-aider.jar
+COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
+RUN chmod +x /opt/jervis/entrypoint-job.sh
 
 ENV PORT=3100 \
     JAVA_OPTS="-Xmx1g -Xms256m" \

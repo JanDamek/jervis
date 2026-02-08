@@ -3,7 +3,7 @@ FROM eclipse-temurin:21-jre-jammy
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    git curl ca-certificates libarchive-tools && \
+    git curl ca-certificates libarchive-tools python3 && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get update && \
     apt-get install -y nodejs && \
@@ -18,6 +18,8 @@ RUN mkdir -p /opt/junie && \
 
 WORKDIR /opt/jervis/junie
 COPY backend/service-junie/build/libs/service-junie-*.jar jervis-junie.jar
+COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
+RUN chmod +x /opt/jervis/entrypoint-job.sh
 
 ENV PORT=3300 \
     JAVA_OPTS="-Xmx1g -Xms256m"
