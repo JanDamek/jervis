@@ -179,16 +179,8 @@ endpoints:
     baseUrl: ws://localhost:8081/         # Document extraction (Apache Tika)
   whisper:
     baseUrl: ws://localhost:8083/         # Speech-to-text (Whisper)
-  aider:
-    baseUrl: ws://localhost:3100/         # Aider coding agent
-  coding:
-    baseUrl: ws://localhost:3200/         # Coding engine (OpenHands)
-  junie:
-    baseUrl: ws://localhost:3300/         # Junie coding agent
   knowledgebase:
     baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph)
-  claude:
-    baseUrl: ws://localhost:3400/         # Claude Code agent
   orchestrator:
     baseUrl: http://localhost:8090        # Python orchestrator (LangGraph)
   providers:

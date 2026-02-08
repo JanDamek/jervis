@@ -2,12 +2,10 @@ package com.jervis.configuration
 
 import com.jervis.common.client.IAtlassianClient
 import com.jervis.common.client.IBugTrackerClient
-import com.jervis.common.client.ICodingClient
 import com.jervis.common.client.IJoernClient
 import com.jervis.common.client.ITikaClient
 import com.jervis.common.client.IWhisperClient
 import com.jervis.common.client.IWikiClient
-import com.jervis.common.dto.CodingRequest
 import com.jervis.common.dto.atlassian.*
 import com.jervis.common.dto.bugtracker.*
 import com.jervis.common.dto.wiki.*
@@ -45,10 +43,6 @@ class RpcClientsConfig(
     private var _tikaClient: ITikaClient? = null
     private var _joernClient: IJoernClient? = null
     private var _whisperClient: IWhisperClient? = null
-    private var _aiderClient: ICodingClient? = null
-    private var _codingEngineClient: ICodingClient? = null
-    private var _junieClient: ICodingClient? = null
-    private var _claudeClient: ICodingClient? = null
     private var _knowledgeService: KnowledgeService? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
 
@@ -93,30 +87,6 @@ class RpcClientsConfig(
     fun whisperClient(): IWhisperClient =
         object : IWhisperClient {
             override suspend fun transcribe(request: com.jervis.common.dto.WhisperRequestDto) = getWhisper().transcribe(request)
-        }
-
-    @Bean
-    fun aiderClient(): ICodingClient =
-        object : ICodingClient {
-            override suspend fun execute(request: CodingRequest) = getAider().execute(request)
-        }
-
-    @Bean
-    fun codingEngineClient(): ICodingClient =
-        object : ICodingClient {
-            override suspend fun execute(request: CodingRequest) = getCodingEngine().execute(request)
-        }
-
-    @Bean
-    fun junieClient(): ICodingClient =
-        object : ICodingClient {
-            override suspend fun execute(request: CodingRequest) = getJunie().execute(request)
-        }
-
-    @Bean
-    fun claudeClient(): ICodingClient =
-        object : ICodingClient {
-            override suspend fun execute(request: CodingRequest) = getClaude().execute(request)
         }
 
     @Bean
@@ -179,18 +149,6 @@ class RpcClientsConfig(
             override suspend fun reconnectWhisper() {
                 _whisperClient = createRpcClient(endpoints.whisper.baseUrl)
             }
-            override suspend fun reconnectAider() {
-                _aiderClient = createRpcClient(endpoints.aider.baseUrl)
-            }
-            override suspend fun reconnectCodingEngine() {
-                _codingEngineClient = createRpcClient(endpoints.coding.baseUrl)
-            }
-            override suspend fun reconnectJunie() {
-                _junieClient = createRpcClient(endpoints.junie.baseUrl)
-            }
-            override suspend fun reconnectClaude() {
-                _claudeClient = createRpcClient(endpoints.claude.baseUrl)
-            }
             override suspend fun reconnectKnowledgebase() {
                 _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
             }
@@ -209,28 +167,6 @@ class RpcClientsConfig(
     private fun getWhisper(): IWhisperClient =
         _whisperClient ?: synchronized(this) {
             _whisperClient ?: createRpcClient<IWhisperClient>(endpoints.whisper.baseUrl).also { _whisperClient = it }
-        }
-
-    private fun getAider(): ICodingClient =
-        _aiderClient ?: synchronized(this) {
-            _aiderClient ?: createRpcClient<ICodingClient>(endpoints.aider.baseUrl).also { _aiderClient = it }
-        }
-
-    private fun getCodingEngine(): ICodingClient =
-        _codingEngineClient ?: synchronized(this) {
-            _codingEngineClient ?: createRpcClient<ICodingClient>(endpoints.coding.baseUrl).also {
-                _codingEngineClient = it
-            }
-        }
-
-    private fun getJunie(): ICodingClient =
-        _junieClient ?: synchronized(this) {
-            _junieClient ?: createRpcClient<ICodingClient>(endpoints.junie.baseUrl).also { _junieClient = it }
-        }
-
-    private fun getClaude(): ICodingClient =
-        _claudeClient ?: synchronized(this) {
-            _claudeClient ?: createRpcClient<ICodingClient>(endpoints.claude.baseUrl).also { _claudeClient = it }
         }
 
     private fun getKnowledgeService(): KnowledgeService =

@@ -23,13 +23,9 @@ data class EndpointProperties(
     val ollama: OllamaConfig,        // Local Ollama instances (GPU + CPU)
     val lmStudio: Host,              // LM Studio (desktop dev)
     val searxng: Host,               // SearXNG web search
-    val aider: Host,                 // Aider coding agent (WebSocket)
-    val coding: Host,                // OpenHands coding engine (WebSocket)
     val tika: Host,                  // Apache Tika document extraction (WebSocket)
     val joern: Host,                 // Joern code analysis (WebSocket)
     val whisper: Host,               // Whisper speech-to-text (WebSocket)
-    val junie: Host,                 // Junie coding agent (WebSocket)
-    val claude: Host,                // Claude Code agent (WebSocket)
     val knowledgebase: Host,         // Python KB microservice (HTTP)
     val orchestrator: Host = Host("http://localhost:8090"),  // Python orchestrator (HTTP)
     val providers: Map<String, String> = emptyMap(),  // Git provider WebSocket URLs (github, gitlab, atlassian)

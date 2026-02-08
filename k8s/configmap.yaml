@@ -166,14 +166,6 @@ data:
         baseUrl: ws://jervis-tika:8081/              # Document extraction
       whisper:
         baseUrl: ws://jervis-whisper:8083/            # Speech-to-text
-      aider:
-        baseUrl: ws://jervis-aider:3100/             # Aider coding agent
-      coding:
-        baseUrl: ws://jervis-coding-engine:3200/     # OpenHands coding engine
-      junie:
-        baseUrl: ws://jervis-junie:3300/             # Junie coding agent
-      claude:
-        baseUrl: ws://jervis-claude:3400/            # Claude Code agent
       knowledgebase:
         baseUrl: http://jervis-knowledgebase:8080/   # Python KB (RAG+Graph)
       orchestrator:

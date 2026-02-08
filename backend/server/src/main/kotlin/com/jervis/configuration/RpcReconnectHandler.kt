@@ -4,9 +4,5 @@ interface RpcReconnectHandler {
     suspend fun reconnectTika()
     suspend fun reconnectJoern()
     suspend fun reconnectWhisper()
-    suspend fun reconnectAider()
-    suspend fun reconnectCodingEngine()
-    suspend fun reconnectJunie()
-    suspend fun reconnectClaude()
     suspend fun reconnectKnowledgebase()
 }

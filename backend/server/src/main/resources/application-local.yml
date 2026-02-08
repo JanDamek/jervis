@@ -5,12 +5,6 @@ endpoints:
     baseUrl: ws://localhost:8081/
   whisper:
     baseUrl: ws://localhost:8083/
-  aider:
-    baseUrl: ws://localhost:3100/
-  coding:
-    baseUrl: ws://localhost:3200/
-  junie:
-    baseUrl: ws://localhost:3300/
   knowledgebase:
     baseUrl: http://localhost:8080/
   providers:
