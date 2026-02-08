@@ -32,7 +32,7 @@ Errors must not be hidden. An exception is better than masking an error.
 **✅ DO:**
 - Try/catch ONLY at boundaries: I/O, REST boundary, top-level controller
 - Let exceptions propagate to top-level handler
-- For Tools (Koog): Tools throw exceptions, framework handles as tool error
+- For Tools: Tools throw exceptions, caller handles as tool error
 - Validate input (fail-fast), not defensive programming everywhere
 
 ### Kotlin-First & Idiomatic Code
@@ -337,7 +337,7 @@ val json = PromptBuilderService.render(template, values)
 | OPENAI | Premium tasks | `gpt-4` |
 | ANTHROPIC | Alternate | `claude-3` |
 
-**Fail-fast:** No fallbacks outside Koog configuration
+**Fail-fast:** No automatic fallbacks between LLM providers
 
 ### Prompt Structure
 

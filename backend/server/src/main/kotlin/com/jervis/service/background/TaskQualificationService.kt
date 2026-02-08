@@ -1,7 +1,7 @@
 package com.jervis.service.background
 
 import com.jervis.entity.TaskDocument
-import com.jervis.koog.qualifier.SimpleQualifierAgent
+import com.jervis.qualifier.SimpleQualifierAgent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch

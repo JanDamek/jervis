@@ -6,11 +6,9 @@ import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 
 /**
- * TaskContext - Execution context for Koog Workflow Agent.
+ * TaskContext - Execution context for agent workflow.
  *
- * Simplified for Koog 0.5.3 architecture:
- * - No PlanExecutor (removed) - AgentOrchestratorService directly calls KoogWorkflowAgent
- * - Routing handled by TaskRouting object (not metadata map - antipattern!)
+ * - Routing handled by TaskRouting object
  * - Agent works internally in English, responds in originalLanguage
  */
 data class TaskContext(

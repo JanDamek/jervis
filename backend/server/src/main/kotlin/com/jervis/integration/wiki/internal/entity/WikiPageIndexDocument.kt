@@ -27,7 +27,7 @@ import java.time.Instant
  *    - Fetches FULL page details from Wiki API
  *    - Creates PendingTask with complete content
  *    - Converts to INDEXED (minimal)
- * 3. KoogQualifierAgent stores to RAG/Graph with sourceUrn
+ * 3. Qualifier stores to RAG/Graph with sourceUrn
  * 4. Future lookups use sourceUrn to find original in Wiki
  *
  * MONGODB STORAGE (minimal for all states):

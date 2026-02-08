@@ -62,7 +62,7 @@ import java.time.Instant
  *   - Source: git file://<projectId>/<commitHash>/<filePath>
  *
  * Agent Persistence:
- * - agentCheckpointJson stores serialized Koog agent state (compressed after time)
+ * - agentCheckpointJson stores serialized agent state (compressed after time)
  * - On next message, agent state is restored to continue where it left off
  * - Enables continuous conversation across multiple user messages
  * - Enables User Task iteration: agent resumes from checkpoint when task returns from USER_TASK state
@@ -89,7 +89,7 @@ import java.time.Instant
  * @property attachments Binary attachments for vision analysis
  * @property scheduledAt When task should run (for scheduled tasks)
  * @property cronExpression Cron expression (for recurring tasks)
- * @property agentCheckpointJson Serialized Koog agent state for continuity (reused across messages)
+ * @property agentCheckpointJson Serialized agent state for continuity (reused across messages)
  * @property orchestratorThreadId LangGraph thread ID when task is dispatched to Python orchestrator
  */
 @Document(collection = "tasks")

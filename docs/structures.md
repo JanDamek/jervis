@@ -7,7 +7,7 @@
 > - [knowledge-base.md](knowledge-base.md) – Knowledge Base SSOT (graph schema, RAG, ingest, normalization, indexers)
 > - [kb-analysis-and-recommendations.md](kb-analysis-and-recommendations.md) – KB analýza, kritické problémy, doporučení (CZ)
 > - [architecture.md](architecture.md) – System-wide architecture overview
-> - [koog.md](koog.md) – Koog agent framework reference
+> - [koog-audit.md](koog-audit.md) – Koog removal audit (historical)
 
 ---
 
@@ -44,9 +44,8 @@
 └─────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────┐
-│ KoogQualifierAgent (CPU - OLLAMA_QUALIFIER)     │
-│ • SequentialIndexingTool (chunking: 4000/200)  │
-│ • GraphRagLinkerTool (Graph ↔ RAG links)       │
+│ Qualifier – SimpleQualifierAgent (CPU - OLLAMA) │
+│ • Calls KB microservice for indexing/linking   │
 │ • TaskRoutingTool (DONE vs READY_FOR_GPU)      │
 │ • TaskMemory creation (context summary)        │
 └─────────────────────────────────────────────────┘
@@ -64,8 +63,8 @@
         └─────────────────────────────────────────┘
                     ↓
         ┌─────────────────────────────────────────┐
-        │ KoogWorkflowAgent (GPU - OLLAMA)        │
-        │ • TaskMemoryTool (loads context)        │
+        │ Python Orchestrator (LangGraph)          │
+        │ • Loads task context from TaskMemory    │
         │ • Focus on analysis/actions             │
         │ • No redundant structuring work         │
         └─────────────────────────────────────────┘
@@ -98,7 +97,7 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
   * Source context (emailId, subject, sender for Graph edge Email→Link)
   * Context around link (text before/after link)
 
-**2. KoogQualifierAgent processes EMAIL task (DATA_PROCESSING):**
+**2. Qualifier (SimpleQualifierAgent) processes EMAIL task (DATA_PROCESSING):**
 - Indexes email content into RAG/Graph
 - Creates Email vertex
 - Creates Person vertices (from, to, cc)
@@ -106,7 +105,7 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 - Notes in metadata: "3 links will be processed separately"
 - Routing: DONE (email indexed, links waiting in queue)
 
-**3. KoogQualifierAgent processes LINK task (LINK_PROCESSING) - SEPARATELY:**
+**3. Qualifier (SimpleQualifierAgent) processes LINK task (LINK_PROCESSING) - SEPARATELY:**
 - Reads link info (URL, source email/jira/confluence, context)
 - Qualifies safety (LinkSafetyQualifier):
   * Already indexed? → DONE (skip)
@@ -127,7 +126,7 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 - Confluence page content (ConfluenceContinuousIndexer)
 - Git commit message (GitContinuousIndexer)
 
-#### 2. KoogQualifierAgent - Tools
+#### 2. Qualifier (SimpleQualifierAgent) - Tools
 
 ```kotlin
 // RagTools.storeChunk - ATOMIC chunk storage (PREFERRED)
@@ -209,7 +208,7 @@ fun routeTask(
 - Only for large documents (≥40000 chars) where precise extraction isn't needed
 - Chunk size: 4000 characters, Overlap: 200 characters (context continuity)
 - Service automatically splits document and embeds all chunks
-- Use: Exceptionally in KoogQualifierAgent for large plain-text documents
+- Use: Exceptionally in Qualifier for large plain-text documents
 
 #### 3. TaskMemory - Context Passing
 
@@ -238,19 +237,12 @@ suspend fun loadTaskMemory(correlationId: String): TaskMemoryDocument?
 suspend fun deleteTaskMemory(correlationId: String)
 ```
 
-#### 4. KoogWorkflowAgent - TaskMemoryTool
+#### 4. Python Orchestrator - Task Context Loading
 
-```kotlin
-// Loads context from Qualifier
-@Tool
-fun loadTaskContext(): String
-```
-
-**Usage in workflow:**
-1. Agent calls `loadTaskContext()` at start
-2. Gets: context summary, Graph node keys, RAG document IDs
-3. Uses Graph/RAG tools with provided keys/IDs for full content
-4. Focus on analysis and actions, not structuring
+The Python Orchestrator loads task context from TaskMemory at the start of execution:
+1. Loads context summary, Graph node keys, RAG document IDs
+2. Uses KB microservice for full content retrieval
+3. Focuses on analysis and actions, not structuring
 
 #### 5. Preemption
 
@@ -306,13 +298,13 @@ fun loadTaskContext(): String
 
 - **Interval:** 30 seconds
 - **Process:** Reads NEW documents from MongoDB, creates PendingTasks
-- **Agents:** KoogQualifierAgent with CPU model (OLLAMA_QUALIFIER)
+- **Agents:** SimpleQualifierAgent with CPU model (OLLAMA_QUALIFIER)
 - **Max iterations:** 10 (for chunking loops)
 
 ### Execution Loop (GPU)
 
 - **Trigger:** Runs ONLY when idle (no user requests for 30s)
-- **Agent:** KoogWorkflowAgent with GPU model (OLLAMA_PRIMARY)
+- **Agent:** Python Orchestrator (LangGraph) with GPU model (OLLAMA_PRIMARY)
 - **Max iterations:** 500 (configurable via application.yml)
 - **Preemption:** Immediately interrupted by user requests
 

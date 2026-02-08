@@ -7,7 +7,7 @@ import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.configuration.properties.CodingToolsProperties
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.configuration.properties.EndpointProperties
-import com.jervis.configuration.properties.KoogProperties
+import com.jervis.configuration.properties.QualifierProperties
 import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.configuration.properties.ModelsProperties
@@ -35,7 +35,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     SecurityProperties::class,
     ArangoProperties::class,
     KtorClientProperties::class,
-    KoogProperties::class,
+    QualifierProperties::class,
     CodingToolsProperties::class,
     PollingProperties::class,
 )

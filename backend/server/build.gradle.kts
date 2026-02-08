@@ -132,10 +132,6 @@ dependencies {
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
 
-    // Koog agents
-    implementation(libs.koog.agents)
-    implementation(libs.koog.agents.features.snapshot) // Persistence/Checkpoint support
-    implementation(libs.koog.agents.features.memory) // Memory feature for long-term facts
 
     testImplementation(libs.jupiter.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)

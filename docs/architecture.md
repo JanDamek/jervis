@@ -8,15 +8,14 @@
 ## Table of Contents
 
 1. [Framework Overview](#framework-overview)
-2. [Koog Agent Framework](#koog-agent-framework)
-3. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
-4. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
-5. [Knowledge Graph Design](#knowledge-graph-design)
-6. [Vision Processing Pipeline](#vision-processing-pipeline)
-7. [Smart Model Selector](#smart-model-selector)
-8. [Security Architecture](#security-architecture)
-9. [Coding Agents](#coding-agents)
-10. [Python Orchestrator](#python-orchestrator)
+2. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
+3. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
+4. [Knowledge Graph Design](#knowledge-graph-design)
+5. [Vision Processing Pipeline](#vision-processing-pipeline)
+6. [Smart Model Selector](#smart-model-selector)
+7. [Security Architecture](#security-architecture)
+8. [Coding Agents](#coding-agents)
+9. [Python Orchestrator](#python-orchestrator)
 
 ---
 
@@ -24,77 +23,12 @@
 
 The Jervis system is built on several key architectural patterns:
 
-- **Koog Framework (0.6.0)**: Type-safe DSL for building AI agents with nodes and edges
+- **Python Orchestrator (LangGraph)**: Agent runtime for coding workflows and complex task execution
+- **SimpleQualifierAgent**: CPU-based qualification agent calling KB microservice directly
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
 - **Vision Processing**: Two-stage vision analysis for document understanding
-
----
-
-## Koog Agent Framework
-
-> For complete Koog reference see [koog.md](koog.md).
-
-### Core Libraries & Components
-
-#### `agents-core-jvm` - Core Agent Framework
-
-- `AIAgent` - Main agent class with functional and graph strategies
-- `AIAgentConfig` - Agent configuration (prompt, model, iterations)
-- `ToolRegistry` - Tool registration and management
-- Strategy DSL: `strategy()`, `node()`, `edge()`
-- Execution flow: `nodeStart`, `nodeSendInput`, `nodeExecuteTool`, `nodeSendToolResult`, `nodeFinish`
-
-#### `agents-ext-jvm` - Extension Tools
-
-- **File System Tools:**
-  - `ListDirectoryTool(provider)` - List directory contents
-  - `ReadFileTool(provider)` - Read file content
-  - `EditFileTool(provider)` - Edit files with patches
-  - `WriteFileTool(provider)` - Write/create files
-  - Providers: `JVMFileSystemProvider.ReadOnly`, `JVMFileSystemProvider.ReadWrite`
-
-- **Shell Tools:**
-  - `ExecuteShellCommandTool(executor, confirmationHandler)`
-  - `JvmShellCommandExecutor()` - JVM shell executor
-  - `PrintShellCommandConfirmationHandler()` - Print confirmations
-
-- **Other:** `AskUser`, `SayToUser`, `ExitTool`
-
-#### `agents-tools-jvm` - Tool System
-
-- `@Tool` - Annotation for tool methods
-- `@LLMDescription` - LLM-readable descriptions
-- `ToolSet` - Interface for tool collections
-- `Tool<I, O>` - Tool interface
-- `ToolRegistry` - Registry builder DSL
-
----
-
-## Agent Strategy Types
-
-### Graph-Based Strategy (Production)
-
-Complex workflow agents with strategy graphs for production use:
-
-- **Full persistence** with controllable rollbacks for fault-tolerance
-- **Advanced OpenTelemetry tracing** with nested graph events
-- **Strategy graph DSL:** `strategy<Input, Output>("name") { ... }`
-- **Nodes:** `val nodeName by node<I, O>("Name") { input -> output }`
-- **Subgraphs:** `val subgraphName by subgraph<I, O>(name = "Name") { ... }`
-- **Edges:** `edge(nodeA forwardTo nodeB)`
-- **Conditional routing:** `.onCondition { state -> boolean }`
-- **Event routing:** `.onToolCall { true }`, `.onAssistantMessage { true }`
-
-### Functional Strategy (Prototyping)
-
-Lightweight agents without complex graphs:
-
-- **Lambda function** handles user input, LLM calls, and tools
-- **Custom control flows** in plain Kotlin
-- **History compression** and automatic state management
-- **Good for MVP and prototyping**
 
 ---
 
@@ -200,38 +134,9 @@ For each client, Jervis creates **3 ArangoDB objects**:
 
 ### Vision Architecture
 
-#### ❌ What NOT TO DO (Anti-patterns)
+### Vision Integration
 
-```kotlin
-// ❌ WRONG - Vision as Tool
-@Tool
-suspend fun analyzeAttachment(attachmentId: String): String {
-    val model = selectVisionModel(...)
-    return llmGateway.call(model, image) // LLM call in Tool!
-}
-```
-
-**Why is it wrong:**
-- Tool API is for **actions** (save to DB, create task), not for LLM calls
-- We lose type-safety of Koog graph
-- Cannot use Koog multimodal (different models per node)
-- Complicated testing
-
-#### ✅ What TO DO (Correct approach)
-
-```kotlin
-// ✅ CORRECT - Vision as LLM node
-val nodeVision by node<QualifierPipelineState, QualifierPipelineState>("Vision Analysis") { state ->
-    val model = selectVisionModel(state.attachments)
-    val visionResult = llmGateway.call(model, image)
-    state.withVision(visionResult)
-}
-```
-
-### Vision Integration with Koog
-
-- **Vision as LLM node**: Part of Koog strategy graph
-- **Type-safe**: `QualifierPipelineState -> QualifierPipelineState`
+- **Vision as a pipeline stage**: Separate processing step in qualification pipeline
 - **Model selection**: Automatic selection of appropriate vision model
 - **Context preservation**: Vision context preserved through all phases
 
