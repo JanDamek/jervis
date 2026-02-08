@@ -551,16 +551,30 @@ class BackgroundEngine(
                 // Still working – skip
             }
             "interrupted" -> {
-                // Approval required → escalate to USER_TASK via UserTaskService
-                // This properly: changes type to USER_TASK, sends notification, updates content
+                // Interrupted → escalate to USER_TASK via UserTaskService
+                // Distinguishes between clarification (pre-planning questions) and approval (commit/push)
                 val interruptAction = status["interrupt_action"] ?: "unknown"
                 val interruptDescription = status["interrupt_description"] ?: "Schválení vyžadováno"
+
+                // Clarification vs approval: different question format for the user
+                val (pendingQuestion, questionContext, phase) = when (interruptAction) {
+                    "clarify" -> Triple(
+                        interruptDescription,  // Questions directly, no "Schválení:" prefix
+                        "Orchestrátor potřebuje upřesnění před zahájením práce",
+                        "clarification",
+                    )
+                    else -> Triple(
+                        "Schválení: $interruptAction – $interruptDescription",
+                        "Python orchestrátor potřebuje schválení pro: $interruptAction",
+                        "approval",
+                    )
+                }
 
                 userTaskService.failAndEscalateToUserTask(
                     task = task,
                     reason = "ORCHESTRATOR_INTERRUPT",
-                    pendingQuestion = "Schválení: $interruptAction – $interruptDescription",
-                    questionContext = "Python orchestrátor potřebuje schválení pro: $interruptAction",
+                    pendingQuestion = pendingQuestion,
+                    questionContext = questionContext,
                 )
 
                 // Also emit progress to chat for FOREGROUND tasks
@@ -569,15 +583,17 @@ class BackgroundEngine(
                         agentOrchestratorRpc.emitProgress(
                             clientId = task.clientId.toString(),
                             projectId = task.projectId?.toString(),
-                            message = "Orchestrátor potřebuje schválení: $interruptAction",
-                            metadata = mapOf("phase" to "approval", "action" to interruptAction),
+                            message = if (phase == "clarification")
+                                "Orchestrátor potřebuje upřesnění" else
+                                "Orchestrátor potřebuje schválení: $interruptAction",
+                            metadata = mapOf("phase" to phase, "action" to interruptAction),
                         )
                     } catch (e: Exception) {
-                        logger.warn(e) { "Failed to emit approval notification for task ${task.id}" }
+                        logger.warn(e) { "Failed to emit interrupt notification for task ${task.id}" }
                     }
                 }
 
-                logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$interruptAction → USER_TASK" }
+                logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$interruptAction phase=$phase → USER_TASK" }
             }
             "done" -> {
                 // Completed → fetch full result and handle

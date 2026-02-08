@@ -118,6 +118,31 @@ class Evaluation(BaseModel):
     diff: str = ""
 
 
+# --- Clarification ---
+
+
+class ClarificationQuestion(BaseModel):
+    """A question the orchestrator needs answered before proceeding."""
+
+    id: str  # e.g. "q1"
+    question: str
+    options: list[str] = Field(default_factory=list)  # Suggested answers (empty = freeform)
+    required: bool = True
+
+
+# --- Cross-goal Context ---
+
+
+class GoalSummary(BaseModel):
+    """Summary of a completed goal for cross-goal context."""
+
+    goal_id: str
+    title: str
+    summary: str
+    changed_files: list[str] = Field(default_factory=list)
+    key_decisions: list[str] = Field(default_factory=list)
+
+
 # --- Approval ---
 
 
@@ -165,28 +190,3 @@ class OrchestrateResponse(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     step_results: list[StepResult] = Field(default_factory=list)
     thread_id: str | None = None
-
-
-# --- LangGraph State ---
-
-
-class OrchestratorState(dict):
-    """TypedDict-compatible state for LangGraph.
-
-    Fields:
-        task: CodingTask
-        rules: ProjectRules
-        goals: list[Goal]
-        current_goal_index: int
-        steps: list[CodingStep]
-        current_step_index: int
-        step_results: list[StepResult]
-        evaluation: dict | None
-        environment: dict | None
-        branch: str | None
-        final_result: str | None
-        artifacts: list[str]
-        error: str | None
-    """
-
-    pass

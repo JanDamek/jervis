@@ -4,12 +4,13 @@ Each function takes OrchestratorState and returns a partial state update.
 Orchestrator is the brain – agent is just the executor.
 
 Flow:
-    decompose → select_goal → plan_steps → execute_step → evaluate → next_step
-                    ↑                                              │
-                    └──── advance_goal ←── (more goals) ───────────┘
-                                           │
-                                           ↓ (all goals done)
-                                    git_operations → report
+    clarify → decompose → select_goal → plan_steps → execute_step → evaluate
+                  ↑                                                      │
+                  └──── advance_goal ←── (more goals) ──────── next_step ┤
+                                          ↓ (all done)                   │
+                                   git_operations → report → END   advance_step
+                                                                         │
+                                                                  execute_step ←┘
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import logging
+import re
 from typing import Any
 
 from langgraph.types import interrupt
@@ -24,14 +26,17 @@ from langgraph.types import interrupt
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
+from app.kb.prefetch import fetch_project_context
 from app.llm.provider import llm_provider
 from app.models import (
     AgentType,
+    ClarificationQuestion,
     Complexity,
     CodingStep,
     CodingTask,
     Evaluation,
     Goal,
+    GoalSummary,
     ModelTier,
     ProjectRules,
     StepResult,
@@ -62,49 +67,259 @@ def select_agent(complexity: Complexity, preference: str = "auto") -> AgentType:
     return AgentType.CLAUDE
 
 
+# --- Node: clarify ---
+
+async def clarify(state: dict) -> dict:
+    """Fetch project context from KB, detect complexity, optionally ask user.
+
+    This node runs BEFORE decompose. It:
+    1. Queries KB for project structure, architecture, and conventions
+    2. Asks LLM to assess complexity and whether clarification is needed
+    3. If clarification needed → interrupt() to ask user questions
+    4. If not → passes through with project_context and task_complexity set
+
+    Simple tasks ("fix login bug") pass through without interruption.
+    Complex/greenfield tasks ("implement KMP library app") trigger questions.
+    """
+    task = CodingTask(**state["task"])
+
+    # 1. Fetch project context from KB (code graph, architecture, conventions)
+    project_context = await fetch_project_context(
+        client_id=task.client_id,
+        project_id=task.project_id,
+        task_description=task.query,
+    )
+
+    # 2. Build environment summary if available
+    env_summary = ""
+    env_data = state.get("environment")
+    if env_data:
+        env_summary = f"\nEnvironment: {json.dumps(env_data, default=str)[:500]}"
+
+    # 3. Ask LLM to assess complexity and whether clarification is needed
+    tier = llm_provider.select_tier(
+        task_type="architecture",
+        complexity=Complexity.COMPLEX,
+    )
+
+    context_section = ""
+    if project_context:
+        # Truncate to avoid overflowing context window
+        context_section = f"\n\n## Existing Project Context (from KB):\n{project_context[:3000]}"
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a task analysis agent. Your job is to:\n"
+                "1. Assess the complexity of the user's request (simple/medium/complex/critical)\n"
+                "2. Determine if clarification questions are needed before planning\n"
+                "3. If needed, generate concise clarification questions\n\n"
+                "Rules:\n"
+                "- Simple, focused tasks (fix a bug, add a field, rename) → NO clarification needed\n"
+                "- Broad, multi-component, or greenfield tasks → generate 2-5 questions\n"
+                "- Questions should resolve genuine ambiguity, not ask obvious things\n"
+                "- Each question should have suggested options when possible\n"
+                "- The task will be executed by coding agents (Claude CLI, Aider) — "
+                "they handle the actual code. You are planning the work, not writing code.\n\n"
+                "Respond with JSON:\n"
+                "{\n"
+                '  "needs_clarification": true/false,\n'
+                '  "complexity": "simple" | "medium" | "complex" | "critical",\n'
+                '  "reasoning": "brief explanation of complexity assessment",\n'
+                '  "questions": [\n'
+                '    {"id": "q1", "question": "...", "options": ["opt1", "opt2"], "required": true}\n'
+                "  ]\n"
+                "}"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Task: {task.query}"
+                f"{context_section}"
+                f"{env_summary}"
+            ),
+        },
+    ]
+
+    response = await llm_provider.completion(
+        messages=messages, tier=tier, max_tokens=4096,
+    )
+    content = response.choices[0].message.content
+
+    # Parse LLM response
+    parsed = _parse_json_response(content)
+    needs_clarification = parsed.get("needs_clarification", False)
+    complexity = parsed.get("complexity", "medium")
+    questions_raw = parsed.get("questions", [])
+
+    logger.info(
+        "Clarify: complexity=%s needs_clarification=%s questions=%d kb_context=%d chars",
+        complexity, needs_clarification, len(questions_raw), len(project_context),
+    )
+
+    result: dict = {
+        "project_context": project_context,
+        "task_complexity": complexity,
+    }
+
+    if not needs_clarification or not questions_raw:
+        # Simple task — pass through without interruption
+        return result
+
+    # Complex task — build questions and interrupt for user input
+    questions = [
+        ClarificationQuestion(
+            id=q.get("id", f"q{i+1}"),
+            question=q.get("question", ""),
+            options=q.get("options", []),
+            required=q.get("required", True),
+        )
+        for i, q in enumerate(questions_raw)
+        if q.get("question")
+    ]
+
+    result["clarification_questions"] = [q.model_dump() for q in questions]
+
+    # Format questions for display
+    description_lines = ["Clarification needed before planning:"]
+    for q in questions:
+        opts = f" ({', '.join(q.options)})" if q.options else ""
+        description_lines.append(f"- {q.question}{opts}")
+
+    # Interrupt — graph pauses here, Kotlin picks up via SSE/polling
+    # Resume value will contain user's answers
+    clarification_response = interrupt({
+        "type": "clarification",
+        "action": "clarify",
+        "description": "\n".join(description_lines),
+        "questions": [q.model_dump() for q in questions],
+        "task_id": task.id,
+    })
+
+    # After resume: store user's answers
+    result["clarification_response"] = clarification_response
+    logger.info("Clarify: resumed with user response")
+
+    return result
+
+
 # --- Node: decompose ---
 
 async def decompose(state: dict) -> dict:
-    """Decompose user query into goals using LLM."""
+    """Decompose user query into goals using LLM.
+
+    Context-aware: uses project_context (from KB), task_complexity (from clarify),
+    clarification_response (user answers), and environment to produce
+    well-ordered goals with dependency declarations.
+    """
     task = CodingTask(**state["task"])
+
+    # Use auto-detected complexity from clarify node (or default to MEDIUM)
+    raw_complexity = state.get("task_complexity", "medium")
+    try:
+        complexity = Complexity(raw_complexity)
+    except ValueError:
+        complexity = Complexity.MEDIUM
 
     tier = llm_provider.select_tier(
         task_type="decomposition",
-        complexity=Complexity.MEDIUM,
+        complexity=complexity,
     )
+
+    # Build context sections for the prompt
+    context_parts: list[str] = []
+
+    # Project context from KB (clarify node populated this)
+    project_context = state.get("project_context", "")
+    if project_context:
+        # Truncate to keep prompt manageable
+        context_parts.append(
+            f"## Existing Project Context\n{project_context[:3000]}"
+        )
+
+    # Clarification answers from user
+    clarification = state.get("clarification_response")
+    if clarification:
+        context_parts.append(
+            f"## User Clarification Answers\n{json.dumps(clarification, default=str, indent=2)}"
+        )
+
+    # Environment context
+    env_data = state.get("environment")
+    if env_data:
+        context_parts.append(
+            f"## Environment\n{json.dumps(env_data, default=str)[:500]}"
+        )
+
+    context_block = "\n\n".join(context_parts)
 
     messages = [
         {
             "role": "system",
             "content": (
                 "You are a task decomposition agent. Break down the user's request "
-                "into concrete goals. Each goal should be independently achievable.\n"
-                "Respond with JSON: {\"goals\": [{\"id\": \"g1\", \"title\": \"...\", "
-                "\"description\": \"...\", \"complexity\": \"simple|medium|complex|critical\", "
-                "\"dependencies\": []}]}"
+                "into concrete, implementable goals.\n\n"
+                "Rules:\n"
+                "- Each goal will be executed by a coding agent (Claude CLI or Aider) — "
+                "make goals concrete and implementable, not abstract\n"
+                "- Order goals by dependency: foundational setup first, then features, "
+                "then integration/testing\n"
+                "- Use the dependencies field to declare prerequisite goal IDs\n"
+                "- Simple tasks may have just 1 goal; complex tasks can have 5-10+\n"
+                "- Each goal should be independently testable when its dependencies are met\n"
+                "- Assign realistic complexity per goal (simple/medium/complex/critical)\n\n"
+                "Respond with JSON:\n"
+                "{\n"
+                '  "goals": [\n'
+                '    {\n'
+                '      "id": "g1",\n'
+                '      "title": "Short descriptive title",\n'
+                '      "description": "Detailed instructions for the coding agent",\n'
+                '      "complexity": "simple|medium|complex|critical",\n'
+                '      "dependencies": []  // IDs of goals that must complete first\n'
+                "    }\n"
+                "  ]\n"
+                "}"
             ),
         },
-        {"role": "user", "content": task.query},
+        {
+            "role": "user",
+            "content": (
+                f"Task: {task.query}"
+                + (f"\n\n{context_block}" if context_block else "")
+            ),
+        },
     ]
 
-    response = await llm_provider.completion(messages=messages, tier=tier)
+    response = await llm_provider.completion(
+        messages=messages, tier=tier, max_tokens=8192,
+    )
     content = response.choices[0].message.content
 
-    try:
-        parsed = json.loads(content)
-        goals = [Goal(**g) for g in parsed.get("goals", [])]
-    except (json.JSONDecodeError, KeyError):
+    parsed = _parse_json_response(content)
+    raw_goals = parsed.get("goals", [])
+
+    if raw_goals:
+        goals = []
+        for g in raw_goals:
+            try:
+                goals.append(Goal(**g))
+            except Exception as e:
+                logger.warning("Skipping invalid goal: %s (%s)", g, e)
+    else:
         # Fallback: single goal from the entire query
         goals = [
             Goal(
                 id="g1",
                 title="Execute task",
                 description=task.query,
-                complexity=Complexity.MEDIUM,
+                complexity=complexity,
             )
         ]
 
-    logger.info("Decomposed into %d goals", len(goals))
+    logger.info("Decomposed into %d goals (complexity=%s)", len(goals), complexity)
 
     return {
         "goals": [g.model_dump() for g in goals],
@@ -115,10 +330,11 @@ async def decompose(state: dict) -> dict:
 # --- Node: select_goal ---
 
 def select_goal(state: dict) -> dict:
-    """Select the current goal for processing.
+    """Select the current goal for processing with dependency validation.
 
-    Logs the current goal and validates the index. No state mutation needed –
-    the goal is already selected by current_goal_index.
+    Checks whether the current goal's dependencies have been completed
+    (present in goal_summaries). If not, attempts to swap with a later goal
+    whose dependencies are all met. Falls through best-effort if no swap found.
     """
     goals = [Goal(**g) for g in state["goals"]]
     idx = state["current_goal_index"]
@@ -127,7 +343,48 @@ def select_goal(state: dict) -> dict:
         logger.error("Goal index %d out of range (%d goals)", idx, len(goals))
         return {"error": f"Goal index {idx} out of range ({len(goals)} goals)"}
 
+    # Build set of completed goal IDs
+    completed_ids = {
+        gs.get("goal_id") for gs in state.get("goal_summaries", [])
+    }
+
     goal = goals[idx]
+
+    # Check dependencies
+    unmet = [dep for dep in goal.dependencies if dep not in completed_ids]
+    if unmet:
+        logger.warning(
+            "Goal %s has unmet dependencies: %s. Trying to swap.",
+            goal.id, unmet,
+        )
+
+        # Try to find a later goal with all dependencies met
+        swap_idx = None
+        for candidate_idx in range(idx + 1, len(goals)):
+            candidate = goals[candidate_idx]
+            candidate_unmet = [
+                d for d in candidate.dependencies if d not in completed_ids
+            ]
+            if not candidate_unmet:
+                swap_idx = candidate_idx
+                break
+
+        if swap_idx is not None:
+            # Swap goals in the list
+            goals[idx], goals[swap_idx] = goals[swap_idx], goals[idx]
+            goal = goals[idx]
+            logger.info(
+                "Swapped goal %d with %d: now executing %s",
+                idx, swap_idx, goal.title,
+            )
+            return {"goals": [g.model_dump() for g in goals]}
+
+        # No swap possible — continue best-effort with warning
+        logger.warning(
+            "Cannot resolve dependencies for goal %s — proceeding best-effort",
+            goal.id,
+        )
+
     logger.info(
         "Selected goal %d/%d: %s (complexity=%s)",
         idx + 1, len(goals), goal.title, goal.complexity,
@@ -138,7 +395,12 @@ def select_goal(state: dict) -> dict:
 # --- Node: plan_steps ---
 
 async def plan_steps(state: dict) -> dict:
-    """Create execution steps for the current goal."""
+    """Create execution steps for the current goal.
+
+    Context-aware: includes cross-goal context (previously completed goals)
+    and project context from KB so the LLM can plan steps that integrate
+    with existing code and prior work.
+    """
     task = CodingTask(**state["task"])
     goals = [Goal(**g) for g in state["goals"]]
     idx = state["current_goal_index"]
@@ -151,30 +413,86 @@ async def plan_steps(state: dict) -> dict:
 
     agent_type = select_agent(goal.complexity, task.agent_preference)
 
+    # Build context sections
+    context_parts: list[str] = []
+
+    # Cross-goal context: what was already done
+    goal_summaries = state.get("goal_summaries", [])
+    if goal_summaries:
+        context_parts.append("## Previously Completed Goals")
+        for gs in goal_summaries:
+            summary = GoalSummary(**gs)
+            files_str = ", ".join(summary.changed_files[:10]) if summary.changed_files else "none"
+            context_parts.append(
+                f"- **{summary.title}**: {summary.summary} (files: {files_str})"
+            )
+
+    # Project context from KB (truncated for planning)
+    project_context = state.get("project_context", "")
+    if project_context:
+        context_parts.append(
+            f"\n## Project Context\n{project_context[:2000]}"
+        )
+
+    context_block = "\n".join(context_parts)
+
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a coding task planner. Create concrete steps for the coding agent.\n"
-                "Each step should be a single, focused change.\n"
-                "Respond with JSON: {\"steps\": [{\"index\": 0, \"instructions\": \"...\", "
-                f"\"agent_type\": \"{agent_type.value}\", \"files\": []}}]}}"
+                "You are a coding task planner. Create concrete, detailed steps "
+                "for a coding agent to execute.\n\n"
+                "Rules:\n"
+                "- Each step should be a single, focused change that a coding agent "
+                "(Claude CLI or Aider) will execute\n"
+                "- Instructions must be specific enough for the agent to implement "
+                "without further clarification\n"
+                "- Include relevant file paths in the files array when known\n"
+                "- Steps should be ordered logically (create before use, etc.)\n\n"
+                "Respond with JSON:\n"
+                "{\n"
+                '  "steps": [\n'
+                '    {\n'
+                '      "index": 0,\n'
+                '      "instructions": "Detailed instructions for the coding agent...",\n'
+                f'      "agent_type": "{agent_type.value}",\n'
+                '      "files": ["path/to/file.kt"]\n'
+                "    }\n"
+                "  ]\n"
+                "}"
             ),
         },
         {
             "role": "user",
-            "content": f"Goal: {goal.title}\nDescription: {goal.description}",
+            "content": (
+                f"Goal: {goal.title}\n"
+                f"Description: {goal.description}"
+                + (f"\n\n{context_block}" if context_block else "")
+            ),
         },
     ]
 
-    response = await llm_provider.completion(messages=messages, tier=tier)
+    response = await llm_provider.completion(
+        messages=messages, tier=tier, max_tokens=8192,
+    )
     content = response.choices[0].message.content
 
-    try:
-        parsed = json.loads(content)
-        steps = [CodingStep(**s) for s in parsed.get("steps", [])]
-    except (json.JSONDecodeError, KeyError):
-        # Fallback: single step
+    # Robust JSON parsing with fallbacks
+    parsed = _parse_json_response(content)
+    raw_steps = parsed.get("steps", [])
+
+    steps: list[CodingStep] = []
+    for s in raw_steps:
+        try:
+            step = CodingStep(**s)
+            # Validate: skip steps with empty instructions
+            if step.instructions.strip():
+                steps.append(step)
+        except Exception as e:
+            logger.warning("Skipping invalid step: %s (%s)", s, e)
+
+    if not steps:
+        # Fallback: single step with the entire goal description
         steps = [
             CodingStep(
                 index=0,
@@ -349,8 +667,49 @@ def advance_step(state: dict) -> dict:
 
 
 def advance_goal(state: dict) -> dict:
-    """Advance to next goal index."""
-    return {"current_goal_index": state.get("current_goal_index", 0) + 1}
+    """Advance to next goal index and build GoalSummary for cross-goal context.
+
+    Collects results from steps of the current goal (the last N step_results
+    where N = number of steps planned for this goal) and creates a summary
+    that subsequent goals can reference.
+    """
+    current_idx = state.get("current_goal_index", 0)
+    goals = [Goal(**g) for g in state.get("goals", [])]
+    step_results = [StepResult(**r) for r in state.get("step_results", [])]
+    steps_for_goal = state.get("steps", [])
+
+    # Collect results from steps of the current goal
+    num_steps = len(steps_for_goal)
+    recent_results = step_results[-num_steps:] if num_steps > 0 else []
+
+    # Build summary
+    changed_files: list[str] = []
+    summaries: list[str] = []
+    for r in recent_results:
+        if r.success:
+            summaries.append(r.summary)
+        changed_files.extend(r.changed_files)
+
+    goal = goals[current_idx] if current_idx < len(goals) else None
+    goal_summary = GoalSummary(
+        goal_id=goal.id if goal else f"g{current_idx}",
+        title=goal.title if goal else "Unknown",
+        summary="; ".join(summaries) if summaries else "No successful steps",
+        changed_files=list(set(changed_files)),
+    )
+
+    existing_summaries = list(state.get("goal_summaries", []))
+    existing_summaries.append(goal_summary.model_dump())
+
+    logger.info(
+        "Advancing from goal %d to %d, summary: %s",
+        current_idx + 1, current_idx + 2, goal_summary.summary[:100],
+    )
+
+    return {
+        "current_goal_index": current_idx + 1,
+        "goal_summaries": existing_summaries,
+    }
 
 
 # --- Node: git_operations ---
@@ -482,3 +841,39 @@ async def report(state: dict) -> dict:
         "final_result": summary,
         "artifacts": list(set(artifacts)),
     }
+
+
+# --- Helpers ---
+
+def _parse_json_response(content: str) -> dict:
+    """Parse JSON from LLM response, handling markdown code blocks.
+
+    LLMs often wrap JSON in ```json ... ``` blocks. This helper
+    tries direct parse first, then extracts from code blocks.
+    """
+    # 1. Try direct JSON parse
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 2. Try extracting from markdown code block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", content, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 3. Try finding JSON object in the content
+    # Look for the outermost { ... } pair
+    brace_start = content.find("{")
+    brace_end = content.rfind("}")
+    if brace_start != -1 and brace_end > brace_start:
+        try:
+            return json.loads(content[brace_start:brace_end + 1])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    logger.warning("Failed to parse JSON from LLM response: %s", content[:200])
+    return {}

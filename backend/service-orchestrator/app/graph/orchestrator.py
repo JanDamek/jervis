@@ -1,36 +1,83 @@
 """LangGraph StateGraph – main orchestrator workflow.
 
 Flow:
-    decompose → select_goal → plan_steps → execute_step → evaluate → next_step
-                    ↑                                              │
-                    └──── advance_goal ←── (more goals) ───────────┘
-                                           │
-                                           ↓ (all goals done)
-                                    git_operations → report
+    clarify → decompose → select_goal → plan_steps → execute_step → evaluate
+                  ↑                                                      │
+                  └──── advance_goal ←── (more goals) ──────── next_step ┤
+                                          ↓ (all done)                   │
+                                   git_operations → report → END   advance_step
+                                                                         │
+                                                                  execute_step ←┘
+
+Nodes (10):
+    clarify        — fetch KB context, detect complexity, optionally ask user
+    decompose      — break user query into goals (context-aware)
+    select_goal    — pick current goal, validate dependencies
+    plan_steps     — create execution steps with cross-goal context
+    execute_step   — run one coding step via K8s Job
+    evaluate       — check step result against rules
+    advance_step   — increment step index
+    advance_goal   — increment goal index, build GoalSummary
+    git_operations — commit/push with approval gates
+    report         — generate final summary
 
 State persistence:
     Uses MongoDBSaver for persistent checkpointing.
     All graph state is stored in MongoDB (same instance as Kotlin server).
     This ensures:
     - Restart resilience: state survives Python process restarts
-    - Interrupt/resume: approval flow works across restarts
+    - Interrupt/resume: clarification + approval flow works across restarts
     - Thread ID links TaskDocument ↔ LangGraph checkpoint
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, TypedDict
 
 from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 
+
+class OrchestratorState(TypedDict, total=False):
+    """Typed state for the orchestrator graph.
+
+    Using TypedDict ensures LangGraph creates a channel per key
+    and merges partial node returns instead of replacing the whole state.
+    """
+    # --- Core task data ---
+    task: dict
+    rules: dict
+    environment: dict | None
+
+    # --- Clarification (pre-decompose) ---
+    clarification_questions: list | None    # Questions for the user
+    clarification_response: dict | None     # User's answers
+    project_context: str | None             # KB-fetched project overview
+    task_complexity: str | None             # Auto-detected: simple/medium/complex/critical
+
+    # --- Goals & steps ---
+    goals: list
+    current_goal_index: int
+    steps: list
+    current_step_index: int
+    step_results: list
+    goal_summaries: list                    # Cross-goal context (completed goals)
+
+    # --- Results ---
+    branch: str | None
+    final_result: str | None
+    artifacts: list
+    error: str | None
+    evaluation: dict | None
+
 from app.config import settings
 from app.graph.nodes import (
     advance_goal,
     advance_step,
+    clarify,
     decompose,
     evaluate,
     execute_step,
@@ -85,20 +132,22 @@ def build_orchestrator_graph() -> StateGraph:
     - Coding agents are hands (execute specific steps)
     - Git operations: orchestrator DECIDES, agent EXECUTES
 
-    Nodes (9):
-        decompose     — break user query into goals
-        select_goal   — pick current goal by index
-        plan_steps    — create execution steps for current goal
+    Nodes (10):
+        clarify       — fetch KB context, detect complexity, optionally ask user
+        decompose     — break user query into goals (context-aware)
+        select_goal   — pick current goal, validate dependencies
+        plan_steps    — create execution steps with cross-goal context
         execute_step  — run one coding step via K8s Job
         evaluate      — check step result against rules
         advance_step  — increment step index
-        advance_goal  — increment goal index
+        advance_goal  — increment goal index, build GoalSummary
         git_operations — commit/push with approval gates
         report        — generate final summary
     """
-    graph = StateGraph(dict)
+    graph = StateGraph(OrchestratorState)
 
     # Add nodes
+    graph.add_node("clarify", clarify)
     graph.add_node("decompose", decompose)
     graph.add_node("select_goal", select_goal)
     graph.add_node("plan_steps", plan_steps)
@@ -109,10 +158,11 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("git_operations", git_operations)
     graph.add_node("report", report)
 
-    # Set entry point
-    graph.set_entry_point("decompose")
+    # Set entry point — clarify runs first
+    graph.set_entry_point("clarify")
 
     # Linear edges
+    graph.add_edge("clarify", "decompose")
     graph.add_edge("decompose", "select_goal")
     graph.add_edge("select_goal", "plan_steps")
     graph.add_edge("plan_steps", "execute_step")
@@ -161,6 +211,7 @@ def get_orchestrator_graph():
 def _build_initial_state(request: OrchestrateRequest) -> dict:
     """Build initial state dict from request."""
     return {
+        # Core task data
         "task": CodingTask(
             id=request.task_id,
             client_id=request.client_id,
@@ -170,17 +221,25 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
             agent_preference=request.agent_preference,
         ).model_dump(),
         "rules": request.rules.model_dump(),
+        "environment": request.environment,
+        # Clarification (populated by clarify node)
+        "clarification_questions": None,
+        "clarification_response": None,
+        "project_context": None,
+        "task_complexity": None,
+        # Goals & steps
         "goals": [],
         "current_goal_index": 0,
         "steps": [],
         "current_step_index": 0,
         "step_results": [],
+        "goal_summaries": [],
+        # Results
         "branch": None,
         "final_result": None,
         "artifacts": [],
         "error": None,
         "evaluation": None,
-        "environment": request.environment,
     }
 
 
@@ -233,8 +292,8 @@ async def run_orchestration_streaming(
         name = event.get("name", "")
 
         if kind == "on_chain_start" and name in (
-            "decompose", "select_goal", "plan_steps", "execute_step",
-            "evaluate", "git_operations", "report",
+            "clarify", "decompose", "select_goal", "plan_steps",
+            "execute_step", "evaluate", "git_operations", "report",
         ):
             yield {
                 "type": "node_start",
@@ -243,8 +302,8 @@ async def run_orchestration_streaming(
             }
 
         elif kind == "on_chain_end" and name in (
-            "decompose", "select_goal", "plan_steps", "execute_step",
-            "evaluate", "git_operations", "report",
+            "clarify", "decompose", "select_goal", "plan_steps",
+            "execute_step", "evaluate", "git_operations", "report",
         ):
             output = event.get("data", {}).get("output", {})
             yield {
@@ -310,7 +369,7 @@ def _safe_serialize(obj: Any) -> Any:
     if isinstance(obj, dict):
         result = {}
         for k, v in obj.items():
-            if k in ("diff", "kb_context") and isinstance(v, str) and len(v) > 500:
+            if k in ("diff", "kb_context", "project_context") and isinstance(v, str) and len(v) > 500:
                 result[k] = v[:500] + "...(truncated)"
             else:
                 result[k] = _safe_serialize(v)

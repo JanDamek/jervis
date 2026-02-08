@@ -93,51 +93,53 @@ GET  /health                 # Health check
   (rules, workspace, task info – vše upfront)
 - Python → UI: SSE `/stream/{thread_id}` pro progress
 - Kotlin polls: `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()`
-- Approval: interrupt → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
+- Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
 - **Žádné Python → Kotlin callbacky** (kotlin_client.py je minimální)
 
-**LangGraph StateGraph (9 nodes):**
+**LangGraph StateGraph (10 nodes):**
 ```
-[decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
-                    ↑                               ↑                │
-                    │                               │           [next_step]
-                    │                               │                │
-                    └── [advance_goal] ←── more goals ───────────────┤
-                                                    │                │
-                                           [advance_step] ← more steps
-                                                                     │
-                                                                     ↓ (all done)
-                                                              [git_operations] → [report]
+[clarify] → [decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
+                  ↑                               ↑                             │
+                  │                               │                        [next_step]
+                  │                               │                             │
+                  └── [advance_goal] ←── more goals ────────────────────────────┤
+                                                  │                             │
+                                         [advance_step] ← more steps ──────────┘
+                                                                                │
+                                                                                ↓ (all done)
+                                                                     [git_operations] → [report]
 ```
+
+`clarify` may `interrupt()` for user questions (resumes after answers), or pass through for simple tasks.
 
 **State model:**
 ```python
-class OrchestratorState(TypedDict):
-    # Input
-    task_id: str
-    client_id: str
-    project_id: str | None
-    user_query: str
-    workspace_path: str
+class OrchestratorState(TypedDict, total=False):
+    # Core task data
+    task: dict               # CodingTask serialized
+    rules: dict              # ProjectRules serialized
+    environment: dict | None # Resolved K8s environment context
 
-    # Rules
-    rules: ProjectRules
+    # Clarification (populated by clarify node)
+    clarification_questions: list | None   # Questions for the user
+    clarification_response: dict | None    # User's answers
+    project_context: str | None            # KB-fetched project overview
+    task_complexity: str | None            # Auto-detected: simple/medium/complex/critical
 
-    # Execution state
-    goals: list[Goal]
+    # Goals & steps
+    goals: list              # list[Goal]
     current_goal_index: int
-    steps: list[CodingStep]
+    steps: list              # list[CodingStep]
     current_step_index: int
-    step_results: list[StepResult]
+    step_results: list       # list[StepResult]
+    goal_summaries: list     # list[GoalSummary] – cross-goal context
 
-    # Evaluation
-    evaluation: dict | None
-
-    # Output
+    # Results
     branch: str | None
     final_result: str | None
-    artifacts: list[str]
+    artifacts: list
     error: str | None
+    evaluation: dict | None
 ```
 
 #### B. K8s Job Runner (`agents/job_runner.py`)
@@ -260,7 +262,7 @@ class ApprovalRequest(BaseModel):
 
 ### Fáze 2: Core workflow
 5. `graph/orchestrator.py` – LangGraph StateGraph
-6. `graph/nodes.py` – decompose, select_goal, plan, execute_step, evaluate, advance_step, advance_goal, git_operations, report
+6. `graph/nodes.py` – clarify, decompose, select_goal, plan_steps, execute_step, evaluate, advance_step, advance_goal, git_operations, report (10 nodes)
 7. `agents/workspace_manager.py` – příprava workspace
 8. `agents/job_runner.py` – K8s Job CRUD + log streaming
 
@@ -498,6 +500,52 @@ READY_FOR_GPU
 - **task.content** po sendToAgent() = odpověď uživatele (ne původní task popis)
 - **UserTaskService** zajistí notifikace + správný type + state
 - **Checkpoint v MongoDB** zachová plný stav grafu včetně step_results, branch, atd.
+
+### 10.3 Clarification flow (odlišný od approval)
+
+Clarify node (`clarify`) může přerušit graf pro upřesňující otázky **před plánováním**.
+Odlišnosti od approval flow:
+
+| Aspekt | Clarification | Approval |
+|--------|---------------|----------|
+| **Node** | `clarify` | `git_operations` |
+| **Kdy** | Před decompose | Před commit/push |
+| **interrupt action** | `"clarify"` | `"commit"` / `"push"` |
+| **pendingQuestion prefix** | Bez prefixu | `"Schválení: ..."` |
+| **Resume handling** | `approved=true`, celý userInput jako reason | Parsování ano/ne z userInput |
+
+**Flow:**
+1. `clarify` node volá KB pro project context + LLM pro analýzu
+2. Pokud `needs_clarification=true` → `interrupt({"action": "clarify", ...})`
+3. BackgroundEngine detekuje `interrupted`, action=`clarify`
+4. `pendingQuestion` = otázky **bez** prefixu "Schválení:"
+5. Uživatel odpoví → `resumePythonOrchestrator()`
+6. Detekce: `pendingQuestion` nezačíná "Schválení:" → clarification
+7. `approve(threadId, approved=true, reason=userInput)` — celý input je odpověď
+8. Python obnoví graf → odpovědi uloženy do `clarification_response`
+9. `decompose` čte `clarification_response` + `project_context` + `task_complexity`
+
+### 10.4 Cross-goal context (GoalSummary)
+
+Při přechodu mezi goals (`advance_goal` node) se sestaví `GoalSummary`:
+```python
+class GoalSummary(BaseModel):
+    goal_id: str
+    title: str
+    summary: str                                     # Shrnutí z step results
+    changed_files: list[str] = []                    # Soubory změněné v tomto goalu
+    key_decisions: list[str] = []                    # Klíčová rozhodnutí
+```
+
+- `plan_steps` čte `goal_summaries` ze state → předá LLM jako "Previously Completed Goals"
+- Umožňuje agentům navazovat na předchozí práci místo duplikace
+
+### 10.5 Dependency validation (select_goal)
+
+`select_goal` node validuje `goal.dependencies`:
+1. Kontrola: mají všechny dependency goals odpovídající ID v `goal_summaries`?
+2. Pokud ne → zkusí swapnout s jiným goalem bez nesplněných dependencies
+3. Pokud swap nemožný → warning log, pokračuje best-effort
 
 ---
 

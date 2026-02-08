@@ -229,7 +229,13 @@ class AgentOrchestratorService(
     }
 
     /**
-     * Resume Python orchestrator after approval (USER_TASK → READY_FOR_GPU with answer).
+     * Resume Python orchestrator after user interaction (USER_TASK → PYTHON_ORCHESTRATING).
+     *
+     * Distinguishes between two interrupt types:
+     * - **Clarification**: Pre-planning questions (no "Schválení:" prefix).
+     *   Always approved=true, user's full input is the answer passed as reason.
+     * - **Approval**: Commit/push approval (has "Schválení:" prefix).
+     *   Parses yes/no intent from user input.
      *
      * @return true if dispatched successfully
      */
@@ -245,22 +251,37 @@ class AgentOrchestratorService(
             return false
         }
 
-        onProgress("Pokračuji v orchestraci...", mapOf("phase" to "python_resume"))
+        // Clarification questions don't have "Schválení:" prefix
+        val wasClarification = task.pendingUserQuestion?.startsWith("Schválení:") != true
 
-        val approved = userInput.lowercase().let {
-            it.contains("ano") || it.contains("yes") || it.contains("approve") || it.contains("schval")
+        if (wasClarification) {
+            // Clarification: always approved, user's answer is the resume value
+            onProgress("Pokračuji v orchestraci s upřesněním...", mapOf("phase" to "python_resume", "type" to "clarification"))
+
+            pythonOrchestratorClient.approve(
+                threadId = threadId,
+                approved = true,
+                reason = userInput,
+            )
+        } else {
+            // Approval: parse yes/no intent
+            onProgress("Pokračuji v orchestraci...", mapOf("phase" to "python_resume", "type" to "approval"))
+
+            val approved = userInput.lowercase().let {
+                it.contains("ano") || it.contains("yes") || it.contains("approve") || it.contains("schval")
+            }
+
+            pythonOrchestratorClient.approve(
+                threadId = threadId,
+                approved = approved,
+                reason = userInput,
+            )
         }
-
-        pythonOrchestratorClient.approve(
-            threadId = threadId,
-            approved = approved,
-            reason = userInput,
-        )
 
         val updatedTask = task.copy(state = TaskStateEnum.PYTHON_ORCHESTRATING)
         taskRepository.save(updatedTask)
 
-        logger.info { "PYTHON_RESUMED: taskId=${task.id} threadId=$threadId approved=$approved" }
+        logger.info { "PYTHON_RESUMED: taskId=${task.id} threadId=$threadId clarification=$wasClarification" }
 
         return true
     }

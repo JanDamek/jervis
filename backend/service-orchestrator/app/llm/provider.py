@@ -118,7 +118,7 @@ class LLMProvider:
         tier: ModelTier = ModelTier.LOCAL_STANDARD,
         tools: list[dict] | None = None,
         temperature: float = 0.1,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> dict:
         """Call LLM with specified tier."""
         config = TIER_CONFIG[tier]
@@ -146,7 +146,7 @@ class LLMProvider:
         messages: list[dict],
         tier: ModelTier = ModelTier.LOCAL_STANDARD,
         temperature: float = 0.1,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> AsyncIterator:
         """Stream LLM response."""
         config = TIER_CONFIG[tier]
