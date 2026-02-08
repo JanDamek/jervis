@@ -43,13 +43,11 @@ enum class SettingsCategory(
     val description: String,
 ) {
     GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
-    PROJECTS("Projekty", "📁", "Správa projektů přiřazených klientům."),
+    CLIENTS("Klienti a projekty", "🏢", "Správa klientů, projektů a jejich konfigurace."),
     PROJECT_GROUPS("Skupiny projektů", "📂", "Logické seskupení projektů se sdílenou KB."),
     CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Atlassian, Git, Email)."),
     ENVIRONMENTS("Prostředí", "🌐", "Definice K8s prostředí pro testování."),
     CODING_AGENTS("Coding Agenti", "🤖", "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
-    LOGS("Logy", "📜", "Chybové logy a diagnostika."),
 }
 
 @Composable
@@ -86,11 +84,9 @@ private fun SettingsContent(
     when (category) {
         SettingsCategory.GENERAL -> GeneralSettings(repository)
         SettingsCategory.CLIENTS -> ClientsSettings(repository)
-        SettingsCategory.PROJECTS -> ProjectsSettings(repository)
         SettingsCategory.PROJECT_GROUPS -> ProjectGroupsSettings(repository)
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
         SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(repository)
         SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
-        SettingsCategory.LOGS -> LogsSettings(repository)
     }
 }

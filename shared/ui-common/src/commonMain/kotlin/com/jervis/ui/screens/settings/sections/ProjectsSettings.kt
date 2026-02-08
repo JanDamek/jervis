@@ -120,7 +120,7 @@ fun ProjectsSettings(repository: JervisRepository) {
 }
 
 @Composable
-private fun ProjectEditForm(
+internal fun ProjectEditForm(
     project: ProjectDto,
     repository: JervisRepository,
     onSave: (ProjectDto) -> Unit,

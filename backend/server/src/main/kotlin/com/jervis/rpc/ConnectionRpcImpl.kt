@@ -6,6 +6,7 @@ import com.jervis.common.types.ConnectionId
 import com.jervis.configuration.ProviderRegistry
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionCreateRequestDto
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionTestResultDto
@@ -174,9 +175,14 @@ class ConnectionRpcImpl(
 
         return try {
             val client = providerRegistry.getClient(connection.provider)
-            client.testConnection(connection.toTestRequest())
+            val result = client.testConnection(connection.toTestRequest())
+            connection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
+            connectionService.save(connection)
+            result
         } catch (e: Exception) {
             logger.error(e) { "Connection test failed for ${connection.name}" }
+            connection.state = ConnectionStateEnum.INVALID
+            connectionService.save(connection)
             ConnectionTestResultDto(
                 success = false,
                 message = "Connection test failed: ${e.message}",

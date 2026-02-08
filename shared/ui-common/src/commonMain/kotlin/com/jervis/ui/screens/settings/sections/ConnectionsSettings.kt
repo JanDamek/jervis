@@ -67,6 +67,7 @@ import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 import com.jervis.ui.util.openUrlInBrowser
 
@@ -115,6 +116,9 @@ fun ConnectionsSettings(repository: JervisRepository) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             JActionBar {
+                RefreshIconButton(onClick = {
+                    scope.launch { loadConnections() }
+                })
                 JPrimaryButton(onClick = { showCreateDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -144,8 +148,10 @@ fun ConnectionsSettings(repository: JervisRepository) {
                                         snackbarHostState.showSnackbar(
                                             if (result.success) "Test OK" else "Test selhal: ${result.message}",
                                         )
+                                        loadConnections()
                                     } catch (e: Exception) {
                                         snackbarHostState.showSnackbar("Chyba testu: ${e.message}")
+                                        loadConnections()
                                     }
                                 }
                             },

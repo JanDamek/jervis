@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -32,84 +33,345 @@ import kotlinx.coroutines.launch
 @Composable
 fun ClientsSettings(repository: JervisRepository) {
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
+    var allProjects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
-    var selectedClient by remember { mutableStateOf<ClientDto?>(null) }
+    var editingClient by remember { mutableStateOf<ClientDto?>(null) }
+    var editingProject by remember { mutableStateOf<ProjectDto?>(null) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var showArchivedSection by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    fun loadClients() {
-        scope.launch {
-            isLoading = true
-            try {
-                clients = repository.clients.getAllClients()
-            } catch (_: Exception) {
-            } finally {
-                isLoading = false
-            }
+    suspend fun loadData() {
+        isLoading = true
+        try {
+            clients = repository.clients.getAllClients()
+            allProjects = repository.projects.getAllProjects()
+        } catch (e: Exception) {
+            snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
+        } finally {
+            isLoading = false
         }
     }
 
-    LaunchedEffect(Unit) { loadClients() }
+    LaunchedEffect(Unit) { loadData() }
 
-    JListDetailLayout(
-        items = clients,
-        selectedItem = selectedClient,
-        isLoading = isLoading,
-        onItemSelected = { selectedClient = it },
-        emptyMessage = "Žádní klienti nenalezeni",
-        emptyIcon = "🏢",
-        listHeader = {
+    // If editing a client or project, show the edit form
+    if (editingClient != null) {
+        ClientEditForm(
+            client = editingClient!!,
+            repository = repository,
+            onSave = { updated ->
+                scope.launch {
+                    try {
+                        repository.clients.updateClient(updated.id, updated)
+                        editingClient = null
+                        loadData()
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                    }
+                }
+            },
+            onCancel = { editingClient = null },
+        )
+        return
+    }
+
+    if (editingProject != null) {
+        ProjectEditForm(
+            project = editingProject!!,
+            repository = repository,
+            onSave = { updated ->
+                scope.launch {
+                    try {
+                        repository.projects.saveProject(updated)
+                        editingProject = null
+                        loadData()
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                    }
+                }
+            },
+            onCancel = { editingProject = null },
+        )
+        return
+    }
+
+    val activeClients = clients.filter { !it.archived }
+    val archivedClients = clients.filter { it.archived }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             JActionBar {
-                RefreshIconButton(onClick = { loadClients() })
-                JPrimaryButton(onClick = { /* New client */ }) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
+                RefreshIconButton(onClick = {
+                    scope.launch { loadData() }
+                })
+                JPrimaryButton(onClick = { showCreateDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
                     Text("Přidat klienta")
                 }
             }
-        },
-        listItem = { client ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedClient = client },
-                border = CardDefaults.outlinedCardBorder(),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .heightIn(min = JervisSpacing.touchTarget),
-                    verticalAlignment = Alignment.CenterVertically,
+
+            Spacer(Modifier.height(JervisSpacing.itemGap))
+
+            if (clients.isEmpty() && isLoading) {
+                JCenteredLoading()
+            } else if (clients.isEmpty() && !isLoading) {
+                JEmptyState(message = "Žádní klienti nenalezeni", icon = "🏢")
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(client.name, style = MaterialTheme.typography.titleMedium)
-                        Text("ID: ${client.id}", style = MaterialTheme.typography.bodySmall)
+                    items(activeClients, key = { it.id }) { client ->
+                        ClientExpandableCard(
+                            client = client,
+                            projects = allProjects.filter { it.clientId == client.id },
+                            onEditClient = { editingClient = client },
+                            onEditProject = { editingProject = it },
+                            onCreateProject = { clientId ->
+                                scope.launch {
+                                    try {
+                                        repository.projects.saveProject(
+                                            ProjectDto(name = "Nový projekt", clientId = clientId),
+                                        )
+                                        loadData()
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                    }
+                                }
+                            },
+                        )
                     }
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-        detailContent = { client ->
-            ClientEditForm(
-                client = client,
-                repository = repository,
-                onSave = { updated ->
-                    scope.launch {
-                        try {
-                            repository.clients.updateClient(updated.id, updated)
-                            selectedClient = null
-                            loadClients()
-                        } catch (_: Exception) {
+
+                    // Archived section
+                    if (archivedClients.isNotEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                border = CardDefaults.outlinedCardBorder(),
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showArchivedSection = !showArchivedSection }
+                                            .padding(16.dp)
+                                            .heightIn(min = JervisSpacing.touchTarget),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            "Archivovaní klienti (${archivedClients.size})",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Icon(
+                                            imageVector = if (showArchivedSection) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+
+                                    if (showArchivedSection) {
+                                        HorizontalDivider()
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            archivedClients.forEach { client ->
+                                                ClientExpandableCard(
+                                                    client = client,
+                                                    projects = allProjects.filter { it.clientId == client.id },
+                                                    onEditClient = { editingClient = client },
+                                                    onEditProject = { editingProject = it },
+                                                    onCreateProject = { clientId ->
+                                                        scope.launch {
+                                                            try {
+                                                                repository.projects.saveProject(
+                                                                    ProjectDto(name = "Nový projekt", clientId = clientId),
+                                                                )
+                                                                loadData()
+                                                            } catch (e: Exception) {
+                                                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                                            }
+                                                        }
+                                                    },
+                                                )
+                                                Spacer(Modifier.height(8.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                },
-                onCancel = { selectedClient = null },
-            )
-        },
-    )
+                }
+            }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+        )
+    }
+
+    // Create client dialog
+    if (showCreateDialog) {
+        var newName by remember { mutableStateOf("") }
+        var newDescription by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Vytvořit nového klienta") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Název klienta") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newDescription,
+                        onValueChange = { newDescription = it },
+                        label = { Text("Popis (volitelné)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                repository.clients.createClient(
+                                    ClientDto(name = newName, description = newDescription.ifBlank { null }),
+                                )
+                                showCreateDialog = false
+                                loadData()
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                            }
+                        }
+                    },
+                    enabled = newName.isNotBlank(),
+                ) {
+                    Text("Vytvořit")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) { Text("Zrušit") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ClientExpandableCard(
+    client: ClientDto,
+    projects: List<ProjectDto>,
+    onEditClient: () -> Unit,
+    onEditProject: (ProjectDto) -> Unit,
+    onCreateProject: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = CardDefaults.outlinedCardBorder(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .heightIn(min = JervisSpacing.touchTarget),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(client.name, style = MaterialTheme.typography.titleMedium)
+                    client.description?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "${projects.size} projektů",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(
+                    onClick = onEditClient,
+                    modifier = Modifier.size(JervisSpacing.touchTarget),
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Upravit klienta")
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
+                if (projects.isEmpty()) {
+                    Text(
+                        "Žádné projekty",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    projects.forEach { project ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            border = CardDefaults.outlinedCardBorder(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .heightIn(min = JervisSpacing.touchTarget),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(project.name, style = MaterialTheme.typography.bodyMedium)
+                                    project.description?.let {
+                                        Text(
+                                            it,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { onEditProject(project) },
+                                    modifier = Modifier.size(JervisSpacing.touchTarget),
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Upravit projekt")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                JPrimaryButton(onClick = { onCreateProject(client.id) }) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Nový projekt")
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -121,6 +383,7 @@ private fun ClientEditForm(
 ) {
     var name by remember { mutableStateOf(client.name) }
     var description by remember { mutableStateOf(client.description ?: "") }
+    var archived by remember { mutableStateOf(client.archived) }
 
     // Git commit configuration
     var gitCommitMessageFormat by remember { mutableStateOf(client.gitCommitMessageFormat ?: "") }
@@ -235,6 +498,7 @@ private fun ClientEditForm(
                 client.copy(
                     name = name,
                     description = description.ifBlank { null },
+                    archived = archived,
                     connectionIds = selectedConnectionIds.toList(),
                     connectionCapabilities = connectionCapabilities,
                     gitCommitMessageFormat = gitCommitMessageFormat.ifBlank { null },
@@ -272,6 +536,20 @@ private fun ClientEditForm(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                 )
+                Spacer(Modifier.height(JervisSpacing.itemGap))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = JervisSpacing.touchTarget),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = archived,
+                        onCheckedChange = { archived = it },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Archivovat klienta")
+                }
             }
 
             JSection(title = "Připojení klienta") {

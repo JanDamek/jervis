@@ -436,14 +436,13 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │    → JAdaptiveSidebarLayout                                         │
 │    Example: SettingsScreen.kt                                       │
 │                                                                     │
-│  Entity list with CRUD (clients, projects)?                         │
-│    → JListDetailLayout (for the list)                               │
-│    → JDetailScreen (for the edit form)                              │
-│    Example: ClientsSettings.kt, ProjectsSettings.kt                │
+│  Expandable list with nested items (clients + projects)?            │
+│    → LazyColumn + expandable Cards + JDetailScreen for edit         │
+│    Example: ClientsSettings.kt                                     │
 │                                                                     │
-│  Flat list with per-row actions (connections, logs)?                 │
+│  Flat list with per-row actions (connections)?                       │
 │    → LazyColumn + Card(outlinedCardBorder) + JActionBar at top      │
-│    Example: ConnectionsSettings.kt, LogsSettings.kt                │
+│    Example: ConnectionsSettings.kt                                  │
 │                                                                     │
 │  Simple scrollable form (general settings)?                         │
 │    → Column(verticalScroll) with JSection blocks                    │
@@ -469,8 +468,9 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 ```kotlin
 enum class SettingsCategory(val title: String, val icon: String, val description: String) {
     GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
-    // ...
+    CLIENTS("Klienti a projekty", "🏢", "Správa klientů, projektů a jejich konfigurace."),
+    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení."),
+    CODING_AGENTS("Coding Agenti", "🤖", "Konfigurace coding agentů."),
 }
 
 @Composable

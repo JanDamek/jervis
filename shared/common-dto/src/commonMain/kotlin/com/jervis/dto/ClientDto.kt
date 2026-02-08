@@ -12,6 +12,7 @@ data class ClientDto(
     val id: String = Constants.GLOBAL_ID_STRING,
     val name: String,
     val description: String? = null,
+    val archived: Boolean = false,
     val defaultLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val lastSelectedProjectId: String? = null,
     // External service connections assigned to this client

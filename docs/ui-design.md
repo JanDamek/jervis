@@ -302,8 +302,8 @@ const val COMPACT_BREAKPOINT_DP = 600
 │ │ │    Základní nastavení aplikace   │  │   │
 │ │ └──────────────────────────────────┘  │   │
 │ │ ┌─ JNavigationRow ─────────────────┐  │   │
-│ │ │ 🏢 Klienti                   [>] │  │   │
-│ │ │    Správa organizačních jednotek │  │   │
+│ │ │ 🏢 Klienti a projekty         [>] │  │   │
+│ │ │    Správa klientů, projektů ...  │  │   │
 │ │ └──────────────────────────────────┘  │   │
 │ │ ...                                   │   │
 │ └───────────────────────────────────────┘   │
@@ -319,11 +319,10 @@ enum class SettingsCategory(
     val description: String,
 ) {
     GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti", "🏢", "Správa organizačních jednotek."),
-    PROJECTS("Projekty", "📁", "Správa projektů a přiřazení ke klientům."),
-    PROJECT_GROUPS("Skupiny projektů", "📦", "Logické seskupení projektů."),
-    ENVIRONMENTS("Prostředí", "🏗️", "K8s namespace definice pro testování."),
-    // ...
+    CLIENTS("Klienti a projekty", "🏢", "Správa klientů, projektů a jejich konfigurace."),
+    PROJECT_GROUPS("Skupiny projektů", "📂", "Logické seskupení projektů se sdílenou KB."),
+    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení."),
+    CODING_AGENTS("Coding Agenti", "🤖", "Konfigurace coding agentů."),
 }
 
 @Composable
@@ -749,12 +748,11 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   ├── settings/
 │   │   ├── SettingsScreen.kt        ← JAdaptiveSidebarLayout + categories
 │   │   └── sections/
-│   │       ├── ClientsSettings.kt   ← JListDetailLayout + shared helpers
-│   │       ├── ProjectsSettings.kt  ← JListDetailLayout + JDetailScreen + group selector
+│   │       ├── ClientsSettings.kt   ← Expandable cards (clients + nested projects) + shared helpers
+│   │       ├── ProjectsSettings.kt  ← ProjectEditForm (internal, reused by ClientsSettings)
 │   │       ├── ProjectGroupsSettings.kt ← JListDetailLayout (group CRUD + shared resources)
 │   │       ├── EnvironmentsSettings.kt  ← JListDetailLayout (environment CRUD + components)
 │   │       ├── ConnectionsSettings.kt ← Flat list + per-card actions
-│   │       ├── LogsSettings.kt      ← Flat list of error logs
 │   │       ├── GitSettings.kt       ← (standalone git config)
 │   │       ├── BugTrackerSettings.kt ← (standalone bug tracker config)
 │   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
