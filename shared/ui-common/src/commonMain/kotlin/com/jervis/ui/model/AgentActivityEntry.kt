@@ -1,8 +1,8 @@
 package com.jervis.ui.model
 
-import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 /**
  * Single entry in the in-memory agent activity log.
