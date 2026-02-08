@@ -59,6 +59,7 @@ endpoints:
     qualifier:
       baseUrl: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11435/}
     embedding:
-      baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11436/}
+      # Merged with CPU ingest instance (was separate port 11436, now shares 11435)
+      baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11435/}
   lmStudio:
     baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}

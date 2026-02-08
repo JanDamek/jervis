@@ -3,7 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://192.168.100.117:11434"
-    OLLAMA_EMBEDDING_BASE_URL: str = "http://192.168.100.117:11436"
+    # Embedding runs on the same CPU ingest instance (merged from separate port 11436).
+    OLLAMA_EMBEDDING_BASE_URL: str = "http://192.168.100.117:11435"
     # Dedicated CPU Ollama instance for ingest LLM calls (summary, relevance).
     # Runs on separate port with OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18.
     # Falls back to OLLAMA_BASE_URL if not set.

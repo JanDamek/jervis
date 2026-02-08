@@ -333,28 +333,23 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ## Ollama Instance Architecture (GPU / CPU Separation)
 
-Three dedicated Ollama instances isolate interactive queries from background ingest:
+Two Ollama instances – GPU for interactive queries, CPU for all background work (ingest + embedding):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                       NAS Server (2×24 cores, 200GB RAM, P40 GPU)      │
+│               NAS Server (2×24 cores, 200GB RAM, P40 GPU)              │
+│               Ollama sees max 24 cores (single NUMA node)              │
 │                                                                         │
 │  ┌──────────────────────────┐  ┌──────────────────────────────────────┐ │
-│  │  GPU Instance (:11434)   │  │  CPU Ingest Instance (:11435)       │ │
-│  │  Qwen 30B on P40         │  │  Qwen2.5 7B + 14B in RAM           │ │
+│  │  GPU Instance (:11434)   │  │  CPU Instance (:11435)              │ │
+│  │  Qwen 30B on P40         │  │  Qwen2.5 7B + 14B + Embedding 8B   │ │
 │  │  OLLAMA_NUM_PARALLEL=2   │  │  OLLAMA_NUM_PARALLEL=10            │ │
 │  │  Interactive queries     │  │  OLLAMA_NUM_THREADS=18             │ │
-│  │  Python orchestrator     │  │  OLLAMA_MAX_LOADED_MODELS=2        │ │
+│  │  Python orchestrator     │  │  OLLAMA_MAX_LOADED_MODELS=3        │ │
 │  │  Coding tools            │  │  OLLAMA_FLASH_ATTENTION=1          │ │
 │  │                          │  │  OLLAMA_KV_CACHE_TYPE=q8_0         │ │
 │  │  6 cores reserved        │  │  18 cores for inference            │ │
 │  └──────────────────────────┘  └──────────────────────────────────────┘ │
-│                                                                         │
-│  ┌──────────────────────────┐                                           │
-│  │  CPU Embedding (:11436)  │                                           │
-│  │  qwen3-embedding:8b      │                                           │
-│  │  Concurrency: 50         │                                           │
-│  └──────────────────────────┘                                           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -363,47 +358,54 @@ Three dedicated Ollama instances isolate interactive queries from background ing
 | Instance | Port | Models | Purpose | Concurrency |
 |----------|------|--------|---------|-------------|
 | GPU Primary | 11434 | Qwen3-coder-tool:30b | Interactive chat, orchestrator, coding tools | `NUM_PARALLEL=2` |
-| CPU Ingest | 11435 | Qwen2.5:7b + Qwen2.5:14b | Qualification, summary, relevance check | `NUM_PARALLEL=10`, `NUM_THREADS=18` |
-| CPU Embedding | 11436 | qwen3-embedding:8b | Vector embeddings for RAG | Concurrency 50 |
+| CPU Ingest + Embed | 11435 | Qwen2.5:7b, Qwen2.5:14b, qwen3-embedding:8b | Qualification, summary, relevance, embedding | `NUM_PARALLEL=10`, `NUM_THREADS=18` |
 
-### Ingest Model Routing (CPU Instance)
+> **Note:** `OLLAMA_NUM_PARALLEL` is per-model. Each of the 3 loaded models gets 10 parallel slots independently.
+> Ollama can only use cores from one NUMA node (max 24 on this server), so `NUM_THREADS=18` leaves 6 for GPU instance + OS.
 
-The CPU ingest instance runs two models simultaneously (200GB RAM allows both in memory):
+### Model Routing (CPU Instance)
+
+The CPU instance runs three models simultaneously (`OLLAMA_MAX_LOADED_MODELS=3`, 200GB RAM):
 
 | Task | Model | Rationale |
 |------|-------|-----------|
 | Link relevance check | `qwen2.5:7b` (simple) | Binary classification, small context (~3k chars), speed priority |
 | Summary generation + entity extraction | `qwen2.5:14b` (complex) | Structured JSON output, entity detection, actionability routing |
+| Vector embeddings (RAG) | `qwen3-embedding:8b` | Single forward pass, no generation, very fast on CPU |
 | Koog qualifier agent | Configured in Modelfile | Structuring, chunking, graph/RAG linking |
 
 ### Key Configuration Values
 
 **Kotlin side** (`models-config.yaml`, `application.yml`):
 - `OLLAMA_QUALIFIER.maxConcurrentRequests: 10`
+- `OLLAMA_EMBEDDING.maxConcurrentRequests: 50` (embedding is fast, Ollama queues excess)
 - `preload.ollama.cpu.concurrency: 10`
 - `TaskQualificationService.effectiveConcurrency: 10`
+- `ollama.embedding.baseUrl` → port 11435 (same as qualifier)
 
 **Python KB side** (`config.py`, K8s ConfigMap):
 - `OLLAMA_INGEST_BASE_URL: http://192.168.100.117:11435`
+- `OLLAMA_EMBEDDING_BASE_URL: http://192.168.100.117:11435`
 - `INGEST_MODEL_SIMPLE: qwen2.5:7b`
 - `INGEST_MODEL_COMPLEX: qwen2.5:14b`
 
-### Why CPU for Ingest
+### Why CPU for Ingest + Embedding
 
 1. **GPU stays free** for 30B interactive model (P40 VRAM nearly full)
-2. **Batch parallelism** – 10 concurrent slots process ingest queue faster than sequential GPU
-3. **No latency competition** – user queries never compete with background ingest
-4. **CPU penalty is small** for 7B/14B models – memory bandwidth bound, not compute bound
-5. **200GB RAM** holds both models with room for KV cache across all parallel slots
+2. **Batch parallelism** – 10 concurrent slots per model, process ingest queue faster than sequential GPU
+3. **No latency competition** – user queries never compete with background ingest or embedding
+4. **CPU penalty is small** for 7B/14B/8B models – memory bandwidth bound, not compute bound
+5. **200GB RAM** holds all 3 models with room for KV cache across parallel slots
+6. **Simpler ops** – one CPU Ollama process instead of two, one port to monitor
 
-### Ollama ENV Setup (CPU Ingest Instance)
+### Ollama ENV Setup (CPU Instance)
 
 ```bash
-# /etc/systemd/system/ollama-ingest.service or docker run env:
+# /etc/systemd/system/ollama-cpu.service or docker run env:
 OLLAMA_HOST=0.0.0.0:11435
-OLLAMA_NUM_PARALLEL=10
-OLLAMA_NUM_THREADS=18
-OLLAMA_MAX_LOADED_MODELS=2
+OLLAMA_NUM_PARALLEL=10       # 10 parallel slots per loaded model
+OLLAMA_NUM_THREADS=18        # 18 of 24 cores (NUMA node limit)
+OLLAMA_MAX_LOADED_MODELS=3   # qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
 ```
