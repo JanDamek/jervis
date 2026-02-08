@@ -11,6 +11,7 @@ import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IIntegrationSettingsService
+import com.jervis.service.IMeetingService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.IProjectGroupService
@@ -206,6 +207,8 @@ object NetworkModule {
             private set
         var environmentService: IEnvironmentService = initialRpcClient.withService<IEnvironmentService>()
             private set
+        var meetingService: IMeetingService = initialRpcClient.withService<IMeetingService>()
+            private set
 
         fun updateFrom(rpcClient: KtorRpcClient) {
             projectService = rpcClient.withService<IProjectService>()
@@ -225,6 +228,7 @@ object NetworkModule {
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>()
             projectGroupService = rpcClient.withService<IProjectGroupService>()
             environmentService = rpcClient.withService<IEnvironmentService>()
+            meetingService = rpcClient.withService<IMeetingService>()
         }
     }
 

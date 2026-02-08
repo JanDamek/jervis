@@ -55,6 +55,16 @@ value class SourceUrn(
 
         fun document(documentId: String): SourceUrn = SourceUrn("doc::id:${encodeValue(documentId)}")
 
+        fun meeting(
+            meetingId: String,
+            title: String? = null,
+        ): SourceUrn =
+            SourceUrn(
+                "meeting::id:${encodeValue(meetingId)}${
+                    title?.let { ",title:${encodeValue(it)}" } ?: ""
+                }",
+            )
+
         fun git(
             projectId: ProjectId,
             commitHash: String,

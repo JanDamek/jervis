@@ -118,6 +118,7 @@ class ConnectionManager(
                         notifications = services!!.notificationService,
                         bugTrackerSetup = services!!.bugTrackerSetupService,
                         codingAgents = services!!.codingAgentSettingsService,
+                        meetings = services!!.meetingService,
                     )
 
                 // Try a simple test call to verify connectivity

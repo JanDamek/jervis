@@ -633,6 +633,34 @@ Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
 }
 ```
 
+### Pattern 6: Meeting Recording Screen
+
+```kotlin
+// MeetingsScreen: list with recording controls + transcript detail
+MeetingsScreen(
+    viewModel = meetingViewModel,     // MeetingViewModel(meetingService)
+    clients = clients,
+    projects = projects,
+    selectedClientId = selectedClientId,
+    selectedProjectId = selectedProjectId,
+    onBack = { navigator.goBack() },
+)
+
+// RecordingIndicator: shown on MainScreen during active recording
+RecordingIndicator(
+    durationSeconds = recordingDuration,
+    onStop = { viewModel.stopRecording() },
+)
+
+// Audio capture: expect/actual AudioRecorder
+val recorder = AudioRecorder()
+recorder.getAvailableInputDevices()       // List<AudioDevice>
+recorder.getSystemAudioCapabilities()     // SystemAudioCapability
+recorder.startRecording(config)           // Boolean
+recorder.getAndClearBuffer()              // ByteArray? (for chunked upload)
+recorder.stopRecording()                  // ByteArray?
+```
+
 ### Shared Form Helpers
 
 | Helper | Location | Purpose |

@@ -39,6 +39,7 @@ class KtorRpcServer(
     private val bugTrackerSetupRpcImpl: BugTrackerSetupRpcImpl,
     private val integrationSettingsRpcImpl: IntegrationSettingsRpcImpl,
     private val codingAgentSettingsRpcImpl: CodingAgentSettingsRpcImpl,
+    private val meetingRpcImpl: MeetingRpcImpl,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val properties: KtorClientProperties,
 ) {
@@ -163,6 +164,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IBugTrackerSetupService> { bugTrackerSetupRpcImpl }
                                 registerService<com.jervis.service.IIntegrationSettingsService> { integrationSettingsRpcImpl }
                                 registerService<com.jervis.service.ICodingAgentSettingsService> { codingAgentSettingsRpcImpl }
+                                registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
                             }
                         }
                     }

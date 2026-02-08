@@ -140,6 +140,19 @@ fun App(
                 )
             }
 
+            Screen.Meetings -> {
+                val meetingViewModel = remember { com.jervis.ui.meeting.MeetingViewModel(repository.meetings) }
+
+                com.jervis.ui.meeting.MeetingsScreen(
+                    viewModel = meetingViewModel,
+                    clients = clients,
+                    projects = projects,
+                    selectedClientId = selectedClientId,
+                    selectedProjectId = selectedProjectId,
+                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                )
+            }
+
             // Debug console removed - server does not publish debug WebSocket
             Screen.DebugConsole -> {
                 // No debug window - navigate back to main

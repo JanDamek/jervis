@@ -81,6 +81,17 @@
 
 For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-base.md#continuous-indexers).
 
+**TaskTypeEnum values:**
+- `EMAIL_PROCESSING` – Email content from IMAP/POP3
+- `WIKI_PROCESSING` – Confluence pages
+- `BUGTRACKER_PROCESSING` – Jira/GitHub/GitLab issues
+- `GIT_PROCESSING` – Git commits and diffs
+- `USER_INPUT_PROCESSING` – User chat messages
+- `USER_TASK` – User-created tasks
+- `SCHEDULED_TASK` – Cron-scheduled tasks
+- `LINK_PROCESSING` – URLs extracted from other documents
+- `MEETING_PROCESSING` – Transcribed meeting recordings (from MeetingContinuousIndexer)
+
 #### 1.1 Link Handling Flow - SEPARATE PENDING TASKS
 
 **CRITICAL: Links are NEVER downloaded in continuous indexer!**
