@@ -176,7 +176,10 @@ The Whisper container writes a progress file on PVC (`meeting_{id}_progress.json
 ```json
 {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "updated_at": 1738000000.0}
 ```
-The server-side `WhisperJobRunner` reads this file during K8s Job polling and logs detailed progress.
+The server-side `WhisperJobRunner` reads this file during K8s Job polling (every 10s) and emits
+`MeetingTranscriptionProgress` events via `NotificationRpcImpl` for real-time UI updates.
+State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED, etc.) emit
+`MeetingStateChanged` events so the meeting list/detail view updates without polling.
 
 ### Key Files
 
@@ -223,8 +226,8 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 2. `TranscriptCorrectionService.correct()` sets state to CORRECTING
 3. Delegates to Python orchestrator via `PythonOrchestratorClient.correctTranscript()`
 4. Python `CorrectionAgent` loads per-client/project correction rules from KB (Weaviate)
-5. Transcript segments chunked (20/chunk) and sent to Ollama GPU (`qwen3-coder-tool:30b`)
-6. System prompt includes correction rules grouped by category + instructions for interactive questions
+5. Transcript segments chunked (40/chunk) and sent to Ollama GPU (`qwen3-tools` reasoning model, configurable via `DEFAULT_CORRECTION_MODEL`)
+6. System prompt: meaning-first approach — read full context, phonetic reasoning for garbled Czech, apply correction rules
 7. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
 8. If questions exist: state → CORRECTION_REVIEW (best-effort corrections + questions stored)
 9. If no questions: state → CORRECTED
@@ -702,6 +705,8 @@ Hybrid push/local notification architecture for real-time user alerts.
 | **Approval** | `UserTaskCreated(isApproval=true)` | HIGH | Approve / Deny (with reason) |
 | **User Task** | `UserTaskCreated(isApproval=false)` | NORMAL | Tap to open app |
 | **Error** | `ErrorNotification` | NORMAL | Informational |
+| **Meeting State** | `MeetingStateChanged` | NORMAL | UI updates meeting list/detail in real-time |
+| **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % |
 
 ### Event Flow
 
