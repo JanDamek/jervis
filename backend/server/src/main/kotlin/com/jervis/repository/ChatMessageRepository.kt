@@ -60,6 +60,16 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     suspend fun countByTaskId(taskId: TaskId): Long
 
     /**
+     * Count USER messages for a task after a given timestamp.
+     * Used to detect inline messages sent while agent was orchestrating.
+     */
+    suspend fun countByTaskIdAndRoleAndTimestampAfter(
+        taskId: TaskId,
+        role: MessageRole,
+        timestamp: java.time.Instant,
+    ): Long
+
+    /**
      * Delete all messages for a task.
      * Used when deleting a task.
      */

@@ -517,7 +517,7 @@ Column(modifier = Modifier.fillMaxSize()) {
 ### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`)
 
 Full-screen view accessed by clicking the `AgentStatusRow` on the main screen.
-Shows live agent status card, pending queue items, and in-memory activity log (max 200 entries, since restart, no persistence).
+Shows live agent status card, two separate pending queues (Frontend/Backend), and in-memory activity log (max 200 entries, since restart, no persistence).
 
 ```
 ┌─ JTopBar ("Aktivita agenta", onBack) ─────────────────┐
@@ -528,12 +528,19 @@ Shows live agent status card, pending queue items, and in-memory activity log (m
 │ │                task preview text...        Fronta: 1 │ │
 │ └─────────────────────────────────────────────────────┘ │
 │                                                         │
-│ Fronta (2)                                              │
-│ ┌─ Pending queue items ────────────────────────────────┐│
-│ │ ⏳  ProjectX                                         ││
-│ │     co jsem kupoval v alze?                          ││
-│ │ ⏳  ProjectY                                         ││
-│ │     připrav report za leden...                       ││
+│ Frontend (2)                  ← FOREGROUND queue        │
+│ ┌─ QueueItemRow ───────────────────────────────────────┐│
+│ │ ⏳ ProjectX       [↑] [↓] [→]                       ││
+│ │    co jsem kupoval v alze?                           ││
+│ ├──────────────────────────────────────────────────────┤│
+│ │ ⏳ ProjectY       [↑] [↓] [→]                       ││
+│ │    připrav report za leden...                        ││
+│ └──────────────────────────────────────────────────────┘│
+│                                                         │
+│ Backend (1)                   ← BACKGROUND queue        │
+│ ┌─ QueueItemRow ───────────────────────────────────────┐│
+│ │ ⏳ ProjectZ       [↑] [↓] [←]                       ││
+│ │    index wiki pages...                               ││
 │ └──────────────────────────────────────────────────────┘│
 │                                                         │
 │ Historie aktivity                                       │
@@ -545,12 +552,28 @@ Shows live agent status card, pending queue items, and in-memory activity log (m
 └─────────────────────────────────────────────────────────┘
 ```
 
+**QueueItemRow** – Each pending task row includes:
+- Up/down arrow buttons (`[↑]`/`[↓]`) for reordering within the same queue
+- Switch button (`[→]` in Frontend, `[←]` in Backend) to move the task between queues
+- All buttons use `IconButton(modifier = Modifier.size(JervisSpacing.touchTarget))`
+
 **Data models** (`com.jervis.ui.model.AgentActivityEntry`):
 - `AgentActivityEntry`: `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED), `description`, `projectName?`, `taskType?`, `clientId?`
-- `PendingQueueItem`: `preview` (task content first 60 chars), `projectName`
+- `PendingQueueItem`: `taskId`, `preview` (task content first 60 chars), `projectName`, `processingMode` (FOREGROUND/BACKGROUND), `queuePosition`
 - Stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
 
-**Queue size**: Backend counts only FOREGROUND tasks in READY_FOR_GPU state, excluding the currently running task. Pending items include content preview and project name for UI display.
+**Dual-queue state** in `MainViewModel`:
+- `foregroundQueue: StateFlow<List<PendingQueueItem>>` – user-initiated tasks (FOREGROUND)
+- `backgroundQueue: StateFlow<List<PendingQueueItem>>` – system/indexing tasks (BACKGROUND)
+- `reorderTask(taskId, newPosition)` – reorder within current queue
+- `moveTaskToQueue(taskId, targetMode)` – move between FOREGROUND and BACKGROUND
+
+**RPC methods** (`IAgentOrchestratorService`):
+- `getPendingTasks()` – returns both queues with taskId and processingMode
+- `reorderTask(taskId, newPosition)` – change position within queue
+- `moveTask(taskId, targetProcessingMode)` – switch between queues
+
+**Queue status emissions**: Backend emits queue status updates that include both FOREGROUND and BACKGROUND items with their taskId, enabling the UI to display and manage both queues independently.
 
 ### 5.6) Meetings Screen (`MeetingsScreen.kt`)
 

@@ -319,6 +319,32 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 - **Agent:** Python Orchestrator (LangGraph) with GPU model (OLLAMA_PRIMARY)
 - **Max iterations:** 500 (configurable via application.yml)
 - **Preemption:** Immediately interrupted by user requests
+- **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
+
+### Auto-Requeue on Inline Messages
+
+When orchestration is dispatched, `TaskDocument.orchestrationStartedAt` is set to the current timestamp.
+On completion ("done"), `BackgroundEngine` checks for new USER messages that arrived during orchestration:
+
+```
+orchestrationStartedAt = Instant.now()  ← set on dispatch
+
+... orchestration runs (PYTHON_ORCHESTRATING) ...
+
+onComplete("done"):
+  newMessageCount = chatMessageRepository.countAfterTimestamp(
+      projectId, orchestrationStartedAt
+  )
+  if (newMessageCount > 0):
+      task.state = READY_FOR_GPU      ← auto-requeue (not DISPATCHED_GPU)
+      task.orchestrationStartedAt = null
+      // Agent will re-process with full context including new messages
+  else:
+      // Normal completion flow (DISPATCHED_GPU or DELETE)
+```
+
+This ensures that messages sent while the agent is busy are not lost -- the task is automatically
+re-processed with the full conversation context once the current orchestration finishes.
 
 ### Task States Flow
 
@@ -327,7 +353,10 @@ NEW (from API) → INDEXING (processing) → INDEXED (task created)
     ↓
 QUALIFICATION_IN_PROGRESS (CPU agent) → DONE or READY_FOR_GPU
     ↓
-READY_FOR_GPU → EXECUTION (GPU agent) → COMPLETED
+READY_FOR_GPU → PYTHON_ORCHESTRATING (GPU agent) → COMPLETED
+                    │                     │
+                    │                     └── new messages arrived? → READY_FOR_GPU (auto-requeue)
+                    └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
 ```
 
 For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestrator-final-spec.md#9-async-dispatch--result-polling-architektura).

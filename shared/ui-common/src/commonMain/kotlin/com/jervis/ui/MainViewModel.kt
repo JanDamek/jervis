@@ -130,9 +130,15 @@ class MainViewModel(
     private val _runningTaskType = MutableStateFlow<String?>(null)
     val runningTaskType: StateFlow<String?> = _runningTaskType.asStateFlow()
 
-    // Pending queue items (tasks waiting to be processed)
+    // Pending queue items (tasks waiting to be processed) - split by queue type
     private val _pendingQueueItems = MutableStateFlow<List<PendingQueueItem>>(emptyList())
     val pendingQueueItems: StateFlow<List<PendingQueueItem>> = _pendingQueueItems.asStateFlow()
+
+    private val _foregroundQueue = MutableStateFlow<List<PendingQueueItem>>(emptyList())
+    val foregroundQueue: StateFlow<List<PendingQueueItem>> = _foregroundQueue.asStateFlow()
+
+    private val _backgroundQueue = MutableStateFlow<List<PendingQueueItem>>(emptyList())
+    val backgroundQueue: StateFlow<List<PendingQueueItem>> = _backgroundQueue.asStateFlow()
 
     // In-memory agent activity log (since app start, max 200 entries, no persistence)
     val activityLog = AgentActivityLog()
@@ -359,13 +365,18 @@ class MainViewModel(
                             val wasRunning = previousRunningProjectId != null && previousRunningProjectId != "none"
                             val isRunning = newRunningId != null && newRunningId != "none"
 
+                            // Use meaningful task type label for activity log
+                            // "Asistent" is not useful as a type label for chat tasks
+                            val displayTaskType = newTaskType?.takeIf { it != "Asistent" }
+                            val prevDisplayTaskType = _runningTaskType.value?.takeIf { it != "Asistent" }
+
                             if (!wasRunning && isRunning) {
                                 // Task started
                                 activityLog.add(
                                     type = AgentActivityEntry.Type.TASK_STARTED,
                                     description = newTaskPreview ?: "Zpracování úlohy",
                                     projectName = newProjectName,
-                                    taskType = newTaskType,
+                                    taskType = displayTaskType,
                                     clientId = clientId,
                                 )
                                 _activityEntries.value = activityLog.entries
@@ -373,9 +384,10 @@ class MainViewModel(
                                 // Task completed, agent idle
                                 activityLog.add(
                                     type = AgentActivityEntry.Type.TASK_COMPLETED,
-                                    description = "Úloha dokončena",
+                                    description = "Úloha dokončena" +
+                                        (_runningProjectName.value?.let { " ($it)" } ?: ""),
                                     projectName = _runningProjectName.value,
-                                    taskType = _runningTaskType.value,
+                                    taskType = prevDisplayTaskType,
                                     clientId = clientId,
                                 )
                                 _activityEntries.value = activityLog.entries
@@ -383,16 +395,17 @@ class MainViewModel(
                                 // Different task started (previous completed)
                                 activityLog.add(
                                     type = AgentActivityEntry.Type.TASK_COMPLETED,
-                                    description = "Úloha dokončena",
+                                    description = "Úloha dokončena" +
+                                        (_runningProjectName.value?.let { " ($it)" } ?: ""),
                                     projectName = _runningProjectName.value,
-                                    taskType = _runningTaskType.value,
+                                    taskType = prevDisplayTaskType,
                                     clientId = clientId,
                                 )
                                 activityLog.add(
                                     type = AgentActivityEntry.Type.TASK_STARTED,
                                     description = newTaskPreview ?: "Zpracování úlohy",
                                     projectName = newProjectName,
-                                    taskType = newTaskType,
+                                    taskType = displayTaskType,
                                     clientId = clientId,
                                 )
                                 _activityEntries.value = activityLog.entries
@@ -405,19 +418,40 @@ class MainViewModel(
                             _runningTaskPreview.value = newTaskPreview
                             _runningTaskType.value = newTaskType
 
-                            // Parse pending queue items from metadata
+                            // Parse FOREGROUND pending queue items from metadata
                             val pendingCount = response.metadata["pendingItemCount"]?.toIntOrNull() ?: 0
-                            val items = (0 until pendingCount).mapNotNull { i ->
+                            val foregroundItems = (0 until pendingCount).mapNotNull { i ->
                                 val preview = response.metadata["pendingItem_${i}_preview"]
                                 val project = response.metadata["pendingItem_${i}_project"]
+                                val taskId = response.metadata["pendingItem_${i}_taskId"] ?: ""
                                 if (preview != null) {
                                     PendingQueueItem(
+                                        taskId = taskId,
                                         preview = preview,
                                         projectName = project ?: "General",
+                                        processingMode = "FOREGROUND",
                                     )
                                 } else null
                             }
-                            _pendingQueueItems.value = items
+                            _foregroundQueue.value = foregroundItems
+                            _pendingQueueItems.value = foregroundItems // backward compat
+
+                            // Parse BACKGROUND pending queue items from metadata
+                            val backgroundCount = response.metadata["backgroundItemCount"]?.toIntOrNull() ?: 0
+                            val backgroundItems = (0 until backgroundCount).mapNotNull { i ->
+                                val preview = response.metadata["backgroundItem_${i}_preview"]
+                                val project = response.metadata["backgroundItem_${i}_project"]
+                                val taskId = response.metadata["backgroundItem_${i}_taskId"] ?: ""
+                                if (preview != null) {
+                                    PendingQueueItem(
+                                        taskId = taskId,
+                                        preview = preview,
+                                        projectName = project ?: "General",
+                                        processingMode = "BACKGROUND",
+                                    )
+                                } else null
+                            }
+                            _backgroundQueue.value = backgroundItems
                         }
                     }
             }
@@ -660,8 +694,11 @@ class MainViewModel(
             }
 
             ChatMessage.MessageType.PROGRESS -> {
-                if (messages.lastOrNull()?.messageType == ChatMessage.MessageType.PROGRESS) {
-                    messages[messages.lastIndex] =
+                // Replace any existing PROGRESS message (not just the last one)
+                // to avoid stacking multiple progress indicators when user sends messages
+                val existingProgressIndex = messages.indexOfLast { it.messageType == ChatMessage.MessageType.PROGRESS }
+                if (existingProgressIndex >= 0) {
+                    messages[existingProgressIndex] =
                         ChatMessage(
                             from = ChatMessage.Sender.Assistant,
                             text = response.message,
@@ -683,9 +720,8 @@ class MainViewModel(
             }
 
             ChatMessage.MessageType.FINAL -> {
-                if (messages.lastOrNull()?.messageType == ChatMessage.MessageType.PROGRESS) {
-                    messages.removeAt(messages.lastIndex)
-                }
+                // Remove ALL progress messages (not just last) to clean up stacked indicators
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -912,6 +948,98 @@ class MainViewModel(
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    // --- Queue Management Actions ---
+
+    /**
+     * Refresh queue data from server via dedicated RPC call.
+     * Populates foregroundQueue and backgroundQueue with full task details.
+     */
+    fun refreshQueues() {
+        val clientId = _selectedClientId.value ?: return
+        scope.launch {
+            try {
+                val pending = repository.agentOrchestrator.getPendingTasks(clientId)
+                _foregroundQueue.value = pending.foreground.map { dto ->
+                    PendingQueueItem(
+                        taskId = dto.taskId,
+                        preview = dto.preview,
+                        projectName = dto.projectName,
+                        taskType = dto.taskType,
+                        processingMode = dto.processingMode,
+                        queuePosition = dto.queuePosition,
+                    )
+                }
+                _backgroundQueue.value = pending.background.map { dto ->
+                    PendingQueueItem(
+                        taskId = dto.taskId,
+                        preview = dto.preview,
+                        projectName = dto.projectName,
+                        taskType = dto.taskType,
+                        processingMode = dto.processingMode,
+                        queuePosition = dto.queuePosition,
+                    )
+                }
+            } catch (e: Exception) {
+                println("Error refreshing queues: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Move task up in its queue (decrease position).
+     */
+    fun moveTaskUp(taskId: String) {
+        val allItems = _foregroundQueue.value + _backgroundQueue.value
+        val item = allItems.find { it.taskId == taskId } ?: return
+        val currentPos = item.queuePosition ?: return
+        if (currentPos <= 1) return
+
+        scope.launch {
+            try {
+                repository.agentOrchestrator.reorderTask(taskId, currentPos - 1)
+                refreshQueues()
+            } catch (e: Exception) {
+                println("Error moving task up: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Move task down in its queue (increase position).
+     */
+    fun moveTaskDown(taskId: String) {
+        val allItems = _foregroundQueue.value + _backgroundQueue.value
+        val item = allItems.find { it.taskId == taskId } ?: return
+        val currentPos = item.queuePosition ?: return
+
+        // Check if it's the last item in its queue
+        val queueItems = if (item.processingMode == "FOREGROUND") _foregroundQueue.value else _backgroundQueue.value
+        if (currentPos >= queueItems.size) return
+
+        scope.launch {
+            try {
+                repository.agentOrchestrator.reorderTask(taskId, currentPos + 1)
+                refreshQueues()
+            } catch (e: Exception) {
+                println("Error moving task down: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Move task between FOREGROUND and BACKGROUND queues.
+     */
+    fun moveTaskToQueue(taskId: String, targetMode: String) {
+        scope.launch {
+            try {
+                repository.agentOrchestrator.moveTask(taskId, targetMode)
+                refreshQueues()
+            } catch (e: Exception) {
+                println("Error moving task to $targetMode: ${e.message}")
+            }
+        }
     }
 
     fun onDispose() {
