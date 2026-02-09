@@ -315,18 +315,22 @@ class CorrectionAgent:
         logger.warning("All correction attempts failed, using original text")
         return {"segments": segments, "questions": []}
 
+    # Available context sizes for qwen3-tool models on GPU (up to 48k fits VRAM)
+    CONTEXT_SIZES = [4, 8, 16, 32, 40, 48]
+
     async def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
         """Call Ollama chat API on GPU instance."""
         # Estimate input tokens (~1 token per 2.5 chars for Czech)
         input_chars = len(system_prompt) + len(user_prompt)
         input_tokens_est = int(input_chars / 2.5)
-        # Context = input + think (3x output) + output; output ≈ 0.5x input
-        num_ctx = max(8192, input_tokens_est * 4)
-        # Round up to nearest 4k, cap at 48k (GPU VRAM limit)
-        num_ctx = min(((num_ctx + 4095) // 4096) * 4096, 49152)
+        # Total need = input + think (3x output) + output; output ≈ 0.5x input
+        total_needed_k = max(4, (input_tokens_est * 4) // 1024)
+        # Pick smallest available context that fits
+        ctx_k = next((s for s in self.CONTEXT_SIZES if s >= total_needed_k), 48)
+        model_name = f"qwen3-tool-{ctx_k}k:30b"
 
         payload = {
-            "model": self.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -334,11 +338,10 @@ class CorrectionAgent:
             "stream": False,
             "options": {
                 "num_predict": 16384,
-                "num_ctx": num_ctx,
                 "temperature": 0.3,
             },
         }
-        logger.info("Calling Ollama %s (num_ctx=%d, input≈%d tokens)", self.model, num_ctx, input_tokens_est)
+        logger.info("Calling Ollama %s (input≈%d tokens, need≈%dk ctx)", model_name, input_tokens_est, total_needed_k)
 
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(
