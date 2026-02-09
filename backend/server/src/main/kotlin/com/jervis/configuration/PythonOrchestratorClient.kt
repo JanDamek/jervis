@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -180,6 +181,10 @@ class PythonOrchestratorClient(baseUrl: String) {
         return client.post("$apiBaseUrl/correction/correct") {
             contentType(ContentType.Application.Json)
             setBody(request)
+            timeout {
+                requestTimeoutMillis = 900_000  // 15 min – correction uses reasoning model, can be slow
+                socketTimeoutMillis = 900_000
+            }
         }.body()
     }
 
