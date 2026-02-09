@@ -126,6 +126,7 @@ class CorrectionAgent:
         project_id: str | None,
         segments: list[dict],
         chunk_size: int = CHUNK_SIZE,
+        meeting_id: str | None = None,
     ) -> dict:
         """
         Correct transcript segments using KB-stored corrections + Ollama GPU.
@@ -152,13 +153,27 @@ class CorrectionAgent:
         # Process in chunks
         corrected_segments = []
         all_questions = []
-        for chunk_start in range(0, len(segments), chunk_size):
+        total_chunks = (len(segments) + chunk_size - 1) // chunk_size
+        for chunk_idx, chunk_start in enumerate(range(0, len(segments), chunk_size)):
             chunk = segments[chunk_start:chunk_start + chunk_size]
+
+            # Emit progress before processing this chunk
+            await self._emit_correction_progress(
+                meeting_id, client_id, chunk_idx, total_chunks,
+                f"Korekce chunk {chunk_idx + 1}/{total_chunks}",
+            )
+
             chunk_result = await self._correct_chunk_interactive(
                 chunk, correction_prompt, all_text,
             )
             corrected_segments.extend(chunk_result["segments"])
             all_questions.extend(chunk_result["questions"])
+
+        # Emit 100% when done
+        await self._emit_correction_progress(
+            meeting_id, client_id, total_chunks, total_chunks,
+            "Korekce dokoncena",
+        )
 
         status = "needs_input" if all_questions else "success"
         return {
@@ -287,6 +302,35 @@ class CorrectionAgent:
                 })
 
         return corrections
+
+    async def _emit_correction_progress(
+        self,
+        meeting_id: str | None,
+        client_id: str,
+        chunks_done: int,
+        total_chunks: int,
+        message: str | None = None,
+    ):
+        """Send correction progress to Kotlin server for UI broadcast."""
+        if not meeting_id:
+            return
+        percent = (chunks_done / total_chunks * 100.0) if total_chunks > 0 else 0.0
+        payload = {
+            "meetingId": meeting_id,
+            "clientId": client_id,
+            "percent": percent,
+            "chunksDone": chunks_done,
+            "totalChunks": total_chunks,
+            "message": message,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{settings.kotlin_server_url}/internal/correction-progress",
+                    json=payload,
+                )
+        except Exception as e:
+            logger.debug("Failed to emit correction progress: %s", e)
 
     async def _correct_chunk_interactive(
         self,

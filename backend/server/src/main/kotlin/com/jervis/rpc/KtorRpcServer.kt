@@ -3,16 +3,22 @@ package com.jervis.rpc
 import com.jervis.common.types.ConnectionId
 import com.jervis.configuration.properties.KtorClientProperties
 import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
+import io.ktor.server.request.receive
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.rpc.krpc.ktor.server.rpc
@@ -59,6 +65,9 @@ class KtorRpcServer(
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
                         install(WebSockets) {
                             maxFrameSize = Long.MAX_VALUE
+                        }
+                        install(ContentNegotiation) {
+                            json(Json { ignoreUnknownKeys = true })
                         }
 
                         routing {
@@ -148,6 +157,31 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: orchestrator sends correction progress here
+                            post("/internal/correction-progress") {
+                                try {
+                                    val body = call.receive<CorrectionProgressCallback>()
+                                    launch {
+                                        notificationRpcImpl.emitMeetingCorrectionProgress(
+                                            meetingId = body.meetingId,
+                                            clientId = body.clientId,
+                                            percent = body.percent,
+                                            chunksDone = body.chunksDone,
+                                            totalChunks = body.totalChunks,
+                                            message = body.message,
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process correction progress callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -191,3 +225,13 @@ class KtorRpcServer(
         logger.info { "Ktor RPC server stopped" }
     }
 }
+
+@kotlinx.serialization.Serializable
+data class CorrectionProgressCallback(
+    val meetingId: String,
+    val clientId: String,
+    val percent: Double,
+    val chunksDone: Int,
+    val totalChunks: Int,
+    val message: String? = null,
+)

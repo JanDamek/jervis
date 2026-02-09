@@ -132,6 +132,28 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    suspend fun emitMeetingCorrectionProgress(
+        meetingId: String,
+        clientId: String,
+        percent: Double,
+        chunksDone: Int,
+        totalChunks: Int,
+        message: String? = null,
+    ) {
+        val event = JervisEvent.MeetingCorrectionProgress(
+            meetingId = meetingId,
+            clientId = clientId,
+            percent = percent,
+            chunksDone = chunksDone,
+            totalChunks = totalChunks,
+            message = message,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
     /**
      * Emit a generic event to a client.
      */

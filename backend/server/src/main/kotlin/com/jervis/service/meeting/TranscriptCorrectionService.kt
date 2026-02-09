@@ -79,6 +79,7 @@ class TranscriptCorrectionService(
                 CorrectionRequestDto(
                     clientId = meeting.clientId.toString(),
                     projectId = meeting.projectId?.toString(),
+                    meetingId = meetingIdStr,
                     segments = requestSegments,
                 ),
             )

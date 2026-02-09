@@ -298,6 +298,10 @@ class MainViewModel(
                 // Handled by MeetingViewModel
             }
 
+            is JervisEvent.MeetingCorrectionProgress -> {
+                // Handled by MeetingViewModel
+            }
+
             else -> {
                 // Ignore others or handle as needed
             }

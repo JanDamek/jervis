@@ -77,6 +77,11 @@ class MeetingViewModel(
     private val _transcriptionProgress = MutableStateFlow<Map<String, Double>>(emptyMap())
     val transcriptionProgress: StateFlow<Map<String, Double>> = _transcriptionProgress.asStateFlow()
 
+    // Correction progress: meetingId -> CorrectionProgressInfo
+    data class CorrectionProgressInfo(val percent: Double, val chunksDone: Int, val totalChunks: Int, val message: String?)
+    private val _correctionProgress = MutableStateFlow<Map<String, CorrectionProgressInfo>>(emptyMap())
+    val correctionProgress: StateFlow<Map<String, CorrectionProgressInfo>> = _correctionProgress.asStateFlow()
+
     private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
 
@@ -139,6 +144,7 @@ class MeetingViewModel(
                     when (event) {
                         is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
                         is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
+                        is JervisEvent.MeetingCorrectionProgress -> handleCorrectionProgress(event)
                         else -> {}
                     }
                 }
@@ -165,9 +171,12 @@ class MeetingViewModel(
             )
         }
 
-        // Clear progress when not transcribing
+        // Clear progress when leaving active processing states
         if (newState != MeetingStateEnum.TRANSCRIBING) {
             _transcriptionProgress.value = _transcriptionProgress.value - event.meetingId
+        }
+        if (newState != MeetingStateEnum.CORRECTING) {
+            _correctionProgress.value = _correctionProgress.value - event.meetingId
         }
 
         // Full refresh to get transcript data etc.
@@ -176,6 +185,17 @@ class MeetingViewModel(
 
     private fun handleTranscriptionProgress(event: JervisEvent.MeetingTranscriptionProgress) {
         _transcriptionProgress.value = _transcriptionProgress.value + (event.meetingId to event.percent)
+    }
+
+    private fun handleCorrectionProgress(event: JervisEvent.MeetingCorrectionProgress) {
+        _correctionProgress.value = _correctionProgress.value + (
+            event.meetingId to CorrectionProgressInfo(
+                percent = event.percent,
+                chunksDone = event.chunksDone,
+                totalChunks = event.totalChunks,
+                message = event.message,
+            )
+        )
     }
 
     fun startRecording(

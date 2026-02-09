@@ -263,6 +263,7 @@ data class CorrectionSubmitResultDto(
 data class CorrectionRequestDto(
     @SerialName("clientId") val clientId: String,
     @SerialName("projectId") val projectId: String? = null,
+    @SerialName("meetingId") val meetingId: String? = null,
     val segments: List<CorrectionSegmentDto>,
     @SerialName("chunkSize") val chunkSize: Int = 20,
 )

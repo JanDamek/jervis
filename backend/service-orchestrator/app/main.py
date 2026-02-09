@@ -391,6 +391,7 @@ async def correct_transcript(request: dict):
             project_id=request.get("projectId"),
             segments=segments,
             chunk_size=request.get("chunkSize", 20),
+            meeting_id=request.get("meetingId"),
         )
         return result
     except Exception as e:

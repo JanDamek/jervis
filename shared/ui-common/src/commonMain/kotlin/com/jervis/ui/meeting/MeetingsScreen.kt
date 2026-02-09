@@ -91,6 +91,7 @@ fun MeetingsScreen(
     val isCorrecting by viewModel.isCorrecting.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val transcriptionProgress by viewModel.transcriptionProgress.collectAsState()
+    val correctionProgress by viewModel.correctionProgress.collectAsState()
     val error by viewModel.error.collectAsState()
 
     // Filter state — pre-filled from main window selection
@@ -145,6 +146,7 @@ fun MeetingsScreen(
             isPlaying = playingMeetingId == currentDetail.id,
             isCorrecting = isCorrecting,
             transcriptionPercent = transcriptionProgress[currentDetail.id],
+            correctionProgress = correctionProgress[currentDetail.id],
             onBack = { viewModel.selectMeeting(null) },
             onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
@@ -314,6 +316,7 @@ fun MeetingsScreen(
                                     meeting = meeting,
                                     isPlaying = playingMeetingId == meeting.id,
                                     transcriptionPercent = transcriptionProgress[meeting.id],
+                                    correctionProgress = correctionProgress[meeting.id],
                                     onClick = { viewModel.selectMeeting(meeting) },
                                     onPlayToggle = { viewModel.playAudio(meeting.id) },
                                 )
@@ -506,6 +509,7 @@ private fun MeetingListItem(
     meeting: MeetingDto,
     isPlaying: Boolean,
     transcriptionPercent: Double? = null,
+    correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     onClick: () -> Unit,
     onPlayToggle: () -> Unit,
 ) {
@@ -583,10 +587,12 @@ private fun MeetingListItem(
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = if (meeting.state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
-                        "Prepis ${transcriptionPercent.toInt()}%"
-                    } else {
-                        stateLabel(meeting.state)
+                    text = when {
+                        meeting.state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
+                            "Prepis ${transcriptionPercent.toInt()}%"
+                        meeting.state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
+                            "Korekce ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}"
+                        else -> stateLabel(meeting.state)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (meeting.state == MeetingStateEnum.FAILED)
@@ -674,6 +680,7 @@ private fun MeetingDetailView(
     isPlaying: Boolean,
     isCorrecting: Boolean,
     transcriptionPercent: Double? = null,
+    correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
@@ -802,7 +809,11 @@ private fun MeetingDetailView(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Pipeline progress indicator
-        PipelineProgress(state = meeting.state, transcriptionPercent = transcriptionPercent)
+        PipelineProgress(
+            state = meeting.state,
+            transcriptionPercent = transcriptionPercent,
+            correctionProgress = correctionProgress,
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -989,7 +1000,11 @@ private fun stateToStepInfo(state: MeetingStateEnum): Pair<Int, Boolean> =
     }
 
 @Composable
-private fun PipelineProgress(state: MeetingStateEnum, transcriptionPercent: Double? = null) {
+private fun PipelineProgress(
+    state: MeetingStateEnum,
+    transcriptionPercent: Double? = null,
+    correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
+) {
     if (state == MeetingStateEnum.RECORDING) return
 
     val (currentStepIndex, isActive) = stateToStepInfo(state)
@@ -1089,6 +1104,8 @@ private fun PipelineProgress(state: MeetingStateEnum, transcriptionPercent: Doub
                 state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
                     "Whisper prepisuje: ${transcriptionPercent.toInt()}%"
                 state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
+                state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
+                    correctionProgress.message ?: "Korekce: chunk ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}"
                 state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potrebuje vase odpovedi"
                 state == MeetingStateEnum.CORRECTED -> "Ve fronte - ceka na indexaci do znalostni baze"
                 // Actively processing
@@ -1105,6 +1122,11 @@ private fun PipelineProgress(state: MeetingStateEnum, transcriptionPercent: Doub
                     if (state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
                         LinearProgressIndicator(
                             progress = { (transcriptionPercent / 100.0).toFloat() },
+                            modifier = Modifier.width(80.dp).height(3.dp),
+                        )
+                    } else if (state == MeetingStateEnum.CORRECTING && correctionProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { (correctionProgress.percent / 100.0).toFloat() },
                             modifier = Modifier.width(80.dp).height(3.dp),
                         )
                     } else if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED)) {
