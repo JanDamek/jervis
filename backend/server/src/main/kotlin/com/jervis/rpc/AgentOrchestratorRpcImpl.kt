@@ -31,6 +31,7 @@ class AgentOrchestratorRpcImpl(
     private val chatMessageRepository: ChatMessageRepository,
     private val taskRepository: TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
+    private val projectService: com.jervis.service.project.ProjectService,
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -403,16 +404,34 @@ class AgentOrchestratorRpcImpl(
 
                 val (runningTask, queueSize) = taskService.getQueueStatus(clientIdTyped, null)
 
+                // Get pending queue items for display
+                val pendingTasks = taskService.getPendingForegroundTasks(clientIdTyped)
+                val pendingItems = pendingTasks.mapIndexed { index, task ->
+                    val preview = task.content.take(60).let {
+                        if (task.content.length > 60) "$it..." else it
+                    }
+                    val pName = task.projectId?.let { pid ->
+                        try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                    } ?: "General"
+                    listOf(
+                        "pendingItem_${index}_preview" to preview,
+                        "pendingItem_${index}_project" to pName,
+                    )
+                }.flatten().toMap() + mapOf("pendingItemCount" to pendingTasks.size.toString())
+
                 val response =
                     if (runningTask != null) {
-                        val projectName = "Project"
+                        val projectName =
+                            runningTask.projectId?.let { pid ->
+                                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                            } ?: "General"
                         val taskPreview =
                             runningTask.content.take(50).let {
                                 if (runningTask.content.length > 50) "$it..." else it
                             }
                         val taskTypeLabel =
                             when (runningTask.type) {
-                                com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Chat"
+                                com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
                                 com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
                                 com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
                                 com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
@@ -429,7 +448,7 @@ class AgentOrchestratorRpcImpl(
                                     "runningTaskPreview" to taskPreview,
                                     "runningTaskType" to taskTypeLabel,
                                     "queueSize" to queueSize.toString(),
-                                ),
+                                ) + pendingItems,
                         )
                     } else {
                         ChatResponseDto(
@@ -442,13 +461,13 @@ class AgentOrchestratorRpcImpl(
                                     "runningTaskPreview" to "",
                                     "runningTaskType" to "",
                                     "queueSize" to queueSize.toString(),
-                                ),
+                                ) + pendingItems,
                         )
                     }
 
                 sharedFlow.emit(response)
                 logger.info {
-                    "INITIAL_QUEUE_STATUS_EMITTED | clientId=$clientId | queueSize=$queueSize | hasRunningTask=${runningTask != null} | taskType=${runningTask?.type}"
+                    "INITIAL_QUEUE_STATUS_EMITTED | clientId=$clientId | queueSize=$queueSize | pendingItems=${pendingTasks.size} | hasRunningTask=${runningTask != null} | taskType=${runningTask?.type}"
                 }
             } catch (e: Exception) {
                 logger.error(e) { "Failed to emit initial queue status for clientId=$clientId" }

@@ -94,6 +94,16 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Long
 
     /**
+     * Count FOREGROUND queue: tasks by processingMode + state + type + clientId.
+     */
+    suspend fun countByProcessingModeAndStateAndTypeAndClientId(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+        type: TaskTypeEnum,
+        clientId: ClientId,
+    ): Long
+
+    /**
      * Find tasks ready for qualification where backoff window has elapsed.
      * Returns tasks where nextQualificationRetryAt is null (new) or <= now (backoff expired).
      */

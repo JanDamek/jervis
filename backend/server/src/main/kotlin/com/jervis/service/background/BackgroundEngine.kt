@@ -279,7 +279,7 @@ class BackgroundEngine(
                     if (freshTask?.state == TaskStateEnum.PYTHON_ORCHESTRATING) {
                         logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
                         taskService.setRunningTask(null)
-                        emitQueueStatus(null)
+                        emitIdleQueueStatus(task.clientId)
                         return@launch
                     }
 
@@ -326,23 +326,9 @@ class BackgroundEngine(
                     val clientIdForStatus = task.clientId
                     taskService.setRunningTask(null)
 
-                    // Emit empty queue status to client
+                    // Emit queue status with actual remaining queue count
                     try {
-                        agentOrchestratorRpc.emitQueueStatus(
-                            clientIdForStatus.toString(),
-                            com.jervis.dto.ChatResponseDto(
-                                message = "Queue is empty",
-                                type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                                metadata =
-                                    mapOf(
-                                        "runningProjectId" to "none",
-                                        "runningProjectName" to "None",
-                                        "runningTaskPreview" to "",
-                                        "runningTaskType" to "",
-                                        "queueSize" to "0",
-                                    ),
-                            ),
-                        )
+                        emitIdleQueueStatus(clientIdForStatus)
                         logger.info { "QUEUE_STATUS_CLEARED | clientId=$clientIdForStatus" }
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to emit queue status after task completion" }
@@ -355,23 +341,9 @@ class BackgroundEngine(
                     val clientIdForStatus = task.clientId
                     taskService.setRunningTask(null)
 
-                    // Emit queue status after cancellation
+                    // Emit queue status with actual remaining queue count
                     try {
-                        agentOrchestratorRpc.emitQueueStatus(
-                            clientIdForStatus.toString(),
-                            com.jervis.dto.ChatResponseDto(
-                                message = "Task cancelled",
-                                type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                                metadata =
-                                    mapOf(
-                                        "runningProjectId" to "none",
-                                        "runningProjectName" to "None",
-                                        "runningTaskPreview" to "",
-                                        "runningTaskType" to "",
-                                        "queueSize" to "0",
-                                    ),
-                            ),
-                        )
+                        emitIdleQueueStatus(clientIdForStatus)
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to emit queue status after cancellation" }
                     }
@@ -416,6 +388,9 @@ class BackgroundEngine(
                             "consecutiveFailures=$consecutiveFailures isCommunication=$isCommunicationError"
                     }
 
+                    val clientIdForStatus = task.clientId
+                    taskService.setRunningTask(null)
+
                     try {
                         if (isCommunicationError) {
                             val errorMessage =
@@ -429,6 +404,13 @@ class BackgroundEngine(
                     } catch (esc: Exception) {
                         logger.error(esc) { "Failed to handle task error for ${task.id}" }
                         taskService.deleteTask(task)
+                    }
+
+                    // Emit updated queue status after error
+                    try {
+                        emitIdleQueueStatus(clientIdForStatus)
+                    } catch (qe: Exception) {
+                        logger.warn(qe) { "Failed to emit queue status after error" }
                     }
 
                     if (backoffDelay > 0) {
@@ -448,7 +430,8 @@ class BackgroundEngine(
     }
 
     /**
-     * Emit queue status to all connected clients for this task's clientId
+     * Emit queue status to all connected clients for this task's clientId.
+     * Includes pending queue items info for UI display.
      */
     private suspend fun emitQueueStatus(runningTask: TaskDocument?) {
         try {
@@ -472,6 +455,31 @@ class BackgroundEngine(
                         if (runningTask.content.length > 50) "$it..." else it
                     }
 
+                val taskTypeLabel =
+                    when (runningTask.type) {
+                        com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
+                        com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
+                        com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
+                        com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
+                        else -> runningTask.type.toString()
+                    }
+
+                // Get pending queue items for display
+                val pendingTasks = taskService.getPendingForegroundTasks(runningTask.clientId)
+                val pendingItems = buildMap {
+                    put("pendingItemCount", pendingTasks.size.toString())
+                    pendingTasks.forEachIndexed { index, task ->
+                        val preview = task.content.take(60).let {
+                            if (task.content.length > 60) "$it..." else it
+                        }
+                        val pName = task.projectId?.let { pid ->
+                            try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                        } ?: "General"
+                        put("pendingItem_${index}_preview", preview)
+                        put("pendingItem_${index}_project", pName)
+                    }
+                }
+
                 val response =
                     com.jervis.dto.ChatResponseDto(
                         message = "Queue status update",
@@ -481,8 +489,9 @@ class BackgroundEngine(
                                 "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
                                 "runningProjectName" to projectName,
                                 "runningTaskPreview" to taskPreview,
+                                "runningTaskType" to taskTypeLabel,
                                 "queueSize" to queueSize.toString(),
-                            ),
+                            ) + pendingItems,
                     )
 
                 agentOrchestratorRpc.emitQueueStatus(runningTask.clientId.toString(), response)
@@ -491,6 +500,42 @@ class BackgroundEngine(
         } catch (e: Exception) {
             logger.error(e) { "Failed to emit queue status" }
         }
+    }
+
+    /**
+     * Emit queue status when agent becomes idle (task completed/cancelled).
+     * Queries actual remaining queue size and pending items.
+     */
+    private suspend fun emitIdleQueueStatus(clientId: com.jervis.common.types.ClientId) {
+        val (_, remainingQueueSize) = taskService.getQueueStatus(clientId, null)
+        val pendingTasks = taskService.getPendingForegroundTasks(clientId)
+        val pendingItems = pendingTasks.mapIndexed { index, task ->
+            val preview = task.content.take(60).let {
+                if (task.content.length > 60) "$it..." else it
+            }
+            val pName = task.projectId?.let { pid ->
+                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+            } ?: "General"
+            listOf(
+                "pendingItem_${index}_preview" to preview,
+                "pendingItem_${index}_project" to pName,
+            )
+        }.flatten().toMap() + mapOf("pendingItemCount" to pendingTasks.size.toString())
+
+        agentOrchestratorRpc.emitQueueStatus(
+            clientId.toString(),
+            com.jervis.dto.ChatResponseDto(
+                message = if (remainingQueueSize > 0) "Queue: $remainingQueueSize" else "Queue is empty",
+                type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                metadata = mapOf(
+                    "runningProjectId" to "none",
+                    "runningProjectName" to "None",
+                    "runningTaskPreview" to "",
+                    "runningTaskType" to "",
+                    "queueSize" to remainingQueueSize.toString(),
+                ) + pendingItems,
+            ),
+        )
     }
 
     /**

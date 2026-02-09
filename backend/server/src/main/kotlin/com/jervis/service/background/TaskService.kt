@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
@@ -135,23 +136,49 @@ class TaskService(
     fun getCurrentRunningTask(): TaskDocument? = currentRunningTask
 
     /**
-     * Get queue status: currently running task and queue size
+     * Get queue status: currently running task and queue size.
+     * Queue size counts only FOREGROUND tasks in READY_FOR_GPU state,
+     * excluding the currently running task (which is still READY_FOR_GPU in DB).
      */
     suspend fun getQueueStatus(
         clientId: ClientId,
         projectId: ProjectId?,
     ): Pair<TaskDocument?, Int> {
-        val queueSize =
-            taskRepository.countByStateAndTypeAndClientId(
+        val rawCount =
+            taskRepository.countByProcessingModeAndStateAndTypeAndClientId(
+                processingMode = ProcessingMode.FOREGROUND,
                 state = TaskStateEnum.READY_FOR_GPU,
                 type = TaskTypeEnum.USER_INPUT_PROCESSING,
                 clientId = clientId,
             )
+        // Exclude the currently running task from the count (its DB state is still READY_FOR_GPU)
+        val running = currentRunningTask
+        val isRunningCounted = running != null &&
+            running.clientId == clientId &&
+            running.processingMode == ProcessingMode.FOREGROUND &&
+            running.type == TaskTypeEnum.USER_INPUT_PROCESSING &&
+            running.state == TaskStateEnum.READY_FOR_GPU
+        val queueSize = if (isRunningCounted) (rawCount - 1).coerceAtLeast(0) else rawCount
+
         logger.debug {
             "GET_QUEUE_STATUS | clientId=$clientId | projectId=$projectId | " +
-                "queueSize=$queueSize | hasRunningTask=${currentRunningTask != null}"
+                "rawCount=$rawCount | queueSize=$queueSize | hasRunningTask=${running != null} | isRunningCounted=$isRunningCounted"
         }
-        return currentRunningTask to queueSize.toInt()
+        return running to queueSize.toInt()
+    }
+
+    /**
+     * Get pending FOREGROUND tasks for queue display.
+     * Returns tasks waiting to be processed, excluding the currently running task.
+     */
+    suspend fun getPendingForegroundTasks(clientId: ClientId): List<TaskDocument> {
+        val running = currentRunningTask
+        return taskRepository
+            .findByProcessingModeAndStateOrderByQueuePositionAsc(
+                ProcessingMode.FOREGROUND,
+                TaskStateEnum.READY_FOR_GPU,
+            ).toList()
+            .filter { it.clientId == clientId && it.id != running?.id }
     }
 
     suspend fun updateState(

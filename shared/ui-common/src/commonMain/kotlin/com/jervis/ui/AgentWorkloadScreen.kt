@@ -34,10 +34,11 @@ import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.model.AgentActivityEntry
+import com.jervis.ui.model.PendingQueueItem
 
 /**
  * Agent workload detail screen.
- * Shows current agent status and in-memory activity log (since app start).
+ * Shows current agent status, pending queue items, and in-memory activity log.
  */
 @Composable
 fun AgentWorkloadScreen(
@@ -50,6 +51,7 @@ fun AgentWorkloadScreen(
     val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
     val runningTaskType by viewModel.runningTaskType.collectAsState()
     val queueSize by viewModel.queueSize.collectAsState()
+    val pendingItems by viewModel.pendingQueueItems.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
 
@@ -59,45 +61,63 @@ fun AgentWorkloadScreen(
             onBack = onBack,
         )
 
-        // Current status card
-        CurrentStatusCard(
-            isRunning = isRunning,
-            runningProjectName = runningProjectName,
-            runningProjectId = runningProjectId,
-            runningTaskPreview = runningTaskPreview,
-            runningTaskType = runningTaskType,
-            queueSize = queueSize,
-        )
+        val listState = rememberLazyListState()
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // Current status card
+            item {
+                CurrentStatusCard(
+                    isRunning = isRunning,
+                    runningProjectName = runningProjectName,
+                    runningProjectId = runningProjectId,
+                    runningTaskPreview = runningTaskPreview,
+                    runningTaskType = runningTaskType,
+                    queueSize = queueSize,
+                )
+            }
 
-        HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
+            // Pending queue items section
+            if (pendingItems.isNotEmpty()) {
+                item {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
+                    Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
+                    Text(
+                        text = "Fronta (${pendingItems.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                items(pendingItems) { item ->
+                    PendingQueueItemRow(item)
+                }
+            }
 
-        Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
+            // Activity history section
+            item {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
+                Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
+                Text(
+                    text = "Historie aktivity",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
-        // Section title
-        Text(
-            text = "Historie aktivity",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-
-        Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
-
-        // Activity log
-        if (entries.isEmpty()) {
-            JEmptyState(
-                message = "Zatím žádná aktivita od spuštění",
-                icon = "📋",
-            )
-        } else {
-            val listState = rememberLazyListState()
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = JervisSpacing.outerPadding),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
+            if (entries.isEmpty()) {
+                item {
+                    JEmptyState(
+                        message = "Zatím žádná aktivita od spuštění",
+                        icon = "📋",
+                    )
+                }
+            } else {
                 // Show newest first
                 items(entries.reversed()) { entry ->
                     ActivityEntryRow(entry)
@@ -203,6 +223,42 @@ private fun CurrentStatusCard(
     }
 }
 
+/**
+ * Row displaying a single pending queue item.
+ */
+@Composable
+private fun PendingQueueItemRow(item: PendingQueueItem) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .heightIn(min = 36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Waiting indicator
+        Text(
+            text = "⏳",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.width(28.dp),
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.projectName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = item.preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ActivityEntryRow(entry: AgentActivityEntry) {
     val (icon, color) = when (entry.type) {
@@ -215,7 +271,7 @@ private fun ActivityEntryRow(entry: AgentActivityEntry) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .heightIn(min = 32.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
