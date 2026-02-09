@@ -1,6 +1,5 @@
 package com.jervis.ui.meeting
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,14 +7,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -33,13 +35,25 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
+import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.ui.audio.AudioDevice
 import com.jervis.ui.audio.SystemAudioCapability
 import com.jervis.ui.design.JervisSpacing
 
+private val meetingTypeLabels = mapOf(
+    MeetingTypeEnum.MEETING to "Schuzka",
+    MeetingTypeEnum.TASK_DISCUSSION to "Diskuse ukolu",
+    MeetingTypeEnum.STANDUP_PROJECT to "Standup projekt",
+    MeetingTypeEnum.STANDUP_TEAM to "Standup tym",
+    MeetingTypeEnum.INTERVIEW to "Pohovor",
+    MeetingTypeEnum.WORKSHOP to "Workshop",
+    MeetingTypeEnum.REVIEW to "Review",
+    MeetingTypeEnum.OTHER to "Jine",
+)
+
 /**
- * Dialog for setting up a new recording.
- * Allows selection of client, project, audio input device, and system audio toggle.
+ * Combined setup dialog for a new recording.
+ * Collects client, project, audio device, meeting type, and title — all before recording starts.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,19 +64,25 @@ fun RecordingSetupDialog(
     selectedProjectId: String?,
     audioDevices: List<AudioDevice>,
     systemAudioCapability: SystemAudioCapability,
-    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?) -> Unit,
+    onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var clientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id ?: "") }
     var projectId by remember { mutableStateOf(selectedProjectId) }
     var selectedDevice by remember { mutableStateOf(audioDevices.firstOrNull()) }
     var captureSystemAudio by remember { mutableStateOf(false) }
+    var title by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(MeetingTypeEnum.MEETING) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nova nahravka") },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 // Client selector
                 var clientExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
@@ -135,10 +155,60 @@ fun RecordingSetupDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Title input
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Nazev (volitelne)") },
+                    placeholder = { Text("Nazev nahravky...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Meeting type selector
+                Text(
+                    text = "Typ meetingu:",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Column(modifier = Modifier.selectableGroup()) {
+                    MeetingTypeEnum.entries.forEach { type ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(JervisSpacing.touchTarget)
+                                .selectable(
+                                    selected = selectedType == type,
+                                    onClick = { selectedType = type },
+                                    role = Role.RadioButton,
+                                )
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selectedType == type,
+                                onClick = null,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                meetingTypeLabels[type] ?: type.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
 
                 // Audio device selection
                 if (audioDevices.size > 1) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
                         text = "Zvukovy vstup:",
                         style = MaterialTheme.typography.labelLarge,
@@ -216,7 +286,7 @@ fun RecordingSetupDialog(
                         captureSystemAudio -> AudioInputType.MIXED
                         else -> AudioInputType.MICROPHONE
                     }
-                    onStart(clientId, projectId, inputType, selectedDevice)
+                    onStart(clientId, projectId, inputType, selectedDevice, title.ifBlank { null }, selectedType)
                 },
                 enabled = clientId.isNotBlank(),
             ) {

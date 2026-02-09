@@ -88,7 +88,6 @@ fun MeetingsScreen(
     val selectedMeeting by viewModel.selectedMeeting.collectAsState()
     val currentMeetingId by viewModel.currentMeetingId.collectAsState()
     val playingMeetingId by viewModel.playingMeetingId.collectAsState()
-    val readyToFinalize by viewModel.readyToFinalize.collectAsState()
     val isCorrecting by viewModel.isCorrecting.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -99,7 +98,6 @@ fun MeetingsScreen(
     val deletedMeetings by viewModel.deletedMeetings.collectAsState()
 
     var showSetupDialog by remember { mutableStateOf(false) }
-    var showFinalizeDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
@@ -114,13 +112,6 @@ fun MeetingsScreen(
                 viewModel.loadMeetings(clientId, filterProjectId)
             }
             viewModel.loadProjects(clientId)
-        }
-    }
-
-    // Show finalize dialog when upload succeeds
-    LaunchedEffect(readyToFinalize) {
-        if (readyToFinalize) {
-            showFinalizeDialog = true
         }
     }
 
@@ -329,7 +320,7 @@ fun MeetingsScreen(
             selectedProjectId = filterProjectId,
             audioDevices = audioRecorder.getAvailableInputDevices(),
             systemAudioCapability = audioRecorder.getSystemAudioCapabilities(),
-            onStart = { clientId, projectId, audioInputType, selectedDevice ->
+            onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType ->
                 showSetupDialog = false
                 viewModel.startRecording(
                     clientId = clientId,
@@ -340,24 +331,11 @@ fun MeetingsScreen(
                             inputDevice = selectedDevice,
                             captureSystemAudio = audioInputType == AudioInputType.MIXED,
                         ),
+                    title = title,
+                    meetingType = meetingType,
                 )
             },
             onDismiss = { showSetupDialog = false },
-        )
-    }
-
-    // Finalize dialog
-    if (showFinalizeDialog) {
-        RecordingFinalizeDialog(
-            durationSeconds = recordingDuration,
-            onFinalize = { title, meetingType ->
-                showFinalizeDialog = false
-                viewModel.finalizeRecording(title, meetingType)
-            },
-            onCancel = {
-                showFinalizeDialog = false
-                viewModel.cancelRecording()
-            },
         )
     }
 

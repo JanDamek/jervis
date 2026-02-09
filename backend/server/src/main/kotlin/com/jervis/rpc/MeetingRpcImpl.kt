@@ -65,6 +65,8 @@ class MeetingRpcImpl(
             id = meetingId,
             clientId = clientId,
             projectId = projectId,
+            title = request.title,
+            meetingType = request.meetingType,
             audioInputType = request.audioInputType,
             state = MeetingStateEnum.RECORDING,
             audioFilePath = audioFilePath.toString(),

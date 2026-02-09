@@ -89,6 +89,8 @@ data class MeetingCreateDto(
     val clientId: String,
     val projectId: String? = null,
     val audioInputType: AudioInputType = AudioInputType.MIXED,
+    val title: String? = null,
+    val meetingType: MeetingTypeEnum? = null,
 )
 
 @Serializable

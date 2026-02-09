@@ -14,6 +14,8 @@ import com.jervis.service.IProjectService
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
+import com.jervis.ui.audio.PlatformRecordingService
+import com.jervis.ui.audio.RecordingServiceBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,16 +62,13 @@ class MeetingViewModel(
     private val _playingMeetingId = MutableStateFlow<String?>(null)
     val playingMeetingId: StateFlow<String?> = _playingMeetingId.asStateFlow()
 
-    /** Set to true after audio upload succeeds, signals the UI to show finalize dialog */
-    private val _readyToFinalize = MutableStateFlow(false)
-    val readyToFinalize: StateFlow<Boolean> = _readyToFinalize.asStateFlow()
-
     private val _isCorrecting = MutableStateFlow(false)
     val isCorrecting: StateFlow<Boolean> = _isCorrecting.asStateFlow()
 
     private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
 
+    private val platformRecordingService = PlatformRecordingService()
     private var audioRecorder: AudioRecorder? = null
     private var audioPlayer: AudioPlayer? = null
     private var durationUpdateJob: Job? = null
@@ -78,6 +77,17 @@ class MeetingViewModel(
 
     private var lastClientId: String? = null
     private var lastProjectId: String? = null
+    private var pendingTitle: String? = null
+    private var pendingMeetingType: MeetingTypeEnum? = null
+
+    init {
+        // Listen for stop requests from platform controls (notification / lock screen)
+        scope.launch {
+            RecordingServiceBridge.stopRequested.collect {
+                stopRecording()
+            }
+        }
+    }
 
     fun loadMeetings(clientId: String, projectId: String? = null) {
         lastClientId = clientId
@@ -109,9 +119,13 @@ class MeetingViewModel(
         projectId: String? = null,
         audioInputType: AudioInputType = AudioInputType.MIXED,
         recordingConfig: AudioRecordingConfig = AudioRecordingConfig(),
+        title: String? = null,
+        meetingType: MeetingTypeEnum? = null,
     ) {
         lastClientId = clientId
         lastProjectId = projectId
+        pendingTitle = title
+        pendingMeetingType = meetingType
         scope.launch {
             try {
                 println("[Meeting] Starting recording for client=$clientId project=$projectId")
@@ -120,6 +134,8 @@ class MeetingViewModel(
                         clientId = clientId,
                         projectId = projectId,
                         audioInputType = audioInputType,
+                        title = title,
+                        meetingType = meetingType,
                     ),
                 )
                 _currentMeetingId.value = meeting.id
@@ -137,10 +153,10 @@ class MeetingViewModel(
 
                 audioRecorder = recorder
                 _isRecording.value = true
-                _readyToFinalize.value = false
                 chunkIndex = 0
 
                 println("[Meeting] Recording started successfully")
+                platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
                 startDurationUpdate()
             } catch (e: Exception) {
                 println("[Meeting] Error starting recording: ${e.message}")
@@ -154,6 +170,7 @@ class MeetingViewModel(
         if (!_isRecording.value) return
         _isRecording.value = false
         durationUpdateJob?.cancel()
+        platformRecordingService.stopBackgroundRecording()
 
         val recorder = audioRecorder ?: return
         audioRecorder = null // Clear immediately so second call returns at guard
@@ -172,8 +189,8 @@ class MeetingViewModel(
                 if (audioData != null && audioData.size > 44) {
                     val uploaded = uploadInChunks(meetingId, audioData)
                     if (uploaded) {
-                        println("[Meeting] Upload succeeded, ready to finalize")
-                        _readyToFinalize.value = true
+                        println("[Meeting] Upload succeeded, auto-finalizing")
+                        finalizeRecording(pendingTitle, pendingMeetingType ?: MeetingTypeEnum.MEETING)
                     } else {
                         println("[Meeting] Upload failed, cancelling meeting")
                         try { meetingService.cancelRecording(meetingId) } catch (_: Exception) {}
@@ -217,7 +234,6 @@ class MeetingViewModel(
                 )
                 _currentMeetingId.value = null
                 _recordingDuration.value = 0
-                _readyToFinalize.value = false
 
                 lastClientId?.let { loadMeetings(it, lastProjectId) }
                 println("[Meeting] Finalization complete")
@@ -234,7 +250,7 @@ class MeetingViewModel(
         durationUpdateJob?.cancel()
         _isRecording.value = false
         _recordingDuration.value = 0
-        _readyToFinalize.value = false
+        platformRecordingService.stopBackgroundRecording()
 
         audioRecorder?.release()
         audioRecorder = null
@@ -495,7 +511,9 @@ class MeetingViewModel(
     private fun startDurationUpdate() {
         durationUpdateJob = scope.launch {
             while (_isRecording.value) {
-                _recordingDuration.value = audioRecorder?.durationSeconds ?: 0
+                val dur = audioRecorder?.durationSeconds ?: 0
+                _recordingDuration.value = dur
+                platformRecordingService.updateDuration(dur)
                 delay(1000)
             }
         }
