@@ -755,6 +755,44 @@ Inline card shown in MeetingDetailView when `state == CORRECTION_REVIEW`. Displa
 
 Answers are saved as KB correction rules and the meeting resets to TRANSCRIBED for re-correction.
 
+### 5.8) Pending Tasks Screen (`PendingTasksScreen.kt`)
+
+Task queue management screen accessed from the hamburger menu ("Fronta úloh").
+Shows filterable list of pending tasks with delete capability. Uses **Pattern D** (flat list with per-row actions).
+
+```
+┌─ JTopBar ("Fronta úloh (42)", onBack, [🔄]) ─────────┐
+│                                                         │
+│ ┌─ JSection ("Filtry") ──────────────────────────────┐  │
+│ │ [Typ úlohy ▼ Vše]    [Stav ▼ Vše]                 │  │
+│ └────────────────────────────────────────────────────┘  │
+│                                                         │
+│ ┌─ Card(outlinedCardBorder) ─────────────────────────┐  │
+│ │ Zpracování emailu                            [🗑️]  │  │
+│ │ [K kvalifikaci]  [Projekt: abc12345]               │  │
+│ │ Klient: def456...                                  │  │
+│ │ Vytvořeno: 2024-01-15 10:30                        │  │
+│ │ Email content preview text here...                 │  │
+│ │ Přílohy: 2                                         │  │
+│ └────────────────────────────────────────────────────┘  │
+│                                                         │
+│ ┌─ Card(outlinedCardBorder) ─────────────────────────┐  │
+│ │ Uživatelský vstup                            [🗑️]  │  │
+│ │ [Nový]                                             │  │
+│ │ ...                                                │  │
+│ └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key components:**
+- `FilterDropdown` – reusable dropdown for task type and state filtering
+- `PendingTaskCard` – outlined card with Czech labels for task types/states via `getTaskTypeLabel()` / `getTaskStateLabel()`
+- `SuggestionChip` for state and project badges (consistent with ConnectionsSettings)
+- `SnackbarHost` in Scaffold (not raw Snackbar) for delete feedback
+- `ConfirmDialog` for delete confirmation
+
+**Data:** `PendingTaskDto` with `id`, `taskType`, `content`, `projectId?`, `clientId`, `createdAt`, `state`, `attachments`
+
 ---
 
 ## 6) Expandable / Collapsible Sections
@@ -975,6 +1013,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   ├── SchedulerScreen.kt          ← JListDetailLayout (task list + detail + create dialog)
 │   ├── UserTasksScreen.kt      ← User task list + detail (JListDetailLayout + JDetailScreen)
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
+│   ├── PendingTasksScreen.kt   ← Task queue with filters, outlined cards, Czech labels
+│   ├── UserTasksScreen.kt      ← User tasks with list-detail layout
 │   ├── ConnectionsScreen.kt
 │   └── meeting/
 │       ├── MeetingsScreen.kt       ← Meeting list + detail + recording controls
