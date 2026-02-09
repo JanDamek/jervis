@@ -71,8 +71,6 @@ fun WhisperSettings(repository: JervisRepository) {
     var conditionOnPreviousText by remember { mutableStateOf(true) }
     var noSpeechThreshold by remember { mutableStateOf(0.6f) }
     var maxParallelJobs by remember { mutableStateOf(3f) }
-    var timeoutMultiplier by remember { mutableStateOf(3f) }
-    var minTimeoutSeconds by remember { mutableStateOf(600f) }
 
     fun applyFromDto(dto: WhisperSettingsDto) {
         model = dto.model
@@ -85,8 +83,6 @@ fun WhisperSettings(repository: JervisRepository) {
         conditionOnPreviousText = dto.conditionOnPreviousText
         noSpeechThreshold = dto.noSpeechThreshold.toFloat()
         maxParallelJobs = dto.maxParallelJobs.toFloat()
-        timeoutMultiplier = dto.timeoutMultiplier.toFloat()
-        minTimeoutSeconds = dto.minTimeoutSeconds.toFloat()
     }
 
     LaunchedEffect(Unit) {
@@ -119,8 +115,6 @@ fun WhisperSettings(repository: JervisRepository) {
                         conditionOnPreviousText = conditionOnPreviousText,
                         noSpeechThreshold = noSpeechThreshold.toDouble(),
                         maxParallelJobs = maxParallelJobs.roundToInt(),
-                        timeoutMultiplier = timeoutMultiplier.roundToInt(),
-                        minTimeoutSeconds = minTimeoutSeconds.roundToInt(),
                     ),
                 )
                 settings = updated
@@ -240,7 +234,7 @@ fun WhisperSettings(repository: JervisRepository) {
                 }
 
                 // === Performance Section ===
-                JSection(title = "Výkon a limity") {
+                JSection(title = "Výkon") {
                     SliderSetting(
                         label = "Max paralelních jobů",
                         value = maxParallelJobs,
@@ -249,26 +243,6 @@ fun WhisperSettings(repository: JervisRepository) {
                         steps = 8,
                         valueLabel = { "${it.roundToInt()}" },
                         description = "Kolik nahrávek se přepisuje současně",
-                    )
-                    Spacer(Modifier.height(JervisSpacing.itemGap))
-                    SliderSetting(
-                        label = "Násobitel timeoutu",
-                        value = timeoutMultiplier,
-                        onValueChange = { timeoutMultiplier = it },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                        valueLabel = { "${it.roundToInt()}×" },
-                        description = "Timeout = délka audia × násobitel (min. ${minTimeoutSeconds.roundToInt()}s)",
-                    )
-                    Spacer(Modifier.height(JervisSpacing.itemGap))
-                    SliderSetting(
-                        label = "Minimální timeout",
-                        value = minTimeoutSeconds,
-                        onValueChange = { minTimeoutSeconds = it },
-                        valueRange = 60f..3600f,
-                        steps = 58,
-                        valueLabel = { "${it.roundToInt()}s (${it.roundToInt() / 60} min)" },
-                        description = "Minimální doba čekání na dokončení přepisu",
                     )
                 }
 
