@@ -44,7 +44,7 @@ class CorrectionAgent:
     def __init__(self):
         self.kb_url = f"{settings.knowledgebase_url}/api/v1"
         self.ollama_url = settings.ollama_url
-        self.model = settings.default_correction_model  # qwen3-tool-4k:30b (reasoning, num_ctx overridden dynamically)
+        self.model = settings.default_correction_model  # qwen3-tool:30b (reasoning, num_ctx overridden dynamically)
 
     async def submit_correction(
         self,
@@ -364,8 +364,9 @@ class CorrectionAgent:
         # Estimate input tokens (~1 token per 2.5 chars for Czech)
         input_chars = len(system_prompt) + len(user_prompt)
         input_tokens_est = int(input_chars / 2.5)
-        # Total need = input + think (3x output) + output; output ≈ 0.5x input
-        num_ctx = max(4096, input_tokens_est * 4)
+        # Reasoning model needs: input + <think> reasoning (10-15k) + JSON output (~2k)
+        # Use 8x input as baseline to leave enough room for verbose reasoning
+        num_ctx = max(8192, input_tokens_est * 8)
         # Round up to nearest 4k, cap at 48k (GPU VRAM limit)
         num_ctx = min(((num_ctx + 4095) // 4096) * 4096, 49152)
 
@@ -377,14 +378,14 @@ class CorrectionAgent:
             ],
             "stream": False,
             "options": {
-                "num_predict": 16384,
+                "num_predict": 32768,
                 "num_ctx": num_ctx,
                 "temperature": 0.3,
             },
         }
         logger.info("Calling Ollama %s (num_ctx=%d, input≈%d tokens)", self.model, num_ctx, input_tokens_est)
 
-        async with httpx.AsyncClient(timeout=600.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             response = await client.post(
                 f"{self.ollama_url}/api/chat",
                 json=payload,
@@ -535,8 +536,10 @@ class CorrectionAgent:
         """Parse LLM response — either simple array or object with questions."""
         text = content.strip()
 
-        # Remove /think tags if present (some models add these)
+        # Remove <think> tags if present (some models add these)
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        # Handle unclosed <think> (truncated output) — strip from <think> to end
+        text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
 
         # Handle markdown code blocks
         match = re.search(
@@ -613,6 +616,7 @@ class CorrectionAgent:
         """Parse response from instruction-based correction."""
         text = content.strip()
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
 
         match = re.search(
             r"```(?:json)?\s*\n?(\{.*?\}|\[.*?\])\s*\n?```", text, re.DOTALL,

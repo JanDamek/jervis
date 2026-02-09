@@ -305,6 +305,7 @@ class JobRunner:
                             client.V1Container(
                                 name="agent",
                                 image=image,
+                                image_pull_policy="Always",
                                 command=["/opt/jervis/entrypoint-job.sh"],
                                 env=env_vars,
                                 resources=client.V1ResourceRequirements(

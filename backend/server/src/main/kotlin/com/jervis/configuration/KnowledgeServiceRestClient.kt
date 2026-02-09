@@ -57,9 +57,9 @@ class KnowledgeServiceRestClient(
             )
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 600_000   // 10 minutes - ingestFull uses LLM for each attachment
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis = 600_000
+            requestTimeoutMillis = Long.MAX_VALUE
+            connectTimeoutMillis = 30_000   // 30s connect timeout only
+            socketTimeoutMillis = Long.MAX_VALUE
         }
     }
 
