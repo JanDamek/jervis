@@ -44,7 +44,7 @@ class CorrectionAgent:
     def __init__(self):
         self.kb_url = f"{settings.knowledgebase_url}/api/v1"
         self.ollama_url = settings.ollama_url
-        self.model = settings.default_correction_model  # qwen3-tools (reasoning)
+        self.model = settings.default_correction_model  # qwen3-tool-16k:30b (reasoning)
 
     async def submit_correction(
         self,
