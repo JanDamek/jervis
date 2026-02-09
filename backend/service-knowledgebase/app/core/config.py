@@ -12,8 +12,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
 
     # -- Ollama endpoints -------------------------------------------------------
-    # GPU instance – used only by services that need the main 30B model.
-    # The KB service does NOT use this directly for ingest (uses INGEST URL instead).
+    # GPU instance – reserved for orchestrator (30B coding model).
+    # KB uses this ONLY for VLM (image_service.py) – all other KB tasks use CPU URLs below.
     OLLAMA_BASE_URL: str = "http://192.168.100.117:11434"
     # CPU instance – embedding + ingest LLM merged on single port.
     # Runs OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3.
