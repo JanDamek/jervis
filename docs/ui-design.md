@@ -576,7 +576,71 @@ Shows live agent status card, two separate pending queues (Frontend/Backend), an
 
 **Queue status emissions**: Backend emits queue status updates that include both FOREGROUND and BACKGROUND items with their taskId, enabling the UI to display and manage both queues independently.
 
-### 5.6) Meetings Screen (`MeetingsScreen.kt`)
+### 5.6) User Tasks Screen (`UserTasksScreen.kt`)
+
+Full-screen view accessed from hamburger menu ("Uživatelské úlohy"). Shows escalated tasks that require user attention (failed background tasks, approval requests). Uses `JListDetailLayout` + `JDetailScreen` pattern.
+
+**List view:**
+```
+┌─ JTopBar ("Uživatelské úlohy", onBack, [🔄]) ─────────┐
+│                                                          │
+│ [OutlinedTextField: Filtr]                              │
+│                                                          │
+│ ┌─ Card (outlinedBorder) ────────────────────────────┐  │
+│ │ Task title                            [🗑] [>]     │  │
+│ │ ⬤ USER_TASK  projectId                             │  │
+│ └────────────────────────────────────────────────────┘  │
+│ ┌─ Card (outlinedBorder) ────────────────────────────┐  │
+│ │ Another task                          [🗑] [>]     │  │
+│ │ ⬤ USER_TASK  projectId                             │  │
+│ └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Detail view (replaces list via JListDetailLayout):**
+```
+┌─ JDetailScreen ("Task title", onBack) ───────────────────┐
+│                                                           │
+│ ┌─ JSection: Základní údaje ───────────────────────────┐ │
+│ │ Stav: USER_TASK                                      │ │
+│ │ Projekt: projectId                                   │ │
+│ │ Klient: clientId                                     │ │
+│ └──────────────────────────────────────────────────────┘ │
+│ ┌─ JSection: Odkaz na zdroj ───────────────────────────┐ │
+│ │                                     [Kopírovat]      │ │
+│ │ https://source-uri...                                │ │
+│ └──────────────────────────────────────────────────────┘ │
+│ ┌─ JSection: Popis ───────────────────────────────────┐  │
+│ │                                     [Kopírovat]      │ │
+│ │ Task description text...                             │ │
+│ └──────────────────────────────────────────────────────┘ │
+│ ┌─ JSection: Dodatečné instrukce ─────────────────────┐  │
+│ │ [OutlinedTextField: placeholder]                     │ │
+│ └──────────────────────────────────────────────────────┘ │
+│                                                           │
+│ ┌─ JActionBar ────────────────────────────────────────┐  │
+│ │                    [Do fronty] [Agentovi]           │  │
+│ └────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Routing modes:**
+- "Do fronty" (`BACK_TO_PENDING`) – returns task to BACKGROUND processing queue
+- "Agentovi" (`DIRECT_TO_AGENT`) – sends task directly to FOREGROUND agent processing
+
+**Key components:**
+- `UserTasksScreen` – `JListDetailLayout` with filter, list cards, detail view
+- `UserTaskRow` – `Card(outlinedCardBorder)` with title, state badge, projectId, delete button, chevron
+- `UserTaskDetail` – `JDetailScreen` with `JSection` blocks, additional instructions input, routing buttons
+- `TaskDetailField` – Label/value pair with primary-colored label
+
+**Data flow:**
+- Loads tasks from all clients via `repository.userTasks.listActive(clientId)`
+- Sorted by creation date (oldest first)
+- Client-side filter by title, description, projectId
+- Delete via `repository.userTasks.cancel(taskId)` with `ConfirmDialog`
+
+### 5.7) Meetings Screen (`MeetingsScreen.kt`)
 
 Recording management screen accessed from the hamburger menu ("Meetingy").
 Lists meeting recordings with state indicators, supports starting new recordings and viewing transcripts.
@@ -642,7 +706,7 @@ private fun TranscriptContent(
 - Desktop: Java Sound API (TargetDataLine)
 - iOS: Stub (AVAudioEngine TODO)
 
-### 5.7) Corrections Screen (`CorrectionsScreen.kt`)
+### 5.8) Corrections Screen (`CorrectionsScreen.kt`)
 
 Sub-view of MeetingDetailView for managing KB-stored transcript correction rules.
 Accessible via the book icon in MeetingDetailView action bar.
@@ -671,7 +735,7 @@ Accessible via the book icon in MeetingDetailView action bar.
 
 **Correction categories**: person_name, company_name, department, terminology, abbreviation, general
 
-### 5.7.1) Correction Questions Card
+### 5.8.1) Correction Questions Card
 
 Inline card shown in MeetingDetailView when `state == CORRECTION_REVIEW`. Displays questions from the correction agent when it's uncertain about proper nouns or terminology.
 
@@ -908,6 +972,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       ├── WhisperSettings.kt    ← Whisper transcription config (model, quality, concurrency)
 │   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
 │   ├── MainScreen.kt
+│   ├── UserTasksScreen.kt      ← User task list + detail (JListDetailLayout + JDetailScreen)
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
 │   ├── ConnectionsScreen.kt
 │   └── meeting/
