@@ -440,6 +440,10 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │    → LazyColumn + expandable Cards + JDetailScreen for edit         │
 │    Example: ClientsSettings.kt                                     │
 │                                                                     │
+│  Entity list with detail view (tasks, projects)?                     │
+│    → JListDetailLayout + JDetailScreen for detail                    │
+│    Example: UserTasksScreen.kt, ProjectGroupsSettings.kt            │
+│                                                                     │
 │  Flat list with per-row actions (connections)?                       │
 │    → LazyColumn + Card(outlinedCardBorder) + JActionBar at top      │
 │    Example: ConnectionsSettings.kt                                  │
