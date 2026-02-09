@@ -1,7 +1,6 @@
 package com.jervis.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,9 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -22,7 +20,9 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +52,7 @@ fun PendingTasksScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingDeleteTaskId by remember { mutableStateOf<String?>(null) }
-    var infoMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     var selectedTaskType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -77,10 +77,10 @@ fun PendingTasksScreen(
         scope.launch {
             try {
                 repository.pendingTasks.deletePendingTask(taskId)
-                infoMessage = "Úloha byla úspěšně smazána"
+                snackbarHostState.showSnackbar("Úloha byla úspěšně smazána")
                 load()
             } catch (t: Throwable) {
-                infoMessage = "Smazání úlohy selhalo: ${t.message}"
+                snackbarHostState.showSnackbar("Smazání úlohy selhalo: ${t.message}")
             }
         }
     }
@@ -98,126 +98,178 @@ fun PendingTasksScreen(
                 },
             )
         },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(16.dp),
+            )
+        },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(JervisSpacing.outerPadding),
+        ) {
+            // Filters section
             JSection(title = "Filtry") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
                 ) {
                     FilterDropdown(
                         label = "Typ úlohy",
                         items = taskTypes,
                         selectedItem = selectedTaskType,
                         onItemSelected = { selectedTaskType = it },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     FilterDropdown(
                         label = "Stav",
                         items = taskStates,
                         selectedItem = selectedState,
                         onItemSelected = { selectedState = it },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                when {
-                    isLoading -> {
-                        JCenteredLoading()
-                    }
+            // Task list
+            when {
+                isLoading && tasks.isEmpty() -> {
+                    JCenteredLoading()
+                }
 
-                    error != null -> {
-                        JErrorState(
-                            message = "Chyba při načítání: $error",
-                            onRetry = { load() },
-                        )
-                    }
+                error != null -> {
+                    JErrorState(
+                        message = "Chyba při načítání: $error",
+                        onRetry = { load() },
+                    )
+                }
 
-                    tasks.isEmpty() -> {
-                        JEmptyState(message = "Žádné čekající úlohy")
-                    }
+                tasks.isEmpty() -> {
+                    JEmptyState(message = "Žádné čekající úlohy", icon = "📋")
+                }
 
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(tasks) { task ->
-                                JTableRowCard(selected = false) {
-                                    Column(modifier = Modifier.fillMaxWidth().padding(4.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(task.taskType, style = MaterialTheme.typography.titleMedium)
-                                            DeleteIconButton(
-                                                onClick = { pendingDeleteTaskId = task.id },
-                                            )
-                                        }
-                                        Spacer(Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            Badge { Text(task.state) }
-                                            task.projectId?.let {
-                                                AssistChip(onClick = {}, label = { Text("Projekt: ${it.take(8)}") })
-                                            }
-                                        }
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            "Klient: ${task.clientId.take(8)}...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        Text(
-                                            "Vytvořeno: ${task.createdAt}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(
-                                            task.content.take(200) + if (task.content.length > 200) "..." else "",
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                    }
-                                }
-                            }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                    ) {
+                        items(tasks) { task ->
+                            PendingTaskCard(
+                                task = task,
+                                onDelete = { pendingDeleteTaskId = task.id },
+                            )
                         }
                     }
                 }
             }
         }
+    }
 
-        // Delete confirmation dialog
-        ConfirmDialog(
-            visible = pendingDeleteTaskId != null,
-            title = "Smazat úlohu z fronty",
-            message = "Opravdu chcete smazat tuto úlohu z fronty? Tuto akci nelze vrátit.",
-            confirmText = "Smazat",
-            onConfirm = {
-                val id = pendingDeleteTaskId ?: return@ConfirmDialog
-                pendingDeleteTaskId = null
-                deleteTask(id)
-            },
-            onDismiss = { pendingDeleteTaskId = null },
-        )
+    // Delete confirmation dialog
+    ConfirmDialog(
+        visible = pendingDeleteTaskId != null,
+        title = "Smazat úlohu z fronty",
+        message = "Opravdu chcete smazat tuto úlohu z fronty? Tuto akci nelze vrátit.",
+        confirmText = "Smazat",
+        onConfirm = {
+            val id = pendingDeleteTaskId ?: return@ConfirmDialog
+            pendingDeleteTaskId = null
+            deleteTask(id)
+        },
+        onDismiss = { pendingDeleteTaskId = null },
+    )
+}
 
-        // Info message snackbar
-        infoMessage?.let {
-            LaunchedEffect(it) {
-                kotlinx.coroutines.delay(3000)
-                infoMessage = null
-            }
-            Snackbar(
-                modifier = Modifier.padding(16.dp),
+@Composable
+private fun PendingTaskCard(
+    task: PendingTaskDto,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = CardDefaults.outlinedCardBorder(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header: task type + delete button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(it)
+                Text(
+                    text = getTaskTypeLabel(task.taskType),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                DeleteIconButton(onClick = onDelete)
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // State chip + project chip
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SuggestionChip(
+                    onClick = {},
+                    label = {
+                        Text(
+                            getTaskStateLabel(task.state),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
+                task.projectId?.let {
+                    SuggestionChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                "Projekt: ${it.take(8)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Client and creation time
+            Text(
+                text = "Klient: ${task.clientId.take(8)}...",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Vytvořeno: ${task.createdAt}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // Content preview
+            if (task.content.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = task.content.take(200) + if (task.content.length > 200) "..." else "",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            // Attachments count
+            if (task.attachments.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Přílohy: ${task.attachments.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -225,19 +277,19 @@ fun PendingTasksScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilterDropdown(
+private fun FilterDropdown(
     label: String,
     items: List<String>,
     selectedItem: String?,
     onItemSelected: (String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded },
-        modifier = modifier
+        modifier = modifier,
     ) {
         OutlinedTextField(
             value = selectedItem ?: "Vše",
@@ -269,4 +321,29 @@ fun FilterDropdown(
             }
         }
     }
+}
+
+private fun getTaskTypeLabel(taskType: String): String = when (taskType) {
+    "EMAIL_PROCESSING" -> "Zpracování emailu"
+    "BUGTRACKER_PROCESSING" -> "Zpracování bug trackeru"
+    "LINK_PROCESSING" -> "Zpracování odkazu"
+    "WIKI_PROCESSING" -> "Zpracování wiki"
+    "GIT_PROCESSING" -> "Zpracování gitu"
+    "MEETING_PROCESSING" -> "Zpracování schůzky"
+    "USER_INPUT_PROCESSING" -> "Uživatelský vstup"
+    "USER_TASK" -> "Uživatelská úloha"
+    "SCHEDULED_TASK" -> "Plánovaná úloha"
+    else -> taskType
+}
+
+private fun getTaskStateLabel(state: String): String = when (state) {
+    "NEW" -> "Nový"
+    "READY_FOR_QUALIFICATION" -> "K kvalifikaci"
+    "QUALIFYING" -> "Kvalifikace"
+    "READY_FOR_GPU" -> "Připraven pro GPU"
+    "DISPATCHED_GPU" -> "Odeslán na GPU"
+    "PYTHON_ORCHESTRATING" -> "Orchestrace"
+    "USER_TASK" -> "Uživatelská úloha"
+    "ERROR" -> "Chyba"
+    else -> state
 }
