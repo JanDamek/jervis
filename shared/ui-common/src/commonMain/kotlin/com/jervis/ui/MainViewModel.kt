@@ -11,6 +11,7 @@ import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.model.AgentActivityEntry
 import com.jervis.ui.model.AgentActivityLog
+import com.jervis.ui.model.PendingQueueItem
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
@@ -128,6 +129,10 @@ class MainViewModel(
 
     private val _runningTaskType = MutableStateFlow<String?>(null)
     val runningTaskType: StateFlow<String?> = _runningTaskType.asStateFlow()
+
+    // Pending queue items (tasks waiting to be processed)
+    private val _pendingQueueItems = MutableStateFlow<List<PendingQueueItem>>(emptyList())
+    val pendingQueueItems: StateFlow<List<PendingQueueItem>> = _pendingQueueItems.asStateFlow()
 
     // In-memory agent activity log (since app start, max 200 entries, no persistence)
     val activityLog = AgentActivityLog()
@@ -399,6 +404,20 @@ class MainViewModel(
                             _runningProjectName.value = newProjectName
                             _runningTaskPreview.value = newTaskPreview
                             _runningTaskType.value = newTaskType
+
+                            // Parse pending queue items from metadata
+                            val pendingCount = response.metadata["pendingItemCount"]?.toIntOrNull() ?: 0
+                            val items = (0 until pendingCount).mapNotNull { i ->
+                                val preview = response.metadata["pendingItem_${i}_preview"]
+                                val project = response.metadata["pendingItem_${i}_project"]
+                                if (preview != null) {
+                                    PendingQueueItem(
+                                        preview = preview,
+                                        projectName = project ?: "General",
+                                    )
+                                } else null
+                            }
+                            _pendingQueueItems.value = items
                         }
                     }
             }

@@ -517,30 +517,40 @@ Column(modifier = Modifier.fillMaxSize()) {
 ### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`)
 
 Full-screen view accessed by clicking the `AgentStatusRow` on the main screen.
-Shows live agent status card + in-memory activity log (max 200 entries, since restart, no persistence).
+Shows live agent status card, pending queue items, and in-memory activity log (max 200 entries, since restart, no persistence).
 
 ```
 ┌─ JTopBar ("Aktivita agenta", onBack) ─────────────────┐
 │                                                         │
 │ ┌─ CurrentStatusCard ─────────────────────────────────┐ │
 │ │ [spinner/dot]  Zpracovává se / Agent je nečinný     │ │
-│ │                Chat | ProjectName                    │ │
+│ │                Asistent | ProjectName                │ │
 │ │                task preview text...        Fronta: 1 │ │
 │ └─────────────────────────────────────────────────────┘ │
 │                                                         │
+│ Fronta (2)                                              │
+│ ┌─ Pending queue items ────────────────────────────────┐│
+│ │ ⏳  ProjectX                                         ││
+│ │     co jsem kupoval v alze?                          ││
+│ │ ⏳  ProjectY                                         ││
+│ │     připrav report za leden...                       ││
+│ └──────────────────────────────────────────────────────┘│
+│                                                         │
 │ Historie aktivity                                       │
 │ ┌─ LazyColumn (newest first) ────────────────────────┐  │
-│ │ 14:23:05  ▶  Chat  ProjectX   Zpracování úlohy    │  │
+│ │ 14:23:05  ▶  Asistent  ProjectX  Zpracování úlohy │  │
 │ │ 14:22:58  ✓  Wiki  ProjectY   Úloha dokončena     │  │
 │ │ 14:20:11  ▶  Wiki  ProjectY   Wiki indexing...     │  │
 │ └────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Data model** (`com.jervis.ui.model.AgentActivityEntry`):
-- `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED)
-- `description`, `projectName?`, `taskType?`, `clientId?`
+**Data models** (`com.jervis.ui.model.AgentActivityEntry`):
+- `AgentActivityEntry`: `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED), `description`, `projectName?`, `taskType?`, `clientId?`
+- `PendingQueueItem`: `preview` (task content first 60 chars), `projectName`
 - Stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
+
+**Queue size**: Backend counts only FOREGROUND tasks in READY_FOR_GPU state, excluding the currently running task. Pending items include content preview and project name for UI display.
 
 ### 5.6) Meetings Screen (`MeetingsScreen.kt`)
 

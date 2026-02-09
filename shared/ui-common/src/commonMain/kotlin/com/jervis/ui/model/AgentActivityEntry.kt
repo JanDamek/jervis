@@ -35,6 +35,15 @@ data class AgentActivityEntry(
 }
 
 /**
+ * Represents a pending item in the agent processing queue.
+ * Displayed in the AgentWorkloadScreen to show what's waiting.
+ */
+data class PendingQueueItem(
+    val preview: String,
+    val projectName: String,
+)
+
+/**
  * In-memory ring-buffer style activity log. Keeps last [maxSize] entries.
  * Thread-safe via synchronized access from coroutine dispatcher.
  */
