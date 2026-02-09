@@ -71,6 +71,36 @@ sealed class JervisEvent {
         val chunksDone: Int,
         val totalChunks: Int,
         val message: String? = null,
+        val tokensGenerated: Int = 0,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    @Serializable
+    data class OrchestratorTaskProgress(
+        val taskId: String,
+        val clientId: String,
+        val node: String,
+        val message: String,
+        val percent: Double = 0.0,
+        val goalIndex: Int = 0,
+        val totalGoals: Int = 0,
+        val stepIndex: Int = 0,
+        val totalSteps: Int = 0,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    @Serializable
+    data class OrchestratorTaskStatusChange(
+        val taskId: String,
+        val clientId: String = "",
+        val threadId: String,
+        val status: String,
+        val summary: String? = null,
+        val error: String? = null,
+        val interruptAction: String? = null,
+        val interruptDescription: String? = null,
+        val branch: String? = null,
+        val artifacts: List<String> = emptyList(),
         override val timestamp: String,
     ) : JervisEvent()
 }

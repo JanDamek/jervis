@@ -163,7 +163,7 @@ collection, singleton document) and configurable via UI (**Settings → Whisper*
 | Beam size | 5 | 1-10, higher = more accurate but slower |
 | VAD filter | true | Silero VAD skips silence — significant speedup |
 | Word timestamps | false | Per-word timing in segments |
-| Initial prompt | null | Vocabulary hints (names, abbreviations) |
+| Initial prompt | auto | Auto-populated from KB correction rules (per client/project) |
 | Condition on previous | true | Use previous segment as context |
 | No-speech threshold | 0.6 | Skip segments above this silence probability |
 | Max parallel jobs | 3 | Concurrent K8s Whisper Jobs (Semaphore) |
@@ -226,13 +226,22 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 2. `TranscriptCorrectionService.correct()` sets state to CORRECTING
 3. Delegates to Python orchestrator via `PythonOrchestratorClient.correctTranscript()`
 4. Python `CorrectionAgent` loads per-client/project correction rules from KB (Weaviate)
-5. Transcript segments chunked (40/chunk) and sent to Ollama GPU (`qwen3-tools` reasoning model, configurable via `DEFAULT_CORRECTION_MODEL`)
-6. System prompt: meaning-first approach — read full context, phonetic reasoning for garbled Czech, apply correction rules
-7. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
-8. If questions exist: state → CORRECTION_REVIEW (best-effort corrections + questions stored)
-9. If no questions: state → CORRECTED
-10. User answers questions in UI → answers saved as KB correction rules → state reset to TRANSCRIBED → re-run
-11. Downstream indexing picks up CORRECTED meetings for KB ingestion
+5. Transcript segments chunked (20/chunk) and sent to Ollama GPU (`qwen3-coder-tool:30b`, configurable via `DEFAULT_CORRECTION_MODEL`)
+6. **Streaming + heartbeat**: Ollama called with `stream: True`, responses processed as NDJSON lines. Liveness determined by token arrival — if no token arrives for 5 min (`HEARTBEAT_DEAD_SECONDS=300`), `HeartbeatTimeoutError` is raised
+7. **Intra-chunk progress**: Every ~10s during streaming, progress is emitted to Kotlin server with token count, enabling smooth UI progress within each chunk
+8. System prompt: meaning-first approach — read full context, phonetic reasoning for garbled Czech, apply correction rules
+9. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
+10. If questions exist: state → CORRECTION_REVIEW (best-effort corrections + questions stored)
+11. If no questions: state → CORRECTED
+12. User answers questions in UI → answers saved as KB correction rules → state reset to TRANSCRIBED → re-run
+13. Downstream indexing picks up CORRECTED meetings for KB ingestion
+
+### Liveness & Recovery
+
+- **Heartbeat tracking**: `CorrectionHeartbeatTracker` (in-memory `ConcurrentHashMap`) stores last progress timestamp per meeting. Updated on every `/internal/correction-progress` callback from Python
+- **Stuck detection (Pipeline 5)**: CORRECTING meetings with no heartbeat for 10 min are reset to TRANSCRIBED (auto-retry), not FAILED
+- **Connection-error recovery**: If `TranscriptCorrectionService.correct()` fails with `ConnectException` or `IOException` (Connection refused/reset), the meeting is reset to TRANSCRIBED for automatic retry instead of being marked as FAILED
+- **No hard timeouts**: All LLM operations use streaming with heartbeat-based liveness detection — never a fixed timeout
 
 ### Correction Rules Management
 
@@ -253,6 +262,7 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 | `shared/common-dto/.../dto/meeting/MeetingDtos.kt` | `MeetingStateEnum` (incl. CORRECTION_REVIEW), `CorrectionQuestionDto`, `CorrectionAnswerDto` |
 | `shared/ui-common/.../meeting/CorrectionsScreen.kt` | Corrections management UI |
 | `shared/ui-common/.../meeting/CorrectionViewModel.kt` | Corrections UI state management |
+| `backend/server/.../service/meeting/CorrectionHeartbeatTracker.kt` | In-memory heartbeat tracking for correction liveness |
 
 ---
 
@@ -444,7 +454,7 @@ with the Kotlin server via REST.
 **Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
 to do and WHEN; agents just execute.
 
-### Architecture
+### Architecture (Push-Based Communication)
 
 ```
 Kotlin Server (BackgroundEngine)
@@ -453,14 +463,30 @@ Kotlin Server (BackgroundEngine)
     │   (fire-and-forget,               │
     │    returns thread_id)              ├── decompose → plan → execute → evaluate
     │                                    │   (K8s Jobs for coding agents)
-    ├── GET /status/{thread_id} ◄──────│
-    │   (polling every 5s)               │
+    │                                    │
+    │   ◄── POST /internal/             │   Python pushes progress on each node:
+    │       orchestrator-progress ──────│   - node name, message, goal/step indices
+    │   (real-time node progress)        │   - heartbeat for liveness detection
+    │                                    │
+    │   ◄── POST /internal/             │   Python pushes status on completion:
+    │       orchestrator-status ────────│   - done/error/interrupted + details
+    │   (completion/error/interrupt)      │
     │                                    └── interrupt() for commit/push approval
     ├── POST /approve/{thread_id} ──► resume from checkpoint
     │   (after USER_TASK response)
     │
+    ├── GET /status/{thread_id} ◄─── safety-net polling (60s, NOT primary)
+    │
+    ├── OrchestratorHeartbeatTracker    (in-memory liveness detection)
+    ├── OrchestratorStatusHandler       (task state transitions)
     └── TaskDocument (MongoDB) = SSOT for lifecycle state
 ```
+
+**Communication model**: Push-based (Python → Kotlin) with 60s safety-net polling.
+- **Primary**: Python pushes `orchestrator-progress` on each node transition and `orchestrator-status` on completion
+- **Safety net**: BackgroundEngine polls every 60s to catch missed callbacks (network failure, process restart)
+- **Heartbeat**: OrchestratorHeartbeatTracker tracks last progress timestamp; 10 min without heartbeat = dead
+- **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
 
 ### State Persistence
 
@@ -481,11 +507,12 @@ READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
 
 1. LangGraph hits `interrupt()` at `git_operations` node (commit/push approval)
 2. Checkpoint saved to MongoDB automatically
-3. `BackgroundEngine.runOrchestratorResultLoop()` detects "interrupted" status
-4. `UserTaskService.failAndEscalateToUserTask()` creates USER_TASK with notification
-5. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = READY_FOR_GPU
-6. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
-7. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
+3. Python pushes `orchestrator-status` with `status=interrupted` to Kotlin
+4. `OrchestratorStatusHandler` creates USER_TASK with notification
+5. UI receives `OrchestratorTaskStatusChange` event via Flow subscription
+6. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = READY_FOR_GPU
+7. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
+8. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
 
 ### Concurrency Control
 
@@ -506,8 +533,12 @@ Two layers:
 | `backend/service-orchestrator/app/graph/nodes.py` | Node functions: decompose, plan, execute, evaluate, git_ops |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
-| `backend/server/.../BackgroundEngine.kt` | Result polling loop, USER_TASK escalation |
+| `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), heartbeat-based stuck detection |
+| `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |
+| `backend/server/.../OrchestratorHeartbeatTracker.kt` | In-memory liveness detection for orchestrator tasks |
 | `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |
+| `backend/service-orchestrator/app/tools/kotlin_client.py` | Push client: progress + status callbacks to Kotlin |
+| `backend/service-orchestrator/app/llm/provider.py` | LLM provider with streaming + heartbeat liveness |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
 
 ---
@@ -707,16 +738,28 @@ Hybrid push/local notification architecture for real-time user alerts.
 | **Error** | `ErrorNotification` | NORMAL | Informational |
 | **Meeting State** | `MeetingStateChanged` | NORMAL | UI updates meeting list/detail in real-time |
 | **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % |
+| **Orchestrator Progress** | `OrchestratorTaskProgress` | NORMAL | UI shows node/goal/step progress |
+| **Orchestrator Status** | `OrchestratorTaskStatusChange` | NORMAL | UI shows done/error/interrupted |
 
 ### Event Flow
 
 ```
-Python Orchestrator interrupt
-  → BackgroundEngine.checkOrchestratorTaskStatus()
-    → UserTaskService.failAndEscalateToUserTask(interruptAction, isApproval)
-      → NotificationRpcImpl.emitUserTaskCreated() [kRPC stream]
-      → FcmPushService.sendPushNotification() [FCM data message]
-        → Mobile receives push even if app killed
+Python Orchestrator → node transition
+  → POST /internal/orchestrator-progress
+    → KtorRpcServer → OrchestratorHeartbeatTracker.updateHeartbeat()
+    → NotificationRpcImpl.emitOrchestratorTaskProgress() [kRPC stream]
+    → MainViewModel.handleGlobalEvent() → OrchestratorProgressInfo state
+
+Python Orchestrator → completion/error/interrupt
+  → POST /internal/orchestrator-status
+    → KtorRpcServer → OrchestratorStatusHandler.handleStatusChange()
+    → NotificationRpcImpl.emitOrchestratorTaskStatusChange() [kRPC stream]
+    → MainViewModel.handleGlobalEvent() → clear progress / show approval
+
+Python Orchestrator → interrupt (approval required)
+  → OrchestratorStatusHandler → UserTaskService.failAndEscalateToUserTask()
+    → NotificationRpcImpl.emitUserTaskCreated() [kRPC stream]
+    → FcmPushService.sendPushNotification() [FCM data message]
   → MainViewModel.handleGlobalEvent()
     → PlatformNotificationManager.showNotification()
     → ApprovalNotificationDialog (if isApproval)

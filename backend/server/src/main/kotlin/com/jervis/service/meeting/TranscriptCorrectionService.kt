@@ -13,6 +13,8 @@ import com.jervis.repository.MeetingRepository
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
+import java.io.IOException
+import java.net.ConnectException
 
 private val logger = KotlinLogging.logger {}
 
@@ -133,6 +135,20 @@ class TranscriptCorrectionService(
             }
             return corrected
         } catch (e: Exception) {
+            // Connection errors → reset to TRANSCRIBED for auto-retry (orchestrator may be restarting)
+            if (isConnectionError(e)) {
+                logger.warn(e) { "Connection error during correction for meeting ${meeting.id}, resetting to TRANSCRIBED for retry" }
+                val retryable = meetingRepository.save(
+                    correcting.copy(
+                        state = MeetingStateEnum.TRANSCRIBED,
+                        stateChangedAt = java.time.Instant.now(),
+                        errorMessage = null,
+                    ),
+                )
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title)
+                return retryable
+            }
+
             logger.error(e) { "Correction failed for meeting ${meeting.id}" }
             val failed = meetingRepository.save(
                 correcting.copy(
@@ -196,5 +212,13 @@ class TranscriptCorrectionService(
 
         logger.info { "Answered ${answers.size} questions for meeting $meetingId, reset to TRANSCRIBED" }
         return true
+    }
+
+    private fun isConnectionError(e: Exception): Boolean {
+        val cause = e.cause ?: e
+        return cause is ConnectException ||
+            (cause is IOException && cause.message?.let {
+                "Connection refused" in it || "Connection reset" in it
+            } == true)
     }
 }

@@ -279,7 +279,10 @@ async def run_orchestration_streaming(
 ) -> AsyncIterator[dict]:
     """Execute orchestration with streaming node events.
 
-    Yields SSE-compatible events for each node execution.
+    Yields enriched events for each node execution including
+    goal/step tracking for progress calculation. Events include
+    task_id, client_id, and current goal/step indices so the caller
+    can push progress to Kotlin server.
     """
     graph = get_orchestrator_graph()
     initial_state = _build_initial_state(request)
@@ -287,30 +290,55 @@ async def run_orchestration_streaming(
 
     logger.info("Starting streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
 
+    # Track state for progress info
+    tracked = {
+        "total_goals": 0,
+        "current_goal_index": 0,
+        "total_steps": 0,
+        "current_step_index": 0,
+    }
+
+    _KNOWN_NODES = {
+        "clarify", "decompose", "select_goal", "plan_steps",
+        "execute_step", "evaluate", "git_operations", "report",
+    }
+
     async for event in graph.astream_events(initial_state, config=config, version="v2"):
         kind = event.get("event", "")
         name = event.get("name", "")
 
-        if kind == "on_chain_start" and name in (
-            "clarify", "decompose", "select_goal", "plan_steps",
-            "execute_step", "evaluate", "git_operations", "report",
-        ):
+        if kind == "on_chain_start" and name in _KNOWN_NODES:
             yield {
                 "type": "node_start",
                 "node": name,
                 "thread_id": thread_id,
+                "task_id": request.task_id,
+                "client_id": request.client_id,
+                **tracked,
             }
 
-        elif kind == "on_chain_end" and name in (
-            "clarify", "decompose", "select_goal", "plan_steps",
-            "execute_step", "evaluate", "git_operations", "report",
-        ):
+        elif kind == "on_chain_end" and name in _KNOWN_NODES:
             output = event.get("data", {}).get("output", {})
+
+            # Update tracked state from node output
+            if isinstance(output, dict):
+                if "goals" in output:
+                    tracked["total_goals"] = len(output["goals"])
+                if "current_goal_index" in output:
+                    tracked["current_goal_index"] = output["current_goal_index"]
+                if "steps" in output:
+                    tracked["total_steps"] = len(output["steps"])
+                if "current_step_index" in output:
+                    tracked["current_step_index"] = output["current_step_index"]
+
             yield {
                 "type": "node_end",
                 "node": name,
                 "result": _safe_serialize(output),
                 "thread_id": thread_id,
+                "task_id": request.task_id,
+                "client_id": request.client_id,
+                **tracked,
             }
 
 

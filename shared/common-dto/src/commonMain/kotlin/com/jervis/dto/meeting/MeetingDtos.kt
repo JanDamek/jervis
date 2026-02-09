@@ -54,6 +54,7 @@ data class MeetingDto(
     val correctionQuestions: List<CorrectionQuestionDto> = emptyList(),
     val stateChangedAt: String? = null,
     val errorMessage: String? = null,
+    val correctionChatHistory: List<CorrectionChatMessageDto> = emptyList(),
     val deleted: Boolean = false,
     val deletedAt: String? = null,
 )
@@ -100,6 +101,15 @@ data class MeetingFinalizeDto(
     val title: String? = null,
     val meetingType: MeetingTypeEnum,
     val durationSeconds: Long,
+)
+
+@Serializable
+data class CorrectionChatMessageDto(
+    val role: String,              // "user" or "agent"
+    val text: String,
+    val timestamp: String,         // ISO 8601
+    val rulesCreated: Int = 0,
+    val status: String = "success",
 )
 
 @Serializable

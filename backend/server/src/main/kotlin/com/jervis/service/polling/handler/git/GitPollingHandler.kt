@@ -1,8 +1,8 @@
 package com.jervis.service.polling.handler.git
 
 import com.jervis.dto.connection.ConnectionCapability
-import com.jervis.entity.ProjectDocument
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.service.indexing.git.GitAuthenticationException
 import com.jervis.service.indexing.git.GitRepositoryService
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
@@ -34,6 +34,7 @@ class GitPollingHandler(
         var itemsDiscovered = 0
         var itemsCreated = 0
         var errors = 0
+        var authError = false
 
         logger.info { "Polling Git repositories for connection: ${connectionDocument.name}" }
 
@@ -50,6 +51,17 @@ class GitPollingHandler(
                     gitRepositoryService.syncRepository(project, resource)
                     itemsDiscovered++
                     itemsCreated++ // commits are saved by syncRepository
+                } catch (e: GitAuthenticationException) {
+                    logger.error { "Auth error syncing repo ${resource.resourceIdentifier}: ${e.message}" }
+                    authError = true
+                    errors++
+                    // Stop processing more repos for this connection - credentials are bad
+                    return PollingResult(
+                        itemsDiscovered = itemsDiscovered,
+                        itemsCreated = itemsCreated,
+                        errors = errors,
+                        authenticationError = true,
+                    )
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to sync repo ${resource.resourceIdentifier} for project ${project.name}" }
                     errors++
@@ -61,6 +73,7 @@ class GitPollingHandler(
             itemsDiscovered = itemsDiscovered,
             itemsCreated = itemsCreated,
             errors = errors,
+            authenticationError = authError,
         )
     }
 }

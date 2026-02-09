@@ -35,11 +35,6 @@ class WhisperSettingsRpcImpl(
             beamSize = (request.beamSize ?: existing.beamSize).coerceIn(1, 10),
             vadFilter = request.vadFilter ?: existing.vadFilter,
             wordTimestamps = request.wordTimestamps ?: existing.wordTimestamps,
-            initialPrompt = when {
-                request.clearInitialPrompt -> null
-                request.initialPrompt != null -> request.initialPrompt
-                else -> existing.initialPrompt
-            },
             conditionOnPreviousText = request.conditionOnPreviousText ?: existing.conditionOnPreviousText,
             noSpeechThreshold = (request.noSpeechThreshold ?: existing.noSpeechThreshold).coerceIn(0.0, 1.0),
             maxParallelJobs = (request.maxParallelJobs ?: existing.maxParallelJobs).coerceIn(1, 10),
@@ -67,7 +62,6 @@ class WhisperSettingsRpcImpl(
         beamSize = beamSize,
         vadFilter = vadFilter,
         wordTimestamps = wordTimestamps,
-        initialPrompt = initialPrompt,
         conditionOnPreviousText = conditionOnPreviousText,
         noSpeechThreshold = noSpeechThreshold,
         maxParallelJobs = maxParallelJobs,

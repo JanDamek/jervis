@@ -70,6 +70,8 @@ class BackgroundEngine(
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val pythonOrchestratorClient: PythonOrchestratorClient,
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
+    private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
+    private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -569,15 +571,18 @@ class BackgroundEngine(
     }
 
     /**
-     * Orchestrator result loop – polls Python orchestrator for tasks in PYTHON_ORCHESTRATING state.
+     * Orchestrator result loop – SAFETY NET polling for tasks in PYTHON_ORCHESTRATING state.
      *
-     * Runs independently from execution loop. Checks every 5s for tasks dispatched
-     * to the Python orchestrator and handles their results:
-     * - "running" → skip (still working)
-     * - "interrupted" → escalate to USER_TASK (approval required)
-     * - "done" → emit result, update state to DISPATCHED_GPU
-     * - "error" → mark ERROR, escalate
-     * - Python unreachable → skip (retry on next cycle)
+     * Primary communication is push-based: Python → POST /internal/orchestrator-status
+     * → OrchestratorStatusHandler handles state transitions.
+     *
+     * This loop is a safety net (60s interval) that catches cases where:
+     * - Python push callback failed to deliver
+     * - Python process restarted mid-task
+     * - Network issues prevented callback delivery
+     *
+     * Also performs heartbeat-based stuck detection:
+     * - If no heartbeat for 10 min → task considered dead → reset for retry
      */
     private suspend fun runOrchestratorResultLoop() {
         delay(backgroundProperties.waitOnStartup)
@@ -595,160 +600,87 @@ class BackgroundEngine(
                     }
                 }
 
-                delay(5_000)  // Poll every 5 seconds
+                delay(60_000)  // Safety-net polling every 60s (primary is push-based)
             } catch (e: CancellationException) {
                 logger.info { "Orchestrator result loop cancelled" }
                 throw e
             } catch (e: Exception) {
                 logger.error(e) { "Error in orchestrator result loop" }
-                delay(10_000)
+                delay(60_000)
             }
         }
     }
 
     /**
-     * Check the status of a single Python-orchestrated task.
+     * Safety-net check for a single Python-orchestrated task.
+     *
+     * 1. Check heartbeat — if alive (< 10 min), skip polling entirely
+     * 2. If no heartbeat for >= 10 min, poll Python for status
+     * 3. If Python unreachable and no heartbeat → reset to READY_FOR_GPU for retry
+     * 4. Delegates state handling to OrchestratorStatusHandler
      */
     private suspend fun checkOrchestratorTaskStatus(task: TaskDocument) {
         val threadId = task.orchestratorThreadId ?: return
+        val taskIdStr = task.id.toString()
 
+        // Heartbeat-based liveness check
+        val lastHeartbeat = orchestratorHeartbeatTracker.getLastHeartbeat(taskIdStr)
+        val now = java.time.Instant.now()
+
+        if (lastHeartbeat != null) {
+            val minutesSinceHeartbeat = java.time.Duration.between(lastHeartbeat, now).toMinutes()
+            if (minutesSinceHeartbeat < HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
+                // Still alive — skip polling
+                return
+            }
+            // Heartbeat dead — fall through to poll Python
+            logger.warn { "ORCHESTRATOR_HEARTBEAT_DEAD: taskId=$taskIdStr last=${minutesSinceHeartbeat}min ago" }
+        }
+
+        // Poll Python as safety net
         val status = try {
             pythonOrchestratorClient.getStatus(threadId)
         } catch (e: Exception) {
             logger.debug { "Python orchestrator unreachable for thread $threadId: ${e.message}" }
-            return  // Skip, retry on next cycle
+
+            // If no heartbeat ever received or heartbeat dead → likely Python died
+            if (lastHeartbeat == null || java.time.Duration.between(lastHeartbeat, now).toMinutes() >= HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
+                logger.warn { "ORCHESTRATOR_STUCK: taskId=$taskIdStr, Python unreachable, no heartbeat → resetting to READY_FOR_GPU" }
+                val resetTask = task.copy(
+                    state = TaskStateEnum.READY_FOR_GPU,
+                    orchestratorThreadId = null,
+                    orchestrationStartedAt = null,
+                )
+                taskRepository.save(resetTask)
+                orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
+            }
+            return
         }
 
         val state = status["status"] ?: "unknown"
 
-        when (state) {
-            "running" -> {
-                // Still working – skip
-            }
-            "interrupted" -> {
-                // Interrupted → escalate to USER_TASK via UserTaskService
-                // Distinguishes between clarification (pre-planning questions) and approval (commit/push)
-                val interruptAction = status["interrupt_action"] ?: "unknown"
-                val interruptDescription = status["interrupt_description"] ?: "Schválení vyžadováno"
+        // Delegate to shared handler
+        orchestratorStatusHandler.handleStatusChange(
+            taskId = taskIdStr,
+            status = state,
+            summary = status["summary"],
+            error = status["error"],
+            interruptAction = status["interrupt_action"],
+            interruptDescription = status["interrupt_description"],
+            branch = status["branch"],
+            artifacts = status["artifacts"]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
+        )
 
-                // Clarification vs approval: different question format for the user
-                val (pendingQuestion, questionContext, phase) = when (interruptAction) {
-                    "clarify" -> Triple(
-                        interruptDescription,  // Questions directly, no "Schválení:" prefix
-                        "Orchestrátor potřebuje upřesnění před zahájením práce",
-                        "clarification",
-                    )
-                    else -> Triple(
-                        "Schválení: $interruptAction – $interruptDescription",
-                        "Python orchestrátor potřebuje schválení pro: $interruptAction",
-                        "approval",
-                    )
-                }
-
-                userTaskService.failAndEscalateToUserTask(
-                    task = task,
-                    reason = "ORCHESTRATOR_INTERRUPT",
-                    pendingQuestion = pendingQuestion,
-                    questionContext = questionContext,
-                    interruptAction = interruptAction,
-                    isApproval = interruptAction != "clarify",
-                )
-
-                // Also emit progress to chat for FOREGROUND tasks
-                if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-                    try {
-                        agentOrchestratorRpc.emitProgress(
-                            clientId = task.clientId.toString(),
-                            projectId = task.projectId?.toString(),
-                            message = if (phase == "clarification")
-                                "Orchestrátor potřebuje upřesnění" else
-                                "Orchestrátor potřebuje schválení: $interruptAction",
-                            metadata = mapOf("phase" to phase, "action" to interruptAction),
-                        )
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Failed to emit interrupt notification for task ${task.id}" }
-                    }
-                }
-
-                logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$interruptAction phase=$phase → USER_TASK" }
-            }
-            "done" -> {
-                // Completed → fetch full result and handle
-                val result = try {
-                    pythonOrchestratorClient.getStatus(threadId)
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to fetch orchestrator result for thread $threadId" }
-                    return
-                }
-
-                // Emit final response for FOREGROUND tasks
-                if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-                    val summary = result["summary"] ?: "Orchestrace dokončena"
-                    try {
-                        agentOrchestratorRpc.emitToChatStream(
-                            clientId = task.clientId.toString(),
-                            projectId = task.projectId?.toString(),
-                            response = com.jervis.dto.ChatResponseDto(summary),
-                        )
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to emit orchestrator result for task ${task.id}" }
-                    }
-                }
-
-                // Check if new user messages arrived during orchestration (inline messages)
-                val hasInlineMessages = task.orchestrationStartedAt?.let { startedAt ->
-                    try {
-                        chatMessageRepository.countByTaskIdAndRoleAndTimestampAfter(
-                            taskId = task.id,
-                            role = com.jervis.entity.MessageRole.USER,
-                            timestamp = startedAt,
-                        ) > 0
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Failed to check for inline messages for task ${task.id}" }
-                        false
-                    }
-                } ?: false
-
-                if (hasInlineMessages && task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-                    // New messages arrived during orchestration — auto-requeue for processing
-                    val requeuedTask = task.copy(
-                        state = TaskStateEnum.READY_FOR_GPU,
-                        orchestratorThreadId = null,
-                        orchestrationStartedAt = null,
-                    )
-                    taskRepository.save(requeuedTask)
-                    logger.info { "INLINE_REQUEUE: taskId=${task.id} - new user messages arrived during orchestration, re-queuing" }
-                } else {
-                    // Normal completion
-                    val updatedTask = task.copy(
-                        state = TaskStateEnum.DISPATCHED_GPU,
-                        orchestratorThreadId = null,
-                        orchestrationStartedAt = null,
-                    )
-                    taskRepository.save(updatedTask)
-
-                    // Background tasks: delete after completion
-                    if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
-                        taskRepository.delete(updatedTask)
-                    }
-                }
-
-                logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages" }
-            }
-            "error" -> {
-                val errorMsg = status["error"] ?: "Unknown orchestrator error"
-                logger.error { "ORCHESTRATOR_ERROR: taskId=${task.id} error=$errorMsg" }
-
-                userTaskService.failAndEscalateToUserTask(
-                    task = task,
-                    reason = "PYTHON_ORCHESTRATOR_ERROR",
-                )
-                taskService.updateState(task, TaskStateEnum.ERROR)
-            }
+        // Clear heartbeat on terminal states
+        if (state in setOf("done", "error", "interrupted")) {
+            orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
         }
     }
 
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
+
+        /** No heartbeat for this long = orchestrator task is dead. */
+        private const val HEARTBEAT_DEAD_THRESHOLD_MINUTES = 10L
     }
 }

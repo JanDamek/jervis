@@ -207,6 +207,7 @@ All components live in `com.jervis.ui.design.DesignSystem.kt` unless noted other
 | `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
 | `JDetailScreen` | Full-screen edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
 | `JNavigationRow` | Touch-friendly nav row (compact mode) | `icon`, `title`, `subtitle?`, `onClick`, `trailing` |
+| `JVerticalSplitLayout` | Two-pane vertical split (top/bottom) with draggable handle | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
 
 ### 3.4) Data Display Components
 
@@ -717,6 +718,39 @@ Compact (<600dp):
 
 **State icons:** 🔴 RECORDING, ⬆ UPLOADING, ⏳ UPLOADED/TRANSCRIBING/CORRECTING, ✅ TRANSCRIBED/CORRECTED/INDEXED, ❌ FAILED
 
+**MeetingDetailView** uses a split layout with transcript on top and agent chat on bottom:
+
+```
+Expanded (>=600dp):
++--------------------------------------------------+
+| JTopBar: "Meeting Title"  [play] [book] [...]    |
++--------------------------------------------------+
+| Metadata: date, type, duration                   |
+| PipelineProgress + Error/Questions cards         |
++--------------------------------------------------+
+|                                                  |
+| TRANSCRIPT PANEL (LazyColumn, selectable text)   |
+|   Corrected/Raw toggle chips + action buttons    |
+|   Each row: [time] [text] [edit] [play/stop]     |
+|                                                  |
++======= DRAGGABLE SPLITTER (JVerticalSplitLayout) +
+|                                                  |
+| AGENT CHAT PANEL                                 |
+|   Chat history (LazyColumn, auto-scroll)         |
+|   Processing indicator (if correcting)           |
+|   [Instruction TextField] [Odeslat]              |
+|                                                  |
++--------------------------------------------------+
+
+Compact (<600dp):
+Same layout but chat panel has fixed 180dp height (no interactive splitter).
+```
+
+**Split layout details:**
+- Expanded: `JVerticalSplitLayout` with default 70/30 split, draggable via `draggable()` modifier (clamped 0.3..0.9)
+- Compact: `Column` with `weight(1f)` transcript + fixed `height(180.dp)` chat
+- No `JDetailScreen` wrapper (conflicts with nested scrolling); uses custom `Column` + `JTopBar`
+
 **MeetingDetailView states:**
 
 | State | UI Behaviour |
@@ -727,30 +761,53 @@ Compact (<600dp):
 | CORRECTING | `JCenteredLoading` + text "Probiha korekce prepisu..." |
 | CORRECTION_REVIEW | `CorrectionQuestionsCard` + best-effort corrected transcript |
 | FAILED | Error message in `error` color |
-| TRANSCRIBED | Raw transcript only (via `TranscriptContent`) |
-| CORRECTED / INDEXED | `FilterChip` toggle (Opraveny / Surovy) + "Prepsat znovu" button + `TranscriptContent` |
+| TRANSCRIBED | Raw transcript only (via `TranscriptPanel`) |
+| CORRECTED / INDEXED | `FilterChip` toggle (Opraveny / Surovy) + "Prepsat znovu" button + `TranscriptPanel` |
 
 **MeetingDetailView** actions bar includes:
-- Pencil toggle (correction mode — segments become clickable, clicking opens `CorrectionDialog` to submit a correction rule)
+- Play/Stop toggle (full audio playback)
 - Book icon → navigates to `CorrectionsScreen` sub-view (managed as `showCorrections` state)
+- Refresh, delete buttons
 - When `state == CORRECTION_REVIEW`: `CorrectionQuestionsCard` is shown below the pipeline progress
 
-**TranscriptContent** – helper composable that renders either timestamped segment rows (`TranscriptSegmentRow`) or plain text fallback. Supports `correctionMode` parameter for clickable segments.
+**TranscriptPanel** – composable with `FilterChip` toggle, action buttons, and `LazyColumn` wrapped in `SelectionContainer` for text copy support.
+
+**TranscriptSegmentRow** – each row layout: `[time (52dp)] [text (weight 1f)] [edit button] [play/stop button]`
+- Text is always selectable/copyable (no correction mode toggle needed)
+- Edit button opens `SegmentCorrectionDialog` for inline text correction
+- Play/Stop button plays the audio range from this segment's `startSec` to the next segment's `startSec`
+- `playingSegmentIndex` state highlights the currently playing segment's play button
+
+**AudioPlayer** – `expect class` with platform actuals:
+- `play(audioData)` – full audio playback
+- `playRange(audioData, startSec, endSec)` – range playback for per-segment play
+- JVM: `javax.sound.sampled.Clip` with frame position + timer thread
+- Android: `MediaPlayer` with `seekTo()` + `Handler.postDelayed()`
+- iOS: `AVAudioPlayer` with `currentTime` + `NSTimer`
+
+**AgentChatPanel** – chat-style panel with:
+- `LazyColumn` of chat bubbles (user = primaryContainer, agent = secondaryContainer, error = errorContainer)
+- Auto-scroll to newest message via `LaunchedEffect`
+- Processing indicator during active correction
+- Input row: `OutlinedTextField` (1-3 lines) + "Odeslat" button
+- Chat history persisted in `MeetingDocument.correctionChatHistory`
+- Optimistic user message via `pendingChatMessage` ViewModel state
 
 ```kotlin
 @Composable
-private fun TranscriptContent(
-    segments: List<TranscriptSegmentDto>,
-    text: String?,
-    correctionMode: Boolean = false,
-    onSegmentClick: (TranscriptSegmentDto) -> Unit = {},
+private fun AgentChatPanel(
+    chatHistory: List<CorrectionChatMessageDto>,
+    pendingMessage: CorrectionChatMessageDto?,
+    isCorrecting: Boolean,
+    onSendInstruction: (String) -> Unit,
+    modifier: Modifier,
 )
 ```
 
 **Audio capture:** `expect class AudioRecorder` with platform actuals:
 - Android: AudioRecord API (VOICE_RECOGNITION source)
 - Desktop: Java Sound API (TargetDataLine)
-- iOS: Stub (AVAudioEngine TODO)
+- iOS: AVAudioEngine
 
 ### 5.8) Corrections Screen (`CorrectionsScreen.kt`)
 

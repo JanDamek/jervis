@@ -30,6 +30,26 @@ import kotlin.io.path.exists
 private val logger = KotlinLogging.logger {}
 
 /**
+ * Thrown when git operations fail due to authentication/authorization errors.
+ * Signals that the connection credentials are invalid and should be marked INVALID.
+ */
+class GitAuthenticationException(message: String) : RuntimeException(message)
+
+/** Patterns in git error output that indicate credential/auth failures. */
+private val AUTH_ERROR_PATTERNS = listOf(
+    "HTTP Basic: Access denied",
+    "Authentication failed",
+    "returned error: 401",
+    "returned error: 403",
+    "could not read Username",
+    "terminal prompts disabled",
+    "Invalid username or password",
+    "Permission denied",
+    "not found",
+    "returned error: 404",
+)
+
+/**
  * Manages git repository cloning, pulling, and commit discovery.
  *
  * Responsibilities:
@@ -204,7 +224,11 @@ class GitRepositoryService(
 
         val result = executeGitCommand(cmd, workingDir = null)
         if (!result.success) {
-            throw RuntimeException("Clone failed for $repoUrl: ${result.output}")
+            val output = result.output
+            if (AUTH_ERROR_PATTERNS.any { output.contains(it, ignoreCase = true) }) {
+                throw GitAuthenticationException("Git auth failed cloning $repoUrl: $output")
+            }
+            throw RuntimeException("Clone failed for $repoUrl: $output")
         }
 
         // Strip credentials from remote URL after clone
@@ -231,7 +255,11 @@ class GitRepositoryService(
             workingDir = repoDir,
         )
         if (!result.success) {
-            logger.warn { "Fetch failed in $repoDir: ${result.output}" }
+            val output = result.output
+            if (AUTH_ERROR_PATTERNS.any { output.contains(it, ignoreCase = true) }) {
+                throw GitAuthenticationException("Git auth failed in $repoDir: $output")
+            }
+            logger.warn { "Fetch failed in $repoDir (non-auth error, skipping): $output" }
         }
     }
 

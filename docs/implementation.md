@@ -545,6 +545,8 @@ Only one Python orchestration runs at a time:
 5. **Consistent, responsive UI with shared components**
 6. **Clear module boundaries and contracts**
 7. **Documentation in existing files ONLY - no status/summary files**
+8. **No hard timeouts — streaming + heartbeat everywhere**: All LLM/GPU operations (Ollama, correction agent, orchestrator) MUST use streaming. Liveness is determined by whether tokens keep arriving, not by a fixed timeout. If tokens stop arriving for an extended period, the operation is considered dead and retried/reset. This principle applies to ALL LLM calls in the project.
+9. **Push-based communication — no polling as primary**: All real-time progress and status changes use push callbacks (Python → Kotlin POST endpoints → Flow-based UI subscriptions). Polling is reduced to safety-net only (60s interval). Heartbeat trackers (CorrectionHeartbeatTracker, OrchestratorHeartbeatTracker) detect dead processes. Connection errors reset to retryable state, not FAILED.
 
 ### Benefits
 

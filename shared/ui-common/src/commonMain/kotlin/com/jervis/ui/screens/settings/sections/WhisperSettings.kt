@@ -67,7 +67,6 @@ fun WhisperSettings(repository: JervisRepository) {
     var beamSize by remember { mutableStateOf(5f) }
     var vadFilter by remember { mutableStateOf(true) }
     var wordTimestamps by remember { mutableStateOf(false) }
-    var initialPrompt by remember { mutableStateOf("") }
     var conditionOnPreviousText by remember { mutableStateOf(true) }
     var noSpeechThreshold by remember { mutableStateOf(0.6f) }
     var maxParallelJobs by remember { mutableStateOf(3f) }
@@ -79,7 +78,6 @@ fun WhisperSettings(repository: JervisRepository) {
         beamSize = dto.beamSize.toFloat()
         vadFilter = dto.vadFilter
         wordTimestamps = dto.wordTimestamps
-        initialPrompt = dto.initialPrompt ?: ""
         conditionOnPreviousText = dto.conditionOnPreviousText
         noSpeechThreshold = dto.noSpeechThreshold.toFloat()
         maxParallelJobs = dto.maxParallelJobs.toFloat()
@@ -110,8 +108,6 @@ fun WhisperSettings(repository: JervisRepository) {
                         beamSize = beamSize.roundToInt(),
                         vadFilter = vadFilter,
                         wordTimestamps = wordTimestamps,
-                        initialPrompt = initialPrompt.ifBlank { null },
-                        clearInitialPrompt = initialPrompt.isBlank(),
                         conditionOnPreviousText = conditionOnPreviousText,
                         noSpeechThreshold = noSpeechThreshold.toDouble(),
                         maxParallelJobs = maxParallelJobs.roundToInt(),
@@ -211,25 +207,6 @@ fun WhisperSettings(repository: JervisRepository) {
                         steps = 9,
                         valueLabel = { val rounded = (it * 10).toInt() / 10.0; "$rounded" },
                         description = "Segmenty s pravděpodobností ticha nad tímto prahem budou přeskočeny",
-                    )
-                }
-
-                // === Context / Vocabulary ===
-                JSection(title = "Kontext a slovník") {
-                    OutlinedTextField(
-                        value = initialPrompt,
-                        onValueChange = { initialPrompt = it },
-                        label = { Text("Nápověda pro přepis") },
-                        placeholder = { Text("Jména, zkratky, odborné termíny...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        maxLines = 5,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Zadejte slova, jména nebo zkratky, které se v nahrávce často vyskytují. Whisper je bude lépe rozpoznávat.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

@@ -1,7 +1,7 @@
 """
 Whisper transcript correction agent.
 
-Stores/retrieves correction rules from KB and applies them via Ollama GPU (reasoning model).
+Stores/retrieves correction rules from KB and applies them via Ollama GPU.
 Correction rules are regular KB chunks with kind="transcript_correction",
 making them available to any agent with KB access (orchestrator, correction agent, etc.).
 
@@ -12,9 +12,11 @@ Interactive mode: when the agent is uncertain about corrections, it generates
 questions for the user. Answers are saved as correction rules for future use.
 """
 
+import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any
 
@@ -25,8 +27,21 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 CORRECTION_KIND = "transcript_correction"
-CHUNK_SIZE = 40
+CHUNK_SIZE = 20
 MAX_RETRIES = 1
+# Output budget for non-reasoning model: JSON only (~4k tokens for 20 segments)
+OUTPUT_BUDGET = 8192
+# GPU VRAM cap — models above this spill to CPU RAM and become slow
+GPU_CTX_CAP = 49152
+# Streaming heartbeat: no token for this long = dead
+HEARTBEAT_DEAD_SECONDS = 300  # 5 min
+# How often to emit progress during streaming
+PROGRESS_EMIT_INTERVAL = 10  # seconds
+
+
+class HeartbeatTimeoutError(Exception):
+    """Ollama stopped sending tokens (heartbeat dead)."""
+    pass
 
 CATEGORY_LABELS = {
     "person_name": "Person Names / Jmena osob",
@@ -44,7 +59,7 @@ class CorrectionAgent:
     def __init__(self):
         self.kb_url = f"{settings.knowledgebase_url}/api/v1"
         self.ollama_url = settings.ollama_url
-        self.model = settings.default_correction_model  # qwen3-tool:30b (reasoning, num_ctx overridden dynamically)
+        self.model = settings.default_correction_model  # qwen3-coder-tool:30b (num_ctx overridden dynamically)
 
     async def submit_correction(
         self,
@@ -165,6 +180,8 @@ class CorrectionAgent:
 
             chunk_result = await self._correct_chunk_interactive(
                 chunk, correction_prompt, all_text,
+                meeting_id=meeting_id, client_id=client_id,
+                chunk_idx=chunk_idx, total_chunks=total_chunks,
             )
             corrected_segments.extend(chunk_result["segments"])
             all_questions.extend(chunk_result["questions"])
@@ -197,7 +214,7 @@ class CorrectionAgent:
         and existing KB rules, then extracts new rules from the instruction.
         """
         if not segments:
-            return {"segments": segments, "newRules": [], "status": "success"}
+            return {"segments": segments, "newRules": [], "status": "success", "summary": "Zadne segmenty k oprave."}
 
         corrections = await self._load_corrections(client_id, project_id)
         correction_prompt = self._format_corrections_for_prompt(corrections)
@@ -235,10 +252,20 @@ class CorrectionAgent:
                         except Exception as e:
                             logger.warning("Failed to save extracted rule: %s", e)
 
+                    # Build summary of what changed
+                    changed_count = sum(
+                        1 for i, seg in enumerate(parsed["segments"])
+                        if i < len(segments) and seg.get("text", "") != segments[i].get("text", "")
+                    )
+                    summary = f"Opraveno {changed_count} segmentu."
+                    if saved_rules:
+                        summary += f" Vytvoreno {len(saved_rules)} novych pravidel."
+
                     return {
                         "segments": parsed["segments"],
                         "newRules": saved_rules,
                         "status": "success",
+                        "summary": summary,
                     }
                 logger.warning(
                     "Failed to parse instruction response (attempt %d)", attempt + 1,
@@ -249,7 +276,7 @@ class CorrectionAgent:
                 )
 
         logger.warning("All instruction correction attempts failed")
-        return {"segments": segments, "newRules": [], "status": "failed"}
+        return {"segments": segments, "newRules": [], "status": "failed", "summary": "Oprava se nezdarila."}
 
     async def apply_answers_as_corrections(
         self,
@@ -310,11 +337,16 @@ class CorrectionAgent:
         chunks_done: int,
         total_chunks: int,
         message: str | None = None,
+        percent_override: float | None = None,
+        tokens_generated: int = 0,
     ):
         """Send correction progress to Kotlin server for UI broadcast."""
         if not meeting_id:
             return
-        percent = (chunks_done / total_chunks * 100.0) if total_chunks > 0 else 0.0
+        if percent_override is not None:
+            percent = percent_override
+        else:
+            percent = (chunks_done / total_chunks * 100.0) if total_chunks > 0 else 0.0
         payload = {
             "meetingId": meeting_id,
             "clientId": client_id,
@@ -322,6 +354,7 @@ class CorrectionAgent:
             "chunksDone": chunks_done,
             "totalChunks": total_chunks,
             "message": message,
+            "tokensGenerated": tokens_generated,
         }
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -337,38 +370,69 @@ class CorrectionAgent:
         segments: list[dict],
         correction_prompt: str,
         full_transcript: str,
+        meeting_id: str | None = None,
+        client_id: str | None = None,
+        chunk_idx: int = 0,
+        total_chunks: int = 1,
     ) -> dict:
         """Send a chunk of segments to Ollama for interactive correction."""
         system_prompt = self._build_system_prompt_interactive(correction_prompt)
         user_prompt = self._build_user_prompt(segments, full_transcript)
+        seg_indices = [s.get("i", i) for i, s in enumerate(segments)]
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response_text = await self._call_ollama(system_prompt, user_prompt)
+                response_text = await self._call_ollama(
+                    system_prompt, user_prompt,
+                    meeting_id=meeting_id, client_id=client_id,
+                    chunk_idx=chunk_idx, total_chunks=total_chunks,
+                )
                 parsed = self._parse_interactive_response(response_text, segments)
                 if parsed is not None:
+                    logger.info(
+                        "Chunk correction succeeded (attempt %d): %d segments [%s..%s]",
+                        attempt + 1, len(segments),
+                        seg_indices[0] if seg_indices else "?",
+                        seg_indices[-1] if seg_indices else "?",
+                    )
                     return parsed
                 logger.warning(
-                    "Failed to parse correction response (attempt %d)", attempt + 1,
+                    "Failed to parse correction response (attempt %d, %d segments [%s..%s])",
+                    attempt + 1, len(segments),
+                    seg_indices[0] if seg_indices else "?",
+                    seg_indices[-1] if seg_indices else "?",
                 )
             except Exception as e:
                 logger.error(
                     "Correction LLM call failed (attempt %d): %s", attempt + 1, e,
                 )
 
-        logger.warning("All correction attempts failed, using original text")
+        logger.warning(
+            "All %d correction attempts failed for segments [%s..%s], using original text",
+            MAX_RETRIES + 1,
+            seg_indices[0] if seg_indices else "?",
+            seg_indices[-1] if seg_indices else "?",
+        )
         return {"segments": segments, "questions": []}
 
-    async def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Ollama chat API on GPU instance."""
+    async def _call_ollama(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        meeting_id: str | None = None,
+        client_id: str | None = None,
+        chunk_idx: int = 0,
+        total_chunks: int = 1,
+    ) -> str:
+        """Call Ollama chat API with streaming + heartbeat liveness detection."""
         # Estimate input tokens (~1 token per 2.5 chars for Czech)
         input_chars = len(system_prompt) + len(user_prompt)
         input_tokens_est = int(input_chars / 2.5)
-        # Reasoning model needs: input + <think> reasoning (10-15k) + JSON output (~2k)
-        # Use 8x input as baseline to leave enough room for verbose reasoning
-        num_ctx = max(8192, input_tokens_est * 8)
-        # Round up to nearest 4k, cap at 48k (GPU VRAM limit)
-        num_ctx = min(((num_ctx + 4095) // 4096) * 4096, 49152)
+        # num_ctx = input + output budget (JSON corrections for chunk)
+        num_ctx = input_tokens_est + OUTPUT_BUDGET
+        # Round up to nearest 4k, cap at GPU VRAM limit
+        num_ctx = min(((num_ctx + 4095) // 4096) * 4096, GPU_CTX_CAP)
+        num_predict = OUTPUT_BUDGET
 
         payload = {
             "model": self.model,
@@ -376,23 +440,102 @@ class CorrectionAgent:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "stream": False,
+            "stream": True,
             "options": {
-                "num_predict": 32768,
+                "num_predict": num_predict,
                 "num_ctx": num_ctx,
                 "temperature": 0.3,
             },
         }
-        logger.info("Calling Ollama %s (num_ctx=%d, input≈%d tokens)", self.model, num_ctx, input_tokens_est)
+        logger.info(
+            "Calling Ollama %s streaming (num_ctx=%d, num_predict=%d, input≈%d tokens, input_chars=%d)",
+            self.model, num_ctx, num_predict, input_tokens_est, input_chars,
+        )
 
-        async with httpx.AsyncClient(timeout=None) as client:
-            response = await client.post(
+        content_parts: list[str] = []
+        token_count = 0
+        done_reason = "?"
+        eval_count = "?"
+        last_progress_emit = time.monotonic()
+
+        async with httpx.AsyncClient(timeout=None) as http_client:
+            async with http_client.stream(
+                "POST",
                 f"{self.ollama_url}/api/chat",
                 json=payload,
+            ) as response:
+                response.raise_for_status()
+
+                async for raw_line in self._iter_lines_with_heartbeat(response):
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        data = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        logger.debug("Non-JSON streaming line: %s", raw_line[:200])
+                        continue
+
+                    # Accumulate content tokens
+                    chunk_content = data.get("message", {}).get("content", "")
+                    if chunk_content:
+                        content_parts.append(chunk_content)
+                        token_count += 1
+
+                    # Final message with metadata
+                    if data.get("done"):
+                        done_reason = data.get("done_reason", "?")
+                        eval_count = data.get("eval_count", "?")
+
+                    # Emit intra-chunk progress periodically
+                    now = time.monotonic()
+                    if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
+                        last_progress_emit = now
+                        chunk_base = (chunk_idx / total_chunks) * 100
+                        intra = min(token_count / OUTPUT_BUDGET, 1.0)
+                        percent = chunk_base + (1.0 / total_chunks) * 100 * intra * 0.9
+                        await self._emit_correction_progress(
+                            meeting_id, client_id,
+                            chunk_idx, total_chunks,
+                            f"Chunk {chunk_idx + 1}/{total_chunks}: generuji... {token_count} tokenů",
+                            percent_override=percent,
+                            tokens_generated=token_count,
+                        )
+
+        content = "".join(content_parts)
+
+        logger.info(
+            "Ollama streaming complete: %d chars, %d tokens, eval_count=%s, done_reason=%s",
+            len(content), token_count, eval_count, done_reason,
+        )
+
+        if done_reason == "length":
+            logger.warning(
+                "OUTPUT TRUNCATED: model hit num_predict=%d limit. "
+                "Response may be incomplete (raw=%d chars). First 500 chars: %s",
+                num_predict, len(content), content.strip()[:500],
             )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("message", {}).get("content", "")
+
+        return content
+
+    async def _iter_lines_with_heartbeat(self, response: httpx.Response):
+        """
+        Iterate over streaming response lines with heartbeat timeout.
+        Raises HeartbeatTimeoutError if no data arrives for HEARTBEAT_DEAD_SECONDS.
+        """
+        aiter = response.aiter_lines().__aiter__()
+        while True:
+            try:
+                line = await asyncio.wait_for(
+                    aiter.__anext__(),
+                    timeout=HEARTBEAT_DEAD_SECONDS,
+                )
+                yield line
+            except asyncio.TimeoutError:
+                raise HeartbeatTimeoutError(
+                    f"Ollama stopped sending tokens for {HEARTBEAT_DEAD_SECONDS}s"
+                )
+            except StopAsyncIteration:
+                return
 
     # --- Prompt building ---
 
@@ -514,12 +657,21 @@ class CorrectionAgent:
 
         prompt = ""
 
-        # Full transcript first — model should understand context before correcting
+        # Full transcript as context — truncate if too long to save input tokens.
+        # The model needs enough to understand the topic, not every word.
         if full_transcript:
-            prompt += (
-                f"FULL TRANSCRIPT (read first to understand the topic):\n"
-                f"{full_transcript}\n\n"
-            )
+            max_context_chars = 8000  # ~3200 tokens — enough for topic understanding
+            if len(full_transcript) > max_context_chars:
+                truncated = full_transcript[:max_context_chars]
+                prompt += (
+                    f"FULL TRANSCRIPT (first {max_context_chars} chars, read for topic context):\n"
+                    f"{truncated}\n...(truncated)\n\n"
+                )
+            else:
+                prompt += (
+                    f"FULL TRANSCRIPT (read first to understand the topic):\n"
+                    f"{full_transcript}\n\n"
+                )
 
         prompt += (
             "SEGMENTS TO CORRECT:\n"
@@ -534,12 +686,22 @@ class CorrectionAgent:
         self, content: str, original_segments: list[dict],
     ) -> dict | None:
         """Parse LLM response — either simple array or object with questions."""
+        raw_len = len(content)
         text = content.strip()
 
         # Remove <think> tags if present (some models add these)
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         # Handle unclosed <think> (truncated output) — strip from <think> to end
+        has_unclosed_think = "<think>" in text
         text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
+
+        if not text:
+            logger.warning(
+                "Empty response after stripping <think> tags (raw=%d chars, unclosed_think=%s). "
+                "Model likely exhausted num_predict on reasoning. Raw tail: ...%s",
+                raw_len, has_unclosed_think, content[-300:] if raw_len > 0 else "(empty)",
+            )
+            return None
 
         # Handle markdown code blocks
         match = re.search(
@@ -614,9 +776,19 @@ class CorrectionAgent:
         self, content: str, original_segments: list[dict],
     ) -> dict | None:
         """Parse response from instruction-based correction."""
+        raw_len = len(content)
         text = content.strip()
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        has_unclosed_think = "<think>" in text
         text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
+
+        if not text:
+            logger.warning(
+                "Empty instruction response after stripping <think> (raw=%d chars, unclosed=%s). "
+                "Raw tail: ...%s",
+                raw_len, has_unclosed_think, content[-300:] if raw_len > 0 else "(empty)",
+            )
+            return None
 
         match = re.search(
             r"```(?:json)?\s*\n?(\{.*?\}|\[.*?\])\s*\n?```", text, re.DOTALL,

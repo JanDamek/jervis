@@ -6,10 +6,12 @@ import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.CorrectionQuestionDto
 import com.jervis.dto.meeting.MeetingCreateDto
+import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptSegmentDto
+import com.jervis.entity.meeting.CorrectionChatMessage
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
 import com.jervis.service.IMeetingService
@@ -435,6 +437,14 @@ class MeetingRpcImpl(
             throw IllegalStateException("Meeting $meetingId has no transcript segments")
         }
 
+        // Persist user message in chat history
+        val userMessage = CorrectionChatMessage(
+            role = "user",
+            text = instruction,
+        )
+        val chatHistory = meeting.correctionChatHistory + userMessage
+        meetingRepository.save(meeting.copy(correctionChatHistory = chatHistory))
+
         val requestSegments = segments.mapIndexed { i, seg ->
             CorrectionSegmentDto(
                 i = i,
@@ -445,14 +455,28 @@ class MeetingRpcImpl(
             )
         }
 
-        val result = orchestratorClient.correctWithInstruction(
-            CorrectionInstructRequestDto(
-                clientId = meeting.clientId.toString(),
-                projectId = meeting.projectId?.toString(),
-                segments = requestSegments,
-                instruction = instruction,
-            ),
-        )
+        val result = try {
+            orchestratorClient.correctWithInstruction(
+                CorrectionInstructRequestDto(
+                    clientId = meeting.clientId.toString(),
+                    projectId = meeting.projectId?.toString(),
+                    segments = requestSegments,
+                    instruction = instruction,
+                ),
+            )
+        } catch (e: Exception) {
+            // Persist error agent message
+            val errorMessage = CorrectionChatMessage(
+                role = "agent",
+                text = "Chyba pri oprave: ${e.message}",
+                status = "error",
+            )
+            val updatedMeeting = meetingRepository.findById(id)!!
+            meetingRepository.save(updatedMeeting.copy(
+                correctionChatHistory = updatedMeeting.correctionChatHistory + errorMessage,
+            ))
+            throw e
+        }
 
         val correctedSegments = result.segments.mapIndexed { i, corrSeg ->
             val original = segments.getOrNull(i)
@@ -466,10 +490,21 @@ class MeetingRpcImpl(
 
         val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
 
+        // Persist agent response message
+        val summaryText = result.summary ?: "Opraveno. Pravidel vytvoreno: ${result.newRules.size}."
+        val agentMessage = CorrectionChatMessage(
+            role = "agent",
+            text = summaryText,
+            rulesCreated = result.newRules.size,
+        )
+
+        // Re-read to get latest chat history (includes user message saved earlier)
+        val latestMeeting = meetingRepository.findById(id)!!
         val saved = meetingRepository.save(
-            meeting.copy(
+            latestMeeting.copy(
                 correctedTranscriptSegments = correctedSegments,
                 correctedTranscriptText = correctedText,
+                correctionChatHistory = latestMeeting.correctionChatHistory + agentMessage,
             ),
         )
 
@@ -519,6 +554,15 @@ private fun MeetingDocument.toDto(): MeetingDto =
                 correctionOptions = q.correctionOptions,
                 question = q.question,
                 context = q.context,
+            )
+        },
+        correctionChatHistory = correctionChatHistory.map { msg ->
+            CorrectionChatMessageDto(
+                role = msg.role,
+                text = msg.text,
+                timestamp = msg.timestamp.toString(),
+                rulesCreated = msg.rulesCreated,
+                status = msg.status,
             )
         },
         stateChangedAt = stateChangedAt?.toString(),

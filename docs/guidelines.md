@@ -459,6 +459,10 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │  CRUD sub-view with category grouping (corrections, per-entity)?    │
 │    → JDetailScreen + LazyColumn grouped by category + dialogs       │
 │    Example: CorrectionsScreen.kt                                     │
+│                                                                     │
+│  Vertical split with independent scrolling (transcript + chat)?     │
+│    → JVerticalSplitLayout (draggable top/bottom panels)             │
+│    Example: MeetingDetailView in MeetingsScreen.kt                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -470,6 +474,7 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 | `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
 | `JDetailScreen` | Edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
 | `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon`, `title`, `subtitle?`, `onClick`, `trailing` |
+| `JVerticalSplitLayout` | Draggable vertical split (top/bottom) | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
 
 ### Pattern 1: Category-Based Settings
 
@@ -653,19 +658,28 @@ MeetingsScreen(
     onBack = { navigator.goBack() },
 )
 
-// MeetingDetailView: transcript display with correction + interactive questions
+// MeetingDetailView: split layout (transcript top + agent chat bottom)
+// Uses JVerticalSplitLayout (expanded) or fixed-height chat (compact)
 MeetingDetailView(
     meeting = meeting,
     isPlaying = isPlaying,
+    isCorrecting = isCorrecting,
+    pendingChatMessage = pendingChatMessage,  // optimistic chat message
     onBack = { viewModel.selectMeeting(null) },
     onDelete = { viewModel.deleteMeeting(meeting.id) },
     onRefresh = { viewModel.refreshMeeting(meeting.id) },
     onPlayToggle = { viewModel.playAudio(meeting.id) },
+    onRetranscribe = { viewModel.retranscribeMeeting(meeting.id) },
     onRecorrect = { viewModel.recorrectMeeting(meeting.id) },
+    onReindex = { viewModel.reindexMeeting(meeting.id) },
     onCorrections = { showCorrections = true },
     onAnswerQuestions = { answers -> viewModel.answerQuestions(meeting.id, answers) },
-    onSubmitCorrection = { submit -> viewModel.submitCorrectionFromSegment(...) },
+    onApplySegmentCorrection = { idx, text -> viewModel.applySegmentCorrection(meeting.id, idx, text) },
+    onCorrectWithInstruction = { instruction -> viewModel.correctWithInstruction(meeting.id, instruction) },
 )
+
+// Chat history persisted in MeetingDocument.correctionChatHistory
+// CorrectionChatMessageDto: role ("user"/"agent"), text, timestamp, rulesCreated, status
 
 // RecordingIndicator: shown on MainScreen during active recording
 RecordingIndicator(

@@ -18,7 +18,6 @@ data class WhisperSettingsDocument(
     val beamSize: Int = 5,
     val vadFilter: Boolean = true,
     val wordTimestamps: Boolean = false,
-    val initialPrompt: String? = null,
     val conditionOnPreviousText: Boolean = true,
     val noSpeechThreshold: Double = 0.6,
     val maxParallelJobs: Int = 3,

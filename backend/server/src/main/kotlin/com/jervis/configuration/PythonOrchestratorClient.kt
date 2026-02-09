@@ -355,6 +355,7 @@ data class CorrectionInstructResultDto(
     val segments: List<CorrectionSegmentDto> = emptyList(),
     @SerialName("newRules") val newRules: List<CorrectionInstructRuleDto> = emptyList(),
     val status: String,
+    val summary: String? = null,
 )
 
 @Serializable

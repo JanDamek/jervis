@@ -4,6 +4,7 @@ import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingCreateDto
+import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
@@ -68,6 +69,14 @@ class MeetingViewModel(
     private val _playingMeetingId = MutableStateFlow<String?>(null)
     val playingMeetingId: StateFlow<String?> = _playingMeetingId.asStateFlow()
 
+    /** Index of the transcript segment currently being played, or -1 for full playback. */
+    private val _playingSegmentIndex = MutableStateFlow(-1)
+    val playingSegmentIndex: StateFlow<Int> = _playingSegmentIndex.asStateFlow()
+
+    /** Cached audio bytes for segment playback (avoids re-downloading per segment). */
+    private var cachedAudioMeetingId: String? = null
+    private var cachedAudioBytes: ByteArray? = null
+
     private val _isCorrecting = MutableStateFlow(false)
     val isCorrecting: StateFlow<Boolean> = _isCorrecting.asStateFlow()
 
@@ -78,9 +87,12 @@ class MeetingViewModel(
     val transcriptionProgress: StateFlow<Map<String, Double>> = _transcriptionProgress.asStateFlow()
 
     // Correction progress: meetingId -> CorrectionProgressInfo
-    data class CorrectionProgressInfo(val percent: Double, val chunksDone: Int, val totalChunks: Int, val message: String?)
+    data class CorrectionProgressInfo(val percent: Double, val chunksDone: Int, val totalChunks: Int, val message: String?, val tokensGenerated: Int = 0)
     private val _correctionProgress = MutableStateFlow<Map<String, CorrectionProgressInfo>>(emptyMap())
     val correctionProgress: StateFlow<Map<String, CorrectionProgressInfo>> = _correctionProgress.asStateFlow()
+
+    private val _pendingChatMessage = MutableStateFlow<CorrectionChatMessageDto?>(null)
+    val pendingChatMessage: StateFlow<CorrectionChatMessageDto?> = _pendingChatMessage.asStateFlow()
 
     private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
@@ -194,6 +206,7 @@ class MeetingViewModel(
                 chunksDone = event.chunksDone,
                 totalChunks = event.totalChunks,
                 message = event.message,
+                tokensGenerated = event.tokensGenerated,
             )
         )
     }
@@ -390,11 +403,68 @@ class MeetingViewModel(
         audioPlayer?.release()
         audioPlayer = null
         _playingMeetingId.value = null
+        _playingSegmentIndex.value = -1
+    }
+
+    /**
+     * Play a single transcript segment (startSec to endSec).
+     * If the same segment is already playing, toggles stop.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    fun playSegment(meetingId: String, segmentIndex: Int, startSec: Double, endSec: Double) {
+        // Toggle off if same segment is playing
+        if (_playingMeetingId.value == meetingId && _playingSegmentIndex.value == segmentIndex) {
+            stopPlayback()
+            return
+        }
+        stopPlayback()
+
+        _playingMeetingId.value = meetingId
+        _playingSegmentIndex.value = segmentIndex
+
+        scope.launch {
+            try {
+                // Use cached audio if same meeting
+                val audioBytes = if (cachedAudioMeetingId == meetingId && cachedAudioBytes != null) {
+                    cachedAudioBytes!!
+                } else {
+                    val base64Data = meetingService.getAudioData(meetingId)
+                    val bytes = Base64.decode(base64Data)
+                    cachedAudioMeetingId = meetingId
+                    cachedAudioBytes = bytes
+                    bytes
+                }
+
+                val player = AudioPlayer()
+                audioPlayer = player
+                player.playRange(audioBytes, startSec, endSec)
+
+                // Monitor playback completion
+                playbackMonitorJob?.cancel()
+                playbackMonitorJob = scope.launch {
+                    while (audioPlayer?.isPlaying == true) {
+                        delay(200)
+                    }
+                    if (_playingMeetingId.value == meetingId && _playingSegmentIndex.value == segmentIndex) {
+                        _playingMeetingId.value = null
+                        _playingSegmentIndex.value = -1
+                    }
+                }
+            } catch (e: Exception) {
+                _error.value = "Chyba pri prehravani segmentu: ${e.message}"
+                _playingMeetingId.value = null
+                _playingSegmentIndex.value = -1
+            }
+        }
     }
 
     fun selectMeeting(meeting: MeetingDto?) {
         if (meeting == null || meeting.id != _playingMeetingId.value) {
             stopPlayback()
+        }
+        if (meeting?.id != cachedAudioMeetingId) {
+            cachedAudioMeetingId = null
+            cachedAudioBytes = null
         }
         _selectedMeeting.value = meeting
     }
@@ -537,6 +607,15 @@ class MeetingViewModel(
     fun correctWithInstruction(meetingId: String, instruction: String) {
         scope.launch {
             _isCorrecting.value = true
+            // Optimistic user message
+            val userMsg = CorrectionChatMessageDto(
+                role = "user",
+                text = instruction,
+                timestamp = kotlinx.datetime.Instant.fromEpochMilliseconds(
+                    kotlin.time.Clock.System.now().toEpochMilliseconds()
+                ).toString(),
+            )
+            _pendingChatMessage.value = userMsg
             try {
                 val updated = meetingService.correctWithInstruction(meetingId, instruction)
                 _selectedMeeting.value = updated
@@ -544,6 +623,7 @@ class MeetingViewModel(
             } catch (e: Exception) {
                 _error.value = "Chyba pri instrukci korekce: ${e.message}"
             } finally {
+                _pendingChatMessage.value = null
                 _isCorrecting.value = false
             }
         }

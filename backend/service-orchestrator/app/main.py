@@ -3,12 +3,17 @@
 Accepts requests from Kotlin server, runs LangGraph orchestration,
 streams progress via SSE, handles approval flow via LangGraph interrupt().
 
-Communication architecture:
+Communication architecture (push-based):
 - Kotlin → Python: POST /orchestrate/stream (fire-and-forget, returns thread_id)
+- Python → Kotlin: POST /internal/orchestrator-progress (node progress, real-time)
+- Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
 - Python → UI: SSE /stream/{thread_id} (progress + approval requests)
-- Kotlin polls: GET /status/{thread_id} (running/interrupted/done/error)
 - Kotlin → Python: POST /approve/{thread_id} (fire-and-forget, resumes graph)
-- No Python → Kotlin callbacks needed (full request model)
+- Kotlin → Python: GET /status/{thread_id} (safety-net fallback polling, 60s)
+
+Python pushes progress and status changes to Kotlin in real-time.
+Kotlin broadcasts to UI via Flow-based event subscriptions.
+Polling is reduced to a 60s safety-net fallback only.
 
 Concurrency:
 - Only ONE orchestration runs at a time (asyncio.Semaphore)
@@ -248,19 +253,51 @@ async def orchestrate_stream(request: OrchestrateRequest):
     return {"thread_id": thread_id, "stream_url": f"/stream/{thread_id}"}
 
 
+# Human-readable node messages for progress reporting
+_NODE_MESSAGES = {
+    "clarify": "Analyzing task complexity...",
+    "decompose": "Breaking down into goals...",
+    "select_goal": "Selecting next goal...",
+    "plan_steps": "Planning execution steps...",
+    "execute_step": "Executing coding step...",
+    "evaluate": "Evaluating results...",
+    "advance_step": "Moving to next step...",
+    "advance_goal": "Moving to next goal...",
+    "git_operations": "Handling git operations...",
+    "report": "Generating final report...",
+}
+
+
 async def _run_and_stream(
     request: OrchestrateRequest,
     thread_id: str,
     queue: asyncio.Queue,
 ):
-    """Background task: run orchestration and push events to SSE queue.
+    """Background task: run orchestration, push events to SSE queue and Kotlin.
 
-    Acquires the orchestration semaphore to ensure only one runs at a time.
+    Push-based communication:
+    - Each node_start event is pushed to Kotlin via report_progress()
+    - Completion/error/interrupt is pushed via report_status_change()
+    - SSE queue is still maintained for direct stream subscribers
     """
     try:
         async with _orchestration_semaphore:
             async for event in run_orchestration_streaming(request, thread_id):
                 await queue.put(event)
+
+                # Push progress to Kotlin server on each node transition
+                if event.get("type") == "node_start":
+                    node = event.get("node", "")
+                    await kotlin_client.report_progress(
+                        task_id=request.task_id,
+                        client_id=request.client_id,
+                        node=node,
+                        message=_NODE_MESSAGES.get(node, f"Running {node}..."),
+                        goal_index=event.get("current_goal_index", 0),
+                        total_goals=event.get("total_goals", 0),
+                        step_index=event.get("current_step_index", 0),
+                        total_steps=event.get("total_steps", 0),
+                    )
 
             # Check if graph was interrupted
             graph_state = await get_graph_state(thread_id)
@@ -276,11 +313,39 @@ async def _run_and_stream(
                     "thread_id": thread_id,
                     "interrupt": interrupt_data,
                 })
+
+                # Push interrupted status to Kotlin
+                await kotlin_client.report_status_change(
+                    task_id=request.task_id,
+                    thread_id=thread_id,
+                    status="interrupted",
+                    interrupt_action=interrupt_data.get("action") if interrupt_data else None,
+                    interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+                )
             else:
                 await queue.put({"type": "done", "thread_id": thread_id})
+
+                # Push done status to Kotlin with final state
+                values = graph_state.values if graph_state else {}
+                await kotlin_client.report_status_change(
+                    task_id=request.task_id,
+                    thread_id=thread_id,
+                    status="done",
+                    summary=values.get("final_result"),
+                    branch=values.get("branch"),
+                    artifacts=values.get("artifacts", []),
+                )
     except Exception as e:
         logger.exception("Streaming orchestration failed: %s", e)
         await queue.put({"type": "error", "error": str(e)})
+
+        # Push error status to Kotlin
+        await kotlin_client.report_status_change(
+            task_id=request.task_id,
+            thread_id=thread_id,
+            status="error",
+            error=str(e),
+        )
     finally:
         await queue.put(None)  # Sentinel to close SSE
 
@@ -343,13 +408,35 @@ async def approve(thread_id: str, response: ApprovalResponse):
 
 
 async def _resume_in_background(thread_id: str, resume_value: dict):
-    """Background task: resume orchestration from interrupt with semaphore."""
+    """Background task: resume orchestration from interrupt with semaphore.
+
+    After resumption completes, pushes status change to Kotlin.
+    """
     try:
         async with _orchestration_semaphore:
-            await resume_orchestration(thread_id, resume_value)
+            final_state = await resume_orchestration(thread_id, resume_value)
             logger.info("Resume completed for thread %s", thread_id)
+
+            # Push completion status to Kotlin
+            task_id = final_state.get("task", {}).get("id", "")
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id=thread_id,
+                status="done",
+                summary=final_state.get("final_result"),
+                branch=final_state.get("branch"),
+                artifacts=final_state.get("artifacts", []),
+            )
     except Exception as e:
         logger.exception("Background resume failed for thread %s: %s", thread_id, e)
+
+        # Push error status to Kotlin
+        await kotlin_client.report_status_change(
+            task_id="",
+            thread_id=thread_id,
+            status="error",
+            error=str(e),
+        )
 
 
 # --- Whisper Transcript Correction Agent ---

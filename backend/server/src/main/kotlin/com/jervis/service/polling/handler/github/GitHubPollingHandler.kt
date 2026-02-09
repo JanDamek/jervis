@@ -32,6 +32,7 @@ class GitHubPollingHandler(
         var totalCreated = 0
         var totalSkipped = 0
         var totalErrors = 0
+        var authError = false
 
         if (connectionDocument.availableCapabilities.contains(ConnectionCapability.REPOSITORY)) {
             try {
@@ -40,19 +41,22 @@ class GitHubPollingHandler(
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
                 totalErrors += result.errors
+                if (result.authenticationError) authError = true
             } catch (e: Exception) {
                 logger.error(e) { "Error polling GitHub Git for ${connectionDocument.name}" }
                 totalErrors++
             }
         }
 
-        if (connectionDocument.availableCapabilities.contains(ConnectionCapability.BUGTRACKER)) {
+        // Skip bug tracker polling if auth already failed
+        if (!authError && connectionDocument.availableCapabilities.contains(ConnectionCapability.BUGTRACKER)) {
             try {
                 val result = gitHubBugTrackerPollingHandler.poll(connectionDocument, context)
                 totalDiscovered += result.itemsDiscovered
                 totalCreated += result.itemsCreated
                 totalSkipped += result.itemsSkipped
                 totalErrors += result.errors
+                if (result.authenticationError) authError = true
             } catch (e: Exception) {
                 logger.error(e) { "Error polling GitHub Issues for ${connectionDocument.name}" }
                 totalErrors++
@@ -64,6 +68,7 @@ class GitHubPollingHandler(
             itemsCreated = totalCreated,
             itemsSkipped = totalSkipped,
             errors = totalErrors,
+            authenticationError = authError,
         )
     }
 }

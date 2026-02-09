@@ -57,15 +57,21 @@ import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.CorrectionAnswerDto
+import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.CorrectionQuestionDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
+import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JCenteredLoading
-import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JTopBar
+import com.jervis.ui.design.JVerticalSplitLayout
 import com.jervis.ui.design.JervisSpacing
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 
 
 /**
@@ -89,10 +95,12 @@ fun MeetingsScreen(
     val selectedMeeting by viewModel.selectedMeeting.collectAsState()
     val currentMeetingId by viewModel.currentMeetingId.collectAsState()
     val playingMeetingId by viewModel.playingMeetingId.collectAsState()
+    val playingSegmentIndex by viewModel.playingSegmentIndex.collectAsState()
     val isCorrecting by viewModel.isCorrecting.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val transcriptionProgress by viewModel.transcriptionProgress.collectAsState()
     val correctionProgress by viewModel.correctionProgress.collectAsState()
+    val pendingChatMessage by viewModel.pendingChatMessage.collectAsState()
     val error by viewModel.error.collectAsState()
 
     // Filter state — pre-filled from main window selection
@@ -145,7 +153,9 @@ fun MeetingsScreen(
         MeetingDetailView(
             meeting = currentDetail,
             isPlaying = playingMeetingId == currentDetail.id,
+            playingSegmentIndex = if (playingMeetingId == currentDetail.id) playingSegmentIndex else -1,
             isCorrecting = isCorrecting,
+            pendingChatMessage = pendingChatMessage,
             transcriptionPercent = transcriptionProgress[currentDetail.id],
             correctionProgress = correctionProgress[currentDetail.id],
             onBack = { viewModel.selectMeeting(null) },
@@ -162,6 +172,9 @@ fun MeetingsScreen(
             },
             onCorrectWithInstruction = { instruction ->
                 viewModel.correctWithInstruction(currentDetail.id, instruction)
+            },
+            onSegmentPlay = { segmentIndex, startSec, endSec ->
+                viewModel.playSegment(currentDetail.id, segmentIndex, startSec, endSec)
             },
         )
         return
@@ -679,7 +692,9 @@ private fun DeletedMeetingListItem(
 private fun MeetingDetailView(
     meeting: MeetingDto,
     isPlaying: Boolean,
+    playingSegmentIndex: Int = -1,
     isCorrecting: Boolean,
+    pendingChatMessage: CorrectionChatMessageDto? = null,
     transcriptionPercent: Double? = null,
     correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     onBack: () -> Unit,
@@ -693,270 +708,216 @@ private fun MeetingDetailView(
     onAnswerQuestions: (List<CorrectionAnswerDto>) -> Unit,
     onApplySegmentCorrection: (segmentIndex: Int, correctedText: String) -> Unit,
     onCorrectWithInstruction: (instruction: String) -> Unit,
+    onSegmentPlay: (segmentIndex: Int, startSec: Double, endSec: Double) -> Unit = { _, _, _ -> },
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
-    // Correction mode — clickable segments to submit corrections
-    var correctionMode by remember { mutableStateOf(false) }
     // Segment click correction: stores (segmentIndex, segmentText)
     var segmentForCorrection by remember { mutableStateOf<Pair<Int, String>?>(null) }
-    // Chat instruction input
-    var instructionText by remember { mutableStateOf("") }
     // Overflow menu for compact screens
     var showOverflowMenu by remember { mutableStateOf(false) }
+    // Splitter fraction for expanded mode
+    var splitFraction by remember { mutableStateOf(0.7f) }
 
-    BoxWithConstraints {
-        val isCompact = maxWidth < 600.dp
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
 
-    JDetailScreen(
-        title = meeting.title ?: "Meeting",
-        onBack = onBack,
-        actions = {
-            if (meeting.state != MeetingStateEnum.RECORDING) {
-                IconButton(onClick = onPlayToggle) {
-                    Text(
-                        text = if (isPlaying) "\u23F9" else "\u25B6",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-            }
-            if (isCompact) {
-                // Compact: overflow menu for secondary actions
-                Box {
-                    IconButton(onClick = { showOverflowMenu = true }) {
-                        Text("\u22EF", style = MaterialTheme.typography.bodyLarge)
-                    }
-                    DropdownMenu(
-                        expanded = showOverflowMenu,
-                        onDismissRequest = { showOverflowMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (correctionMode) "\u270F Rezim oprav (zap.)"
-                                    else "\u270F Rezim oprav",
-                                )
-                            },
-                            onClick = { correctionMode = !correctionMode; showOverflowMenu = false },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("\uD83D\uDCD6 Pravidla oprav") },
-                            onClick = { onCorrections(); showOverflowMenu = false },
-                        )
-                        if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                            DropdownMenuItem(
-                                text = { Text("\u21BB Prepsat znovu") },
-                                onClick = { onRetranscribe(); showOverflowMenu = false },
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top bar
+            JTopBar(
+                title = meeting.title ?: "Meeting",
+                onBack = onBack,
+                actions = {
+                    if (meeting.state != MeetingStateEnum.RECORDING) {
+                        IconButton(onClick = onPlayToggle) {
+                            Text(
+                                text = if (isPlaying && playingSegmentIndex < 0) "\u23F9" else "\u25B6",
+                                style = MaterialTheme.typography.bodyLarge,
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("\u21BB Obnovit") },
-                            onClick = { onRefresh(); showOverflowMenu = false },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("\uD83D\uDDD1 Smazat") },
-                            onClick = { onDelete(); showOverflowMenu = false },
-                        )
                     }
-                }
-            } else {
-                // Expanded: all action buttons visible
-                IconButton(onClick = { correctionMode = !correctionMode }) {
-                    Text(
-                        text = "\u270F",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (correctionMode) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                IconButton(onClick = onCorrections) {
-                    Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
-                }
-                IconButton(onClick = onRefresh) {
-                    Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
-                }
-                IconButton(onClick = onDelete) {
-                    Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-        },
-    ) {
-        // Metadata header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = formatDateTime(meeting.startedAt),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (isCompact) {
+                        // Compact: overflow menu for secondary actions
+                        Box {
+                            IconButton(onClick = { showOverflowMenu = true }) {
+                                Text("\u22EF", style = MaterialTheme.typography.bodyLarge)
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("\uD83D\uDCD6 Pravidla oprav") },
+                                    onClick = { onCorrections(); showOverflowMenu = false },
+                                )
+                                if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                                    DropdownMenuItem(
+                                        text = { Text("\u21BB Prepsat znovu") },
+                                        onClick = { onRetranscribe(); showOverflowMenu = false },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("\u21BB Obnovit") },
+                                    onClick = { onRefresh(); showOverflowMenu = false },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("\uD83D\uDDD1 Smazat") },
+                                    onClick = { onDelete(); showOverflowMenu = false },
+                                )
+                            }
+                        }
+                    } else {
+                        // Expanded: all action buttons visible
+                        IconButton(onClick = onCorrections) {
+                            Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
+                        }
+                        IconButton(onClick = onRefresh) {
+                            Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
+                        }
+                        IconButton(onClick = onDelete) {
+                            Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                },
             )
-            meeting.meetingType?.let {
-                Text(
-                    text = meetingTypeLabel(it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            meeting.durationSeconds?.let {
-                Text(
-                    text = formatDuration(it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Pipeline progress indicator
-        PipelineProgress(
-            state = meeting.state,
-            transcriptionPercent = transcriptionPercent,
-            correctionProgress = correctionProgress,
-            stateChangedAt = meeting.stateChangedAt,
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Correction questions card (when agent needs user input)
-        if (meeting.state == MeetingStateEnum.CORRECTION_REVIEW && meeting.correctionQuestions.isNotEmpty()) {
-            CorrectionQuestionsCard(
-                questions = meeting.correctionQuestions,
-                onSubmitAnswers = onAnswerQuestions,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Error message
-        if (meeting.state == MeetingStateEnum.FAILED) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                ),
-                modifier = Modifier.fillMaxWidth(),
+            // Metadata header (scrollable with content on compact, fixed on expanded)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = JervisSpacing.outerPadding),
             ) {
-                Text(
-                    text = meeting.errorMessage ?: "Neznama chyba",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(12.dp),
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Transcript content (when available)
-        val hasRawTranscript = meeting.transcriptSegments.isNotEmpty() ||
-            !meeting.transcriptText.isNullOrBlank()
-        val hasCorrected = meeting.correctedTranscriptSegments.isNotEmpty() ||
-            !meeting.correctedTranscriptText.isNullOrBlank()
-
-        if (hasRawTranscript || hasCorrected) {
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Corrected/Raw toggle + action buttons
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (hasCorrected) {
-                    FilterChip(
-                        selected = showCorrected,
-                        onClick = { showCorrected = true },
-                        label = { Text("Opraveny") },
-                    )
-                    FilterChip(
-                        selected = !showCorrected,
-                        onClick = { showCorrected = false },
-                        label = { Text("Surovy") },
-                    )
-                }
-                if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                    TextButton(onClick = onRetranscribe) {
-                        Text("Prepsat znovu")
-                    }
-                }
-                if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                    TextButton(onClick = onRecorrect) {
-                        Text("Opravit znovu")
-                    }
-                }
-                if (meeting.state == MeetingStateEnum.INDEXED) {
-                    TextButton(onClick = onReindex) {
-                        Text("Preindexovat")
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (showCorrected && hasCorrected) {
-                TranscriptContent(
-                    segments = meeting.correctedTranscriptSegments,
-                    text = meeting.correctedTranscriptText,
-                    correctionMode = correctionMode,
-                    onSegmentClick = { index, seg -> segmentForCorrection = index to seg.text },
-                )
-            } else {
-                TranscriptContent(
-                    segments = meeting.transcriptSegments,
-                    text = meeting.transcriptText,
-                    correctionMode = correctionMode,
-                    onSegmentClick = { index, seg -> segmentForCorrection = index to seg.text },
-                )
-            }
-
-            // Chat correction input
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (isCorrecting) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     Text(
-                        text = "Agent opravuje prepis...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = formatDateTime(meeting.startedAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    meeting.meetingType?.let {
+                        Text(
+                            text = meetingTypeLabel(it),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    meeting.durationSeconds?.let {
+                        Text(
+                            text = formatDuration(it),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Pipeline progress indicator
+                PipelineProgress(
+                    state = meeting.state,
+                    transcriptionPercent = transcriptionPercent,
+                    correctionProgress = correctionProgress,
+                    stateChangedAt = meeting.stateChangedAt,
+                )
+
+                // Correction questions card (when agent needs user input)
+                if (meeting.state == MeetingStateEnum.CORRECTION_REVIEW && meeting.correctionQuestions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    CorrectionQuestionsCard(
+                        questions = meeting.correctionQuestions,
+                        onSubmitAnswers = onAnswerQuestions,
                     )
                 }
+
+                // Error message
+                if (meeting.state == MeetingStateEnum.FAILED) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = meeting.errorMessage ?: "Neznama chyba",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = instructionText,
-                    onValueChange = { instructionText = it },
-                    label = { Text("Instrukce pro opravu") },
-                    placeholder = { Text("Napr: 'Mazlusek' oprav na 'Mazlusek s.r.o.'") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    enabled = !isCorrecting,
-                )
-                TextButton(
-                    onClick = {
-                        if (instructionText.isNotBlank()) {
-                            onCorrectWithInstruction(instructionText)
-                            instructionText = ""
-                        }
-                    },
-                    enabled = instructionText.isNotBlank() && !isCorrecting,
+            // Split layout: transcript on top, chat on bottom
+            if (isCompact) {
+                // Compact mode: vertical column, fixed chat height
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                 ) {
-                    Text("Opravit")
+                    // Transcript panel (takes remaining space)
+                    TranscriptPanel(
+                        meeting = meeting,
+                        showCorrected = showCorrected,
+                        onShowCorrectedChange = { showCorrected = it },
+                        playingSegmentIndex = playingSegmentIndex,
+                        onSegmentEdit = { index, seg -> segmentForCorrection = index to seg.text },
+                        onSegmentPlay = onSegmentPlay,
+                        onRetranscribe = onRetranscribe,
+                        onRecorrect = onRecorrect,
+                        onReindex = onReindex,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+
+                    // Chat panel (fixed height in compact)
+                    AgentChatPanel(
+                        chatHistory = meeting.correctionChatHistory,
+                        pendingMessage = pendingChatMessage,
+                        isCorrecting = isCorrecting,
+                        onSendInstruction = onCorrectWithInstruction,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                    )
                 }
+            } else {
+                // Expanded mode: draggable splitter
+                JVerticalSplitLayout(
+                    splitFraction = splitFraction,
+                    onSplitChange = { splitFraction = it },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    topContent = { mod ->
+                        TranscriptPanel(
+                            meeting = meeting,
+                            showCorrected = showCorrected,
+                            onShowCorrectedChange = { showCorrected = it },
+                            playingSegmentIndex = playingSegmentIndex,
+                            onSegmentEdit = { index, seg -> segmentForCorrection = index to seg.text },
+                            onSegmentPlay = onSegmentPlay,
+                            onRetranscribe = onRetranscribe,
+                            onRecorrect = onRecorrect,
+                            onReindex = onReindex,
+                            modifier = mod,
+                        )
+                    },
+                    bottomContent = { mod ->
+                        AgentChatPanel(
+                            chatHistory = meeting.correctionChatHistory,
+                            pendingMessage = pendingChatMessage,
+                            isCorrecting = isCorrecting,
+                            onSendInstruction = onCorrectWithInstruction,
+                            modifier = mod,
+                        )
+                    },
+                )
             }
         }
-    } // JDetailScreen
-    } // BoxWithConstraints
+    }
 
     // Correction dialog for segment click — pre-fills corrected with original text
     if (segmentForCorrection != null) {
@@ -970,6 +931,312 @@ private fun MeetingDetailView(
             onDismiss = { segmentForCorrection = null },
         )
     }
+}
+
+/**
+ * Transcript panel with toggle chips, action buttons, and scrollable segment list.
+ * Each row shows: [time] [selectable text] [edit button] [play/stop button]
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TranscriptPanel(
+    meeting: MeetingDto,
+    showCorrected: Boolean,
+    onShowCorrectedChange: (Boolean) -> Unit,
+    playingSegmentIndex: Int = -1,
+    onSegmentEdit: (Int, TranscriptSegmentDto) -> Unit,
+    onSegmentPlay: (segmentIndex: Int, startSec: Double, endSec: Double) -> Unit,
+    onRetranscribe: () -> Unit,
+    onRecorrect: () -> Unit,
+    onReindex: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hasRawTranscript = meeting.transcriptSegments.isNotEmpty() ||
+        !meeting.transcriptText.isNullOrBlank()
+    val hasCorrected = meeting.correctedTranscriptSegments.isNotEmpty() ||
+        !meeting.correctedTranscriptText.isNullOrBlank()
+
+    Column(
+        modifier = modifier.padding(horizontal = JervisSpacing.outerPadding),
+    ) {
+        if (hasRawTranscript || hasCorrected) {
+            // Corrected/Raw toggle + action buttons
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (hasCorrected) {
+                    FilterChip(
+                        selected = showCorrected,
+                        onClick = { onShowCorrectedChange(true) },
+                        label = { Text("Opraveny") },
+                    )
+                    FilterChip(
+                        selected = !showCorrected,
+                        onClick = { onShowCorrectedChange(false) },
+                        label = { Text("Surovy") },
+                    )
+                }
+                if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                    TextButton(onClick = onRetranscribe) { Text("Prepsat znovu") }
+                }
+                if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                    TextButton(onClick = onRecorrect) { Text("Opravit znovu") }
+                }
+                if (meeting.state == MeetingStateEnum.INDEXED) {
+                    TextButton(onClick = onReindex) { Text("Preindexovat") }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Segments in LazyColumn for performance
+            val segments = if (showCorrected && hasCorrected) {
+                meeting.correctedTranscriptSegments
+            } else {
+                meeting.transcriptSegments
+            }
+            val text = if (showCorrected && hasCorrected) {
+                meeting.correctedTranscriptText
+            } else {
+                meeting.transcriptText
+            }
+
+            if (segments.isNotEmpty()) {
+                SelectionContainer {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        items(segments.size) { index ->
+                            val seg = segments[index]
+                            val nextStartSec = if (index + 1 < segments.size) {
+                                segments[index + 1].startSec
+                            } else {
+                                seg.endSec
+                            }
+                            TranscriptSegmentRow(
+                                segment = seg,
+                                isPlayingSegment = playingSegmentIndex == index,
+                                onEdit = { onSegmentEdit(index, seg) },
+                                onPlayToggle = { onSegmentPlay(index, seg.startSec, nextStartSec) },
+                            )
+                        }
+                    }
+                }
+            } else if (!text.isNullOrBlank()) {
+                SelectionContainer {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Prepis je prazdny",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Prepis zatim neni k dispozici",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Agent chat panel with conversation history and instruction input.
+ */
+@Composable
+private fun AgentChatPanel(
+    chatHistory: List<CorrectionChatMessageDto>,
+    pendingMessage: CorrectionChatMessageDto?,
+    isCorrecting: Boolean,
+    onSendInstruction: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var instructionText by remember { mutableStateOf("") }
+    val chatListState = rememberLazyListState()
+
+    // Build display messages: persisted + pending optimistic
+    val displayMessages = remember(chatHistory, pendingMessage) {
+        val messages = chatHistory.toMutableList()
+        // Add pending message only if it's not already persisted
+        if (pendingMessage != null && messages.none { it.role == "user" && it.text == pendingMessage.text && it.timestamp == pendingMessage.timestamp }) {
+            messages.add(pendingMessage)
+        }
+        messages
+    }
+
+    // Auto-scroll to bottom when messages change
+    LaunchedEffect(displayMessages.size) {
+        if (displayMessages.isNotEmpty()) {
+            chatListState.animateScrollToItem(displayMessages.size - 1)
+        }
+    }
+
+    Column(modifier = modifier) {
+        HorizontalDivider()
+
+        // Chat history
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = JervisSpacing.outerPadding),
+            state = chatListState,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(vertical = 8.dp),
+        ) {
+            if (displayMessages.isEmpty()) {
+                item {
+                    Text(
+                        text = "Zadejte instrukci pro opravu prepisu...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            } else {
+                items(displayMessages.size) { index ->
+                    ChatMessageBubble(message = displayMessages[index])
+                }
+            }
+
+            // Processing indicator
+            if (isCorrecting) {
+                item {
+                    Row(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = "Agent opravuje prepis...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Input row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = JervisSpacing.outerPadding)
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = instructionText,
+                onValueChange = { instructionText = it },
+                placeholder = { Text("Instrukce pro opravu...") },
+                modifier = Modifier.weight(1f),
+                minLines = 1,
+                maxLines = 3,
+                enabled = !isCorrecting,
+            )
+            TextButton(
+                onClick = {
+                    if (instructionText.isNotBlank()) {
+                        onSendInstruction(instructionText)
+                        instructionText = ""
+                    }
+                },
+                enabled = instructionText.isNotBlank() && !isCorrecting,
+            ) {
+                Text("Odeslat")
+            }
+        }
+    }
+}
+
+/**
+ * Chat message bubble. User messages align right, agent messages align left.
+ */
+@Composable
+private fun ChatMessageBubble(message: CorrectionChatMessageDto) {
+    val isUser = message.role == "user"
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (isUser) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else if (message.status == "error") {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer
+                },
+            ),
+            modifier = Modifier.fillMaxWidth(0.85f),
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isUser) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else if (message.status == "error") {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    },
+                )
+                if (!isUser && message.rulesCreated > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Pravidel vytvoreno: ${message.rulesCreated}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+            }
+        }
+        // Timestamp
+        Text(
+            text = formatChatTimestamp(message.timestamp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/** Format ISO timestamp to short "HH:MM" for chat bubbles. */
+private fun formatChatTimestamp(isoString: String): String {
+    // ISO 8601: "2025-01-15T10:30:45.123Z" -> "10:30"
+    val timeStart = isoString.indexOf('T')
+    if (timeStart < 0) return ""
+    return isoString.substring(timeStart + 1).take(5)
 }
 
 /** Pipeline step definition for visual progress. */
@@ -1173,57 +1440,24 @@ private fun PipelineProgress(
     }
 }
 
-@Composable
-private fun TranscriptContent(
-    segments: List<TranscriptSegmentDto>,
-    text: String?,
-    correctionMode: Boolean = false,
-    onSegmentClick: (Int, TranscriptSegmentDto) -> Unit = { _, _ -> },
-) {
-    if (segments.isNotEmpty()) {
-        segments.forEachIndexed { index, segment ->
-            TranscriptSegmentRow(
-                segment = segment,
-                correctionMode = correctionMode,
-                onClick = { onSegmentClick(index, segment) },
-            )
-        }
-    } else if (!text.isNullOrBlank()) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    } else {
-        Text(
-            text = "Prepis je prazdny",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
+/**
+ * Transcript segment row layout: [time] [text] [edit] [play/stop]
+ * Text is selectable (wrapped in SelectionContainer at parent level).
+ */
 @Composable
 private fun TranscriptSegmentRow(
     segment: TranscriptSegmentDto,
-    correctionMode: Boolean = false,
-    onClick: () -> Unit = {},
+    isPlayingSegment: Boolean = false,
+    onEdit: () -> Unit = {},
+    onPlayToggle: () -> Unit = {},
 ) {
-    val modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 2.dp)
-        .let {
-            if (correctionMode) {
-                it
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                    .clickable(onClick = onClick)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            } else {
-                it
-            }
-        }
-
-    Row(modifier = modifier) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Time column (fixed width)
         Text(
             text = formatDuration(segment.startSec.toLong()),
             style = MaterialTheme.typography.bodySmall,
@@ -1231,17 +1465,45 @@ private fun TranscriptSegmentRow(
             modifier = Modifier.width(52.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
-        if (segment.speaker != null) {
+
+        // Text column (fills remaining space)
+        Row(modifier = Modifier.weight(1f)) {
+            if (segment.speaker != null) {
+                Text(
+                    text = "${segment.speaker}: ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Text(
-                text = "${segment.speaker}: ",
+                text = segment.text,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
             )
         }
-        Text(
-            text = segment.text,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+
+        // Edit button
+        IconButton(
+            onClick = onEdit,
+            modifier = Modifier.size(JervisSpacing.touchTarget),
+        ) {
+            Text(
+                text = "\u270F",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        // Play/Stop button
+        IconButton(
+            onClick = onPlayToggle,
+            modifier = Modifier.size(JervisSpacing.touchTarget),
+        ) {
+            Text(
+                text = if (isPlayingSegment) "\u23F9" else "\u25B6",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isPlayingSegment) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

@@ -53,11 +53,15 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
         var totalCreated = 0
         var totalSkipped = 0
         var totalErrors = 0
+        var authError = false
 
         suspend fun pollClientIssuesAsync(
             client: ClientDocument,
             project: ProjectDocument?,
         ) {
+            // Stop processing if auth already failed
+            if (authError) return
+
             // Check capability configuration - get resource filter
             val resourceFilter =
                 if (project != null) {
@@ -90,7 +94,12 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
                     }
                 }
             } catch (e: Exception) {
-                logger.error(e) { "    Error polling ${getSystemName()} for client ${client.name}" }
+                if (isAuthenticationError(e)) {
+                    logger.error { "Auth error polling ${getSystemName()} for client ${client.name}: ${e.message}" }
+                    authError = true
+                } else {
+                    logger.error(e) { "    Error polling ${getSystemName()} for client ${client.name}" }
+                }
                 totalErrors++
             }
         }
@@ -104,7 +113,8 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
 
         logger.info {
             "  ← ${getSystemName()} handler completed | " +
-                "Total: discovered=$totalDiscovered, created=$totalCreated, skipped=$totalSkipped, errors=$totalErrors"
+                "Total: discovered=$totalDiscovered, created=$totalCreated, skipped=$totalSkipped, errors=$totalErrors" +
+                if (authError) " | AUTH ERROR" else ""
         }
 
         return PollingResult(
@@ -112,7 +122,22 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             itemsCreated = totalCreated,
             itemsSkipped = totalSkipped,
             errors = totalErrors,
+            authenticationError = authError,
         )
+    }
+
+    /**
+     * Detect authentication/authorization errors from HTTP exceptions.
+     */
+    private fun isAuthenticationError(e: Exception): Boolean {
+        val message = e.message ?: return false
+        return message.contains("401") ||
+            message.contains("403") ||
+            message.contains("Unauthorized", ignoreCase = true) ||
+            message.contains("Forbidden", ignoreCase = true) ||
+            message.contains("Access denied", ignoreCase = true) ||
+            message.contains("Authentication failed", ignoreCase = true) ||
+            message.contains("Invalid credentials", ignoreCase = true)
     }
 
     /**

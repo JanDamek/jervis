@@ -53,8 +53,17 @@ data class MeetingDocument(
     val stateChangedAt: Instant? = null,
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
+    val correctionChatHistory: List<CorrectionChatMessage> = emptyList(),
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,
+)
+
+data class CorrectionChatMessage(
+    val role: String,
+    val text: String,
+    val timestamp: Instant = Instant.now(),
+    val rulesCreated: Int = 0,
+    val status: String = "success",
 )
 
 data class CorrectionQuestion(

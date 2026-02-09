@@ -152,6 +152,10 @@ class MainViewModel(
     private val _approvalDialogEvent = MutableStateFlow<JervisEvent.UserTaskCreated?>(null)
     val approvalDialogEvent: StateFlow<JervisEvent.UserTaskCreated?> = _approvalDialogEvent.asStateFlow()
 
+    // Orchestrator task progress (push-based from Python via Kotlin)
+    private val _orchestratorProgress = MutableStateFlow<OrchestratorProgressInfo?>(null)
+    val orchestratorProgress: StateFlow<OrchestratorProgressInfo?> = _orchestratorProgress.asStateFlow()
+
     // Platform notification manager
     val notificationManager = PlatformNotificationManager()
 
@@ -300,6 +304,34 @@ class MainViewModel(
 
             is JervisEvent.MeetingCorrectionProgress -> {
                 // Handled by MeetingViewModel
+            }
+
+            is JervisEvent.OrchestratorTaskProgress -> {
+                _orchestratorProgress.value = OrchestratorProgressInfo(
+                    taskId = event.taskId,
+                    node = event.node,
+                    message = event.message,
+                    percent = event.percent,
+                    goalIndex = event.goalIndex,
+                    totalGoals = event.totalGoals,
+                    stepIndex = event.stepIndex,
+                    totalSteps = event.totalSteps,
+                )
+            }
+
+            is JervisEvent.OrchestratorTaskStatusChange -> {
+                when (event.status) {
+                    "done", "error" -> {
+                        // Clear progress — orchestration finished
+                        _orchestratorProgress.value = null
+                    }
+                    "interrupted" -> {
+                        // Keep progress visible but update message
+                        _orchestratorProgress.value = _orchestratorProgress.value?.copy(
+                            message = "Čekám na schválení...",
+                        )
+                    }
+                }
             }
 
             else -> {
@@ -1058,3 +1090,18 @@ class MainViewModel(
         // Cleanup if needed
     }
 }
+
+/**
+ * Orchestrator task progress info pushed from Python via Kotlin.
+ * Displayed in UI to show real-time orchestration progress.
+ */
+data class OrchestratorProgressInfo(
+    val taskId: String,
+    val node: String,
+    val message: String,
+    val percent: Double = 0.0,
+    val goalIndex: Int = 0,
+    val totalGoals: Int = 0,
+    val stepIndex: Int = 0,
+    val totalSteps: Int = 0,
+)

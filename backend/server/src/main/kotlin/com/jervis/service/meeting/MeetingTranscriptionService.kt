@@ -56,6 +56,7 @@ class MeetingTranscriptionService(
                 workspacePath = workspacePath,
                 meetingId = meetingIdStr,
                 clientId = clientIdStr,
+                projectId = meeting.projectId?.toString(),
             )
 
             if (!result.error.isNullOrBlank()) {

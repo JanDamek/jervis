@@ -42,8 +42,6 @@ data class WhisperSettingsDto(
     val vadFilter: Boolean = true,
     /** Enable word-level timestamps in segments */
     val wordTimestamps: Boolean = false,
-    /** Initial prompt / vocabulary hints for better recognition of domain terms */
-    val initialPrompt: String? = null,
     /** Use previous text as context for next segment (can degrade on very long audio) */
     val conditionOnPreviousText: Boolean = true,
     /** No-speech probability threshold (0.0-1.0) */
@@ -68,8 +66,6 @@ data class WhisperSettingsUpdateDto(
     val beamSize: Int? = null,
     val vadFilter: Boolean? = null,
     val wordTimestamps: Boolean? = null,
-    val initialPrompt: String? = null,
-    val clearInitialPrompt: Boolean = false,
     val conditionOnPreviousText: Boolean? = null,
     val noSpeechThreshold: Double? = null,
     val maxParallelJobs: Int? = null,

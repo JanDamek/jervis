@@ -139,6 +139,7 @@ class NotificationRpcImpl : INotificationService {
         chunksDone: Int,
         totalChunks: Int,
         message: String? = null,
+        tokensGenerated: Int = 0,
     ) {
         val event = JervisEvent.MeetingCorrectionProgress(
             meetingId = meetingId,
@@ -147,6 +148,65 @@ class NotificationRpcImpl : INotificationService {
             chunksDone = chunksDone,
             totalChunks = totalChunks,
             message = message,
+            tokensGenerated = tokensGenerated,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
+    suspend fun emitOrchestratorTaskProgress(
+        taskId: String,
+        clientId: String,
+        node: String,
+        message: String,
+        percent: Double = 0.0,
+        goalIndex: Int = 0,
+        totalGoals: Int = 0,
+        stepIndex: Int = 0,
+        totalSteps: Int = 0,
+    ) {
+        val event = JervisEvent.OrchestratorTaskProgress(
+            taskId = taskId,
+            clientId = clientId,
+            node = node,
+            message = message,
+            percent = percent,
+            goalIndex = goalIndex,
+            totalGoals = totalGoals,
+            stepIndex = stepIndex,
+            totalSteps = totalSteps,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
+    suspend fun emitOrchestratorTaskStatusChange(
+        taskId: String,
+        clientId: String,
+        threadId: String,
+        status: String,
+        summary: String? = null,
+        error: String? = null,
+        interruptAction: String? = null,
+        interruptDescription: String? = null,
+        branch: String? = null,
+        artifacts: List<String> = emptyList(),
+    ) {
+        val event = JervisEvent.OrchestratorTaskStatusChange(
+            taskId = taskId,
+            clientId = clientId,
+            threadId = threadId,
+            status = status,
+            summary = summary,
+            error = error,
+            interruptAction = interruptAction,
+            interruptDescription = interruptDescription,
+            branch = branch,
+            artifacts = artifacts,
             timestamp = Instant.now().toString(),
         )
         eventStreams.keys().asSequence().forEach { id ->

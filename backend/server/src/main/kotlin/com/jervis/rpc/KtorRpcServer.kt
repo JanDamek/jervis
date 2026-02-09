@@ -49,6 +49,9 @@ class KtorRpcServer(
     private val meetingRpcImpl: MeetingRpcImpl,
     private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
+    private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
+    private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
+    private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val properties: KtorClientProperties,
 ) {
@@ -161,6 +164,7 @@ class KtorRpcServer(
                             post("/internal/correction-progress") {
                                 try {
                                     val body = call.receive<CorrectionProgressCallback>()
+                                    correctionHeartbeatTracker.updateHeartbeat(body.meetingId)
                                     launch {
                                         notificationRpcImpl.emitMeetingCorrectionProgress(
                                             meetingId = body.meetingId,
@@ -169,11 +173,84 @@ class KtorRpcServer(
                                             chunksDone = body.chunksDone,
                                             totalChunks = body.totalChunks,
                                             message = body.message,
+                                            tokensGenerated = body.tokensGenerated,
                                         )
                                     }
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to process correction progress callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator sends task progress here
+                            post("/internal/orchestrator-progress") {
+                                try {
+                                    val body = call.receive<OrchestratorProgressCallback>()
+                                    orchestratorHeartbeatTracker.updateHeartbeat(body.taskId)
+                                    launch {
+                                        notificationRpcImpl.emitOrchestratorTaskProgress(
+                                            taskId = body.taskId,
+                                            clientId = body.clientId,
+                                            node = body.node,
+                                            message = body.message,
+                                            percent = body.percent,
+                                            goalIndex = body.goalIndex,
+                                            totalGoals = body.totalGoals,
+                                            stepIndex = body.stepIndex,
+                                            totalSteps = body.totalSteps,
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process orchestrator progress callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator sends status changes here (done/error/interrupted)
+                            // Handles BOTH UI notification (via NotificationRpc) AND task state transition (via StatusHandler)
+                            post("/internal/orchestrator-status") {
+                                try {
+                                    val body = call.receive<OrchestratorStatusCallback>()
+                                    orchestratorHeartbeatTracker.clearHeartbeat(body.taskId)
+                                    launch {
+                                        // 1. Broadcast to UI
+                                        notificationRpcImpl.emitOrchestratorTaskStatusChange(
+                                            taskId = body.taskId,
+                                            clientId = body.clientId,
+                                            threadId = body.threadId,
+                                            status = body.status,
+                                            summary = body.summary,
+                                            error = body.error,
+                                            interruptAction = body.interruptAction,
+                                            interruptDescription = body.interruptDescription,
+                                            branch = body.branch,
+                                            artifacts = body.artifacts,
+                                        )
+                                        // 2. Handle task state transition (PYTHON_ORCHESTRATING → DONE/ERROR/USER_TASK)
+                                        orchestratorStatusHandler.handleStatusChange(
+                                            taskId = body.taskId,
+                                            status = body.status,
+                                            summary = body.summary,
+                                            error = body.error,
+                                            interruptAction = body.interruptAction,
+                                            interruptDescription = body.interruptDescription,
+                                            branch = body.branch,
+                                            artifacts = body.artifacts,
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process orchestrator status callback" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -234,4 +311,32 @@ data class CorrectionProgressCallback(
     val chunksDone: Int,
     val totalChunks: Int,
     val message: String? = null,
+    val tokensGenerated: Int = 0,
+)
+
+@kotlinx.serialization.Serializable
+data class OrchestratorProgressCallback(
+    val taskId: String,
+    val clientId: String,
+    val node: String,
+    val message: String,
+    val percent: Double = 0.0,
+    val goalIndex: Int = 0,
+    val totalGoals: Int = 0,
+    val stepIndex: Int = 0,
+    val totalSteps: Int = 0,
+)
+
+@kotlinx.serialization.Serializable
+data class OrchestratorStatusCallback(
+    val taskId: String,
+    val clientId: String = "",
+    val threadId: String,
+    val status: String,
+    val summary: String? = null,
+    val error: String? = null,
+    val interruptAction: String? = null,
+    val interruptDescription: String? = null,
+    val branch: String? = null,
+    val artifacts: List<String> = emptyList(),
 )

@@ -1,5 +1,7 @@
 package com.jervis.service.meeting
 
+import com.jervis.configuration.CorrectionListRequestDto
+import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.entity.WhisperSettingsDocument
 import com.jervis.rpc.WhisperSettingsRpcImpl
 import io.fabric8.kubernetes.api.model.EnvVarBuilder
@@ -38,6 +40,7 @@ private val json = Json { ignoreUnknownKeys = true }
 class WhisperJobRunner(
     private val whisperSettingsRpc: WhisperSettingsRpcImpl,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
+    private val orchestratorClient: PythonOrchestratorClient,
 ) {
 
     companion object {
@@ -86,8 +89,12 @@ class WhisperJobRunner(
         workspacePath: String,
         meetingId: String? = null,
         clientId: String? = null,
+        projectId: String? = null,
     ): WhisperResult {
         val settings = whisperSettingsRpc.getSettingsDocument()
+
+        // Auto-build initial_prompt from KB corrections for this client/project
+        val autoPrompt = buildInitialPromptFromCorrections(clientId, projectId)
 
         // Per-meeting result file — enables parallel Whisper Jobs without collision
         val audioPath = Paths.get(audioFilePath)
@@ -111,7 +118,7 @@ class WhisperJobRunner(
         }
 
         // Build options JSON for whisper_runner.py
-        val optionsJson = buildOptionsJson(settings, progressFile.toString())
+        val optionsJson = buildOptionsJson(settings, progressFile.toString(), autoPrompt)
 
         try {
             if (IN_CLUSTER) {
@@ -247,7 +254,55 @@ class WhisperJobRunner(
         }
     }
 
-    private fun buildOptionsJson(settings: WhisperSettingsDocument, progressFilePath: String): String {
+    /**
+     * Build Whisper initial_prompt from KB correction rules.
+     *
+     * Fetches corrections from two scopes and merges them:
+     * 1. Global client corrections (projectId=null) — always included
+     * 2. Project-specific corrections — only if projectId is provided
+     *
+     * Both "corrected" (correct form) and "original" (misheard form) are included
+     * so Whisper knows what to expect and what to avoid.
+     */
+    private suspend fun buildInitialPromptFromCorrections(clientId: String?, projectId: String?): String? {
+        if (clientId == null) return null
+        return try {
+            // 1. Global client corrections (no project filter)
+            val globalResult = orchestratorClient.listCorrections(
+                CorrectionListRequestDto(clientId = clientId, projectId = null, maxResults = 500),
+            )
+
+            // 2. Project-specific corrections (if project is set)
+            val projectResult = if (!projectId.isNullOrBlank()) {
+                orchestratorClient.listCorrections(
+                    CorrectionListRequestDto(clientId = clientId, projectId = projectId, maxResults = 500),
+                )
+            } else {
+                null
+            }
+
+            // Merge all corrections, extract unique terms
+            val allCorrections = globalResult.corrections + (projectResult?.corrections ?: emptyList())
+            val terms = allCorrections
+                .flatMap { listOf(it.metadata.corrected, it.metadata.original) }
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            if (terms.isEmpty()) {
+                logger.info { "No KB corrections found for clientId=$clientId, projectId=$projectId — no initial_prompt" }
+                null
+            } else {
+                val prompt = terms.joinToString(", ")
+                logger.info { "Auto-built initial_prompt from ${terms.size} terms (${allCorrections.size} corrections, global+project): ${prompt.take(200)}..." }
+                prompt
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch KB corrections for initial_prompt (clientId=$clientId, projectId=$projectId), proceeding without" }
+            null
+        }
+    }
+
+    private fun buildOptionsJson(settings: WhisperSettingsDocument, progressFilePath: String, initialPrompt: String? = null): String {
         val opts = mutableMapOf<String, Any?>(
             "task" to settings.task,
             "model" to settings.model,
@@ -259,7 +314,7 @@ class WhisperJobRunner(
             "progress_file" to progressFilePath,
         )
         settings.language?.let { opts["language"] = it }
-        settings.initialPrompt?.let { opts["initial_prompt"] = it }
+        initialPrompt?.let { opts["initial_prompt"] = it }
 
         // Manual JSON serialization to avoid dependency issues
         return buildString {
