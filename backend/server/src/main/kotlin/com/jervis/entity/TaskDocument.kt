@@ -91,6 +91,7 @@ import java.time.Instant
  * @property cronExpression Cron expression (for recurring tasks)
  * @property agentCheckpointJson Serialized agent state for continuity (reused across messages)
  * @property orchestratorThreadId LangGraph thread ID when task is dispatched to Python orchestrator
+ * @property orchestrationStartedAt Timestamp when task was dispatched to Python orchestrator (for detecting inline messages)
  */
 @Document(collection = "tasks")
 data class TaskDocument(
@@ -121,6 +122,8 @@ data class TaskDocument(
     val agentCheckpointJson: String? = null,
     // Python orchestrator thread ID for async dispatch (state = PYTHON_ORCHESTRATING)
     val orchestratorThreadId: String? = null,
+    // Timestamp when task was dispatched to Python orchestrator (for inline message detection)
+    val orchestrationStartedAt: Instant? = null,
     // NEW (2026-01): User interaction state for async USER_TASK workflow
     /**
      * Question agent is waiting for user to answer (when state = USER_TASK).

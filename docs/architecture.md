@@ -17,7 +17,8 @@
 8. [Security Architecture](#security-architecture)
 9. [Coding Agents](#coding-agents)
 10. [Python Orchestrator](#python-orchestrator)
-11. [Notification System](#notification-system)
+11. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
+12. [Notification System](#notification-system)
 
 ---
 
@@ -455,6 +456,80 @@ Two layers:
 | `backend/server/.../BackgroundEngine.kt` | Result polling loop, USER_TASK escalation |
 | `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
+
+---
+
+## Dual-Queue System & Inline Message Delivery
+
+### Dual-Queue Architecture
+
+Tasks are divided into two processing queues based on their `processingMode`:
+
+| Queue | Mode | Purpose | Examples |
+|-------|------|---------|----------|
+| **Frontend** | `FOREGROUND` | User-initiated tasks, higher priority | Chat messages, user tasks |
+| **Backend** | `BACKGROUND` | System/indexing tasks, lower priority | Email processing, wiki indexing, git processing |
+
+The UI (`AgentWorkloadScreen`) displays both queues separately and allows:
+- **Reordering** tasks within a queue (up/down)
+- **Moving** tasks between queues (e.g., promote a background task to foreground)
+
+#### Queue Management RPC
+
+Three new RPC methods on `IAgentOrchestratorService`:
+
+| Method | Purpose |
+|--------|---------|
+| `getPendingTasks()` | Returns all pending items from both queues with `taskId`, `processingMode`, `queuePosition` |
+| `reorderTask(taskId, newPosition)` | Changes a task's position within its current queue |
+| `moveTask(taskId, targetProcessingMode)` | Moves a task between FOREGROUND and BACKGROUND queues |
+
+Backend services: `TaskService.getPendingBackgroundTasks()`, `reorderTaskInQueue()`, `moveTaskToQueue()`.
+Repository: `TaskRepository` has a dedicated query for background queue items.
+
+#### Queue Status Emissions
+
+`BackgroundEngine` emits queue status updates via kRPC stream that include items from both FOREGROUND and BACKGROUND queues. Each `PendingQueueItem` carries `taskId` and `processingMode` so the UI can partition them into separate lists.
+
+### Inline Message Delivery During Orchestration
+
+When a user sends a message to a project whose task is currently in `PYTHON_ORCHESTRATING` state, the message cannot be processed immediately (the orchestrator is busy). Instead of dropping or blocking the message:
+
+1. The message is saved to `ChatMessageDocument` (MongoDB) as usual -- it is persisted
+2. `TaskDocument` has an `orchestrationStartedAt: Instant?` field set when orchestration begins
+3. When orchestration completes ("done"), `BackgroundEngine` checks if any new USER messages arrived after `orchestrationStartedAt` (via `ChatMessageRepository.countByTimestamp`)
+4. If new messages found: the task is auto-requeued to `READY_FOR_GPU` (not `DISPATCHED_GPU`), so the agent re-processes with full context including the new messages
+5. If no new messages: normal completion flow continues
+
+```
+User sends message while PYTHON_ORCHESTRATING
+    │
+    ├── Message saved to ChatMessageDocument (persisted)
+    │
+    └── Orchestration completes ("done")
+         │
+         ├── New USER messages after orchestrationStartedAt?
+         │   YES → auto-requeue to READY_FOR_GPU (re-process with new context)
+         │   NO  → normal completion (DISPATCHED_GPU or DELETE)
+         │
+         └── TaskDocument.orchestrationStartedAt reset
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `TaskDocument.kt` | `orchestrationStartedAt` field for tracking orchestration start time |
+| `AgentOrchestratorService.kt` | Sets `orchestrationStartedAt` on dispatch |
+| `AgentOrchestratorRpcImpl.kt` | PYTHON_ORCHESTRATING handling, 3 new queue RPC methods |
+| `BackgroundEngine.kt` | Auto-requeue logic, dual-queue status emissions |
+| `ChatMessageRepository.kt` | Count messages by timestamp query |
+| `TaskService.kt` | `getPendingBackgroundTasks()`, `reorderTaskInQueue()`, `moveTaskToQueue()` |
+| `TaskRepository.kt` | Background queue query |
+| `PendingTasksDto.kt` | Shared DTO for queue items |
+| `AgentActivityEntry.kt` | Enhanced `PendingQueueItem` with `taskId`, `processingMode`, `queuePosition` |
+| `MainViewModel.kt` | Dual-queue state (`foregroundQueue`, `backgroundQueue`), action methods |
+| `AgentWorkloadScreen.kt` | Dual-queue UI with reorder/move controls |
 
 ---
 

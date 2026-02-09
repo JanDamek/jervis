@@ -37,10 +37,15 @@ data class AgentActivityEntry(
 /**
  * Represents a pending item in the agent processing queue.
  * Displayed in the AgentWorkloadScreen to show what's waiting.
+ * Enhanced with taskId and processingMode for queue management (reorder/move).
  */
 data class PendingQueueItem(
+    val taskId: String = "",
     val preview: String,
     val projectName: String,
+    val taskType: String = "",
+    val processingMode: String = "FOREGROUND", // "FOREGROUND" or "BACKGROUND"
+    val queuePosition: Int? = null,
 )
 
 /**

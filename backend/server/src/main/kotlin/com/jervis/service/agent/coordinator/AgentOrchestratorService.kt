@@ -215,6 +215,7 @@ class AgentOrchestratorService(
         val updatedTask = task.copy(
             state = TaskStateEnum.PYTHON_ORCHESTRATING,
             orchestratorThreadId = streamResponse.threadId,
+            orchestrationStartedAt = java.time.Instant.now(),
         )
         taskRepository.save(updatedTask)
 

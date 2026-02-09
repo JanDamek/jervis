@@ -104,6 +104,25 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Long
 
     /**
+     * Find BACKGROUND tasks ordered by queuePosition (if set) then createdAt.
+     * Supports user-reordered background queue while falling back to FIFO for unordered tasks.
+     */
+    suspend fun findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find all pending tasks for a client by processing mode and state.
+     * Used for queue management UI display.
+     */
+    suspend fun findByClientIdAndProcessingModeAndState(
+        clientId: ClientId,
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
      * Find tasks ready for qualification where backoff window has elapsed.
      * Returns tasks where nextQualificationRetryAt is null (new) or <= now (backoff expired).
      */

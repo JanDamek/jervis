@@ -181,6 +181,78 @@ class TaskService(
             .filter { it.clientId == clientId && it.id != running?.id }
     }
 
+    /**
+     * Get pending BACKGROUND tasks for queue display.
+     * Returns tasks waiting to be processed, excluding the currently running task.
+     */
+    suspend fun getPendingBackgroundTasks(clientId: ClientId): List<TaskDocument> {
+        val running = currentRunningTask
+        return taskRepository
+            .findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
+                ProcessingMode.BACKGROUND,
+                TaskStateEnum.READY_FOR_GPU,
+            ).toList()
+            .filter { it.clientId == clientId && it.id != running?.id }
+    }
+
+    /**
+     * Reorder a task within its queue by setting a new position.
+     * Recalculates positions for all tasks in the same queue to maintain contiguous ordering.
+     */
+    suspend fun reorderTaskInQueue(task: TaskDocument, newPosition: Int) {
+        val allTasks = when (task.processingMode) {
+            ProcessingMode.FOREGROUND -> getPendingForegroundTasks(task.clientId)
+            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks(task.clientId)
+        }.sortedBy { it.queuePosition ?: Int.MAX_VALUE }.toMutableList()
+
+        // Remove the target task from the list
+        allTasks.removeAll { it.id == task.id }
+
+        // Clamp new position to valid range (1-based)
+        val clampedPos = newPosition.coerceIn(1, allTasks.size + 1)
+
+        // Insert at the new position (convert to 0-based index)
+        allTasks.add((clampedPos - 1).coerceAtLeast(0), task)
+
+        // Recalculate all positions (1-based contiguous)
+        allTasks.forEachIndexed { index, t ->
+            val updatedTask = t.copy(queuePosition = index + 1)
+            taskRepository.save(updatedTask)
+        }
+
+        logger.info {
+            "TASK_REORDERED: id=${task.id} newPosition=$clampedPos queue=${task.processingMode} totalTasks=${allTasks.size}"
+        }
+    }
+
+    /**
+     * Move a task between FOREGROUND and BACKGROUND queues.
+     * Assigns queuePosition at the end of the target queue.
+     */
+    suspend fun moveTaskToQueue(task: TaskDocument, targetMode: ProcessingMode) {
+        if (task.processingMode == targetMode) {
+            logger.info { "TASK_MOVE_SKIP: id=${task.id} already in $targetMode" }
+            return
+        }
+
+        // Calculate next position in target queue
+        val targetTasks = when (targetMode) {
+            ProcessingMode.FOREGROUND -> getPendingForegroundTasks(task.clientId)
+            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks(task.clientId)
+        }
+        val maxPosition = targetTasks.maxOfOrNull { it.queuePosition ?: 0 } ?: 0
+
+        val updatedTask = task.copy(
+            processingMode = targetMode,
+            queuePosition = maxPosition + 1,
+        )
+        taskRepository.save(updatedTask)
+
+        logger.info {
+            "TASK_MOVED: id=${task.id} from=${task.processingMode} to=$targetMode newPosition=${maxPosition + 1}"
+        }
+    }
+
     suspend fun updateState(
         task: TaskDocument,
         next: TaskStateEnum,

@@ -69,6 +69,7 @@ class BackgroundEngine(
     private val projectService: com.jervis.service.project.ProjectService,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val pythonOrchestratorClient: PythonOrchestratorClient,
+    private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -464,8 +465,9 @@ class BackgroundEngine(
                         else -> runningTask.type.toString()
                     }
 
-                // Get pending queue items for display
+                // Get pending queue items for display (both FOREGROUND and BACKGROUND)
                 val pendingTasks = taskService.getPendingForegroundTasks(runningTask.clientId)
+                val backgroundTasks = taskService.getPendingBackgroundTasks(runningTask.clientId)
                 val pendingItems = buildMap {
                     put("pendingItemCount", pendingTasks.size.toString())
                     pendingTasks.forEachIndexed { index, task ->
@@ -477,6 +479,19 @@ class BackgroundEngine(
                         } ?: "General"
                         put("pendingItem_${index}_preview", preview)
                         put("pendingItem_${index}_project", pName)
+                        put("pendingItem_${index}_taskId", task.id.toString())
+                    }
+                    put("backgroundItemCount", backgroundTasks.size.toString())
+                    backgroundTasks.forEachIndexed { index, task ->
+                        val preview = task.content.take(60).let {
+                            if (task.content.length > 60) "$it..." else it
+                        }
+                        val pName = task.projectId?.let { pid ->
+                            try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                        } ?: "General"
+                        put("backgroundItem_${index}_preview", preview)
+                        put("backgroundItem_${index}_project", pName)
+                        put("backgroundItem_${index}_taskId", task.id.toString())
                     }
                 }
 
@@ -509,18 +524,33 @@ class BackgroundEngine(
     private suspend fun emitIdleQueueStatus(clientId: com.jervis.common.types.ClientId) {
         val (_, remainingQueueSize) = taskService.getQueueStatus(clientId, null)
         val pendingTasks = taskService.getPendingForegroundTasks(clientId)
-        val pendingItems = pendingTasks.mapIndexed { index, task ->
-            val preview = task.content.take(60).let {
-                if (task.content.length > 60) "$it..." else it
+        val backgroundTasks = taskService.getPendingBackgroundTasks(clientId)
+        val pendingItems = buildMap {
+            put("pendingItemCount", pendingTasks.size.toString())
+            pendingTasks.forEachIndexed { index, task ->
+                val preview = task.content.take(60).let {
+                    if (task.content.length > 60) "$it..." else it
+                }
+                val pName = task.projectId?.let { pid ->
+                    try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                } ?: "General"
+                put("pendingItem_${index}_preview", preview)
+                put("pendingItem_${index}_project", pName)
+                put("pendingItem_${index}_taskId", task.id.toString())
             }
-            val pName = task.projectId?.let { pid ->
-                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
-            } ?: "General"
-            listOf(
-                "pendingItem_${index}_preview" to preview,
-                "pendingItem_${index}_project" to pName,
-            )
-        }.flatten().toMap() + mapOf("pendingItemCount" to pendingTasks.size.toString())
+            put("backgroundItemCount", backgroundTasks.size.toString())
+            backgroundTasks.forEachIndexed { index, task ->
+                val preview = task.content.take(60).let {
+                    if (task.content.length > 60) "$it..." else it
+                }
+                val pName = task.projectId?.let { pid ->
+                    try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                } ?: "General"
+                put("backgroundItem_${index}_preview", preview)
+                put("backgroundItem_${index}_project", pName)
+                put("backgroundItem_${index}_taskId", task.id.toString())
+            }
+        }
 
         agentOrchestratorRpc.emitQueueStatus(
             clientId.toString(),
@@ -651,12 +681,6 @@ class BackgroundEngine(
                     return
                 }
 
-                val updatedTask = task.copy(
-                    state = TaskStateEnum.DISPATCHED_GPU,
-                    orchestratorThreadId = null,
-                )
-                taskRepository.save(updatedTask)
-
                 // Emit final response for FOREGROUND tasks
                 if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
                     val summary = result["summary"] ?: "Orchestrace dokončena"
@@ -671,12 +695,45 @@ class BackgroundEngine(
                     }
                 }
 
-                // Background tasks: delete after completion
-                if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
-                    taskRepository.delete(updatedTask)
+                // Check if new user messages arrived during orchestration (inline messages)
+                val hasInlineMessages = task.orchestrationStartedAt?.let { startedAt ->
+                    try {
+                        chatMessageRepository.countByTaskIdAndRoleAndTimestampAfter(
+                            taskId = task.id,
+                            role = com.jervis.entity.MessageRole.USER,
+                            timestamp = startedAt,
+                        ) > 0
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to check for inline messages for task ${task.id}" }
+                        false
+                    }
+                } ?: false
+
+                if (hasInlineMessages && task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+                    // New messages arrived during orchestration — auto-requeue for processing
+                    val requeuedTask = task.copy(
+                        state = TaskStateEnum.READY_FOR_GPU,
+                        orchestratorThreadId = null,
+                        orchestrationStartedAt = null,
+                    )
+                    taskRepository.save(requeuedTask)
+                    logger.info { "INLINE_REQUEUE: taskId=${task.id} - new user messages arrived during orchestration, re-queuing" }
+                } else {
+                    // Normal completion
+                    val updatedTask = task.copy(
+                        state = TaskStateEnum.DISPATCHED_GPU,
+                        orchestratorThreadId = null,
+                        orchestrationStartedAt = null,
+                    )
+                    taskRepository.save(updatedTask)
+
+                    // Background tasks: delete after completion
+                    if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
+                        taskRepository.delete(updatedTask)
+                    }
                 }
 
-                logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id}" }
+                logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages" }
             }
             "error" -> {
                 val errorMsg = status["error"] ?: "Unknown orchestrator error"

@@ -3,6 +3,7 @@ package com.jervis.service
 import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
+import com.jervis.dto.PendingTasksDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
@@ -31,4 +32,25 @@ interface IAgentOrchestratorService {
      * Used when loading chat to show previous conversation.
      */
     suspend fun getChatHistory(clientId: String, projectId: String?, limit: Int = 10): ChatHistoryDto
+
+    // --- Queue Management ---
+
+    /**
+     * Get all pending tasks for both FOREGROUND and BACKGROUND queues.
+     * Returns structured data with queue items and running task info.
+     */
+    suspend fun getPendingTasks(clientId: String): PendingTasksDto
+
+    /**
+     * Reorder a task within its queue by setting a new position.
+     * Only works for tasks in READY_FOR_GPU state.
+     */
+    suspend fun reorderTask(taskId: String, newPosition: Int)
+
+    /**
+     * Move a task between FOREGROUND and BACKGROUND queues.
+     * Only works for tasks in READY_FOR_GPU state.
+     * @param targetMode "FOREGROUND" or "BACKGROUND"
+     */
+    suspend fun moveTask(taskId: String, targetMode: String)
 }

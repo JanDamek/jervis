@@ -310,6 +310,13 @@ class AgentOrchestratorRpcImpl(
                             com.jervis.dto.TaskStateEnum.READY_FOR_GPU
                         }
 
+                        com.jervis.dto.TaskStateEnum.PYTHON_ORCHESTRATING -> {
+                            // Agent is running on Python orchestrator for this project.
+                            // Save message to chat history (below); auto-requeue after orchestration completes.
+                            logger.info { "INLINE_MESSAGE_QUEUED | taskId=$currentTaskId | state=PYTHON_ORCHESTRATING | session=$sessionKey" }
+                            currentState // keep state unchanged - let orchestrator finish
+                        }
+
                         else -> {
                             logger.warn { "TASK_STILL_PROCESSING | taskId=$currentTaskId | state=$currentState | session=$sessionKey" }
                             currentState
@@ -475,5 +482,201 @@ class AgentOrchestratorRpcImpl(
         }
 
         return sharedFlow
+    }
+
+    // --- Queue Management RPC Methods ---
+
+    override suspend fun getPendingTasks(clientId: String): com.jervis.dto.PendingTasksDto {
+        val clientIdTyped = ClientId.fromString(clientId)
+        logger.info { "GET_PENDING_TASKS | clientId=$clientId" }
+
+        val running = taskService.getCurrentRunningTask()
+
+        val foregroundTasks = taskService.getPendingForegroundTasks(clientIdTyped)
+        val backgroundTasks = taskService.getPendingBackgroundTasks(clientIdTyped)
+
+        val foregroundItems = foregroundTasks.map { task -> task.toPendingTaskItemDto() }
+        val backgroundItems = backgroundTasks.map { task -> task.toPendingTaskItemDto() }
+
+        val runningItem = running?.takeIf { it.clientId == clientIdTyped }?.toPendingTaskItemDto()
+
+        logger.info {
+            "PENDING_TASKS_RESULT | clientId=$clientId | foreground=${foregroundItems.size} | background=${backgroundItems.size} | hasRunning=${runningItem != null}"
+        }
+
+        return com.jervis.dto.PendingTasksDto(
+            foreground = foregroundItems,
+            background = backgroundItems,
+            runningTask = runningItem,
+        )
+    }
+
+    override suspend fun reorderTask(taskId: String, newPosition: Int) {
+        logger.info { "REORDER_TASK | taskId=$taskId | newPosition=$newPosition" }
+
+        val taskIdTyped = com.jervis.common.types.TaskId.fromString(taskId)
+        val task = taskRepository.findById(taskIdTyped)
+            ?: run {
+                logger.warn { "REORDER_TASK_NOT_FOUND | taskId=$taskId" }
+                return
+            }
+
+        if (task.state != com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+            logger.warn { "REORDER_TASK_INVALID_STATE | taskId=$taskId | state=${task.state}" }
+            return
+        }
+
+        taskService.reorderTaskInQueue(task, newPosition)
+
+        // Emit updated queue status
+        try {
+            emitQueueStatusForClient(task.clientId.toString())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to emit queue status after reorder" }
+        }
+    }
+
+    override suspend fun moveTask(taskId: String, targetMode: String) {
+        logger.info { "MOVE_TASK | taskId=$taskId | targetMode=$targetMode" }
+
+        val taskIdTyped = com.jervis.common.types.TaskId.fromString(taskId)
+        val task = taskRepository.findById(taskIdTyped)
+            ?: run {
+                logger.warn { "MOVE_TASK_NOT_FOUND | taskId=$taskId" }
+                return
+            }
+
+        if (task.state != com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+            logger.warn { "MOVE_TASK_INVALID_STATE | taskId=$taskId | state=${task.state}" }
+            return
+        }
+
+        val mode = when (targetMode) {
+            "FOREGROUND" -> com.jervis.entity.ProcessingMode.FOREGROUND
+            "BACKGROUND" -> com.jervis.entity.ProcessingMode.BACKGROUND
+            else -> {
+                logger.warn { "MOVE_TASK_INVALID_MODE | taskId=$taskId | targetMode=$targetMode" }
+                return
+            }
+        }
+
+        taskService.moveTaskToQueue(task, mode)
+
+        // Emit updated queue status
+        try {
+            emitQueueStatusForClient(task.clientId.toString())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to emit queue status after move" }
+        }
+    }
+
+    // --- Internal Helpers ---
+
+    /**
+     * Convert TaskDocument to PendingTaskItemDto for queue display.
+     */
+    private suspend fun com.jervis.entity.TaskDocument.toPendingTaskItemDto(): com.jervis.dto.PendingTaskItemDto {
+        val projectName = this.projectId?.let { pid ->
+            try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+        } ?: "General"
+
+        val preview = this.content.take(60).let {
+            if (this.content.length > 60) "$it..." else it
+        }
+
+        val taskTypeLabel = when (this.type) {
+            com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
+            com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
+            com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
+            com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
+            else -> this.type.toString()
+        }
+
+        return com.jervis.dto.PendingTaskItemDto(
+            taskId = this.id.toString(),
+            projectName = projectName,
+            preview = preview,
+            taskType = taskTypeLabel,
+            processingMode = this.processingMode.name,
+            queuePosition = this.queuePosition,
+        )
+    }
+
+    /**
+     * Emit updated queue status for a client after queue changes (reorder/move).
+     */
+    private suspend fun emitQueueStatusForClient(clientId: String) {
+        val clientIdTyped = ClientId.fromString(clientId)
+        val (runningTask, queueSize) = taskService.getQueueStatus(clientIdTyped, null)
+
+        // Build pending items for metadata
+        val foregroundTasks = taskService.getPendingForegroundTasks(clientIdTyped)
+        val backgroundTasks = taskService.getPendingBackgroundTasks(clientIdTyped)
+
+        val pendingItems = buildMap {
+            put("pendingItemCount", foregroundTasks.size.toString())
+            foregroundTasks.forEachIndexed { index, task ->
+                val preview = task.content.take(60).let {
+                    if (task.content.length > 60) "$it..." else it
+                }
+                val pName = task.projectId?.let { pid ->
+                    try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                } ?: "General"
+                put("pendingItem_${index}_preview", preview)
+                put("pendingItem_${index}_project", pName)
+                put("pendingItem_${index}_taskId", task.id.toString())
+            }
+            put("backgroundItemCount", backgroundTasks.size.toString())
+            backgroundTasks.forEachIndexed { index, task ->
+                val preview = task.content.take(60).let {
+                    if (task.content.length > 60) "$it..." else it
+                }
+                val pName = task.projectId?.let { pid ->
+                    try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+                } ?: "General"
+                put("backgroundItem_${index}_preview", preview)
+                put("backgroundItem_${index}_project", pName)
+                put("backgroundItem_${index}_taskId", task.id.toString())
+            }
+        }
+
+        val metadata = if (runningTask != null) {
+            val projectName = runningTask.projectId?.let { pid ->
+                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+            } ?: "General"
+            val taskPreview = runningTask.content.take(50).let {
+                if (runningTask.content.length > 50) "$it..." else it
+            }
+            val taskTypeLabel = when (runningTask.type) {
+                com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
+                com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
+                com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
+                com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
+                else -> runningTask.type.toString()
+            }
+            mapOf(
+                "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
+                "runningProjectName" to projectName,
+                "runningTaskPreview" to taskPreview,
+                "runningTaskType" to taskTypeLabel,
+                "queueSize" to queueSize.toString(),
+            )
+        } else {
+            mapOf(
+                "runningProjectId" to "none",
+                "runningProjectName" to "None",
+                "runningTaskPreview" to "",
+                "runningTaskType" to "",
+                "queueSize" to queueSize.toString(),
+            )
+        }
+
+        val response = ChatResponseDto(
+            message = "Queue status update",
+            type = ChatResponseType.QUEUE_STATUS,
+            metadata = metadata + pendingItems,
+        )
+
+        emitQueueStatus(clientId, response)
     }
 }

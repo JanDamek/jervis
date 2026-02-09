@@ -14,15 +14,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -38,7 +41,8 @@ import com.jervis.ui.model.PendingQueueItem
 
 /**
  * Agent workload detail screen.
- * Shows current agent status, pending queue items, and in-memory activity log.
+ * Shows current agent status, dual-queue (Frontend/Backend) with reorder/move controls,
+ * and in-memory activity log.
  */
 @Composable
 fun AgentWorkloadScreen(
@@ -51,9 +55,15 @@ fun AgentWorkloadScreen(
     val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
     val runningTaskType by viewModel.runningTaskType.collectAsState()
     val queueSize by viewModel.queueSize.collectAsState()
-    val pendingItems by viewModel.pendingQueueItems.collectAsState()
+    val foregroundQueue by viewModel.foregroundQueue.collectAsState()
+    val backgroundQueue by viewModel.backgroundQueue.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
+
+    // Refresh full queue data when screen opens
+    LaunchedEffect(Unit) {
+        viewModel.refreshQueues()
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         JTopBar(
@@ -79,35 +89,70 @@ fun AgentWorkloadScreen(
                 )
             }
 
-            // Pending queue items section
-            if (pendingItems.isNotEmpty()) {
+            // FOREGROUND queue section ("Frontend")
+            item {
+                QueueSectionHeader(
+                    title = "Frontend",
+                    count = foregroundQueue.size,
+                )
+            }
+            if (foregroundQueue.isEmpty()) {
                 item {
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
-                    Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
-                    Text(
-                        text = "Fronta (${pendingItems.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                    JEmptyState(
+                        message = "Žádná úloha ve frontě",
+                        icon = "📭",
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
                 }
-                items(pendingItems) { item ->
-                    PendingQueueItemRow(item)
+            } else {
+                itemsIndexed(foregroundQueue) { index, item ->
+                    QueueItemRow(
+                        item = item,
+                        isFirst = index == 0,
+                        isLast = index == foregroundQueue.lastIndex,
+                        onMoveUp = { viewModel.moveTaskUp(item.taskId) },
+                        onMoveDown = { viewModel.moveTaskDown(item.taskId) },
+                        onSwitchQueue = { viewModel.moveTaskToQueue(item.taskId, "BACKGROUND") },
+                        switchQueueIcon = "→",
+                        switchQueueLabel = "Do backendu",
+                    )
+                }
+            }
+
+            // BACKGROUND queue section ("Backend")
+            item {
+                QueueSectionHeader(
+                    title = "Backend",
+                    count = backgroundQueue.size,
+                )
+            }
+            if (backgroundQueue.isEmpty()) {
+                item {
+                    JEmptyState(
+                        message = "Žádné úlohy na pozadí",
+                        icon = "📭",
+                    )
+                }
+            } else {
+                itemsIndexed(backgroundQueue) { index, item ->
+                    QueueItemRow(
+                        item = item,
+                        isFirst = index == 0,
+                        isLast = index == backgroundQueue.lastIndex,
+                        onMoveUp = { viewModel.moveTaskUp(item.taskId) },
+                        onMoveDown = { viewModel.moveTaskDown(item.taskId) },
+                        onSwitchQueue = { viewModel.moveTaskToQueue(item.taskId, "FOREGROUND") },
+                        switchQueueIcon = "←",
+                        switchQueueLabel = "Do frontendu",
+                    )
                 }
             }
 
             // Activity history section
             item {
-                HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
-                Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
-                Text(
-                    text = "Historie aktivity",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                QueueSectionHeader(
+                    title = "Historie aktivity",
+                    count = entries.size,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
             }
 
             if (entries.isEmpty()) {
@@ -124,6 +169,43 @@ fun AgentWorkloadScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Section header with title and count badge.
+ */
+@Composable
+private fun QueueSectionHeader(
+    title: String,
+    count: Int,
+) {
+    Column {
+        HorizontalDivider(modifier = Modifier.padding(horizontal = JervisSpacing.outerPadding))
+        Spacer(modifier = Modifier.height(JervisSpacing.itemGap))
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (count > 0) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
     }
 }
 
@@ -224,37 +306,97 @@ private fun CurrentStatusCard(
 }
 
 /**
- * Row displaying a single pending queue item.
+ * Row displaying a single queue item with reorder and queue-switch controls.
+ * All buttons have 44dp touch targets per design system requirements.
  */
 @Composable
-private fun PendingQueueItemRow(item: PendingQueueItem) {
-    Row(
+private fun QueueItemRow(
+    item: PendingQueueItem,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onSwitchQueue: () -> Unit,
+    switchQueueIcon: String,
+    switchQueueLabel: String,
+) {
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .heightIn(min = 36.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        border = CardDefaults.outlinedCardBorder(),
     ) {
-        // Waiting indicator
-        Text(
-            text = "⏳",
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.width(28.dp),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (item.taskType.isNotBlank()) {
+                        Text(
+                            text = item.taskType,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = item.projectName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = item.preview,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.projectName,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = item.preview,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Reorder: Move up
+            IconButton(
+                onClick = onMoveUp,
+                enabled = !isFirst,
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Text(
+                    text = "▲",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (!isFirst) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                )
+            }
+
+            // Reorder: Move down
+            IconButton(
+                onClick = onMoveDown,
+                enabled = !isLast,
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Text(
+                    text = "▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (!isLast) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                )
+            }
+
+            // Switch queue
+            IconButton(
+                onClick = onSwitchQueue,
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Text(
+                    text = switchQueueIcon,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
         }
     }
 }
@@ -293,21 +435,32 @@ private fun ActivityEntryRow(entry: AgentActivityEntry) {
 
         // Description
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (entry.taskType != null) {
-                    Text(
-                        text = entry.taskType,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                if (entry.projectName != null) {
-                    Text(
-                        text = entry.projectName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            // Show type-based label + project name on first line
+            val hasTypeLabel = !entry.taskType.isNullOrBlank()
+            val hasProjectName = !entry.projectName.isNullOrBlank()
+            // Avoid showing duplicate text (e.g., taskType == projectName)
+            val showProjectName = hasProjectName &&
+                (!hasTypeLabel || entry.projectName != entry.taskType)
+
+            if (hasTypeLabel || showProjectName) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasTypeLabel) {
+                        Text(
+                            text = entry.taskType!!,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        if (showProjectName) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                    }
+                    if (showProjectName) {
+                        Text(
+                            text = entry.projectName!!,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             Text(

@@ -584,9 +584,8 @@ private fun InputArea(
         val buttonText =
             when {
                 runningProjectId == null || runningProjectId == "none" -> "Odeslat"
-                runningProjectId != currentProjectId -> "Do fronty"
-                queueSize > 0 -> "Do fronty"
-                else -> "Do fronty"
+                runningProjectId == currentProjectId -> "Odeslat" // Inline delivery to running task
+                else -> "Do fronty" // Different project or queue has items
             }
 
         Button(
