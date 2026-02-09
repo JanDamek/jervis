@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.weaviate import get_weaviate_client
 from app.api.models import IngestRequest, RetrievalRequest, EvidenceItem, EvidencePack
 import weaviate.classes.config as wvc
+import weaviate.classes.query as wvq
 
 logger = logging.getLogger(__name__)
 
@@ -129,11 +130,10 @@ class RagService:
             Tuple of (chunks_deleted, list of deleted chunk UUIDs)
         """
         collection = self.client.collections.get("KnowledgeChunk")
-        import weaviate.classes.config as wvc
 
         # Find all chunks with this sourceUrn
         response = collection.query.fetch_objects(
-            filters=wvc.query.Filter.by_property("sourceUrn").equal(source_urn),
+            filters=wvq.Filter.by_property("sourceUrn").equal(source_urn),
             limit=10000,
             return_properties=["sourceUrn"],
         )
@@ -160,24 +160,24 @@ class RagService:
         """List all chunks matching a specific kind, with tenant filtering."""
         collection = self.client.collections.get("KnowledgeChunk")
 
-        kind_filter = wvc.query.Filter.by_property("kind").equal(kind)
+        kind_filter = wvq.Filter.by_property("kind").equal(kind)
 
-        global_client = wvc.query.Filter.by_property("clientId").equal("")
+        global_client = wvq.Filter.by_property("clientId").equal("")
         if client_id:
-            my_client = wvc.query.Filter.by_property("clientId").equal(client_id)
-            client_filter = wvc.query.Filter.any_of([global_client, my_client])
+            my_client = wvq.Filter.by_property("clientId").equal(client_id)
+            client_filter = wvq.Filter.any_of([global_client, my_client])
         else:
             client_filter = global_client
 
         if project_id:
-            global_project = wvc.query.Filter.by_property("projectId").equal("")
-            my_project = wvc.query.Filter.by_property("projectId").equal(project_id)
-            project_filter = wvc.query.Filter.any_of([global_project, my_project])
-            tenant_filter = wvc.query.Filter.all_of([client_filter, project_filter])
+            global_project = wvq.Filter.by_property("projectId").equal("")
+            my_project = wvq.Filter.by_property("projectId").equal(project_id)
+            project_filter = wvq.Filter.any_of([global_project, my_project])
+            tenant_filter = wvq.Filter.all_of([client_filter, project_filter])
         else:
             tenant_filter = client_filter
 
-        filters = wvc.query.Filter.all_of([kind_filter, tenant_filter])
+        filters = wvq.Filter.all_of([kind_filter, tenant_filter])
 
         response = collection.query.fetch_objects(
             filters=filters,
@@ -215,11 +215,11 @@ class RagService:
         #   - Project data (client=X, project=Y) is included only for that project
 
         # Client filter: always include global ("") + requested client
-        global_client = wvc.query.Filter.by_property("clientId").equal("")
+        global_client = wvq.Filter.by_property("clientId").equal("")
 
         if request.clientId:
-            my_client = wvc.query.Filter.by_property("clientId").equal(request.clientId)
-            client_filter = wvc.query.Filter.any_of([global_client, my_client])
+            my_client = wvq.Filter.by_property("clientId").equal(request.clientId)
+            client_filter = wvq.Filter.any_of([global_client, my_client])
         else:
             # No client specified = only global data
             client_filter = global_client
@@ -227,19 +227,19 @@ class RagService:
         # Project filter: only if project is specified
         if request.projectId:
             # Include global project ("") + requested project
-            global_project = wvc.query.Filter.by_property("projectId").equal("")
-            my_project = wvc.query.Filter.by_property("projectId").equal(request.projectId)
+            global_project = wvq.Filter.by_property("projectId").equal("")
+            my_project = wvq.Filter.by_property("projectId").equal(request.projectId)
             project_alternatives = [global_project, my_project]
 
             # Group cross-visibility: include data from other projects in same group
             if request.groupId:
-                my_group = wvc.query.Filter.by_property("groupId").equal(request.groupId)
+                my_group = wvq.Filter.by_property("groupId").equal(request.groupId)
                 project_alternatives.append(my_group)
 
-            project_filter = wvc.query.Filter.any_of(project_alternatives)
+            project_filter = wvq.Filter.any_of(project_alternatives)
 
             # Combine: client AND project
-            filters = wvc.query.Filter.all_of([client_filter, project_filter])
+            filters = wvq.Filter.all_of([client_filter, project_filter])
         else:
             # No project specified = don't filter by project (return all projects for client)
             filters = client_filter
@@ -248,7 +248,7 @@ class RagService:
             near_vector=vector,
             limit=request.maxResults,
             filters=filters,
-            return_metadata=wvc.MetadataQuery(distance=True)
+            return_metadata=wvq.MetadataQuery(distance=True)
         )
         
         items = []
