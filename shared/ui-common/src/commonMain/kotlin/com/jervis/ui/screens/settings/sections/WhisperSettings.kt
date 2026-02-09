@@ -215,7 +215,7 @@ fun WhisperSettings(repository: JervisRepository) {
                         onValueChange = { noSpeechThreshold = it },
                         valueRange = 0f..1f,
                         steps = 9,
-                        valueLabel = { "%.1f".format(it) },
+                        valueLabel = { val rounded = (it * 10).toInt() / 10.0; "$rounded" },
                         description = "Segmenty s pravděpodobností ticha nad tímto prahem budou přeskočeny",
                     )
                 }
