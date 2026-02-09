@@ -83,7 +83,7 @@ class MeetingContinuousIndexer(
         private const val POLL_DELAY_MS = 30_000L
         private const val STUCK_CHECK_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
         private const val STUCK_TRANSCRIBING_THRESHOLD_MINUTES = 60L
-        private const val STUCK_CORRECTING_THRESHOLD_MINUTES = 60L
+        private const val STUCK_CORRECTING_THRESHOLD_MINUTES = 180L  // 3 hours — correction uses reasoning model
         private const val TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6 hours
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
@@ -445,11 +445,18 @@ class MeetingContinuousIndexer(
 
     private suspend fun correctContinuously() {
         continuousMeetingsInState(MeetingStateEnum.TRANSCRIBED).collect { meeting ->
+            val meetingIdStr = meeting.id.toHexString()
+            if (!processingMeetingIds.add(meetingIdStr)) {
+                logger.debug { "Meeting $meetingIdStr already being processed, skipping correction" }
+                return@collect
+            }
             try {
                 transcriptCorrectionService.correct(meeting)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to correct meeting ${meeting.id}" }
                 markAsFailed(meeting, "Correction error: ${e.message}")
+            } finally {
+                processingMeetingIds.remove(meetingIdStr)
             }
         }
     }
@@ -656,6 +663,11 @@ class MeetingContinuousIndexer(
                 // Check stuck CORRECTING
                 meetingRepository.findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.CORRECTING)
                     .collect { meeting ->
+                        val meetingIdStr = meeting.id.toHexString()
+                        if (processingMeetingIds.contains(meetingIdStr)) {
+                            logger.debug { "Meeting $meetingIdStr in CORRECTING but actively processing, skipping stuck check" }
+                            return@collect
+                        }
                         val stateAge = meeting.stateChangedAt ?: meeting.startedAt
                         val minutesInState = Duration.between(stateAge, now).toMinutes()
                         if (minutesInState >= STUCK_CORRECTING_THRESHOLD_MINUTES) {
