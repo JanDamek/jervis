@@ -53,7 +53,6 @@ import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.CorrectionQuestionDto
-import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
@@ -86,6 +85,7 @@ fun MeetingsScreen(
     val currentMeetingId by viewModel.currentMeetingId.collectAsState()
     val playingMeetingId by viewModel.playingMeetingId.collectAsState()
     val readyToFinalize by viewModel.readyToFinalize.collectAsState()
+    val isCorrecting by viewModel.isCorrecting.collectAsState()
     val error by viewModel.error.collectAsState()
 
     // Filter state — pre-filled from main window selection
@@ -145,6 +145,7 @@ fun MeetingsScreen(
         MeetingDetailView(
             meeting = currentDetail,
             isPlaying = playingMeetingId == currentDetail.id,
+            isCorrecting = isCorrecting,
             onBack = { viewModel.selectMeeting(null) },
             onDelete = { viewModel.deleteMeeting(currentDetail.id) },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
@@ -153,12 +154,11 @@ fun MeetingsScreen(
             onReindex = { viewModel.reindexMeeting(currentDetail.id) },
             onCorrections = { showCorrections = true },
             onAnswerQuestions = { answers -> viewModel.answerQuestions(currentDetail.id, answers) },
-            onSubmitCorrection = { submit ->
-                viewModel.submitCorrectionFromSegment(
-                    clientId = currentDetail.clientId,
-                    projectId = currentDetail.projectId,
-                    submit = submit,
-                )
+            onApplySegmentCorrection = { segmentIndex, correctedText ->
+                viewModel.applySegmentCorrection(currentDetail.id, segmentIndex, correctedText)
+            },
+            onCorrectWithInstruction = { instruction ->
+                viewModel.correctWithInstruction(currentDetail.id, instruction)
             },
         )
         return
@@ -492,6 +492,7 @@ private fun MeetingListItem(
 private fun MeetingDetailView(
     meeting: MeetingDto,
     isPlaying: Boolean,
+    isCorrecting: Boolean,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
@@ -500,13 +501,17 @@ private fun MeetingDetailView(
     onReindex: () -> Unit,
     onCorrections: () -> Unit,
     onAnswerQuestions: (List<CorrectionAnswerDto>) -> Unit,
-    onSubmitCorrection: (TranscriptCorrectionSubmitDto) -> Unit,
+    onApplySegmentCorrection: (segmentIndex: Int, correctedText: String) -> Unit,
+    onCorrectWithInstruction: (instruction: String) -> Unit,
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
     // Correction mode — clickable segments to submit corrections
     var correctionMode by remember { mutableStateOf(false) }
-    var segmentForCorrection by remember { mutableStateOf<TranscriptSegmentDto?>(null) }
+    // Segment click correction: stores (segmentIndex, segmentText)
+    var segmentForCorrection by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    // Chat instruction input
+    var instructionText by remember { mutableStateOf("") }
 
     JDetailScreen(
         title = meeting.title ?: "Meeting",
@@ -646,25 +651,73 @@ private fun MeetingDetailView(
                     segments = meeting.correctedTranscriptSegments,
                     text = meeting.correctedTranscriptText,
                     correctionMode = correctionMode,
-                    onSegmentClick = { seg -> segmentForCorrection = seg },
+                    onSegmentClick = { index, seg -> segmentForCorrection = index to seg.text },
                 )
             } else {
                 TranscriptContent(
                     segments = meeting.transcriptSegments,
                     text = meeting.transcriptText,
                     correctionMode = correctionMode,
-                    onSegmentClick = { seg -> segmentForCorrection = seg },
+                    onSegmentClick = { index, seg -> segmentForCorrection = index to seg.text },
                 )
+            }
+
+            // Chat correction input
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (isCorrecting) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = "Agent opravuje prepis...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = instructionText,
+                    onValueChange = { instructionText = it },
+                    label = { Text("Instrukce pro opravu") },
+                    placeholder = { Text("Napr: 'Mazlusek' oprav na 'Mazlusek s.r.o.'") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    enabled = !isCorrecting,
+                )
+                TextButton(
+                    onClick = {
+                        if (instructionText.isNotBlank()) {
+                            onCorrectWithInstruction(instructionText)
+                            instructionText = ""
+                        }
+                    },
+                    enabled = instructionText.isNotBlank() && !isCorrecting,
+                ) {
+                    Text("Opravit")
+                }
             }
         }
     }
 
-    // Correction dialog for segment click
+    // Correction dialog for segment click — pre-fills corrected with original text
     if (segmentForCorrection != null) {
-        CorrectionDialog(
-            initialOriginal = segmentForCorrection!!.text,
-            onConfirm = { submit ->
-                onSubmitCorrection(submit)
+        val (segIndex, segText) = segmentForCorrection!!
+        SegmentCorrectionDialog(
+            segmentText = segText,
+            onConfirm = { correctedText ->
+                onApplySegmentCorrection(segIndex, correctedText)
                 segmentForCorrection = null
             },
             onDismiss = { segmentForCorrection = null },
@@ -837,14 +890,14 @@ private fun TranscriptContent(
     segments: List<TranscriptSegmentDto>,
     text: String?,
     correctionMode: Boolean = false,
-    onSegmentClick: (TranscriptSegmentDto) -> Unit = {},
+    onSegmentClick: (Int, TranscriptSegmentDto) -> Unit = { _, _ -> },
 ) {
     if (segments.isNotEmpty()) {
-        segments.forEach { segment ->
+        segments.forEachIndexed { index, segment ->
             TranscriptSegmentRow(
                 segment = segment,
                 correctionMode = correctionMode,
-                onClick = { onSegmentClick(segment) },
+                onClick = { onSegmentClick(index, segment) },
             )
         }
     } else if (!text.isNullOrBlank()) {
@@ -1022,6 +1075,58 @@ private fun CorrectionQuestionsCard(
             }
         }
     }
+}
+
+/**
+ * Simple dialog for correcting a single transcript segment.
+ * Pre-fills with the original text so the user just edits it.
+ */
+@Composable
+private fun SegmentCorrectionDialog(
+    segmentText: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var correctedText by remember { mutableStateOf(segmentText) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Opravit segment") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Upravte text segmentu:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = correctedText,
+                    onValueChange = { correctedText = it },
+                    label = { Text("Text") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 5,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (correctedText.isNotBlank() && correctedText != segmentText) {
+                        onConfirm(correctedText.trim())
+                    }
+                },
+                enabled = correctedText.isNotBlank() && correctedText != segmentText,
+            ) {
+                Text("Ulozit")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrusit")
+            }
+        },
+    )
 }
 
 @Composable

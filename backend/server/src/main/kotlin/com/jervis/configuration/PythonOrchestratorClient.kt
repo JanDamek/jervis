@@ -212,6 +212,17 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
+     * Re-correct transcript based on user's natural language instruction.
+     */
+    suspend fun correctWithInstruction(request: CorrectionInstructRequestDto): CorrectionInstructResultDto {
+        logger.info { "CORRECTION_INSTRUCT: ${request.segments.size} segments, instruction='${request.instruction.take(80)}'" }
+        return client.post("$apiBaseUrl/correction/instruct") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
      * Delete a correction rule from KB.
      */
     suspend fun deleteCorrection(sourceUrn: String): Boolean {
@@ -328,6 +339,28 @@ data class CorrectionChunkMetadataDto(
 @Serializable
 data class CorrectionDeleteRequestDto(
     @SerialName("sourceUrn") val sourceUrn: String,
+)
+
+@Serializable
+data class CorrectionInstructRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    val segments: List<CorrectionSegmentDto>,
+    val instruction: String,
+)
+
+@Serializable
+data class CorrectionInstructResultDto(
+    val segments: List<CorrectionSegmentDto> = emptyList(),
+    @SerialName("newRules") val newRules: List<CorrectionInstructRuleDto> = emptyList(),
+    val status: String,
+)
+
+@Serializable
+data class CorrectionInstructRuleDto(
+    @SerialName("correctionId") val correctionId: String = "",
+    @SerialName("sourceUrn") val sourceUrn: String = "",
+    val status: String = "",
 )
 
 // --- DTOs for Python Orchestrator ---

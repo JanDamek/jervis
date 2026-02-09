@@ -167,6 +167,75 @@ class CorrectionAgent:
             "status": status,
         }
 
+    async def correct_with_instruction(
+        self,
+        client_id: str,
+        project_id: str | None,
+        segments: list[dict],
+        instruction: str,
+    ) -> dict:
+        """
+        Re-correct transcript based on a user instruction.
+
+        The user describes what needs to be fixed in natural language.
+        The agent re-corrects the entire transcript using the instruction
+        and existing KB rules, then extracts new rules from the instruction.
+        """
+        if not segments:
+            return {"segments": segments, "newRules": [], "status": "success"}
+
+        corrections = await self._load_corrections(client_id, project_id)
+        correction_prompt = self._format_corrections_for_prompt(corrections)
+
+        system_prompt = self._build_instruction_system_prompt(
+            correction_prompt, instruction,
+        )
+
+        full_text = " ".join(seg["text"] for seg in segments)
+        user_prompt = self._build_user_prompt(segments, full_text)
+
+        logger.info(
+            "Instruction-based correction: %d segments, instruction='%s'",
+            len(segments), instruction[:100],
+        )
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response_text = await self._call_ollama(system_prompt, user_prompt)
+                parsed = self._parse_instruction_response(response_text, segments)
+                if parsed is not None:
+                    # Save any new rules the agent extracted
+                    new_rules = parsed.get("newRules", [])
+                    saved_rules = []
+                    for rule in new_rules:
+                        try:
+                            result = await self.submit_correction(
+                                client_id=client_id,
+                                project_id=project_id,
+                                original=rule["original"],
+                                corrected=rule["corrected"],
+                                category=rule.get("category", "general"),
+                            )
+                            saved_rules.append(result)
+                        except Exception as e:
+                            logger.warning("Failed to save extracted rule: %s", e)
+
+                    return {
+                        "segments": parsed["segments"],
+                        "newRules": saved_rules,
+                        "status": "success",
+                    }
+                logger.warning(
+                    "Failed to parse instruction response (attempt %d)", attempt + 1,
+                )
+            except Exception as e:
+                logger.error(
+                    "Instruction correction failed (attempt %d): %s", attempt + 1, e,
+                )
+
+        logger.warning("All instruction correction attempts failed")
+        return {"segments": segments, "newRules": [], "status": "failed"}
+
     async def apply_answers_as_corrections(
         self,
         client_id: str,
@@ -198,7 +267,11 @@ class CorrectionAgent:
         project_id: str | None,
     ) -> list[dict]:
         """Load all correction rules from KB for this client/project."""
-        raw = await self.list_corrections(client_id, project_id, max_results=200)
+        try:
+            raw = await self.list_corrections(client_id, project_id, max_results=200)
+        except Exception as e:
+            logger.warning("Failed to load corrections from KB, proceeding without rules: %s", e)
+            return []
 
         corrections = []
         for item in raw:
@@ -311,15 +384,23 @@ class CorrectionAgent:
             "You are a transcript correction assistant. "
             "Fix speech-to-text errors in the transcript segments below.\n\n"
             "RULES:\n"
+            "- Your primary goal is to UNDERSTAND the content and meaning of "
+            "the conversation, then correct the text so it makes sense as a whole\n"
             "- Fix misspellings of names, companies, departments per the "
             "correction rules below\n"
+            "- Figure out what was actually said based on context — Whisper often "
+            "garbles proper nouns, technical terms, and names\n"
+            "- The corrected text must read coherently — each segment should make "
+            "sense in context of the full conversation\n"
             "- The meeting may contain Czech, Slovak, and English mixed together "
             "— do NOT translate between languages, only correct transcription "
             "errors\n"
             "- Occasionally Scandinavian or Spanish may also appear\n"
-            "- Preserve informal/spoken style — do not make it formal\n"
-            "- Preserve the meaning — only fix obvious speech-to-text errors\n"
-            "- You MUST understand the content and context to correct properly\n\n"
+            "- DO NOT fix grammar or make the text formal — preserve the spoken "
+            "style exactly as it was said\n"
+            "- Stay as faithful as possible to the original audio/transcription "
+            "— only change what is clearly a transcription error\n"
+            "- Preserve the meaning — only fix obvious speech-to-text errors\n\n"
             "INTERACTIVE MODE:\n"
             "- Always apply your best-guess correction for every segment\n"
             "- When you encounter names, terms, or abbreviations that:\n"
@@ -347,6 +428,44 @@ class CorrectionAgent:
                 "Use your best judgment to fix obvious transcription errors "
                 "(misspelled names, garbled words, etc.).\n"
             )
+
+        return base
+
+    def _build_instruction_system_prompt(
+        self, correction_prompt: str, instruction: str,
+    ) -> str:
+        """Build system prompt for instruction-based correction."""
+        base = (
+            "You are a transcript correction assistant. "
+            "The user has provided a specific instruction for how to correct "
+            "the transcript. Apply the instruction to ALL relevant segments.\n\n"
+            "RULES:\n"
+            "- UNDERSTAND the content and meaning of the conversation first\n"
+            "- Apply the user's instruction across the entire transcript\n"
+            "- Also apply any existing correction rules below\n"
+            "- The corrected text must make sense as a whole — ensure coherence "
+            "across segments\n"
+            "- The meeting may contain Czech, Slovak, and English mixed together "
+            "— do NOT translate between languages, only correct transcription errors\n"
+            "- DO NOT fix grammar — preserve the spoken style exactly\n"
+            "- Stay as faithful as possible to the original audio — only change "
+            "what the instruction says or what is clearly a transcription error\n"
+            "- Preserve the meaning — write text that is semantically correct\n\n"
+            f"USER INSTRUCTION:\n{instruction}\n\n"
+            "OUTPUT FORMAT:\n"
+            "Return a JSON object with:\n"
+            '{"corrections":[{"i":0,"t":"corrected text"},...],'
+            '"newRules":[{"original":"wrong","corrected":"right",'
+            '"category":"person_name|company_name|terminology|general"}]}\n\n'
+            "The newRules array should contain correction rules extracted from "
+            "the user's instruction — mappings that should be remembered for "
+            "future transcripts. Only include rules if the instruction implies "
+            "a reusable pattern (e.g. a name spelling).\n\n"
+            "IMPORTANT: Return ONLY valid JSON, no markdown, no explanation.\n"
+        )
+
+        if correction_prompt:
+            base += f"\nEXISTING CORRECTION RULES:\n{correction_prompt}"
 
         return base
 
@@ -451,6 +570,61 @@ class CorrectionAgent:
             return {"segments": segments, "questions": []}
 
         logger.warning("Unexpected JSON structure: %s", type(parsed))
+        return None
+
+    def _parse_instruction_response(
+        self, content: str, original_segments: list[dict],
+    ) -> dict | None:
+        """Parse response from instruction-based correction."""
+        text = content.strip()
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+        match = re.search(
+            r"```(?:json)?\s*\n?(\{.*?\}|\[.*?\])\s*\n?```", text, re.DOTALL,
+        )
+        if match:
+            text = match.group(1)
+
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if obj_match:
+                try:
+                    parsed = json.loads(obj_match.group(0))
+                except json.JSONDecodeError:
+                    logger.warning("Instruction JSON parse failed: %s", text[:200])
+                    return None
+            else:
+                logger.warning("No JSON in instruction response: %s", text[:200])
+                return None
+
+        if isinstance(parsed, dict) and "corrections" in parsed:
+            segments = self._merge_corrections(
+                parsed.get("corrections", []), original_segments,
+            )
+            if segments is None:
+                return None
+
+            new_rules = []
+            for rule in parsed.get("newRules", []):
+                if isinstance(rule, dict) and rule.get("original") and rule.get("corrected"):
+                    new_rules.append({
+                        "original": rule["original"],
+                        "corrected": rule["corrected"],
+                        "category": rule.get("category", "general"),
+                    })
+
+            return {"segments": segments, "newRules": new_rules}
+
+        # Fallback: treat as simple corrections array
+        if isinstance(parsed, list):
+            segments = self._merge_corrections(parsed, original_segments)
+            if segments is None:
+                return None
+            return {"segments": segments, "newRules": []}
+
+        logger.warning("Unexpected instruction response: %s", type(parsed))
         return None
 
     def _merge_corrections(

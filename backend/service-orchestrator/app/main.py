@@ -424,6 +424,26 @@ async def delete_correction(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/correction/instruct")
+async def correct_with_instruction(request: dict):
+    """Re-correct transcript based on user's natural language instruction.
+
+    The user describes what needs to be corrected and the agent applies it
+    across the entire transcript, also extracting reusable rules for KB.
+    """
+    try:
+        result = await correction_agent.correct_with_instruction(
+            client_id=request["clientId"],
+            project_id=request.get("projectId"),
+            segments=request["segments"],
+            instruction=request["instruction"],
+        )
+        return result
+    except Exception as e:
+        logger.exception("Failed instruction-based correction")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/correction/answer")
 async def answer_correction_questions(request: dict):
     """Store user answers as correction rules in KB.

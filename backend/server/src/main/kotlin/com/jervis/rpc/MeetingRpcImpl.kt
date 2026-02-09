@@ -13,6 +13,10 @@ import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
 import com.jervis.service.IMeetingService
+import com.jervis.configuration.CorrectionInstructRequestDto
+import com.jervis.configuration.CorrectionSegmentDto
+import com.jervis.configuration.CorrectionSubmitRequestDto
+import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.service.meeting.TranscriptCorrectionService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +38,7 @@ class MeetingRpcImpl(
     private val directoryStructureService: DirectoryStructureService,
     private val knowledgeService: com.jervis.knowledgebase.KnowledgeService,
     private val transcriptCorrectionService: TranscriptCorrectionService,
+    private val orchestratorClient: PythonOrchestratorClient,
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
@@ -258,6 +263,117 @@ class MeetingRpcImpl(
         meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTED))
         logger.info { "Reset meeting $meetingId to CORRECTED for re-indexing" }
         return true
+    }
+
+    override suspend fun applySegmentCorrection(
+        meetingId: String,
+        segmentIndex: Int,
+        correctedText: String,
+    ): MeetingDto {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        // Use corrected segments if available, otherwise raw
+        val segments = meeting.correctedTranscriptSegments.ifEmpty {
+            meeting.transcriptSegments
+        }
+
+        require(segmentIndex in segments.indices) {
+            "Segment index $segmentIndex out of range (0..${segments.size - 1})"
+        }
+
+        val originalText = segments[segmentIndex].text
+
+        // Update the segment text
+        val updatedSegments = segments.toMutableList()
+        updatedSegments[segmentIndex] = updatedSegments[segmentIndex].copy(text = correctedText)
+
+        val updatedText = updatedSegments.joinToString(" ") { it.text.trim() }
+
+        val saved = meetingRepository.save(
+            meeting.copy(
+                correctedTranscriptSegments = updatedSegments,
+                correctedTranscriptText = updatedText,
+            ),
+        )
+
+        // Save as KB correction rule in background
+        try {
+            orchestratorClient.submitCorrection(
+                CorrectionSubmitRequestDto(
+                    clientId = meeting.clientId.toString(),
+                    projectId = meeting.projectId?.toString(),
+                    original = originalText,
+                    corrected = correctedText,
+                ),
+            )
+            logger.info { "Saved correction rule: '$originalText' -> '$correctedText'" }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to save correction rule to KB" }
+        }
+
+        logger.info { "Applied segment correction for meeting $meetingId: segment $segmentIndex" }
+        return saved.toDto()
+    }
+
+    override suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        // Use corrected segments if available, otherwise raw
+        val segments = meeting.correctedTranscriptSegments.ifEmpty {
+            meeting.transcriptSegments
+        }
+
+        if (segments.isEmpty()) {
+            throw IllegalStateException("Meeting $meetingId has no transcript segments")
+        }
+
+        val requestSegments = segments.mapIndexed { i, seg ->
+            CorrectionSegmentDto(
+                i = i,
+                startSec = seg.startSec,
+                endSec = seg.endSec,
+                text = seg.text,
+                speaker = seg.speaker,
+            )
+        }
+
+        val result = orchestratorClient.correctWithInstruction(
+            CorrectionInstructRequestDto(
+                clientId = meeting.clientId.toString(),
+                projectId = meeting.projectId?.toString(),
+                segments = requestSegments,
+                instruction = instruction,
+            ),
+        )
+
+        val correctedSegments = result.segments.mapIndexed { i, corrSeg ->
+            val original = segments.getOrNull(i)
+            com.jervis.entity.meeting.TranscriptSegment(
+                startSec = original?.startSec ?: corrSeg.startSec,
+                endSec = original?.endSec ?: corrSeg.endSec,
+                text = corrSeg.text,
+                speaker = original?.speaker ?: corrSeg.speaker,
+            )
+        }
+
+        val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
+
+        val saved = meetingRepository.save(
+            meeting.copy(
+                correctedTranscriptSegments = correctedSegments,
+                correctedTranscriptText = correctedText,
+            ),
+        )
+
+        logger.info {
+            "Instruction correction for meeting $meetingId: " +
+                "${result.newRules.size} new rules saved, ${correctedText.length} chars"
+        }
+        return saved.toDto()
     }
 }
 

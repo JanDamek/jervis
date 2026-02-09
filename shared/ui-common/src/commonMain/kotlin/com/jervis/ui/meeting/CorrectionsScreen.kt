@@ -151,7 +151,7 @@ private fun CorrectionCard(
                 )
                 if (!correction.context.isNullOrBlank()) {
                     Text(
-                        text = correction.context,
+                        text = correction.context.orEmpty(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -168,11 +168,12 @@ private fun CorrectionCard(
 @Composable
 internal fun CorrectionDialog(
     initialOriginal: String = "",
+    initialCorrected: String = "",
     onConfirm: (TranscriptCorrectionSubmitDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var original by remember { mutableStateOf(initialOriginal) }
-    var corrected by remember { mutableStateOf("") }
+    var corrected by remember { mutableStateOf(initialCorrected) }
     var category by remember { mutableStateOf("general") }
     var context by remember { mutableStateOf("") }
     var categoryExpanded by remember { mutableStateOf(false) }

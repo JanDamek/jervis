@@ -40,4 +40,8 @@ interface IMeetingService {
     suspend fun reindexMeeting(meetingId: String): Boolean
 
     suspend fun answerCorrectionQuestions(meetingId: String, answers: List<CorrectionAnswerDto>): Boolean
+
+    suspend fun applySegmentCorrection(meetingId: String, segmentIndex: Int, correctedText: String): MeetingDto
+
+    suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto
 }

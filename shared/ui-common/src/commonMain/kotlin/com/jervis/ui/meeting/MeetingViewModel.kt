@@ -64,6 +64,9 @@ class MeetingViewModel(
     private val _readyToFinalize = MutableStateFlow(false)
     val readyToFinalize: StateFlow<Boolean> = _readyToFinalize.asStateFlow()
 
+    private val _isCorrecting = MutableStateFlow(false)
+    val isCorrecting: StateFlow<Boolean> = _isCorrecting.asStateFlow()
+
     private var audioRecorder: AudioRecorder? = null
     private var audioPlayer: AudioPlayer? = null
     private var durationUpdateJob: Job? = null
@@ -145,58 +148,49 @@ class MeetingViewModel(
     }
 
     fun stopRecording() {
+        // Guard against double-stop: grab and clear state synchronously
+        if (!_isRecording.value) return
+        _isRecording.value = false
+        durationUpdateJob?.cancel()
+
+        val recorder = audioRecorder ?: return
+        audioRecorder = null // Clear immediately so second call returns at guard
+
+        val meetingId = _currentMeetingId.value ?: run {
+            recorder.release()
+            return
+        }
+
         scope.launch {
-            durationUpdateJob?.cancel()
-
-            val recorder = audioRecorder ?: run {
-                println("[Meeting] stopRecording: no audioRecorder, skipping")
-                _isRecording.value = false
-                return@launch
-            }
-            val meetingId = _currentMeetingId.value ?: run {
-                println("[Meeting] stopRecording: no currentMeetingId, skipping")
-                _isRecording.value = false
-                return@launch
-            }
-
             println("[Meeting] Stopping recording for meeting=$meetingId")
-
             try {
                 val audioData = recorder.stopRecording()
                 println("[Meeting] AudioRecorder returned ${audioData?.size ?: 0} bytes")
 
                 if (audioData != null && audioData.size > 44) {
-                    val uploaded = uploadChunk(meetingId, audioData, isLast = true)
+                    val uploaded = uploadInChunks(meetingId, audioData)
                     if (uploaded) {
                         println("[Meeting] Upload succeeded, ready to finalize")
                         _readyToFinalize.value = true
                     } else {
                         println("[Meeting] Upload failed, cancelling meeting")
-                        try {
-                            meetingService.cancelRecording(meetingId)
-                        } catch (_: Exception) {}
+                        try { meetingService.cancelRecording(meetingId) } catch (_: Exception) {}
                         _currentMeetingId.value = null
                     }
                 } else {
                     println("[Meeting] No audio data captured (${audioData?.size ?: 0} bytes), cancelling")
                     _error.value = "Nahrávání nezachytilo žádná data"
-                    try {
-                        meetingService.cancelRecording(meetingId)
-                    } catch (_: Exception) {}
+                    try { meetingService.cancelRecording(meetingId) } catch (_: Exception) {}
                     _currentMeetingId.value = null
                 }
             } catch (e: Exception) {
                 println("[Meeting] Error in stopRecording: ${e.message}")
                 e.printStackTrace()
                 _error.value = "Chyba při zastavení nahrávání: ${e.message}"
-                try {
-                    meetingService.cancelRecording(meetingId)
-                } catch (_: Exception) {}
+                try { meetingService.cancelRecording(meetingId) } catch (_: Exception) {}
                 _currentMeetingId.value = null
             } finally {
                 recorder.release()
-                audioRecorder = null
-                _isRecording.value = false
             }
         }
     }
@@ -373,32 +367,76 @@ class MeetingViewModel(
         }
     }
 
+    fun applySegmentCorrection(meetingId: String, segmentIndex: Int, correctedText: String) {
+        scope.launch {
+            try {
+                val updated = meetingService.applySegmentCorrection(meetingId, segmentIndex, correctedText)
+                _selectedMeeting.value = updated
+                _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
+            } catch (e: Exception) {
+                _error.value = "Chyba pri oprave segmentu: ${e.message}"
+            }
+        }
+    }
+
+    fun correctWithInstruction(meetingId: String, instruction: String) {
+        scope.launch {
+            _isCorrecting.value = true
+            try {
+                val updated = meetingService.correctWithInstruction(meetingId, instruction)
+                _selectedMeeting.value = updated
+                _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
+            } catch (e: Exception) {
+                _error.value = "Chyba pri instrukci korekce: ${e.message}"
+            } finally {
+                _isCorrecting.value = false
+            }
+        }
+    }
+
     fun clearError() {
         _error.value = null
     }
 
+    /**
+     * Upload audio data in chunks of up to 4MB raw (≈5.3MB Base64).
+     * This prevents WebSocket message size issues with large recordings.
+     */
     @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun uploadChunk(meetingId: String, data: ByteArray, isLast: Boolean): Boolean {
-        return try {
-            println("[Meeting] Encoding ${data.size} bytes to Base64...")
-            val base64Data = Base64.encode(data)
-            println("[Meeting] Base64 size: ${base64Data.length} chars, sending to server...")
-            meetingService.uploadAudioChunk(
-                AudioChunkDto(
-                    meetingId = meetingId,
-                    chunkIndex = chunkIndex++,
-                    data = base64Data,
-                    isLast = isLast,
-                ),
-            )
-            println("[Meeting] Upload chunk sent successfully")
-            true
-        } catch (e: Exception) {
-            println("[Meeting] Upload chunk FAILED: ${e::class.simpleName}: ${e.message}")
-            e.printStackTrace()
-            _error.value = "Chyba při odesílání zvuku: ${e.message}"
-            false
+    private suspend fun uploadInChunks(meetingId: String, data: ByteArray): Boolean {
+        val chunkSizeBytes = 4 * 1024 * 1024 // 4MB per chunk
+        val totalChunks = (data.size + chunkSizeBytes - 1) / chunkSizeBytes
+
+        println("[Meeting] Uploading ${data.size} bytes in $totalChunks chunk(s)...")
+
+        for (i in 0 until totalChunks) {
+            val start = i * chunkSizeBytes
+            val end = minOf(start + chunkSizeBytes, data.size)
+            val chunk = data.copyOfRange(start, end)
+            val isLast = i == totalChunks - 1
+
+            try {
+                val base64Data = Base64.encode(chunk)
+                println("[Meeting] Uploading chunk ${i + 1}/$totalChunks (${chunk.size} bytes, ${base64Data.length} Base64 chars)...")
+                meetingService.uploadAudioChunk(
+                    AudioChunkDto(
+                        meetingId = meetingId,
+                        chunkIndex = chunkIndex++,
+                        data = base64Data,
+                        isLast = isLast,
+                    ),
+                )
+                println("[Meeting] Chunk ${i + 1}/$totalChunks uploaded successfully")
+            } catch (e: Exception) {
+                println("[Meeting] Upload chunk ${i + 1}/$totalChunks FAILED: ${e::class.simpleName}: ${e.message}")
+                e.printStackTrace()
+                _error.value = "Chyba při odesílání zvuku: ${e.message}"
+                return false
+            }
         }
+
+        println("[Meeting] All $totalChunks chunks uploaded successfully")
+        return true
     }
 
     private fun startDurationUpdate() {
