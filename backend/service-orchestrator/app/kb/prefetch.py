@@ -33,92 +33,86 @@ async def prefetch_kb_context(
     Returns:
         Markdown string with KB context, or empty string if nothing found.
     """
-    kb_url = settings.knowledgebase_url
+    kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as http:
-            # 1. Relevant knowledge for the task
-            resp = await http.post(
-                f"{kb_url}/retrieve",
-                json={
-                    "query": task_description,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "maxResults": 5,
-                    "minConfidence": 0.7,
-                    "expandGraph": True,
-                },
-            )
-            if resp.status_code == 200:
-                results = resp.json().get("items", [])
-                if results:
-                    sections.append("## Relevant Knowledge")
-                    for item in results:
-                        source = item.get("sourceUrn", "?")
-                        content = item.get("content", "")[:300]
-                        sections.append(f"- **{source}**: {content}")
+    async with httpx.AsyncClient(timeout=15) as http:
+        # 1. Relevant knowledge for the task
+        resp = await http.post(
+            f"{kb_url}/retrieve",
+            json={
+                "query": task_description,
+                "clientId": client_id,
+                "projectId": project_id,
+                "maxResults": 5,
+                "minConfidence": 0.7,
+                "expandGraph": True,
+            },
+        )
+        resp.raise_for_status()
+        results = resp.json().get("items", [])
+        if results:
+            sections.append("## Relevant Knowledge")
+            for item in results:
+                source = item.get("sourceUrn", "?")
+                content = item.get("content", "")[:300]
+                sections.append(f"- **{source}**: {content}")
 
-            # 2. Coding conventions for the client
+        # 2. Coding conventions for the client
+        resp = await http.post(
+            f"{kb_url}/retrieve/simple",
+            json={
+                "query": "coding conventions style guide rules",
+                "clientId": client_id,
+                "projectId": "",  # Client-level only
+                "maxResults": 3,
+            },
+        )
+        resp.raise_for_status()
+        conventions = resp.json().get("items", [])
+        if conventions:
+            sections.append("\n## Coding Conventions")
+            for item in conventions:
+                sections.append(f"- {item.get('content', '')[:200]}")
+
+        # 3. Architecture decisions for the project
+        if project_id:
             resp = await http.post(
                 f"{kb_url}/retrieve/simple",
                 json={
-                    "query": "coding conventions style guide rules",
+                    "query": "architecture decisions design patterns",
                     "clientId": client_id,
-                    "projectId": "",  # Client-level only
+                    "projectId": project_id,
                     "maxResults": 3,
                 },
             )
-            if resp.status_code == 200:
-                conventions = resp.json().get("items", [])
-                if conventions:
-                    sections.append("\n## Coding Conventions")
-                    for item in conventions:
-                        sections.append(f"- {item.get('content', '')[:200]}")
+            resp.raise_for_status()
+            arch = resp.json().get("items", [])
+            if arch:
+                sections.append("\n## Architecture Decisions")
+                for item in arch:
+                    sections.append(f"- {item.get('content', '')[:200]}")
 
-            # 3. Architecture decisions for the project
-            if project_id:
+        # 4. File-specific knowledge
+        if files:
+            for file_path in files[:3]:  # Max 3 files
                 resp = await http.post(
                     f"{kb_url}/retrieve/simple",
                     json={
-                        "query": "architecture decisions design patterns",
+                        "query": f"file {file_path} implementation notes",
                         "clientId": client_id,
                         "projectId": project_id,
-                        "maxResults": 3,
+                        "maxResults": 2,
                     },
                 )
-                if resp.status_code == 200:
-                    arch = resp.json().get("items", [])
-                    if arch:
-                        sections.append("\n## Architecture Decisions")
-                        for item in arch:
-                            sections.append(f"- {item.get('content', '')[:200]}")
-
-            # 4. File-specific knowledge
-            if files:
-                for file_path in files[:3]:  # Max 3 files
-                    resp = await http.post(
-                        f"{kb_url}/retrieve/simple",
-                        json={
-                            "query": f"file {file_path} implementation notes",
-                            "clientId": client_id,
-                            "projectId": project_id,
-                            "maxResults": 2,
-                        },
-                    )
-                    if resp.status_code == 200:
-                        file_results = resp.json().get("items", [])
-                        if file_results:
-                            sections.append(f"\n## Notes for `{file_path}`")
-                            for item in file_results:
-                                sections.append(
-                                    f"- {item.get('content', '')[:200]}"
-                                )
-
-    except httpx.HTTPError as e:
-        logger.warning("KB pre-fetch failed: %s", e)
-    except Exception as e:
-        logger.warning("KB pre-fetch unexpected error: %s", e)
+                resp.raise_for_status()
+                file_results = resp.json().get("items", [])
+                if file_results:
+                    sections.append(f"\n## Notes for `{file_path}`")
+                    for item in file_results:
+                        sections.append(
+                            f"- {item.get('content', '')[:200]}"
+                        )
 
     context = "\n".join(sections) if sections else ""
     if context:
@@ -155,102 +149,95 @@ async def fetch_project_context(
     Returns:
         Markdown string with project context, or empty string if KB is empty.
     """
-    kb_url = settings.knowledgebase_url
+    kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    try:
-        async with httpx.AsyncClient(timeout=20) as http:
-            # 1. Project structure from code graph (files + classes)
-            file_nodes = await _graph_search(
-                http, kb_url, query="", node_type="file",
-                client_id=client_id, project_id=project_id, limit=50,
-            )
-            class_nodes = await _graph_search(
-                http, kb_url, query="", node_type="class",
-                client_id=client_id, project_id=project_id, limit=30,
-            )
+    async with httpx.AsyncClient(timeout=20) as http:
+        # 1. Project structure from code graph (files + classes)
+        file_nodes = await _graph_search(
+            http, kb_url, query="", node_type="file",
+            client_id=client_id, project_id=project_id, limit=50,
+        )
+        class_nodes = await _graph_search(
+            http, kb_url, query="", node_type="class",
+            client_id=client_id, project_id=project_id, limit=30,
+        )
 
-            if file_nodes or class_nodes:
-                sections.append("## Project Structure (from code graph)")
-                if file_nodes:
-                    sections.append("### Files")
-                    for node in file_nodes:
-                        label = node.get("label", "?")
-                        node_type = node.get("properties", {}).get("type", "")
-                        sections.append(f"- {label}")
-                if class_nodes:
-                    sections.append("### Classes")
-                    for node in class_nodes:
-                        label = node.get("label", "?")
-                        desc = node.get("properties", {}).get("description", "")
-                        line = f"- {label}"
-                        if desc:
-                            line += f" — {desc[:100]}"
-                        sections.append(line)
+        if file_nodes or class_nodes:
+            sections.append("## Project Structure (from code graph)")
+            if file_nodes:
+                sections.append("### Files")
+                for node in file_nodes:
+                    label = node.get("label", "?")
+                    sections.append(f"- {label}")
+            if class_nodes:
+                sections.append("### Classes")
+                for node in class_nodes:
+                    label = node.get("label", "?")
+                    desc = node.get("properties", {}).get("description", "")
+                    line = f"- {label}"
+                    if desc:
+                        line += f" — {desc[:100]}"
+                    sections.append(line)
 
-            # 2. Architecture & modules (semantic search)
-            if project_id:
-                resp = await http.post(
-                    f"{kb_url}/retrieve",
-                    json={
-                        "query": "project structure modules architecture dependencies technology stack",
-                        "clientId": client_id,
-                        "projectId": project_id,
-                        "maxResults": 5,
-                        "expandGraph": True,
-                    },
-                )
-                if resp.status_code == 200:
-                    results = resp.json().get("items", [])
-                    if results:
-                        sections.append("\n## Architecture & Modules")
-                        for item in results:
-                            source = item.get("sourceUrn", "")
-                            content = item.get("content", "")[:300]
-                            sections.append(f"- **{source}**: {content}")
-
-            # 3. Coding conventions (client-level)
-            resp = await http.post(
-                f"{kb_url}/retrieve/simple",
-                json={
-                    "query": "coding conventions technology stack frameworks patterns",
-                    "clientId": client_id,
-                    "projectId": "",  # Client-level only
-                    "maxResults": 3,
-                },
-            )
-            if resp.status_code == 200:
-                conventions = resp.json().get("items", [])
-                if conventions:
-                    sections.append("\n## Coding Conventions")
-                    for item in conventions:
-                        sections.append(f"- {item.get('content', '')[:200]}")
-
-            # 4. Task-relevant context
+        # 2. Architecture & modules (semantic search)
+        if project_id:
             resp = await http.post(
                 f"{kb_url}/retrieve",
                 json={
-                    "query": task_description,
+                    "query": "project structure modules architecture dependencies technology stack",
                     "clientId": client_id,
                     "projectId": project_id,
                     "maxResults": 5,
-                    "minConfidence": 0.6,
                     "expandGraph": True,
                 },
             )
-            if resp.status_code == 200:
-                results = resp.json().get("items", [])
-                if results:
-                    sections.append("\n## Relevant Context for Task")
-                    for item in results:
-                        source = item.get("sourceUrn", "")
-                        content = item.get("content", "")[:300]
-                        sections.append(f"- **{source}**: {content}")
+            resp.raise_for_status()
+            results = resp.json().get("items", [])
+            if results:
+                sections.append("\n## Architecture & Modules")
+                for item in results:
+                    source = item.get("sourceUrn", "")
+                    content = item.get("content", "")[:300]
+                    sections.append(f"- **{source}**: {content}")
 
-    except httpx.HTTPError as e:
-        logger.warning("KB project context fetch failed: %s", e)
-    except Exception as e:
-        logger.warning("KB project context fetch unexpected error: %s", e)
+        # 3. Coding conventions (client-level)
+        resp = await http.post(
+            f"{kb_url}/retrieve/simple",
+            json={
+                "query": "coding conventions technology stack frameworks patterns",
+                "clientId": client_id,
+                "projectId": "",  # Client-level only
+                "maxResults": 3,
+            },
+        )
+        resp.raise_for_status()
+        conventions = resp.json().get("items", [])
+        if conventions:
+            sections.append("\n## Coding Conventions")
+            for item in conventions:
+                sections.append(f"- {item.get('content', '')[:200]}")
+
+        # 4. Task-relevant context
+        resp = await http.post(
+            f"{kb_url}/retrieve",
+            json={
+                "query": task_description,
+                "clientId": client_id,
+                "projectId": project_id,
+                "maxResults": 5,
+                "minConfidence": 0.6,
+                "expandGraph": True,
+            },
+        )
+        resp.raise_for_status()
+        results = resp.json().get("items", [])
+        if results:
+            sections.append("\n## Relevant Context for Task")
+            for item in results:
+                source = item.get("sourceUrn", "")
+                content = item.get("content", "")[:300]
+                sections.append(f"- **{source}**: {content}")
 
     context = "\n".join(sections) if sections else ""
     if context:
@@ -281,10 +268,6 @@ async def _graph_search(
     if project_id:
         params["projectId"] = project_id
 
-    try:
-        resp = await http.get(f"{kb_url}/graph/search", params=params)
-        if resp.status_code == 200:
-            return resp.json()
-    except Exception as e:
-        logger.warning("KB graph search failed (type=%s): %s", node_type, e)
-    return []
+    resp = await http.get(f"{kb_url}/graph/search", params=params)
+    resp.raise_for_status()
+    return resp.json()

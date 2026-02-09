@@ -84,11 +84,15 @@ async def clarify(state: dict) -> dict:
     task = CodingTask(**state["task"])
 
     # 1. Fetch project context from KB (code graph, architecture, conventions)
-    project_context = await fetch_project_context(
-        client_id=task.client_id,
-        project_id=task.project_id,
-        task_description=task.query,
-    )
+    try:
+        project_context = await fetch_project_context(
+            client_id=task.client_id,
+            project_id=task.project_id,
+            task_description=task.query,
+        )
+    except Exception as e:
+        logger.error("KB project context fetch failed for task %s: %s", task.id, e)
+        return {"error": f"Knowledge base project context fetch failed: {e}"}
 
     # 2. Build environment summary if available
     env_summary = ""
@@ -519,13 +523,17 @@ async def execute_step(state: dict) -> dict:
     idx = state["current_step_index"]
     step = steps[idx]
 
-    # Pre-fetch KB context
-    kb_context = await _prefetch_kb_safe(
-        task_description=step.instructions,
-        client_id=task.client_id,
-        project_id=task.project_id,
-        files=step.files,
-    )
+    # Pre-fetch KB context (fail on error)
+    try:
+        kb_context = await _prefetch_kb_context(
+            task_description=step.instructions,
+            client_id=task.client_id,
+            project_id=task.project_id,
+            files=step.files,
+        )
+    except Exception as e:
+        logger.error("KB pre-fetch failed for task %s: %s", task.id, e)
+        return {"error": f"Knowledge base pre-fetch failed: {e}"}
 
     # Prepare workspace (instructions, KB context, agent config, environment)
     await workspace_manager.prepare_workspace(
@@ -564,25 +572,20 @@ async def execute_step(state: dict) -> dict:
     return {"step_results": existing_results}
 
 
-async def _prefetch_kb_safe(
+async def _prefetch_kb_context(
     task_description: str,
     client_id: str,
     project_id: str | None,
     files: list[str],
 ) -> str:
-    """Pre-fetch KB context with error handling."""
-    try:
-        from app.kb.prefetch import prefetch_kb_context
-
-        return await prefetch_kb_context(
-            task_description=task_description,
-            client_id=client_id,
-            project_id=project_id,
-            files=files,
-        )
-    except Exception as e:
-        logger.warning("KB pre-fetch failed, continuing without context: %s", e)
-        return ""
+    """Pre-fetch KB context. Raises if KB is unavailable."""
+    from app.kb.prefetch import prefetch_kb_context
+    return await prefetch_kb_context(
+        task_description=task_description,
+        client_id=client_id,
+        project_id=project_id,
+        files=files,
+    )
 
 
 # --- Node: evaluate ---

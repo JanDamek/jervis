@@ -17,6 +17,7 @@ from app.services.image_service import ImageService
 from app.core.config import settings
 from app.db.arango import get_arango_db
 from langchain_community.document_loaders import RecursiveUrlLoader
+from langchain_ollama import ChatOllama
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,18 @@ class KnowledgeService:
         self.image_service = ImageService()
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
+        # LLM for ingest tasks (simple relevance check, complex summary)
+        self.ingest_llm_simple = ChatOllama(
+            base_url=settings.OLLAMA_INGEST_BASE_URL,
+            model=settings.INGEST_MODEL_SIMPLE,
+            format="json",
+            temperature=0
+        )
+        self.ingest_llm_complex = ChatOllama(
+            base_url=settings.OLLAMA_INGEST_BASE_URL,
+            model=settings.INGEST_MODEL_COMPLEX,
+            format="json",
+        )
 
     def _ensure_crawl_schema(self):
         """Ensure CrawledUrls collection exists for URL dedup tracking."""
@@ -300,14 +313,7 @@ class KnowledgeService:
     async def _check_link_relevance(self, text: str, root_url: str, page_url: str) -> bool:
         """Let LLM decide if a sub-page is relevant for indexing.
         Uses CPU ingest instance with simple (7B) model for fast classification."""
-        from langchain_ollama import ChatOllama
-
-        llm = ChatOllama(
-            base_url=settings.OLLAMA_INGEST_BASE_URL,
-            model=settings.INGEST_MODEL_SIMPLE,
-            format="json",
-            temperature=0
-        )
+        llm = self.ingest_llm_simple
 
         truncated = text[:3000] if len(text) > 3000 else text
         prompt = f"""You are evaluating whether a web page is relevant for indexing in a knowledge base.
@@ -469,16 +475,10 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         """
         Generate summary and detect actionable content using LLM.
         """
-        from langchain_ollama import ChatOllama
-        from app.core.config import settings
         import json
 
         # Use CPU ingest instance with complex (14B) model for accurate entity extraction
-        llm = ChatOllama(
-            base_url=settings.OLLAMA_INGEST_BASE_URL,
-            model=settings.INGEST_MODEL_COMPLEX,
-            format="json"
-        )
+        llm = self.ingest_llm_complex
 
         # Truncate content for summary (first 8000 chars)
         truncated = content[:8000] if len(content) > 8000 else content
