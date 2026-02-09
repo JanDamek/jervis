@@ -75,11 +75,14 @@ class MeetingContinuousIndexer(
     @Volatile
     private var currentMaxParallelJobs = DEFAULT_PARALLEL_TRANSCRIPTIONS
 
+    /** Track meeting IDs currently being processed to prevent duplicate launches. */
+    private val processingMeetingIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     companion object {
         private const val POLL_DELAY_MS = 30_000L
         private const val STUCK_CHECK_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
-        private const val STUCK_TRANSCRIBING_THRESHOLD_MINUTES = 15L
-        private const val STUCK_CORRECTING_THRESHOLD_MINUTES = 30L
+        private const val STUCK_TRANSCRIBING_THRESHOLD_MINUTES = 60L
+        private const val STUCK_CORRECTING_THRESHOLD_MINUTES = 60L
         private const val TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6 hours
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
@@ -343,14 +346,28 @@ class MeetingContinuousIndexer(
             logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (max parallel: $currentMaxParallelJobs)" }
 
             for (meeting in meetings) {
+                val meetingIdStr = meeting.id.toHexString()
+                // Skip if already being processed by another coroutine
+                if (!processingMeetingIds.add(meetingIdStr)) {
+                    logger.debug { "Meeting $meetingIdStr already being processed, skipping" }
+                    continue
+                }
+
                 transcriptionSemaphore.acquire()
                 scope.launch {
                     try {
-                        meetingTranscriptionService.transcribe(meeting)
+                        // Re-read from DB to avoid race with stuck detection or other pipelines
+                        val fresh = meetingRepository.findById(meeting.id)
+                        if (fresh == null || fresh.state != MeetingStateEnum.UPLOADED) {
+                            logger.debug { "Meeting $meetingIdStr no longer UPLOADED (now ${fresh?.state}), skipping" }
+                            return@launch
+                        }
+                        meetingTranscriptionService.transcribe(fresh)
                     } catch (e: Exception) {
-                        logger.error(e) { "Failed to transcribe meeting ${meeting.id}" }
+                        logger.error(e) { "Failed to transcribe meeting $meetingIdStr" }
                         markAsFailed(meeting, "Transcription error: ${e.message}")
                     } finally {
+                        processingMeetingIds.remove(meetingIdStr)
                         transcriptionSemaphore.release()
                     }
                 }
@@ -560,11 +577,17 @@ class MeetingContinuousIndexer(
                 // Check stuck TRANSCRIBING
                 meetingRepository.findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.TRANSCRIBING)
                     .collect { meeting ->
+                        val meetingIdStr = meeting.id.toHexString()
+                        // Skip if actively being processed by a coroutine in this server
+                        if (processingMeetingIds.contains(meetingIdStr)) {
+                            logger.debug { "Meeting $meetingIdStr in TRANSCRIBING but actively processing, skipping stuck check" }
+                            return@collect
+                        }
                         val stateAge = meeting.stateChangedAt ?: meeting.startedAt
                         val minutesInState = Duration.between(stateAge, now).toMinutes()
                         if (minutesInState >= STUCK_TRANSCRIBING_THRESHOLD_MINUTES) {
                             logger.warn {
-                                "Meeting ${meeting.id} stuck in TRANSCRIBING for ${minutesInState}min, " +
+                                "Meeting $meetingIdStr stuck in TRANSCRIBING for ${minutesInState}min, " +
                                     "resetting to UPLOADED for retry"
                             }
                             meetingRepository.save(
@@ -575,7 +598,7 @@ class MeetingContinuousIndexer(
                                 ),
                             )
                             notificationRpc.emitMeetingStateChanged(
-                                meeting.id.toHexString(), meeting.clientId.toString(),
+                                meetingIdStr, meeting.clientId.toString(),
                                 MeetingStateEnum.UPLOADED.name, meeting.title,
                             )
                         }

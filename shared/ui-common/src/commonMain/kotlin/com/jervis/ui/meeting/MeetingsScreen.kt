@@ -1110,8 +1110,8 @@ private fun PipelineProgress(
 
             // Stuck warning
             val isLikelyStuck = elapsedMinutes != null && (
-                (state == MeetingStateEnum.TRANSCRIBING && elapsedMinutes >= 10 && transcriptionPercent == null) ||
-                (state == MeetingStateEnum.CORRECTING && elapsedMinutes >= 20 && correctionProgress == null)
+                (state == MeetingStateEnum.TRANSCRIBING && elapsedMinutes >= 45 && transcriptionPercent == null) ||
+                (state == MeetingStateEnum.CORRECTING && elapsedMinutes >= 45 && correctionProgress == null)
             )
 
             // Status description
