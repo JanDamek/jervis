@@ -1,7 +1,7 @@
 """
 Whisper transcript correction agent.
 
-Stores/retrieves correction rules from KB and applies them via Ollama GPU (30B model).
+Stores/retrieves correction rules from KB and applies them via Ollama GPU (reasoning model).
 Correction rules are regular KB chunks with kind="transcript_correction",
 making them available to any agent with KB access (orchestrator, correction agent, etc.).
 
@@ -44,7 +44,7 @@ class CorrectionAgent:
     def __init__(self):
         self.kb_url = f"{settings.knowledgebase_url}/api/v1"
         self.ollama_url = settings.ollama_url
-        self.model = settings.default_local_model  # qwen3-coder-tool:30b
+        self.model = settings.default_correction_model  # qwen3-tools (reasoning)
 
     async def submit_correction(
         self,
@@ -325,8 +325,8 @@ class CorrectionAgent:
             ],
             "stream": False,
             "options": {
-                "num_predict": 8192,
-                "temperature": 0.1,
+                "num_predict": 16384,
+                "temperature": 0.3,
             },
         }
 
@@ -381,64 +381,46 @@ class CorrectionAgent:
     def _build_system_prompt_interactive(self, correction_prompt: str) -> str:
         """Build system prompt with interactive question generation."""
         base = (
-            "You are a transcript correction assistant. "
-            "Fix speech-to-text errors in the transcript segments below.\n\n"
-            "RULES:\n"
-            "- Your primary goal is to UNDERSTAND the content and meaning of "
-            "the conversation, then correct the text so it makes sense as a whole\n"
-            "- Fix misspellings of names, companies, departments per the "
-            "correction rules below\n"
-            "- Figure out what was actually said based on context — Whisper often "
-            "garbles proper nouns, technical terms, and names\n"
-            "- ANALYZE the full transcript context provided below to understand "
-            "who is speaking and about what topic\n"
-            "- DEDUCE correct spellings of names and terms from context clues "
-            "across the ENTIRE transcript — if a name appears garbled in one "
-            "place but clear elsewhere, use the clear version everywhere\n"
-            "- Cross-reference abbreviations and acronyms with their expanded "
-            "forms that may appear elsewhere in the transcript\n"
-            "- Consider the meeting topic, industry terminology, and project "
-            "names when deciding what was actually said\n"
-            "- When a word sounds similar to a known name or term from the "
-            "conversation context, prefer the known term over the literal "
-            "transcription\n"
-            "- The corrected text must read coherently — each segment should make "
-            "sense in context of the full conversation\n"
-            "- The meeting may contain Czech, Slovak, and English mixed together "
-            "— do NOT translate between languages, only correct transcription "
-            "errors\n"
-            "- Occasionally Scandinavian or Spanish may also appear\n"
-            "- DO NOT fix grammar or make the text formal — preserve the spoken "
-            "style exactly as it was said\n"
-            "- Stay as faithful as possible to the original audio/transcription "
-            "— only change what is clearly a transcription error\n"
-            "- Preserve the meaning — only fix obvious speech-to-text errors\n\n"
+            "You correct Whisper speech-to-text transcripts. "
+            "The audio is mostly Czech/Slovak with occasional English terms.\n\n"
+            "APPROACH:\n"
+            "1. Read the FULL transcript context to understand what the meeting "
+            "is about — the topic, participants, and subject matter\n"
+            "2. For each garbled segment, figure out what the speaker MEANT to say "
+            "based on phonetic similarity and context\n"
+            "3. Reconstruct coherent sentences that match the intended meaning\n\n"
+            "KEY RULES:\n"
+            "- Whisper severely garbles Czech — words may be split, merged, or "
+            "phonetically mangled beyond recognition\n"
+            "- READ the garbled text ALOUD in your head — the sounds often reveal "
+            "the intended Czech/Slovak words\n"
+            "- Apply all CORRECTION RULES below — these are verified phrases from "
+            "the user's domain\n"
+            "- Keep spoken style — do NOT formalize grammar or add punctuation "
+            "beyond what helps readability\n"
+            "- Do NOT translate between languages\n"
+            "- Each corrected segment MUST make sense in context of the full "
+            "conversation\n\n"
             "INTERACTIVE MODE:\n"
-            "- Always apply your best-guess correction for every segment\n"
-            "- When you encounter names, terms, or abbreviations that:\n"
-            "  (a) do NOT match any correction rule below, AND\n"
-            "  (b) look like they could be misspelled proper nouns, "
-            "company names, or domain-specific terms\n"
-            "  → add a question to the 'questions' array\n"
-            "- Do NOT ask about common words or obvious corrections\n"
-            "- Only ask about genuinely ambiguous proper nouns or terminology\n\n"
-            "OUTPUT FORMAT:\n"
-            "If you have questions:\n"
-            '{"corrections":[{"i":0,"t":"corrected text"},...],\n'
-            ' "questions":[{"id":"q1","i":5,"original":"unclear text",'
-            '"question":"What is the correct spelling?","options":["Option A","Option B"]}]}\n\n'
-            "If NO questions (all corrections are confident):\n"
-            '[{"i":0,"t":"corrected text"},{"i":1,"t":"corrected text"},...]\n\n'
-            "IMPORTANT: Return ONLY valid JSON, no markdown, no explanation.\n"
+            "- Always provide your best correction for every segment\n"
+            "- If you encounter unknown proper nouns or domain terms that are NOT "
+            "in the correction rules, add a question\n"
+            "- Do NOT ask about common words\n\n"
+            "OUTPUT — valid JSON only, no markdown:\n"
+            "With questions: "
+            '{"corrections":[{"i":0,"t":"text"},...], '
+            '"questions":[{"id":"q1","i":5,"original":"unclear",'
+            '"question":"Correct spelling?","options":["A","B"]}]}\n'
+            "Without questions: "
+            '[{"i":0,"t":"text"},{"i":1,"t":"text"},...]\n'
         )
 
         if correction_prompt:
-            base += f"\nCORRECTION RULES:\n{correction_prompt}"
+            base += f"\nCORRECTION RULES (always apply these):\n{correction_prompt}"
         else:
             base += (
-                "\nNo specific correction rules are stored yet. "
-                "Use your best judgment to fix obvious transcription errors "
-                "(misspelled names, garbled words, etc.).\n"
+                "\nNo correction rules stored yet. "
+                "Use context and phonetic reasoning to fix errors.\n"
             )
 
         return base
@@ -448,32 +430,18 @@ class CorrectionAgent:
     ) -> str:
         """Build system prompt for instruction-based correction."""
         base = (
-            "You are a transcript correction assistant. "
-            "The user has provided a specific instruction for how to correct "
-            "the transcript. Apply the instruction to ALL relevant segments.\n\n"
-            "RULES:\n"
-            "- UNDERSTAND the content and meaning of the conversation first\n"
-            "- Apply the user's instruction across the entire transcript\n"
-            "- Also apply any existing correction rules below\n"
-            "- The corrected text must make sense as a whole — ensure coherence "
-            "across segments\n"
-            "- The meeting may contain Czech, Slovak, and English mixed together "
-            "— do NOT translate between languages, only correct transcription errors\n"
-            "- DO NOT fix grammar — preserve the spoken style exactly\n"
-            "- Stay as faithful as possible to the original audio — only change "
-            "what the instruction says or what is clearly a transcription error\n"
-            "- Preserve the meaning — write text that is semantically correct\n\n"
+            "You correct Whisper speech-to-text transcripts. "
+            "Apply the user's instruction to fix the transcript.\n\n"
+            "1. Understand the conversation meaning from full context\n"
+            "2. Apply the user instruction across ALL relevant segments\n"
+            "3. Also apply existing correction rules below\n"
+            "4. Keep spoken style, do NOT translate between languages\n\n"
             f"USER INSTRUCTION:\n{instruction}\n\n"
-            "OUTPUT FORMAT:\n"
-            "Return a JSON object with:\n"
-            '{"corrections":[{"i":0,"t":"corrected text"},...],'
+            "OUTPUT — valid JSON only, no markdown:\n"
+            '{"corrections":[{"i":0,"t":"text"},...],'
             '"newRules":[{"original":"wrong","corrected":"right",'
-            '"category":"person_name|company_name|terminology|general"}]}\n\n'
-            "The newRules array should contain correction rules extracted from "
-            "the user's instruction — mappings that should be remembered for "
-            "future transcripts. Only include rules if the instruction implies "
-            "a reusable pattern (e.g. a name spelling).\n\n"
-            "IMPORTANT: Return ONLY valid JSON, no markdown, no explanation.\n"
+            '"category":"person_name|company_name|terminology|general"}]}\n'
+            "newRules: reusable patterns from the instruction (name spellings etc.)\n"
         )
 
         if correction_prompt:
@@ -489,18 +457,19 @@ class CorrectionAgent:
         for idx, seg in enumerate(segments):
             entries.append({"i": seg.get("i", idx), "t": seg["text"]})
 
-        prompt = (
-            "Correct these transcript segments:\n"
-            f"{json.dumps(entries, ensure_ascii=False)}"
-        )
+        prompt = ""
 
-        # Add full transcript context for cross-referencing names and terms
+        # Full transcript first — model should understand context before correcting
         if full_transcript:
             prompt += (
-                f"\n\nFull transcript context (use this to deduce correct "
-                f"spellings of names, terms, and abbreviations):\n"
-                f"{full_transcript}"
+                f"FULL TRANSCRIPT (read first to understand the topic):\n"
+                f"{full_transcript}\n\n"
             )
+
+        prompt += (
+            "SEGMENTS TO CORRECT:\n"
+            f"{json.dumps(entries, ensure_ascii=False)}"
+        )
 
         return prompt
 

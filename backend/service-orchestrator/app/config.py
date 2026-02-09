@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     default_local_model: str = os.getenv(
         "DEFAULT_LOCAL_MODEL", "qwen3-coder-tool:30b"
     )
+    default_correction_model: str = os.getenv(
+        "DEFAULT_CORRECTION_MODEL", "qwen3-tools"
+    )
     default_cloud_model: str = os.getenv(
         "DEFAULT_CLOUD_MODEL", "claude-sonnet-4-5-20250929"
     )
