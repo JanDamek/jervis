@@ -163,6 +163,7 @@ fun MeetingsScreen(
             onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
             onPlayToggle = { viewModel.playAudio(currentDetail.id) },
+            onRetranscribe = { viewModel.retranscribeMeeting(currentDetail.id) },
             onRecorrect = { viewModel.recorrectMeeting(currentDetail.id) },
             onReindex = { viewModel.reindexMeeting(currentDetail.id) },
             onCorrections = { showCorrections = true },
@@ -679,6 +680,7 @@ private fun MeetingDetailView(
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
     onPlayToggle: () -> Unit,
+    onRetranscribe: () -> Unit,
     onRecorrect: () -> Unit,
     onReindex: () -> Unit,
     onCorrections: () -> Unit,
@@ -735,6 +737,12 @@ private fun MeetingDetailView(
                             text = { Text("\uD83D\uDCD6 Pravidla oprav") },
                             onClick = { onCorrections(); showOverflowMenu = false },
                         )
+                        if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                            DropdownMenuItem(
+                                text = { Text("\u21BB Prepsat znovu") },
+                                onClick = { onRetranscribe(); showOverflowMenu = false },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("\u21BB Obnovit") },
                             onClick = { onRefresh(); showOverflowMenu = false },
@@ -854,6 +862,11 @@ private fun MeetingDetailView(
                         onClick = { showCorrected = false },
                         label = { Text("Surovy") },
                     )
+                }
+                if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                    TextButton(onClick = onRetranscribe) {
+                        Text("Prepsat znovu")
+                    }
                 }
                 if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                     TextButton(onClick = onRecorrect) {

@@ -25,7 +25,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 CORRECTION_KIND = "transcript_correction"
-CHUNK_SIZE = 20
+CHUNK_SIZE = 40
 MAX_RETRIES = 1
 
 CATEGORY_LABELS = {
@@ -390,6 +390,18 @@ class CorrectionAgent:
             "correction rules below\n"
             "- Figure out what was actually said based on context — Whisper often "
             "garbles proper nouns, technical terms, and names\n"
+            "- ANALYZE the full transcript context provided below to understand "
+            "who is speaking and about what topic\n"
+            "- DEDUCE correct spellings of names and terms from context clues "
+            "across the ENTIRE transcript — if a name appears garbled in one "
+            "place but clear elsewhere, use the clear version everywhere\n"
+            "- Cross-reference abbreviations and acronyms with their expanded "
+            "forms that may appear elsewhere in the transcript\n"
+            "- Consider the meeting topic, industry terminology, and project "
+            "names when deciding what was actually said\n"
+            "- When a word sounds similar to a known name or term from the "
+            "conversation context, prefer the known term over the literal "
+            "transcription\n"
             "- The corrected text must read coherently — each segment should make "
             "sense in context of the full conversation\n"
             "- The meeting may contain Czech, Slovak, and English mixed together "
@@ -482,12 +494,12 @@ class CorrectionAgent:
             f"{json.dumps(entries, ensure_ascii=False)}"
         )
 
-        # Add context from full transcript (truncated)
-        if len(full_transcript) > 500:
-            context_snippet = full_transcript[:500] + "..."
+        # Add full transcript context for cross-referencing names and terms
+        if full_transcript:
             prompt += (
-                f"\n\nFull transcript context (for understanding):\n"
-                f"{context_snippet}"
+                f"\n\nFull transcript context (use this to deduce correct "
+                f"spellings of names, terms, and abbreviations):\n"
+                f"{full_transcript}"
             )
 
         return prompt

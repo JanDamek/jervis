@@ -35,6 +35,8 @@ interface IMeetingService {
 
     suspend fun getAudioData(meetingId: String): String
 
+    suspend fun retranscribeMeeting(meetingId: String): Boolean
+
     suspend fun recorrectMeeting(meetingId: String): Boolean
 
     suspend fun reindexMeeting(meetingId: String): Boolean

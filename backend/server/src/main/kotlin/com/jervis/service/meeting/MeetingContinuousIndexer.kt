@@ -16,9 +16,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.core.annotation.Order
@@ -35,6 +38,7 @@ import kotlin.io.path.fileSize
 import kotlin.streams.toList
 
 private val logger = KotlinLogging.logger {}
+private val jsonParser = Json { ignoreUnknownKeys = true }
 
 /**
  * Continuous indexer for meeting recordings.
@@ -61,12 +65,15 @@ class MeetingContinuousIndexer(
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
+    private val transcriptionSemaphore = Semaphore(MAX_PARALLEL_TRANSCRIPTIONS)
+
     companion object {
         private const val POLL_DELAY_MS = 30_000L
         private const val TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6 hours
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
         private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
+        private const val MAX_PARALLEL_TRANSCRIPTIONS = 3
     }
 
     @PostConstruct
@@ -212,20 +219,48 @@ class MeetingContinuousIndexer(
 
                 val duration = (fileSize - WAV_HEADER_SIZE) / BYTES_PER_SECOND
 
+                // Check for companion transcript file
+                val transcriptFile = dir.resolve(file.name.replace(".wav", "_transcript.json"))
+                val (state, transcriptText, transcriptSegments) = if (transcriptFile.exists()) {
+                    try {
+                        val content = withContext(Dispatchers.IO) { java.nio.file.Files.readString(transcriptFile) }
+                        val result = jsonParser.decodeFromString<WhisperResult>(content)
+                        if (result.error.isNullOrBlank() && result.text.isNotBlank()) {
+                            val segments = result.segments.map { seg ->
+                                com.jervis.entity.meeting.TranscriptSegment(
+                                    startSec = seg.start,
+                                    endSec = seg.end,
+                                    text = seg.text.trim(),
+                                )
+                            }
+                            Triple(MeetingStateEnum.TRANSCRIBED, result.text, segments)
+                        } else {
+                            Triple(MeetingStateEnum.UPLOADED, null, emptyList())
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to parse transcript file: ${transcriptFile.name}" }
+                        Triple(MeetingStateEnum.UPLOADED, null, emptyList())
+                    }
+                } else {
+                    Triple(MeetingStateEnum.UPLOADED, null, emptyList())
+                }
+
                 val document = MeetingDocument(
                     id = objectId,
                     clientId = clientId,
                     projectId = projectId,
-                    state = MeetingStateEnum.UPLOADED,
+                    state = state,
                     audioFilePath = file.toString(),
                     audioSizeBytes = fileSize,
                     durationSeconds = duration,
+                    transcriptText = transcriptText,
+                    transcriptSegments = transcriptSegments,
                     stoppedAt = Instant.now(),
                 )
                 meetingRepository.save(document)
                 logger.info {
                     "Synced orphaned audio file to DB: ${file.name} " +
-                        "(client=$clientId, project=$projectId, ${fileSize} bytes, ${duration}s)"
+                        "(client=$clientId, project=$projectId, state=$state, ${fileSize} bytes, ${duration}s)"
                 }
             } catch (e: Exception) {
                 logger.warn(e) { "Error syncing orphaned file: ${file.name}" }
@@ -236,15 +271,33 @@ class MeetingContinuousIndexer(
     private fun isValidObjectIdHex(hex: String): Boolean =
         hex.length == 24 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
-    // ===== Pipeline 1: Transcription =====
+    // ===== Pipeline 1: Transcription (parallel, up to MAX_PARALLEL_TRANSCRIPTIONS) =====
 
     private suspend fun transcribeContinuously() {
-        continuousMeetingsInState(MeetingStateEnum.UPLOADED).collect { meeting ->
-            try {
-                meetingTranscriptionService.transcribe(meeting)
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to transcribe meeting ${meeting.id}" }
-                markAsFailed(meeting, "Transcription error: ${e.message}")
+        while (true) {
+            val meetings = meetingRepository
+                .findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.UPLOADED)
+                .toList()
+
+            if (meetings.isEmpty()) {
+                delay(POLL_DELAY_MS)
+                continue
+            }
+
+            logger.info { "Found ${meetings.size} UPLOADED meetings for transcription" }
+
+            for (meeting in meetings) {
+                transcriptionSemaphore.acquire()
+                scope.launch {
+                    try {
+                        meetingTranscriptionService.transcribe(meeting)
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to transcribe meeting ${meeting.id}" }
+                        markAsFailed(meeting, "Transcription error: ${e.message}")
+                    } finally {
+                        transcriptionSemaphore.release()
+                    }
+                }
             }
         }
     }

@@ -21,7 +21,7 @@ WORKSPACE="${WORKSPACE:?WORKSPACE env is required}"
 AUDIO_FILE="${AUDIO_FILE:?AUDIO_FILE env is required}"
 WHISPER_TASK="${WHISPER_TASK:-transcribe}"
 WHISPER_MODEL="${WHISPER_MODEL:-base}"
-RESULT_FILE="$WORKSPACE/.jervis/whisper-result.json"
+RESULT_FILE="${RESULT_FILE:-$WORKSPACE/.jervis/whisper-result.json}"
 
 # Resolve relative paths
 if [[ ! "$AUDIO_FILE" = /* ]]; then

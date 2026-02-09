@@ -269,6 +269,49 @@ class MeetingRpcImpl(
         return meetings.toList().map { it.toDto() }
     }
 
+    override suspend fun retranscribeMeeting(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state !in listOf(
+                MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING,
+                MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED,
+                MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED,
+            )
+        ) {
+            throw IllegalStateException("Cannot re-transcribe meeting in state ${meeting.state}")
+        }
+
+        // Purge KB if was indexed
+        if (meeting.state == MeetingStateEnum.INDEXED) {
+            try {
+                val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                    meetingId = meeting.id.toHexString(),
+                    title = meeting.title,
+                )
+                knowledgeService.purge(sourceUrn.toString())
+                logger.info { "Purged KB data for meeting $meetingId on re-transcribe" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to purge KB data for meeting $meetingId" }
+            }
+        }
+
+        meetingRepository.save(
+            meeting.copy(
+                state = MeetingStateEnum.UPLOADED,
+                transcriptText = null,
+                transcriptSegments = emptyList(),
+                correctedTranscriptText = null,
+                correctedTranscriptSegments = emptyList(),
+                correctionQuestions = emptyList(),
+                errorMessage = null,
+            ),
+        )
+        logger.info { "Reset meeting $meetingId to UPLOADED for re-transcription" }
+        return true
+    }
+
     override suspend fun recorrectMeeting(meetingId: String): Boolean {
         val id = ObjectId(meetingId)
         val meeting = meetingRepository.findById(id)

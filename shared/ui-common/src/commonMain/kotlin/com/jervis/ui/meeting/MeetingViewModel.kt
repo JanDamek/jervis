@@ -360,6 +360,17 @@ class MeetingViewModel(
         }
     }
 
+    fun retranscribeMeeting(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.retranscribeMeeting(meetingId)
+                refreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba pri obnove prepisu: ${e.message}"
+            }
+        }
+    }
+
     fun recorrectMeeting(meetingId: String) {
         scope.launch {
             try {

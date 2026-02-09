@@ -54,12 +54,35 @@ class WhisperJobRunner {
      * @param workspacePath Absolute path to the workspace directory on PVC
      * @return WhisperResult with transcription text and segments
      */
+    /**
+     * Check if Whisper transcription is available (K8s API accessible in-cluster, always true locally).
+     */
+    suspend fun isAvailable(): Boolean {
+        if (!IN_CLUSTER) return true
+        return try {
+            withContext(Dispatchers.IO) {
+                KubernetesClientBuilder().build().use { client ->
+                    client.batch().v1().jobs()
+                        .inNamespace(K8S_NAMESPACE)
+                        .withLabel("app", "jervis-whisper")
+                        .list()
+                    true
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Whisper K8s health check failed" }
+            false
+        }
+    }
+
     suspend fun transcribe(audioFilePath: String, workspacePath: String): WhisperResult {
-        val jervisDir = Paths.get(workspacePath).resolve(".jervis")
-        val resultFile = jervisDir.resolve("whisper-result.json")
+        // Per-meeting result file — enables parallel Whisper Jobs without collision
+        val audioPath = Paths.get(audioFilePath)
+        val resultFileName = audioPath.fileName.toString().replace(".wav", "_transcript.json")
+        val resultFile = audioPath.parent.resolve(resultFileName)
 
         withContext(Dispatchers.IO) {
-            Files.createDirectories(jervisDir)
+            Files.createDirectories(resultFile.parent)
             Files.deleteIfExists(resultFile)
         }
 
@@ -73,7 +96,7 @@ class WhisperJobRunner {
 
         try {
             if (IN_CLUSTER) {
-                runK8sJob(audioFilePath, workspacePath, timeoutSeconds)
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile)
             } else {
                 runLocal(audioFilePath, resultFile)
             }
@@ -95,7 +118,7 @@ class WhisperJobRunner {
         }
     }
 
-    private suspend fun runK8sJob(audioFilePath: String, workspacePath: String, timeoutSeconds: Long) {
+    private suspend fun runK8sJob(audioFilePath: String, workspacePath: String, timeoutSeconds: Long, resultFile: Path) {
         val jobName = "whisper-${UUID.randomUUID().toString().substring(0, 8)}"
 
         logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath)" }
@@ -124,6 +147,7 @@ class WhisperJobRunner {
                             .withEnv(
                                 EnvVarBuilder().withName("WORKSPACE").withValue(workspacePath).build(),
                                 EnvVarBuilder().withName("AUDIO_FILE").withValue(audioFilePath).build(),
+                                EnvVarBuilder().withName("RESULT_FILE").withValue(resultFile.toString()).build(),
                             )
                             .withVolumeMounts(
                                 VolumeMountBuilder()
