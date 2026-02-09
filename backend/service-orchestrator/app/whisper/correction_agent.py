@@ -44,7 +44,7 @@ class CorrectionAgent:
     def __init__(self):
         self.kb_url = f"{settings.knowledgebase_url}/api/v1"
         self.ollama_url = settings.ollama_url
-        self.model = settings.default_correction_model  # qwen3-tool-16k:30b (reasoning)
+        self.model = settings.default_correction_model  # qwen3-tool:30b (reasoning, num_ctx set dynamically)
 
     async def submit_correction(
         self,
@@ -317,6 +317,14 @@ class CorrectionAgent:
 
     async def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
         """Call Ollama chat API on GPU instance."""
+        # Estimate input tokens (~1 token per 2.5 chars for Czech)
+        input_chars = len(system_prompt) + len(user_prompt)
+        input_tokens_est = int(input_chars / 2.5)
+        # Context = input + think (3x output) + output; output ≈ 0.5x input
+        num_ctx = max(8192, input_tokens_est * 4)
+        # Round up to nearest 4k, cap at 48k (GPU VRAM limit)
+        num_ctx = min(((num_ctx + 4095) // 4096) * 4096, 49152)
+
         payload = {
             "model": self.model,
             "messages": [
@@ -326,9 +334,11 @@ class CorrectionAgent:
             "stream": False,
             "options": {
                 "num_predict": 16384,
+                "num_ctx": num_ctx,
                 "temperature": 0.3,
             },
         }
+        logger.info("Calling Ollama %s (num_ctx=%d, input≈%d tokens)", self.model, num_ctx, input_tokens_est)
 
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(
