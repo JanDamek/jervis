@@ -1,6 +1,7 @@
 package com.jervis.ui.meeting
 
 import androidx.compose.foundation.background
+import kotlin.time.Clock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -813,6 +814,7 @@ private fun MeetingDetailView(
             state = meeting.state,
             transcriptionPercent = transcriptionPercent,
             correctionProgress = correctionProgress,
+            stateChangedAt = meeting.stateChangedAt,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1004,10 +1006,21 @@ private fun PipelineProgress(
     state: MeetingStateEnum,
     transcriptionPercent: Double? = null,
     correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
+    stateChangedAt: String? = null,
 ) {
     if (state == MeetingStateEnum.RECORDING) return
 
     val (currentStepIndex, isActive) = stateToStepInfo(state)
+
+    // Compute elapsed minutes since state changed (for stuck detection)
+    val elapsedMinutes = remember(stateChangedAt) {
+        if (stateChangedAt == null) return@remember null
+        try {
+            val changedEpochMs = kotlinx.datetime.Instant.parse(stateChangedAt).toEpochMilliseconds()
+            val nowEpochMs = Clock.System.now().toEpochMilliseconds()
+            ((nowEpochMs - changedEpochMs) / 60_000).toInt()
+        } catch (_: Exception) { null }
+    }
 
     Card(
         colors = CardDefaults.cardColors(
@@ -1095,22 +1108,33 @@ private fun PipelineProgress(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Stuck warning
+            val isLikelyStuck = elapsedMinutes != null && (
+                (state == MeetingStateEnum.TRANSCRIBING && elapsedMinutes >= 10 && transcriptionPercent == null) ||
+                (state == MeetingStateEnum.CORRECTING && elapsedMinutes >= 20 && correctionProgress == null)
+            )
+
             // Status description
+            val elapsedSuffix = if (elapsedMinutes != null && elapsedMinutes > 0 && isActive) " (${elapsedMinutes} min)" else ""
             val statusText = when {
                 state == MeetingStateEnum.FAILED -> null // handled separately
                 state == MeetingStateEnum.INDEXED -> "Zpracovani dokonceno"
                 // Waiting in queue (step done, next not started yet)
                 state == MeetingStateEnum.UPLOADED -> "Ve fronte - ceka na prepis pres Whisper"
+                isLikelyStuck && state == MeetingStateEnum.TRANSCRIBING ->
+                    "Mozna zaseknuto - zadny progress ${elapsedMinutes} min. Zkuste 'Prepsat znovu'."
                 state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
-                    "Whisper prepisuje: ${transcriptionPercent.toInt()}%"
-                state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
+                    "Whisper prepisuje: ${transcriptionPercent.toInt()}%$elapsedSuffix"
+                isLikelyStuck && state == MeetingStateEnum.CORRECTING ->
+                    "Mozna zaseknuto - zadny progress ${elapsedMinutes} min."
                 state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
-                    correctionProgress.message ?: "Korekce: chunk ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}"
+                    (correctionProgress.message ?: "Korekce: chunk ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}") + elapsedSuffix
+                state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
                 state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potrebuje vase odpovedi"
                 state == MeetingStateEnum.CORRECTED -> "Ve fronte - ceka na indexaci do znalostni baze"
                 // Actively processing
                 isActive && currentStepIndex in pipelineSteps.indices ->
-                    pipelineSteps[currentStepIndex].activeDescription
+                    pipelineSteps[currentStepIndex].activeDescription + elapsedSuffix
                 else -> null
             }
 
@@ -1137,10 +1161,11 @@ private fun PipelineProgress(
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (state == MeetingStateEnum.INDEXED)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = when {
+                            isLikelyStuck -> MaterialTheme.colorScheme.error
+                            state == MeetingStateEnum.INDEXED -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
             }

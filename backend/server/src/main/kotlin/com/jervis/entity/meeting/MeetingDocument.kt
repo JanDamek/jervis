@@ -50,6 +50,7 @@ data class MeetingDocument(
     val correctedTranscriptText: String? = null,
     val correctedTranscriptSegments: List<TranscriptSegment> = emptyList(),
     val correctionQuestions: List<CorrectionQuestion> = emptyList(),
+    val stateChangedAt: Instant? = null,
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
     val deleted: Boolean = false,

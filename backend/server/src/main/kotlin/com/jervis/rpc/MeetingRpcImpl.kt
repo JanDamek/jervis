@@ -521,6 +521,7 @@ private fun MeetingDocument.toDto(): MeetingDto =
                 context = q.context,
             )
         },
+        stateChangedAt = stateChangedAt?.toString(),
         errorMessage = errorMessage,
         deleted = deleted,
         deletedAt = deletedAt?.toString(),

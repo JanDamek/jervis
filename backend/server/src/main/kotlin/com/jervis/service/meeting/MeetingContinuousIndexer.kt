@@ -77,6 +77,9 @@ class MeetingContinuousIndexer(
 
     companion object {
         private const val POLL_DELAY_MS = 30_000L
+        private const val STUCK_CHECK_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
+        private const val STUCK_TRANSCRIBING_THRESHOLD_MINUTES = 15L
+        private const val STUCK_CORRECTING_THRESHOLD_MINUTES = 30L
         private const val TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6 hours
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
@@ -117,6 +120,12 @@ class MeetingContinuousIndexer(
             runCatching { trashPurgeContinuously() }
                 .onFailure { e -> logger.error(e) { "Trash purge pipeline crashed" } }
         }
+
+        // Pipeline 5: Stuck meeting detection (periodic)
+        scope.launch {
+            runCatching { recoverStuckMeetingsContinuously() }
+                .onFailure { e -> logger.error(e) { "Stuck meeting recovery pipeline crashed" } }
+        }
     }
 
     // ===== Startup: Stale Meeting Recovery =====
@@ -125,6 +134,9 @@ class MeetingContinuousIndexer(
      * Single-instance server: after restart, any RECORDING/UPLOADING meetings are stale.
      * If audio file has useful data, promote to UPLOADED for processing.
      * Otherwise, clean up.
+     *
+     * Also recovers TRANSCRIBING/CORRECTING meetings — the server restart killed
+     * the poll loops watching K8s jobs, so these are orphaned.
      */
     private suspend fun recoverStaleMeetings() {
         val staleStates = listOf(MeetingStateEnum.RECORDING, MeetingStateEnum.UPLOADING)
@@ -152,6 +164,36 @@ class MeetingContinuousIndexer(
                 } catch (e: Exception) {
                     logger.error(e) { "Error recovering stale meeting ${meeting.id}" }
                 }
+            }
+        }
+
+        // Recover TRANSCRIBING meetings — reset to UPLOADED for re-transcription
+        meetingRepository.findByStateOrderByStoppedAtAsc(MeetingStateEnum.TRANSCRIBING).collect { meeting ->
+            try {
+                meetingRepository.save(
+                    meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
+                )
+                notificationRpc.emitMeetingStateChanged(
+                    meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
+                )
+                logger.info { "Recovered stale TRANSCRIBING meeting ${meeting.id} -> UPLOADED (server restart)" }
+            } catch (e: Exception) {
+                logger.error(e) { "Error recovering TRANSCRIBING meeting ${meeting.id}" }
+            }
+        }
+
+        // Recover CORRECTING meetings — reset to TRANSCRIBED for re-correction
+        meetingRepository.findByStateOrderByStoppedAtAsc(MeetingStateEnum.CORRECTING).collect { meeting ->
+            try {
+                meetingRepository.save(
+                    meeting.copy(state = MeetingStateEnum.TRANSCRIBED, stateChangedAt = Instant.now(), errorMessage = null),
+                )
+                notificationRpc.emitMeetingStateChanged(
+                    meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.TRANSCRIBED.name, meeting.title,
+                )
+                logger.info { "Recovered stale CORRECTING meeting ${meeting.id} -> TRANSCRIBED (server restart)" }
+            } catch (e: Exception) {
+                logger.error(e) { "Error recovering CORRECTING meeting ${meeting.id}" }
             }
         }
     }
@@ -502,10 +544,67 @@ class MeetingContinuousIndexer(
             }
         }
 
+    // ===== Pipeline 5: Stuck Meeting Detection =====
+
+    /**
+     * Periodically checks for meetings stuck in TRANSCRIBING or CORRECTING
+     * for longer than the configured thresholds. Uses stateChangedAt timestamp.
+     * Meetings without stateChangedAt are checked by startedAt as fallback.
+     */
+    private suspend fun recoverStuckMeetingsContinuously() {
+        while (true) {
+            delay(STUCK_CHECK_INTERVAL_MS)
+            try {
+                val now = Instant.now()
+
+                // Check stuck TRANSCRIBING
+                meetingRepository.findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.TRANSCRIBING)
+                    .collect { meeting ->
+                        val stateAge = meeting.stateChangedAt ?: meeting.startedAt
+                        val minutesInState = Duration.between(stateAge, now).toMinutes()
+                        if (minutesInState >= STUCK_TRANSCRIBING_THRESHOLD_MINUTES) {
+                            logger.warn {
+                                "Meeting ${meeting.id} stuck in TRANSCRIBING for ${minutesInState}min, " +
+                                    "resetting to UPLOADED for retry"
+                            }
+                            meetingRepository.save(
+                                meeting.copy(
+                                    state = MeetingStateEnum.UPLOADED,
+                                    stateChangedAt = now,
+                                    errorMessage = null,
+                                ),
+                            )
+                            notificationRpc.emitMeetingStateChanged(
+                                meeting.id.toHexString(), meeting.clientId.toString(),
+                                MeetingStateEnum.UPLOADED.name, meeting.title,
+                            )
+                        }
+                    }
+
+                // Check stuck CORRECTING
+                meetingRepository.findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.CORRECTING)
+                    .collect { meeting ->
+                        val stateAge = meeting.stateChangedAt ?: meeting.startedAt
+                        val minutesInState = Duration.between(stateAge, now).toMinutes()
+                        if (minutesInState >= STUCK_CORRECTING_THRESHOLD_MINUTES) {
+                            logger.warn {
+                                "Meeting ${meeting.id} stuck in CORRECTING for ${minutesInState}min, " +
+                                    "marking as FAILED"
+                            }
+                            markAsFailed(meeting, "Correction timed out after ${minutesInState} minutes")
+                        }
+                    }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in stuck meeting recovery cycle" }
+            }
+        }
+    }
+
     private suspend fun markAsFailed(meeting: MeetingDocument, error: String) {
         meetingRepository.save(
             meeting.copy(
                 state = MeetingStateEnum.FAILED,
+                stateChangedAt = Instant.now(),
                 errorMessage = error,
             ),
         )

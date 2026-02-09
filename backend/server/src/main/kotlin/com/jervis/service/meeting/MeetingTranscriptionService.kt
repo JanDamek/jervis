@@ -43,7 +43,7 @@ class MeetingTranscriptionService(
         val clientIdStr = meeting.clientId.toString()
 
         // Mark as TRANSCRIBING
-        val transcribing = meetingRepository.save(meeting.copy(state = MeetingStateEnum.TRANSCRIBING))
+        val transcribing = meetingRepository.save(meeting.copy(state = MeetingStateEnum.TRANSCRIBING, stateChangedAt = Instant.now()))
         notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBING.name, meeting.title)
 
         try {
@@ -63,6 +63,7 @@ class MeetingTranscriptionService(
                 val failed = meetingRepository.save(
                     transcribing.copy(
                         state = MeetingStateEnum.FAILED,
+                        stateChangedAt = Instant.now(),
                         errorMessage = "Whisper error: ${result.error}",
                     ),
                 )
@@ -81,6 +82,7 @@ class MeetingTranscriptionService(
             val transcribed = meetingRepository.save(
                 transcribing.copy(
                     state = MeetingStateEnum.TRANSCRIBED,
+                    stateChangedAt = Instant.now(),
                     transcriptText = result.text,
                     transcriptSegments = segments,
                 ),
@@ -98,6 +100,7 @@ class MeetingTranscriptionService(
             val failed = meetingRepository.save(
                 transcribing.copy(
                     state = MeetingStateEnum.FAILED,
+                    stateChangedAt = Instant.now(),
                     errorMessage = "Transcription error: ${e.message}",
                 ),
             )

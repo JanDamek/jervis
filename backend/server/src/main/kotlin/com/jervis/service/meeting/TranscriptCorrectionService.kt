@@ -41,7 +41,7 @@ class TranscriptCorrectionService(
 
         logger.info { "Starting transcript correction for meeting ${meeting.id}" }
 
-        val correcting = meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTING))
+        val correcting = meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTING, stateChangedAt = java.time.Instant.now()))
         notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.CORRECTING.name, meeting.title)
 
         try {
@@ -50,6 +50,7 @@ class TranscriptCorrectionService(
                 val corrected = meetingRepository.save(
                     correcting.copy(
                         state = MeetingStateEnum.CORRECTED,
+                        stateChangedAt = java.time.Instant.now(),
                         correctedTranscriptText = meeting.transcriptText,
                         correctedTranscriptSegments = meeting.transcriptSegments,
                         correctionQuestions = emptyList(),
@@ -117,6 +118,7 @@ class TranscriptCorrectionService(
             val corrected = meetingRepository.save(
                 correcting.copy(
                     state = newState,
+                    stateChangedAt = java.time.Instant.now(),
                     correctedTranscriptText = correctedText,
                     correctedTranscriptSegments = correctedSegments,
                     correctionQuestions = questions,
@@ -135,6 +137,7 @@ class TranscriptCorrectionService(
             val failed = meetingRepository.save(
                 correcting.copy(
                     state = MeetingStateEnum.FAILED,
+                    stateChangedAt = java.time.Instant.now(),
                     errorMessage = "Correction error: ${e.message}",
                 ),
             )
