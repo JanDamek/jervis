@@ -142,18 +142,25 @@ object NetworkModule {
 
     /**
      * Reconnect RPC client and refresh all service stubs.
+     * Recreates the HttpClient to handle cases where the underlying engine
+     * is in a broken state (common on iOS after background/foreground transitions).
      */
     suspend fun reconnect() {
         val baseUrl = _baseUrl ?: return
-        val httpClient = _httpClient ?: return
 
-        println("NetworkModule: Reconnecting to $baseUrl...")
+        println("NetworkModule: Reconnecting to $baseUrl (recreating HttpClient)...")
         try {
             // Close old RPC client to release WebSocket resources
-            _rpcClient?.close()
+            try { _rpcClient?.close() } catch (_: Exception) {}
 
-            // Create new RPC client (kRPC manages WebSocket internally)
-            val newRpcClient = createRpcClient(baseUrl, httpClient)
+            // Close old HttpClient — on iOS the Darwin engine can get stuck
+            try { _httpClient?.close() } catch (_: Exception) {}
+
+            // Create fresh HttpClient and RPC client
+            val newHttpClient = createHttpClient()
+            _httpClient = newHttpClient
+
+            val newRpcClient = createRpcClient(baseUrl, newHttpClient)
             _rpcClient = newRpcClient
 
             // Refresh service stubs in the container

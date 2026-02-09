@@ -39,8 +39,12 @@ class WhisperJobRunner {
         private val PVC_NAME = System.getenv("DATA_PVC_NAME") ?: "jervis-data-pvc"
         private val PVC_MOUNT = System.getenv("DATA_PVC_MOUNT") ?: "/opt/jervis/data"
         private val IN_CLUSTER = Paths.get("/var/run/secrets/kubernetes.io/serviceaccount/token").toFile().exists()
-        private const val JOB_TIMEOUT_SECONDS = 600L
-        private const val POLL_INTERVAL_SECONDS = 5L
+        private const val MIN_TIMEOUT_SECONDS = 600L // 10 min minimum
+        private const val TIMEOUT_MULTIPLIER = 3L // 3x audio duration as timeout
+        private const val POLL_INTERVAL_SECONDS = 30L
+        private const val PROGRESS_LOG_INTERVAL = 5 // Log progress every 5 polls (2.5 min)
+        private const val WAV_HEADER_SIZE = 44
+        private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
     }
 
     /**
@@ -59,9 +63,17 @@ class WhisperJobRunner {
             Files.deleteIfExists(resultFile)
         }
 
+        // Compute dynamic timeout based on audio duration
+        val audioFileSize = withContext(Dispatchers.IO) { Files.size(Paths.get(audioFilePath)) }
+        val audioDurationSeconds = (audioFileSize - WAV_HEADER_SIZE).coerceAtLeast(0) / BYTES_PER_SECOND
+        val timeoutSeconds = (audioDurationSeconds * TIMEOUT_MULTIPLIER).coerceAtLeast(MIN_TIMEOUT_SECONDS)
+        logger.info {
+            "Whisper timeout: ${timeoutSeconds}s (audio duration: ${audioDurationSeconds}s, file size: ${audioFileSize} bytes)"
+        }
+
         try {
             if (IN_CLUSTER) {
-                runK8sJob(audioFilePath, workspacePath)
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds)
             } else {
                 runLocal(audioFilePath, resultFile)
             }
@@ -83,7 +95,7 @@ class WhisperJobRunner {
         }
     }
 
-    private suspend fun runK8sJob(audioFilePath: String, workspacePath: String) {
+    private suspend fun runK8sJob(audioFilePath: String, workspacePath: String, timeoutSeconds: Long) {
         val jobName = "whisper-${UUID.randomUUID().toString().substring(0, 8)}"
 
         logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath)" }
@@ -148,11 +160,15 @@ class WhisperJobRunner {
                     .resource(job)
                     .create()
 
-                // Poll for completion
+                // Poll for completion with progress logging
                 var elapsed = 0L
-                while (elapsed < JOB_TIMEOUT_SECONDS) {
+                var pollCount = 0
+                logger.info { "Waiting for Whisper Job $jobName (timeout: ${timeoutSeconds}s, poll interval: ${POLL_INTERVAL_SECONDS}s)" }
+
+                while (elapsed < timeoutSeconds) {
                     delay(POLL_INTERVAL_SECONDS * 1000)
                     elapsed += POLL_INTERVAL_SECONDS
+                    pollCount++
 
                     val status = client.batch().v1().jobs()
                         .inNamespace(K8S_NAMESPACE)
@@ -166,16 +182,25 @@ class WhisperJobRunner {
                     }
 
                     if ((status.succeeded ?: 0) > 0) {
-                        logger.info { "Whisper Job $jobName completed successfully" }
+                        logger.info { "Whisper Job $jobName completed successfully after ${elapsed}s" }
                         return@withContext
                     }
 
                     if ((status.failed ?: 0) > 0) {
-                        throw RuntimeException("Whisper Job $jobName failed")
+                        throw RuntimeException("Whisper Job $jobName failed after ${elapsed}s")
+                    }
+
+                    // Progress log
+                    if (pollCount % PROGRESS_LOG_INTERVAL == 0) {
+                        val remaining = timeoutSeconds - elapsed
+                        logger.info {
+                            "Whisper Job $jobName still running (${elapsed}s elapsed, ${remaining}s remaining, " +
+                                "active=${status.active ?: 0})"
+                        }
                     }
                 }
 
-                throw RuntimeException("Whisper Job $jobName timed out after ${JOB_TIMEOUT_SECONDS}s")
+                throw RuntimeException("Whisper Job $jobName timed out after ${timeoutSeconds}s")
             }
         }
     }

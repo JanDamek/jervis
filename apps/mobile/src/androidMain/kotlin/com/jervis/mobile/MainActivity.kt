@@ -19,13 +19,14 @@ class MainActivity : ComponentActivity() {
         // Initialize notification context holder
         AndroidContextHolder.initialize(this)
 
-        // Request notification permission on Android 13+
+        // Request runtime permissions
+        val permissions = mutableListOf(
+            android.Manifest.permission.RECORD_AUDIO,
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissions(
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                1001,
-            )
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+        requestPermissions(permissions.toTypedArray(), 1001)
 
         setContent {
             val serverBaseUrl = "https://jervis.damek-soft.eu"

@@ -503,8 +503,8 @@ class MainViewModel(
                 if (reconnectAttempts > 0) {
                     _isOverlayVisible.value = true
 
-                    // Pokud už máme hodně neúspěšných pokusů, zkusíme kompletní refresh klienta
-                    if (reconnectAttempts % 10 == 0 && onRefreshConnection != null) {
+                    // After 3 failed attempts, trigger full refresh (recreates HttpClient + RPC)
+                    if (reconnectAttempts % 3 == 0 && onRefreshConnection != null) {
                         println("=== Max attempts reached for this RPC client, triggering full refresh ===")
                         onRefreshConnection.invoke()
                         return // LaunchedEffect v JervisApp se postará o zbytek
@@ -538,7 +538,7 @@ class MainViewModel(
                             e.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
                                 e.message?.contains("Client cancelled", ignoreCase = true) == true
 
-                        if (isRpcCancelled && reconnectAttempts >= 2) {
+                        if (isRpcCancelled && reconnectAttempts >= 1) {
                             println("=== RPC client cancelled, triggering full reconnect ===")
                             onRefreshConnection?.invoke()
                             throw e // Stop retry loop, onRefreshConnection will handle it
