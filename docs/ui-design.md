@@ -906,8 +906,9 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       ├── GitSettings.kt       ← (standalone git config)
 │   │       ├── BugTrackerSettings.kt ← (standalone bug tracker config)
 │   │       ├── WhisperSettings.kt    ← Whisper transcription config (model, quality, concurrency)
-│   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
+│   │       └── SchedulerSettings.kt  ← Scheduled task list (cards + delete)
 │   ├── MainScreen.kt
+│   ├── SchedulerScreen.kt          ← JListDetailLayout (task list + detail + create dialog)
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
 │   ├── ConnectionsScreen.kt
 │   └── meeting/
