@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-07
+**Last updated:** 2026-02-09
 **Status:** Production Documentation
 
 This document is the **single source of truth** for UI guidelines, design patterns, and shared components.
@@ -96,6 +96,9 @@ On expanded the sidebar has a "Zpět" text button and the content area has a hea
 ```
 Need category-based navigation (settings, admin panels)?
   → JAdaptiveSidebarLayout
+
+Need sidebar navigation alongside primary content (main screen)?
+  → Custom BoxWithConstraints with sidebar + content (see §5.1.1)
 
 Need entity list with create/edit/detail (clients, projects)?
   → JListDetailLayout + JDetailScreen for the edit form
@@ -232,7 +235,7 @@ All components live in `com.jervis.ui.design.DesignSystem.kt` unless noted other
 | `SettingCard` | Card for setting groups (used in BugTrackerSettings) |
 | `StatusIndicator` | Connection status dot (green/yellow/red) |
 | `ActionRibbon` | Save/Cancel ribbon (legacy – prefer `JDetailScreen`) |
-| `AgentStatusRow` | Clickable agent status bar in MainScreen (idle/running + queue badge + chevron) |
+| `AgentStatusRow` | Clickable agent status bar in MainScreen (idle/running + queue badge + chevron) – private in `MainScreen.kt` |
 
 ### 3.7) Shared Form Helpers (`com.jervis.ui.screens.settings.sections.ClientsSettings.kt`)
 
@@ -345,6 +348,49 @@ fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
     )
 }
 ```
+
+### 5.1.1) Main Screen – Sidebar Navigation
+
+The main screen uses a custom adaptive sidebar (same visual style as `JAdaptiveSidebarLayout`) combined with chat content.
+
+```
+EXPANDED (≥600dp):
+┌──────────┬────────────────────────────────┐
+│ Sidebar  │ Chat Content                   │
+│ 240dp    │                                │
+│          │ ┌─ SelectorsRow ────────────┐  │
+│ JERVIS   │ │ [Klient ▼] [Projekt ▼]  │  │
+│ Assistant│ └──────────────────────────┘  │
+│          │                                │
+│ ●💬 Chat │ Chat messages...               │
+│  ⚙ Nast..│                                │
+│  📋 Úlohy│ ┌─ AgentStatusRow ──────────┐  │
+│  📥 Front│ │ Agent: Nečinný        [>] │  │
+│  🗓 Plán.│ └──────────────────────────┘  │
+│  🎤 Meet.│                                │
+│  🔍 RAG  │ ┌─ InputArea ──────────────┐  │
+│  📛 Logy │ │ [Napište zprávu...] [▶]  │  │
+│          │ └──────────────────────────┘  │
+└──────────┴────────────────────────────────┘
+
+COMPACT (<600dp):  Menu icon → full-screen menu list
+┌───────────────────────────────────────┐
+│ JTopBar: "JERVIS Assistant" [☰]      │
+│                                       │
+│ ┌─ JNavigationRow ─────────────────┐  │
+│ │ 💬 Chat                      [>] │  │
+│ │ ⚙️ Nastavení                 [>] │  │
+│ │ 📋 Uživatelské úlohy        [>] │  │
+│ │ 📥 Fronta úloh              [>] │  │
+│ │ 🗓️ Plánovač                 [>] │  │
+│ │ 🎤 Meetingy                  [>] │  │
+│ │ 🔍 RAG Hledání              [>] │  │
+│ │ 📛 Chybové logy             [>] │  │
+│ └──────────────────────────────────┘  │
+└───────────────────────────────────────┘
+```
+
+**Implementation:** `MainScreenView` in `MainScreen.kt` uses `BoxWithConstraints` with `MainMenuItem` enum. Chat is always the active item on expanded; other items call `onNavigate(screen)`.
 
 ### 5.2) Entity List → Detail Screen
 
@@ -1009,7 +1055,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       ├── BugTrackerSettings.kt ← (standalone bug tracker config)
 │   │       ├── WhisperSettings.kt    ← Whisper transcription config (model, quality, concurrency)
 │   │       └── SchedulerSettings.kt  ← Scheduled task list (cards + delete)
-│   ├── MainScreen.kt
+│   ├── MainScreen.kt                ← Wrapper (ViewModel → MainScreenView)
 │   ├── SchedulerScreen.kt          ← JListDetailLayout (task list + detail + create dialog)
 │   ├── UserTasksScreen.kt      ← User task list + detail (JListDetailLayout + JDetailScreen)
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
@@ -1030,5 +1076,6 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   ├── CopyableTextCard.kt          ← CopyableTextCard + clipboard handler
 │   ├── BrowserHelper.kt             ← expect fun openUrlInBrowser
 │   └── FilePickers.kt               ← expect fun pickTextFileContent
+├── MainScreen.kt                    ← MainScreenView: adaptive sidebar + chat (MainMenuItem enum)
 └── App.kt                           ← Root composable
 ```

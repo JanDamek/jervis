@@ -4,16 +4,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -23,23 +24,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,22 +50,50 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
+import com.jervis.ui.design.JNavigationRow
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.navigation.Screen
 import com.jervis.ui.util.rememberClipboardManager
 
 /**
- * Main screen for Jervis Mobile - inspired by Desktop MainWindow
+ * Main menu items for sidebar navigation.
+ * CHAT is the primary item (shows chat content), others navigate to separate screens.
+ */
+private enum class MainMenuItem(val icon: String, val title: String) {
+    CHAT("💬", "Chat"),
+    SETTINGS("⚙️", "Nastavení"),
+    USER_TASKS("📋", "Uživatelské úlohy"),
+    PENDING_TASKS("📥", "Fronta úloh"),
+    SCHEDULER("🗓️", "Plánovač"),
+    MEETINGS("🎤", "Meetingy"),
+    RAG_SEARCH("🔍", "RAG Hledání"),
+    ERROR_LOGS("📛", "Chybové logy"),
+}
+
+private fun MainMenuItem.toScreen(): Screen? = when (this) {
+    MainMenuItem.CHAT -> null
+    MainMenuItem.SETTINGS -> Screen.Settings
+    MainMenuItem.USER_TASKS -> Screen.UserTasks
+    MainMenuItem.PENDING_TASKS -> Screen.PendingTasks
+    MainMenuItem.SCHEDULER -> Screen.Scheduler
+    MainMenuItem.MEETINGS -> Screen.Meetings
+    MainMenuItem.RAG_SEARCH -> Screen.RagSearch
+    MainMenuItem.ERROR_LOGS -> Screen.ErrorLogs
+}
+
+/**
+ * Main screen for Jervis – adaptive layout inspired by SettingsScreen sidebar.
  *
- * Layout:
- * - Top: Client Selector + Project Selector
- * - Middle: Chat messages (scrollable)
- * - Bottom: Input field + Send button
+ * Expanded (>=600dp): 240dp sidebar with menu items + chat content side by side.
+ * Compact (<600dp): menu icon in top bar toggles full-screen menu list; default shows chat.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,146 +114,245 @@ fun MainScreenView(
     onProjectSelected: (String?) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
-    onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
+    onNavigate: (Screen) -> Unit = {},
     onAgentStatusClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val menuItems = remember { MainMenuItem.entries.toList() }
     var showMenu by remember { mutableStateOf(false) }
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
-        topBar = {
-            JTopBar(
-                title = "JERVIS Assistant",
-                actions = {
-                    // Connection status indicator
-                    IconButton(onClick = { showMenu = true }) {
-                        Text("⋮", style = MaterialTheme.typography.headlineMedium)
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false },
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
+
+        if (isCompact) {
+            // ── Compact: full-screen menu or chat ──
+            if (showMenu) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    JTopBar(
+                        title = "JERVIS Assistant",
+                        onBack = { showMenu = false },
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        // Configuration (mirrors Desktop: Settings window)
-                        DropdownMenuItem(
-                            text = { Text("Nastavení") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.Settings)
-                            },
-                        )
-                        // Connections menu removed – connection management is handled inside Settings → Client/Project edit
-                        HorizontalDivider()
-
-                        // Tasks & Scheduling (mirrors Desktop: UserTasks/Scheduler windows)
-                        DropdownMenuItem(
-                            text = { Text("Uživatelské úlohy") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.UserTasks)
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Fronta úloh") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.PendingTasks)
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Plánovač") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.Scheduler)
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Meetingy") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.Meetings)
-                            },
-                        )
-                        HorizontalDivider()
-
-                        // Search & Logs (mirrors Desktop: RAGSearch/ErrorLogs windows)
-                        DropdownMenuItem(
-                            text = { Text("RAG Hledání") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.RagSearch)
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Chybové logy") },
-                            onClick = {
-                                showMenu = false
-                                onNavigate(com.jervis.ui.navigation.Screen.ErrorLogs)
-                            },
-                        )
+                        items(menuItems.size) { index ->
+                            val item = menuItems[index]
+                            JNavigationRow(
+                                icon = item.icon,
+                                title = item.title,
+                                onClick = {
+                                    val screen = item.toScreen()
+                                    if (screen != null) {
+                                        onNavigate(screen)
+                                    }
+                                    showMenu = false
+                                },
+                            )
+                        }
                     }
-                },
-            )
-        },
-    ) { paddingValues ->
-        Column(
-            modifier =
-                modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-        ) {
-            // Client and Project Selectors
-            SelectorsRow(
-                clients = clients,
-                projects = projects,
-                selectedClientId = selectedClientId,
-                selectedProjectId = selectedProjectId,
-                onClientSelected = onClientSelected,
-                onProjectSelected = onProjectSelected,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    JTopBar(
+                        title = "JERVIS Assistant",
+                        actions = {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(JervisSpacing.touchTarget),
+                            ) {
+                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                            }
+                        },
+                    )
+                    ChatContent(
+                        clients = clients,
+                        projects = projects,
+                        selectedClientId = selectedClientId,
+                        selectedProjectId = selectedProjectId,
+                        chatMessages = chatMessages,
+                        inputText = inputText,
+                        isLoading = isLoading,
+                        queueSize = queueSize,
+                        runningProjectId = runningProjectId,
+                        runningProjectName = runningProjectName,
+                        runningTaskPreview = runningTaskPreview,
+                        runningTaskType = runningTaskType,
+                        onClientSelected = onClientSelected,
+                        onProjectSelected = onProjectSelected,
+                        onInputChanged = onInputChanged,
+                        onSendClick = onSendClick,
+                        onAgentStatusClick = onAgentStatusClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        } else {
+            // ── Expanded: sidebar + chat side by side ──
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Sidebar
+                Column(
+                    modifier = Modifier
+                        .width(240.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 16.dp),
+                ) {
+                    Text(
+                        text = "JERVIS Assistant",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
 
-            Divider()
+                    Spacer(modifier = Modifier.height(12.dp))
 
-            // Chat area
-            ChatArea(
-                messages = chatMessages,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-            )
+                    menuItems.forEach { item ->
+                        val isSelected = item == MainMenuItem.CHAT
+                        Surface(
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                Color.Transparent
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val screen = item.toScreen()
+                                    if (screen != null) {
+                                        onNavigate(screen)
+                                    }
+                                },
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .height(JervisSpacing.touchTarget),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    item.icon,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = item.title,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
 
-            // Agent status row – clickable, navigates to workload detail
-            AgentStatusRow(
-                runningProjectId = runningProjectId,
-                runningProjectName = runningProjectName,
-                runningTaskPreview = runningTaskPreview,
-                runningTaskType = runningTaskType,
-                queueSize = queueSize,
-                onClick = onAgentStatusClick,
-            )
+                VerticalDivider(
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
 
-            HorizontalDivider()
-
-            // Input area
-            InputArea(
-                inputText = inputText,
-                onInputChanged = onInputChanged,
-                onSendClick = onSendClick,
-                enabled = selectedClientId != null && selectedProjectId != null && !isLoading,
-                queueSize = queueSize,
-                runningProjectId = runningProjectId,
-                currentProjectId = selectedProjectId,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-            )
+                // Chat content
+                ChatContent(
+                    clients = clients,
+                    projects = projects,
+                    selectedClientId = selectedClientId,
+                    selectedProjectId = selectedProjectId,
+                    chatMessages = chatMessages,
+                    inputText = inputText,
+                    isLoading = isLoading,
+                    queueSize = queueSize,
+                    runningProjectId = runningProjectId,
+                    runningProjectName = runningProjectName,
+                    runningTaskPreview = runningTaskPreview,
+                    runningTaskType = runningTaskType,
+                    onClientSelected = onClientSelected,
+                    onProjectSelected = onProjectSelected,
+                    onInputChanged = onInputChanged,
+                    onSendClick = onSendClick,
+                    onAgentStatusClick = onAgentStatusClick,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+            }
         }
+    }
+}
+
+/**
+ * Chat content area – selectors, messages, agent status, input.
+ * Extracted to share between compact and expanded layouts.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatContent(
+    clients: List<ClientDto>,
+    projects: List<ProjectDto>,
+    selectedClientId: String?,
+    selectedProjectId: String?,
+    chatMessages: List<ChatMessage>,
+    inputText: String,
+    isLoading: Boolean,
+    queueSize: Int,
+    runningProjectId: String?,
+    runningProjectName: String?,
+    runningTaskPreview: String?,
+    runningTaskType: String?,
+    onClientSelected: (String) -> Unit,
+    onProjectSelected: (String?) -> Unit,
+    onInputChanged: (String) -> Unit,
+    onSendClick: () -> Unit,
+    onAgentStatusClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        // Client and Project Selectors
+        SelectorsRow(
+            clients = clients,
+            projects = projects,
+            selectedClientId = selectedClientId,
+            selectedProjectId = selectedProjectId,
+            onClientSelected = onClientSelected,
+            onProjectSelected = onProjectSelected,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
+        HorizontalDivider()
+
+        // Chat area
+        ChatArea(
+            messages = chatMessages,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        )
+
+        // Agent status row – clickable, navigates to workload detail
+        AgentStatusRow(
+            runningProjectId = runningProjectId,
+            runningProjectName = runningProjectName,
+            runningTaskPreview = runningTaskPreview,
+            runningTaskType = runningTaskType,
+            queueSize = queueSize,
+            onClick = onAgentStatusClick,
+        )
+
+        HorizontalDivider()
+
+        // Input area
+        InputArea(
+            inputText = inputText,
+            onInputChanged = onInputChanged,
+            onSendClick = onSendClick,
+            enabled = selectedClientId != null && selectedProjectId != null && !isLoading,
+            queueSize = queueSize,
+            runningProjectId = runningProjectId,
+            currentProjectId = selectedProjectId,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        )
     }
 }
 
