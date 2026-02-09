@@ -152,6 +152,7 @@ fun App(
                         repository.meetings,
                         repository.projects,
                         repository.transcriptCorrections,
+                        repository.notifications,
                     )
                 }
 

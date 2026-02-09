@@ -9,19 +9,39 @@
 #   AUDIO_FILE  – path to audio file on PVC (relative to WORKSPACE or absolute)
 #
 # Optional env vars:
-#   WHISPER_TASK  – "transcribe" (default) or "translate"
-#   WHISPER_MODEL – model name (default: "base")
+#   WHISPER_OPTIONS – JSON string with all transcription parameters
+#   WHISPER_TASK    – "transcribe" (default) or "translate" (legacy, ignored if OPTIONS set)
+#   WHISPER_MODEL   – model name (default: "base") (legacy, ignored if OPTIONS set)
 #
 # Output:
-#   $WORKSPACE/.jervis/whisper-result.json – JSON with text, segments
+#   RESULT_FILE   – JSON with text, segments
+#   PROGRESS_FILE – periodically updated progress JSON
 #
 set -euo pipefail
 
 WORKSPACE="${WORKSPACE:?WORKSPACE env is required}"
 AUDIO_FILE="${AUDIO_FILE:?AUDIO_FILE env is required}"
-WHISPER_TASK="${WHISPER_TASK:-transcribe}"
-WHISPER_MODEL="${WHISPER_MODEL:-base}"
 RESULT_FILE="${RESULT_FILE:-$WORKSPACE/.jervis/whisper-result.json}"
+PROGRESS_FILE="${PROGRESS_FILE:-${RESULT_FILE%.json}_progress.json}"
+
+# Build options JSON: prefer WHISPER_OPTIONS env, fall back to individual env vars
+if [ -z "${WHISPER_OPTIONS:-}" ]; then
+    WHISPER_TASK="${WHISPER_TASK:-transcribe}"
+    WHISPER_MODEL="${WHISPER_MODEL:-base}"
+    WHISPER_OPTIONS=$(python3 -c "
+import json
+opts = {'task': '$WHISPER_TASK', 'model': '$WHISPER_MODEL', 'progress_file': '$PROGRESS_FILE'}
+print(json.dumps(opts))
+")
+else
+    # Inject progress_file into existing options
+    WHISPER_OPTIONS=$(python3 -c "
+import json
+opts = json.loads('$WHISPER_OPTIONS')
+opts['progress_file'] = '$PROGRESS_FILE'
+print(json.dumps(opts))
+")
+fi
 
 # Resolve relative paths
 if [[ ! "$AUDIO_FILE" = /* ]]; then
@@ -41,8 +61,9 @@ fi
 echo "=== JERVIS WHISPER JOB START ==="
 echo "Workspace: $WORKSPACE"
 echo "Audio file: $AUDIO_FILE"
-echo "Task: $WHISPER_TASK"
-echo "Model: $WHISPER_MODEL"
+echo "Result file: $RESULT_FILE"
+echo "Progress file: $PROGRESS_FILE"
+echo "Options: $WHISPER_OPTIONS"
 echo "================================="
 
 mkdir -p "$(dirname "$RESULT_FILE")"
@@ -51,16 +72,18 @@ mkdir -p "$(dirname "$RESULT_FILE")"
 STDOUT_FILE=$(mktemp)
 STDERR_FILE=$(mktemp)
 set +e
-python3 /opt/jervis/whisper/whisper_runner.py "$AUDIO_FILE" "$WHISPER_TASK" "$WHISPER_MODEL" > "$STDOUT_FILE" 2> "$STDERR_FILE"
+python3 /opt/jervis/whisper/whisper_runner.py "$AUDIO_FILE" "$WHISPER_OPTIONS" > "$STDOUT_FILE" 2> "$STDERR_FILE"
 EXIT_CODE=$?
 set -e
+
+# Stream stderr to container logs for visibility
+cat "$STDERR_FILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
     cp "$STDOUT_FILE" "$RESULT_FILE"
     echo "=== JERVIS WHISPER JOB DONE (exit=0) ==="
 else
     echo "Whisper runner failed (exit=$EXIT_CODE):"
-    cat "$STDERR_FILE"
     # Write error as valid JSON result so server can read the reason
     python3 -c "
 import json, sys

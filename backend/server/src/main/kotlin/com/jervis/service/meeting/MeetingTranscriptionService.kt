@@ -20,6 +20,7 @@ private val logger = KotlinLogging.logger {}
 class MeetingTranscriptionService(
     private val meetingRepository: MeetingRepository,
     private val whisperJobRunner: WhisperJobRunner,
+    private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
 
     /**
@@ -38,8 +39,12 @@ class MeetingTranscriptionService(
 
         logger.info { "Starting transcription for meeting ${meeting.id} (audio: ${meeting.audioFilePath})" }
 
+        val meetingIdStr = meeting.id.toHexString()
+        val clientIdStr = meeting.clientId.toString()
+
         // Mark as TRANSCRIBING
         val transcribing = meetingRepository.save(meeting.copy(state = MeetingStateEnum.TRANSCRIBING))
+        notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBING.name, meeting.title)
 
         try {
             // Derive workspace path from audio file path (parent of the audio file)
@@ -49,16 +54,20 @@ class MeetingTranscriptionService(
             val result = whisperJobRunner.transcribe(
                 audioFilePath = meeting.audioFilePath,
                 workspacePath = workspacePath,
+                meetingId = meetingIdStr,
+                clientId = clientIdStr,
             )
 
             if (!result.error.isNullOrBlank()) {
                 logger.error { "Whisper returned error for meeting ${meeting.id}: ${result.error}" }
-                return meetingRepository.save(
+                val failed = meetingRepository.save(
                     transcribing.copy(
                         state = MeetingStateEnum.FAILED,
                         errorMessage = "Whisper error: ${result.error}",
                     ),
                 )
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.FAILED.name, meeting.title, result.error)
+                return failed
             }
 
             val segments = result.segments.map { seg ->
@@ -76,6 +85,7 @@ class MeetingTranscriptionService(
                     transcriptSegments = segments,
                 ),
             )
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title)
 
             logger.info {
                 "Transcription complete for meeting ${meeting.id}: " +
@@ -85,12 +95,14 @@ class MeetingTranscriptionService(
             return transcribed
         } catch (e: Exception) {
             logger.error(e) { "Transcription failed for meeting ${meeting.id}" }
-            return meetingRepository.save(
+            val failed = meetingRepository.save(
                 transcribing.copy(
                     state = MeetingStateEnum.FAILED,
                     errorMessage = "Transcription error: ${e.message}",
                 ),
             )
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.FAILED.name, meeting.title, e.message)
+            return failed
         }
     }
 }

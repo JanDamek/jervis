@@ -92,6 +92,46 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    suspend fun emitMeetingStateChanged(
+        meetingId: String,
+        clientId: String,
+        newState: String,
+        title: String? = null,
+        errorMessage: String? = null,
+    ) {
+        val event = JervisEvent.MeetingStateChanged(
+            meetingId = meetingId,
+            clientId = clientId,
+            newState = newState,
+            title = title,
+            errorMessage = errorMessage,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
+    suspend fun emitMeetingTranscriptionProgress(
+        meetingId: String,
+        clientId: String,
+        percent: Double,
+        segmentsDone: Int,
+        elapsedSeconds: Double,
+    ) {
+        val event = JervisEvent.MeetingTranscriptionProgress(
+            meetingId = meetingId,
+            clientId = clientId,
+            percent = percent,
+            segmentsDone = segmentsDone,
+            elapsedSeconds = elapsedSeconds,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
     /**
      * Emit a generic event to a client.
      */

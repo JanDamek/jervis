@@ -1,5 +1,7 @@
 package com.jervis.service.meeting
 
+import com.jervis.entity.WhisperSettingsDocument
+import com.jervis.rpc.WhisperSettingsRpcImpl
 import io.fabric8.kubernetes.api.model.EnvVarBuilder
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSourceBuilder
 import io.fabric8.kubernetes.api.model.VolumeBuilder
@@ -25,12 +27,18 @@ private val json = Json { ignoreUnknownKeys = true }
 /**
  * Runs Whisper transcription as a K8s Job (in-cluster) or subprocess (local dev).
  *
- * Same dual-mode pattern as JoernClient in the Python KB service.
+ * Reads configurable parameters from [WhisperSettingsDocument] via [WhisperSettingsRpcImpl].
  * Audio file must already exist on PVC at the given path.
- * Result is written to {workspace}/.jervis/whisper-result.json.
+ * Result is written to per-meeting file: meeting_{id}_transcript.json.
+ *
+ * Progress tracking: the Whisper container writes a progress JSON file on PVC
+ * that this runner reads during polling to log transcription progress.
  */
 @Service
-class WhisperJobRunner {
+class WhisperJobRunner(
+    private val whisperSettingsRpc: WhisperSettingsRpcImpl,
+    private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
+) {
 
     companion object {
         private val WHISPER_IMAGE =
@@ -39,21 +47,12 @@ class WhisperJobRunner {
         private val PVC_NAME = System.getenv("DATA_PVC_NAME") ?: "jervis-data-pvc"
         private val PVC_MOUNT = System.getenv("DATA_PVC_MOUNT") ?: "/opt/jervis/data"
         private val IN_CLUSTER = Paths.get("/var/run/secrets/kubernetes.io/serviceaccount/token").toFile().exists()
-        private const val MIN_TIMEOUT_SECONDS = 600L // 10 min minimum
-        private const val TIMEOUT_MULTIPLIER = 3L // 3x audio duration as timeout
-        private const val POLL_INTERVAL_SECONDS = 30L
-        private const val PROGRESS_LOG_INTERVAL = 5 // Log progress every 5 polls (2.5 min)
+        private const val POLL_INTERVAL_SECONDS = 10L
+        private const val PROGRESS_LOG_INTERVAL = 1 // Log + emit progress every poll
         private const val WAV_HEADER_SIZE = 44
         private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
     }
 
-    /**
-     * Transcribe an audio file using Whisper.
-     *
-     * @param audioFilePath Absolute path to the audio file on PVC
-     * @param workspacePath Absolute path to the workspace directory on PVC
-     * @return WhisperResult with transcription text and segments
-     */
     /**
      * Check if Whisper transcription is available (K8s API accessible in-cluster, always true locally).
      */
@@ -75,30 +74,50 @@ class WhisperJobRunner {
         }
     }
 
-    suspend fun transcribe(audioFilePath: String, workspacePath: String): WhisperResult {
+    /**
+     * Transcribe an audio file using Whisper.
+     *
+     * @param audioFilePath Absolute path to the audio file on PVC
+     * @param workspacePath Absolute path to the workspace directory on PVC
+     * @return WhisperResult with transcription text and segments
+     */
+    suspend fun transcribe(
+        audioFilePath: String,
+        workspacePath: String,
+        meetingId: String? = null,
+        clientId: String? = null,
+    ): WhisperResult {
+        val settings = whisperSettingsRpc.getSettingsDocument()
+
         // Per-meeting result file — enables parallel Whisper Jobs without collision
         val audioPath = Paths.get(audioFilePath)
         val resultFileName = audioPath.fileName.toString().replace(".wav", "_transcript.json")
         val resultFile = audioPath.parent.resolve(resultFileName)
+        val progressFile = audioPath.parent.resolve(resultFileName.replace("_transcript.json", "_progress.json"))
 
         withContext(Dispatchers.IO) {
             Files.createDirectories(resultFile.parent)
             Files.deleteIfExists(resultFile)
+            Files.deleteIfExists(progressFile)
         }
 
-        // Compute dynamic timeout based on audio duration
+        // Compute dynamic timeout based on audio duration and settings
         val audioFileSize = withContext(Dispatchers.IO) { Files.size(Paths.get(audioFilePath)) }
         val audioDurationSeconds = (audioFileSize - WAV_HEADER_SIZE).coerceAtLeast(0) / BYTES_PER_SECOND
-        val timeoutSeconds = (audioDurationSeconds * TIMEOUT_MULTIPLIER).coerceAtLeast(MIN_TIMEOUT_SECONDS)
+        val timeoutSeconds = (audioDurationSeconds * settings.timeoutMultiplier).coerceAtLeast(settings.minTimeoutSeconds.toLong())
         logger.info {
-            "Whisper timeout: ${timeoutSeconds}s (audio duration: ${audioDurationSeconds}s, file size: ${audioFileSize} bytes)"
+            "Whisper timeout: ${timeoutSeconds}s (audio: ${audioDurationSeconds}s, file: ${audioFileSize} bytes, " +
+                "model=${settings.model}, lang=${settings.language ?: "auto"}, beam=${settings.beamSize}, vad=${settings.vadFilter})"
         }
+
+        // Build options JSON for whisper_runner.py
+        val optionsJson = buildOptionsJson(settings, progressFile.toString())
 
         try {
             if (IN_CLUSTER) {
-                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile)
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId)
             } else {
-                runLocal(audioFilePath, resultFile)
+                runLocal(audioFilePath, resultFile, optionsJson)
             }
 
             // Read result
@@ -111,14 +130,57 @@ class WhisperJobRunner {
                 }
             }
         } finally {
-            // Clean up result file
+            // Clean up result and progress files
             withContext(Dispatchers.IO) {
                 Files.deleteIfExists(resultFile)
+                Files.deleteIfExists(progressFile)
             }
         }
     }
 
-    private suspend fun runK8sJob(audioFilePath: String, workspacePath: String, timeoutSeconds: Long, resultFile: Path) {
+    private fun buildOptionsJson(settings: WhisperSettingsDocument, progressFilePath: String): String {
+        val opts = mutableMapOf<String, Any?>(
+            "task" to settings.task,
+            "model" to settings.model,
+            "beam_size" to settings.beamSize,
+            "vad_filter" to settings.vadFilter,
+            "word_timestamps" to settings.wordTimestamps,
+            "condition_on_previous_text" to settings.conditionOnPreviousText,
+            "no_speech_threshold" to settings.noSpeechThreshold,
+            "progress_file" to progressFilePath,
+        )
+        settings.language?.let { opts["language"] = it }
+        settings.initialPrompt?.let { opts["initial_prompt"] = it }
+
+        // Manual JSON serialization to avoid dependency issues
+        return buildString {
+            append("{")
+            val entries = opts.entries.toList()
+            entries.forEachIndexed { index, (key, value) ->
+                append("\"$key\":")
+                when (value) {
+                    is String -> append("\"${value.replace("\"", "\\\"")}\"")
+                    is Boolean -> append(value)
+                    is Number -> append(value)
+                    null -> append("null")
+                    else -> append("\"$value\"")
+                }
+                if (index < entries.size - 1) append(",")
+            }
+            append("}")
+        }
+    }
+
+    private suspend fun runK8sJob(
+        audioFilePath: String,
+        workspacePath: String,
+        timeoutSeconds: Long,
+        resultFile: Path,
+        progressFile: Path,
+        optionsJson: String,
+        meetingId: String? = null,
+        clientId: String? = null,
+    ) {
         val jobName = "whisper-${UUID.randomUUID().toString().substring(0, 8)}"
 
         logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath)" }
@@ -148,6 +210,8 @@ class WhisperJobRunner {
                                 EnvVarBuilder().withName("WORKSPACE").withValue(workspacePath).build(),
                                 EnvVarBuilder().withName("AUDIO_FILE").withValue(audioFilePath).build(),
                                 EnvVarBuilder().withName("RESULT_FILE").withValue(resultFile.toString()).build(),
+                                EnvVarBuilder().withName("PROGRESS_FILE").withValue(progressFile.toString()).build(),
+                                EnvVarBuilder().withName("WHISPER_OPTIONS").withValue(optionsJson).build(),
                             )
                             .withVolumeMounts(
                                 VolumeMountBuilder()
@@ -184,7 +248,7 @@ class WhisperJobRunner {
                     .resource(job)
                     .create()
 
-                // Poll for completion with progress logging
+                // Poll for completion with progress logging from progress file
                 var elapsed = 0L
                 var pollCount = 0
                 logger.info { "Waiting for Whisper Job $jobName (timeout: ${timeoutSeconds}s, poll interval: ${POLL_INTERVAL_SECONDS}s)" }
@@ -214,12 +278,30 @@ class WhisperJobRunner {
                         throw RuntimeException("Whisper Job $jobName failed after ${elapsed}s")
                     }
 
-                    // Progress log
+                    // Read progress file from PVC and emit progress events
                     if (pollCount % PROGRESS_LOG_INTERVAL == 0) {
+                        val progressInfo = readProgressFile(progressFile)
                         val remaining = timeoutSeconds - elapsed
-                        logger.info {
-                            "Whisper Job $jobName still running (${elapsed}s elapsed, ${remaining}s remaining, " +
-                                "active=${status.active ?: 0})"
+                        if (progressInfo != null) {
+                            logger.info {
+                                "Whisper Job $jobName: ${progressInfo.percent}% done " +
+                                    "(${progressInfo.segmentsDone} segments, ${progressInfo.elapsedSeconds.toLong()}s whisper time, " +
+                                    "${elapsed}s wall time, ${remaining}s timeout remaining)"
+                            }
+                            if (meetingId != null && clientId != null) {
+                                notificationRpc.emitMeetingTranscriptionProgress(
+                                    meetingId = meetingId,
+                                    clientId = clientId,
+                                    percent = progressInfo.percent,
+                                    segmentsDone = progressInfo.segmentsDone,
+                                    elapsedSeconds = progressInfo.elapsedSeconds,
+                                )
+                            }
+                        } else {
+                            logger.info {
+                                "Whisper Job $jobName still running (${elapsed}s elapsed, ${remaining}s remaining, " +
+                                    "active=${status.active ?: 0})"
+                            }
                         }
                     }
                 }
@@ -229,12 +311,25 @@ class WhisperJobRunner {
         }
     }
 
-    private suspend fun runLocal(audioFilePath: String, resultFile: Path) {
+    private fun readProgressFile(progressFile: Path): WhisperProgress? {
+        return try {
+            if (Files.exists(progressFile)) {
+                val content = Files.readString(progressFile)
+                json.decodeFromString<WhisperProgress>(content)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private suspend fun runLocal(audioFilePath: String, resultFile: Path, optionsJson: String) {
         withContext(Dispatchers.IO) {
             val whisperScript = findWhisperRunner()
-            val cmd = listOf("python3", whisperScript, audioFilePath, "transcribe", "base")
+            val cmd = listOf("python3", whisperScript, audioFilePath, optionsJson)
 
-            logger.info { "Running Whisper locally: ${cmd.joinToString(" ")}" }
+            logger.info { "Running Whisper locally: python3 $whisperScript $audioFilePath <options>" }
 
             val process = ProcessBuilder(cmd)
                 .redirectErrorStream(false)
@@ -244,9 +339,12 @@ class WhisperJobRunner {
             val stderr = process.errorStream.bufferedReader().readText()
             val exitCode = process.waitFor()
 
+            if (stderr.isNotBlank()) {
+                logger.info { "Whisper stderr: $stderr" }
+            }
+
             if (exitCode != 0) {
                 logger.error { "Whisper process failed (exit=$exitCode): $stderr" }
-                // Write error result
                 Files.writeString(
                     resultFile,
                     """{"text": "", "segments": [], "error": "Whisper failed (exit=$exitCode): $stderr"}""",
@@ -258,7 +356,6 @@ class WhisperJobRunner {
     }
 
     private fun findWhisperRunner(): String {
-        // Check common locations
         val candidates = listOf(
             "backend/service-whisper/whisper_runner.py",
             "../service-whisper/whisper_runner.py",
@@ -267,7 +364,6 @@ class WhisperJobRunner {
         for (candidate in candidates) {
             if (Paths.get(candidate).toFile().exists()) return candidate
         }
-        // Fall back to expecting it on PATH or in current dir
         return "whisper_runner.py"
     }
 }
@@ -277,6 +373,9 @@ data class WhisperResult(
     val text: String,
     val segments: List<WhisperSegment> = emptyList(),
     val error: String? = null,
+    val language: String? = null,
+    val languageProbability: Double? = null,
+    val duration: Double? = null,
 )
 
 @Serializable
@@ -284,4 +383,12 @@ data class WhisperSegment(
     val start: Double,
     val end: Double,
     val text: String,
+)
+
+@Serializable
+data class WhisperProgress(
+    val percent: Double = 0.0,
+    val segmentsDone: Int = 0,
+    val elapsedSeconds: Double = 0.0,
+    val updatedAt: Double = 0.0,
 )

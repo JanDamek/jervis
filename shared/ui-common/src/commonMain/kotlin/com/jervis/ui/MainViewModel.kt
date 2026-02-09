@@ -290,6 +290,14 @@ class MainViewModel(
                 _errorMessage.value = "Server error: ${event.message}"
             }
 
+            is JervisEvent.MeetingStateChanged -> {
+                // Handled by MeetingViewModel
+            }
+
+            is JervisEvent.MeetingTranscriptionProgress -> {
+                // Handled by MeetingViewModel
+            }
+
             else -> {
                 // Ignore others or handle as needed
             }

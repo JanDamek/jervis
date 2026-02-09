@@ -39,6 +39,7 @@ class KtorRpcServer(
     private val bugTrackerSetupRpcImpl: BugTrackerSetupRpcImpl,
     private val integrationSettingsRpcImpl: IntegrationSettingsRpcImpl,
     private val codingAgentSettingsRpcImpl: CodingAgentSettingsRpcImpl,
+    private val whisperSettingsRpcImpl: WhisperSettingsRpcImpl,
     private val meetingRpcImpl: MeetingRpcImpl,
     private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
@@ -168,6 +169,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IBugTrackerSetupService> { bugTrackerSetupRpcImpl }
                                 registerService<com.jervis.service.IIntegrationSettingsService> { integrationSettingsRpcImpl }
                                 registerService<com.jervis.service.ICodingAgentSettingsService> { codingAgentSettingsRpcImpl }
+                                registerService<com.jervis.service.IWhisperSettingsService> { whisperSettingsRpcImpl }
                                 registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
                                 registerService<com.jervis.service.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
                                 registerService<com.jervis.service.IDeviceTokenService> { deviceTokenRpcImpl }

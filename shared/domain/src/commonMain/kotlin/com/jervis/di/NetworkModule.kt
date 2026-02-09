@@ -21,6 +21,7 @@ import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
+import com.jervis.service.IWhisperSettingsService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.HttpTimeout
@@ -220,6 +221,9 @@ object NetworkModule {
         var codingAgentSettingsService: ICodingAgentSettingsService =
             initialRpcClient.withService<ICodingAgentSettingsService>()
             private set
+        var whisperSettingsService: IWhisperSettingsService =
+            initialRpcClient.withService<IWhisperSettingsService>()
+            private set
         var projectGroupService: IProjectGroupService = initialRpcClient.withService<IProjectGroupService>()
             private set
         var environmentService: IEnvironmentService = initialRpcClient.withService<IEnvironmentService>()
@@ -248,6 +252,7 @@ object NetworkModule {
             bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>()
             integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>()
+            whisperSettingsService = rpcClient.withService<IWhisperSettingsService>()
             projectGroupService = rpcClient.withService<IProjectGroupService>()
             environmentService = rpcClient.withService<IEnvironmentService>()
             meetingService = rpcClient.withService<IMeetingService>()

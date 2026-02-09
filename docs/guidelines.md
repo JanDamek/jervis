@@ -444,9 +444,9 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │    → LazyColumn + Card(outlinedCardBorder) + JActionBar at top      │
 │    Example: ConnectionsSettings.kt                                  │
 │                                                                     │
-│  Simple scrollable form (general settings)?                         │
+│  Simple scrollable form (general settings, whisper config)?          │
 │    → Column(verticalScroll) with JSection blocks                    │
-│    Example: GeneralSettings in SettingsScreen.kt                    │
+│    Example: GeneralSettings in SettingsScreen.kt, WhisperSettings.kt│
 │                                                                     │
 │  Status/activity log (agent workload, live state)?                  │
 │    → Status card + LazyColumn (newest first), in-memory log         │

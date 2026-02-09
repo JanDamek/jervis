@@ -17,6 +17,7 @@ import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
+import com.jervis.service.IWhisperSettingsService
 
 /**
  * Main repository facade for Jervis application
@@ -38,6 +39,7 @@ class JervisRepository(
     val notifications: INotificationService,
     val bugTrackerSetup: IBugTrackerSetupService,
     val codingAgents: ICodingAgentSettingsService,
+    val whisperSettings: IWhisperSettingsService,
     val meetings: IMeetingService,
     val transcriptCorrections: ITranscriptCorrectionService,
     val deviceTokens: IDeviceTokenService,

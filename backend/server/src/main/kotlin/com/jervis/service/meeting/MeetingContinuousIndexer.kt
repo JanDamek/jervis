@@ -8,6 +8,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
+import com.jervis.rpc.WhisperSettingsRpcImpl
 import com.jervis.service.background.TaskService
 import com.jervis.service.storage.DirectoryStructureService
 import jakarta.annotation.PostConstruct
@@ -61,11 +62,18 @@ class MeetingContinuousIndexer(
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val taskService: TaskService,
     private val directoryStructureService: DirectoryStructureService,
+    private val whisperSettingsRpc: WhisperSettingsRpcImpl,
+    private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
-    private val transcriptionSemaphore = Semaphore(MAX_PARALLEL_TRANSCRIPTIONS)
+    /** Semaphore for parallel transcription. Re-created when settings change. */
+    @Volatile
+    private var transcriptionSemaphore = Semaphore(DEFAULT_PARALLEL_TRANSCRIPTIONS)
+
+    @Volatile
+    private var currentMaxParallelJobs = DEFAULT_PARALLEL_TRANSCRIPTIONS
 
     companion object {
         private const val POLL_DELAY_MS = 30_000L
@@ -73,7 +81,7 @@ class MeetingContinuousIndexer(
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
         private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
-        private const val MAX_PARALLEL_TRANSCRIPTIONS = 3
+        private const val DEFAULT_PARALLEL_TRANSCRIPTIONS = 3
     }
 
     @PostConstruct
@@ -274,7 +282,13 @@ class MeetingContinuousIndexer(
     // ===== Pipeline 1: Transcription (parallel, up to MAX_PARALLEL_TRANSCRIPTIONS) =====
 
     private suspend fun transcribeContinuously() {
+        // Load initial max parallel jobs from settings
+        refreshMaxParallelJobs()
+
         while (true) {
+            // Periodically refresh max parallel jobs setting
+            refreshMaxParallelJobs()
+
             val meetings = meetingRepository
                 .findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.UPLOADED)
                 .toList()
@@ -284,7 +298,7 @@ class MeetingContinuousIndexer(
                 continue
             }
 
-            logger.info { "Found ${meetings.size} UPLOADED meetings for transcription" }
+            logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (max parallel: $currentMaxParallelJobs)" }
 
             for (meeting in meetings) {
                 transcriptionSemaphore.acquire()
@@ -299,6 +313,23 @@ class MeetingContinuousIndexer(
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Refresh the max parallel transcription jobs from DB settings.
+     * Re-creates semaphore if the limit has changed.
+     */
+    private suspend fun refreshMaxParallelJobs() {
+        try {
+            val settings = whisperSettingsRpc.getSettingsDocument()
+            if (settings.maxParallelJobs != currentMaxParallelJobs) {
+                logger.info { "Whisper max parallel jobs changed: $currentMaxParallelJobs -> ${settings.maxParallelJobs}" }
+                currentMaxParallelJobs = settings.maxParallelJobs
+                transcriptionSemaphore = Semaphore(settings.maxParallelJobs)
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to refresh whisper settings, using current: $currentMaxParallelJobs" }
         }
     }
 
@@ -356,6 +387,9 @@ class MeetingContinuousIndexer(
         )
 
         meetingRepository.save(meeting.copy(state = MeetingStateEnum.INDEXED))
+        notificationRpc.emitMeetingStateChanged(
+            meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
+        )
         logger.info { "Created MEETING_PROCESSING task for meeting: ${meeting.title ?: meeting.id}" }
     }
 
@@ -474,6 +508,9 @@ class MeetingContinuousIndexer(
                 state = MeetingStateEnum.FAILED,
                 errorMessage = error,
             ),
+        )
+        notificationRpc.emitMeetingStateChanged(
+            meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.FAILED.name, meeting.title, error,
         )
         logger.warn { "Marked meeting as FAILED: ${meeting.title ?: meeting.id}" }
     }

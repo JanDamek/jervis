@@ -29,20 +29,25 @@ private val logger = KotlinLogging.logger {}
 class TranscriptCorrectionService(
     private val meetingRepository: MeetingRepository,
     private val orchestratorClient: PythonOrchestratorClient,
+    private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
     suspend fun correct(meeting: MeetingDocument): MeetingDocument {
         require(meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTION_REVIEW)) {
             "Can only correct TRANSCRIBED or CORRECTION_REVIEW meetings, got: ${meeting.state}"
         }
 
+        val meetingIdStr = meeting.id.toHexString()
+        val clientIdStr = meeting.clientId.toString()
+
         logger.info { "Starting transcript correction for meeting ${meeting.id}" }
 
         val correcting = meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTING))
+        notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.CORRECTING.name, meeting.title)
 
         try {
             if (meeting.transcriptSegments.isEmpty() && meeting.transcriptText.isNullOrBlank()) {
                 logger.warn { "Meeting ${meeting.id} has no transcript, skipping correction" }
-                return meetingRepository.save(
+                val corrected = meetingRepository.save(
                     correcting.copy(
                         state = MeetingStateEnum.CORRECTED,
                         correctedTranscriptText = meeting.transcriptText,
@@ -50,6 +55,8 @@ class TranscriptCorrectionService(
                         correctionQuestions = emptyList(),
                     ),
                 )
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.CORRECTED.name, meeting.title)
+                return corrected
             }
 
             val segments = if (meeting.transcriptSegments.isNotEmpty()) {
@@ -114,6 +121,7 @@ class TranscriptCorrectionService(
                     correctionQuestions = questions,
                 ),
             )
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, newState.name, meeting.title)
 
             logger.info {
                 "Correction complete for meeting ${meeting.id}: " +
@@ -123,12 +131,14 @@ class TranscriptCorrectionService(
             return corrected
         } catch (e: Exception) {
             logger.error(e) { "Correction failed for meeting ${meeting.id}" }
-            return meetingRepository.save(
+            val failed = meetingRepository.save(
                 correcting.copy(
                     state = MeetingStateEnum.FAILED,
                     errorMessage = "Correction error: ${e.message}",
                 ),
             )
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.FAILED.name, meeting.title, e.message)
+            return failed
         }
     }
 
@@ -175,6 +185,9 @@ class TranscriptCorrectionService(
                 correctionQuestions = emptyList(),
                 errorMessage = null,
             ),
+        )
+        notificationRpc.emitMeetingStateChanged(
+            meetingId, meeting.clientId.toString(), MeetingStateEnum.TRANSCRIBED.name, meeting.title,
         )
 
         logger.info { "Answered ${answers.size} questions for meeting $meetingId, reset to TRANSCRIBED" }

@@ -65,7 +65,7 @@ import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
-import kotlinx.coroutines.delay
+
 
 /**
  * Meetings screen - list of recordings with detail view.
@@ -89,6 +89,8 @@ fun MeetingsScreen(
     val currentMeetingId by viewModel.currentMeetingId.collectAsState()
     val playingMeetingId by viewModel.playingMeetingId.collectAsState()
     val isCorrecting by viewModel.isCorrecting.collectAsState()
+    val isSaving by viewModel.isSaving.collectAsState()
+    val transcriptionProgress by viewModel.transcriptionProgress.collectAsState()
     val error by viewModel.error.collectAsState()
 
     // Filter state — pre-filled from main window selection
@@ -115,6 +117,11 @@ fun MeetingsScreen(
         }
     }
 
+    // Subscribe to real-time events
+    LaunchedEffect(filterClientId) {
+        filterClientId?.let { viewModel.subscribeToEvents(it) }
+    }
+
     // Corrections sub-view state
     var showCorrections by remember { mutableStateOf(false) }
 
@@ -131,25 +138,13 @@ fun MeetingsScreen(
             return
         }
 
-        // Auto-refresh while meeting is in a processing state
-        val isProcessing = currentDetail.state in listOf(
-            MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBING,
-            MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING,
-            MeetingStateEnum.CORRECTION_REVIEW,
-        )
-        LaunchedEffect(currentDetail.id, isProcessing) {
-            if (isProcessing) {
-                while (true) {
-                    delay(5000)
-                    viewModel.refreshMeeting(currentDetail.id)
-                }
-            }
-        }
+        // Real-time updates via event stream - no polling needed
 
         MeetingDetailView(
             meeting = currentDetail,
             isPlaying = playingMeetingId == currentDetail.id,
             isCorrecting = isCorrecting,
+            transcriptionPercent = transcriptionProgress[currentDetail.id],
             onBack = { viewModel.selectMeeting(null) },
             onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
@@ -239,6 +234,24 @@ fun MeetingsScreen(
                 )
             }
 
+            // Saving indicator (after stop, during upload + finalization)
+            if (isSaving && !showTrash) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = "Ukládám nahrávku...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
             // Error display
             error?.let { errorMsg ->
                 Text(
@@ -300,6 +313,7 @@ fun MeetingsScreen(
                                 MeetingListItem(
                                     meeting = meeting,
                                     isPlaying = playingMeetingId == meeting.id,
+                                    transcriptionPercent = transcriptionProgress[meeting.id],
                                     onClick = { viewModel.selectMeeting(meeting) },
                                     onPlayToggle = { viewModel.playAudio(meeting.id) },
                                 )
@@ -491,6 +505,7 @@ private fun formatDateTime(isoString: String): String =
 private fun MeetingListItem(
     meeting: MeetingDto,
     isPlaying: Boolean,
+    transcriptionPercent: Double? = null,
     onClick: () -> Unit,
     onPlayToggle: () -> Unit,
 ) {
@@ -568,7 +583,11 @@ private fun MeetingListItem(
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = stateLabel(meeting.state),
+                    text = if (meeting.state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
+                        "Prepis ${transcriptionPercent.toInt()}%"
+                    } else {
+                        stateLabel(meeting.state)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (meeting.state == MeetingStateEnum.FAILED)
                         MaterialTheme.colorScheme.error
@@ -654,6 +673,7 @@ private fun MeetingDetailView(
     meeting: MeetingDto,
     isPlaying: Boolean,
     isCorrecting: Boolean,
+    transcriptionPercent: Double? = null,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
@@ -782,7 +802,7 @@ private fun MeetingDetailView(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Pipeline progress indicator
-        PipelineProgress(state = meeting.state)
+        PipelineProgress(state = meeting.state, transcriptionPercent = transcriptionPercent)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -969,7 +989,7 @@ private fun stateToStepInfo(state: MeetingStateEnum): Pair<Int, Boolean> =
     }
 
 @Composable
-private fun PipelineProgress(state: MeetingStateEnum) {
+private fun PipelineProgress(state: MeetingStateEnum, transcriptionPercent: Double? = null) {
     if (state == MeetingStateEnum.RECORDING) return
 
     val (currentStepIndex, isActive) = stateToStepInfo(state)
@@ -1066,6 +1086,8 @@ private fun PipelineProgress(state: MeetingStateEnum) {
                 state == MeetingStateEnum.INDEXED -> "Zpracovani dokonceno"
                 // Waiting in queue (step done, next not started yet)
                 state == MeetingStateEnum.UPLOADED -> "Ve fronte - ceka na prepis pres Whisper"
+                state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
+                    "Whisper prepisuje: ${transcriptionPercent.toInt()}%"
                 state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
                 state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potrebuje vase odpovedi"
                 state == MeetingStateEnum.CORRECTED -> "Ve fronte - ceka na indexaci do znalostni baze"
@@ -1080,7 +1102,12 @@ private fun PipelineProgress(state: MeetingStateEnum) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED)) {
+                    if (state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
+                        LinearProgressIndicator(
+                            progress = { (transcriptionPercent / 100.0).toFloat() },
+                            modifier = Modifier.width(80.dp).height(3.dp),
+                        )
+                    } else if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED)) {
                         LinearProgressIndicator(
                             modifier = Modifier.width(80.dp).height(3.dp),
                         )

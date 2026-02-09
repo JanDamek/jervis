@@ -116,6 +116,7 @@ fun JervisApp(
                 notifications = currentServices.notificationService,
                 bugTrackerSetup = currentServices.bugTrackerSetupService,
                 codingAgents = currentServices.codingAgentSettingsService,
+                whisperSettings = currentServices.whisperSettingsService,
                 meetings = currentServices.meetingService,
                 transcriptCorrections = currentServices.transcriptCorrectionService,
                 deviceTokens = currentServices.deviceTokenService,

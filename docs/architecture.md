@@ -145,6 +145,56 @@ For each client, Jervis creates **3 ArangoDB objects**:
 
 ---
 
+## Whisper Transcription Pipeline
+
+### Overview
+
+Audio recordings are transcribed using **faster-whisper** (CTranslate2-optimized OpenAI Whisper) running
+as K8s Jobs (in-cluster) or Python subprocess (local dev). Settings are stored in MongoDB (`whisper_settings`
+collection, singleton document) and configurable via UI (**Settings → Whisper**).
+
+### Configurable Parameters (UI)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Model | `base` | tiny, base, small, medium, large-v3 |
+| Task | `transcribe` | transcribe (keep language) or translate (to English) |
+| Language | auto-detect | ISO 639-1 code (cs, en, de...) |
+| Beam size | 5 | 1-10, higher = more accurate but slower |
+| VAD filter | true | Silero VAD skips silence — significant speedup |
+| Word timestamps | false | Per-word timing in segments |
+| Initial prompt | null | Vocabulary hints (names, abbreviations) |
+| Condition on previous | true | Use previous segment as context |
+| No-speech threshold | 0.6 | Skip segments above this silence probability |
+| Max parallel jobs | 3 | Concurrent K8s Whisper Jobs (Semaphore) |
+| Timeout multiplier | 3 | Timeout = audio_duration × multiplier |
+| Min timeout | 600s | Minimum job timeout |
+
+### Progress Tracking
+
+The Whisper container writes a progress file on PVC (`meeting_{id}_progress.json`) updated every 5 seconds:
+```json
+{"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "updated_at": 1738000000.0}
+```
+The server-side `WhisperJobRunner` reads this file during K8s Job polling and logs detailed progress.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-whisper/whisper_runner.py` | Python entry point — faster-whisper with progress tracking |
+| `backend/service-whisper/entrypoint-whisper-job.sh` | K8s Job entrypoint — env parsing, error handling |
+| `backend/server/.../service/meeting/WhisperJobRunner.kt` | K8s Job orchestration, polling, settings integration |
+| `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | High-level transcription API |
+| `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | 4 pipelines: transcribe → correct → index → purge |
+| `backend/server/.../entity/WhisperSettingsDocument.kt` | MongoDB singleton settings document |
+| `backend/server/.../rpc/WhisperSettingsRpcImpl.kt` | RPC service for settings CRUD |
+| `shared/common-api/.../service/IWhisperSettingsService.kt` | kRPC interface |
+| `shared/common-dto/.../dto/whisper/WhisperSettingsDtos.kt` | Settings DTOs + enums |
+| `shared/ui-common/.../settings/sections/WhisperSettings.kt` | Settings UI composable |
+
+---
+
 ## Transcript Correction Pipeline
 
 ### Overview

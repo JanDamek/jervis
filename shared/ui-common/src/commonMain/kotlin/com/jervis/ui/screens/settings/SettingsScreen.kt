@@ -48,6 +48,7 @@ enum class SettingsCategory(
     CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Atlassian, Git, Email)."),
     ENVIRONMENTS("Prostředí", "🌐", "Definice K8s prostředí pro testování."),
     CODING_AGENTS("Coding Agenti", "🤖", "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
+    WHISPER("Whisper", "🎙️", "Nastavení přepisu řeči na text a konfigurace modelu."),
 }
 
 @Composable
@@ -88,5 +89,6 @@ private fun SettingsContent(
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
         SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(repository)
         SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
+        SettingsCategory.WHISPER -> WhisperSettings(repository)
     }
 }

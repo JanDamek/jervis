@@ -69,6 +69,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Extension: `ConnectionResponseDto.displayUrl` is in ConnectionsSettings.kt (not a DTO field)
 - Navigation: `shared/ui-common/.../navigation/AppNavigator.kt`
 - DTOs: `shared/common-dto/`, Repository: `shared/domain/`
+- Whisper settings: `shared/common-dto/.../whisper/WhisperSettingsDtos.kt`, `backend/server/.../rpc/WhisperSettingsRpcImpl.kt`
+- Whisper runner: `backend/service-whisper/whisper_runner.py`, `backend/service-whisper/entrypoint-whisper-job.sh`
 
 ## Build Notes
 

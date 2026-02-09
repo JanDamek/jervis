@@ -8,8 +8,11 @@ import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingTypeEnum
+import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
+import com.jervis.dto.events.JervisEvent
 import com.jervis.service.IMeetingService
+import com.jervis.service.INotificationService
 import com.jervis.service.IProjectService
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
@@ -24,6 +27,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -32,6 +37,7 @@ class MeetingViewModel(
     private val meetingService: IMeetingService,
     private val projectService: IProjectService,
     internal val correctionService: com.jervis.service.ITranscriptCorrectionService? = null,
+    private val notificationService: INotificationService? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -65,6 +71,12 @@ class MeetingViewModel(
     private val _isCorrecting = MutableStateFlow(false)
     val isCorrecting: StateFlow<Boolean> = _isCorrecting.asStateFlow()
 
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+
+    private val _transcriptionProgress = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val transcriptionProgress: StateFlow<Map<String, Double>> = _transcriptionProgress.asStateFlow()
+
     private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
 
@@ -73,6 +85,7 @@ class MeetingViewModel(
     private var audioPlayer: AudioPlayer? = null
     private var durationUpdateJob: Job? = null
     private var playbackMonitorJob: Job? = null
+    private var eventSubscriptionJob: Job? = null
     private var chunkIndex = 0
 
     private var lastClientId: String? = null
@@ -89,17 +102,17 @@ class MeetingViewModel(
         }
     }
 
-    fun loadMeetings(clientId: String, projectId: String? = null) {
+    fun loadMeetings(clientId: String, projectId: String? = null, silent: Boolean = false) {
         lastClientId = clientId
         lastProjectId = projectId
         scope.launch {
-            _isLoading.value = true
+            if (!silent) _isLoading.value = true
             try {
                 _meetings.value = meetingService.listMeetings(clientId, projectId)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se načíst schůzky: ${e.message}"
             } finally {
-                _isLoading.value = false
+                if (!silent) _isLoading.value = false
             }
         }
     }
@@ -112,6 +125,57 @@ class MeetingViewModel(
                 _projects.value = emptyList()
             }
         }
+    }
+
+    fun subscribeToEvents(clientId: String) {
+        eventSubscriptionJob?.cancel()
+        eventSubscriptionJob = scope.launch {
+            notificationService?.subscribeToEvents(clientId)
+                ?.retryWhen { _, attempt ->
+                    delay(if (attempt < 3) (attempt + 1).seconds else 3.seconds)
+                    true
+                }
+                ?.collect { event ->
+                    when (event) {
+                        is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
+                        is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
+                        else -> {}
+                    }
+                }
+        }
+    }
+
+    private fun handleMeetingStateChanged(event: JervisEvent.MeetingStateChanged) {
+        val newState = try {
+            MeetingStateEnum.valueOf(event.newState)
+        } catch (_: Exception) { return }
+
+        // Inline update for immediate visual feedback
+        _meetings.value = _meetings.value.map { meeting ->
+            if (meeting.id == event.meetingId) {
+                meeting.copy(state = newState, errorMessage = event.errorMessage)
+            } else {
+                meeting
+            }
+        }
+
+        if (_selectedMeeting.value?.id == event.meetingId) {
+            _selectedMeeting.value = _selectedMeeting.value?.copy(
+                state = newState, errorMessage = event.errorMessage,
+            )
+        }
+
+        // Clear progress when not transcribing
+        if (newState != MeetingStateEnum.TRANSCRIBING) {
+            _transcriptionProgress.value = _transcriptionProgress.value - event.meetingId
+        }
+
+        // Full refresh to get transcript data etc.
+        refreshMeeting(event.meetingId)
+    }
+
+    private fun handleTranscriptionProgress(event: JervisEvent.MeetingTranscriptionProgress) {
+        _transcriptionProgress.value = _transcriptionProgress.value + (event.meetingId to event.percent)
     }
 
     fun startRecording(
@@ -182,6 +246,7 @@ class MeetingViewModel(
 
         scope.launch {
             println("[Meeting] Stopping recording for meeting=$meetingId")
+            _isSaving.value = true
             try {
                 val audioData = recorder.stopRecording()
                 println("[Meeting] AudioRecorder returned ${audioData?.size ?: 0} bytes")
@@ -209,6 +274,7 @@ class MeetingViewModel(
                 try { meetingService.cancelRecording(meetingId) } catch (_: Exception) {}
                 _currentMeetingId.value = null
             } finally {
+                _isSaving.value = false
                 recorder.release()
             }
         }
@@ -235,7 +301,7 @@ class MeetingViewModel(
                 _currentMeetingId.value = null
                 _recordingDuration.value = 0
 
-                lastClientId?.let { loadMeetings(it, lastProjectId) }
+                lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
                 println("[Meeting] Finalization complete")
             } catch (e: Exception) {
                 println("[Meeting] Error finalizing: ${e.message}")

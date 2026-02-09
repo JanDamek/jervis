@@ -324,6 +324,7 @@ enum class SettingsCategory(
     PROJECT_GROUPS("Skupiny projektů", "📂", "Logické seskupení projektů se sdílenou KB."),
     CONNECTIONS("Připojení", "🔌", "Technické parametry připojení."),
     CODING_AGENTS("Coding Agenti", "🤖", "Konfigurace coding agentů."),
+    WHISPER("Whisper", "🎙️", "Nastavení přepisu řeči na text a konfigurace modelu."),
 }
 
 @Composable
@@ -904,6 +905,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       ├── ConnectionsSettings.kt ← Flat list + per-card actions
 │   │       ├── GitSettings.kt       ← (standalone git config)
 │   │       ├── BugTrackerSettings.kt ← (standalone bug tracker config)
+│   │       ├── WhisperSettings.kt    ← Whisper transcription config (model, quality, concurrency)
 │   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
 │   ├── MainScreen.kt
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)

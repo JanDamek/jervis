@@ -42,4 +42,24 @@ sealed class JervisEvent {
         val type: String,
         override val timestamp: String,
     ) : JervisEvent()
+
+    @Serializable
+    data class MeetingStateChanged(
+        val meetingId: String,
+        val clientId: String,
+        val newState: String,
+        val title: String? = null,
+        val errorMessage: String? = null,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    @Serializable
+    data class MeetingTranscriptionProgress(
+        val meetingId: String,
+        val clientId: String,
+        val percent: Double,
+        val segmentsDone: Int,
+        val elapsedSeconds: Double,
+        override val timestamp: String,
+    ) : JervisEvent()
 }
