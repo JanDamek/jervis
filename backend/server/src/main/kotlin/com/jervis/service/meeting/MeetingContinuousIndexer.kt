@@ -1,11 +1,15 @@
 package com.jervis.service.meeting
 
+import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
+import com.jervis.domain.storage.DirectoryStructure
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
 import com.jervis.service.background.TaskService
+import com.jervis.service.storage.DirectoryStructureService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,22 +17,37 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
+import java.time.Instant
+import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.name
+import kotlin.io.path.fileSize
+import kotlin.streams.toList
 
 private val logger = KotlinLogging.logger {}
 
 /**
  * Continuous indexer for meeting recordings.
  *
- * FLOW:
+ * STARTUP:
+ * - Recovers stale RECORDING/UPLOADING meetings (server restart recovery)
+ * - Syncs orphaned audio files on disk to DB
+ *
+ * PIPELINES:
  * 1. Poll for UPLOADED meetings -> run Whisper transcription -> TRANSCRIBED
  * 2. Poll for TRANSCRIBED meetings -> LLM correction -> CORRECTED
  * 3. Poll for CORRECTED meetings -> create MEETING_PROCESSING task for KB ingest -> INDEXED
- *
- * Follows the same pattern as EmailContinuousIndexer.
+ * 4. Trash auto-purge (30-day retention)
  */
 @Service
 @Order(12)
@@ -37,17 +56,28 @@ class MeetingContinuousIndexer(
     private val meetingTranscriptionService: MeetingTranscriptionService,
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val taskService: TaskService,
+    private val directoryStructureService: DirectoryStructureService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
     companion object {
         private const val POLL_DELAY_MS = 30_000L
+        private const val TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6 hours
+        private const val TRASH_RETENTION_DAYS = 30L
+        private const val WAV_HEADER_SIZE = 44
+        private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
     }
 
     @PostConstruct
     fun start() {
         logger.info { "Starting MeetingContinuousIndexer..." }
+
+        // Startup: recover stale meetings + sync disk
+        runBlocking {
+            recoverStaleMeetings()
+            syncDiskToDb()
+        }
 
         // Pipeline 1: UPLOADED -> transcribe -> TRANSCRIBED
         scope.launch {
@@ -66,7 +96,145 @@ class MeetingContinuousIndexer(
             runCatching { indexContinuously() }
                 .onFailure { e -> logger.error(e) { "Meeting indexing pipeline crashed" } }
         }
+
+        // Pipeline 4: Trash auto-purge (30-day retention)
+        scope.launch {
+            runCatching { trashPurgeContinuously() }
+                .onFailure { e -> logger.error(e) { "Trash purge pipeline crashed" } }
+        }
     }
+
+    // ===== Startup: Stale Meeting Recovery =====
+
+    /**
+     * Single-instance server: after restart, any RECORDING/UPLOADING meetings are stale.
+     * If audio file has useful data, promote to UPLOADED for processing.
+     * Otherwise, clean up.
+     */
+    private suspend fun recoverStaleMeetings() {
+        val staleStates = listOf(MeetingStateEnum.RECORDING, MeetingStateEnum.UPLOADING)
+        for (state in staleStates) {
+            meetingRepository.findByStateOrderByStoppedAtAsc(state).collect { meeting ->
+                try {
+                    val audioPath = meeting.audioFilePath?.let { Path.of(it) }
+                    if (audioPath != null && audioPath.exists() && audioPath.fileSize() > WAV_HEADER_SIZE) {
+                        val fileSize = audioPath.fileSize()
+                        val duration = (fileSize - WAV_HEADER_SIZE) / BYTES_PER_SECOND
+                        meetingRepository.save(
+                            meeting.copy(
+                                state = MeetingStateEnum.UPLOADED,
+                                stoppedAt = Instant.now(),
+                                audioSizeBytes = fileSize,
+                                durationSeconds = duration,
+                            ),
+                        )
+                        logger.info { "Recovered stale $state meeting ${meeting.id} -> UPLOADED ($fileSize bytes)" }
+                    } else {
+                        audioPath?.let { Files.deleteIfExists(it) }
+                        meetingRepository.deleteById(meeting.id)
+                        logger.info { "Deleted stale $state meeting ${meeting.id} (no useful audio data)" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "Error recovering stale meeting ${meeting.id}" }
+                }
+            }
+        }
+    }
+
+    // ===== Startup: Disk-to-DB Sync =====
+
+    /**
+     * Scan audio directories on disk for orphaned meeting_*.wav files
+     * that have no corresponding DB entry. Creates DB entries for processing.
+     */
+    private suspend fun syncDiskToDb() {
+        try {
+            val workspaceRoot = directoryStructureService.workspaceRoot()
+            val clientsDir = workspaceRoot.resolve(DirectoryStructure.CLIENTS_DIR)
+            if (!clientsDir.exists() || !clientsDir.isDirectory()) return
+
+            withContext(Dispatchers.IO) {
+                Files.list(clientsDir).toList()
+            }.filter { it.isDirectory() }.forEach { clientDir ->
+                val clientIdHex = clientDir.name
+                if (!isValidObjectIdHex(clientIdHex)) return@forEach
+
+                val clientId = ClientId.fromString(clientIdHex)
+
+                // Scan client-level audio: clients/{clientId}/audio/meeting_*.wav
+                val clientAudioDir = clientDir.resolve(DirectoryStructure.AUDIO_SUBDIR)
+                scanDirForOrphanedMeetings(clientAudioDir, clientId, projectId = null)
+
+                // Scan project-level meetings: clients/{clientId}/projects/*/meetings/meeting_*.wav
+                val projectsDir = clientDir.resolve(DirectoryStructure.PROJECTS_SUBDIR)
+                if (projectsDir.exists() && projectsDir.isDirectory()) {
+                    withContext(Dispatchers.IO) {
+                        Files.list(projectsDir).toList()
+                    }.filter { it.isDirectory() }.forEach { projectDir ->
+                        val projectIdHex = projectDir.name
+                        if (!isValidObjectIdHex(projectIdHex)) return@forEach
+
+                        val projectId = ProjectId.fromString(projectIdHex)
+                        val meetingsDir = projectDir.resolve(DirectoryStructure.MEETINGS_SUBDIR)
+                        scanDirForOrphanedMeetings(meetingsDir, clientId, projectId)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Error during disk-to-DB sync" }
+        }
+    }
+
+    private suspend fun scanDirForOrphanedMeetings(
+        dir: Path,
+        clientId: ClientId,
+        projectId: ProjectId?,
+    ) {
+        if (!dir.exists() || !dir.isDirectory()) return
+
+        val meetingFiles = withContext(Dispatchers.IO) {
+            Files.list(dir).toList()
+        }.filter {
+            it.isRegularFile() && it.name.startsWith("meeting_") && it.name.endsWith(".wav")
+        }
+
+        for (file in meetingFiles) {
+            try {
+                val hexId = file.name.removePrefix("meeting_").removeSuffix(".wav")
+                if (!isValidObjectIdHex(hexId)) continue
+
+                val objectId = ObjectId(hexId)
+                val existing = meetingRepository.findById(objectId)
+                if (existing != null) continue // Already in DB
+
+                val fileSize = file.fileSize()
+                if (fileSize <= WAV_HEADER_SIZE) continue // Empty/header-only file
+
+                val duration = (fileSize - WAV_HEADER_SIZE) / BYTES_PER_SECOND
+
+                val document = MeetingDocument(
+                    id = objectId,
+                    clientId = clientId,
+                    projectId = projectId,
+                    state = MeetingStateEnum.UPLOADED,
+                    audioFilePath = file.toString(),
+                    audioSizeBytes = fileSize,
+                    durationSeconds = duration,
+                    stoppedAt = Instant.now(),
+                )
+                meetingRepository.save(document)
+                logger.info {
+                    "Synced orphaned audio file to DB: ${file.name} " +
+                        "(client=$clientId, project=$projectId, ${fileSize} bytes, ${duration}s)"
+                }
+            } catch (e: Exception) {
+                logger.warn(e) { "Error syncing orphaned file: ${file.name}" }
+            }
+        }
+    }
+
+    private fun isValidObjectIdHex(hex: String): Boolean =
+        hex.length == 24 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
     // ===== Pipeline 1: Transcription =====
 
@@ -138,6 +306,37 @@ class MeetingContinuousIndexer(
         logger.info { "Created MEETING_PROCESSING task for meeting: ${meeting.title ?: meeting.id}" }
     }
 
+    // ===== Pipeline 4: Trash Auto-Purge =====
+
+    private suspend fun trashPurgeContinuously() {
+        while (true) {
+            delay(TRASH_PURGE_INTERVAL_MS)
+            try {
+                val cutoff = Instant.now().minus(Duration.ofDays(TRASH_RETENTION_DAYS))
+                meetingRepository.findByDeletedIsTrueAndDeletedAtBefore(cutoff).collect { meeting ->
+                    try {
+                        meeting.audioFilePath?.let { path ->
+                            withContext(Dispatchers.IO) {
+                                Files.deleteIfExists(Path.of(path))
+                            }
+                        }
+                        meetingRepository.deleteById(meeting.id)
+                        logger.info {
+                            "Auto-purged trashed meeting ${meeting.id} " +
+                                "(deleted ${meeting.deletedAt}, title=${meeting.title})"
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Error purging trashed meeting ${meeting.id}" }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Error in trash purge cycle" }
+            }
+        }
+    }
+
+    // ===== Shared Utilities =====
+
     private fun buildMeetingContent(meeting: MeetingDocument): String = buildString {
         val title = meeting.title ?: "Meeting ${meeting.id}"
         append("# $title\n\n")
@@ -196,12 +395,10 @@ class MeetingContinuousIndexer(
         }
     }
 
-    // ===== Shared Utilities =====
-
     private fun continuousMeetingsInState(state: MeetingStateEnum) =
         flow {
             while (true) {
-                val meetings = meetingRepository.findByStateOrderByStoppedAtAsc(state)
+                val meetings = meetingRepository.findByStateAndDeletedIsFalseOrderByStoppedAtAsc(state)
 
                 var emittedAny = false
                 meetings.collect { meeting ->

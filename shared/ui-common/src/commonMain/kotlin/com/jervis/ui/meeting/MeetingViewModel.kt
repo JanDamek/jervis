@@ -67,6 +67,9 @@ class MeetingViewModel(
     private val _isCorrecting = MutableStateFlow(false)
     val isCorrecting: StateFlow<Boolean> = _isCorrecting.asStateFlow()
 
+    private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
+    val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
+
     private var audioRecorder: AudioRecorder? = null
     private var audioPlayer: AudioPlayer? = null
     private var durationUpdateJob: Job? = null
@@ -82,8 +85,7 @@ class MeetingViewModel(
         scope.launch {
             _isLoading.value = true
             try {
-                val list = meetingService.listMeetings(clientId, projectId)
-                _meetings.value = list
+                _meetings.value = meetingService.listMeetings(clientId, projectId)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se načíst schůzky: ${e.message}"
             } finally {
@@ -289,6 +291,9 @@ class MeetingViewModel(
     }
 
     fun selectMeeting(meeting: MeetingDto?) {
+        if (meeting == null || meeting.id != _playingMeetingId.value) {
+            stopPlayback()
+        }
         _selectedMeeting.value = meeting
     }
 
@@ -314,6 +319,43 @@ class MeetingViewModel(
                 }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se smazat schůzku: ${e.message}"
+            }
+        }
+    }
+
+    fun loadDeletedMeetings(clientId: String, projectId: String? = null) {
+        scope.launch {
+            _isLoading.value = true
+            try {
+                _deletedMeetings.value = meetingService.listDeletedMeetings(clientId, projectId)
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se načíst koš: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun restoreMeeting(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.restoreMeeting(meetingId)
+                _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
+                // Refresh active meetings to show restored item
+                lastClientId?.let { loadMeetings(it, lastProjectId) }
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se obnovit schůzku: ${e.message}"
+            }
+        }
+    }
+
+    fun permanentlyDeleteMeeting(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.permanentlyDeleteMeeting(meetingId)
+                _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se trvale smazat schůzku: ${e.message}"
             }
         }
     }

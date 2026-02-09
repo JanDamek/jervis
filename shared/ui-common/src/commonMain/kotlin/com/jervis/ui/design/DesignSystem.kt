@@ -1,6 +1,7 @@
 package com.jervis.ui.design
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,7 +83,7 @@ fun JTopBar(
             {}
         }
     TopAppBar(
-        title = { Text(title) },
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = navIcon,
         actions = actions,
     )

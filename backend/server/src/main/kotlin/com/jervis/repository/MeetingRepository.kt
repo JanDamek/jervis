@@ -12,12 +12,28 @@ import org.springframework.stereotype.Repository
 @Repository
 interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId> {
 
-    fun findByClientIdOrderByStartedAtDesc(clientId: ClientId): Flow<MeetingDocument>
+    // Active meetings (normal listing, deleted=false)
+    fun findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(clientId: ClientId): Flow<MeetingDocument>
 
-    fun findByClientIdAndProjectIdOrderByStartedAtDesc(
+    fun findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(
         clientId: ClientId,
         projectId: ProjectId,
     ): Flow<MeetingDocument>
 
+    // Pipeline queries — only process non-deleted meetings
+    fun findByStateAndDeletedIsFalseOrderByStoppedAtAsc(state: MeetingStateEnum): Flow<MeetingDocument>
+
+    // Stale recovery (startup) — includes all regardless of deleted flag
     fun findByStateOrderByStoppedAtAsc(state: MeetingStateEnum): Flow<MeetingDocument>
+
+    // Trash listing
+    fun findByClientIdAndDeletedIsTrueOrderByDeletedAtDesc(clientId: ClientId): Flow<MeetingDocument>
+
+    fun findByClientIdAndProjectIdAndDeletedIsTrueOrderByDeletedAtDesc(
+        clientId: ClientId,
+        projectId: ProjectId,
+    ): Flow<MeetingDocument>
+
+    // Trash cleanup (older than cutoff)
+    fun findByDeletedIsTrueAndDeletedAtBefore(cutoff: java.time.Instant): Flow<MeetingDocument>
 }

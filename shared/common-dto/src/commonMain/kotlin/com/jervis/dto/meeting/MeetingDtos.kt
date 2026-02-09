@@ -53,6 +53,8 @@ data class MeetingDto(
     val correctedTranscriptSegments: List<TranscriptSegmentDto> = emptyList(),
     val correctionQuestions: List<CorrectionQuestionDto> = emptyList(),
     val errorMessage: String? = null,
+    val deleted: Boolean = false,
+    val deletedAt: String? = null,
 )
 
 @Serializable

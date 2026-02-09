@@ -44,4 +44,10 @@ interface IMeetingService {
     suspend fun applySegmentCorrection(meetingId: String, segmentIndex: Int, correctedText: String): MeetingDto
 
     suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto
+
+    suspend fun restoreMeeting(meetingId: String): MeetingDto
+
+    suspend fun permanentlyDeleteMeeting(meetingId: String): Boolean
+
+    suspend fun listDeletedMeetings(clientId: String, projectId: String?): List<MeetingDto>
 }

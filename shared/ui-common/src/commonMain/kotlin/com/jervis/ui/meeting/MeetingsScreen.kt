@@ -4,7 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -92,14 +96,23 @@ fun MeetingsScreen(
     var filterClientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id) }
     var filterProjectId by remember { mutableStateOf<String?>(selectedProjectId) }
 
+    val deletedMeetings by viewModel.deletedMeetings.collectAsState()
+
     var showSetupDialog by remember { mutableStateOf(false) }
     var showFinalizeDialog by remember { mutableStateOf(false) }
+    var showTrash by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
+    var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     val audioRecorder = remember { AudioRecorder() }
 
     // Load meetings + projects when filter changes
-    LaunchedEffect(filterClientId, filterProjectId) {
+    LaunchedEffect(filterClientId, filterProjectId, showTrash) {
         filterClientId?.let { clientId ->
-            viewModel.loadMeetings(clientId, filterProjectId)
+            if (showTrash) {
+                viewModel.loadDeletedMeetings(clientId, filterProjectId)
+            } else {
+                viewModel.loadMeetings(clientId, filterProjectId)
+            }
             viewModel.loadProjects(clientId)
         }
     }
@@ -147,7 +160,7 @@ fun MeetingsScreen(
             isPlaying = playingMeetingId == currentDetail.id,
             isCorrecting = isCorrecting,
             onBack = { viewModel.selectMeeting(null) },
-            onDelete = { viewModel.deleteMeeting(currentDetail.id) },
+            onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
             onPlayToggle = { viewModel.playAudio(currentDetail.id) },
             onRecorrect = { viewModel.recorrectMeeting(currentDetail.id) },
@@ -207,8 +220,27 @@ fun MeetingsScreen(
                 onProjectSelected = { id -> filterProjectId = id },
             )
 
+            // Trash / Active toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = !showTrash,
+                    onClick = { showTrash = false },
+                    label = { Text("Nahravky") },
+                )
+                FilterChip(
+                    selected = showTrash,
+                    onClick = { showTrash = true },
+                    label = { Text("\uD83D\uDDD1 Kos") },
+                )
+            }
+
             // Recording indicator (when recording)
-            if (isRecording) {
+            if (isRecording && !showTrash) {
                 RecordingIndicator(
                     durationSeconds = recordingDuration,
                     onStop = { viewModel.stopRecording() },
@@ -226,32 +258,60 @@ fun MeetingsScreen(
             }
 
             // Content
-            when {
-                filterClientId == null -> {
-                    JEmptyState(message = "Vyberte klienta", icon = "")
+            if (showTrash) {
+                // Trash view
+                when {
+                    filterClientId == null -> {
+                        JEmptyState(message = "Vyberte klienta", icon = "")
+                    }
+                    isLoading -> {
+                        JCenteredLoading()
+                    }
+                    deletedMeetings.isEmpty() -> {
+                        JEmptyState(message = "Kos je prazdny", icon = "\uD83D\uDDD1")
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(deletedMeetings, key = { it.id }) { meeting ->
+                                DeletedMeetingListItem(
+                                    meeting = meeting,
+                                    onRestore = { viewModel.restoreMeeting(meeting.id) },
+                                    onPermanentDelete = { showPermanentDeleteConfirmDialog = meeting.id },
+                                )
+                            }
+                        }
+                    }
                 }
-
-                isLoading -> {
-                    JCenteredLoading()
-                }
-
-                displayedMeetings.isEmpty() && !isRecording -> {
-                    JEmptyState(message = "Zatim zadne nahravky", icon = "")
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(displayedMeetings, key = { it.id }) { meeting ->
-                            MeetingListItem(
-                                meeting = meeting,
-                                isPlaying = playingMeetingId == meeting.id,
-                                onClick = { viewModel.selectMeeting(meeting) },
-                                onPlayToggle = { viewModel.playAudio(meeting.id) },
-                            )
+            } else {
+                // Active meetings view
+                when {
+                    filterClientId == null -> {
+                        JEmptyState(message = "Vyberte klienta", icon = "")
+                    }
+                    isLoading -> {
+                        JCenteredLoading()
+                    }
+                    displayedMeetings.isEmpty() && !isRecording -> {
+                        JEmptyState(message = "Zatim zadne nahravky", icon = "")
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(displayedMeetings, key = { it.id }) { meeting ->
+                                MeetingListItem(
+                                    meeting = meeting,
+                                    isPlaying = playingMeetingId == meeting.id,
+                                    onClick = { viewModel.selectMeeting(meeting) },
+                                    onPlayToggle = { viewModel.playAudio(meeting.id) },
+                                )
+                            }
                         }
                     }
                 }
@@ -296,6 +356,59 @@ fun MeetingsScreen(
             onCancel = {
                 showFinalizeDialog = false
                 viewModel.cancelRecording()
+            },
+        )
+    }
+
+    // Delete confirmation dialog (soft delete → trash)
+    showDeleteConfirmDialog?.let { meetingId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = null },
+            title = { Text("Smazat nahravku?") },
+            text = {
+                Text("Nahravka bude presunuta do kose, kde zustane 30 dni. Pote bude trvale smazana.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmDialog = null
+                        viewModel.deleteMeeting(meetingId)
+                        viewModel.selectMeeting(null)
+                    },
+                ) {
+                    Text("Smazat")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = null }) {
+                    Text("Zrusit")
+                }
+            },
+        )
+    }
+
+    // Permanent delete confirmation dialog
+    showPermanentDeleteConfirmDialog?.let { meetingId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPermanentDeleteConfirmDialog = null },
+            title = { Text("Trvale smazat?") },
+            text = {
+                Text("Nahravka bude trvale smazana vcetne audio souboru. Tuto akci nelze vratit zpet.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPermanentDeleteConfirmDialog = null
+                        viewModel.permanentlyDeleteMeeting(meetingId)
+                    },
+                ) {
+                    Text("Trvale smazat", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermanentDeleteConfirmDialog = null }) {
+                    Text("Zrusit")
+                }
             },
         )
     }
@@ -489,6 +602,75 @@ private fun MeetingListItem(
 }
 
 @Composable
+private fun DeletedMeetingListItem(
+    meeting: MeetingDto,
+    onRestore: () -> Unit,
+    onPermanentDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = CardDefaults.outlinedCardBorder(),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meeting.title ?: "Meeting ${meeting.id.takeLast(6)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = formatDateTime(meeting.startedAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    meeting.deletedAt?.let { deletedAt ->
+                        Text(
+                            text = "Smazano: ${formatDateTime(deletedAt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+
+            // Restore button
+            IconButton(
+                onClick = onRestore,
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Text("\u21A9", style = MaterialTheme.typography.bodyLarge)
+            }
+
+            // Permanent delete button
+            IconButton(
+                onClick = onPermanentDelete,
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Text(
+                    "\u2716",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun MeetingDetailView(
     meeting: MeetingDto,
     isPlaying: Boolean,
@@ -512,6 +694,11 @@ private fun MeetingDetailView(
     var segmentForCorrection by remember { mutableStateOf<Pair<Int, String>?>(null) }
     // Chat instruction input
     var instructionText by remember { mutableStateOf("") }
+    // Overflow menu for compact screens
+    var showOverflowMenu by remember { mutableStateOf(false) }
+
+    BoxWithConstraints {
+        val isCompact = maxWidth < 600.dp
 
     JDetailScreen(
         title = meeting.title ?: "Meeting",
@@ -525,22 +712,58 @@ private fun MeetingDetailView(
                     )
                 }
             }
-            IconButton(onClick = { correctionMode = !correctionMode }) {
-                Text(
-                    text = "\u270F",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (correctionMode) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            IconButton(onClick = onCorrections) {
-                Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
-            }
-            IconButton(onClick = onRefresh) {
-                Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
-            }
-            IconButton(onClick = onDelete) {
-                Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
+            if (isCompact) {
+                // Compact: overflow menu for secondary actions
+                Box {
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Text("\u22EF", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (correctionMode) "\u270F Rezim oprav (zap.)"
+                                    else "\u270F Rezim oprav",
+                                )
+                            },
+                            onClick = { correctionMode = !correctionMode; showOverflowMenu = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("\uD83D\uDCD6 Pravidla oprav") },
+                            onClick = { onCorrections(); showOverflowMenu = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("\u21BB Obnovit") },
+                            onClick = { onRefresh(); showOverflowMenu = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("\uD83D\uDDD1 Smazat") },
+                            onClick = { onDelete(); showOverflowMenu = false },
+                        )
+                    }
+                }
+            } else {
+                // Expanded: all action buttons visible
+                IconButton(onClick = { correctionMode = !correctionMode }) {
+                    Text(
+                        text = "\u270F",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (correctionMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = onCorrections) {
+                    Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
+                }
+                IconButton(onClick = onRefresh) {
+                    Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
+                }
+                IconButton(onClick = onDelete) {
+                    Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
+                }
             }
         },
     ) {
@@ -615,10 +838,10 @@ private fun MeetingDetailView(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Corrected/Raw toggle + action buttons
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (hasCorrected) {
                     FilterChip(
@@ -632,7 +855,6 @@ private fun MeetingDetailView(
                         label = { Text("Surovy") },
                     )
                 }
-                Spacer(modifier = Modifier.weight(1f))
                 if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                     TextButton(onClick = onRecorrect) {
                         Text("Opravit znovu")
@@ -709,7 +931,8 @@ private fun MeetingDetailView(
                 }
             }
         }
-    }
+    } // JDetailScreen
+    } // BoxWithConstraints
 
     // Correction dialog for segment click — pre-fills corrected with original text
     if (segmentForCorrection != null) {

@@ -52,6 +52,8 @@ data class MeetingDocument(
     val correctionQuestions: List<CorrectionQuestion> = emptyList(),
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
+    val deleted: Boolean = false,
+    val deletedAt: Instant? = null,
 )
 
 data class CorrectionQuestion(

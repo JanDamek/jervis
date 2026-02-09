@@ -164,9 +164,9 @@ class MeetingRpcImpl(
         val cid = ClientId.fromString(clientId)
         val meetings = if (projectId != null) {
             val pid = ProjectId.fromString(projectId)
-            meetingRepository.findByClientIdAndProjectIdOrderByStartedAtDesc(cid, pid)
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(cid, pid)
         } else {
-            meetingRepository.findByClientIdOrderByStartedAtDesc(cid)
+            meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(cid)
         }
         return meetings.toList().map { it.toDto() }
     }
@@ -197,7 +197,44 @@ class MeetingRpcImpl(
         val meeting = meetingRepository.findById(id)
             ?: throw IllegalStateException("Meeting not found: $meetingId")
 
-        // Delete audio file
+        // Purge KB data if meeting was indexed
+        if (meeting.state == MeetingStateEnum.INDEXED) {
+            try {
+                val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                    meetingId = meeting.id.toHexString(),
+                    title = meeting.title,
+                )
+                knowledgeService.purge(sourceUrn.toString())
+                logger.info { "Purged KB data for meeting $meetingId on soft delete" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to purge KB data for meeting $meetingId" }
+            }
+        }
+
+        // Soft delete — move to trash
+        meetingRepository.save(meeting.copy(deleted = true, deletedAt = Instant.now()))
+        logger.info { "Soft-deleted meeting: $meetingId (moved to trash)" }
+        return true
+    }
+
+    override suspend fun restoreMeeting(meetingId: String): MeetingDto {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+        require(meeting.deleted) { "Meeting $meetingId is not in trash" }
+
+        val restored = meetingRepository.save(meeting.copy(deleted = false, deletedAt = null))
+        logger.info { "Restored meeting from trash: $meetingId" }
+        return restored.toDto()
+    }
+
+    override suspend fun permanentlyDeleteMeeting(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+        require(meeting.deleted) { "Meeting $meetingId must be in trash before permanent deletion" }
+
+        // Delete audio file from disk
         meeting.audioFilePath?.let { path ->
             withContext(Dispatchers.IO) {
                 val file = java.nio.file.Paths.get(path)
@@ -205,9 +242,31 @@ class MeetingRpcImpl(
             }
         }
 
+        // Purge KB data (belt-and-suspenders)
+        if (meeting.state == MeetingStateEnum.INDEXED) {
+            try {
+                val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                    meetingId = meeting.id.toHexString(),
+                    title = meeting.title,
+                )
+                knowledgeService.purge(sourceUrn.toString())
+            } catch (_: Exception) {}
+        }
+
         meetingRepository.deleteById(id)
-        logger.info { "Deleted meeting: $meetingId" }
+        logger.info { "Permanently deleted meeting: $meetingId" }
         return true
+    }
+
+    override suspend fun listDeletedMeetings(clientId: String, projectId: String?): List<MeetingDto> {
+        val cid = ClientId.fromString(clientId)
+        val meetings = if (projectId != null) {
+            val pid = ProjectId.fromString(projectId)
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsTrueOrderByDeletedAtDesc(cid, pid)
+        } else {
+            meetingRepository.findByClientIdAndDeletedIsTrueOrderByDeletedAtDesc(cid)
+        }
+        return meetings.toList().map { it.toDto() }
     }
 
     override suspend fun recorrectMeeting(meetingId: String): Boolean {
@@ -418,4 +477,6 @@ private fun MeetingDocument.toDto(): MeetingDto =
             )
         },
         errorMessage = errorMessage,
+        deleted = deleted,
+        deletedAt = deletedAt?.toString(),
     )
