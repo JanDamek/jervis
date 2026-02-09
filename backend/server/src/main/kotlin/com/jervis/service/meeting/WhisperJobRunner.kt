@@ -138,6 +138,115 @@ class WhisperJobRunner(
         }
     }
 
+    /**
+     * Find an active (non-completed, non-failed) Whisper K8s Job for a specific meeting.
+     * Returns the job name if found, null otherwise.
+     */
+    suspend fun findActiveJobForMeeting(meetingId: String): String? {
+        if (!IN_CLUSTER) return null
+        return withContext(Dispatchers.IO) {
+            KubernetesClientBuilder().build().use { client ->
+                val jobs = client.batch().v1().jobs()
+                    .inNamespace(K8S_NAMESPACE)
+                    .withLabel("app", "jervis-whisper")
+                    .withLabel("meeting-id", meetingId)
+                    .list()
+                    .items
+
+                jobs.firstOrNull { job ->
+                    val status = job.status
+                    status != null && (status.succeeded ?: 0) == 0 && (status.failed ?: 0) == 0
+                }?.metadata?.name
+            }
+        }
+    }
+
+    /**
+     * Wait for an existing Whisper K8s Job to complete (used after server restart
+     * to re-attach to a job that was already running).
+     */
+    suspend fun waitForExistingJob(
+        jobName: String,
+        audioFilePath: String,
+        meetingId: String? = null,
+        clientId: String? = null,
+    ): WhisperResult {
+        val audioPath = Paths.get(audioFilePath)
+        val resultFileName = audioPath.fileName.toString().replace(".wav", "_transcript.json")
+        val resultFile = audioPath.parent.resolve(resultFileName)
+        val progressFile = audioPath.parent.resolve(resultFileName.replace("_transcript.json", "_progress.json"))
+
+        val audioFileSize = withContext(Dispatchers.IO) { Files.size(Paths.get(audioFilePath)) }
+        val audioDurationSeconds = (audioFileSize - WAV_HEADER_SIZE).coerceAtLeast(0) / BYTES_PER_SECOND
+        val settings = whisperSettingsRpc.getSettingsDocument()
+        val timeoutSeconds = (audioDurationSeconds * settings.timeoutMultiplier).coerceAtLeast(settings.minTimeoutSeconds.toLong())
+
+        logger.info { "Re-attaching to existing Whisper Job $jobName (timeout: ${timeoutSeconds}s)" }
+
+        withContext(Dispatchers.IO) {
+            KubernetesClientBuilder().build().use { client ->
+                var elapsed = 0L
+                var pollCount = 0
+
+                while (elapsed < timeoutSeconds) {
+                    delay(POLL_INTERVAL_SECONDS * 1000)
+                    elapsed += POLL_INTERVAL_SECONDS
+                    pollCount++
+
+                    val status = client.batch().v1().jobs()
+                        .inNamespace(K8S_NAMESPACE)
+                        .withName(jobName)
+                        .get()
+                        ?.status
+
+                    if (status == null) {
+                        logger.warn { "Whisper Job $jobName disappeared, treating as failed" }
+                        return@withContext
+                    }
+
+                    if ((status.succeeded ?: 0) > 0) {
+                        logger.info { "Whisper Job $jobName completed successfully after re-attach (${elapsed}s)" }
+                        return@withContext
+                    }
+
+                    if ((status.failed ?: 0) > 0) {
+                        throw RuntimeException("Whisper Job $jobName failed after re-attach (${elapsed}s)")
+                    }
+
+                    if (pollCount % PROGRESS_LOG_INTERVAL == 0) {
+                        val progressInfo = readProgressFile(progressFile)
+                        if (progressInfo != null) {
+                            logger.info { "Whisper Job $jobName (re-attached): ${progressInfo.percent}% done" }
+                            if (meetingId != null && clientId != null) {
+                                notificationRpc.emitMeetingTranscriptionProgress(
+                                    meetingId = meetingId, clientId = clientId,
+                                    percent = progressInfo.percent, segmentsDone = progressInfo.segmentsDone,
+                                    elapsedSeconds = progressInfo.elapsedSeconds,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                throw RuntimeException("Whisper Job $jobName timed out after re-attach (${timeoutSeconds}s)")
+            }
+        }
+
+        return withContext(Dispatchers.IO) {
+            if (Files.exists(resultFile)) {
+                val content = Files.readString(resultFile)
+                try {
+                    json.decodeFromString<WhisperResult>(content)
+                } finally {
+                    Files.deleteIfExists(resultFile)
+                    Files.deleteIfExists(progressFile)
+                }
+            } else {
+                WhisperResult(text = "", segments = emptyList(), error = "Job completed but no result file found")
+            }
+        }
+    }
+
     private fun buildOptionsJson(settings: WhisperSettingsDocument, progressFilePath: String): String {
         val opts = mutableMapOf<String, Any?>(
             "task" to settings.task,
@@ -191,6 +300,7 @@ class WhisperJobRunner(
                 .withNamespace(K8S_NAMESPACE)
                 .addToLabels("app", "jervis-whisper")
                 .addToLabels("type", "job")
+                .apply { meetingId?.let { addToLabels("meeting-id", it) } }
             .endMetadata()
             .withNewSpec()
                 .withTtlSecondsAfterFinished(300)

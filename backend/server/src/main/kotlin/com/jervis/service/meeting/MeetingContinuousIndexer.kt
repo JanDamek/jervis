@@ -63,6 +63,7 @@ class MeetingContinuousIndexer(
     private val taskService: TaskService,
     private val directoryStructureService: DirectoryStructureService,
     private val whisperSettingsRpc: WhisperSettingsRpcImpl,
+    private val whisperJobRunner: WhisperJobRunner,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
     private val supervisor = SupervisorJob()
@@ -170,16 +171,64 @@ class MeetingContinuousIndexer(
             }
         }
 
-        // Recover TRANSCRIBING meetings — reset to UPLOADED for re-transcription
+        // Recover TRANSCRIBING meetings — check for active K8s job first
         meetingRepository.findByStateOrderByStoppedAtAsc(MeetingStateEnum.TRANSCRIBING).collect { meeting ->
             try {
-                meetingRepository.save(
-                    meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
-                )
-                notificationRpc.emitMeetingStateChanged(
-                    meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
-                )
-                logger.info { "Recovered stale TRANSCRIBING meeting ${meeting.id} -> UPLOADED (server restart)" }
+                val meetingIdStr = meeting.id.toHexString()
+                val activeJobName = whisperJobRunner.findActiveJobForMeeting(meetingIdStr)
+
+                if (activeJobName != null) {
+                    // K8s job still running — re-attach to it instead of restarting
+                    logger.info { "Found active Whisper Job $activeJobName for TRANSCRIBING meeting $meetingIdStr, re-attaching" }
+                    val clientIdStr = meeting.clientId.toString()
+                    processingMeetingIds.add(meetingIdStr)
+                    scope.launch {
+                        try {
+                            val result = whisperJobRunner.waitForExistingJob(
+                                jobName = activeJobName,
+                                audioFilePath = meeting.audioFilePath!!,
+                                meetingId = meetingIdStr,
+                                clientId = clientIdStr,
+                            )
+                            // Process result same as MeetingTranscriptionService would
+                            if (!result.error.isNullOrBlank()) {
+                                markAsFailed(meeting, "Whisper error: ${result.error}")
+                            } else {
+                                val segments = result.segments.map { seg ->
+                                    com.jervis.entity.meeting.TranscriptSegment(
+                                        startSec = seg.start, endSec = seg.end, text = seg.text.trim(),
+                                    )
+                                }
+                                meetingRepository.save(
+                                    meeting.copy(
+                                        state = MeetingStateEnum.TRANSCRIBED,
+                                        stateChangedAt = Instant.now(),
+                                        transcriptText = result.text,
+                                        transcriptSegments = segments,
+                                    ),
+                                )
+                                notificationRpc.emitMeetingStateChanged(
+                                    meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title,
+                                )
+                                logger.info { "Re-attached Whisper Job $activeJobName completed: ${result.text.length} chars, ${segments.size} segments" }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(e) { "Re-attached Whisper Job $activeJobName failed for meeting $meetingIdStr" }
+                            markAsFailed(meeting, "Transcription error (re-attached): ${e.message}")
+                        } finally {
+                            processingMeetingIds.remove(meetingIdStr)
+                        }
+                    }
+                } else {
+                    // No active K8s job — reset to UPLOADED for fresh transcription
+                    meetingRepository.save(
+                        meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
+                    )
+                    notificationRpc.emitMeetingStateChanged(
+                        meetingIdStr, meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
+                    )
+                    logger.info { "No active Whisper Job for TRANSCRIBING meeting $meetingIdStr, reset to UPLOADED" }
+                }
             } catch (e: Exception) {
                 logger.error(e) { "Error recovering TRANSCRIBING meeting ${meeting.id}" }
             }
