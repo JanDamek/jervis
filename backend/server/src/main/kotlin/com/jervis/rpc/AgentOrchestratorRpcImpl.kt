@@ -32,6 +32,7 @@ class AgentOrchestratorRpcImpl(
     private val taskRepository: TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
     private val projectService: com.jervis.service.project.ProjectService,
+    private val taskNotifier: com.jervis.service.background.TaskNotifier,
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -332,6 +333,11 @@ class AgentOrchestratorRpcImpl(
                 logger.info {
                     "REUSING_FOREGROUND_TASK | taskId=$currentTaskId | state=$newState | queuePosition=$currentQueuePos | session=$sessionKey"
                 }
+            }
+
+            // Wake up execution loop immediately if task is ready for processing
+            if (taskDocument.state == com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+                taskNotifier.notifyNewTask()
             }
 
             val messageSequence = chatMessageRepository.countByTaskId(taskDocument.id) + 1

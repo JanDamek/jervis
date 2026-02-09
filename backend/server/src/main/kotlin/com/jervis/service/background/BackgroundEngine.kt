@@ -72,6 +72,7 @@ class BackgroundEngine(
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
+    private val taskNotifier: TaskNotifier,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -238,8 +239,8 @@ class BackgroundEngine(
                             "processingMode=${task.processingMode}"
                     }
                 } else {
-                    // No tasks in either queue, wait before checking again
-                    delay(backgroundProperties.waitOnError)
+                    // No tasks — wait for notification or poll every 5s as safety net
+                    taskNotifier.awaitTask(5000L)
                 }
             } catch (e: CancellationException) {
                 logger.info { "Execution loop cancelled" }

@@ -725,16 +725,43 @@ class MainViewModel(
 
         when (messageType) {
             ChatMessage.MessageType.USER_MESSAGE -> {
-                messages.add(
-                    ChatMessage(
-                        from = ChatMessage.Sender.Me,
-                        text = response.message,
-                        contextId = projectId,
-                        messageType = ChatMessage.MessageType.USER_MESSAGE,
-                        metadata = response.metadata,
-                        timestamp = response.metadata["timestamp"],
-                    ),
-                )
+                // Deduplicate: skip if we already showed this message optimistically
+                val alreadyShown = messages.any {
+                    it.from == ChatMessage.Sender.Me &&
+                        it.text == response.message &&
+                        it.messageType == ChatMessage.MessageType.USER_MESSAGE &&
+                        it.timestamp == null // optimistic messages have no timestamp
+                }
+                if (alreadyShown) {
+                    // Replace the optimistic message with the server-confirmed one (with timestamp)
+                    val idx = messages.indexOfLast {
+                        it.from == ChatMessage.Sender.Me &&
+                            it.text == response.message &&
+                            it.messageType == ChatMessage.MessageType.USER_MESSAGE &&
+                            it.timestamp == null
+                    }
+                    if (idx >= 0) {
+                        messages[idx] = ChatMessage(
+                            from = ChatMessage.Sender.Me,
+                            text = response.message,
+                            contextId = projectId,
+                            messageType = ChatMessage.MessageType.USER_MESSAGE,
+                            metadata = response.metadata,
+                            timestamp = response.metadata["timestamp"],
+                        )
+                    }
+                } else {
+                    messages.add(
+                        ChatMessage(
+                            from = ChatMessage.Sender.Me,
+                            text = response.message,
+                            contextId = projectId,
+                            messageType = ChatMessage.MessageType.USER_MESSAGE,
+                            metadata = response.metadata,
+                            timestamp = response.metadata["timestamp"],
+                        ),
+                    )
+                }
             }
 
             ChatMessage.MessageType.PROGRESS -> {
@@ -922,10 +949,16 @@ class MainViewModel(
             return
         }
 
-        // DON'T add user message locally - it will arrive via subscribeToChat stream
-        // This ensures synchronization across all clients (Desktop/iOS/Android)
+        // Optimistic update — show user message immediately
+        val optimisticMsg = ChatMessage(
+            from = ChatMessage.Sender.Me,
+            text = text,
+            contextId = projectId,
+            messageType = ChatMessage.MessageType.USER_MESSAGE,
+        )
+        _chatMessages.value = _chatMessages.value + optimisticMsg
 
-        // Send message - user message + responses will arrive via subscribeToChat stream
+        // Send message - server echo will be deduplicated in handleChatResponse
         scope.launch {
             _isLoading.value = true
             val originalText = text
@@ -944,10 +977,25 @@ class MainViewModel(
                 )
                 println("=== Message sent successfully ===")
                 pendingMessage = null
+
+                // Show progress message — agent is now processing
+                val isQueued = _runningProjectId.value != null &&
+                    _runningProjectId.value != "none" &&
+                    _runningProjectId.value != projectId
+                val progressText = if (isQueued) "Zpráva zařazena do fronty..." else "Zpracovávám..."
+                val progressMsg = ChatMessage(
+                    from = ChatMessage.Sender.Assistant,
+                    text = progressText,
+                    contextId = projectId,
+                    messageType = ChatMessage.MessageType.PROGRESS,
+                )
+                _chatMessages.value = _chatMessages.value + progressMsg
             } catch (e: Exception) {
                 println("Error sending message: ${e.message}")
                 e.printStackTrace()
                 pendingMessage = originalText
+                // Remove optimistic message on failure
+                _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
                 _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
             } finally {
                 _isLoading.value = false

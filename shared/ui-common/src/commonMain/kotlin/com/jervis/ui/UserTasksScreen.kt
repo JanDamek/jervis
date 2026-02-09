@@ -180,6 +180,10 @@ fun UserTasksScreen(
                         loadTasks()
                     },
                     onError = { errorMessage = it },
+                    onDelete = {
+                        taskToDelete = task
+                        showDeleteConfirm = true
+                    },
                 )
             },
         )
@@ -249,6 +253,7 @@ private fun UserTaskDetail(
     onBack: () -> Unit,
     onTaskSent: () -> Unit,
     onError: (String) -> Unit,
+    onDelete: () -> Unit,
 ) {
     var additionalInput by remember(task.id) { mutableStateOf("") }
     var isSending by remember(task.id) { mutableStateOf(false) }
@@ -276,6 +281,9 @@ private fun UserTaskDetail(
     JDetailScreen(
         title = task.title,
         onBack = onBack,
+        actions = {
+            DeleteIconButton(onClick = onDelete)
+        },
     ) {
         val scrollState = rememberScrollState()
         Column(

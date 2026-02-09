@@ -4,12 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,18 +27,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,36 +47,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
-import com.jervis.ui.design.JNavigationRow
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.util.rememberClipboardManager
 
 /**
- * Main menu items for sidebar navigation.
- * CHAT is the primary item (shows chat content), others navigate to separate screens.
+ * Main menu items for the dropdown menu.
+ * Each item navigates to a separate screen.
  */
 private enum class MainMenuItem(val icon: String, val title: String) {
-    CHAT("💬", "Chat"),
-    SETTINGS("⚙️", "Nastavení"),
-    USER_TASKS("📋", "Uživatelské úlohy"),
-    PENDING_TASKS("📥", "Fronta úloh"),
-    SCHEDULER("🗓️", "Plánovač"),
-    MEETINGS("🎤", "Meetingy"),
-    RAG_SEARCH("🔍", "RAG Hledání"),
-    ERROR_LOGS("📛", "Chybové logy"),
+    SETTINGS("\u2699\uFE0F", "Nastaven\u00ED"),
+    USER_TASKS("\uD83D\uDCCB", "U\u017Eivatelsk\u00E9 \u00FAlohy"),
+    PENDING_TASKS("\uD83D\uDCE5", "Fronta \u00FAloh"),
+    SCHEDULER("\uD83D\uDDD3\uFE0F", "Pl\u00E1nova\u010D"),
+    MEETINGS("\uD83C\uDFA4", "Meetingy"),
+    RAG_SEARCH("\uD83D\uDD0D", "RAG Hled\u00E1n\u00ED"),
+    ERROR_LOGS("\uD83D\uDCDB", "Chybov\u00E9 logy"),
 }
 
-private fun MainMenuItem.toScreen(): Screen? = when (this) {
-    MainMenuItem.CHAT -> null
+private fun MainMenuItem.toScreen(): Screen = when (this) {
     MainMenuItem.SETTINGS -> Screen.Settings
     MainMenuItem.USER_TASKS -> Screen.UserTasks
     MainMenuItem.PENDING_TASKS -> Screen.PendingTasks
@@ -90,10 +82,8 @@ private fun MainMenuItem.toScreen(): Screen? = when (this) {
 }
 
 /**
- * Main screen for Jervis – adaptive layout inspired by SettingsScreen sidebar.
- *
- * Expanded (>=600dp): 240dp sidebar with menu items + chat content side by side.
- * Compact (<600dp): menu icon in top bar toggles full-screen menu list; default shows chat.
+ * Main screen for Jervis – unified layout for all screen sizes.
+ * No sidebar; menu is accessible via dropdown in the selectors row.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,169 +108,35 @@ fun MainScreenView(
     onAgentStatusClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val menuItems = remember { MainMenuItem.entries.toList() }
-    var showMenu by remember { mutableStateOf(false) }
+    Column(modifier = modifier.fillMaxSize()) {
+        JTopBar(title = "JERVIS Assistant")
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
-
-        if (isCompact) {
-            // ── Compact: full-screen menu or chat ──
-            if (showMenu) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    JTopBar(
-                        title = "JERVIS Assistant",
-                        onBack = { showMenu = false },
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        items(menuItems.size) { index ->
-                            val item = menuItems[index]
-                            JNavigationRow(
-                                icon = item.icon,
-                                title = item.title,
-                                onClick = {
-                                    val screen = item.toScreen()
-                                    if (screen != null) {
-                                        onNavigate(screen)
-                                    }
-                                    showMenu = false
-                                },
-                            )
-                        }
-                    }
-                }
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    JTopBar(
-                        title = "JERVIS Assistant",
-                        actions = {
-                            IconButton(
-                                onClick = { showMenu = true },
-                                modifier = Modifier.size(JervisSpacing.touchTarget),
-                            ) {
-                                Icon(Icons.Default.Menu, contentDescription = "Menu")
-                            }
-                        },
-                    )
-                    ChatContent(
-                        clients = clients,
-                        projects = projects,
-                        selectedClientId = selectedClientId,
-                        selectedProjectId = selectedProjectId,
-                        chatMessages = chatMessages,
-                        inputText = inputText,
-                        isLoading = isLoading,
-                        queueSize = queueSize,
-                        runningProjectId = runningProjectId,
-                        runningProjectName = runningProjectName,
-                        runningTaskPreview = runningTaskPreview,
-                        runningTaskType = runningTaskType,
-                        onClientSelected = onClientSelected,
-                        onProjectSelected = onProjectSelected,
-                        onInputChanged = onInputChanged,
-                        onSendClick = onSendClick,
-                        onAgentStatusClick = onAgentStatusClick,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-        } else {
-            // ── Expanded: sidebar + chat side by side ──
-            Row(modifier = Modifier.fillMaxSize()) {
-                // Sidebar
-                Column(
-                    modifier = Modifier
-                        .width(240.dp)
-                        .fillMaxHeight()
-                        .padding(vertical = 16.dp),
-                ) {
-                    Text(
-                        text = "JERVIS Assistant",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    menuItems.forEach { item ->
-                        val isSelected = item == MainMenuItem.CHAT
-                        Surface(
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                Color.Transparent
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val screen = item.toScreen()
-                                    if (screen != null) {
-                                        onNavigate(screen)
-                                    }
-                                },
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp)
-                                    .height(JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    item.icon,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = item.title,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                VerticalDivider(
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-
-                // Chat content
-                ChatContent(
-                    clients = clients,
-                    projects = projects,
-                    selectedClientId = selectedClientId,
-                    selectedProjectId = selectedProjectId,
-                    chatMessages = chatMessages,
-                    inputText = inputText,
-                    isLoading = isLoading,
-                    queueSize = queueSize,
-                    runningProjectId = runningProjectId,
-                    runningProjectName = runningProjectName,
-                    runningTaskPreview = runningTaskPreview,
-                    runningTaskType = runningTaskType,
-                    onClientSelected = onClientSelected,
-                    onProjectSelected = onProjectSelected,
-                    onInputChanged = onInputChanged,
-                    onSendClick = onSendClick,
-                    onAgentStatusClick = onAgentStatusClick,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
-            }
-        }
+        ChatContent(
+            clients = clients,
+            projects = projects,
+            selectedClientId = selectedClientId,
+            selectedProjectId = selectedProjectId,
+            chatMessages = chatMessages,
+            inputText = inputText,
+            isLoading = isLoading,
+            queueSize = queueSize,
+            runningProjectId = runningProjectId,
+            runningProjectName = runningProjectName,
+            runningTaskPreview = runningTaskPreview,
+            runningTaskType = runningTaskType,
+            onClientSelected = onClientSelected,
+            onProjectSelected = onProjectSelected,
+            onInputChanged = onInputChanged,
+            onSendClick = onSendClick,
+            onAgentStatusClick = onAgentStatusClick,
+            onNavigate = onNavigate,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
 /**
  * Chat content area – selectors, messages, agent status, input.
- * Extracted to share between compact and expanded layouts.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -302,10 +158,11 @@ private fun ChatContent(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onAgentStatusClick: () -> Unit,
+    onNavigate: (Screen) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        // Client and Project Selectors
+        // Client and Project Selectors + Menu
         SelectorsRow(
             clients = clients,
             projects = projects,
@@ -313,6 +170,7 @@ private fun ChatContent(
             selectedProjectId = selectedProjectId,
             onClientSelected = onClientSelected,
             onProjectSelected = onProjectSelected,
+            onNavigate = onNavigate,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -356,6 +214,7 @@ private fun ChatContent(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectorsRow(
     clients: List<ClientDto>,
@@ -364,9 +223,14 @@ private fun SelectorsRow(
     selectedProjectId: String?,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
+    onNavigate: (Screen) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         // Client selector
         var clientExpanded by remember { mutableStateOf(false) }
 
@@ -436,6 +300,41 @@ private fun SelectorsRow(
                         onClick = {
                             onProjectSelected(project.id)
                             projectExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+
+        // Menu dropdown
+        Box {
+            var menuExpanded by remember { mutableStateOf(false) }
+
+            IconButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Icon(Icons.Default.Menu, contentDescription = "Menu")
+            }
+
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                MainMenuItem.entries.forEach { item ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(item.icon, modifier = Modifier.size(20.dp))
+                                Text(item.title)
+                            }
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onNavigate(item.toScreen())
                         },
                     )
                 }
@@ -541,7 +440,7 @@ private fun ChatMessageItem(
                     Text(
                         text =
                             if (isMe) {
-                                "Já"
+                                "J\u00E1"
                             } else {
                                 "Asistent"
                             },
@@ -616,7 +515,7 @@ private fun AgentStatusRow(
             )
         } else {
             Text(
-                text = "●",
+                text = "\u25CF",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -650,7 +549,7 @@ private fun AgentStatusRow(
                 }
             } else {
                 Text(
-                    text = "Agent: Nečinný",
+                    text = "Agent: Ne\u010Dinn\u00FD",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -700,7 +599,7 @@ private fun InputArea(
         OutlinedTextField(
             value = inputText,
             onValueChange = onInputChanged,
-            placeholder = { Text("Napište zprávu...") },
+            placeholder = { Text("Napi\u0161te zpr\u00E1vu...") },
             enabled = enabled,
             modifier =
                 Modifier
