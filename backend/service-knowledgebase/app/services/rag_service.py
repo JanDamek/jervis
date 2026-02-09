@@ -160,24 +160,14 @@ class RagService:
         """List all chunks matching a specific kind, with tenant filtering."""
         collection = self.client.collections.get("KnowledgeChunk")
 
-        kind_filter = wvq.Filter.by_property("kind").equal(kind)
-
-        global_client = wvq.Filter.by_property("clientId").equal("")
+        # Build filter list — Weaviate TEXT fields can't filter by empty string
+        parts = [wvq.Filter.by_property("kind").equal(kind)]
         if client_id:
-            my_client = wvq.Filter.by_property("clientId").equal(client_id)
-            client_filter = wvq.Filter.any_of([global_client, my_client])
-        else:
-            client_filter = global_client
-
+            parts.append(wvq.Filter.by_property("clientId").equal(client_id))
         if project_id:
-            global_project = wvq.Filter.by_property("projectId").equal("")
-            my_project = wvq.Filter.by_property("projectId").equal(project_id)
-            project_filter = wvq.Filter.any_of([global_project, my_project])
-            tenant_filter = wvq.Filter.all_of([client_filter, project_filter])
-        else:
-            tenant_filter = client_filter
+            parts.append(wvq.Filter.by_property("projectId").equal(project_id))
 
-        filters = wvq.Filter.all_of([kind_filter, tenant_filter])
+        filters = wvq.Filter.all_of(parts) if len(parts) > 1 else parts[0]
 
         response = collection.query.fetch_objects(
             filters=filters,
@@ -198,52 +188,26 @@ class RagService:
         vector = self.embeddings.embed_query(request.query)
         collection = self.client.collections.get("KnowledgeChunk")
 
-        # Multi-tenant Filtering Logic
-        #
-        # Visibility rules:
-        #   - clientId="" (empty) = GLOBAL, visible everywhere
-        #   - clientId="X", projectId="" = CLIENT-LEVEL, visible to client X and all its projects
-        #   - clientId="X", projectId="Y" = PROJECT-LEVEL, visible only to project Y
-        #
-        # Query filter pattern:
-        #   (clientId == "" OR clientId == requested_client)
-        #   AND (projectId == "" OR projectId == requested_project)  -- only if project specified
-        #
-        # This ensures:
-        #   - Global data (client="", project="") is always included
-        #   - Client-level data (client=X, project="") is included for that client
-        #   - Project data (client=X, project=Y) is included only for that project
-
-        # Client filter: always include global ("") + requested client
-        global_client = wvq.Filter.by_property("clientId").equal("")
-
+        # Tenant filtering — Weaviate TEXT fields can't filter by empty string,
+        # so we only add filters for non-empty values
+        parts = []
         if request.clientId:
-            my_client = wvq.Filter.by_property("clientId").equal(request.clientId)
-            client_filter = wvq.Filter.any_of([global_client, my_client])
-        else:
-            # No client specified = only global data
-            client_filter = global_client
-
-        # Project filter: only if project is specified
+            parts.append(wvq.Filter.by_property("clientId").equal(request.clientId))
         if request.projectId:
-            # Include global project ("") + requested project
-            global_project = wvq.Filter.by_property("projectId").equal("")
-            my_project = wvq.Filter.by_property("projectId").equal(request.projectId)
-            project_alternatives = [global_project, my_project]
-
-            # Group cross-visibility: include data from other projects in same group
+            project_alternatives = [
+                wvq.Filter.by_property("projectId").equal(request.projectId),
+            ]
             if request.groupId:
-                my_group = wvq.Filter.by_property("groupId").equal(request.groupId)
-                project_alternatives.append(my_group)
+                project_alternatives.append(
+                    wvq.Filter.by_property("groupId").equal(request.groupId),
+                )
+            parts.append(
+                wvq.Filter.any_of(project_alternatives) if len(project_alternatives) > 1
+                else project_alternatives[0]
+            )
 
-            project_filter = wvq.Filter.any_of(project_alternatives)
+        filters = wvq.Filter.all_of(parts) if len(parts) > 1 else (parts[0] if parts else None)
 
-            # Combine: client AND project
-            filters = wvq.Filter.all_of([client_filter, project_filter])
-        else:
-            # No project specified = don't filter by project (return all projects for client)
-            filters = client_filter
-        
         response = collection.query.near_vector(
             near_vector=vector,
             limit=request.maxResults,
