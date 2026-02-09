@@ -222,6 +222,7 @@ All components live in `com.jervis.ui.design.DesignSystem.kt` unless noted other
 | `DeleteIconButton` | Delete action (emoji "🗑️") |
 | `EditIconButton` | Edit action (emoji "✏️") |
 | `ConfirmDialog` | Confirmation dialog with keyboard support |
+| `ApprovalNotificationDialog` | Orchestrator approval dialog (approve/deny with reason) |
 | `CopyableTextCard` | Text card with click-to-copy |
 
 ### 3.6) Setting Components (`com.jervis.ui.components`)
@@ -570,12 +571,91 @@ Compact (<600dp):
 - `RecordingFinalizeDialog` – Meeting type (radio buttons), optional title
 - `RecordingIndicator` – Animated red dot + elapsed time + stop button (shown during recording)
 
-**State icons:** 🔴 RECORDING, ⏳ UPLOADING/UPLOADED/TRANSCRIBING, ✅ TRANSCRIBED/INDEXED, ❌ FAILED
+**State icons:** 🔴 RECORDING, ⬆ UPLOADING, ⏳ UPLOADED/TRANSCRIBING/CORRECTING, ✅ TRANSCRIBED/CORRECTED/INDEXED, ❌ FAILED
+
+**MeetingDetailView states:**
+
+| State | UI Behaviour |
+|-------|-------------|
+| RECORDING | Text "Probiha nahravani..." |
+| UPLOADING / UPLOADED | Text "Ceka na prepis..." |
+| TRANSCRIBING | `JCenteredLoading` + text "Probiha prepis..." |
+| CORRECTING | `JCenteredLoading` + text "Probiha korekce prepisu..." |
+| CORRECTION_REVIEW | `CorrectionQuestionsCard` + best-effort corrected transcript |
+| FAILED | Error message in `error` color |
+| TRANSCRIBED | Raw transcript only (via `TranscriptContent`) |
+| CORRECTED / INDEXED | `FilterChip` toggle (Opraveny / Surovy) + "Prepsat znovu" button + `TranscriptContent` |
+
+**MeetingDetailView** actions bar includes:
+- Pencil toggle (correction mode — segments become clickable, clicking opens `CorrectionDialog` to submit a correction rule)
+- Book icon → navigates to `CorrectionsScreen` sub-view (managed as `showCorrections` state)
+- When `state == CORRECTION_REVIEW`: `CorrectionQuestionsCard` is shown below the pipeline progress
+
+**TranscriptContent** – helper composable that renders either timestamped segment rows (`TranscriptSegmentRow`) or plain text fallback. Supports `correctionMode` parameter for clickable segments.
+
+```kotlin
+@Composable
+private fun TranscriptContent(
+    segments: List<TranscriptSegmentDto>,
+    text: String?,
+    correctionMode: Boolean = false,
+    onSegmentClick: (TranscriptSegmentDto) -> Unit = {},
+)
+```
 
 **Audio capture:** `expect class AudioRecorder` with platform actuals:
 - Android: AudioRecord API (VOICE_RECOGNITION source)
 - Desktop: Java Sound API (TargetDataLine)
 - iOS: Stub (AVAudioEngine TODO)
+
+### 5.7) Corrections Screen (`CorrectionsScreen.kt`)
+
+Sub-view of MeetingDetailView for managing KB-stored transcript correction rules.
+Accessible via the book icon in MeetingDetailView action bar.
+
+```
+┌─ JDetailScreen ("Korekce prepisu", onBack, [+ Pridat]) ─┐
+│                                                           │
+│ Jmena osob                  ← category header (primary)  │
+│ ┌─ Card (outlinedBorder) ──────────────────────────────┐ │
+│ │ "honza novak" → "Honza Novak"                  [🗑] │ │
+│ │  Optional context text                               │ │
+│ └──────────────────────────────────────────────────────┘ │
+│ Nazvy firem                                               │
+│ ┌─ Card ───────────────────────────────────────────────┐ │
+│ │ "damek soft" → "DamekSoft"                     [🗑] │ │
+│ └──────────────────────────────────────────────────────┘ │
+│ ...                                                       │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Key components:**
+- `CorrectionsScreen` – `JDetailScreen` with `LazyColumn` of entries grouped by category string, add/delete
+- `CorrectionViewModel` – States: `corrections: StateFlow<List<TranscriptCorrectionDto>>`, `isLoading`; Methods: `loadCorrections()`, `submitCorrection()`, `deleteCorrection()`
+- `CorrectionCard` – Card with original→corrected mapping, optional context text, delete button
+- `CorrectionDialog` – `AlertDialog` with fields: original, corrected, category (`ExposedDropdownMenuBox`), context; reusable (`internal`) from MeetingsScreen correction mode
+
+**Correction categories**: person_name, company_name, department, terminology, abbreviation, general
+
+### 5.7.1) Correction Questions Card
+
+Inline card shown in MeetingDetailView when `state == CORRECTION_REVIEW`. Displays questions from the correction agent when it's uncertain about proper nouns or terminology.
+
+```
+┌─ Card (tertiaryContainer) ─────────────────────────────────┐
+│ Agent potrebuje vase upesneni                               │
+│ Opravte nebo potvdte spravny tvar nasledujicich vyrazu:    │
+│                                                             │
+│ Is this "Jan Damek" or "Jan Dameck"?                       │
+│ Puvodne: "jan damek"                                       │
+│ [Jan Damek] [Jan Dameck]    ← FilterChip options           │
+│ [____Spravny tvar____]      ← free text input              │
+│                                                             │
+│                                    [Odeslat odpovedi]      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Answers are saved as KB correction rules and the meeting resets to TRANSCRIBED for re-correction.
 
 ---
 
@@ -794,7 +874,15 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   │       └── SchedulerSettings.kt  ← (standalone scheduler config)
 │   ├── MainScreen.kt
 │   ├── AgentWorkloadScreen.kt  ← Agent activity log (in-memory, click from AgentStatusRow)
-│   └── ConnectionsScreen.kt
+│   ├── ConnectionsScreen.kt
+│   └── meeting/
+│       ├── MeetingsScreen.kt       ← Meeting list + detail + recording controls
+│       ├── MeetingViewModel.kt     ← Meeting state management
+│       ├── RecordingSetupDialog.kt ← Audio device + client/project selection
+│       ├── RecordingFinalizeDialog.kt ← Meeting type + title entry
+│       ├── RecordingIndicator.kt   ← Animated recording indicator
+│       ├── CorrectionsScreen.kt    ← KB correction rules CRUD (grouped by category)
+│       └── CorrectionViewModel.kt ← Corrections state (corrections, isLoading)
 ├── util/
 │   ├── IconButtons.kt               ← RefreshIconButton, DeleteIconButton, EditIconButton
 │   ├── ConfirmDialog.kt             ← ConfirmDialog

@@ -51,12 +51,22 @@ class NotificationRpcImpl : INotificationService {
         ))
     }
 
-    suspend fun emitUserTaskCreated(clientId: String, taskId: String, title: String) {
+    suspend fun emitUserTaskCreated(
+        clientId: String,
+        taskId: String,
+        title: String,
+        interruptAction: String? = null,
+        interruptDescription: String? = null,
+        isApproval: Boolean = false,
+    ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
             taskId = taskId,
             title = title,
-            timestamp = java.time.Instant.now().toString()
+            timestamp = java.time.Instant.now().toString(),
+            interruptAction = interruptAction,
+            interruptDescription = interruptDescription,
+            isApproval = isApproval,
         ))
     }
 

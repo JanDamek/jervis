@@ -7,11 +7,13 @@ import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
+import com.jervis.service.IDeviceTokenService
 import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IMeetingService
+import com.jervis.service.ITranscriptCorrectionService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
 import com.jervis.service.IProjectGroupService
@@ -27,6 +29,8 @@ import io.ktor.client.plugins.logging.DEFAULT
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.pingInterval
 import io.ktor.http.encodedPath
 import kotlinx.rpc.krpc.ktor.client.KtorRpcClient
 import kotlinx.rpc.krpc.ktor.client.installKrpc
@@ -34,6 +38,7 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Interface for UI applications to handle RPC reconnection.
@@ -70,9 +75,14 @@ object NetworkModule {
             }
 
             install(HttpTimeout) {
-                requestTimeoutMillis = 60_000 // Increased for UI stability
+                requestTimeoutMillis = 120_000
                 connectTimeoutMillis = 20_000
-                socketTimeoutMillis = 60_000
+                socketTimeoutMillis = 120_000
+            }
+
+            install(WebSockets) {
+                pingInterval = 20.seconds
+                maxFrameSize = Long.MAX_VALUE
             }
 
             installKrpc {
@@ -209,6 +219,11 @@ object NetworkModule {
             private set
         var meetingService: IMeetingService = initialRpcClient.withService<IMeetingService>()
             private set
+        var transcriptCorrectionService: ITranscriptCorrectionService =
+            initialRpcClient.withService<ITranscriptCorrectionService>()
+            private set
+        var deviceTokenService: IDeviceTokenService = initialRpcClient.withService<IDeviceTokenService>()
+            private set
 
         fun updateFrom(rpcClient: KtorRpcClient) {
             projectService = rpcClient.withService<IProjectService>()
@@ -229,6 +244,8 @@ object NetworkModule {
             projectGroupService = rpcClient.withService<IProjectGroupService>()
             environmentService = rpcClient.withService<IEnvironmentService>()
             meetingService = rpcClient.withService<IMeetingService>()
+            transcriptCorrectionService = rpcClient.withService<ITranscriptCorrectionService>()
+            deviceTokenService = rpcClient.withService<IDeviceTokenService>()
         }
     }
 

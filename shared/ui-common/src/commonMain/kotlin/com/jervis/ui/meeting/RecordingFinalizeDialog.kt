@@ -133,8 +133,8 @@ internal fun formatDuration(seconds: Long): String {
     val m = (seconds % 3600) / 60
     val s = seconds % 60
     return if (h > 0) {
-        "%d:%02d:%02d".format(h, m, s)
+        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
     } else {
-        "%02d:%02d".format(m, s)
+        "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
     }
 }

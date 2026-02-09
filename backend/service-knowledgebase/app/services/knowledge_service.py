@@ -151,6 +151,36 @@ class KnowledgeService:
     async def analyze_code(self, query: str, workspace_path: str) -> JoernResultDto:
         return await self.joern_client.run(query, workspace_path)
 
+    async def purge(self, source_urn: str) -> dict:
+        """
+        Purge all KB data for a given sourceUrn.
+
+        1. Delete RAG chunks from Weaviate
+        2. Remove chunk references from ArangoDB nodes/edges
+        3. Delete orphaned nodes/edges
+        """
+        logger.info("Purge started sourceUrn=%s", source_urn)
+
+        # 1. Delete RAG chunks
+        chunks_deleted, deleted_ids = await self.rag_service.purge_by_source(source_urn)
+
+        # 2. Clean graph references
+        nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted = \
+            await self.graph_service.purge_chunk_refs(deleted_ids)
+
+        logger.info("Purge complete sourceUrn=%s chunks=%d nodes_cleaned=%d edges_cleaned=%d "
+                     "nodes_deleted=%d edges_deleted=%d",
+                     source_urn, chunks_deleted, nodes_cleaned, edges_cleaned,
+                     nodes_deleted, edges_deleted)
+
+        return {
+            "chunks_deleted": chunks_deleted,
+            "nodes_cleaned": nodes_cleaned,
+            "edges_cleaned": edges_cleaned,
+            "nodes_deleted": nodes_deleted,
+            "edges_deleted": edges_deleted,
+        }
+
     async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
         """
         Retrieve evidence using hybrid RAG + Graph approach.

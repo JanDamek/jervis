@@ -121,6 +121,79 @@ class RagService:
 
         return results
 
+    async def purge_by_source(self, source_urn: str) -> tuple[int, list[str]]:
+        """
+        Delete all RAG chunks matching a sourceUrn.
+
+        Returns:
+            Tuple of (chunks_deleted, list of deleted chunk UUIDs)
+        """
+        collection = self.client.collections.get("KnowledgeChunk")
+        import weaviate.classes.config as wvc
+
+        # Find all chunks with this sourceUrn
+        response = collection.query.fetch_objects(
+            filters=wvc.query.Filter.by_property("sourceUrn").equal(source_urn),
+            limit=10000,
+            return_properties=["sourceUrn"],
+        )
+
+        deleted_ids = []
+        for obj in response.objects:
+            chunk_id = str(obj.uuid)
+            try:
+                collection.data.delete_by_id(obj.uuid)
+                deleted_ids.append(chunk_id)
+            except Exception as e:
+                logger.warning("Failed to delete chunk %s: %s", chunk_id, e)
+
+        logger.info("Purged %d RAG chunks for sourceUrn=%s", len(deleted_ids), source_urn)
+        return len(deleted_ids), deleted_ids
+
+    async def list_by_kind(
+        self,
+        client_id: str,
+        project_id: str | None,
+        kind: str,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List all chunks matching a specific kind, with tenant filtering."""
+        collection = self.client.collections.get("KnowledgeChunk")
+
+        kind_filter = wvc.query.Filter.by_property("kind").equal(kind)
+
+        global_client = wvc.query.Filter.by_property("clientId").equal("")
+        if client_id:
+            my_client = wvc.query.Filter.by_property("clientId").equal(client_id)
+            client_filter = wvc.query.Filter.any_of([global_client, my_client])
+        else:
+            client_filter = global_client
+
+        if project_id:
+            global_project = wvc.query.Filter.by_property("projectId").equal("")
+            my_project = wvc.query.Filter.by_property("projectId").equal(project_id)
+            project_filter = wvc.query.Filter.any_of([global_project, my_project])
+            tenant_filter = wvc.query.Filter.all_of([client_filter, project_filter])
+        else:
+            tenant_filter = client_filter
+
+        filters = wvc.query.Filter.all_of([kind_filter, tenant_filter])
+
+        response = collection.query.fetch_objects(
+            filters=filters,
+            limit=limit,
+            return_properties=["content", "sourceUrn", "clientId", "projectId", "kind"],
+        )
+
+        results = []
+        for obj in response.objects:
+            results.append({
+                "content": obj.properties.get("content", ""),
+                "sourceUrn": obj.properties.get("sourceUrn", ""),
+                "metadata": obj.properties,
+            })
+        return results
+
     async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
         vector = self.embeddings.embed_query(request.query)
         collection = self.client.collections.get("KnowledgeChunk")

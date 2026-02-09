@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
+import com.jervis.ui.notification.ApprovalNotificationDialog
 import com.jervis.ui.screens.*
 
 /**
@@ -62,6 +64,10 @@ fun App(
     }
 
     MaterialTheme {
+      Surface(
+          modifier = Modifier.fillMaxSize(),
+          color = MaterialTheme.colorScheme.background,
+      ) {
         val clients by viewModel.clients.collectAsState()
         val projects by viewModel.projects.collectAsState()
         val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -141,12 +147,17 @@ fun App(
             }
 
             Screen.Meetings -> {
-                val meetingViewModel = remember { com.jervis.ui.meeting.MeetingViewModel(repository.meetings) }
+                val meetingViewModel = remember {
+                    com.jervis.ui.meeting.MeetingViewModel(
+                        repository.meetings,
+                        repository.projects,
+                        repository.transcriptCorrections,
+                    )
+                }
 
                 com.jervis.ui.meeting.MeetingsScreen(
                     viewModel = meetingViewModel,
                     clients = clients,
-                    projects = projects,
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
                     onBack = { appNavigator.navigateTo(Screen.Main) },
@@ -163,6 +174,17 @@ fun App(
         }
 
         SnackbarHost(hostState = snackbarHostState)
+
+        // Approval notification dialog — shown when orchestrator needs approval
+        val approvalEvent by viewModel.approvalDialogEvent.collectAsState()
+        approvalEvent?.let { event ->
+            ApprovalNotificationDialog(
+                event = event,
+                onApprove = { taskId -> viewModel.approveTask(taskId) },
+                onDeny = { taskId, reason -> viewModel.denyTask(taskId, reason) },
+                onDismiss = { viewModel.dismissApprovalDialog() },
+            )
+        }
 
         com.jervis.ui.util.ConfirmDialog(
             visible = showReconnectDialog,
@@ -216,5 +238,6 @@ fun App(
                 }
             }
         }
+      }
     }
 }

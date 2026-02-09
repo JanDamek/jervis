@@ -21,6 +21,9 @@ enum class MeetingStateEnum {
     UPLOADED,
     TRANSCRIBING,
     TRANSCRIBED,
+    CORRECTING,
+    CORRECTION_REVIEW,
+    CORRECTED,
     INDEXED,
     FAILED,
 }
@@ -46,7 +49,29 @@ data class MeetingDto(
     val stoppedAt: String? = null,
     val transcriptText: String? = null,
     val transcriptSegments: List<TranscriptSegmentDto> = emptyList(),
+    val correctedTranscriptText: String? = null,
+    val correctedTranscriptSegments: List<TranscriptSegmentDto> = emptyList(),
+    val correctionQuestions: List<CorrectionQuestionDto> = emptyList(),
     val errorMessage: String? = null,
+)
+
+@Serializable
+data class CorrectionQuestionDto(
+    val questionId: String,
+    val segmentIndex: Int,
+    val originalText: String,
+    val correctionOptions: List<String> = emptyList(),
+    val question: String,
+    val context: String? = null,
+)
+
+@Serializable
+data class CorrectionAnswerDto(
+    val questionId: String,
+    val segmentIndex: Int,
+    val original: String,
+    val corrected: String,
+    val category: String = "general",
 )
 
 @Serializable
@@ -77,6 +102,6 @@ data class AudioChunkDto(
     val meetingId: String,
     val chunkIndex: Int,
     val data: String,
-    val mimeType: String = "audio/webm",
+    val mimeType: String = "audio/wav",
     val isLast: Boolean = false,
 )

@@ -1,3 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jervis-server
+  namespace: jervis
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jervis-server-role
+  namespace: jervis
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jervis-server-binding
+  namespace: jervis
+subjects:
+  - kind: ServiceAccount
+    name: jervis-server
+    namespace: jervis
+roleRef:
+  kind: Role
+  name: jervis-server-role
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,6 +50,7 @@ spec:
       labels:
         app: jervis-server
     spec:
+      serviceAccountName: jervis-server
       containers:
         - name: server
           image: registry.damek-soft.eu/jandamek/jervis-server:latest

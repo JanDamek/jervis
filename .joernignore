@@ -1,0 +1,8 @@
+# Required patterns for Joern analysis
+**/*.class
+**/*.jar
+**/target/**
+**/build/**
+**/.idea/**
+**/out/**
+**/node_modules/**

@@ -65,6 +65,7 @@ class RpcClientsConfig(
                 startKey: String,
                 spec: TraversalSpec,
             ): List<GraphNode> = getKnowledgeService().traverse(clientId, startKey, spec)
+            override suspend fun purge(sourceUrn: String): Boolean = getKnowledgeService().purge(sourceUrn)
         }
 
     @Bean

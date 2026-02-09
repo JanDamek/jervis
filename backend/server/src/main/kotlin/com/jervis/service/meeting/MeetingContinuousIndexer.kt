@@ -17,7 +17,6 @@ import mu.KotlinLogging
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.Duration
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
@@ -26,7 +25,8 @@ private val logger = KotlinLogging.logger {}
  *
  * FLOW:
  * 1. Poll for UPLOADED meetings -> run Whisper transcription -> TRANSCRIBED
- * 2. Poll for TRANSCRIBED meetings -> create MEETING_PROCESSING task for KB ingest -> INDEXED
+ * 2. Poll for TRANSCRIBED meetings -> LLM correction -> CORRECTED
+ * 3. Poll for CORRECTED meetings -> create MEETING_PROCESSING task for KB ingest -> INDEXED
  *
  * Follows the same pattern as EmailContinuousIndexer.
  */
@@ -35,6 +35,7 @@ private val logger = KotlinLogging.logger {}
 class MeetingContinuousIndexer(
     private val meetingRepository: MeetingRepository,
     private val meetingTranscriptionService: MeetingTranscriptionService,
+    private val transcriptCorrectionService: TranscriptCorrectionService,
     private val taskService: TaskService,
 ) {
     private val supervisor = SupervisorJob()
@@ -54,7 +55,13 @@ class MeetingContinuousIndexer(
                 .onFailure { e -> logger.error(e) { "Meeting transcription pipeline crashed" } }
         }
 
-        // Pipeline 2: TRANSCRIBED -> create task -> INDEXED
+        // Pipeline 2: TRANSCRIBED -> LLM correction -> CORRECTED
+        scope.launch {
+            runCatching { correctContinuously() }
+                .onFailure { e -> logger.error(e) { "Meeting correction pipeline crashed" } }
+        }
+
+        // Pipeline 3: CORRECTED -> create task -> INDEXED
         scope.launch {
             runCatching { indexContinuously() }
                 .onFailure { e -> logger.error(e) { "Meeting indexing pipeline crashed" } }
@@ -74,10 +81,23 @@ class MeetingContinuousIndexer(
         }
     }
 
-    // ===== Pipeline 2: KB Indexing =====
+    // ===== Pipeline 2: LLM Correction =====
+
+    private suspend fun correctContinuously() {
+        continuousMeetingsInState(MeetingStateEnum.TRANSCRIBED).collect { meeting ->
+            try {
+                transcriptCorrectionService.correct(meeting)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to correct meeting ${meeting.id}" }
+                markAsFailed(meeting, "Correction error: ${e.message}")
+            }
+        }
+    }
+
+    // ===== Pipeline 3: KB Indexing =====
 
     private suspend fun indexContinuously() {
-        continuousMeetingsInState(MeetingStateEnum.TRANSCRIBED).collect { meeting ->
+        continuousMeetingsInState(MeetingStateEnum.CORRECTED).collect { meeting ->
             try {
                 indexMeeting(meeting)
             } catch (e: Exception) {
@@ -88,14 +108,15 @@ class MeetingContinuousIndexer(
     }
 
     private suspend fun indexMeeting(meeting: MeetingDocument) {
-        require(meeting.state == MeetingStateEnum.TRANSCRIBED) {
-            "Can only index TRANSCRIBED meetings, got: ${meeting.state}"
+        require(meeting.state == MeetingStateEnum.CORRECTED) {
+            "Can only index CORRECTED meetings, got: ${meeting.state}"
         }
 
-        val transcript = meeting.transcriptText
+        // Use corrected transcript, fall back to raw
+        val transcript = meeting.correctedTranscriptText ?: meeting.transcriptText
         if (transcript.isNullOrBlank()) {
             logger.warn { "Meeting ${meeting.id} has no transcript text, marking as FAILED" }
-            markAsFailed(meeting, "No transcript text after transcription")
+            markAsFailed(meeting, "No transcript text after correction")
             return
         }
 
@@ -140,14 +161,16 @@ class MeetingContinuousIndexer(
 
         append("## Transcript\n\n")
 
-        if (meeting.transcriptSegments.isNotEmpty()) {
-            meeting.transcriptSegments.forEach { seg ->
+        // Prefer corrected segments over raw
+        val segments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments }
+        if (segments.isNotEmpty()) {
+            segments.forEach { seg ->
                 val timestamp = formatTimestamp(seg.startSec)
                 val speaker = seg.speaker?.let { "**$it:** " } ?: ""
                 append("[$timestamp] $speaker${seg.text}\n")
             }
         } else {
-            append(meeting.transcriptText ?: "")
+            append(meeting.correctedTranscriptText ?: meeting.transcriptText ?: "")
         }
 
         append("\n\n## Source Metadata\n")

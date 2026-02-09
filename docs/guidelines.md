@@ -451,6 +451,10 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │  Status/activity log (agent workload, live state)?                  │
 │    → Status card + LazyColumn (newest first), in-memory log         │
 │    Example: AgentWorkloadScreen.kt                                  │
+│                                                                     │
+│  CRUD sub-view with category grouping (corrections, per-entity)?    │
+│    → JDetailScreen + LazyColumn grouped by category + dialogs       │
+│    Example: CorrectionsScreen.kt                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -640,10 +644,23 @@ Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
 MeetingsScreen(
     viewModel = meetingViewModel,     // MeetingViewModel(meetingService)
     clients = clients,
-    projects = projects,
     selectedClientId = selectedClientId,
     selectedProjectId = selectedProjectId,
     onBack = { navigator.goBack() },
+)
+
+// MeetingDetailView: transcript display with correction + interactive questions
+MeetingDetailView(
+    meeting = meeting,
+    isPlaying = isPlaying,
+    onBack = { viewModel.selectMeeting(null) },
+    onDelete = { viewModel.deleteMeeting(meeting.id) },
+    onRefresh = { viewModel.refreshMeeting(meeting.id) },
+    onPlayToggle = { viewModel.playAudio(meeting.id) },
+    onRecorrect = { viewModel.recorrectMeeting(meeting.id) },
+    onCorrections = { showCorrections = true },
+    onAnswerQuestions = { answers -> viewModel.answerQuestions(meeting.id, answers) },
+    onSubmitCorrection = { submit -> viewModel.submitCorrectionFromSegment(...) },
 )
 
 // RecordingIndicator: shown on MainScreen during active recording
@@ -659,6 +676,32 @@ recorder.getSystemAudioCapabilities()     // SystemAudioCapability
 recorder.startRecording(config)           // Boolean
 recorder.getAndClearBuffer()              // ByteArray? (for chunked upload)
 recorder.stopRecording()                  // ByteArray?
+```
+
+### Pattern 7: Corrections Screen (Sub-view)
+
+```kotlin
+// CorrectionsScreen: accessible from MeetingDetailView via onCorrections
+CorrectionsScreen(
+    correctionService = viewModel.correctionService,  // ITranscriptCorrectionService? (RPC)
+    clientId = meeting.clientId,
+    projectId = meeting.projectId,
+    onBack = { showCorrections = false },
+    prefilledOriginal = null,  // optional pre-fill from segment click
+)
+
+// CorrectionViewModel: manages KB-stored correction rules
+class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
+    val corrections: StateFlow<List<TranscriptCorrectionDto>>
+    val isLoading: StateFlow<Boolean>
+
+    fun loadCorrections(clientId, projectId)
+    fun submitCorrection(submit, clientId, projectId)
+    fun deleteCorrection(sourceUrn, clientId, projectId)
+}
+
+// CorrectionQuestionsCard: shown in MeetingDetailView when state == CORRECTION_REVIEW
+// Displays agent questions with options + free text input, submit button
 ```
 
 ### Shared Form Helpers

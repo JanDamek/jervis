@@ -12,6 +12,10 @@ sealed class JervisEvent {
         val taskId: String,
         val title: String,
         override val timestamp: String,
+        // Approval metadata (backward compatible – CBOR defaults)
+        val interruptAction: String? = null,
+        val interruptDescription: String? = null,
+        val isApproval: Boolean = false,
     ) : JervisEvent()
 
     @Serializable

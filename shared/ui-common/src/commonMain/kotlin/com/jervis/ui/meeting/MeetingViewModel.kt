@@ -1,12 +1,17 @@
 package com.jervis.ui.meeting
 
+import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
+import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingTypeEnum
+import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.service.IMeetingService
+import com.jervis.service.IProjectService
+import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import kotlinx.coroutines.CoroutineScope
@@ -23,11 +28,16 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 
 class MeetingViewModel(
     private val meetingService: IMeetingService,
+    private val projectService: IProjectService,
+    internal val correctionService: com.jervis.service.ITranscriptCorrectionService? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val _meetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val meetings: StateFlow<List<MeetingDto>> = _meetings.asStateFlow()
+
+    private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
+    val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -47,16 +57,25 @@ class MeetingViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _playingMeetingId = MutableStateFlow<String?>(null)
+    val playingMeetingId: StateFlow<String?> = _playingMeetingId.asStateFlow()
+
+    /** Set to true after audio upload succeeds, signals the UI to show finalize dialog */
+    private val _readyToFinalize = MutableStateFlow(false)
+    val readyToFinalize: StateFlow<Boolean> = _readyToFinalize.asStateFlow()
+
     private var audioRecorder: AudioRecorder? = null
-    private var chunkUploadJob: Job? = null
+    private var audioPlayer: AudioPlayer? = null
     private var durationUpdateJob: Job? = null
+    private var playbackMonitorJob: Job? = null
     private var chunkIndex = 0
 
-    companion object {
-        private const val CHUNK_INTERVAL_MS = 30_000L
-    }
+    private var lastClientId: String? = null
+    private var lastProjectId: String? = null
 
     fun loadMeetings(clientId: String, projectId: String? = null) {
+        lastClientId = clientId
+        lastProjectId = projectId
         scope.launch {
             _isLoading.value = true
             try {
@@ -70,14 +89,27 @@ class MeetingViewModel(
         }
     }
 
+    fun loadProjects(clientId: String) {
+        scope.launch {
+            try {
+                _projects.value = projectService.listProjectsForClient(clientId)
+            } catch (_: Exception) {
+                _projects.value = emptyList()
+            }
+        }
+    }
+
     fun startRecording(
         clientId: String,
         projectId: String? = null,
         audioInputType: AudioInputType = AudioInputType.MIXED,
         recordingConfig: AudioRecordingConfig = AudioRecordingConfig(),
     ) {
+        lastClientId = clientId
+        lastProjectId = projectId
         scope.launch {
             try {
+                println("[Meeting] Starting recording for client=$clientId project=$projectId")
                 val meeting = meetingService.startRecording(
                     MeetingCreateDto(
                         clientId = clientId,
@@ -86,10 +118,12 @@ class MeetingViewModel(
                     ),
                 )
                 _currentMeetingId.value = meeting.id
+                println("[Meeting] Server created meeting: ${meeting.id}")
 
                 val recorder = AudioRecorder()
                 val started = recorder.startRecording(recordingConfig)
                 if (!started) {
+                    println("[Meeting] AudioRecorder failed to start")
                     _error.value = "Nepodařilo se spustit nahrávání zvuku"
                     meetingService.cancelRecording(meeting.id)
                     _currentMeetingId.value = null
@@ -98,11 +132,13 @@ class MeetingViewModel(
 
                 audioRecorder = recorder
                 _isRecording.value = true
+                _readyToFinalize.value = false
                 chunkIndex = 0
 
-                startChunkUpload(meeting.id)
+                println("[Meeting] Recording started successfully")
                 startDurationUpdate()
             } catch (e: Exception) {
+                println("[Meeting] Error starting recording: ${e.message}")
                 _error.value = "Chyba při spouštění nahrávání: ${e.message}"
             }
         }
@@ -110,24 +146,57 @@ class MeetingViewModel(
 
     fun stopRecording() {
         scope.launch {
-            chunkUploadJob?.cancel()
             durationUpdateJob?.cancel()
-            _isRecording.value = false
 
-            val recorder = audioRecorder ?: return@launch
-            val meetingId = _currentMeetingId.value ?: return@launch
+            val recorder = audioRecorder ?: run {
+                println("[Meeting] stopRecording: no audioRecorder, skipping")
+                _isRecording.value = false
+                return@launch
+            }
+            val meetingId = _currentMeetingId.value ?: run {
+                println("[Meeting] stopRecording: no currentMeetingId, skipping")
+                _isRecording.value = false
+                return@launch
+            }
+
+            println("[Meeting] Stopping recording for meeting=$meetingId")
 
             try {
-                // Get remaining audio data
-                val remainingData = recorder.stopRecording()
-                if (remainingData != null && remainingData.isNotEmpty()) {
-                    uploadChunk(meetingId, remainingData, isLast = true)
+                val audioData = recorder.stopRecording()
+                println("[Meeting] AudioRecorder returned ${audioData?.size ?: 0} bytes")
+
+                if (audioData != null && audioData.size > 44) {
+                    val uploaded = uploadChunk(meetingId, audioData, isLast = true)
+                    if (uploaded) {
+                        println("[Meeting] Upload succeeded, ready to finalize")
+                        _readyToFinalize.value = true
+                    } else {
+                        println("[Meeting] Upload failed, cancelling meeting")
+                        try {
+                            meetingService.cancelRecording(meetingId)
+                        } catch (_: Exception) {}
+                        _currentMeetingId.value = null
+                    }
+                } else {
+                    println("[Meeting] No audio data captured (${audioData?.size ?: 0} bytes), cancelling")
+                    _error.value = "Nahrávání nezachytilo žádná data"
+                    try {
+                        meetingService.cancelRecording(meetingId)
+                    } catch (_: Exception) {}
+                    _currentMeetingId.value = null
                 }
             } catch (e: Exception) {
+                println("[Meeting] Error in stopRecording: ${e.message}")
+                e.printStackTrace()
                 _error.value = "Chyba při zastavení nahrávání: ${e.message}"
+                try {
+                    meetingService.cancelRecording(meetingId)
+                } catch (_: Exception) {}
+                _currentMeetingId.value = null
             } finally {
                 recorder.release()
                 audioRecorder = null
+                _isRecording.value = false
             }
         }
     }
@@ -141,7 +210,8 @@ class MeetingViewModel(
 
         scope.launch {
             try {
-                val result = meetingService.finalizeRecording(
+                println("[Meeting] Finalizing meeting=$meetingId title=$title type=$meetingType duration=${duration}s")
+                meetingService.finalizeRecording(
                     MeetingFinalizeDto(
                         meetingId = meetingId,
                         title = title,
@@ -151,11 +221,12 @@ class MeetingViewModel(
                 )
                 _currentMeetingId.value = null
                 _recordingDuration.value = 0
+                _readyToFinalize.value = false
 
-                // Refresh meetings list
-                _meetings.value = _meetings.value.map { if (it.id == result.id) result else it } +
-                    if (_meetings.value.none { it.id == result.id }) listOf(result) else emptyList()
+                lastClientId?.let { loadMeetings(it, lastProjectId) }
+                println("[Meeting] Finalization complete")
             } catch (e: Exception) {
+                println("[Meeting] Error finalizing: ${e.message}")
                 _error.value = "Chyba při dokončování nahrávky: ${e.message}"
             }
         }
@@ -164,10 +235,10 @@ class MeetingViewModel(
     fun cancelRecording() {
         val meetingId = _currentMeetingId.value ?: return
 
-        chunkUploadJob?.cancel()
         durationUpdateJob?.cancel()
         _isRecording.value = false
         _recordingDuration.value = 0
+        _readyToFinalize.value = false
 
         audioRecorder?.release()
         audioRecorder = null
@@ -175,11 +246,52 @@ class MeetingViewModel(
         scope.launch {
             try {
                 meetingService.cancelRecording(meetingId)
-            } catch (_: Exception) {
-                // Ignore cancel errors
-            }
+            } catch (_: Exception) {}
             _currentMeetingId.value = null
         }
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    fun playAudio(meetingId: String) {
+        if (_playingMeetingId.value == meetingId) {
+            stopPlayback()
+            return
+        }
+        stopPlayback()
+
+        _playingMeetingId.value = meetingId
+        scope.launch {
+            try {
+                val base64Data = meetingService.getAudioData(meetingId)
+                val audioBytes = Base64.decode(base64Data)
+                val player = AudioPlayer()
+                audioPlayer = player
+                player.play(audioBytes)
+
+                // Monitor playback completion
+                playbackMonitorJob?.cancel()
+                playbackMonitorJob = scope.launch {
+                    while (audioPlayer?.isPlaying == true) {
+                        delay(500)
+                    }
+                    if (_playingMeetingId.value == meetingId) {
+                        _playingMeetingId.value = null
+                    }
+                }
+            } catch (e: Exception) {
+                _error.value = "Chyba při přehrávání: ${e.message}"
+                _playingMeetingId.value = null
+            }
+        }
+    }
+
+    fun stopPlayback() {
+        playbackMonitorJob?.cancel()
+        playbackMonitorJob = null
+        audioPlayer?.stop()
+        audioPlayer?.release()
+        audioPlayer = null
+        _playingMeetingId.value = null
     }
 
     fun selectMeeting(meeting: MeetingDto?) {
@@ -194,9 +306,7 @@ class MeetingViewModel(
                 if (_selectedMeeting.value?.id == meetingId) {
                     _selectedMeeting.value = updated
                 }
-            } catch (_: Exception) {
-                // Ignore refresh errors
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -214,29 +324,65 @@ class MeetingViewModel(
         }
     }
 
+    fun recorrectMeeting(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.recorrectMeeting(meetingId)
+                refreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba pri oprave prepisu: ${e.message}"
+            }
+        }
+    }
+
+    fun reindexMeeting(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.reindexMeeting(meetingId)
+                refreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba pri reindexaci: ${e.message}"
+            }
+        }
+    }
+
+    fun answerQuestions(meetingId: String, answers: List<CorrectionAnswerDto>) {
+        scope.launch {
+            try {
+                meetingService.answerCorrectionQuestions(meetingId, answers)
+                refreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba pri odesilani odpovedi: ${e.message}"
+            }
+        }
+    }
+
+    fun submitCorrectionFromSegment(
+        clientId: String,
+        projectId: String?,
+        submit: TranscriptCorrectionSubmitDto,
+    ) {
+        scope.launch {
+            try {
+                correctionService?.submitCorrection(
+                    submit.copy(clientId = clientId, projectId = projectId),
+                )
+            } catch (e: Exception) {
+                _error.value = "Chyba pri ukladani korekce: ${e.message}"
+            }
+        }
+    }
+
     fun clearError() {
         _error.value = null
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    private fun startChunkUpload(meetingId: String) {
-        chunkUploadJob = scope.launch {
-            while (_isRecording.value) {
-                delay(CHUNK_INTERVAL_MS)
-                if (!_isRecording.value) break
-
-                val data = audioRecorder?.getAndClearBuffer() ?: continue
-                if (data.isNotEmpty()) {
-                    uploadChunk(meetingId, data, isLast = false)
-                }
-            }
-        }
-    }
-
-    @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun uploadChunk(meetingId: String, data: ByteArray, isLast: Boolean) {
-        try {
+    private suspend fun uploadChunk(meetingId: String, data: ByteArray, isLast: Boolean): Boolean {
+        return try {
+            println("[Meeting] Encoding ${data.size} bytes to Base64...")
             val base64Data = Base64.encode(data)
+            println("[Meeting] Base64 size: ${base64Data.length} chars, sending to server...")
             meetingService.uploadAudioChunk(
                 AudioChunkDto(
                     meetingId = meetingId,
@@ -245,8 +391,13 @@ class MeetingViewModel(
                     isLast = isLast,
                 ),
             )
+            println("[Meeting] Upload chunk sent successfully")
+            true
         } catch (e: Exception) {
-            _error.value = "Chyba při odesílání zvukového bloku: ${e.message}"
+            println("[Meeting] Upload chunk FAILED: ${e::class.simpleName}: ${e.message}")
+            e.printStackTrace()
+            _error.value = "Chyba při odesílání zvuku: ${e.message}"
+            false
         }
     }
 

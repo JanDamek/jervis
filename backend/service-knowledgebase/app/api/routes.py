@@ -3,7 +3,9 @@ from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
     FullIngestRequest, FullIngestResult,
-    HybridRetrievalRequest, HybridEvidenceItem, HybridEvidencePack
+    HybridRetrievalRequest, HybridEvidenceItem, HybridEvidencePack,
+    PurgeRequest, PurgeResult,
+    ListByKindRequest,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -52,6 +54,15 @@ async def ingest_file(
 async def crawl(request: CrawlRequest):
     try:
         return await service.crawl(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/purge", response_model=PurgeResult)
+async def purge(request: PurgeRequest):
+    """Delete all RAG chunks and clean graph refs for a sourceUrn."""
+    try:
+        result = await service.purge(request.sourceUrn)
+        return PurgeResult(status="success", **result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -320,5 +331,20 @@ async def ingest_full(
             attachment_list.append((file_bytes, attachment.filename))
 
         return await service.ingest_full(request, attachment_list)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chunks/by-kind")
+async def list_chunks_by_kind(request: ListByKindRequest):
+    """List all RAG chunks matching a specific kind with tenant filtering."""
+    try:
+        results = await service.rag_service.list_by_kind(
+            client_id=request.clientId,
+            project_id=request.projectId,
+            kind=request.kind,
+            limit=request.maxResults,
+        )
+        return {"chunks": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

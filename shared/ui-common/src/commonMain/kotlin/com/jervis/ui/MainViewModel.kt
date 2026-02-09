@@ -5,10 +5,15 @@ import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.events.JervisEvent
+import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.model.AgentActivityEntry
 import com.jervis.ui.model.AgentActivityLog
+import com.jervis.ui.notification.NotificationAction
+import com.jervis.ui.notification.NotificationActionChannel
+import com.jervis.ui.notification.PlatformNotificationManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -132,6 +137,13 @@ class MainViewModel(
     // Track previous running state for transition detection
     private var previousRunningProjectId: String? = null
 
+    // Approval dialog state — shown when orchestrator interrupt arrives
+    private val _approvalDialogEvent = MutableStateFlow<JervisEvent.UserTaskCreated?>(null)
+    val approvalDialogEvent: StateFlow<JervisEvent.UserTaskCreated?> = _approvalDialogEvent.asStateFlow()
+
+    // Platform notification manager
+    val notificationManager = PlatformNotificationManager()
+
     private var chatJob: Job? = null
     private var eventJob: Job? = null
     private var queueStatusJob: Job? = null
@@ -140,6 +152,9 @@ class MainViewModel(
     private var isReconnecting = false
 
     init {
+        // Initialize notifications
+        notificationManager.initialize()
+
         // Load initial data
         loadClients()
 
@@ -171,6 +186,37 @@ class MainViewModel(
                 }
             }
         }
+
+        // Collect notification action results from platform-specific handlers
+        scope.launch {
+            NotificationActionChannel.actions.collect { result ->
+                when (result.action) {
+                    NotificationAction.APPROVE -> {
+                        try {
+                            repository.userTasks.sendToAgent(
+                                taskId = result.taskId,
+                                routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                                additionalInput = null,
+                            )
+                        } catch (e: Exception) {
+                            println("Failed to approve task ${result.taskId}: ${e.message}")
+                            _errorMessage.value = "Schválení selhalo: ${e.message}"
+                        }
+                        _approvalDialogEvent.value = null
+                    }
+                    NotificationAction.DENY -> {
+                        // Deny from notification → show in-app dialog for reason input
+                        // The approval dialog will handle the actual deny with reason
+                        _approvalDialogEvent.value?.let { event ->
+                            // Already showing dialog, user will provide reason there
+                        }
+                    }
+                    NotificationAction.OPEN -> {
+                        // Navigate to user tasks — handled by UI layer
+                    }
+                }
+            }
+        }
     }
 
     private fun subscribeToEventStream(clientId: String) {
@@ -195,24 +241,41 @@ class MainViewModel(
             }
     }
 
-    private fun handleGlobalEvent(event: com.jervis.dto.events.JervisEvent) {
+    private fun handleGlobalEvent(event: JervisEvent) {
         println("Received global event: ${event::class.simpleName}")
         val currentNotifications = _notifications.value
         when (event) {
-            is com.jervis.dto.events.JervisEvent.UserTaskCreated -> {
-                // UI update or notification
-                _notifications.value = currentNotifications + (event as com.jervis.dto.events.JervisEvent)
+            is JervisEvent.UserTaskCreated -> {
+                _notifications.value = currentNotifications + event
+
+                // Show platform notification
+                notificationManager.showNotification(
+                    title = if (event.isApproval) "Schválení vyžadováno" else "Nová úloha",
+                    body = event.title,
+                    taskId = event.taskId,
+                    isApproval = event.isApproval,
+                    interruptAction = event.interruptAction,
+                )
+
+                // Show in-app approval dialog for approval events
+                if (event.isApproval) {
+                    _approvalDialogEvent.value = event
+                }
             }
 
-            is com.jervis.dto.events.JervisEvent.UserTaskCancelled -> {
-                // Remove from notifications if needed or just let it be
+            is JervisEvent.UserTaskCancelled -> {
                 _notifications.value =
                     currentNotifications.filter {
-                        !(it is com.jervis.dto.events.JervisEvent.UserTaskCreated && it.taskId == event.taskId)
+                        !(it is JervisEvent.UserTaskCreated && it.taskId == event.taskId)
                     }
+                notificationManager.cancelNotification(event.taskId)
+                // Dismiss approval dialog if this task was cancelled
+                if (_approvalDialogEvent.value?.taskId == event.taskId) {
+                    _approvalDialogEvent.value = null
+                }
             }
 
-            is com.jervis.dto.events.JervisEvent.ErrorNotification -> {
+            is JervisEvent.ErrorNotification -> {
                 _errorMessage.value = "Server error: ${event.message}"
             }
 
@@ -220,6 +283,53 @@ class MainViewModel(
                 // Ignore others or handle as needed
             }
         }
+    }
+
+    /**
+     * Approve an approval request from the in-app dialog.
+     */
+    fun approveTask(taskId: String) {
+        scope.launch {
+            try {
+                repository.userTasks.sendToAgent(
+                    taskId = taskId,
+                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                    additionalInput = null,
+                )
+                _approvalDialogEvent.value = null
+                notificationManager.cancelNotification(taskId)
+            } catch (e: Exception) {
+                _errorMessage.value = "Schválení selhalo: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Deny an approval request with a reason from the in-app dialog.
+     * The reason becomes a clarification user task for the orchestrator.
+     */
+    fun denyTask(taskId: String, reason: String) {
+        scope.launch {
+            try {
+                repository.userTasks.sendToAgent(
+                    taskId = taskId,
+                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                    additionalInput = reason,
+                )
+                _approvalDialogEvent.value = null
+                notificationManager.cancelNotification(taskId)
+            } catch (e: Exception) {
+                _errorMessage.value = "Zamítnutí selhalo: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Dismiss the approval dialog without action.
+     * The task remains in the user tasks list.
+     */
+    fun dismissApprovalDialog() {
+        _approvalDialogEvent.value = null
     }
 
     private fun subscribeToQueueStatus(clientId: String) {

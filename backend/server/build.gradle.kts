@@ -129,8 +129,14 @@ dependencies {
     // JTokkit for token counting
     implementation(libs.jtokkit)
 
+    // Firebase Admin SDK for FCM push notifications
+    implementation(libs.firebase.admin)
+
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
+
+    // Kubernetes client for creating K8s Jobs (Whisper, etc.)
+    implementation(libs.fabric8.kubernetes.client)
 
 
     testImplementation(libs.jupiter.junit.jupiter)

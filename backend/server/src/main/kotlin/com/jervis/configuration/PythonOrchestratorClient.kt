@@ -157,7 +157,178 @@ class PythonOrchestratorClient(baseUrl: String) {
      * SSE stream URL for a given thread.
      */
     fun streamUrl(threadId: String): String = "$apiBaseUrl/stream/$threadId"
+
+    // --- Transcript Correction Agent ---
+
+    /**
+     * Submit a correction rule to the correction agent.
+     * Stores it in KB as a chunk with kind="transcript_correction".
+     */
+    suspend fun submitCorrection(request: CorrectionSubmitRequestDto): CorrectionSubmitResultDto {
+        logger.info { "CORRECTION_SUBMIT: '${request.original}' -> '${request.corrected}'" }
+        return client.post("$apiBaseUrl/correction/submit") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
+     * Correct transcript segments using KB-stored corrections + Ollama GPU.
+     */
+    suspend fun correctTranscript(request: CorrectionRequestDto): CorrectionResultDto {
+        logger.info { "CORRECTION_CORRECT: ${request.segments.size} segments" }
+        return client.post("$apiBaseUrl/correction/correct") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
+     * List all stored corrections for a client/project.
+     */
+    suspend fun listCorrections(request: CorrectionListRequestDto): CorrectionListResultDto {
+        logger.info { "CORRECTION_LIST: clientId=${request.clientId}" }
+        return client.post("$apiBaseUrl/correction/list") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
+     * Submit user answers to correction questions as new KB correction rules.
+     */
+    suspend fun answerCorrectionQuestions(request: CorrectionAnswerRequestDto): Boolean {
+        logger.info { "CORRECTION_ANSWER: ${request.answers.size} answers" }
+        return try {
+            client.post("$apiBaseUrl/correction/answer") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            true
+        } catch (e: Exception) {
+            logger.error { "CORRECTION_ANSWER_FAIL: ${e.message}" }
+            false
+        }
+    }
+
+    /**
+     * Delete a correction rule from KB.
+     */
+    suspend fun deleteCorrection(sourceUrn: String): Boolean {
+        logger.info { "CORRECTION_DELETE: $sourceUrn" }
+        return try {
+            client.post("$apiBaseUrl/correction/delete") {
+                contentType(ContentType.Application.Json)
+                setBody(CorrectionDeleteRequestDto(sourceUrn))
+            }
+            true
+        } catch (e: Exception) {
+            logger.error { "CORRECTION_DELETE_FAIL: $sourceUrn ${e.message}" }
+            false
+        }
+    }
 }
+
+// --- Correction Agent DTOs ---
+
+@Serializable
+data class CorrectionSubmitRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    val original: String,
+    val corrected: String,
+    val category: String = "general",
+    val context: String? = null,
+)
+
+@Serializable
+data class CorrectionSubmitResultDto(
+    @SerialName("correctionId") val correctionId: String,
+    @SerialName("sourceUrn") val sourceUrn: String,
+    val status: String,
+)
+
+@Serializable
+data class CorrectionRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    val segments: List<CorrectionSegmentDto>,
+    @SerialName("chunkSize") val chunkSize: Int = 20,
+)
+
+@Serializable
+data class CorrectionSegmentDto(
+    val i: Int,
+    @SerialName("startSec") val startSec: Double,
+    @SerialName("endSec") val endSec: Double,
+    val text: String,
+    val speaker: String? = null,
+)
+
+@Serializable
+data class CorrectionResultDto(
+    val segments: List<CorrectionSegmentDto>,
+    val questions: List<CorrectionQuestionPythonDto> = emptyList(),
+    val status: String,
+)
+
+@Serializable
+data class CorrectionQuestionPythonDto(
+    val id: String,
+    val i: Int,
+    val original: String,
+    val question: String,
+    val options: List<String> = emptyList(),
+    val context: String? = null,
+)
+
+@Serializable
+data class CorrectionAnswerRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    val answers: List<CorrectionAnswerItemDto>,
+)
+
+@Serializable
+data class CorrectionAnswerItemDto(
+    val original: String,
+    val corrected: String,
+    val category: String = "general",
+    val context: String? = null,
+)
+
+@Serializable
+data class CorrectionListRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    @SerialName("maxResults") val maxResults: Int = 100,
+)
+
+@Serializable
+data class CorrectionListResultDto(
+    val corrections: List<CorrectionChunkDto> = emptyList(),
+)
+
+@Serializable
+data class CorrectionChunkDto(
+    val content: String = "",
+    @SerialName("sourceUrn") val sourceUrn: String = "",
+    val metadata: CorrectionChunkMetadataDto = CorrectionChunkMetadataDto(),
+)
+
+@Serializable
+data class CorrectionChunkMetadataDto(
+    val original: String = "",
+    val corrected: String = "",
+    val category: String = "general",
+    val context: String = "",
+    @SerialName("correctionId") val correctionId: String = "",
+)
+
+@Serializable
+data class CorrectionDeleteRequestDto(
+    @SerialName("sourceUrn") val sourceUrn: String,
+)
 
 // --- DTOs for Python Orchestrator ---
 

@@ -40,6 +40,8 @@ class KtorRpcServer(
     private val integrationSettingsRpcImpl: IntegrationSettingsRpcImpl,
     private val codingAgentSettingsRpcImpl: CodingAgentSettingsRpcImpl,
     private val meetingRpcImpl: MeetingRpcImpl,
+    private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
+    private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val properties: KtorClientProperties,
 ) {
@@ -54,7 +56,9 @@ class KtorRpcServer(
             try {
                 server =
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
-                        install(WebSockets)
+                        install(WebSockets) {
+                            maxFrameSize = Long.MAX_VALUE
+                        }
 
                         routing {
                             get("/") {
@@ -165,6 +169,8 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IIntegrationSettingsService> { integrationSettingsRpcImpl }
                                 registerService<com.jervis.service.ICodingAgentSettingsService> { codingAgentSettingsRpcImpl }
                                 registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
+                                registerService<com.jervis.service.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
+                                registerService<com.jervis.service.IDeviceTokenService> { deviceTokenRpcImpl }
                             }
                         }
                     }

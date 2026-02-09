@@ -188,6 +188,31 @@ class FullIngestResult(BaseModel):
     suggestedActions: List[str] = []  # e.g., ["reply_email", "review_code"]
 
 
+# === Purge Models ===
+
+class PurgeRequest(BaseModel):
+    """
+    Request to purge all KB data for a given sourceUrn.
+
+    Removes:
+    - All Weaviate RAG chunks matching sourceUrn
+    - References to those chunks from ArangoDB graph nodes and edges
+    - Orphaned nodes/edges that have no remaining evidence
+    """
+    sourceUrn: str
+    clientId: str = ""
+
+
+class PurgeResult(BaseModel):
+    """Result of a purge operation."""
+    status: str
+    chunks_deleted: int = 0
+    nodes_cleaned: int = 0
+    edges_cleaned: int = 0
+    nodes_deleted: int = 0
+    edges_deleted: int = 0
+
+
 # === Advanced Retrieval Models ===
 
 class HybridRetrievalRequest(BaseModel):
@@ -244,4 +269,15 @@ class HybridEvidencePack(BaseModel):
     totalFound: int = 0
     queryEntities: List[str] = []      # Entities extracted from query
     seedNodes: List[str] = []          # Seed nodes used for expansion
+
+
+
+# === KB Kind Listing Models ===
+
+class ListByKindRequest(BaseModel):
+    """Request to list all chunks of a specific kind."""
+    clientId: str = ""
+    projectId: Optional[str] = None
+    kind: str
+    maxResults: int = 100
 

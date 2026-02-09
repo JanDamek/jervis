@@ -11,10 +11,7 @@ package com.jervis.ui.audio
  */
 actual class AudioRecorder actual constructor() {
 
-    @Volatile
     private var _isRecording = false
-
-    @Volatile
     private var startTimeMs = 0L
 
     actual fun getAvailableInputDevices(): List<AudioDevice> {
@@ -52,11 +49,7 @@ actual class AudioRecorder actual constructor() {
         get() = _isRecording
 
     actual val durationSeconds: Long
-        get() = if (_isRecording) {
-            (platform.Foundation.NSDate().timeIntervalSince1970.toLong() * 1000 - startTimeMs) / 1000
-        } else {
-            0
-        }
+        get() = 0L
 
     actual fun release() {
         _isRecording = false

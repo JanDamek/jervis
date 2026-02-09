@@ -1,7 +1,9 @@
 package com.jervis.ui.meeting
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,15 +12,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,16 +42,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.MeetingTypeEnum
+import com.jervis.dto.meeting.CorrectionAnswerDto
+import com.jervis.dto.meeting.CorrectionQuestionDto
+import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
-import com.jervis.ui.audio.AudioDevice
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.design.JCenteredLoading
@@ -45,54 +62,113 @@ import com.jervis.ui.design.JDetailScreen
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
+import kotlinx.coroutines.delay
 
 /**
  * Meetings screen - list of recordings with detail view.
  * Supports starting new recordings, viewing transcripts, and managing meetings.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeetingsScreen(
     viewModel: MeetingViewModel,
     clients: List<ClientDto>,
-    projects: List<ProjectDto>,
     selectedClientId: String?,
     selectedProjectId: String?,
     onBack: () -> Unit,
 ) {
     val meetings by viewModel.meetings.collectAsState()
+    val vmProjects by viewModel.projects.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
     val recordingDuration by viewModel.recordingDuration.collectAsState()
     val selectedMeeting by viewModel.selectedMeeting.collectAsState()
     val currentMeetingId by viewModel.currentMeetingId.collectAsState()
+    val playingMeetingId by viewModel.playingMeetingId.collectAsState()
+    val readyToFinalize by viewModel.readyToFinalize.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // Filter state — pre-filled from main window selection
+    var filterClientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id) }
+    var filterProjectId by remember { mutableStateOf<String?>(selectedProjectId) }
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showFinalizeDialog by remember { mutableStateOf(false) }
     val audioRecorder = remember { AudioRecorder() }
 
-    // Load meetings when screen opens or client changes
-    LaunchedEffect(selectedClientId, selectedProjectId) {
-        selectedClientId?.let { viewModel.loadMeetings(it, selectedProjectId) }
+    // Load meetings + projects when filter changes
+    LaunchedEffect(filterClientId, filterProjectId) {
+        filterClientId?.let { clientId ->
+            viewModel.loadMeetings(clientId, filterProjectId)
+            viewModel.loadProjects(clientId)
+        }
     }
 
-    // Show finalize dialog when recording stops
-    LaunchedEffect(isRecording, currentMeetingId) {
-        if (!isRecording && currentMeetingId != null) {
+    // Show finalize dialog when upload succeeds
+    LaunchedEffect(readyToFinalize) {
+        if (readyToFinalize) {
             showFinalizeDialog = true
         }
     }
 
+    // Corrections sub-view state
+    var showCorrections by remember { mutableStateOf(false) }
+
     // Detail view
     val currentDetail = selectedMeeting
     if (currentDetail != null) {
+        if (showCorrections) {
+            CorrectionsScreen(
+                correctionService = viewModel.correctionService,
+                clientId = currentDetail.clientId,
+                projectId = currentDetail.projectId,
+                onBack = { showCorrections = false },
+            )
+            return
+        }
+
+        // Auto-refresh while meeting is in a processing state
+        val isProcessing = currentDetail.state in listOf(
+            MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBING,
+            MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING,
+            MeetingStateEnum.CORRECTION_REVIEW,
+        )
+        LaunchedEffect(currentDetail.id, isProcessing) {
+            if (isProcessing) {
+                while (true) {
+                    delay(5000)
+                    viewModel.refreshMeeting(currentDetail.id)
+                }
+            }
+        }
+
         MeetingDetailView(
             meeting = currentDetail,
+            isPlaying = playingMeetingId == currentDetail.id,
             onBack = { viewModel.selectMeeting(null) },
             onDelete = { viewModel.deleteMeeting(currentDetail.id) },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
+            onPlayToggle = { viewModel.playAudio(currentDetail.id) },
+            onRecorrect = { viewModel.recorrectMeeting(currentDetail.id) },
+            onReindex = { viewModel.reindexMeeting(currentDetail.id) },
+            onCorrections = { showCorrections = true },
+            onAnswerQuestions = { answers -> viewModel.answerQuestions(currentDetail.id, answers) },
+            onSubmitCorrection = { submit ->
+                viewModel.submitCorrectionFromSegment(
+                    clientId = currentDetail.clientId,
+                    projectId = currentDetail.projectId,
+                    submit = submit,
+                )
+            },
         )
         return
+    }
+
+    // Filter out the currently recording meeting from the list
+    val displayedMeetings = if (currentMeetingId != null) {
+        meetings.filter { it.id != currentMeetingId }
+    } else {
+        meetings
     }
 
     // List view
@@ -104,7 +180,7 @@ fun MeetingsScreen(
                 actions = {
                     IconButton(
                         onClick = { showSetupDialog = true },
-                        enabled = selectedClientId != null && !isRecording,
+                        enabled = !isRecording,
                     ) {
                         Text("+", style = MaterialTheme.typography.headlineMedium)
                     }
@@ -113,10 +189,24 @@ fun MeetingsScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
         ) {
+            // Client/Project filter
+            ClientProjectFilter(
+                clients = clients,
+                projects = vmProjects,
+                selectedClientId = filterClientId,
+                selectedProjectId = filterProjectId,
+                onClientSelected = { id ->
+                    filterClientId = id
+                    filterProjectId = null
+                },
+                onProjectSelected = { id -> filterProjectId = id },
+            )
+
             // Recording indicator (when recording)
             if (isRecording) {
                 RecordingIndicator(
@@ -137,18 +227,30 @@ fun MeetingsScreen(
 
             // Content
             when {
-                isLoading -> JCenteredLoading()
-                meetings.isEmpty() -> JEmptyState(message = "Zatim zadne nahravky", icon = "🎙")
+                filterClientId == null -> {
+                    JEmptyState(message = "Vyberte klienta", icon = "")
+                }
+
+                isLoading -> {
+                    JCenteredLoading()
+                }
+
+                displayedMeetings.isEmpty() && !isRecording -> {
+                    JEmptyState(message = "Zatim zadne nahravky", icon = "")
+                }
+
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(meetings, key = { it.id }) { meeting ->
+                        items(displayedMeetings, key = { it.id }) { meeting ->
                             MeetingListItem(
                                 meeting = meeting,
+                                isPlaying = playingMeetingId == meeting.id,
                                 onClick = { viewModel.selectMeeting(meeting) },
+                                onPlayToggle = { viewModel.playAudio(meeting.id) },
                             )
                         }
                     }
@@ -161,9 +263,9 @@ fun MeetingsScreen(
     if (showSetupDialog) {
         RecordingSetupDialog(
             clients = clients,
-            projects = projects,
-            selectedClientId = selectedClientId,
-            selectedProjectId = selectedProjectId,
+            projects = vmProjects,
+            selectedClientId = filterClientId,
+            selectedProjectId = filterProjectId,
             audioDevices = audioRecorder.getAvailableInputDevices(),
             systemAudioCapability = audioRecorder.getSystemAudioCapabilities(),
             onStart = { clientId, projectId, audioInputType, selectedDevice ->
@@ -172,10 +274,11 @@ fun MeetingsScreen(
                     clientId = clientId,
                     projectId = projectId,
                     audioInputType = audioInputType,
-                    recordingConfig = AudioRecordingConfig(
-                        inputDevice = selectedDevice,
-                        captureSystemAudio = audioInputType == AudioInputType.MIXED,
-                    ),
+                    recordingConfig =
+                        AudioRecordingConfig(
+                            inputDevice = selectedDevice,
+                            captureSystemAudio = audioInputType == AudioInputType.MIXED,
+                        ),
                 )
             },
             onDismiss = { showSetupDialog = false },
@@ -198,24 +301,136 @@ fun MeetingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientProjectFilter(
+    clients: List<ClientDto>,
+    projects: List<com.jervis.dto.ProjectDto>,
+    selectedClientId: String?,
+    selectedProjectId: String?,
+    onClientSelected: (String) -> Unit,
+    onProjectSelected: (String?) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Client dropdown
+        var clientExpanded by remember { mutableStateOf(false) }
+        ExposedDropdownMenuBox(
+            expanded = clientExpanded,
+            onExpandedChange = { clientExpanded = it },
+            modifier = Modifier.weight(1f),
+        ) {
+            OutlinedTextField(
+                value = clients.find { it.id == selectedClientId }?.name ?: "Vyberte klienta...",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Klient") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientExpanded) },
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                singleLine = true,
+            )
+            ExposedDropdownMenu(
+                expanded = clientExpanded,
+                onDismissRequest = { clientExpanded = false },
+            ) {
+                clients.forEach { client ->
+                    DropdownMenuItem(
+                        text = { Text(client.name) },
+                        onClick = {
+                            onClientSelected(client.id)
+                            clientExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+
+        // Project dropdown
+        var projectExpanded by remember { mutableStateOf(false) }
+        ExposedDropdownMenuBox(
+            expanded = projectExpanded,
+            onExpandedChange = { projectExpanded = it },
+            modifier = Modifier.weight(1f),
+        ) {
+            OutlinedTextField(
+                value = projects.find { it.id == selectedProjectId }?.name ?: "(Vse)",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Projekt") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                singleLine = true,
+                enabled = selectedClientId != null,
+            )
+            ExposedDropdownMenu(
+                expanded = projectExpanded,
+                onDismissRequest = { projectExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("(Vse)") },
+                    onClick = {
+                        onProjectSelected(null)
+                        projectExpanded = false
+                    },
+                )
+                projects.forEach { project ->
+                    DropdownMenuItem(
+                        text = { Text(project.name) },
+                        onClick = {
+                            onProjectSelected(project.id)
+                            projectExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Format ISO 8601 startedAt to "YYYY-MM-DD HH:MM" */
+private fun formatDateTime(isoString: String): String =
+    isoString.take(16).replace('T', ' ')
+
 @Composable
 private fun MeetingListItem(
     meeting: MeetingDto,
+    isPlaying: Boolean,
     onClick: () -> Unit,
+    onPlayToggle: () -> Unit,
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
         border = CardDefaults.outlinedCardBorder(),
         colors = CardDefaults.outlinedCardColors(),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Play button (only for meetings with audio)
+            if (meeting.state != MeetingStateEnum.RECORDING) {
+                IconButton(
+                    onClick = onPlayToggle,
+                    modifier = Modifier.size(JervisSpacing.touchTarget),
+                ) {
+                    Text(
+                        text = if (isPlaying) "\u23F9" else "\u25B6",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = meeting.title ?: "Meeting ${meeting.id.takeLast(6)}",
@@ -228,7 +443,7 @@ private fun MeetingListItem(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = meeting.startedAt.take(10),
+                        text = formatDateTime(meeting.startedAt),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -255,10 +470,20 @@ private fun MeetingListItem(
             }
 
             // State indicator
-            Text(
-                text = stateIcon(meeting.state),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stateIcon(meeting.state),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stateLabel(meeting.state),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (meeting.state == MeetingStateEnum.FAILED)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -266,19 +491,51 @@ private fun MeetingListItem(
 @Composable
 private fun MeetingDetailView(
     meeting: MeetingDto,
+    isPlaying: Boolean,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
+    onPlayToggle: () -> Unit,
+    onRecorrect: () -> Unit,
+    onReindex: () -> Unit,
+    onCorrections: () -> Unit,
+    onAnswerQuestions: (List<CorrectionAnswerDto>) -> Unit,
+    onSubmitCorrection: (TranscriptCorrectionSubmitDto) -> Unit,
 ) {
+    // Toggle between corrected and raw transcript
+    var showCorrected by remember { mutableStateOf(true) }
+    // Correction mode — clickable segments to submit corrections
+    var correctionMode by remember { mutableStateOf(false) }
+    var segmentForCorrection by remember { mutableStateOf<TranscriptSegmentDto?>(null) }
+
     JDetailScreen(
         title = meeting.title ?: "Meeting",
         onBack = onBack,
         actions = {
+            if (meeting.state != MeetingStateEnum.RECORDING) {
+                IconButton(onClick = onPlayToggle) {
+                    Text(
+                        text = if (isPlaying) "\u23F9" else "\u25B6",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
+            IconButton(onClick = { correctionMode = !correctionMode }) {
+                Text(
+                    text = "\u270F",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (correctionMode) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            IconButton(onClick = onCorrections) {
+                Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
+            }
             IconButton(onClick = onRefresh) {
-                Text("↻", style = MaterialTheme.typography.bodyLarge)
+                Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
             }
             IconButton(onClick = onDelete) {
-                Text("🗑", style = MaterialTheme.typography.bodyLarge)
+                Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
             }
         },
     ) {
@@ -288,7 +545,7 @@ private fun MeetingDetailView(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = meeting.startedAt.take(10),
+                text = formatDateTime(meeting.startedAt),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -306,48 +563,268 @@ private fun MeetingDetailView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = stateIcon(meeting.state),
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Pipeline progress indicator
+        PipelineProgress(state = meeting.state)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Transcript or state message
-        when (meeting.state) {
-            MeetingStateEnum.RECORDING -> {
-                Text("Probíhá nahrávání...", style = MaterialTheme.typography.bodyMedium)
-            }
-            MeetingStateEnum.UPLOADING, MeetingStateEnum.UPLOADED -> {
-                Text("Čeká na přepis...", style = MaterialTheme.typography.bodyMedium)
-            }
-            MeetingStateEnum.TRANSCRIBING -> {
-                JCenteredLoading()
-                Text("Probíhá přepis...", style = MaterialTheme.typography.bodyMedium)
-            }
-            MeetingStateEnum.FAILED -> {
+        // Correction questions card (when agent needs user input)
+        if (meeting.state == MeetingStateEnum.CORRECTION_REVIEW && meeting.correctionQuestions.isNotEmpty()) {
+            CorrectionQuestionsCard(
+                questions = meeting.correctionQuestions,
+                onSubmitAnswers = onAnswerQuestions,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Error message
+        if (meeting.state == MeetingStateEnum.FAILED) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text(
-                    text = meeting.errorMessage ?: "Neznámá chyba",
+                    text = meeting.errorMessage ?: "Neznama chyba",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(12.dp),
                 )
             }
-            MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.INDEXED -> {
-                if (meeting.transcriptSegments.isNotEmpty()) {
-                    meeting.transcriptSegments.forEach { segment ->
-                        TranscriptSegmentRow(segment)
-                    }
-                } else if (!meeting.transcriptText.isNullOrBlank()) {
-                    Text(
-                        text = meeting.transcriptText,
-                        style = MaterialTheme.typography.bodyMedium,
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Transcript content (when available)
+        val hasRawTranscript = meeting.transcriptSegments.isNotEmpty() ||
+            !meeting.transcriptText.isNullOrBlank()
+        val hasCorrected = meeting.correctedTranscriptSegments.isNotEmpty() ||
+            !meeting.correctedTranscriptText.isNullOrBlank()
+
+        if (hasRawTranscript || hasCorrected) {
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Corrected/Raw toggle + action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (hasCorrected) {
+                    FilterChip(
+                        selected = showCorrected,
+                        onClick = { showCorrected = true },
+                        label = { Text("Opraveny") },
                     )
-                } else {
+                    FilterChip(
+                        selected = !showCorrected,
+                        onClick = { showCorrected = false },
+                        label = { Text("Surovy") },
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                    TextButton(onClick = onRecorrect) {
+                        Text("Opravit znovu")
+                    }
+                }
+                if (meeting.state == MeetingStateEnum.INDEXED) {
+                    TextButton(onClick = onReindex) {
+                        Text("Preindexovat")
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (showCorrected && hasCorrected) {
+                TranscriptContent(
+                    segments = meeting.correctedTranscriptSegments,
+                    text = meeting.correctedTranscriptText,
+                    correctionMode = correctionMode,
+                    onSegmentClick = { seg -> segmentForCorrection = seg },
+                )
+            } else {
+                TranscriptContent(
+                    segments = meeting.transcriptSegments,
+                    text = meeting.transcriptText,
+                    correctionMode = correctionMode,
+                    onSegmentClick = { seg -> segmentForCorrection = seg },
+                )
+            }
+        }
+    }
+
+    // Correction dialog for segment click
+    if (segmentForCorrection != null) {
+        CorrectionDialog(
+            initialOriginal = segmentForCorrection!!.text,
+            onConfirm = { submit ->
+                onSubmitCorrection(submit)
+                segmentForCorrection = null
+            },
+            onDismiss = { segmentForCorrection = null },
+        )
+    }
+}
+
+/** Pipeline step definition for visual progress. */
+private data class PipelineStep(
+    val label: String,
+    val description: String,
+    val activeDescription: String,
+)
+
+private val pipelineSteps = listOf(
+    PipelineStep("Nahrano", "Audio nahrano na server", "Nahrava se audio..."),
+    PipelineStep("Prepis", "Whisper prepsal audio na text", "Whisper prepisuje audio na text..."),
+    PipelineStep("Korekce", "LLM model opravil prepis pomoci slovniku", "LLM model opravuje prepis pomoci slovniku..."),
+    PipelineStep("Indexace", "Prepis ulozen do znalostni baze", "Uklada se prepis do znalostni baze..."),
+)
+
+/** Maps MeetingStateEnum to pipeline step index (0-based) and whether step is active vs done. */
+private fun stateToStepInfo(state: MeetingStateEnum): Pair<Int, Boolean> =
+    when (state) {
+        MeetingStateEnum.RECORDING -> -1 to true
+        MeetingStateEnum.UPLOADING -> 0 to true
+        MeetingStateEnum.UPLOADED -> 0 to false      // step 0 done, waiting in queue
+        MeetingStateEnum.TRANSCRIBING -> 1 to true
+        MeetingStateEnum.TRANSCRIBED -> 1 to false    // step 1 done, waiting in queue
+        MeetingStateEnum.CORRECTING -> 2 to true
+        MeetingStateEnum.CORRECTION_REVIEW -> 2 to false  // step 2 paused, waiting for user answers
+        MeetingStateEnum.CORRECTED -> 2 to false      // step 2 done, waiting in queue
+        MeetingStateEnum.INDEXED -> 3 to false         // all done
+        MeetingStateEnum.FAILED -> -1 to false
+    }
+
+@Composable
+private fun PipelineProgress(state: MeetingStateEnum) {
+    if (state == MeetingStateEnum.RECORDING) return
+
+    val (currentStepIndex, isActive) = stateToStepInfo(state)
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Step indicators row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                pipelineSteps.forEachIndexed { index, step ->
+                    if (index > 0) {
+                        // Connector line
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(2.dp)
+                                .background(
+                                    if (index <= currentStepIndex)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                ),
+                        )
+                    }
+
+                    val isDone = index < currentStepIndex || (index == currentStepIndex && !isActive && state != MeetingStateEnum.FAILED)
+                    val isCurrent = index == currentStepIndex ||
+                        (isActive && index == currentStepIndex) ||
+                        (!isActive && index == currentStepIndex + 1 && state != MeetingStateEnum.INDEXED && state != MeetingStateEnum.FAILED)
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        // Circle indicator
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isDone -> MaterialTheme.colorScheme.primary
+                                        isCurrent -> MaterialTheme.colorScheme.primaryContainer
+                                        else -> MaterialTheme.colorScheme.outlineVariant
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isCurrent && !isDone) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else {
+                                Text(
+                                    text = if (isDone) "\u2713" else "${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDone)
+                                        MaterialTheme.colorScheme.onPrimary
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = step.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when {
+                                isDone -> MaterialTheme.colorScheme.primary
+                                isCurrent -> MaterialTheme.colorScheme.onSurface
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Status description
+            val statusText = when {
+                state == MeetingStateEnum.FAILED -> null // handled separately
+                state == MeetingStateEnum.INDEXED -> "Zpracovani dokonceno"
+                // Waiting in queue (step done, next not started yet)
+                state == MeetingStateEnum.UPLOADED -> "Ve fronte - ceka na prepis pres Whisper"
+                state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
+                state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potrebuje vase odpovedi"
+                state == MeetingStateEnum.CORRECTED -> "Ve fronte - ceka na indexaci do znalostni baze"
+                // Actively processing
+                isActive && currentStepIndex in pipelineSteps.indices ->
+                    pipelineSteps[currentStepIndex].activeDescription
+                else -> null
+            }
+
+            if (statusText != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED)) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.width(80.dp).height(3.dp),
+                        )
+                    }
                     Text(
-                        text = "Přepis je prázdný",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state == MeetingStateEnum.INDEXED)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -356,12 +833,56 @@ private fun MeetingDetailView(
 }
 
 @Composable
-private fun TranscriptSegmentRow(segment: TranscriptSegmentDto) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-    ) {
+private fun TranscriptContent(
+    segments: List<TranscriptSegmentDto>,
+    text: String?,
+    correctionMode: Boolean = false,
+    onSegmentClick: (TranscriptSegmentDto) -> Unit = {},
+) {
+    if (segments.isNotEmpty()) {
+        segments.forEach { segment ->
+            TranscriptSegmentRow(
+                segment = segment,
+                correctionMode = correctionMode,
+                onClick = { onSegmentClick(segment) },
+            )
+        }
+    } else if (!text.isNullOrBlank()) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    } else {
+        Text(
+            text = "Prepis je prazdny",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun TranscriptSegmentRow(
+    segment: TranscriptSegmentDto,
+    correctionMode: Boolean = false,
+    onClick: () -> Unit = {},
+) {
+    val modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 2.dp)
+        .let {
+            if (correctionMode) {
+                it
+                    .clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            } else {
+                it
+            }
+        }
+
+    Row(modifier = modifier) {
         Text(
             text = formatDuration(segment.startSec.toLong()),
             style = MaterialTheme.typography.bodySmall,
@@ -383,23 +904,167 @@ private fun TranscriptSegmentRow(segment: TranscriptSegmentDto) {
     }
 }
 
-private fun stateIcon(state: MeetingStateEnum): String = when (state) {
-    MeetingStateEnum.RECORDING -> "🔴"
-    MeetingStateEnum.UPLOADING -> "⬆"
-    MeetingStateEnum.UPLOADED -> "⏳"
-    MeetingStateEnum.TRANSCRIBING -> "⏳"
-    MeetingStateEnum.TRANSCRIBED -> "✅"
-    MeetingStateEnum.INDEXED -> "✅"
-    MeetingStateEnum.FAILED -> "❌"
+private fun stateIcon(state: MeetingStateEnum): String =
+    when (state) {
+        MeetingStateEnum.RECORDING -> "\uD83D\uDD34"
+        MeetingStateEnum.UPLOADING -> "\u2B06"
+        MeetingStateEnum.UPLOADED -> "\u231B"
+        MeetingStateEnum.TRANSCRIBING -> "\uD83C\uDFA4"
+        MeetingStateEnum.TRANSCRIBED -> "\u23F3"
+        MeetingStateEnum.CORRECTING -> "\u270D"
+        MeetingStateEnum.CORRECTION_REVIEW -> "\u2753"
+        MeetingStateEnum.CORRECTED -> "\u23F3"
+        MeetingStateEnum.INDEXED -> "\u2705"
+        MeetingStateEnum.FAILED -> "\u274C"
+    }
+
+private fun stateLabel(state: MeetingStateEnum): String =
+    when (state) {
+        MeetingStateEnum.RECORDING -> "Nahrava se"
+        MeetingStateEnum.UPLOADING -> "Odesila se"
+        MeetingStateEnum.UPLOADED -> "Ceka na prepis"
+        MeetingStateEnum.TRANSCRIBING -> "Prepisuje se"
+        MeetingStateEnum.TRANSCRIBED -> "Ceka na korekci"
+        MeetingStateEnum.CORRECTING -> "Opravuje se"
+        MeetingStateEnum.CORRECTION_REVIEW -> "Ceka na odpoved"
+        MeetingStateEnum.CORRECTED -> "Ceka na indexaci"
+        MeetingStateEnum.INDEXED -> "Hotovo"
+        MeetingStateEnum.FAILED -> "Chyba"
+    }
+
+private fun meetingTypeLabel(type: MeetingTypeEnum): String =
+    when (type) {
+        MeetingTypeEnum.MEETING -> "Schuzka"
+        MeetingTypeEnum.TASK_DISCUSSION -> "Diskuse ukolu"
+        MeetingTypeEnum.STANDUP_PROJECT -> "Standup projekt"
+        MeetingTypeEnum.STANDUP_TEAM -> "Standup tym"
+        MeetingTypeEnum.INTERVIEW -> "Pohovor"
+        MeetingTypeEnum.WORKSHOP -> "Workshop"
+        MeetingTypeEnum.REVIEW -> "Review"
+        MeetingTypeEnum.OTHER -> "Jine"
+    }
+
+/**
+ * Card showing correction questions from the agent.
+ * Each question has options (radio) or a free text input.
+ * User answers are submitted as correction rules.
+ */
+@Composable
+private fun CorrectionQuestionsCard(
+    questions: List<CorrectionQuestionDto>,
+    onSubmitAnswers: (List<CorrectionAnswerDto>) -> Unit,
+) {
+    // Track answers: questionId -> corrected text
+    val answers = remember { mutableStateOf(questions.associate { it.questionId to "" }) }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Agent potrebuje vase upesneni",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Opravte nebo potvdte spravny tvar nasledujicich vyrazu:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            questions.forEach { question ->
+                CorrectionQuestionItem(
+                    question = question,
+                    currentAnswer = answers.value[question.questionId] ?: "",
+                    onAnswerChanged = { newAnswer ->
+                        answers.value = answers.value.toMutableMap().apply {
+                            put(question.questionId, newAnswer)
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                val allAnswered = questions.all { q ->
+                    (answers.value[q.questionId] ?: "").isNotBlank()
+                }
+                TextButton(
+                    onClick = {
+                        val answerDtos = questions.mapNotNull { q ->
+                            val corrected = answers.value[q.questionId]?.trim()
+                            if (!corrected.isNullOrBlank()) {
+                                CorrectionAnswerDto(
+                                    questionId = q.questionId,
+                                    segmentIndex = q.segmentIndex,
+                                    original = q.originalText,
+                                    corrected = corrected,
+                                )
+                            } else {
+                                null
+                            }
+                        }
+                        onSubmitAnswers(answerDtos)
+                    },
+                    enabled = allAnswered,
+                ) {
+                    Text("Odeslat odpovedi")
+                }
+            }
+        }
+    }
 }
 
-private fun meetingTypeLabel(type: MeetingTypeEnum): String = when (type) {
-    MeetingTypeEnum.MEETING -> "Schuzka"
-    MeetingTypeEnum.TASK_DISCUSSION -> "Diskuse ukolu"
-    MeetingTypeEnum.STANDUP_PROJECT -> "Standup projekt"
-    MeetingTypeEnum.STANDUP_TEAM -> "Standup tym"
-    MeetingTypeEnum.INTERVIEW -> "Pohovor"
-    MeetingTypeEnum.WORKSHOP -> "Workshop"
-    MeetingTypeEnum.REVIEW -> "Review"
-    MeetingTypeEnum.OTHER -> "Jine"
+@Composable
+private fun CorrectionQuestionItem(
+    question: CorrectionQuestionDto,
+    currentAnswer: String,
+    onAnswerChanged: (String) -> Unit,
+) {
+    Column {
+        Text(
+            text = question.question,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = "Puvodne: \"${question.originalText}\"",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (question.correctionOptions.isNotEmpty()) {
+            // Radio options
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                question.correctionOptions.forEach { option ->
+                    FilterChip(
+                        selected = currentAnswer == option,
+                        onClick = { onAnswerChanged(option) },
+                        label = { Text(option) },
+                    )
+                }
+            }
+        }
+
+        // Free text input (always shown, pre-filled if option selected)
+        OutlinedTextField(
+            value = currentAnswer,
+            onValueChange = onAnswerChanged,
+            label = { Text("Spravny tvar") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            singleLine = true,
+        )
+    }
 }

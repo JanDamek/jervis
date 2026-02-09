@@ -5,6 +5,7 @@ import com.jervis.common.types.TaskId
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.service.notification.FcmPushService
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service
 class UserTaskService(
     private val userTaskRepository: TaskRepository,
     private val notificationRpc: NotificationRpcImpl,
+    private val fcmPushService: FcmPushService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -22,6 +24,8 @@ class UserTaskService(
         error: Throwable? = null,
         pendingQuestion: String? = null,
         questionContext: String? = null,
+        interruptAction: String? = null,
+        isApproval: Boolean = false,
     ) {
         val title = pendingQuestion ?: "Background task failed: ${task.type}"
         val description =
@@ -59,8 +63,32 @@ class UserTaskService(
             )
         userTaskRepository.save(updatedTask)
 
-        // Notify client via kRPC stream
-        notificationRpc.emitUserTaskCreated(task.clientId.toString(), task.id.toString(), title)
+        // Notify client via kRPC stream (with approval metadata for push notifications)
+        notificationRpc.emitUserTaskCreated(
+            clientId = task.clientId.toString(),
+            taskId = task.id.toString(),
+            title = title,
+            interruptAction = interruptAction,
+            interruptDescription = pendingQuestion,
+            isApproval = isApproval,
+        )
+
+        // Send FCM push notification for mobile devices not connected via kRPC
+        try {
+            fcmPushService.sendPushNotification(
+                clientId = task.clientId.toString(),
+                title = if (isApproval) "Schválení vyžadováno" else "Nová úloha",
+                body = title,
+                data = buildMap {
+                    put("taskId", task.id.toString())
+                    put("type", if (isApproval) "approval" else "user_task")
+                    interruptAction?.let { put("interruptAction", it) }
+                    put("isApproval", isApproval.toString())
+                },
+            )
+        } catch (e: Exception) {
+            logger.warn { "FCM push failed for task ${task.id}: ${e.message}" }
+        }
 
         logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }
     }

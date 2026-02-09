@@ -15,7 +15,7 @@ import java.time.Instant
 /**
  * Meeting recording document.
  *
- * STATE MACHINE: RECORDING -> UPLOADED -> TRANSCRIBING -> TRANSCRIBED -> INDEXED (or FAILED at any step)
+ * STATE MACHINE: RECORDING -> UPLOADED -> TRANSCRIBING -> TRANSCRIBED -> CORRECTING -> CORRECTED (or CORRECTION_REVIEW if questions) -> INDEXED (or FAILED at any step)
  *
  * FLOW:
  * 1. Client calls startRecording -> creates RECORDING document + empty audio file on PVC
@@ -47,8 +47,20 @@ data class MeetingDocument(
     val stoppedAt: Instant? = null,
     val transcriptText: String? = null,
     val transcriptSegments: List<TranscriptSegment> = emptyList(),
+    val correctedTranscriptText: String? = null,
+    val correctedTranscriptSegments: List<TranscriptSegment> = emptyList(),
+    val correctionQuestions: List<CorrectionQuestion> = emptyList(),
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
+)
+
+data class CorrectionQuestion(
+    val questionId: String,
+    val segmentIndex: Int,
+    val originalText: String,
+    val correctionOptions: List<String> = emptyList(),
+    val question: String,
+    val context: String? = null,
 )
 
 data class TranscriptSegment(

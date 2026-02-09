@@ -3,6 +3,8 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.meeting.AudioChunkDto
+import com.jervis.dto.meeting.CorrectionAnswerDto
+import com.jervis.dto.meeting.CorrectionQuestionDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
@@ -11,6 +13,7 @@ import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
 import com.jervis.service.IMeetingService
+import com.jervis.service.meeting.TranscriptCorrectionService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -29,6 +32,8 @@ private val logger = KotlinLogging.logger {}
 class MeetingRpcImpl(
     private val meetingRepository: MeetingRepository,
     private val directoryStructureService: DirectoryStructureService,
+    private val knowledgeService: com.jervis.knowledgebase.KnowledgeService,
+    private val transcriptCorrectionService: TranscriptCorrectionService,
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
@@ -43,7 +48,7 @@ class MeetingRpcImpl(
         }
 
         val meetingId = ObjectId.get()
-        val audioFileName = "meeting_${meetingId.toHexString()}.webm"
+        val audioFileName = "meeting_${meetingId.toHexString()}.wav"
         val audioFilePath = meetingsDir.resolve(audioFileName)
 
         // Create empty audio file
@@ -97,7 +102,7 @@ class MeetingRpcImpl(
             ),
         )
 
-        logger.debug { "Received chunk ${chunk.chunkIndex} for meeting ${chunk.meetingId} (${audioBytes.size} bytes)" }
+        logger.info { "Received chunk ${chunk.chunkIndex} for meeting ${chunk.meetingId} (${audioBytes.size} bytes)" }
         return true
     }
 
@@ -106,16 +111,29 @@ class MeetingRpcImpl(
         val meeting = meetingRepository.findById(meetingId)
             ?: throw IllegalStateException("Meeting not found: ${request.meetingId}")
 
+        // Compute duration from actual WAV file size (16kHz, 16-bit, mono = 32000 bytes/sec)
+        val fileDuration = withContext(Dispatchers.IO) {
+            meeting.audioFilePath?.let { path ->
+                val file = java.nio.file.Paths.get(path)
+                if (Files.exists(file)) {
+                    val fileSize = Files.size(file)
+                    if (fileSize > 44) (fileSize - 44) / 32000 else request.durationSeconds
+                } else {
+                    request.durationSeconds
+                }
+            } ?: request.durationSeconds
+        }
+
         val updated = meeting.copy(
             state = MeetingStateEnum.UPLOADED,
             title = request.title,
             meetingType = request.meetingType,
-            durationSeconds = request.durationSeconds,
+            durationSeconds = fileDuration,
             stoppedAt = Instant.now(),
         )
 
         val saved = meetingRepository.save(updated)
-        logger.info { "Finalized meeting ${request.meetingId}: type=${request.meetingType}, duration=${request.durationSeconds}s" }
+        logger.info { "Finalized meeting ${request.meetingId}: type=${request.meetingType}, duration=${fileDuration}s (file-based)" }
         return saved.toDto()
     }
 
@@ -154,6 +172,21 @@ class MeetingRpcImpl(
         return meeting.toDto()
     }
 
+    override suspend fun getAudioData(meetingId: String): String {
+        val meeting = meetingRepository.findById(ObjectId(meetingId))
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+        val audioPath = meeting.audioFilePath
+            ?: throw IllegalStateException("Meeting $meetingId has no audio file")
+
+        return withContext(Dispatchers.IO) {
+            val file = java.nio.file.Paths.get(audioPath)
+            if (!Files.exists(file)) {
+                throw IllegalStateException("Audio file not found: $audioPath")
+            }
+            Base64.getEncoder().encodeToString(Files.readAllBytes(file))
+        }
+    }
+
     override suspend fun deleteMeeting(meetingId: String): Boolean {
         val id = ObjectId(meetingId)
         val meeting = meetingRepository.findById(id)
@@ -169,6 +202,61 @@ class MeetingRpcImpl(
 
         meetingRepository.deleteById(id)
         logger.info { "Deleted meeting: $meetingId" }
+        return true
+    }
+
+    override suspend fun recorrectMeeting(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state !in listOf(
+                MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW,
+                MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED,
+            )
+        ) {
+            throw IllegalStateException("Cannot re-correct meeting in state ${meeting.state}")
+        }
+
+        meetingRepository.save(
+            meeting.copy(
+                state = MeetingStateEnum.TRANSCRIBED,
+                correctedTranscriptText = null,
+                correctedTranscriptSegments = emptyList(),
+                correctionQuestions = emptyList(),
+                errorMessage = null,
+            ),
+        )
+        logger.info { "Reset meeting $meetingId to TRANSCRIBED for re-correction" }
+        return true
+    }
+
+    override suspend fun answerCorrectionQuestions(
+        meetingId: String,
+        answers: List<CorrectionAnswerDto>,
+    ): Boolean {
+        return transcriptCorrectionService.answerQuestions(meetingId, answers)
+    }
+
+    override suspend fun reindexMeeting(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state != MeetingStateEnum.INDEXED) {
+            throw IllegalStateException("Can only re-index INDEXED meetings, got: ${meeting.state}")
+        }
+
+        // Purge old KB data before re-indexing
+        val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+            meetingId = meeting.id.toHexString(),
+            title = meeting.title,
+        )
+        val purged = knowledgeService.purge(sourceUrn.toString())
+        logger.info { "Purged KB data for meeting $meetingId: success=$purged" }
+
+        meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTED))
+        logger.info { "Reset meeting $meetingId to CORRECTED for re-indexing" }
         return true
     }
 }
@@ -192,6 +280,25 @@ private fun MeetingDocument.toDto(): MeetingDto =
                 endSec = seg.endSec,
                 text = seg.text,
                 speaker = seg.speaker,
+            )
+        },
+        correctedTranscriptText = correctedTranscriptText,
+        correctedTranscriptSegments = correctedTranscriptSegments.map { seg ->
+            TranscriptSegmentDto(
+                startSec = seg.startSec,
+                endSec = seg.endSec,
+                text = seg.text,
+                speaker = seg.speaker,
+            )
+        },
+        correctionQuestions = correctionQuestions.map { q ->
+            CorrectionQuestionDto(
+                questionId = q.questionId,
+                segmentIndex = q.segmentIndex,
+                originalText = q.originalText,
+                correctionOptions = q.correctionOptions,
+                question = q.question,
+                context = q.context,
             )
         },
         errorMessage = errorMessage,

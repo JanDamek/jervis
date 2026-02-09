@@ -259,6 +259,74 @@ Text: {text}
 
         return local_nodes, local_edges, entity_keys
 
+    async def purge_chunk_refs(self, deleted_chunk_ids: list[str]) -> tuple[int, int, int, int]:
+        """
+        Remove references to deleted RAG chunks from graph nodes and edges.
+        Delete orphaned nodes/edges that have no remaining evidence.
+
+        Returns:
+            Tuple of (nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted)
+        """
+        if not deleted_chunk_ids:
+            return 0, 0, 0, 0
+
+        deleted_set = set(deleted_chunk_ids)
+        nodes_collection = self.db.collection("KnowledgeNodes")
+        edges_collection = self.db.collection("KnowledgeEdges")
+
+        nodes_cleaned = 0
+        edges_cleaned = 0
+        nodes_deleted = 0
+        edges_deleted = 0
+
+        # Clean nodes: remove deleted chunk IDs from ragChunks
+        try:
+            cursor = self.db.aql.execute(
+                "FOR doc IN KnowledgeNodes FILTER LENGTH(doc.ragChunks) > 0 RETURN doc"
+            )
+            for doc in cursor:
+                rag_chunks = doc.get("ragChunks", [])
+                remaining = [c for c in rag_chunks if c not in deleted_set]
+                if len(remaining) < len(rag_chunks):
+                    if remaining:
+                        nodes_collection.update({"_key": doc["_key"], "ragChunks": remaining})
+                        nodes_cleaned += 1
+                    else:
+                        # No remaining evidence - delete node
+                        try:
+                            nodes_collection.delete(doc["_key"])
+                            nodes_deleted += 1
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning("Failed to clean node chunk refs: %s", e)
+
+        # Clean edges: remove deleted chunk IDs from evidenceChunkIds
+        try:
+            cursor = self.db.aql.execute(
+                "FOR doc IN KnowledgeEdges FILTER LENGTH(doc.evidenceChunkIds) > 0 RETURN doc"
+            )
+            for doc in cursor:
+                evidence_ids = doc.get("evidenceChunkIds", [])
+                remaining = [c for c in evidence_ids if c not in deleted_set]
+                if len(remaining) < len(evidence_ids):
+                    if remaining:
+                        edges_collection.update({"_key": doc["_key"], "evidenceChunkIds": remaining})
+                        edges_cleaned += 1
+                    else:
+                        # No remaining evidence - delete edge
+                        try:
+                            edges_collection.delete(doc["_key"])
+                            edges_deleted += 1
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning("Failed to clean edge chunk refs: %s", e)
+
+        logger.info("Graph purge: nodes_cleaned=%d nodes_deleted=%d edges_cleaned=%d edges_deleted=%d",
+                     nodes_cleaned, nodes_deleted, edges_cleaned, edges_deleted)
+        return nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted
+
     async def get_node_chunks(self, node_key: str, client_id: str = "") -> list[str]:
         """
         Get RAG chunk IDs associated with a graph node.

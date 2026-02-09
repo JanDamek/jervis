@@ -46,8 +46,29 @@ echo "Model: $WHISPER_MODEL"
 echo "================================="
 
 mkdir -p "$(dirname "$RESULT_FILE")"
-python3 /opt/jervis/whisper/whisper_runner.py "$AUDIO_FILE" "$WHISPER_TASK" "$WHISPER_MODEL" > "$RESULT_FILE"
-EXIT_CODE=$?
 
-echo "=== JERVIS WHISPER JOB DONE (exit=$EXIT_CODE) ==="
-exit $EXIT_CODE
+# Run whisper and capture both stdout and stderr
+STDOUT_FILE=$(mktemp)
+STDERR_FILE=$(mktemp)
+set +e
+python3 /opt/jervis/whisper/whisper_runner.py "$AUDIO_FILE" "$WHISPER_TASK" "$WHISPER_MODEL" > "$STDOUT_FILE" 2> "$STDERR_FILE"
+EXIT_CODE=$?
+set -e
+
+if [ $EXIT_CODE -eq 0 ]; then
+    cp "$STDOUT_FILE" "$RESULT_FILE"
+    echo "=== JERVIS WHISPER JOB DONE (exit=0) ==="
+else
+    echo "Whisper runner failed (exit=$EXIT_CODE):"
+    cat "$STDERR_FILE"
+    # Write error as valid JSON result so server can read the reason
+    python3 -c "
+import json, sys
+stderr = open('$STDERR_FILE').read().strip()
+json.dump({'text': '', 'segments': [], 'error': f'Whisper failed (exit=$EXIT_CODE): {stderr}'}, open('$RESULT_FILE', 'w'))
+"
+    echo "=== JERVIS WHISPER JOB DONE (exit=0, error written to result) ==="
+fi
+
+rm -f "$STDOUT_FILE" "$STDERR_FILE"
+exit 0

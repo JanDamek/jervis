@@ -575,6 +575,8 @@ class BackgroundEngine(
                     reason = "ORCHESTRATOR_INTERRUPT",
                     pendingQuestion = pendingQuestion,
                     questionContext = questionContext,
+                    interruptAction = interruptAction,
+                    isApproval = interruptAction != "clarify",
                 )
 
                 // Also emit progress to chat for FOREGROUND tasks

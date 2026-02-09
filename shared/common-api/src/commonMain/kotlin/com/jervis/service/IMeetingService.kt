@@ -1,6 +1,7 @@
 package com.jervis.service
 
 import com.jervis.dto.meeting.AudioChunkDto
+import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
@@ -31,4 +32,12 @@ interface IMeetingService {
     suspend fun getMeeting(meetingId: String): MeetingDto
 
     suspend fun deleteMeeting(meetingId: String): Boolean
+
+    suspend fun getAudioData(meetingId: String): String
+
+    suspend fun recorrectMeeting(meetingId: String): Boolean
+
+    suspend fun reindexMeeting(meetingId: String): Boolean
+
+    suspend fun answerCorrectionQuestions(meetingId: String, answers: List<CorrectionAnswerDto>): Boolean
 }

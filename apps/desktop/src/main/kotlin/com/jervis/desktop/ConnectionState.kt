@@ -119,6 +119,8 @@ class ConnectionManager(
                         bugTrackerSetup = services!!.bugTrackerSetupService,
                         codingAgents = services!!.codingAgentSettingsService,
                         meetings = services!!.meetingService,
+                        transcriptCorrections = services!!.transcriptCorrectionService,
+                        deviceTokens = services!!.deviceTokenService,
                     )
 
                 // Try a simple test call to verify connectivity
@@ -165,9 +167,10 @@ class ConnectionManager(
     private suspend fun handleEvent(event: com.jervis.dto.events.JervisEvent) {
         when (event) {
             is com.jervis.dto.events.JervisEvent.UserTaskCreated -> {
-                println("User task created: ${event.title}")
+                println("User task created: ${event.title} (approval=${event.isApproval}, action=${event.interruptAction})")
                 updateTaskBadge()
-                MacOSUtils.showNotification("New Task", event.title)
+                val notifTitle = if (event.isApproval) "Schválení vyžadováno" else "Nová úloha"
+                MacOSUtils.showNotification(notifTitle, event.title)
             }
 
             is com.jervis.dto.events.JervisEvent.UserTaskCancelled -> {

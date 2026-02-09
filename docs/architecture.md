@@ -12,10 +12,12 @@
 3. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
 4. [Knowledge Graph Design](#knowledge-graph-design)
 5. [Vision Processing Pipeline](#vision-processing-pipeline)
-6. [Smart Model Selector](#smart-model-selector)
-7. [Security Architecture](#security-architecture)
-8. [Coding Agents](#coding-agents)
-9. [Python Orchestrator](#python-orchestrator)
+6. [Transcript Correction Pipeline](#transcript-correction-pipeline)
+7. [Smart Model Selector](#smart-model-selector)
+8. [Security Architecture](#security-architecture)
+9. [Coding Agents](#coding-agents)
+10. [Python Orchestrator](#python-orchestrator)
+11. [Notification System](#notification-system)
 
 ---
 
@@ -139,6 +141,64 @@ For each client, Jervis creates **3 ArangoDB objects**:
 - **Vision as a pipeline stage**: Separate processing step in qualification pipeline
 - **Model selection**: Automatic selection of appropriate vision model
 - **Context preservation**: Vision context preserved through all phases
+
+---
+
+## Transcript Correction Pipeline
+
+### Overview
+
+After Whisper produces a raw transcript, an LLM-based correction pipeline fixes speech-to-text errors
+using per-client/project correction rules stored in KB (Weaviate) as chunks with `kind="transcript_correction"`.
+
+The correction agent lives in the Python orchestrator service (`service-orchestrator/app/whisper/correction_agent.py`)
+to share Ollama GPU access. The Kotlin server delegates to it via REST.
+
+### State Machine
+
+```
+RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORRECTING → CORRECTED → INDEXED
+                                                                     │    ↑         │
+                                                                     │    │         │
+                                                              CORRECTION_REVIEW    │
+                                                              (questions pending)   │
+                                                                     │              │
+                                                                     └──── FAILED ──┘
+```
+
+### Correction Flow
+
+1. `MeetingContinuousIndexer` picks up TRANSCRIBED meetings
+2. `TranscriptCorrectionService.correct()` sets state to CORRECTING
+3. Delegates to Python orchestrator via `PythonOrchestratorClient.correctTranscript()`
+4. Python `CorrectionAgent` loads per-client/project correction rules from KB (Weaviate)
+5. Transcript segments chunked (20/chunk) and sent to Ollama GPU (`qwen3-coder-tool:30b`)
+6. System prompt includes correction rules grouped by category + instructions for interactive questions
+7. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
+8. If questions exist: state → CORRECTION_REVIEW (best-effort corrections + questions stored)
+9. If no questions: state → CORRECTED
+10. User answers questions in UI → answers saved as KB correction rules → state reset to TRANSCRIBED → re-run
+11. Downstream indexing picks up CORRECTED meetings for KB ingestion
+
+### Correction Rules Management
+
+- **Storage**: KB (Weaviate) chunks with `kind="transcript_correction"`, per-client/project
+- **RPC interface**: `ITranscriptCorrectionService` in `shared/common-api/` — `submitCorrection()`, `listCorrections()`, `deleteCorrection()`
+- **Categories**: person_name, company_name, department, terminology, abbreviation, general
+- **UI**: `CorrectionsScreen` composable accessible from MeetingDetailView (book icon)
+- **Interactive**: `CorrectionQuestionsCard` in MeetingDetailView shows agent questions when state == CORRECTION_REVIEW
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-orchestrator/app/whisper/correction_agent.py` | Python correction agent — KB loading, LLM calls, interactive questions |
+| `backend/server/.../service/meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling |
+| `backend/server/.../configuration/PythonOrchestratorClient.kt` | REST client for Python correction endpoints |
+| `shared/common-api/.../service/ITranscriptCorrectionService.kt` | RPC interface for correction CRUD |
+| `shared/common-dto/.../dto/meeting/MeetingDtos.kt` | `MeetingStateEnum` (incl. CORRECTION_REVIEW), `CorrectionQuestionDto`, `CorrectionAnswerDto` |
+| `shared/ui-common/.../meeting/CorrectionsScreen.kt` | Corrections management UI |
+| `shared/ui-common/.../meeting/CorrectionViewModel.kt` | Corrections UI state management |
 
 ---
 
@@ -494,3 +554,66 @@ ProjectDocument.groupId: ProjectGroupId?  ← null = ungrouped
 | `backend/server/.../service/projectgroup/ProjectGroupService.kt` | CRUD |
 | `backend/server/.../mapper/ProjectGroupMapper.kt` | Document ↔ DTO |
 | `shared/common-dto/.../dto/ProjectGroupDto.kt` | Cross-platform DTO |
+
+---
+
+## Notification System
+
+Hybrid push/local notification architecture for real-time user alerts.
+
+### Delivery Channels
+
+| Channel | When Used | Capabilities |
+|---------|-----------|-------------|
+| **kRPC WebSocket** | App running (foreground/background) | Immediate delivery, all event types |
+| **FCM Data Messages** | App killed or not connected | Remote push, Android + iOS |
+| **Desktop OS** | macOS/Windows/Linux, app running | osascript / SystemTray / notify-send |
+| **In-app Dialog** | Approval events, any platform | Approve/Deny buttons with reason input |
+
+### Notification Types
+
+| Type | Event | Urgency | Actions |
+|------|-------|---------|---------|
+| **Approval** | `UserTaskCreated(isApproval=true)` | HIGH | Approve / Deny (with reason) |
+| **User Task** | `UserTaskCreated(isApproval=false)` | NORMAL | Tap to open app |
+| **Error** | `ErrorNotification` | NORMAL | Informational |
+
+### Event Flow
+
+```
+Python Orchestrator interrupt
+  → BackgroundEngine.checkOrchestratorTaskStatus()
+    → UserTaskService.failAndEscalateToUserTask(interruptAction, isApproval)
+      → NotificationRpcImpl.emitUserTaskCreated() [kRPC stream]
+      → FcmPushService.sendPushNotification() [FCM data message]
+        → Mobile receives push even if app killed
+  → MainViewModel.handleGlobalEvent()
+    → PlatformNotificationManager.showNotification()
+    → ApprovalNotificationDialog (if isApproval)
+```
+
+### Cross-Platform Architecture
+
+```
+expect class PlatformNotificationManager
+├── jvmMain:    macOS osascript, Windows SystemTray, Linux notify-send
+├── androidMain: NotificationCompat + BroadcastReceiver + action buttons
+└── iosMain:    UNUserNotificationCenter + UNNotificationAction
+
+NotificationActionChannel (MutableSharedFlow)
+├── Android: NotificationActionReceiver → emits
+├── iOS:     NotificationDelegate.swift → NotificationBridge.kt → emits
+└── MainViewModel: collects → sendToAgent(taskId, routingMode, input)
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `shared/common-dto/.../events/JervisEvent.kt` | Event model with approval metadata |
+| `shared/ui-common/.../notification/PlatformNotificationManager.kt` | expect class |
+| `shared/ui-common/.../notification/NotificationActionChannel.kt` | Cross-platform action callback |
+| `shared/ui-common/.../notification/ApprovalNotificationDialog.kt` | In-app approve/deny dialog |
+| `backend/server/.../service/notification/FcmPushService.kt` | Firebase Cloud Messaging sender |
+| `backend/server/.../entity/DeviceTokenDocument.kt` | FCM token storage |
+| `shared/common-api/.../IDeviceTokenService.kt` | Token registration RPC |

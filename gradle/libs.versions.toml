@@ -22,9 +22,11 @@ joern = "4.0.439"
 langchain4j = "1.10.0"
 google-cloud-bom = "26.73.0"
 jtokkit = "1.1.0"
+fabric8 = "7.1.0"
 compose = "1.9.3"
 agp = "8.12.3"
 badass-runtime = "2.0.1"
+firebase-admin = "9.4.2"
 
 [libraries]
 # Kotlin
@@ -109,6 +111,8 @@ guava = { module = "com.google.guava:guava", version.ref = "guava" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" }
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 jtokkit = { module = "com.knuddels:jtokkit", version.ref = "jtokkit" }
+firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
+fabric8-kubernetes-client = { module = "io.fabric8:kubernetes-client", version.ref = "fabric8" }
 
 # Testing
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

@@ -1,5 +1,11 @@
 package com.jervis.service.meeting
 
+import io.fabric8.kubernetes.api.model.EnvVarBuilder
+import io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSourceBuilder
+import io.fabric8.kubernetes.api.model.VolumeBuilder
+import io.fabric8.kubernetes.api.model.VolumeMountBuilder
+import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder
+import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -10,6 +16,7 @@ import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 
@@ -77,20 +84,99 @@ class WhisperJobRunner {
     }
 
     private suspend fun runK8sJob(audioFilePath: String, workspacePath: String) {
-        // Dynamic import to avoid hard dependency when running locally
-        val k8sClientClass = Class.forName("io.fabric8.kubernetes.client.KubernetesClientBuilder")
-        val clientBuilder = k8sClientClass.getDeclaredConstructor().newInstance()
-        val buildMethod = k8sClientClass.getMethod("build")
-        val k8sClient = buildMethod.invoke(clientBuilder) as AutoCloseable
+        val jobName = "whisper-${UUID.randomUUID().toString().substring(0, 8)}"
 
-        try {
-            // For now, fall back to local mode if K8s client is not available
-            // K8s Job creation would use fabric8 API here
-            logger.warn { "K8s Job mode not yet fully implemented, falling back to local" }
-            val resultFile = Paths.get(workspacePath).resolve(".jervis").resolve("whisper-result.json")
-            runLocal(audioFilePath, resultFile)
-        } finally {
-            k8sClient.close()
+        logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath)" }
+
+        val job = JobBuilder()
+            .withNewMetadata()
+                .withName(jobName)
+                .withNamespace(K8S_NAMESPACE)
+                .addToLabels("app", "jervis-whisper")
+                .addToLabels("type", "job")
+            .endMetadata()
+            .withNewSpec()
+                .withTtlSecondsAfterFinished(300)
+                .withBackoffLimit(0)
+                .withNewTemplate()
+                    .withNewMetadata()
+                        .addToLabels("app", "jervis-whisper")
+                        .addToLabels("type", "job")
+                    .endMetadata()
+                    .withNewSpec()
+                        .withRestartPolicy("Never")
+                        .addNewContainer()
+                            .withName("whisper")
+                            .withImage(WHISPER_IMAGE)
+                            .withImagePullPolicy("Always")
+                            .withEnv(
+                                EnvVarBuilder().withName("WORKSPACE").withValue(workspacePath).build(),
+                                EnvVarBuilder().withName("AUDIO_FILE").withValue(audioFilePath).build(),
+                            )
+                            .withVolumeMounts(
+                                VolumeMountBuilder()
+                                    .withName("data")
+                                    .withMountPath(PVC_MOUNT)
+                                    .build(),
+                            )
+                            .withNewResources()
+                                .addToRequests("memory", io.fabric8.kubernetes.api.model.Quantity("256Mi"))
+                                .addToRequests("cpu", io.fabric8.kubernetes.api.model.Quantity("500m"))
+                                .addToLimits("memory", io.fabric8.kubernetes.api.model.Quantity("2Gi"))
+                                .addToLimits("cpu", io.fabric8.kubernetes.api.model.Quantity("2"))
+                            .endResources()
+                        .endContainer()
+                        .withVolumes(
+                            VolumeBuilder()
+                                .withName("data")
+                                .withPersistentVolumeClaim(
+                                    PersistentVolumeClaimVolumeSourceBuilder()
+                                        .withClaimName(PVC_NAME)
+                                        .build(),
+                                )
+                                .build(),
+                        )
+                    .endSpec()
+                .endTemplate()
+            .endSpec()
+            .build()
+
+        withContext(Dispatchers.IO) {
+            KubernetesClientBuilder().build().use { client ->
+                client.batch().v1().jobs()
+                    .inNamespace(K8S_NAMESPACE)
+                    .resource(job)
+                    .create()
+
+                // Poll for completion
+                var elapsed = 0L
+                while (elapsed < JOB_TIMEOUT_SECONDS) {
+                    delay(POLL_INTERVAL_SECONDS * 1000)
+                    elapsed += POLL_INTERVAL_SECONDS
+
+                    val status = client.batch().v1().jobs()
+                        .inNamespace(K8S_NAMESPACE)
+                        .withName(jobName)
+                        .get()
+                        ?.status
+
+                    if (status == null) {
+                        logger.warn { "Whisper Job $jobName status is null, retrying..." }
+                        continue
+                    }
+
+                    if ((status.succeeded ?: 0) > 0) {
+                        logger.info { "Whisper Job $jobName completed successfully" }
+                        return@withContext
+                    }
+
+                    if ((status.failed ?: 0) > 0) {
+                        throw RuntimeException("Whisper Job $jobName failed")
+                    }
+                }
+
+                throw RuntimeException("Whisper Job $jobName timed out after ${JOB_TIMEOUT_SECONDS}s")
+            }
         }
     }
 

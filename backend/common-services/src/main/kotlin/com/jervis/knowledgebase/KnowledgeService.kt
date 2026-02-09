@@ -41,4 +41,10 @@ interface KnowledgeService {
         startKey: String,
         spec: com.jervis.knowledgebase.service.graphdb.model.TraversalSpec,
     ): List<com.jervis.knowledgebase.service.graphdb.model.GraphNode>
+
+    /**
+     * Purge all KB data (RAG chunks + graph refs) for a given sourceUrn.
+     * Returns true if purge was successful.
+     */
+    suspend fun purge(sourceUrn: String): Boolean
 }

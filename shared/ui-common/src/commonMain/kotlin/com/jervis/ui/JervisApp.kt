@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,21 +72,28 @@ fun JervisApp(
     val currentServices = servicesState?.second
     if (currentServices == null) {
         // Show loading screen while connecting
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+        MaterialTheme {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
             ) {
-                CircularProgressIndicator()
-                Text("Connecting to server...")
-                Text(
-                    text = serverBaseUrl,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        CircularProgressIndicator()
+                        Text("Connecting to server...")
+                        Text(
+                            text = serverBaseUrl,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
         return
@@ -109,6 +117,8 @@ fun JervisApp(
                 bugTrackerSetup = currentServices.bugTrackerSetupService,
                 codingAgents = currentServices.codingAgentSettingsService,
                 meetings = currentServices.meetingService,
+                transcriptCorrections = currentServices.transcriptCorrectionService,
+                deviceTokens = currentServices.deviceTokenService,
             )
         }
 

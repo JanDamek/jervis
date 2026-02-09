@@ -233,6 +233,27 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    override suspend fun purge(sourceUrn: String): Boolean {
+        logger.debug { "Calling knowledgebase purge: sourceUrn=$sourceUrn" }
+
+        return try {
+            val response: PythonPurgeResult = client.post("$apiBaseUrl/purge") {
+                contentType(ContentType.Application.Json)
+                setBody(PythonPurgeRequest(sourceUrn = sourceUrn))
+            }.body()
+
+            logger.info {
+                "Purge complete: chunks=${response.chunksDeleted} " +
+                    "nodes_cleaned=${response.nodesCleaned} edges_cleaned=${response.edgesCleaned} " +
+                    "nodes_deleted=${response.nodesDeleted} edges_deleted=${response.edgesDeleted}"
+            }
+            response.status == "success"
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to purge knowledgebase: ${e.message}" }
+            false
+        }
+    }
+
     fun close() {
         client.close()
     }
@@ -307,6 +328,26 @@ private data class PythonGraphNode(
     val key: String,
     val label: String,
     val properties: Map<String, String>,
+)
+
+@Serializable
+private data class PythonPurgeRequest(
+    val sourceUrn: String,
+)
+
+@Serializable
+private data class PythonPurgeResult(
+    val status: String,
+    @SerialName("chunks_deleted")
+    val chunksDeleted: Int = 0,
+    @SerialName("nodes_cleaned")
+    val nodesCleaned: Int = 0,
+    @SerialName("edges_cleaned")
+    val edgesCleaned: Int = 0,
+    @SerialName("nodes_deleted")
+    val nodesDeleted: Int = 0,
+    @SerialName("edges_deleted")
+    val edgesDeleted: Int = 0,
 )
 
 @Serializable
