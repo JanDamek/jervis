@@ -357,8 +357,6 @@ The main screen uses a unified layout for all screen sizes. No sidebar — menu 
 ```
 ALL SCREEN SIZES:
 ┌──────────────────────────────────────────────┐
-│ JTopBar: "JERVIS Assistant"                  │
-├──────────────────────────────────────────────┤
 │ [Klient ▼]  [Projekt ▼]  [☰ Menu]           │
 │──────────────────────────────────────────────│
 │ Chat messages...                             │

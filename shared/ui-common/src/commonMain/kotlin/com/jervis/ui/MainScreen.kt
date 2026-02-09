@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.util.rememberClipboardManager
@@ -109,8 +108,6 @@ fun MainScreenView(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        JTopBar(title = "JERVIS Assistant")
-
         ChatContent(
             clients = clients,
             projects = projects,
