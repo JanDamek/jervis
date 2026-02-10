@@ -15,6 +15,7 @@ import com.jervis.ui.model.PendingQueueItem
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
+import com.jervis.ui.storage.PendingMessageStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -170,6 +171,9 @@ class MainViewModel(
         // Initialize notifications
         notificationManager.initialize()
 
+        // Restore pending message from persistent storage (survives app restart)
+        pendingMessage = PendingMessageStorage.load()
+
         // Load initial data
         loadClients()
 
@@ -241,15 +245,22 @@ class MainViewModel(
                 repository.notifications
                     .subscribeToEvents(clientId)
                     .retryWhen { cause, attempt ->
-                        println("Event stream error: ${cause.message}, retry attempt $attempt")
-                        val delaySeconds =
-                            when (attempt + 1) {
-                                1L -> 1L
-                                2L -> 2L
-                                else -> 3L
-                            }
-                        delay(delaySeconds.seconds)
-                        true
+                        val isRpcDead = cause.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
+                            cause.message?.contains("Client cancelled", ignoreCase = true) == true
+                        if (isRpcDead) {
+                            println("Event stream: RPC client dead, stopping retry")
+                            false // stop — connectWithRetry in chat stream triggers onRefreshConnection
+                        } else {
+                            println("Event stream error: ${cause.message}, retry attempt $attempt")
+                            val delaySeconds =
+                                when (attempt + 1) {
+                                    1L -> 1L
+                                    2L -> 2L
+                                    else -> 3L
+                                }
+                            delay(delaySeconds.seconds)
+                            true
+                        }
                     }.collect { event ->
                         handleGlobalEvent(event)
                     }
@@ -394,9 +405,16 @@ class MainViewModel(
                 repository.agentOrchestrator
                     .subscribeToQueueStatus(clientId)
                     .retryWhen { cause, attempt ->
-                        println("Queue status stream error: ${cause.message}, retry attempt $attempt")
-                        delay(2.seconds)
-                        true
+                        val isRpcDead = cause.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
+                            cause.message?.contains("Client cancelled", ignoreCase = true) == true
+                        if (isRpcDead) {
+                            println("Queue status stream: RPC client dead, stopping retry")
+                            false // stop — connectWithRetry in chat stream triggers onRefreshConnection
+                        } else {
+                            println("Queue status stream error: ${cause.message}, retry attempt $attempt")
+                            delay(2.seconds)
+                            true
+                        }
                     }.collect { response ->
                         if (response.type == ChatResponseType.QUEUE_STATUS) {
                             val newRunningId = response.metadata["runningProjectId"]
@@ -833,6 +851,15 @@ class MainViewModel(
             _isOverlayVisible.value = false
             reconnectAttempts = 0
             _reconnectAttemptDisplay.value = 0
+
+            // After successful reconnect, retry pending message
+            pendingMessage?.let { msg ->
+                println("=== Retrying pending message after reconnect ===")
+                _inputText.value = msg
+                pendingMessage = null
+                PendingMessageStorage.save(null)
+                sendMessage()
+            }
         } catch (e: Exception) {
             println("Failed to reload history: ${e.message}")
 
@@ -977,6 +1004,7 @@ class MainViewModel(
                 )
                 println("=== Message sent successfully ===")
                 pendingMessage = null
+                PendingMessageStorage.save(null)
 
                 // Show progress message — agent is now processing
                 val isQueued = _runningProjectId.value != null &&
@@ -994,6 +1022,7 @@ class MainViewModel(
                 println("Error sending message: ${e.message}")
                 e.printStackTrace()
                 pendingMessage = originalText
+                PendingMessageStorage.save(originalText)
                 // Remove optimistic message on failure
                 _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
                 _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
@@ -1025,6 +1054,7 @@ class MainViewModel(
                 )
                 println("=== Retried message sent successfully ===")
                 pendingMessage = null
+                PendingMessageStorage.save(null)
             } catch (e: Exception) {
                 println("Error retrying message: ${e.message}")
                 _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
@@ -1036,6 +1066,7 @@ class MainViewModel(
 
     fun cancelRetry() {
         pendingMessage = null
+        PendingMessageStorage.save(null)
     }
 
     fun clearError() {

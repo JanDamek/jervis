@@ -18,8 +18,15 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactor.awaitSingle
+import kotlinx.coroutines.reactor.awaitSingleOrNull
 import mu.KotlinLogging
 import org.springframework.context.annotation.Lazy
+import org.springframework.data.mongodb.core.FindAndModifyOptions
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate
+import org.springframework.data.mongodb.core.query.Criteria
+import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -29,6 +36,7 @@ class TaskService(
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val qualifierProperties: QualifierProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
+    private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -137,8 +145,8 @@ class TaskService(
 
     /**
      * Get queue status: currently running task and queue size.
-     * Queue size counts only FOREGROUND tasks in READY_FOR_GPU state,
-     * excluding the currently running task (which is still READY_FOR_GPU in DB).
+     * Queue size counts only FOREGROUND tasks in READY_FOR_GPU state.
+     * Running task is atomically claimed (DISPATCHED_GPU) so it's excluded automatically.
      */
     suspend fun getQueueStatus(
         clientId: ClientId,
@@ -362,12 +370,112 @@ class TaskService(
      * Returns: Updated task with QUALIFYING state if successfully claimed, null if already claimed
      */
     suspend fun setToQualifying(task: TaskDocument): TaskDocument? {
-        logger.info {
-            "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
-                "from=READY_FOR_QUALIFICATION to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
+        val result = atomicStateTransition(
+            taskId = task.id,
+            expectedState = TaskStateEnum.READY_FOR_QUALIFICATION,
+            newState = TaskStateEnum.QUALIFYING,
+        )
+
+        if (result != null) {
+            logger.info {
+                "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
+                    "from=READY_FOR_QUALIFICATION to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
+            }
+        } else {
+            logger.debug {
+                "TASK_CLAIM_FAILED: id=${task.id} - already claimed by another instance"
+            }
         }
 
-        return task
+        return result
+    }
+
+    /**
+     * Atomically claim a task for GPU execution using MongoDB findAndModify.
+     * Returns null if the task was already claimed by another instance.
+     */
+    suspend fun claimForExecution(task: TaskDocument): TaskDocument? {
+        val result = atomicStateTransition(
+            taskId = task.id,
+            expectedState = TaskStateEnum.READY_FOR_GPU,
+            newState = TaskStateEnum.DISPATCHED_GPU,
+        )
+
+        if (result != null) {
+            logger.info {
+                "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
+                    "from=READY_FOR_GPU to=DISPATCHED_GPU type=${task.type} (ATOMICALLY CLAIMED)"
+            }
+        } else {
+            logger.debug {
+                "TASK_CLAIM_FAILED: id=${task.id} - already claimed by another instance"
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Atomic state transition using MongoDB findAndModify.
+     * Only succeeds if the task is currently in expectedState.
+     * Returns the updated document, or null if the task was already in a different state.
+     */
+    private suspend fun atomicStateTransition(
+        taskId: TaskId,
+        expectedState: TaskStateEnum,
+        newState: TaskStateEnum,
+    ): TaskDocument? {
+        val query = Query(
+            Criteria.where("_id").`is`(taskId.value)
+                .and("state").`is`(expectedState.name),
+        )
+        val update = Update().set("state", newState.name)
+        val options = FindAndModifyOptions.options().returnNew(true)
+
+        return mongoTemplate.findAndModify(query, update, options, TaskDocument::class.java)
+            .awaitSingleOrNull()
+    }
+
+    /**
+     * Reset stale tasks stuck in transient states after pod crash/restart.
+     * DISPATCHED_GPU older than threshold → READY_FOR_GPU
+     * QUALIFYING older than threshold → READY_FOR_QUALIFICATION
+     * Returns the number of tasks reset.
+     */
+    suspend fun resetStaleTasks(staleThreshold: Instant): Int {
+        var resetCount = 0
+
+        // Reset DISPATCHED_GPU → READY_FOR_GPU
+        val dispatchedQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
+                .and("createdAt").lt(staleThreshold),
+        )
+        val dispatchedUpdate = Update().set("state", TaskStateEnum.READY_FOR_GPU.name)
+        val dispatchedResult = mongoTemplate.updateMulti(dispatchedQuery, dispatchedUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        val dispatchedCount = dispatchedResult.modifiedCount.toInt()
+        resetCount += dispatchedCount
+
+        if (dispatchedCount > 0) {
+            logger.warn { "STALE_RECOVERY: Reset $dispatchedCount DISPATCHED_GPU tasks → READY_FOR_GPU" }
+        }
+
+        // Reset QUALIFYING → READY_FOR_QUALIFICATION
+        val qualifyingQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
+                .and("createdAt").lt(staleThreshold),
+        )
+        val qualifyingUpdate = Update().set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+        val qualifyingResult = mongoTemplate.updateMulti(qualifyingQuery, qualifyingUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        val qualifyingCount = qualifyingResult.modifiedCount.toInt()
+        resetCount += qualifyingCount
+
+        if (qualifyingCount > 0) {
+            logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → READY_FOR_QUALIFICATION" }
+        }
+
+        return resetCount
     }
 
     /**

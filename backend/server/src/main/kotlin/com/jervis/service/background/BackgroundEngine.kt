@@ -103,6 +103,21 @@ class BackgroundEngine(
 
         logger.info { "BackgroundEngine starting - initializing three independent loops..." }
 
+        // Recover tasks stuck in transient states from previous pod crash
+        scope.launch {
+            try {
+                val staleThreshold = java.time.Instant.now().minus(Duration.ofMinutes(10))
+                val resetCount = taskService.resetStaleTasks(staleThreshold)
+                if (resetCount > 0) {
+                    logger.info { "Recovered $resetCount stale tasks after pod restart" }
+                } else {
+                    logger.info { "No stale tasks found after pod restart" }
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to recover stale tasks on startup" }
+            }
+        }
+
         qualificationJob =
             scope.launch {
                 try {
@@ -226,17 +241,23 @@ class BackgroundEngine(
                 }
 
                 if (task != null) {
-                    logger.info {
-                        "GPU_TASK_PICKUP: id=${task.id} correlationId=${task.correlationId} " +
-                            "type=${task.type} state=${task.state} processingMode=${task.processingMode} " +
-                            "queuePosition=${task.queuePosition}"
-                    }
+                    // Atomically claim the task — prevents duplicate execution if 2 instances overlap
+                    val claimed = taskService.claimForExecution(task)
+                    if (claimed == null) {
+                        logger.info { "GPU_TASK_SKIP: id=${task.id} - already claimed by another instance" }
+                    } else {
+                        logger.info {
+                            "GPU_TASK_PICKUP: id=${claimed.id} correlationId=${claimed.correlationId} " +
+                                "type=${claimed.type} state=${claimed.state} processingMode=${claimed.processingMode} " +
+                                "queuePosition=${claimed.queuePosition}"
+                        }
 
-                    executeTask(task)
+                        executeTask(claimed)
 
-                    logger.info {
-                        "GPU_TASK_FINISHED: id=${task.id} correlationId=${task.correlationId} " +
-                            "processingMode=${task.processingMode}"
+                        logger.info {
+                            "GPU_TASK_FINISHED: id=${claimed.id} correlationId=${claimed.correlationId} " +
+                                "processingMode=${claimed.processingMode}"
+                        }
                     }
                 } else {
                     // No tasks — wait for notification or poll every 5s as safety net

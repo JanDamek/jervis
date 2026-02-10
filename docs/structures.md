@@ -320,6 +320,8 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 - **Max iterations:** 500 (configurable via application.yml)
 - **Preemption:** Immediately interrupted by user requests
 - **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
+- **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
+- **Stale recovery:** On pod startup, tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset
 
 ### Auto-Requeue on Inline Messages
 
@@ -351,13 +353,20 @@ re-processed with the full conversation context once the current orchestration f
 ```
 NEW (from API) → INDEXING (processing) → INDEXED (task created)
     ↓
-QUALIFICATION_IN_PROGRESS (CPU agent) → DONE or READY_FOR_GPU
+READY_FOR_QUALIFICATION → QUALIFYING (atomic findAndModify) → DONE or READY_FOR_GPU
     ↓
-READY_FOR_GPU → PYTHON_ORCHESTRATING (GPU agent) → COMPLETED
+READY_FOR_GPU → DISPATCHED_GPU (atomic findAndModify) → PYTHON_ORCHESTRATING → COMPLETED
                     │                     │
                     │                     └── new messages arrived? → READY_FOR_GPU (auto-requeue)
                     └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
 ```
+
+### K8s Resilience
+
+- **Deployment strategy:** `Recreate` — old pod is stopped before new pod starts (no overlap)
+- **Atomic task claiming:** MongoDB `findAndModify` ensures only one instance processes each task
+- **Stale task recovery:** On startup, BackgroundEngine resets tasks stuck in transient states (DISPATCHED_GPU, QUALIFYING) for >10 minutes back to their retryable state
+- **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
 For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestrator-final-spec.md#9-async-dispatch--result-polling-architektura).
 
@@ -444,5 +453,5 @@ OLLAMA_KV_CACHE_TYPE=q8_0
 
 ---
 
-**Document Version:** 4.0
-**Last Updated:** 2026-02-07
+**Document Version:** 4.1
+**Last Updated:** 2026-02-10
