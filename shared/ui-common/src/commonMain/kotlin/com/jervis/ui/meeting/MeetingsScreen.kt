@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.MenuBook
@@ -179,6 +180,8 @@ fun MeetingsScreen(
             pendingChatMessage = pendingChatMessage,
             transcriptionPercent = transcriptionProgress[currentDetail.id],
             correctionProgress = correctionProgress[currentDetail.id],
+            errorMessage = error,
+            onDismissViewError = { viewModel.clearError() },
             onBack = { viewModel.selectMeeting(null) },
             onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
@@ -196,6 +199,10 @@ fun MeetingsScreen(
             },
             onSegmentPlay = { segmentIndex, startSec, endSec ->
                 viewModel.playSegment(currentDetail.id, segmentIndex, startSec, endSec)
+            },
+            onDismissError = { viewModel.dismissMeetingError(currentDetail.id) },
+            onRetranscribeSegment = { segmentIndex ->
+                viewModel.retranscribeSegment(currentDetail.id, segmentIndex)
             },
         )
         return
@@ -682,6 +689,10 @@ private fun MeetingDetailView(
     onApplySegmentCorrection: (segmentIndex: Int, correctedText: String) -> Unit,
     onCorrectWithInstruction: (instruction: String) -> Unit,
     onSegmentPlay: (segmentIndex: Int, startSec: Double, endSec: Double) -> Unit = { _, _, _ -> },
+    onDismissError: () -> Unit = {},
+    onRetranscribeSegment: (segmentIndex: Int) -> Unit = {},
+    errorMessage: String? = null,
+    onDismissViewError: () -> Unit = {},
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
@@ -772,6 +783,27 @@ private fun MeetingDetailView(
                 },
             )
 
+            // ViewModel error (RPC failures etc.)
+            errorMessage?.let { msg ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    JIconButton(
+                        onClick = onDismissViewError,
+                        icon = Icons.Default.Close,
+                        contentDescription = "Zavřít",
+                    )
+                }
+            }
+
             // Metadata header — scrollable when content overflows (error messages, correction questions)
             Column(
                 modifier = Modifier
@@ -824,7 +856,7 @@ private fun MeetingDetailView(
                     )
                 }
 
-                // Error message with retranscribe action
+                // Error message with retranscribe + dismiss actions
                 if (meeting.state == MeetingStateEnum.FAILED) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
@@ -834,14 +866,23 @@ private fun MeetingDetailView(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = meeting.errorMessage ?: "Neznámá chyba",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
+                            SelectionContainer {
+                                Text(
+                                    text = meeting.errorMessage ?: "Neznámá chyba",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
-                            JTextButton(onClick = onRetranscribe) {
-                                Text("Přepsat znovu")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                JTextButton(onClick = onRetranscribe) {
+                                    Text("Přepsat znovu")
+                                }
+                                if (meeting.transcriptSegments.isNotEmpty()) {
+                                    JTextButton(onClick = onDismissError) {
+                                        Text("Zamítnout")
+                                    }
+                                }
                             }
                         }
                     }
@@ -957,6 +998,10 @@ private fun MeetingDetailView(
                 showCorrected = true
             },
             onDismiss = { segmentForCorrection = null },
+            onRetranscribeSegment = {
+                onRetranscribeSegment(state.segmentIndex)
+                segmentForCorrection = null
+            },
         )
     }
 }
@@ -1720,6 +1765,7 @@ private fun SegmentCorrectionDialog(
     onPlayToggle: () -> Unit,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    onRetranscribeSegment: (() -> Unit)? = null,
 ) {
     var correctedText by remember { mutableStateOf(editableText) }
 
@@ -1779,6 +1825,12 @@ private fun SegmentCorrectionDialog(
             maxLines = 5,
             singleLine = false,
         )
+        if (onRetranscribeSegment != null) {
+            Spacer(Modifier.height(8.dp))
+            JTextButton(onClick = onRetranscribeSegment) {
+                Text("Přepsat segment")
+            }
+        }
     }
 }
 

@@ -472,12 +472,18 @@ class MeetingViewModel(
     fun refreshMeeting(meetingId: String) {
         scope.launch {
             try {
-                val updated = meetingService.getMeeting(meetingId)
-                _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
-                if (_selectedMeeting.value?.id == meetingId) {
-                    _selectedMeeting.value = updated
-                }
-            } catch (_: Exception) {}
+                doRefreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při obnovení schůzky: ${e.message}"
+            }
+        }
+    }
+
+    private suspend fun doRefreshMeeting(meetingId: String) {
+        val updated = meetingService.getMeeting(meetingId)
+        _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
+        if (_selectedMeeting.value?.id == meetingId) {
+            _selectedMeeting.value = updated
         }
     }
 
@@ -536,9 +542,31 @@ class MeetingViewModel(
         scope.launch {
             try {
                 meetingService.retranscribeMeeting(meetingId)
-                refreshMeeting(meetingId)
+                doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri obnove prepisu: ${e.message}"
+            }
+        }
+    }
+
+    fun dismissMeetingError(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.dismissMeetingError(meetingId)
+                doRefreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při zamítnutí chyby: ${e.message}"
+            }
+        }
+    }
+
+    fun retranscribeSegment(meetingId: String, segmentIndex: Int) {
+        scope.launch {
+            try {
+                meetingService.retranscribeSegments(meetingId, listOf(segmentIndex))
+                doRefreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při přepisu segmentu: ${e.message}"
             }
         }
     }
@@ -547,7 +575,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 meetingService.recorrectMeeting(meetingId)
-                refreshMeeting(meetingId)
+                doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri oprave prepisu: ${e.message}"
             }
@@ -558,7 +586,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 meetingService.reindexMeeting(meetingId)
-                refreshMeeting(meetingId)
+                doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri reindexaci: ${e.message}"
             }
@@ -569,7 +597,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 meetingService.answerCorrectionQuestions(meetingId, answers)
-                refreshMeeting(meetingId)
+                doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri odesilani odpovedi: ${e.message}"
             }
@@ -609,7 +637,7 @@ class MeetingViewModel(
             _isCorrecting.value = true
             // Optimistic user message
             val userMsg = CorrectionChatMessageDto(
-                role = "user",
+                role = com.jervis.dto.meeting.CorrectionChatRole.USER,
                 text = instruction,
                 timestamp = kotlinx.datetime.Instant.fromEpochMilliseconds(
                     kotlin.time.Clock.System.now().toEpochMilliseconds()
