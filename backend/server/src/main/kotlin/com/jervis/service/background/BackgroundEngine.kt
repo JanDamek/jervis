@@ -308,6 +308,31 @@ class BackgroundEngine(
                         return@launch
                     }
 
+                    // Dispatch to orchestrator failed — task still DISPATCHED_GPU, reset for retry
+                    if (freshTask?.state == TaskStateEnum.DISPATCHED_GPU && finalResponse.message.isNotBlank()) {
+                        logger.warn { "PYTHON_DISPATCH_FAILED: taskId=${task.id} — resetting to READY_FOR_GPU for retry" }
+                        taskRepository.save(freshTask.copy(state = TaskStateEnum.READY_FOR_GPU))
+                        taskService.setRunningTask(null)
+
+                        // Inform user about the issue
+                        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+                            try {
+                                agentOrchestratorRpc.emitToChatStream(
+                                    clientId = task.clientId.toString(),
+                                    projectId = task.projectId?.toString(),
+                                    response = finalResponse,
+                                )
+                            } catch (e: Exception) {
+                                logger.warn(e) { "Failed to emit dispatch failure to chat" }
+                            }
+                        }
+
+                        emitIdleQueueStatus(task.clientId)
+                        // Brief delay to avoid tight retry loop when orchestrator is down
+                        delay(10_000)
+                        return@launch
+                    }
+
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
 
                     // Emit final response to chat stream for FOREGROUND tasks
