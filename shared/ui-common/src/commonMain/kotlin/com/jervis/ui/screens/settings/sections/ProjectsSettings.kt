@@ -392,10 +392,10 @@ internal fun ProjectEditForm(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
-                                        JIconButton(
-                                            onClick = { removeLink(link) },
-                                            icon = Icons.Default.Close,
-                                            contentDescription = "Odebrat propojení",
+                                        JRemoveIconButton(
+                                            onConfirmed = { removeLink(link) },
+                                            title = "Odebrat propojení?",
+                                            message = "Propojení bude odebráno z projektu.",
                                         )
                                     }
                                 }
@@ -531,10 +531,10 @@ private fun ProjectResourceItem(
                     contentDescription = "Propojit",
                 )
             }
-            JIconButton(
-                onClick = onRemove,
-                icon = Icons.Default.Close,
-                contentDescription = "Odebrat",
+            JRemoveIconButton(
+                onConfirmed = onRemove,
+                title = "Odebrat zdroj?",
+                message = "Zdroj \"${resource.displayName.ifEmpty { resource.resourceIdentifier }}\" bude odebrán z projektu.",
             )
         }
     }

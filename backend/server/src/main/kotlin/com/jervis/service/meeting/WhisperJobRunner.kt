@@ -9,6 +9,8 @@ import io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSourceBuilder
 import io.fabric8.kubernetes.api.model.VolumeBuilder
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder
+import io.fabric8.kubernetes.client.ConfigBuilder
+import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -57,6 +59,16 @@ class WhisperJobRunner(
         private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
     }
 
+    private fun buildK8sClient(): KubernetesClient {
+        val config = ConfigBuilder()
+            .withRequestTimeout(300_000)     // 5 min for API requests
+            .withConnectionTimeout(30_000)   // 30s for initial connection
+            .build()
+        return KubernetesClientBuilder()
+            .withConfig(config)
+            .build()
+    }
+
     /**
      * Check if Whisper transcription is available (K8s API accessible in-cluster, always true locally).
      */
@@ -64,7 +76,7 @@ class WhisperJobRunner(
         if (!IN_CLUSTER) return true
         return try {
             withContext(Dispatchers.IO) {
-                KubernetesClientBuilder().build().use { client ->
+                buildK8sClient().use { client ->
                     client.batch().v1().jobs()
                         .inNamespace(K8S_NAMESPACE)
                         .withLabel("app", "jervis-whisper")
@@ -251,7 +263,7 @@ class WhisperJobRunner(
     suspend fun findActiveJobForMeeting(meetingId: String): String? {
         if (!IN_CLUSTER) return null
         return withContext(Dispatchers.IO) {
-            KubernetesClientBuilder().build().use { client ->
+            buildK8sClient().use { client ->
                 val jobs = client.batch().v1().jobs()
                     .inNamespace(K8S_NAMESPACE)
                     .withLabel("app", "jervis-whisper")
@@ -290,7 +302,7 @@ class WhisperJobRunner(
         logger.info { "Re-attaching to existing Whisper Job $jobName (timeout: ${timeoutSeconds}s)" }
 
         withContext(Dispatchers.IO) {
-            KubernetesClientBuilder().build().use { client ->
+            buildK8sClient().use { client ->
                 var elapsed = 0L
                 var pollCount = 0
 
@@ -521,7 +533,7 @@ class WhisperJobRunner(
             .build()
 
         withContext(Dispatchers.IO) {
-            KubernetesClientBuilder().build().use { client ->
+            buildK8sClient().use { client ->
                 client.batch().v1().jobs()
                     .inNamespace(K8S_NAMESPACE)
                     .resource(job)

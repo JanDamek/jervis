@@ -562,10 +562,10 @@ private fun ClientEditForm(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    JIconButton(
-                                        onClick = { selectedConnectionIds.remove(connId) },
-                                        icon = Icons.Default.Close,
-                                        contentDescription = "Odebrat",
+                                    JRemoveIconButton(
+                                        onConfirmed = { selectedConnectionIds.remove(connId) },
+                                        title = "Odebrat připojení?",
+                                        message = "Připojení \"${connection?.name ?: ""}\" bude odebráno od klienta.",
                                     )
                                 }
                             }

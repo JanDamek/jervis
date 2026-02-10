@@ -200,7 +200,7 @@ Foundation files are in the `design/` directory (see Section 10).
 
 | Component | Purpose | Key params |
 |-----------|---------|------------|
-| `JTopBar` | Navigation bar with IconButton + ArrowBack icon | `title`, `onBack?`, `actions` |
+| `JTopBar` | Navigation bar with IconButton + ArrowBack icon; uses `surfaceVariant` background for visual separation from content in both light and dark themes | `title`, `onBack?`, `actions` |
 | `JSection` | Visual grouping with title and padding | `title`, `content` |
 | `JActionBar` | Right-aligned action buttons bar | `modifier`, `content: RowScope` |
 | `JVerticalSplitLayout` | Two-pane vertical split with draggable handle | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
@@ -259,6 +259,7 @@ Note: `categoryIcon` in `JAdaptiveSidebarLayout` takes a `@Composable (T) -> Uni
 | `JDeleteButton` | Delegates to `JIconButton(Icons.Default.Delete)`, tinted error | `onClick` |
 | `JEditButton` | Delegates to `JIconButton(Icons.Default.Edit)` | `onClick` |
 | `JAddButton` | Delegates to `JIconButton(Icons.Default.Add)` | `onClick` |
+| `JRemoveIconButton` | Close icon + built-in ConfirmDialog; fires `onConfirmed` only after confirmation | `onConfirmed`, `title`, `message`, `confirmText` |
 
 ### 3.7) Card Components
 
@@ -1095,7 +1096,7 @@ JFormDialog(
 
 ### 7.4) Delete Confirmation
 
-Always use `JConfirmDialog`:
+Always use `ConfirmDialog` (from `com.jervis.ui.util.ConfirmDialog`):
 
 ```kotlin
 JConfirmDialog(
@@ -1108,6 +1109,21 @@ JConfirmDialog(
     isDestructive = true,
 )
 ```
+
+### 7.5) Remove-Action Confirmation (Inline Items)
+
+Use `JRemoveIconButton` for inline remove buttons (X icon on list items). It encapsulates
+the confirm dialog — no extra state variables needed:
+
+```kotlin
+JRemoveIconButton(
+    onConfirmed = { removeItem(item) },
+    title = "Odebrat zdroj?",
+    message = "Zdroj \"${item.displayName}\" bude odebran z projektu.",
+)
+```
+
+All remove actions across settings screens (resource, link, component, connection removal) use this component.
 
 ---
 
@@ -1132,7 +1148,7 @@ JConfirmDialog(
 | Secondary / outlined | `JSecondaryButton` (outlined button) |
 | Text-only / cancel | `JTextButton` |
 | Destructive | `JDestructiveButton` (error-colored) |
-| Icon action | `JIconButton` / `JRefreshButton` / `JDeleteButton` / `JEditButton` / `JAddButton` |
+| Icon action | `JIconButton` / `JRefreshButton` / `JDeleteButton` / `JEditButton` / `JAddButton` / `JRemoveIconButton` |
 
 ---
 
@@ -1229,7 +1245,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- CopyableTextCard.kt          <- CopyableTextCard (SelectionContainer + outlinedCardBorder)
 |   +-- BrowserHelper.kt             <- expect fun openUrlInBrowser
 |   +-- FilePickers.kt               <- expect fun pickTextFileContent
-+-- App.kt                           <- Root composable (JervisTheme wrapper)
++-- App.kt                           <- Root composable (JervisTheme wrapper, global SelectionContainer)
 ```
 
 **Deleted files** (no longer exist):

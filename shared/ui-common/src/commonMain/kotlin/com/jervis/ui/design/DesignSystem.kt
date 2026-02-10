@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -59,6 +60,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -84,6 +86,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.jervis.ui.util.ConfirmDialog
 
 /**
  * Jervis Design System – centralized components for a unified look & feel.
@@ -176,6 +179,12 @@ fun JTopBar(
             {}
         },
         actions = actions,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
     )
 }
 
@@ -433,6 +442,36 @@ fun JEditButton(onClick: () -> Unit, enabled: Boolean = true) {
 @Composable
 fun JAddButton(onClick: () -> Unit, enabled: Boolean = true) {
     JIconButton(onClick = onClick, icon = Icons.Default.Add, contentDescription = "Přidat", enabled = enabled)
+}
+
+/**
+ * Remove icon button with built-in confirmation dialog.
+ * Click shows ConfirmDialog; onConfirmed fires only after user confirms.
+ */
+@Composable
+fun JRemoveIconButton(
+    onConfirmed: () -> Unit,
+    title: String = "Odebrat?",
+    message: String = "Položka bude odebrána.",
+    confirmText: String = "Odebrat",
+    contentDescription: String = "Odebrat",
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+
+    JIconButton(
+        onClick = { showConfirm = true },
+        icon = Icons.Default.Close,
+        contentDescription = contentDescription,
+    )
+
+    ConfirmDialog(
+        visible = showConfirm,
+        title = title,
+        message = message,
+        confirmText = confirmText,
+        onConfirm = { showConfirm = false; onConfirmed() },
+        onDismiss = { showConfirm = false },
+    )
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

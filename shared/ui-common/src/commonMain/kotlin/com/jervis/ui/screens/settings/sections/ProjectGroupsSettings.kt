@@ -295,10 +295,10 @@ private fun ProjectGroupEditForm(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    JIconButton(
-                                        icon = Icons.Default.Close,
-                                        contentDescription = "Odebrat",
-                                        onClick = { removeResource(res) },
+                                    JRemoveIconButton(
+                                        onConfirmed = { removeResource(res) },
+                                        title = "Odebrat zdroj?",
+                                        message = "Zdroj \"${res.displayName.ifEmpty { res.resourceIdentifier }}\" bude odebrán ze skupiny.",
                                     )
                                 }
                             }

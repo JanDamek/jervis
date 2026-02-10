@@ -29,6 +29,7 @@ import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.notification.ApprovalNotificationDialog
 import com.jervis.ui.screens.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 
 /**
  * Root Compose Application
@@ -44,7 +45,7 @@ fun App(
     onOpenDebugWindow: (() -> Unit)? = null,
     onRefreshConnection: (() -> Unit)? = null,
 ) {
-    val viewModel = remember { MainViewModel(repository, defaultClientId, defaultProjectId, onRefreshConnection) }
+    val viewModel = remember(repository) { MainViewModel(repository, defaultClientId, defaultProjectId, onRefreshConnection) }
     val snackbarHostState = remember { SnackbarHostState() }
     val appNavigator = navigator ?: remember { AppNavigator() }
 
@@ -57,8 +58,8 @@ fun App(
         }
     }
 
-    // Cleanup on dispose
-    DisposableEffect(Unit) {
+    // Cleanup on dispose (keyed on viewModel so old one gets disposed on reconnect)
+    DisposableEffect(viewModel) {
         onDispose {
             viewModel.onDispose()
         }
@@ -69,6 +70,7 @@ fun App(
           modifier = Modifier.fillMaxSize(),
           color = MaterialTheme.colorScheme.background,
       ) {
+        SelectionContainer {
         val clients by viewModel.clients.collectAsState()
         val projects by viewModel.projects.collectAsState()
         val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -239,6 +241,7 @@ fun App(
                     }
                 }
             }
+        }
         }
       }
     }

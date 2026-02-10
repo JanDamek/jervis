@@ -279,12 +279,12 @@ private fun EnvironmentEditForm(
                                             )
                                         }
                                     }
-                                    JIconButton(
-                                        icon = Icons.Default.Close,
-                                        contentDescription = "Odebrat",
-                                        onClick = {
+                                    JRemoveIconButton(
+                                        onConfirmed = {
                                             components = components.filter { it.id != component.id }.toMutableList()
                                         },
+                                        title = "Odebrat komponentu?",
+                                        message = "Komponenta \"${component.name}\" bude odebrána z prostředí.",
                                     )
                                 }
                             }

@@ -862,6 +862,7 @@ COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 
 - `com.jervis.ui.design.*` -- ALL J-prefixed components (buttons, cards, forms, dialogs, layout)
 - `com.jervis.ui.util.ConfirmDialog` -- Delete confirmations (Czech defaults)
+- `JRemoveIconButton` -- Inline remove button with built-in ConfirmDialog (for list item removal)
 - `com.jervis.ui.util.CopyableTextCard` -- Text with SelectionContainer wrapping
 
 ---
