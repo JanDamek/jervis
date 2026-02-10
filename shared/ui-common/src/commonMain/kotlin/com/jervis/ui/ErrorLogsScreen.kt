@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -30,12 +29,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.error.ErrorLogDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JTableHeaderCell
 import com.jervis.ui.design.JTableHeaderRow
-import com.jervis.ui.design.JTableRowCard
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.CopyableTextCard
@@ -43,7 +42,6 @@ import com.jervis.ui.util.DeleteIconButton
 import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ErrorLogsScreen(
     repository: JervisRepository,
@@ -64,7 +62,7 @@ fun ErrorLogsScreen(
             try {
                 errorLogs = repository.errorLogs.listAll()
             } catch (e: Exception) {
-                errorMessage = "Failed to load error logs: ${e.message}"
+                errorMessage = "Chyba při načítání logů: ${e.message}"
             } finally {
                 isLoading = false
             }
@@ -189,15 +187,14 @@ private fun ErrorLogsTable(
         // Rows
         items(errorLogs) { log ->
             val isSelected = selectedLogId == log.id
-            JTableRowCard(
+            JCard(
                 selected = isSelected,
-                modifier =
-                    Modifier.fillMaxWidth().clickable {
-                        onRowSelected(if (isSelected) null else log.id)
-                    },
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onRowSelected(if (isSelected) null else log.id)
+                },
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

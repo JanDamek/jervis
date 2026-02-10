@@ -16,15 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,24 +28,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.design.JActionBar
-import com.jervis.ui.design.JCenteredLoading
-import com.jervis.ui.design.JDetailScreen
-import com.jervis.ui.design.JEmptyState
-import com.jervis.ui.design.JErrorState
-import com.jervis.ui.design.JListDetailLayout
-import com.jervis.ui.design.JSection
-import com.jervis.ui.design.JTopBar
-import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.design.*
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.DeleteIconButton
 import com.jervis.ui.util.RefreshIconButton
-import com.jervis.ui.util.rememberClipboardManager
 import kotlinx.coroutines.launch
 
 @Composable
@@ -59,7 +43,6 @@ fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
 ) {
-    val clipboard = rememberClipboardManager()
     var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -150,11 +133,11 @@ fun UserTasksScreen(
                     RefreshIconButton(onClick = { loadTasks() })
                 })
 
-                OutlinedTextField(
+                JTextField(
                     value = filterText,
                     onValueChange = { filterText = it },
-                    label = { Text("Filtr") },
-                    placeholder = { Text("Hledat podle názvu, popisu nebo projektu...") },
+                    label = "Filtr",
+                    placeholder = "Hledat podle názvu, popisu nebo projektu...",
                     modifier = Modifier.fillMaxWidth().padding(horizontal = JervisSpacing.outerPadding),
                     singleLine = true,
                 )
@@ -173,7 +156,6 @@ fun UserTasksScreen(
                 UserTaskDetail(
                     task = task,
                     repository = repository,
-                    clipboard = clipboard,
                     onBack = { selectedTask = null },
                     onTaskSent = {
                         selectedTask = null
@@ -206,14 +188,13 @@ private fun UserTaskRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(
+    JCard(
         modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
+        onClick = onClick,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
                 .padding(16.dp)
                 .heightIn(min = JervisSpacing.touchTarget),
             verticalAlignment = Alignment.CenterVertically,
@@ -249,7 +230,6 @@ private fun UserTaskRow(
 private fun UserTaskDetail(
     task: UserTaskDto,
     repository: JervisRepository,
-    clipboard: com.jervis.ui.util.ClipboardHandler,
     onBack: () -> Unit,
     onTaskSent: () -> Unit,
     onError: (String) -> Unit,
@@ -286,111 +266,67 @@ private fun UserTaskDetail(
         },
     ) {
         val scrollState = rememberScrollState()
-        Column(
-            modifier = Modifier.weight(1f).verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní údaje") {
-                TaskDetailField("Stav", task.state)
-                TaskDetailField("Projekt", task.projectId ?: "-")
-                TaskDetailField("Klient", task.clientId)
-            }
+        SelectionContainer {
+            Column(
+                modifier = Modifier.weight(1f).verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní údaje") {
+                    JKeyValueRow("Stav", task.state)
+                    JKeyValueRow("Projekt", task.projectId ?: "-")
+                    JKeyValueRow("Klient", task.clientId)
+                }
 
-            if (!task.sourceUri.isNullOrBlank()) {
-                JSection(title = "Odkaz na zdroj") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(onClick = {
-                            clipboard.setText(AnnotatedString(task.sourceUri!!))
-                        }) {
-                            Text("Kopírovat")
-                        }
-                    }
-                    SelectionContainer {
+                if (!task.sourceUri.isNullOrBlank()) {
+                    JSection(title = "Odkaz na zdroj") {
                         Text(
                             text = task.sourceUri!!,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
-            }
 
-            if (!task.description.isNullOrBlank()) {
-                JSection(title = "Popis") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(onClick = {
-                            clipboard.setText(AnnotatedString(task.description!!))
-                        }) {
-                            Text("Kopírovat")
-                        }
-                    }
-                    SelectionContainer {
+                if (!task.description.isNullOrBlank()) {
+                    JSection(title = "Popis") {
                         Text(
                             text = task.description!!,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
-            }
 
-            JSection(title = "Dodatečné instrukce (volitelné)") {
-                OutlinedTextField(
-                    value = additionalInput,
-                    onValueChange = { additionalInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Přidejte kontext nebo instrukce...") },
-                    minLines = 3,
-                    maxLines = 6,
-                    enabled = !isSending,
-                )
-            }
+                JSection(title = "Dodatečné instrukce (volitelné)") {
+                    JTextField(
+                        value = additionalInput,
+                        onValueChange = { additionalInput = it },
+                        label = "Instrukce",
+                        placeholder = "Přidejte kontext nebo instrukce...",
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        minLines = 3,
+                        maxLines = 6,
+                        enabled = !isSending,
+                    )
+                }
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
+            }
         }
 
         // Action buttons at the bottom
         JActionBar(modifier = Modifier.padding(vertical = JervisSpacing.outerPadding)) {
-            Button(
+            JSecondaryButton(
                 onClick = { sendToAgent(TaskRoutingMode.BACK_TO_PENDING) },
                 enabled = !isSending,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                ),
             ) {
                 Text("Do fronty")
             }
-            Button(
+            JPrimaryButton(
                 onClick = { sendToAgent(TaskRoutingMode.DIRECT_TO_AGENT) },
                 enabled = !isSending,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
             ) {
                 Text("Agentovi")
             }
         }
-    }
-}
-
-@Composable
-private fun TaskDetailField(
-    label: String,
-    value: String,
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(
-            text = "$label:",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
 }

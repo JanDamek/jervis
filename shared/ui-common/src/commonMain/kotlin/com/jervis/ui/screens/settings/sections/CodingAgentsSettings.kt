@@ -12,13 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -38,8 +33,13 @@ import com.jervis.dto.coding.CodingAgentConfigDto
 import com.jervis.dto.coding.CodingAgentSetupTokenUpdateDto
 import com.jervis.dto.coding.CodingAgentSettingsDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.JCard
+import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JSection
+import com.jervis.ui.design.JSnackbarHost
+import com.jervis.ui.design.JTextField
 import com.jervis.ui.util.openUrlInBrowser
 import kotlinx.coroutines.launch
 
@@ -63,56 +63,56 @@ fun CodingAgentsSettings(repository: JervisRepository) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading && settings == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            JCenteredLoading()
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                val agents = settings?.agents ?: emptyList()
-                items(agents) { agent ->
-                    CodingAgentCard(
-                        agent = agent,
-                        onSaveApiKey = { apiKey ->
-                            scope.launch {
-                                try {
-                                    val updated = repository.codingAgents.updateApiKey(
-                                        CodingAgentApiKeyUpdateDto(
-                                            agentName = agent.name,
-                                            apiKey = apiKey,
-                                        ),
-                                    )
-                                    settings = updated
-                                    snackbarHostState.showSnackbar("API klic ulozen pro ${agent.displayName}")
-                                } catch (e: Exception) {
-                                    snackbarHostState.showSnackbar("Chyba: ${e.message}")
+            SelectionContainer {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val agents = settings?.agents ?: emptyList()
+                    items(agents) { agent ->
+                        CodingAgentCard(
+                            agent = agent,
+                            onSaveApiKey = { apiKey ->
+                                scope.launch {
+                                    try {
+                                        val updated = repository.codingAgents.updateApiKey(
+                                            CodingAgentApiKeyUpdateDto(
+                                                agentName = agent.name,
+                                                apiKey = apiKey,
+                                            ),
+                                        )
+                                        settings = updated
+                                        snackbarHostState.showSnackbar("API klic ulozen pro ${agent.displayName}")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                    }
                                 }
-                            }
-                        },
-                        onSaveSetupToken = { token ->
-                            scope.launch {
-                                try {
-                                    val updated = repository.codingAgents.updateSetupToken(
-                                        CodingAgentSetupTokenUpdateDto(
-                                            agentName = agent.name,
-                                            token = token,
-                                        ),
-                                    )
-                                    settings = updated
-                                    snackbarHostState.showSnackbar("Setup token ulozen pro ${agent.displayName}")
-                                } catch (e: Exception) {
-                                    snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                            },
+                            onSaveSetupToken = { token ->
+                                scope.launch {
+                                    try {
+                                        val updated = repository.codingAgents.updateSetupToken(
+                                            CodingAgentSetupTokenUpdateDto(
+                                                agentName = agent.name,
+                                                token = token,
+                                            ),
+                                        )
+                                        settings = updated
+                                        snackbarHostState.showSnackbar("Setup token ulozen pro ${agent.displayName}")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                    }
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
         }
 
-        SnackbarHost(
+        JSnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
         )
@@ -128,10 +128,7 @@ private fun CodingAgentCard(
     var apiKeyInput by remember { mutableStateOf("") }
     var setupTokenInput by remember { mutableStateOf("") }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
+    JCard {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(agent.displayName, style = MaterialTheme.typography.titleMedium)
@@ -182,18 +179,14 @@ private fun CodingAgentCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            OutlinedTextField(
+                            JTextField(
                                 value = setupTokenInput,
                                 onValueChange = { setupTokenInput = it },
-                                label = { Text("Setup Token") },
-                                placeholder = {
-                                    Text(
-                                        if (agent.setupTokenConfigured) {
-                                            "Token nastaven - vlozit novy pro zmenu"
-                                        } else {
-                                            "sk-ant-oat01-..."
-                                        },
-                                    )
+                                label = "Setup Token",
+                                placeholder = if (agent.setupTokenConfigured) {
+                                    "Token nastaven - vlozit novy pro zmenu"
+                                } else {
+                                    "sk-ant-oat01-..."
                                 },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
@@ -219,7 +212,7 @@ private fun CodingAgentCard(
                     // "Ziskat API klic" button - opens provider console in browser
                     if (agent.consoleUrl.isNotBlank()) {
                         Row(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
+                            JSecondaryButton(
                                 onClick = { openUrlInBrowser(agent.consoleUrl) },
                             ) {
                                 Text("Ziskat API klic")
@@ -239,13 +232,11 @@ private fun CodingAgentCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        OutlinedTextField(
+                        JTextField(
                             value = apiKeyInput,
                             onValueChange = { apiKeyInput = it },
-                            label = { Text("API Key") },
-                            placeholder = {
-                                Text(if (agent.apiKeySet) "Zadejte novy klic pro zmenu" else "Zadejte API klic")
-                            },
+                            label = "API Key",
+                            placeholder = if (agent.apiKeySet) "Zadejte novy klic pro zmenu" else "Zadejte API klic",
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             modifier = Modifier.weight(1f),

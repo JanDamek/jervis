@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -67,11 +69,8 @@ fun ProjectGroupsSettings(repository: JervisRepository) {
             }
         },
         listItem = { group ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedGroup = group },
-                border = CardDefaults.outlinedCardBorder(),
+            JCard(
+                onClick = { selectedGroup = group },
             ) {
                 Row(
                     modifier = Modifier
@@ -239,133 +238,107 @@ private fun ProjectGroupEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní informace") {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název skupiny") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Popis") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                )
-            }
+        SelectionContainer {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní informace") {
+                    JTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = "Název skupiny",
+                    )
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = "Popis",
+                        singleLine = false,
+                    )
+                }
 
-            JSection(title = "Sdílené zdroje skupiny") {
-                Text(
-                    "Zdroje na úrovni skupiny jsou sdílené všemi projekty ve skupině.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (resources.isEmpty()) {
+                JSection(title = "Sdílené zdroje skupiny") {
                     Text(
-                        "Žádné sdílené zdroje.",
+                        "Zdroje na úrovni skupiny jsou sdílené všemi projekty ve skupině.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    resources.forEach { res ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            border = CardDefaults.outlinedCardBorder(),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    .heightIn(min = JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        res.displayName.ifEmpty { res.resourceIdentifier },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    Text(
-                                        "${getCapabilityLabel(res.capability)} · ${res.resourceIdentifier}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { removeResource(res) },
-                                    modifier = Modifier.size(JervisSpacing.touchTarget),
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (resources.isEmpty()) {
+                        Text(
+                            "Žádné sdílené zdroje.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        resources.forEach { res ->
+                            JCard {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .heightIn(min = JervisSpacing.touchTarget),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("✕", style = MaterialTheme.typography.labelSmall)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            res.displayName.ifEmpty { res.resourceIdentifier },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        Text(
+                                            "${getCapabilityLabel(res.capability)} · ${res.resourceIdentifier}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    JIconButton(
+                                        icon = Icons.Default.Close,
+                                        contentDescription = "Odebrat",
+                                        onClick = { removeResource(res) },
+                                    )
                                 }
                             }
                         }
                     }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    JPrimaryButton(onClick = { showAddResourceDialog = true }) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Přidat zdroj")
+                    }
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                JPrimaryButton(onClick = { showAddResourceDialog = true }) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Přidat zdroj")
+                // Delete group
+                JSection(title = "Nebezpečná zóna") {
+                    JDestructiveButton(onClick = { showDeleteConfirm = true }) {
+                        Text("Smazat skupinu")
+                    }
                 }
+
+                Spacer(Modifier.height(16.dp))
             }
-
-            // Delete group
-            JSection(title = "Nebezpečná zóna") {
-                OutlinedButton(
-                    onClick = { showDeleteConfirm = true },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
-                ) {
-                    Text("Smazat skupinu")
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
         }
     }
 
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Smazat skupinu?") },
-            text = { Text("Projekty ve skupině nebudou smazány, pouze odřazeny ze skupiny.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirm = false
-                        onDelete()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text("Smazat")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Zrušit")
-                }
-            },
-        )
-    }
+    ConfirmDialog(
+        visible = showDeleteConfirm,
+        title = "Smazat skupinu?",
+        message = "Projekty ve skupině nebudou smazány, pouze odřazeny ze skupiny.",
+        confirmText = "Smazat",
+        onConfirm = {
+            showDeleteConfirm = false
+            onDelete()
+        },
+        onDismiss = { showDeleteConfirm = false },
+    )
 
     if (showAddResourceDialog) {
-        // Reuse the same AddResourceDialog pattern from ProjectsSettings
-        // For now, simplified version
         AddGroupResourceDialog(
             clientConnections = clientConnections,
             availableResources = availableResources,
@@ -395,11 +368,10 @@ private fun AddGroupResourceDialog(
         title = { Text("Přidat sdílený zdroj") },
         text = {
             Column {
-                OutlinedTextField(
+                JTextField(
                     value = filterText,
                     onValueChange = { filterText = it },
-                    label = { Text("Filtrovat...") },
-                    modifier = Modifier.fillMaxWidth(),
+                    label = "Filtrovat...",
                     singleLine = true,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -490,7 +462,7 @@ private fun AddGroupResourceDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            JTextButton(onClick = onDismiss) {
                 Text("Zavřít")
             }
         },
@@ -507,7 +479,6 @@ private fun NewProjectGroupDialog(
     var description by remember { mutableStateOf("") }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
-    var expanded by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -521,88 +492,50 @@ private fun NewProjectGroupDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nová skupina projektů") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název skupiny") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Popis (volitelné)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                // Client selector
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = clients.find { it.id == selectedClientId }?.name ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Klient") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+    JFormDialog(
+        visible = true,
+        title = "Nová skupina projektů",
+        onConfirm = {
+            val clientId = selectedClientId ?: return@JFormDialog
+            isSaving = true
+            scope.launch {
+                try {
+                    repository.projectGroups.saveGroup(
+                        ProjectGroupDto(
+                            clientId = clientId,
+                            name = name,
+                            description = description.ifBlank { null },
+                        ),
                     )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        clients.forEach { client ->
-                            DropdownMenuItem(
-                                text = { Text(client.name) },
-                                onClick = {
-                                    selectedClientId = client.id
-                                    expanded = false
-                                },
-                            )
-                        }
-                    }
+                    onCreated()
+                } catch (_: Exception) {
+                    isSaving = false
                 }
             }
         },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text("Zrušit")
-                }
-                Button(
-                    onClick = {
-                        val clientId = selectedClientId ?: return@Button
-                        isSaving = true
-                        scope.launch {
-                            try {
-                                repository.projectGroups.saveGroup(
-                                    ProjectGroupDto(
-                                        clientId = clientId,
-                                        name = name,
-                                        description = description.ifBlank { null },
-                                    ),
-                                )
-                                onCreated()
-                            } catch (_: Exception) {
-                                isSaving = false
-                            }
-                        }
-                    },
-                    enabled = name.isNotBlank() && selectedClientId != null && !isSaving,
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Vytvořit")
-                    }
-                }
-            }
-        },
-    )
+        onDismiss = onDismiss,
+        confirmEnabled = name.isNotBlank() && selectedClientId != null && !isSaving,
+        confirmText = "Vytvořit",
+    ) {
+        JTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "Název skupiny",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "Popis (volitelné)",
+        )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = clients,
+            selectedItem = clients.find { it.id == selectedClientId },
+            onItemSelected = { selectedClientId = it.id },
+            label = "Klient",
+            itemLabel = { it.name },
+        )
+    }
 }

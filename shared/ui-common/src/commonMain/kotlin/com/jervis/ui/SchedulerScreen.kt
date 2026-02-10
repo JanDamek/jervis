@@ -1,8 +1,8 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -23,7 +23,6 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchedulerScreen(
     repository: JervisRepository,
@@ -100,11 +99,9 @@ fun SchedulerScreen(
                 )
             },
             listItem = { task ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedTask = task },
-                    border = CardDefaults.outlinedCardBorder(),
+                JCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { selectedTask = task },
                 ) {
                     Row(
                         modifier = Modifier
@@ -153,9 +150,9 @@ fun SchedulerScreen(
             },
         )
 
-        SnackbarHost(
+        JSnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+            modifier = Modifier.align(Alignment.TopEnd),
         )
     }
 
@@ -229,70 +226,53 @@ private fun ScheduledTaskDetail(
         title = task.task.taskName,
         onBack = onBack,
         actions = {
-            Button(
-                onClick = onDelete,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
+            JDestructiveButton(onClick = onDelete) {
                 Text("Smazat")
             }
         },
     ) {
         val scrollState = rememberScrollState()
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní údaje") {
-                DetailField("Název úlohy", task.task.taskName)
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                DetailField("Klient", task.clientName)
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                DetailField("Projekt", task.projectName)
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                DetailField("Naplánováno", formatInstant(task.task.scheduledAt))
-                task.task.cronExpression?.let {
+        SelectionContainer {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní údaje") {
+                    JKeyValueRow("Název úlohy", task.task.taskName)
                     Spacer(Modifier.height(JervisSpacing.itemGap))
-                    DetailField("Cron výraz", it)
-                }
-                task.task.correlationId?.let {
+                    JKeyValueRow("Klient", task.clientName)
                     Spacer(Modifier.height(JervisSpacing.itemGap))
-                    DetailField("Correlation ID", it)
+                    JKeyValueRow("Projekt", task.projectName)
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JKeyValueRow("Naplánováno", formatInstant(task.task.scheduledAt))
+                    task.task.cronExpression?.let {
+                        Spacer(Modifier.height(JervisSpacing.itemGap))
+                        JKeyValueRow("Cron výraz", it)
+                    }
+                    task.task.correlationId?.let {
+                        Spacer(Modifier.height(JervisSpacing.itemGap))
+                        JKeyValueRow("Correlation ID", it)
+                    }
                 }
-            }
 
-            JSection(title = "Instrukce pro agenta") {
-                Text(
-                    text = task.task.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+                JSection(title = "Instrukce pro agenta") {
+                    Text(
+                        text = task.task.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
+            }
         }
-    }
-}
-
-@Composable
-private fun DetailField(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
 }
 
 // ── Create Dialog ────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScheduleTaskDialog(
     clients: List<ClientDto>,
@@ -305,8 +285,6 @@ private fun ScheduleTaskDialog(
     var taskName by remember { mutableStateOf("") }
     var taskInstruction by remember { mutableStateOf("") }
     var cronExpression by remember { mutableStateOf("") }
-    var clientExpanded by remember { mutableStateOf(false) }
-    var projectExpanded by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
 
     // Auto-select first project for selected client
@@ -318,127 +296,64 @@ private fun ScheduleTaskDialog(
     val clientProjects = projects.filter { it.clientId == selectedClient?.id }
     val enabled = selectedClient != null && taskInstruction.isNotBlank() && !isSaving
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Naplánovat úlohu") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // Client dropdown
-                ExposedDropdownMenuBox(
-                    expanded = clientExpanded,
-                    onExpandedChange = { clientExpanded = !clientExpanded },
-                ) {
-                    OutlinedTextField(
-                        value = selectedClient?.name ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Klient") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = clientExpanded,
-                        onDismissRequest = { clientExpanded = false },
-                    ) {
-                        clients.forEach { client ->
-                            DropdownMenuItem(
-                                text = { Text(client.name) },
-                                onClick = {
-                                    selectedClient = client
-                                    clientExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-
-                // Project dropdown
-                ExposedDropdownMenuBox(
-                    expanded = projectExpanded,
-                    onExpandedChange = { projectExpanded = !projectExpanded },
-                ) {
-                    OutlinedTextField(
-                        value = selectedProject?.name ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Projekt (volitelné)") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = projectExpanded,
-                        onDismissRequest = { projectExpanded = false },
-                    ) {
-                        clientProjects.forEach { project ->
-                            DropdownMenuItem(
-                                text = { Text(project.name) },
-                                onClick = {
-                                    selectedProject = project
-                                    projectExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = taskName,
-                    onValueChange = { taskName = it },
-                    label = { Text("Název úlohy (volitelné)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = taskInstruction,
-                    onValueChange = { taskInstruction = it },
-                    label = { Text("Instrukce pro agenta") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 4,
-                )
-
-                OutlinedTextField(
-                    value = cronExpression,
-                    onValueChange = { cronExpression = it },
-                    label = { Text("Cron výraz (volitelné)") },
-                    placeholder = { Text("např. 0 0 * * *") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+    JFormDialog(
+        visible = true,
+        title = "Naplánovat úlohu",
+        onConfirm = {
+            val client = selectedClient ?: return@JFormDialog
+            val finalName = taskName.ifBlank { "Úloha: ${taskInstruction.take(50)}" }
+            isSaving = true
+            onCreate(
+                client.id,
+                selectedProject?.id,
+                finalName,
+                taskInstruction,
+                cronExpression.ifBlank { null },
+            )
         },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val client = selectedClient ?: return@Button
-                    val finalName = taskName.ifBlank { "Úloha: ${taskInstruction.take(50)}" }
-                    isSaving = true
-                    onCreate(
-                        client.id,
-                        selectedProject?.id,
-                        finalName,
-                        taskInstruction,
-                        cronExpression.ifBlank { null },
-                    )
-                },
-                enabled = enabled,
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("Naplánovat")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Zrušit") }
-        },
-    )
+        onDismiss = onDismiss,
+        confirmEnabled = enabled,
+        confirmText = "Naplánovat",
+    ) {
+        JDropdown(
+            items = clients,
+            selectedItem = selectedClient,
+            onItemSelected = { selectedClient = it },
+            label = "Klient",
+            itemLabel = { it.name },
+        )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = clientProjects,
+            selectedItem = selectedProject,
+            onItemSelected = { selectedProject = it },
+            label = "Projekt (volitelné)",
+            itemLabel = { it.name },
+        )
+        Spacer(Modifier.height(12.dp))
+        JTextField(
+            value = taskName,
+            onValueChange = { taskName = it },
+            label = "Název úlohy (volitelné)",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JTextField(
+            value = taskInstruction,
+            onValueChange = { taskInstruction = it },
+            label = "Instrukce pro agenta",
+            singleLine = false,
+            minLines = 4,
+        )
+        Spacer(Modifier.height(12.dp))
+        JTextField(
+            value = cronExpression,
+            onValueChange = { cronExpression = it },
+            label = "Cron výraz (volitelné)",
+            placeholder = "např. 0 0 * * *",
+            singleLine = true,
+        )
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,20 +17,13 @@ import com.jervis.dto.ProjectDto
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.design.JActionBar
-import com.jervis.ui.design.JCenteredLoading
-import com.jervis.ui.design.JEmptyState
-import com.jervis.ui.design.JErrorState
-import com.jervis.ui.design.JSection
-import com.jervis.ui.design.JTableRowCard
-import com.jervis.ui.design.JTopBar
+import com.jervis.ui.design.*
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RagSearchScreen(
     repository: JervisRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
@@ -48,9 +42,6 @@ fun RagSearchScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var resultCount by remember { mutableStateOf(0) }
 
-    var clientDropdownExpanded by remember { mutableStateOf(false) }
-    var projectDropdownExpanded by remember { mutableStateOf(false) }
-
     val scope = rememberCoroutineScope()
 
     // Load clients and projects on mount
@@ -63,7 +54,7 @@ fun RagSearchScreen(
                 selectedClient = clients[0]
             }
         } catch (e: Exception) {
-            errorMessage = "Failed to load data: ${e.message}"
+            errorMessage = "Chyba při načítání dat: ${e.message}"
         } finally {
             isLoadingData = false
         }
@@ -71,11 +62,11 @@ fun RagSearchScreen(
 
     fun performSearch() {
         if (searchQuery.isBlank()) {
-            errorMessage = "Please enter a search query"
+            errorMessage = "Zadejte vyhledávací dotaz"
             return
         }
         if (selectedClient == null) {
-            errorMessage = "Please select a client"
+            errorMessage = "Vyberte klienta"
             return
         }
 
@@ -83,11 +74,11 @@ fun RagSearchScreen(
         val minScoreDouble = minScore.toDoubleOrNull() ?: 0.15
 
         if (maxChunksInt !in 1..1000) {
-            errorMessage = "Max Chunks must be between 1 and 1000"
+            errorMessage = "Max fragmentů musí být mezi 1 a 1000"
             return
         }
         if (minScoreDouble !in 0.0..1.0) {
-            errorMessage = "Min Score must be between 0.0 and 1.0"
+            errorMessage = "Min skóre musí být mezi 0.0 a 1.0"
             return
         }
 
@@ -102,7 +93,7 @@ fun RagSearchScreen(
                     filterKey = filterKey.ifBlank { null },
                     filterValue = filterValue.ifBlank { null },
                     maxChunks = maxChunksInt,
-                    minSimilarityThreshold = minScoreDouble
+                    minSimilarityThreshold = minScoreDouble,
                 )
                 val response = repository.ragSearch.search(request)
                 searchResults = response.items
@@ -111,7 +102,7 @@ fun RagSearchScreen(
                     selectedResult = searchResults[0]
                 }
             } catch (e: Exception) {
-                errorMessage = "Search failed: ${e.message}"
+                errorMessage = "Hledání selhalo: ${e.message}"
             } finally {
                 isLoading = false
             }
@@ -122,161 +113,104 @@ fun RagSearchScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
         topBar = {
             JTopBar(
-                title = "RAG Search${if (resultCount > 0) " - $resultCount results" else ""}",
+                title = "RAG Hledání${if (resultCount > 0) " - $resultCount výsledků" else ""}",
                 onBack = onBack,
             )
-        }
+        },
     ) { padding ->
         Row(
-            modifier = Modifier.fillMaxSize().padding(padding)
+            modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             // Left panel - Search form
             Column(
                 modifier = Modifier.width(400.dp).fillMaxHeight()
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 JSection(title = "Hledání") {
-                    OutlinedTextField(
+                    JTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("Dotaz") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        label = "Dotaz",
+                        enabled = !isLoading,
                     )
                 }
 
                 JSection(title = "Filtry") {
-                    // Client dropdown
-                    ExposedDropdownMenuBox(
-                        expanded = clientDropdownExpanded,
-                        onExpandedChange = { clientDropdownExpanded = !clientDropdownExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedClient?.name ?: "Vyberte klienta",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Klient") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientDropdownExpanded) },
-                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
-                            enabled = !isLoading && !isLoadingData
-                        )
-                        ExposedDropdownMenu(
-                            expanded = clientDropdownExpanded,
-                            onDismissRequest = { clientDropdownExpanded = false }
-                        ) {
-                            clients.forEach { client ->
-                                DropdownMenuItem(
-                                    text = { Text(client.name) },
-                                    onClick = {
-                                        selectedClient = client
-                                        clientDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // Project dropdown
-                    ExposedDropdownMenuBox(
-                        expanded = projectDropdownExpanded,
-                        onExpandedChange = { projectDropdownExpanded = !projectDropdownExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedProject?.name ?: "<Všechny projekty>",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Projekt (volitelné)") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectDropdownExpanded) },
-                            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
-                            enabled = !isLoading && !isLoadingData
-                        )
-                        ExposedDropdownMenu(
-                            expanded = projectDropdownExpanded,
-                            onDismissRequest = { projectDropdownExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("<Všechny projekty>") },
-                                onClick = {
-                                    selectedProject = null
-                                    projectDropdownExpanded = false
-                                }
-                            )
-                            projects.forEach { project ->
-                                DropdownMenuItem(
-                                    text = { Text(project.name) },
-                                    onClick = {
-                                        selectedProject = project
-                                        projectDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = filterKey,
-                        onValueChange = { filterKey = it },
-                        label = { Text("Klíč filtru (volitelné)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                    JDropdown(
+                        items = clients,
+                        selectedItem = selectedClient,
+                        onItemSelected = { selectedClient = it },
+                        label = "Klient",
+                        itemLabel = { it.name },
+                        enabled = !isLoading && !isLoadingData,
                     )
 
-                    OutlinedTextField(
+                    Spacer(Modifier.height(8.dp))
+
+                    JDropdown(
+                        items = listOf<ProjectDto?>(null) + projects,
+                        selectedItem = selectedProject,
+                        onItemSelected = { selectedProject = it },
+                        label = "Projekt (volitelné)",
+                        itemLabel = { it?.name ?: "<Všechny projekty>" },
+                        enabled = !isLoading && !isLoadingData,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    JTextField(
+                        value = filterKey,
+                        onValueChange = { filterKey = it },
+                        label = "Klíč filtru (volitelné)",
+                        enabled = !isLoading,
+                    )
+
+                    JTextField(
                         value = filterValue,
                         onValueChange = { filterValue = it },
-                        label = { Text("Hodnota filtru (volitelné)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        label = "Hodnota filtru (volitelné)",
+                        enabled = !isLoading,
                     )
                 }
 
                 JSection(title = "Parametry") {
-                    OutlinedTextField(
+                    JTextField(
                         value = maxChunks,
                         onValueChange = { maxChunks = it },
-                        label = { Text("Max fragmentů (1-1000)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        label = "Max fragmentů (1-1000)",
+                        enabled = !isLoading,
                     )
 
-                    OutlinedTextField(
+                    JTextField(
                         value = minScore,
                         onValueChange = { minScore = it },
-                        label = { Text("Min skóre (0.0-1.0)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        label = "Min skóre (0.0-1.0)",
+                        enabled = !isLoading,
                     )
                 }
 
-                Button(
+                JPrimaryButton(
                     onClick = { performSearch() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading && searchQuery.isNotBlank() && selectedClient != null
+                    enabled = !isLoading && searchQuery.isNotBlank() && selectedClient != null,
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Text(if (isLoading) "Hledám..." else "🔍 Hledat")
+                    Text(if (isLoading) "Hledám..." else "Hledat")
                 }
 
                 errorMessage?.let { error ->
-                    Card(
+                    JCard(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
                     ) {
                         Text(
                             text = error,
                             modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -286,120 +220,122 @@ fun RagSearchScreen(
 
             // Right panel - Results
             Row(
-                modifier = Modifier.weight(1f).fillMaxHeight()
+                modifier = Modifier.weight(1f).fillMaxHeight(),
             ) {
                 // Results list
                 Column(
-                    modifier = Modifier.weight(0.4f).fillMaxHeight()
+                    modifier = Modifier.weight(0.4f).fillMaxHeight(),
                 ) {
                     Text(
-                        text = "Results ($resultCount)",
+                        text = "Výsledky ($resultCount)",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(16.dp),
                     )
                     HorizontalDivider()
 
-                if (searchResults.isEmpty() && !isLoading) {
-                    JEmptyState(message = "Žádné výsledky. Provedte hledání.", icon = "🔍")
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(searchResults) { result ->
-                            JTableRowCard(
-                                selected = selectedResult == result,
-                                modifier = Modifier.clickable { selectedResult = result }
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth()
+                    if (searchResults.isEmpty() && !isLoading) {
+                        JEmptyState(message = "Žádné výsledky. Proveďte hledání.", icon = "🔍")
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            items(searchResults) { result ->
+                                JCard(
+                                    selected = selectedResult == result,
+                                    modifier = Modifier.clickable { selectedResult = result },
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                     ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(
+                                                text = result.metadata["sourceType"] ?: "Neznámý",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                            Text(
+                                                text = result.score.toString().take(5),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                         Text(
-                                            text = result.metadata["sourceType"] ?: "Unknown",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = result.score.toString().take(5),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = result.content.take(150) + if (result.content.length > 150) "..." else "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(top = 4.dp),
                                         )
                                     }
-                                    Text(
-                                        text = result.content.take(150) + if (result.content.length > 150) "..." else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
                                 }
                             }
                         }
                     }
-                }
                 }
 
                 VerticalDivider()
 
                 // Result detail
                 Column(
-                    modifier = Modifier.weight(0.6f).fillMaxHeight()
+                    modifier = Modifier.weight(0.6f).fillMaxHeight(),
                 ) {
                     Text(
                         text = "Detaily",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(16.dp),
                     )
                     HorizontalDivider()
 
                     if (selectedResult != null) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            JSection {
-                                val scoreText = selectedResult!!.score.toString().take(6)
-                                RagDetailField("Skóre", scoreText)
-                                selectedResult!!.metadata["sourceType"]?.let {
-                                    RagDetailField("Typ zdroje", it)
-                                }
-                                selectedResult!!.metadata["sourceUri"]?.let {
-                                    RagDetailField("URI zdroje", it)
-                                }
-                                selectedResult!!.metadata["filePath"]?.let {
-                                    RagDetailField("Cesta k souboru", it)
-                                }
-                            }
-
-                            Text(
-                                text = "Obsah:",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            JTableRowCard(selected = false) {
-                                Text(
-                                    text = selectedResult!!.content,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-
-                            if (selectedResult!!.metadata.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Všechna metadata:",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        SelectionContainer {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
                                 JSection {
-                                    selectedResult!!.metadata.forEach { (key, value) ->
-                                        RagDetailField(key, value)
+                                    val scoreText = selectedResult!!.score.toString().take(6)
+                                    JKeyValueRow("Skóre", scoreText)
+                                    selectedResult!!.metadata["sourceType"]?.let {
+                                        JKeyValueRow("Typ zdroje", it)
+                                    }
+                                    selectedResult!!.metadata["sourceUri"]?.let {
+                                        JKeyValueRow("URI zdroje", it)
+                                    }
+                                    selectedResult!!.metadata["filePath"]?.let {
+                                        JKeyValueRow("Cesta k souboru", it)
+                                    }
+                                }
+
+                                Text(
+                                    text = "Obsah:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                JCard {
+                                    Text(
+                                        text = selectedResult!!.content,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(12.dp),
+                                    )
+                                }
+
+                                if (selectedResult!!.metadata.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Všechna metadata:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    JSection {
+                                        selectedResult!!.metadata.forEach { (key, value) ->
+                                            JKeyValueRow(key, value)
+                                        }
                                     }
                                 }
                             }
@@ -407,31 +343,16 @@ fun RagSearchScreen(
                     } else {
                         Box(
                             modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 "Vyberte výsledek pro zobrazení detailů",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun RagDetailField(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(
-            text = "$label:",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium
-        )
     }
 }

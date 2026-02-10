@@ -1,11 +1,21 @@
 package com.jervis.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
@@ -25,7 +35,7 @@ fun SettingsScreen(
         onSelect = { selectedIndex = it },
         onBack = onBack,
         title = "Nastavení",
-        categoryIcon = { it.icon },
+        categoryIcon = { Icon(it.icon, contentDescription = it.title) },
         categoryTitle = { it.title },
         categoryDescription = { it.description },
         content = { category ->
@@ -39,16 +49,16 @@ fun SettingsScreen(
 
 enum class SettingsCategory(
     val title: String,
-    val icon: String,
+    val icon: ImageVector,
     val description: String,
 ) {
-    GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti a projekty", "🏢", "Správa klientů, projektů a jejich konfigurace."),
-    PROJECT_GROUPS("Skupiny projektů", "📂", "Logické seskupení projektů se sdílenou KB."),
-    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení (Atlassian, Git, Email)."),
-    ENVIRONMENTS("Prostředí", "🌐", "Definice K8s prostředí pro testování."),
-    CODING_AGENTS("Coding Agenti", "🤖", "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
-    WHISPER("Whisper", "🎙️", "Nastavení přepisu řeči na text a konfigurace modelu."),
+    GENERAL("Obecné", Icons.Default.Settings, "Základní nastavení aplikace a vzhledu."),
+    CLIENTS("Klienti a projekty", Icons.Default.Business, "Správa klientů, projektů a jejich konfigurace."),
+    PROJECT_GROUPS("Skupiny projektů", Icons.Default.Folder, "Logické seskupení projektů se sdílenou KB."),
+    CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení (Atlassian, Git, Email)."),
+    ENVIRONMENTS("Prostředí", Icons.Default.Language, "Definice K8s prostředí pro testování."),
+    CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
+    WHISPER("Whisper", Icons.Default.Mic, "Nastavení přepisu řeči na text a konfigurace modelu."),
 }
 
 @Composable

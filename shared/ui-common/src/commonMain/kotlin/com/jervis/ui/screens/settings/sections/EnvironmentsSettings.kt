@@ -3,9 +3,11 @@ package com.jervis.ui.screens.settings.sections
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,11 +62,8 @@ fun EnvironmentsSettings(repository: JervisRepository) {
             }
         },
         listItem = { env ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedEnv = env },
-                border = CardDefaults.outlinedCardBorder(),
+            JCard(
+                onClick = { selectedEnv = env },
             ) {
                 Row(
                     modifier = Modifier
@@ -161,19 +160,15 @@ fun EnvironmentsSettings(repository: JervisRepository) {
 
 @Composable
 private fun EnvironmentStateBadge(state: EnvironmentStateEnum) {
-    val (color, label) = when (state) {
-        EnvironmentStateEnum.PENDING -> MaterialTheme.colorScheme.outline to "Čeká"
-        EnvironmentStateEnum.CREATING -> MaterialTheme.colorScheme.tertiary to "Vytváří se"
-        EnvironmentStateEnum.RUNNING -> MaterialTheme.colorScheme.primary to "Běží"
-        EnvironmentStateEnum.STOPPING -> MaterialTheme.colorScheme.tertiary to "Zastavuje se"
-        EnvironmentStateEnum.STOPPED -> MaterialTheme.colorScheme.outline to "Zastaveno"
-        EnvironmentStateEnum.ERROR -> MaterialTheme.colorScheme.error to "Chyba"
+    val status = when (state) {
+        EnvironmentStateEnum.PENDING -> "Čeká"
+        EnvironmentStateEnum.CREATING -> "Vytváří se"
+        EnvironmentStateEnum.RUNNING -> "Běží"
+        EnvironmentStateEnum.STOPPING -> "Zastavuje se"
+        EnvironmentStateEnum.STOPPED -> "Zastaveno"
+        EnvironmentStateEnum.ERROR -> "Chyba"
     }
-    Text(
-        label,
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-    )
+    JStatusBadge(status = status)
 }
 
 @Composable
@@ -212,183 +207,154 @@ private fun EnvironmentEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní informace") {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název prostředí") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                OutlinedTextField(
-                    value = namespace,
-                    onValueChange = { namespace = it },
-                    label = { Text("K8s Namespace") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Popis") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                )
-            }
+        SelectionContainer {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní informace") {
+                    JTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = "Název prostředí",
+                    )
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JTextField(
+                        value = namespace,
+                        onValueChange = { namespace = it },
+                        label = "K8s Namespace",
+                    )
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = "Popis",
+                        singleLine = false,
+                    )
+                }
 
-            JSection(title = "Komponenty") {
-                Text(
-                    "Infrastrukturní komponenty (DB, cache) a projektové reference.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (components.isEmpty()) {
+                JSection(title = "Komponenty") {
                     Text(
-                        "Žádné komponenty.",
+                        "Infrastrukturní komponenty (DB, cache) a projektové reference.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    components.forEach { component ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            border = CardDefaults.outlinedCardBorder(),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    .heightIn(min = JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        component.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    val typeLabel = componentTypeLabel(component.type)
-                                    val imageInfo = component.image?.let { " · $it" } ?: ""
-                                    Text(
-                                        "$typeLabel$imageInfo",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    if (component.ports.isNotEmpty()) {
-                                        Text(
-                                            component.ports.joinToString(", ") { "${it.containerPort}" },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                                IconButton(
-                                    onClick = {
-                                        components = components.filter { it.id != component.id }.toMutableList()
-                                    },
-                                    modifier = Modifier.size(JervisSpacing.touchTarget),
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (components.isEmpty()) {
+                        Text(
+                            "Žádné komponenty.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        components.forEach { component ->
+                            JCard {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .heightIn(min = JervisSpacing.touchTarget),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("✕", style = MaterialTheme.typography.labelSmall)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            component.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        val typeLabel = componentTypeLabel(component.type)
+                                        val imageInfo = component.image?.let { " · $it" } ?: ""
+                                        Text(
+                                            "$typeLabel$imageInfo",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        if (component.ports.isNotEmpty()) {
+                                            Text(
+                                                component.ports.joinToString(", ") { "${it.containerPort}" },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                    JIconButton(
+                                        icon = Icons.Default.Close,
+                                        contentDescription = "Odebrat",
+                                        onClick = {
+                                            components = components.filter { it.id != component.id }.toMutableList()
+                                        },
+                                    )
                                 }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    JPrimaryButton(onClick = { showAddComponentDialog = true }) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Přidat komponentu")
+                    }
+                }
+
+                JSection(title = "Instrukce pro agenta") {
+                    JTextField(
+                        value = agentInstructions,
+                        onValueChange = { agentInstructions = it },
+                        label = "Instrukce (volitelné)",
+                        singleLine = false,
+                    )
+                    Text(
+                        "Tyto instrukce budou předány coding agentovi jako kontext prostředí.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Provisioning actions
+                JSection(title = "Správa prostředí") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (environment.state == EnvironmentStateEnum.PENDING ||
+                            environment.state == EnvironmentStateEnum.STOPPED ||
+                            environment.state == EnvironmentStateEnum.ERROR
+                        ) {
+                            JPrimaryButton(onClick = onProvision) {
+                                Text("Provisionovat")
+                            }
+                        }
+                        if (environment.state == EnvironmentStateEnum.RUNNING) {
+                            JSecondaryButton(onClick = onDeprovision) {
+                                Text("Zastavit")
                             }
                         }
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                JPrimaryButton(onClick = { showAddComponentDialog = true }) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Přidat komponentu")
-                }
-            }
-
-            JSection(title = "Instrukce pro agenta") {
-                OutlinedTextField(
-                    value = agentInstructions,
-                    onValueChange = { agentInstructions = it },
-                    label = { Text("Instrukce (volitelné)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                )
-                Text(
-                    "Tyto instrukce budou předány coding agentovi jako kontext prostředí.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Provisioning actions
-            JSection(title = "Správa prostředí") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (environment.state == EnvironmentStateEnum.PENDING ||
-                        environment.state == EnvironmentStateEnum.STOPPED ||
-                        environment.state == EnvironmentStateEnum.ERROR
-                    ) {
-                        JPrimaryButton(onClick = onProvision) {
-                            Text("Provisionovat")
-                        }
-                    }
-                    if (environment.state == EnvironmentStateEnum.RUNNING) {
-                        OutlinedButton(
-                            onClick = onDeprovision,
-                            modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
-                        ) {
-                            Text("Zastavit")
-                        }
+                JSection(title = "Nebezpečná zóna") {
+                    JDestructiveButton(onClick = { showDeleteConfirm = true }) {
+                        Text("Smazat prostředí")
                     }
                 }
-            }
 
-            JSection(title = "Nebezpečná zóna") {
-                OutlinedButton(
-                    onClick = { showDeleteConfirm = true },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
-                ) {
-                    Text("Smazat prostředí")
-                }
+                Spacer(Modifier.height(16.dp))
             }
-
-            Spacer(Modifier.height(16.dp))
         }
     }
 
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Smazat prostředí?") },
-            text = { Text("Tato akce je nevratná. Pokud je prostředí provisionované, bude nejdříve zastaveno.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirm = false
-                        onDelete()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text("Smazat")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Zrušit")
-                }
-            },
-        )
-    }
+    ConfirmDialog(
+        visible = showDeleteConfirm,
+        title = "Smazat prostředí?",
+        message = "Tato akce je nevratná. Pokud je prostředí provisionované, bude nejdříve zastaveno.",
+        confirmText = "Smazat",
+        onConfirm = {
+            showDeleteConfirm = false
+            onDelete()
+        },
+        onDismiss = { showDeleteConfirm = false },
+    )
 
     if (showAddComponentDialog) {
         AddComponentDialog(
@@ -410,85 +376,50 @@ private fun AddComponentDialog(
     var name by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(ComponentTypeEnum.POSTGRESQL) }
     var image by remember { mutableStateOf("") }
-    var typeExpanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Přidat komponentu") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = typeExpanded,
-                    onExpandedChange = { typeExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = componentTypeLabel(selectedType),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Typ") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = typeExpanded,
-                        onDismissRequest = { typeExpanded = false },
-                    ) {
-                        ComponentTypeEnum.entries.forEach { type ->
-                            DropdownMenuItem(
-                                text = { Text(componentTypeLabel(type)) },
-                                onClick = {
-                                    selectedType = type
-                                    typeExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-
-                if (selectedType != ComponentTypeEnum.PROJECT) {
-                    OutlinedTextField(
-                        value = image,
-                        onValueChange = { image = it },
-                        label = { Text("Docker image (volitelné, výchozí bude použit)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-            }
+    JFormDialog(
+        visible = true,
+        title = "Přidat komponentu",
+        onConfirm = {
+            val id = name.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            onAdd(
+                EnvironmentComponentDto(
+                    id = id,
+                    name = name,
+                    type = selectedType,
+                    image = image.ifBlank { null },
+                ),
+            )
+            onDismiss()
         },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text("Zrušit")
-                }
-                Button(
-                    onClick = {
-                        val id = name.lowercase().replace(Regex("[^a-z0-9-]"), "-")
-                        onAdd(
-                            EnvironmentComponentDto(
-                                id = id,
-                                name = name,
-                                type = selectedType,
-                                image = image.ifBlank { null },
-                            ),
-                        )
-                        onDismiss()
-                    },
-                    enabled = name.isNotBlank(),
-                ) {
-                    Text("Přidat")
-                }
-            }
-        },
-    )
+        onDismiss = onDismiss,
+        confirmEnabled = name.isNotBlank(),
+        confirmText = "Přidat",
+    ) {
+        JTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "Název",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = ComponentTypeEnum.entries.toList(),
+            selectedItem = selectedType,
+            onItemSelected = { selectedType = it },
+            label = "Typ",
+            itemLabel = { componentTypeLabel(it) },
+        )
+        if (selectedType != ComponentTypeEnum.PROJECT) {
+            Spacer(Modifier.height(12.dp))
+            JTextField(
+                value = image,
+                onValueChange = { image = it },
+                label = "Docker image (volitelné, výchozí bude použit)",
+                singleLine = true,
+            )
+        }
+    }
 }
 
 private fun componentTypeLabel(type: ComponentTypeEnum): String = when (type) {
@@ -515,7 +446,6 @@ private fun NewEnvironmentDialog(
     var namespace by remember { mutableStateOf("") }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
-    var expanded by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -529,93 +459,56 @@ private fun NewEnvironmentDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nové prostředí") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        if (namespace.isBlank() || namespace == name.lowercase().replace(Regex("[^a-z0-9-]"), "-").dropLast(1)) {
-                            namespace = it.lowercase().replace(Regex("[^a-z0-9-]"), "-")
-                        }
-                    },
-                    label = { Text("Název") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = namespace,
-                    onValueChange = { namespace = it },
-                    label = { Text("K8s Namespace") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = clients.find { it.id == selectedClientId }?.name ?: "",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Klient") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+    JFormDialog(
+        visible = true,
+        title = "Nové prostředí",
+        onConfirm = {
+            val clientId = selectedClientId ?: return@JFormDialog
+            isSaving = true
+            scope.launch {
+                try {
+                    repository.environments.saveEnvironment(
+                        EnvironmentDto(
+                            clientId = clientId,
+                            name = name,
+                            namespace = namespace,
+                        ),
                     )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        clients.forEach { client ->
-                            DropdownMenuItem(
-                                text = { Text(client.name) },
-                                onClick = {
-                                    selectedClientId = client.id
-                                    expanded = false
-                                },
-                            )
-                        }
-                    }
+                    onCreated()
+                } catch (_: Exception) {
+                    isSaving = false
                 }
             }
         },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text("Zrušit")
+        onDismiss = onDismiss,
+        confirmEnabled = name.isNotBlank() && namespace.isNotBlank() && selectedClientId != null && !isSaving,
+        confirmText = "Vytvořit",
+    ) {
+        JTextField(
+            value = name,
+            onValueChange = {
+                name = it
+                if (namespace.isBlank() || namespace == name.lowercase().replace(Regex("[^a-z0-9-]"), "-").dropLast(1)) {
+                    namespace = it.lowercase().replace(Regex("[^a-z0-9-]"), "-")
                 }
-                Button(
-                    onClick = {
-                        val clientId = selectedClientId ?: return@Button
-                        isSaving = true
-                        scope.launch {
-                            try {
-                                repository.environments.saveEnvironment(
-                                    EnvironmentDto(
-                                        clientId = clientId,
-                                        name = name,
-                                        namespace = namespace,
-                                    ),
-                                )
-                                onCreated()
-                            } catch (_: Exception) {
-                                isSaving = false
-                            }
-                        }
-                    },
-                    enabled = name.isNotBlank() && namespace.isNotBlank() && selectedClientId != null && !isSaving,
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Vytvořit")
-                    }
-                }
-            }
-        },
-    )
+            },
+            label = "Název",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JTextField(
+            value = namespace,
+            onValueChange = { namespace = it },
+            label = "K8s Namespace",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = clients,
+            selectedItem = clients.find { it.id == selectedClientId },
+            onItemSelected = { selectedClientId = it.id },
+            label = "Klient",
+            itemLabel = { it.name },
+        )
+    }
 }

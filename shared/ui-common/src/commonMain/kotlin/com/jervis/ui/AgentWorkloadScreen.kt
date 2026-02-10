@@ -17,11 +17,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,7 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.model.AgentActivityEntry
@@ -112,7 +116,7 @@ fun AgentWorkloadScreen(
                         onMoveUp = { viewModel.moveTaskUp(item.taskId) },
                         onMoveDown = { viewModel.moveTaskDown(item.taskId) },
                         onSwitchQueue = { viewModel.moveTaskToQueue(item.taskId, "BACKGROUND") },
-                        switchQueueIcon = "→",
+                        switchQueueForward = true,
                         switchQueueLabel = "Do backendu",
                     )
                 }
@@ -141,7 +145,7 @@ fun AgentWorkloadScreen(
                         onMoveUp = { viewModel.moveTaskUp(item.taskId) },
                         onMoveDown = { viewModel.moveTaskDown(item.taskId) },
                         onSwitchQueue = { viewModel.moveTaskToQueue(item.taskId, "FOREGROUND") },
-                        switchQueueIcon = "←",
+                        switchQueueForward = false,
                         switchQueueLabel = "Do frontendu",
                     )
                 }
@@ -218,11 +222,10 @@ private fun CurrentStatusCard(
     runningTaskType: String?,
     queueSize: Int,
 ) {
-    Card(
+    JCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(JervisSpacing.outerPadding),
-        border = CardDefaults.outlinedCardBorder(),
     ) {
         Row(
             modifier = Modifier
@@ -317,14 +320,13 @@ private fun QueueItemRow(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onSwitchQueue: () -> Unit,
-    switchQueueIcon: String,
+    switchQueueForward: Boolean,
     switchQueueLabel: String,
 ) {
-    Card(
+    JCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp),
-        border = CardDefaults.outlinedCardBorder(),
     ) {
         Row(
             modifier = Modifier
@@ -359,44 +361,28 @@ private fun QueueItemRow(
             }
 
             // Reorder: Move up
-            IconButton(
+            JIconButton(
                 onClick = onMoveUp,
+                icon = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Posunout nahoru",
                 enabled = !isFirst,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text(
-                    text = "▲",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (!isFirst) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                )
-            }
+            )
 
             // Reorder: Move down
-            IconButton(
+            JIconButton(
                 onClick = onMoveDown,
+                icon = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Posunout dolů",
                 enabled = !isLast,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text(
-                    text = "▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (!isLast) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                )
-            }
+            )
 
             // Switch queue
-            IconButton(
+            JIconButton(
                 onClick = onSwitchQueue,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text(
-                    text = switchQueueIcon,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
+                icon = if (switchQueueForward) Icons.AutoMirrored.Filled.ArrowForward
+                else Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = switchQueueLabel,
+            )
         }
     }
 }

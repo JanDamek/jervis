@@ -3,24 +3,15 @@ package com.jervis.ui.meeting
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,17 +25,23 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.meeting.TranscriptCorrectionDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.service.ITranscriptCorrectionService
+import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JDetailScreen
+import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JFormDialog
+import com.jervis.ui.design.JTextField
+import com.jervis.ui.design.JTextButton
+import com.jervis.ui.util.DeleteIconButton
 
 private val CATEGORIES = listOf(
-    "person_name" to "Jmena osob",
-    "company_name" to "Nazvy firem",
-    "department" to "Oddeleni",
+    "person_name" to "Jména osob",
+    "company_name" to "Názvy firem",
+    "department" to "Oddělení",
     "terminology" to "Terminologie",
     "abbreviation" to "Zkratky",
-    "general" to "Obecne opravy",
+    "general" to "Obecné opravy",
 )
 
 /**
@@ -60,7 +57,7 @@ fun CorrectionsScreen(
     prefilledOriginal: String? = null,
 ) {
     if (correctionService == null) {
-        JEmptyState("Sluzba korekci neni dostupna")
+        JEmptyState("Služba korekcí není dostupná")
         return
     }
 
@@ -76,21 +73,21 @@ fun CorrectionsScreen(
     }
 
     JDetailScreen(
-        title = "Korekce prepisu",
+        title = "Korekce přepisu",
         onBack = onBack,
         actions = {
-            TextButton(onClick = {
+            JTextButton(onClick = {
                 dialogOriginal = ""
                 showAddDialog = true
             }) {
-                Text("+ Pridat")
+                Text("+ Přidat")
             }
         },
     ) {
         if (isLoading) {
             JCenteredLoading()
         } else if (corrections.isEmpty()) {
-            JEmptyState("Zadne korekce. Pridejte pravidla pro opravu prepisu.")
+            JEmptyState("Žádné korekce. Přidejte pravidla pro opravu přepisu.")
         } else {
             val grouped = corrections.groupBy { it.category }
             LazyColumn(
@@ -134,10 +131,8 @@ private fun CorrectionCard(
     correction: TranscriptCorrectionDto,
     onDelete: () -> Unit,
 ) {
-    Card(
+    JCard(
         modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.outlinedCardColors(),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -157,14 +152,11 @@ private fun CorrectionCard(
                     )
                 }
             }
-            IconButton(onClick = onDelete) {
-                Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
-            }
+            DeleteIconButton(onClick = onDelete)
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CorrectionDialog(
     initialOriginal: String = "",
@@ -176,88 +168,56 @@ internal fun CorrectionDialog(
     var corrected by remember { mutableStateOf(initialCorrected) }
     var category by remember { mutableStateOf("general") }
     var context by remember { mutableStateOf("") }
-    var categoryExpanded by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Pridat korekci") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = original,
-                    onValueChange = { original = it },
-                    label = { Text("Spatne prepsano") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = corrected,
-                    onValueChange = { corrected = it },
-                    label = { Text("Spravny tvar") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                ExposedDropdownMenuBox(
-                    expanded = categoryExpanded,
-                    onExpandedChange = { categoryExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = CATEGORIES.firstOrNull { it.first == category }?.second ?: category,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Kategorie") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = categoryExpanded,
-                        onDismissRequest = { categoryExpanded = false },
-                    ) {
-                        CATEGORIES.forEach { (key, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = {
-                                    category = key
-                                    categoryExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = context,
-                    onValueChange = { context = it },
-                    label = { Text("Kontext (volitelne)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 3,
+    JFormDialog(
+        visible = true,
+        title = "Přidat korekci",
+        onConfirm = {
+            if (original.isNotBlank() && corrected.isNotBlank()) {
+                onConfirm(
+                    TranscriptCorrectionSubmitDto(
+                        clientId = "",
+                        original = original.trim(),
+                        corrected = corrected.trim(),
+                        category = category,
+                        context = context.ifBlank { null },
+                    ),
                 )
             }
         },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (original.isNotBlank() && corrected.isNotBlank()) {
-                        onConfirm(
-                            TranscriptCorrectionSubmitDto(
-                                clientId = "",
-                                original = original.trim(),
-                                corrected = corrected.trim(),
-                                category = category,
-                                context = context.ifBlank { null },
-                            ),
-                        )
-                    }
-                },
-                enabled = original.isNotBlank() && corrected.isNotBlank(),
-            ) {
-                Text("Ulozit")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrusit")
-            }
-        },
-    )
+        onDismiss = onDismiss,
+        confirmEnabled = original.isNotBlank() && corrected.isNotBlank(),
+        confirmText = "Uložit",
+    ) {
+        JTextField(
+            value = original,
+            onValueChange = { original = it },
+            label = "Špatně přepsáno",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        JTextField(
+            value = corrected,
+            onValueChange = { corrected = it },
+            label = "Správný tvar",
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        JDropdown(
+            items = CATEGORIES,
+            selectedItem = CATEGORIES.firstOrNull { it.first == category },
+            onItemSelected = { category = it.first },
+            label = "Kategorie",
+            itemLabel = { it.second },
+        )
+        Spacer(Modifier.height(8.dp))
+        JTextField(
+            value = context,
+            onValueChange = { context = it },
+            label = "Kontext (volitelné)",
+            singleLine = false,
+            minLines = 2,
+            maxLines = 3,
+        )
+    }
 }

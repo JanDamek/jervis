@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.ui.design.JervisTheme
 import com.jervis.di.NetworkModule
 import com.jervis.repository.JervisRepository
 import io.ktor.client.request.get
@@ -72,7 +73,7 @@ fun JervisApp(
     val currentServices = servicesState?.second
     if (currentServices == null) {
         // Show loading screen while connecting
-        MaterialTheme {
+        JervisTheme {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,

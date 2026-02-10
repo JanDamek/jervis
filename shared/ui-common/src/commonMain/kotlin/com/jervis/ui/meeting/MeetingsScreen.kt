@@ -22,6 +22,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,14 +42,12 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,11 +73,22 @@ import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
+import com.jervis.ui.design.JAddButton
+import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JDeleteButton
+import com.jervis.ui.design.JEditButton
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JFormDialog
+import com.jervis.ui.design.JIconButton
+import com.jervis.ui.design.JRefreshButton
+import com.jervis.ui.design.JSecondaryButton
+import com.jervis.ui.design.JTextField
+import com.jervis.ui.design.JTextButton
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JVerticalSplitLayout
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.util.ConfirmDialog
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -196,12 +215,10 @@ fun MeetingsScreen(
                 title = "Meetingy",
                 onBack = onBack,
                 actions = {
-                    IconButton(
+                    JAddButton(
                         onClick = { showSetupDialog = true },
                         enabled = !isRecording,
-                    ) {
-                        Text("+", style = MaterialTheme.typography.headlineMedium)
-                    }
+                    )
                 },
             )
         },
@@ -235,12 +252,12 @@ fun MeetingsScreen(
                 FilterChip(
                     selected = !showTrash,
                     onClick = { showTrash = false },
-                    label = { Text("Nahravky") },
+                    label = { Text("Nahrávky") },
                 )
                 FilterChip(
                     selected = showTrash,
                     onClick = { showTrash = true },
-                    label = { Text("\uD83D\uDDD1 Kos") },
+                    label = { Text("Koš") },
                 )
             }
 
@@ -291,7 +308,7 @@ fun MeetingsScreen(
                         JCenteredLoading()
                     }
                     deletedMeetings.isEmpty() -> {
-                        JEmptyState(message = "Kos je prazdny", icon = "\uD83D\uDDD1")
+                        JEmptyState(message = "Koš je prázdný", icon = "\uD83D\uDDD1")
                     }
                     else -> {
                         LazyColumn(
@@ -319,7 +336,7 @@ fun MeetingsScreen(
                         JCenteredLoading()
                     }
                     displayedMeetings.isEmpty() && !isRecording -> {
-                        JEmptyState(message = "Zatim zadne nahravky", icon = "")
+                        JEmptyState(message = "Zatím žádné nahrávky", icon = "")
                     }
                     else -> {
                         LazyColumn(
@@ -373,57 +390,33 @@ fun MeetingsScreen(
     }
 
     // Delete confirmation dialog (soft delete → trash)
-    showDeleteConfirmDialog?.let { meetingId ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text("Smazat nahravku?") },
-            text = {
-                Text("Nahravka bude presunuta do kose, kde zustane 30 dni. Pote bude trvale smazana.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmDialog = null
-                        viewModel.deleteMeeting(meetingId)
-                        viewModel.selectMeeting(null)
-                    },
-                ) {
-                    Text("Smazat")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text("Zrusit")
-                }
-            },
-        )
-    }
+    ConfirmDialog(
+        visible = showDeleteConfirmDialog != null,
+        title = "Smazat nahrávku?",
+        message = "Nahrávka bude přesunuta do koše, kde zůstane 30 dní. Poté bude trvale smazána.",
+        confirmText = "Smazat",
+        onConfirm = {
+            val meetingId = showDeleteConfirmDialog ?: return@ConfirmDialog
+            showDeleteConfirmDialog = null
+            viewModel.deleteMeeting(meetingId)
+            viewModel.selectMeeting(null)
+        },
+        onDismiss = { showDeleteConfirmDialog = null },
+    )
 
     // Permanent delete confirmation dialog
-    showPermanentDeleteConfirmDialog?.let { meetingId ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showPermanentDeleteConfirmDialog = null },
-            title = { Text("Trvale smazat?") },
-            text = {
-                Text("Nahravka bude trvale smazana vcetne audio souboru. Tuto akci nelze vratit zpet.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showPermanentDeleteConfirmDialog = null
-                        viewModel.permanentlyDeleteMeeting(meetingId)
-                    },
-                ) {
-                    Text("Trvale smazat", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermanentDeleteConfirmDialog = null }) {
-                    Text("Zrusit")
-                }
-            },
-        )
-    }
+    ConfirmDialog(
+        visible = showPermanentDeleteConfirmDialog != null,
+        title = "Trvale smazat?",
+        message = "Nahrávka bude trvale smazána včetně audio souboru. Tuto akci nelze vrátit zpět.",
+        confirmText = "Trvale smazat",
+        onConfirm = {
+            val meetingId = showPermanentDeleteConfirmDialog ?: return@ConfirmDialog
+            showPermanentDeleteConfirmDialog = null
+            viewModel.permanentlyDeleteMeeting(meetingId)
+        },
+        onDismiss = { showPermanentDeleteConfirmDialog = null },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -482,7 +475,7 @@ private fun ClientProjectFilter(
             modifier = Modifier.weight(1f),
         ) {
             OutlinedTextField(
-                value = projects.find { it.id == selectedProjectId }?.name ?: "(Vse)",
+                value = projects.find { it.id == selectedProjectId }?.name ?: "(Vše)",
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Projekt") },
@@ -496,7 +489,7 @@ private fun ClientProjectFilter(
                 onDismissRequest = { projectExpanded = false },
             ) {
                 DropdownMenuItem(
-                    text = { Text("(Vse)") },
+                    text = { Text("(Vše)") },
                     onClick = {
                         onProjectSelected(null)
                         projectExpanded = false
@@ -529,32 +522,21 @@ private fun MeetingListItem(
     onClick: () -> Unit,
     onPlayToggle: () -> Unit,
 ) {
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick),
-        border = CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.outlinedCardColors(),
+    JCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
     ) {
         Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Play button (only for meetings with audio)
             if (meeting.state != MeetingStateEnum.RECORDING) {
-                IconButton(
+                JIconButton(
                     onClick = onPlayToggle,
-                    modifier = Modifier.size(JervisSpacing.touchTarget),
-                ) {
-                    Text(
-                        text = if (isPlaying) "\u23F9" else "\u25B6",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
+                    icon = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Zastavit" else "Přehrát",
+                )
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
@@ -605,7 +587,7 @@ private fun MeetingListItem(
                 Text(
                     text = when {
                         meeting.state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
-                            "Prepis ${transcriptionPercent.toInt()}%"
+                            "Přepis ${transcriptionPercent.toInt()}%"
                         meeting.state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
                             "Korekce ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}"
                         else -> stateLabel(meeting.state)
@@ -627,17 +609,11 @@ private fun DeletedMeetingListItem(
     onRestore: () -> Unit,
     onPermanentDelete: () -> Unit,
 ) {
-    Card(
+    JCard(
         modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        ),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -658,7 +634,7 @@ private fun DeletedMeetingListItem(
                     )
                     meeting.deletedAt?.let { deletedAt ->
                         Text(
-                            text = "Smazano: ${formatDateTime(deletedAt)}",
+                            text = "Smazáno: ${formatDateTime(deletedAt)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -667,24 +643,19 @@ private fun DeletedMeetingListItem(
             }
 
             // Restore button
-            IconButton(
+            JIconButton(
                 onClick = onRestore,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text("\u21A9", style = MaterialTheme.typography.bodyLarge)
-            }
+                icon = Icons.Default.Undo,
+                contentDescription = "Obnovit",
+            )
 
             // Permanent delete button
-            IconButton(
+            JIconButton(
                 onClick = onPermanentDelete,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text(
-                    "\u2716",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+                icon = Icons.Default.DeleteForever,
+                contentDescription = "Trvale smazat",
+                tint = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }
@@ -731,59 +702,72 @@ private fun MeetingDetailView(
                 onBack = onBack,
                 actions = {
                     if (meeting.state != MeetingStateEnum.RECORDING) {
-                        IconButton(onClick = onPlayToggle) {
-                            Text(
-                                text = if (isPlaying && playingSegmentIndex < 0) "\u23F9" else "\u25B6",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
+                        JIconButton(
+                            onClick = onPlayToggle,
+                            icon = if (isPlaying && playingSegmentIndex < 0) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying && playingSegmentIndex < 0) "Zastavit" else "Přehrát",
+                        )
                     }
                     if (isCompact) {
                         // Compact: overflow menu for secondary actions
                         Box {
-                            IconButton(onClick = { showOverflowMenu = true }) {
-                                Text("\u22EF", style = MaterialTheme.typography.bodyLarge)
-                            }
+                            JIconButton(
+                                onClick = { showOverflowMenu = true },
+                                icon = Icons.Default.MoreVert,
+                                contentDescription = "Více",
+                            )
                             DropdownMenu(
                                 expanded = showOverflowMenu,
                                 onDismissRequest = { showOverflowMenu = false },
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("\uD83D\uDCD6 Pravidla oprav") },
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text("Pravidla oprav")
+                                        }
+                                    },
                                     onClick = { onCorrections(); showOverflowMenu = false },
                                 )
                                 if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                                     DropdownMenuItem(
-                                        text = { Text("\u21BB Prepsat znovu") },
+                                        text = {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(20.dp))
+                                                Text("Přepsat znovu")
+                                            }
+                                        },
                                         onClick = { onRetranscribe(); showOverflowMenu = false },
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("\u21BB Obnovit") },
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text("Obnovit")
+                                        }
+                                    },
                                     onClick = { onRefresh(); showOverflowMenu = false },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("\uD83D\uDDD1 Smazat") },
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                                            Text("Smazat", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    },
                                     onClick = { onDelete(); showOverflowMenu = false },
                                 )
                             }
                         }
                     } else {
                         // Expanded: all action buttons visible
-                        IconButton(onClick = onCorrections) {
-                            Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
-                        }
+                        JIconButton(onClick = onCorrections, icon = Icons.Default.MenuBook, contentDescription = "Pravidla oprav")
                         if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                            IconButton(onClick = onRetranscribe) {
-                                Text("\uD83D\uDD04", style = MaterialTheme.typography.bodyLarge)
-                            }
+                            JIconButton(onClick = onRetranscribe, icon = Icons.Default.Replay, contentDescription = "Přepsat znovu")
                         }
-                        IconButton(onClick = onRefresh) {
-                            Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
-                        }
-                        IconButton(onClick = onDelete) {
-                            Text("\uD83D\uDDD1", style = MaterialTheme.typography.bodyLarge)
-                        }
+                        JRefreshButton(onClick = onRefresh)
+                        JDeleteButton(onClick = onDelete)
                     }
                 },
             )
@@ -856,7 +840,7 @@ private fun MeetingDetailView(
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(onClick = onRetranscribe) {
+                            JTextButton(onClick = onRetranscribe) {
                                 Text("Přepsat znovu")
                             }
                         }
@@ -1014,22 +998,22 @@ private fun TranscriptPanel(
                     FilterChip(
                         selected = showCorrected,
                         onClick = { onShowCorrectedChange(true) },
-                        label = { Text("Opraveny") },
+                        label = { Text("Opravený") },
                     )
                     FilterChip(
                         selected = !showCorrected,
                         onClick = { onShowCorrectedChange(false) },
-                        label = { Text("Surovy") },
+                        label = { Text("Surový") },
                     )
                 }
                 if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                    TextButton(onClick = onRetranscribe) { Text("Prepsat znovu") }
+                    JTextButton(onClick = onRetranscribe) { Text("Přepsat znovu") }
                 }
                 if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
-                    TextButton(onClick = onRecorrect) { Text("Opravit znovu") }
+                    JTextButton(onClick = onRecorrect) { Text("Opravit znovu") }
                 }
                 if (meeting.state == MeetingStateEnum.INDEXED) {
-                    TextButton(onClick = onReindex) { Text("Preindexovat") }
+                    JTextButton(onClick = onReindex) { Text("Přeindexovat") }
                 }
             }
 
@@ -1088,7 +1072,7 @@ private fun TranscriptPanel(
             } else {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "Prepis je prazdny",
+                        text = "Přepis je prázdný",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1097,7 +1081,7 @@ private fun TranscriptPanel(
         } else {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "Prepis zatim neni k dispozici",
+                    text = "Přepis zatím není k dispozici",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1153,7 +1137,7 @@ private fun AgentChatPanel(
             if (displayMessages.isEmpty()) {
                 item {
                     Text(
-                        text = "Zadejte instrukci pro opravu prepisu...",
+                        text = "Zadejte instrukci pro opravu přepisu...",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 8.dp),
@@ -1178,7 +1162,7 @@ private fun AgentChatPanel(
                             strokeWidth = 2.dp,
                         )
                         Text(
-                            text = "Agent opravuje prepis...",
+                            text = "Agent opravuje přepis...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -1196,16 +1180,18 @@ private fun AgentChatPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
+            JTextField(
                 value = instructionText,
                 onValueChange = { instructionText = it },
-                placeholder = { Text("Instrukce pro opravu...") },
+                label = "Instrukce",
+                placeholder = "Instrukce pro opravu...",
                 modifier = Modifier.weight(1f),
                 minLines = 1,
                 maxLines = 3,
+                singleLine = false,
                 enabled = !isCorrecting,
             )
-            TextButton(
+            JTextButton(
                 onClick = {
                     if (instructionText.isNotBlank()) {
                         onSendInstruction(instructionText)
@@ -1258,7 +1244,7 @@ private fun ChatMessageBubble(message: CorrectionChatMessageDto) {
                 if (!isUser && message.rulesCreated > 0) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Pravidel vytvoreno: ${message.rulesCreated}",
+                        text = "Pravidel vytvořeno: ${message.rulesCreated}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
                     )
@@ -1291,10 +1277,10 @@ private data class PipelineStep(
 )
 
 private val pipelineSteps = listOf(
-    PipelineStep("Nahrano", "Audio nahrano na server", "Nahrava se audio..."),
-    PipelineStep("Prepis", "Whisper prepsal audio na text", "Whisper prepisuje audio na text..."),
-    PipelineStep("Korekce", "LLM model opravil prepis pomoci slovniku", "LLM model opravuje prepis pomoci slovniku..."),
-    PipelineStep("Indexace", "Prepis ulozen do znalostni baze", "Uklada se prepis do znalostni baze..."),
+    PipelineStep("Nahráno", "Audio nahráno na server", "Nahrává se audio..."),
+    PipelineStep("Přepis", "Whisper přepsal audio na text", "Whisper přepisuje audio na text..."),
+    PipelineStep("Korekce", "LLM model opravil přepis pomocí slovníku", "LLM model opravuje přepis pomocí slovníku..."),
+    PipelineStep("Indexace", "Přepis uložen do znalostní báze", "Ukládá se přepis do znalostní báze..."),
 )
 
 /** Maps MeetingStateEnum to pipeline step index (0-based) and whether step is active vs done. */
@@ -1429,20 +1415,20 @@ private fun PipelineProgress(
             val elapsedSuffix = if (elapsedMinutes != null && elapsedMinutes > 0 && isActive) " (${elapsedMinutes} min)" else ""
             val statusText = when {
                 state == MeetingStateEnum.FAILED -> null // handled separately
-                state == MeetingStateEnum.INDEXED -> "Zpracovani dokonceno"
+                state == MeetingStateEnum.INDEXED -> "Zpracování dokončeno"
                 // Waiting in queue (step done, next not started yet)
-                state == MeetingStateEnum.UPLOADED -> "Ve fronte - ceka na prepis pres Whisper"
+                state == MeetingStateEnum.UPLOADED -> "Ve frontě – čeká na přepis přes Whisper"
                 isLikelyStuck && state == MeetingStateEnum.TRANSCRIBING ->
-                    "Mozna zaseknuto - zadny progress ${elapsedMinutes} min. Zkuste 'Prepsat znovu'."
+                    "Možná zaseknuto – žádný progress ${elapsedMinutes} min. Zkuste 'Přepsat znovu'."
                 state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
-                    "Whisper prepisuje: ${transcriptionPercent.toInt()}%$elapsedSuffix"
+                    "Whisper přepisuje: ${transcriptionPercent.toInt()}%$elapsedSuffix"
                 isLikelyStuck && state == MeetingStateEnum.CORRECTING ->
-                    "Mozna zaseknuto - zadny progress ${elapsedMinutes} min."
+                    "Možná zaseknuto – žádný progress ${elapsedMinutes} min."
                 state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
                     (correctionProgress.message ?: "Korekce: chunk ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}") + elapsedSuffix
-                state == MeetingStateEnum.TRANSCRIBED -> "Ve fronte - ceka na korekci pres LLM model"
-                state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potrebuje vase odpovedi"
-                state == MeetingStateEnum.CORRECTED -> "Ve fronte - ceka na indexaci do znalostni baze"
+                state == MeetingStateEnum.TRANSCRIBED -> "Ve frontě – čeká na korekci přes LLM model"
+                state == MeetingStateEnum.CORRECTION_REVIEW -> "Agent potřebuje vaše odpovědi"
+                state == MeetingStateEnum.CORRECTED -> "Ve frontě – čeká na indexaci do znalostní báze"
                 // Actively processing
                 isActive && currentStepIndex in pipelineSteps.indices ->
                     pipelineSteps[currentStepIndex].activeDescription + elapsedSuffix
@@ -1526,28 +1512,16 @@ private fun TranscriptSegmentRow(
         }
 
         // Edit button
-        IconButton(
-            onClick = onEdit,
-            modifier = Modifier.size(JervisSpacing.touchTarget),
-        ) {
-            Text(
-                text = "\u270F",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
+        JEditButton(onClick = onEdit)
 
         // Play/Stop button
-        IconButton(
+        JIconButton(
             onClick = onPlayToggle,
-            modifier = Modifier.size(JervisSpacing.touchTarget),
-        ) {
-            Text(
-                text = if (isPlayingSegment) "\u23F9" else "\u25B6",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isPlayingSegment) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+            icon = if (isPlayingSegment) Icons.Default.Stop else Icons.Default.PlayArrow,
+            contentDescription = if (isPlayingSegment) "Zastavit" else "Přehrát",
+            tint = if (isPlayingSegment) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1567,28 +1541,28 @@ private fun stateIcon(state: MeetingStateEnum): String =
 
 private fun stateLabel(state: MeetingStateEnum): String =
     when (state) {
-        MeetingStateEnum.RECORDING -> "Nahrava se"
-        MeetingStateEnum.UPLOADING -> "Odesila se"
-        MeetingStateEnum.UPLOADED -> "Ceka na prepis"
-        MeetingStateEnum.TRANSCRIBING -> "Prepisuje se"
-        MeetingStateEnum.TRANSCRIBED -> "Ceka na korekci"
+        MeetingStateEnum.RECORDING -> "Nahrává se"
+        MeetingStateEnum.UPLOADING -> "Odesílá se"
+        MeetingStateEnum.UPLOADED -> "Čeká na přepis"
+        MeetingStateEnum.TRANSCRIBING -> "Přepisuje se"
+        MeetingStateEnum.TRANSCRIBED -> "Čeká na korekci"
         MeetingStateEnum.CORRECTING -> "Opravuje se"
-        MeetingStateEnum.CORRECTION_REVIEW -> "Ceka na odpoved"
-        MeetingStateEnum.CORRECTED -> "Ceka na indexaci"
+        MeetingStateEnum.CORRECTION_REVIEW -> "Čeká na odpověď"
+        MeetingStateEnum.CORRECTED -> "Čeká na indexaci"
         MeetingStateEnum.INDEXED -> "Hotovo"
         MeetingStateEnum.FAILED -> "Chyba"
     }
 
 private fun meetingTypeLabel(type: MeetingTypeEnum): String =
     when (type) {
-        MeetingTypeEnum.MEETING -> "Schuzka"
-        MeetingTypeEnum.TASK_DISCUSSION -> "Diskuse ukolu"
+        MeetingTypeEnum.MEETING -> "Schůzka"
+        MeetingTypeEnum.TASK_DISCUSSION -> "Diskuse úkolů"
         MeetingTypeEnum.STANDUP_PROJECT -> "Standup projekt"
-        MeetingTypeEnum.STANDUP_TEAM -> "Standup tym"
+        MeetingTypeEnum.STANDUP_TEAM -> "Standup tým"
         MeetingTypeEnum.INTERVIEW -> "Pohovor"
         MeetingTypeEnum.WORKSHOP -> "Workshop"
         MeetingTypeEnum.REVIEW -> "Review"
-        MeetingTypeEnum.OTHER -> "Jine"
+        MeetingTypeEnum.OTHER -> "Jiné"
     }
 
 /**
@@ -1682,14 +1656,14 @@ private fun CorrectionQuestionsCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    TextButton(
+                    JTextButton(
                         onClick = {
                             val answerDtos = questions.mapNotNull { q ->
                                 if (q.questionId !in confirmed.value) return@mapNotNull null
                                 val rawAnswer = answers.value[q.questionId]?.trim()
                                 val isNevim = rawAnswer == "\u0000"
                                 if (isNevim) {
-                                    // "Nevim" → send empty corrected string
+                                    // "Nevím" → send empty corrected string
                                     CorrectionAnswerDto(
                                         questionId = q.questionId,
                                         segmentIndex = q.segmentIndex,
@@ -1749,82 +1723,63 @@ private fun SegmentCorrectionDialog(
 ) {
     var correctedText by remember { mutableStateOf(editableText) }
 
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Opravit segment") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Original text (read-only) with play button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Original:",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    IconButton(
-                        onClick = onPlayToggle,
-                        modifier = Modifier.size(JervisSpacing.touchTarget),
-                    ) {
-                        Text(
-                            text = if (isPlayingSegment) "\u23F9" else "\u25B6",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (isPlayingSegment) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    SelectionContainer {
-                        Text(
-                            text = originalText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                }
-
-                // Editable corrected text
+    JFormDialog(
+        visible = true,
+        title = "Opravit segment",
+        onConfirm = {
+            if (correctedText.isNotBlank() && correctedText != editableText) {
+                onConfirm(correctedText.trim())
+            }
+        },
+        onDismiss = onDismiss,
+        confirmEnabled = correctedText.isNotBlank() && correctedText != editableText,
+        confirmText = "Uložit",
+    ) {
+        // Original text (read-only) with play button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Original:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            JIconButton(
+                onClick = onPlayToggle,
+                icon = if (isPlayingSegment) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = if (isPlayingSegment) "Zastavit" else "Přehrát",
+                tint = if (isPlayingSegment) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            SelectionContainer {
                 Text(
-                    text = "Opraveny text:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = correctedText,
-                    onValueChange = { correctedText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 5,
+                    text = originalText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp),
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (correctedText.isNotBlank() && correctedText != editableText) {
-                        onConfirm(correctedText.trim())
-                    }
-                },
-                enabled = correctedText.isNotBlank() && correctedText != editableText,
-            ) {
-                Text("Ulozit")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Zrusit")
-            }
-        },
-    )
+        }
+        Spacer(Modifier.height(8.dp))
+        // Editable corrected text
+        JTextField(
+            value = correctedText,
+            onValueChange = { correctedText = it },
+            label = "Opraveny text",
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 5,
+            singleLine = false,
+        )
+    }
 }
 
 @Composable
@@ -1905,14 +1860,14 @@ private fun CorrectionQuestionItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
+                JTextField(
                     value = if (isNevim) "" else currentAnswer,
                     onValueChange = onAnswerChanged,
-                    label = { Text("Správný tvar") },
+                    label = "Správný tvar",
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
-                OutlinedButton(
+                JSecondaryButton(
                     onClick = {
                         onAnswerChanged("\u0000")
                         onConfirm()
@@ -1920,7 +1875,7 @@ private fun CorrectionQuestionItem(
                 ) {
                     Text("Nevím")
                 }
-                TextButton(
+                JTextButton(
                     onClick = onConfirm,
                     enabled = currentAnswer.isNotBlank() && !isNevim,
                 ) {

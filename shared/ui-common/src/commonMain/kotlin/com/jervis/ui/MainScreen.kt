@@ -21,9 +21,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,7 +40,6 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -47,27 +52,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.design.JIconButton
+import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.navigation.Screen
-import com.jervis.ui.util.rememberClipboardManager
 
 /**
  * Main menu items for the dropdown menu.
  * Each item navigates to a separate screen.
  */
-private enum class MainMenuItem(val icon: String, val title: String) {
-    SETTINGS("\u2699\uFE0F", "Nastaven\u00ED"),
-    USER_TASKS("\uD83D\uDCCB", "U\u017Eivatelsk\u00E9 \u00FAlohy"),
-    PENDING_TASKS("\uD83D\uDCE5", "Fronta \u00FAloh"),
-    SCHEDULER("\uD83D\uDDD3\uFE0F", "Pl\u00E1nova\u010D"),
-    MEETINGS("\uD83C\uDFA4", "Meetingy"),
-    RAG_SEARCH("\uD83D\uDD0D", "RAG Hled\u00E1n\u00ED"),
-    ERROR_LOGS("\uD83D\uDCDB", "Chybov\u00E9 logy"),
+private enum class MainMenuItem(val icon: ImageVector, val title: String) {
+    SETTINGS(Icons.Default.Settings, "Nastaven\u00ED"),
+    USER_TASKS(Icons.AutoMirrored.Filled.List, "U\u017Eivatelsk\u00E9 \u00FAlohy"),
+    PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta \u00FAloh"),
+    SCHEDULER(Icons.Default.CalendarMonth, "Pl\u00E1nova\u010D"),
+    MEETINGS(Icons.Default.Mic, "Meetingy"),
+    RAG_SEARCH(Icons.Default.Search, "RAG Hled\u00E1n\u00ED"),
+    ERROR_LOGS(Icons.Default.BugReport, "Chybov\u00E9 logy"),
 }
 
 private fun MainMenuItem.toScreen(): Screen = when (this) {
@@ -307,12 +315,11 @@ private fun SelectorsRow(
         Box {
             var menuExpanded by remember { mutableStateOf(false) }
 
-            IconButton(
+            JIconButton(
                 onClick = { menuExpanded = true },
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Icon(Icons.Default.Menu, contentDescription = "Menu")
-            }
+                icon = Icons.Default.Menu,
+                contentDescription = "Menu",
+            )
 
             DropdownMenu(
                 expanded = menuExpanded,
@@ -325,7 +332,7 @@ private fun SelectorsRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(item.icon, modifier = Modifier.size(20.dp))
+                                Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Text(item.title)
                             }
                         },
@@ -362,7 +369,7 @@ private fun ChatArea(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No messages yet. Start a conversation!",
+                    text = "Zat\u00EDm \u017E\u00E1dn\u00E9 zpr\u00E1vy. Za\u010Dn\u011Bte konverzaci!",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -387,7 +394,6 @@ private fun ChatMessageItem(
     message: ChatMessage,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = rememberClipboardManager()
     val isMe = message.from == ChatMessage.Sender.Me
 
     // Progress messages are displayed differently (compact, with spinner)
@@ -593,16 +599,18 @@ private fun InputArea(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        OutlinedTextField(
+        JTextField(
             value = inputText,
             onValueChange = onInputChanged,
-            placeholder = { Text("Napi\u0161te zpr\u00E1vu...") },
+            label = "",
+            placeholder = "Napi\u0161te zpr\u00E1vu...",
             enabled = enabled,
             modifier =
                 Modifier
                     .weight(1f)
                     .heightIn(min = 56.dp, max = 120.dp),
             maxLines = 4,
+            singleLine = false,
         )
 
         val buttonText =
@@ -612,7 +620,7 @@ private fun InputArea(
                 else -> "Do fronty" // Different project or queue has items
             }
 
-        Button(
+        JPrimaryButton(
             onClick = onSendClick,
             enabled = enabled && inputText.isNotBlank(),
             modifier = Modifier.height(56.dp),

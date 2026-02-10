@@ -5,10 +5,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,16 +64,11 @@ fun ProjectsSettings(repository: JervisRepository) {
             }
         },
         listItem = { project ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { selectedProject = project },
-                border = CardDefaults.outlinedCardBorder(),
+            JCard(
+                onClick = { selectedProject = project },
             ) {
                 Row(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .heightIn(min = JervisSpacing.touchTarget),
+                    modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -264,229 +262,188 @@ internal fun ProjectEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní informace") {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název projektu") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Popis") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                )
-
-                // Group selector
-                if (clientGroups.isNotEmpty()) {
+        SelectionContainer {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní informace") {
+                    JTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = "Název projektu",
+                    )
                     Spacer(Modifier.height(JervisSpacing.itemGap))
-                    var groupExpanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = groupExpanded,
-                        onExpandedChange = { groupExpanded = it },
-                    ) {
-                        OutlinedTextField(
-                            value = clientGroups.find { it.id == selectedGroupId }?.name ?: "(Žádná skupina)",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Skupina projektů") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = groupExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    JTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = "Popis",
+                        singleLine = false,
+                        minLines = 2,
+                    )
+
+                    // Group selector
+                    if (clientGroups.isNotEmpty()) {
+                        Spacer(Modifier.height(JervisSpacing.itemGap))
+                        JDropdown(
+                            items = listOf<ProjectGroupDto?>(null) + clientGroups,
+                            selectedItem = clientGroups.find { it.id == selectedGroupId },
+                            onItemSelected = { selectedGroupId = it?.id },
+                            label = "Skupina projektů",
+                            itemLabel = { it?.name ?: "(Žádná skupina)" },
                         )
-                        ExposedDropdownMenu(
-                            expanded = groupExpanded,
-                            onDismissRequest = { groupExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("(Žádná skupina)") },
-                                onClick = {
-                                    selectedGroupId = null
-                                    groupExpanded = false
-                                },
+                    }
+                }
+
+                // Resources section
+                JSection(title = "Zdroje projektu") {
+                    Text(
+                        "Přidejte repozitáře, issue trackery, wiki a další zdroje z připojení klienta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (resources.isEmpty()) {
+                        Text(
+                            "Žádné zdroje. Klikněte na tlačítko pro přidání.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        val grouped = resources.groupBy { it.capability }
+                        grouped.forEach { (capability, unsorted) ->
+                            val capResources = unsorted.sortedBy { (it.displayName.ifEmpty { it.resourceIdentifier }).lowercase() }
+                            Text(
+                                getCapabilityLabel(capability),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
                             )
-                            clientGroups.forEach { group ->
-                                DropdownMenuItem(
-                                    text = { Text(group.name) },
-                                    onClick = {
-                                        selectedGroupId = group.id
-                                        groupExpanded = false
+                            Spacer(Modifier.height(4.dp))
+
+                            capResources.forEach { res ->
+                                val links = getLinksForResource(res.id)
+                                ProjectResourceItem(
+                                    resource = res,
+                                    connectionName = getConnectionName(res.connectionId),
+                                    links = links,
+                                    allResources = resources,
+                                    onRemove = { removeResource(res) },
+                                    onAddLink = {
+                                        linkSourceResource = res
+                                        showLinkDialog = true
                                     },
+                                    onRemoveLink = { link -> removeLink(link) },
                                 )
                             }
+                            Spacer(Modifier.height(8.dp))
                         }
                     }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    JPrimaryButton(onClick = {
+                        addResourceCapabilityFilter = null
+                        showAddResourceDialog = true
+                    }) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Přidat zdroj")
+                    }
                 }
-            }
 
-            // Resources section
-            JSection(title = "Zdroje projektu") {
-                Text(
-                    "Přidejte repozitáře, issue trackery, wiki a další zdroje z připojení klienta.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (resources.isEmpty()) {
+                // Resource links section
+                JSection(title = "Propojení zdrojů") {
                     Text(
-                        "Žádné zdroje. Klikněte na tlačítko pro přidání.",
+                        "Propojte repozitáře s issue trackery a wiki. Nepropojené zdroje jsou projekt-level.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    val grouped = resources.groupBy { it.capability }
-                    grouped.forEach { (capability, unsorted) ->
-                        val capResources = unsorted.sortedBy { (it.displayName.ifEmpty { it.resourceIdentifier }).lowercase() }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (resourceLinks.isEmpty()) {
                         Text(
-                            getCapabilityLabel(capability),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            "Žádná propojení. Přidejte je tlačítkem u zdroje.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(4.dp))
-
-                        capResources.forEach { res ->
-                            val links = getLinksForResource(res.id)
-                            ProjectResourceItem(
-                                resource = res,
-                                connectionName = getConnectionName(res.connectionId),
-                                links = links,
-                                allResources = resources,
-                                onRemove = { removeResource(res) },
-                                onAddLink = {
-                                    linkSourceResource = res
-                                    showLinkDialog = true
-                                },
-                                onRemoveLink = { link -> removeLink(link) },
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                JPrimaryButton(onClick = {
-                    addResourceCapabilityFilter = null
-                    showAddResourceDialog = true
-                }) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Přidat zdroj")
-                }
-            }
-
-            // Resource links section
-            JSection(title = "Propojení zdrojů") {
-                Text(
-                    "Propojte repozitáře s issue trackery a wiki. Nepropojené zdroje jsou projekt-level.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (resourceLinks.isEmpty()) {
-                    Text(
-                        "Žádná propojení. Přidejte je tlačítkem u zdroje.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    resourceLinks.forEach { link ->
-                        val source = findResourceById(link.sourceId)
-                        val target = findResourceById(link.targetId)
-                        if (source != null && target != null) {
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                border = CardDefaults.outlinedCardBorder(),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .padding(8.dp)
-                                        .heightIn(min = JervisSpacing.touchTarget),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            "${source.displayName.ifEmpty { source.resourceIdentifier }} ↔ ${target.displayName.ifEmpty { target.resourceIdentifier }}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                        Text(
-                                            "${getCapabilityLabel(source.capability)} ↔ ${getCapabilityLabel(target.capability)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { removeLink(link) },
-                                        modifier = Modifier.size(JervisSpacing.touchTarget),
+                    } else {
+                        resourceLinks.forEach { link ->
+                            val source = findResourceById(link.sourceId)
+                            val target = findResourceById(link.targetId)
+                            if (source != null && target != null) {
+                                JCard {
+                                    Row(
+                                        modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text("✕", style = MaterialTheme.typography.labelSmall)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                "${source.displayName.ifEmpty { source.resourceIdentifier }} ↔ ${target.displayName.ifEmpty { target.resourceIdentifier }}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            Text(
+                                                "${getCapabilityLabel(source.capability)} ↔ ${getCapabilityLabel(target.capability)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        JIconButton(
+                                            onClick = { removeLink(link) },
+                                            icon = Icons.Default.Close,
+                                            contentDescription = "Odebrat propojení",
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            JSection(title = "Přepsání Git Commit Konfigurace") {
-                Text(
-                    "Standardně se používá konfigurace z klienta. Zde můžete přepsat pro tento projekt.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                JSection(title = "Přepsání Git Commit Konfigurace") {
+                    Text(
+                        "Standardně se používá konfigurace z klienta. Zde můžete přepsat pro tento projekt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
 
-                Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = JervisSpacing.touchTarget),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
+                    JCheckboxRow(
+                        label = "Přepsat konfiguraci klienta",
                         checked = useCustomGitConfig,
                         onCheckedChange = { useCustomGitConfig = it },
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Přepsat konfiguraci klienta")
+
+                    if (useCustomGitConfig) {
+                        Spacer(Modifier.height(12.dp))
+
+                        GitCommitConfigFields(
+                            messageFormat = gitCommitMessageFormat,
+                            onMessageFormatChange = { gitCommitMessageFormat = it },
+                            authorName = gitCommitAuthorName,
+                            onAuthorNameChange = { gitCommitAuthorName = it },
+                            authorEmail = gitCommitAuthorEmail,
+                            onAuthorEmailChange = { gitCommitAuthorEmail = it },
+                            committerName = gitCommitCommitterName,
+                            onCommitterNameChange = { gitCommitCommitterName = it },
+                            committerEmail = gitCommitCommitterEmail,
+                            onCommitterEmailChange = { gitCommitCommitterEmail = it },
+                            gpgSign = gitCommitGpgSign,
+                            onGpgSignChange = { gitCommitGpgSign = it },
+                            gpgKeyId = gitCommitGpgKeyId,
+                            onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                        )
+                    }
                 }
 
-                if (useCustomGitConfig) {
-                    Spacer(Modifier.height(12.dp))
-
-                    GitCommitConfigFields(
-                        messageFormat = gitCommitMessageFormat,
-                        onMessageFormatChange = { gitCommitMessageFormat = it },
-                        authorName = gitCommitAuthorName,
-                        onAuthorNameChange = { gitCommitAuthorName = it },
-                        authorEmail = gitCommitAuthorEmail,
-                        onAuthorEmailChange = { gitCommitAuthorEmail = it },
-                        committerName = gitCommitCommitterName,
-                        onCommitterNameChange = { gitCommitCommitterName = it },
-                        committerEmail = gitCommitCommitterEmail,
-                        onCommitterEmailChange = { gitCommitCommitterEmail = it },
-                        gpgSign = gitCommitGpgSign,
-                        onGpgSignChange = { gitCommitGpgSign = it },
-                        gpgKeyId = gitCommitGpgKeyId,
-                        onGpgKeyIdChange = { gitCommitGpgKeyId = it },
-                    )
-                }
+                // Bottom spacing
+                Spacer(Modifier.height(16.dp))
             }
-
-            // Bottom spacing
-            Spacer(Modifier.height(16.dp))
         }
     }
 
@@ -539,14 +496,9 @@ private fun ProjectResourceItem(
     onAddLink: () -> Unit,
     onRemoveLink: (ResourceLinkDto) -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
+    JCard {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-                .heightIn(min = JervisSpacing.touchTarget),
+            modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -573,19 +525,17 @@ private fun ProjectResourceItem(
                 }
             }
             if (resource.id.isNotEmpty()) {
-                IconButton(
+                JIconButton(
                     onClick = onAddLink,
-                    modifier = Modifier.size(JervisSpacing.touchTarget),
-                ) {
-                    Text("+↔", style = MaterialTheme.typography.labelSmall)
-                }
+                    icon = Icons.Default.Link,
+                    contentDescription = "Propojit",
+                )
             }
-            IconButton(
+            JIconButton(
                 onClick = onRemove,
-                modifier = Modifier.size(JervisSpacing.touchTarget),
-            ) {
-                Text("✕", style = MaterialTheme.typography.labelSmall)
-            }
+                icon = Icons.Default.Close,
+                contentDescription = "Odebrat",
+            )
         }
     }
 }
@@ -615,11 +565,10 @@ private fun AddResourceDialog(
         title = { Text("Přidat zdroje") },
         text = {
             Column {
-                OutlinedTextField(
+                JTextField(
                     value = filterText,
                     onValueChange = { filterText = it },
-                    label = { Text("Filtrovat...") },
-                    modifier = Modifier.fillMaxWidth(),
+                    label = "Filtrovat...",
                     singleLine = true,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -735,11 +684,11 @@ private fun AddResourceDialog(
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
+                JTextButton(onClick = onDismiss) {
                     Text("Zavřít")
                 }
                 if (selected.isNotEmpty()) {
-                    Button(onClick = {
+                    JPrimaryButton(onClick = {
                         selected.forEach { sel ->
                             onAdd(sel.connectionId, sel.capability, sel.resourceId, sel.displayName)
                         }
@@ -824,7 +773,7 @@ private fun LinkResourceDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            JTextButton(onClick = onDismiss) {
                 Text("Zavřít")
             }
         },

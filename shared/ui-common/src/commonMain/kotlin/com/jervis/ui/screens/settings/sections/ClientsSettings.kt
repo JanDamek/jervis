@@ -5,13 +5,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -120,44 +123,40 @@ fun ClientsSettings(repository: JervisRepository) {
             } else if (clients.isEmpty() && !isLoading) {
                 JEmptyState(message = "Žádní klienti nenalezeni", icon = "🏢")
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    items(activeClients, key = { it.id }) { client ->
-                        ClientExpandableCard(
-                            client = client,
-                            projects = allProjects.filter { it.clientId == client.id },
-                            onEditClient = { editingClient = client },
-                            onEditProject = { editingProject = it },
-                            onCreateProject = { clientId ->
-                                scope.launch {
-                                    try {
-                                        repository.projects.saveProject(
-                                            ProjectDto(name = "Nový projekt", clientId = clientId),
-                                        )
-                                        loadData()
-                                    } catch (e: Exception) {
-                                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                SelectionContainer {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        items(activeClients, key = { it.id }) { client ->
+                            ClientExpandableCard(
+                                client = client,
+                                projects = allProjects.filter { it.clientId == client.id },
+                                onEditClient = { editingClient = client },
+                                onEditProject = { editingProject = it },
+                                onCreateProject = { clientId ->
+                                    scope.launch {
+                                        try {
+                                            repository.projects.saveProject(
+                                                ProjectDto(name = "Nový projekt", clientId = clientId),
+                                            )
+                                            loadData()
+                                        } catch (e: Exception) {
+                                            snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                                        }
                                     }
-                                }
-                            },
-                        )
-                    }
+                                },
+                            )
+                        }
 
-                    // Archived section
-                    if (archivedClients.isNotEmpty()) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                border = CardDefaults.outlinedCardBorder(),
-                            ) {
-                                Column {
+                        // Archived section
+                        if (archivedClients.isNotEmpty()) {
+                            item {
+                                JCard {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable { showArchivedSection = !showArchivedSection }
-                                            .padding(16.dp)
                                             .heightIn(min = JervisSpacing.touchTarget),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
@@ -208,7 +207,7 @@ fun ClientsSettings(repository: JervisRepository) {
             }
         }
 
-        SnackbarHost(
+        JSnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
         )
@@ -219,51 +218,39 @@ fun ClientsSettings(repository: JervisRepository) {
         var newName by remember { mutableStateOf("") }
         var newDescription by remember { mutableStateOf("") }
 
-        AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("Vytvořit nového klienta") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Název klienta") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = newDescription,
-                        onValueChange = { newDescription = it },
-                        label = { Text("Popis (volitelné)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                    )
+        JFormDialog(
+            visible = true,
+            title = "Vytvořit nového klienta",
+            onConfirm = {
+                scope.launch {
+                    try {
+                        repository.clients.createClient(
+                            ClientDto(name = newName, description = newDescription.ifBlank { null }),
+                        )
+                        showCreateDialog = false
+                        loadData()
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar("Chyba: ${e.message}")
+                    }
                 }
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                repository.clients.createClient(
-                                    ClientDto(name = newName, description = newDescription.ifBlank { null }),
-                                )
-                                showCreateDialog = false
-                                loadData()
-                            } catch (e: Exception) {
-                                snackbarHostState.showSnackbar("Chyba: ${e.message}")
-                            }
-                        }
-                    },
-                    enabled = newName.isNotBlank(),
-                ) {
-                    Text("Vytvořit")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) { Text("Zrušit") }
-            },
-        )
+            onDismiss = { showCreateDialog = false },
+            confirmEnabled = newName.isNotBlank(),
+            confirmText = "Vytvořit",
+        ) {
+            JTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                label = "Název klienta",
+            )
+            JTextField(
+                value = newDescription,
+                onValueChange = { newDescription = it },
+                label = "Popis (volitelné)",
+                singleLine = false,
+                minLines = 2,
+            )
+        }
     }
 }
 
@@ -277,98 +264,85 @@ private fun ClientExpandableCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .heightIn(min = JervisSpacing.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(client.name, style = MaterialTheme.typography.titleMedium)
-                    client.description?.let {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+    JCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(client.name, style = MaterialTheme.typography.titleMedium)
+                client.description?.let {
                     Text(
-                        "${projects.size} projektů",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                IconButton(
-                    onClick = onEditClient,
-                    modifier = Modifier.size(JervisSpacing.touchTarget),
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Upravit klienta")
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-
-                if (projects.isEmpty()) {
-                    Text(
-                        "Žádné projekty",
+                        it,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                } else {
-                    projects.forEach { project ->
-                        Card(
+                }
+                Text(
+                    "${projects.size} projektů",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            JIconButton(
+                onClick = onEditClient,
+                icon = Icons.Default.Edit,
+                contentDescription = "Upravit klienta",
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            if (projects.isEmpty()) {
+                Text(
+                    "Žádné projekty",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                projects.forEach { project ->
+                    JCard {
+                        Row(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            border = CardDefaults.outlinedCardBorder(),
+                                .heightIn(min = JervisSpacing.touchTarget),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .heightIn(min = JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(project.name, style = MaterialTheme.typography.bodyMedium)
-                                    project.description?.let {
-                                        Text(
-                                            it,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                                IconButton(
-                                    onClick = { onEditProject(project) },
-                                    modifier = Modifier.size(JervisSpacing.touchTarget),
-                                ) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Upravit projekt")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(project.name, style = MaterialTheme.typography.bodyMedium)
+                                project.description?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
+                            JIconButton(
+                                onClick = { onEditProject(project) },
+                                icon = Icons.Default.Edit,
+                                contentDescription = "Upravit projekt",
+                            )
                         }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(8.dp))
-                JPrimaryButton(onClick = { onCreateProject(client.id) }) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Nový projekt")
-                }
+            Spacer(Modifier.height(8.dp))
+            JPrimaryButton(onClick = { onCreateProject(client.id) }) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Nový projekt")
             }
         }
     }
@@ -515,390 +489,357 @@ private fun ClientEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            JSection(title = "Základní údaje") {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Název klienta") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Popis") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                )
-                Spacer(Modifier.height(JervisSpacing.itemGap))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = JervisSpacing.touchTarget),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
+        SelectionContainer {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                JSection(title = "Základní údaje") {
+                    JTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = "Název klienta",
+                    )
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = "Popis",
+                        singleLine = false,
+                        minLines = 2,
+                    )
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JCheckboxRow(
+                        label = "Archivovat klienta",
                         checked = archived,
                         onCheckedChange = { archived = it },
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Archivovat klienta")
-                }
-            }
-
-            JSection(title = "Připojení klienta") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Přiřaďte connections tomuto klientovi",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    JPrimaryButton(onClick = { showConnectionsDialog = true }) {
-                        Text("+ Přidat")
-                    }
                 }
 
-                Spacer(Modifier.height(12.dp))
-
-                if (selectedConnectionIds.isEmpty()) {
-                    Text(
-                        "Žádná připojení nejsou přiřazena.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    selectedConnectionIds.forEach { connId ->
-                        val connection = availableConnections.firstOrNull { it.id == connId }
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            border = CardDefaults.outlinedCardBorder(),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .heightIn(min = JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        connection?.name ?: "Unknown",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    Text(
-                                        connection?.protocol?.name ?: "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { selectedConnectionIds.remove(connId) },
-                                    modifier = Modifier.size(JervisSpacing.touchTarget),
-                                ) {
-                                    Text("✕", style = MaterialTheme.typography.titleSmall)
-                                }
-                            }
+                JSection(title = "Připojení klienta") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Přiřaďte connections tomuto klientovi",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        JPrimaryButton(onClick = { showConnectionsDialog = true }) {
+                            Text("+ Přidat")
                         }
                     }
-                }
-            }
 
-            if (showConnectionsDialog) {
-                AlertDialog(
-                    onDismissRequest = { showConnectionsDialog = false },
-                    title = { Text("Vybrat připojení") },
-                    text = {
-                        LazyColumn {
-                            items(availableConnections.filter { it.id !in selectedConnectionIds }) { conn ->
+                    Spacer(Modifier.height(12.dp))
+
+                    if (selectedConnectionIds.isEmpty()) {
+                        Text(
+                            "Žádná připojení nejsou přiřazena.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else {
+                        selectedConnectionIds.forEach { connId ->
+                            val connection = availableConnections.firstOrNull { it.id == connId }
+                            JCard {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedConnectionIds.add(conn.id)
-                                            showConnectionsDialog = false
-                                        }
-                                        .padding(12.dp)
-                                        .heightIn(min = JervisSpacing.touchTarget),
+                                    modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(conn.name, style = MaterialTheme.typography.bodyMedium)
-                                        Text(conn.protocol.name, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                                HorizontalDivider()
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showConnectionsDialog = false }) {
-                            Text("Zavřít")
-                        }
-                    },
-                )
-            }
-
-            // Capability configuration section
-            JSection(title = "Konfigurace schopností") {
-                Text(
-                    "Nastavte, které zdroje z připojení se mají indexovat pro tohoto klienta.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (selectedConnectionIds.isEmpty()) {
-                    Text(
-                        "Nejprve přiřaďte alespoň jedno připojení.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    selectedConnectionIds.forEach { connId ->
-                        val connection = availableConnections.firstOrNull { it.id == connId }
-                        if (connection != null && connection.capabilities.isNotEmpty()) {
-                            ConnectionCapabilityCard(
-                                connection = connection,
-                                capabilities = connectionCapabilities,
-                                availableResources = availableResources,
-                                loadingResources = loadingResources,
-                                onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
-                                onUpdateConfig = { config -> updateCapabilityConfig(config) },
-                                onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
-                                getConfig = { capability -> getCapabilityConfig(connId, capability) },
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Provider resources → project creation section
-            JSection(title = "Dostupné zdroje z providerů") {
-                Text(
-                    "Zdroje z připojených služeb. Můžete vytvořit projekt propojený s daným zdrojem.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                if (selectedConnectionIds.isEmpty()) {
-                    Text(
-                        "Nejprve přiřaďte alespoň jedno připojení.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    selectedConnectionIds.forEach { connId ->
-                        val connection = availableConnections.firstOrNull { it.id == connId }
-                        if (connection != null && connection.capabilities.isNotEmpty()) {
-                            ProviderResourcesCard(
-                                connection = connection,
-                                availableResources = availableResources,
-                                loadingResources = loadingResources,
-                                findLinkedProject = { capability, resourceId ->
-                                    findLinkedProject(connId, capability, resourceId)
-                                },
-                                onCreateProject = { resource, capability ->
-                                    scope.launch {
-                                        try {
-                                            repository.projects.saveProject(
-                                                ProjectDto(
-                                                    name = resource.name,
-                                                    description = resource.description,
-                                                    clientId = client.id,
-                                                    connectionCapabilities = listOf(
-                                                        ProjectConnectionCapabilityDto(
-                                                            connectionId = connId,
-                                                            capability = capability,
-                                                            enabled = true,
-                                                            resourceIdentifier = resource.id,
-                                                            selectedResources = listOf(resource.id),
-                                                        ),
-                                                    ),
-                                                    resources = listOf(
-                                                        ProjectResourceDto(
-                                                            connectionId = connId,
-                                                            capability = capability,
-                                                            resourceIdentifier = resource.id,
-                                                            displayName = resource.name,
-                                                        ),
-                                                    ),
-                                                ),
-                                            )
-                                            loadProjects()
-                                        } catch (_: Exception) {
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            JSection(title = "Projekty klienta") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Projekty přiřazené tomuto klientovi",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    JPrimaryButton(onClick = { showCreateProjectDialog = true }) {
-                        Text("+ Vytvořit projekt")
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                if (projects.isEmpty()) {
-                    Text(
-                        "Žádné projekty nejsou vytvořeny.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    projects.forEach { project ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    // TODO: Navigate to project detail
-                                },
-                            border = CardDefaults.outlinedCardBorder(),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .heightIn(min = JervisSpacing.touchTarget),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        project.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    project.description?.let {
                                         Text(
-                                            it,
+                                            connection?.name ?: "Unknown",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        Text(
+                                            connection?.protocol?.name ?: "",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
+                                    JIconButton(
+                                        onClick = { selectedConnectionIds.remove(connId) },
+                                        icon = Icons.Default.Close,
+                                        contentDescription = "Odebrat",
+                                    )
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            }
+                        }
+                    }
+                }
+
+                if (showConnectionsDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showConnectionsDialog = false },
+                        title = { Text("Vybrat připojení") },
+                        text = {
+                            LazyColumn {
+                                items(availableConnections.filter { it.id !in selectedConnectionIds }) { conn ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedConnectionIds.add(conn.id)
+                                                showConnectionsDialog = false
+                                            }
+                                            .padding(12.dp)
+                                            .heightIn(min = JervisSpacing.touchTarget),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(conn.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text(conn.protocol.name, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            JTextButton(onClick = { showConnectionsDialog = false }) {
+                                Text("Zavřít")
+                            }
+                        },
+                    )
+                }
+
+                // Capability configuration section
+                JSection(title = "Konfigurace schopností") {
+                    Text(
+                        "Nastavte, které zdroje z připojení se mají indexovat pro tohoto klienta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (selectedConnectionIds.isEmpty()) {
+                        Text(
+                            "Nejprve přiřaďte alespoň jedno připojení.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        selectedConnectionIds.forEach { connId ->
+                            val connection = availableConnections.firstOrNull { it.id == connId }
+                            if (connection != null && connection.capabilities.isNotEmpty()) {
+                                ConnectionCapabilityCard(
+                                    connection = connection,
+                                    capabilities = connectionCapabilities,
+                                    availableResources = availableResources,
+                                    loadingResources = loadingResources,
+                                    onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
+                                    onUpdateConfig = { config -> updateCapabilityConfig(config) },
+                                    onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
+                                    getConfig = { capability -> getCapabilityConfig(connId, capability) },
                                 )
                             }
                         }
                     }
                 }
-            }
 
-            if (showCreateProjectDialog) {
-                var newProjectName by remember { mutableStateOf("") }
-                var newProjectDescription by remember { mutableStateOf("") }
+                // Provider resources → project creation section
+                JSection(title = "Dostupné zdroje z providerů") {
+                    Text(
+                        "Zdroje z připojených služeb. Můžete vytvořit projekt propojený s daným zdrojem.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
 
-                AlertDialog(
-                    onDismissRequest = { showCreateProjectDialog = false },
-                    title = { Text("Vytvořit nový projekt") },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = newProjectName,
-                                onValueChange = { newProjectName = it },
-                                label = { Text("Název projektu") },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = newProjectDescription,
-                                onValueChange = { newProjectDescription = it },
-                                label = { Text("Popis (volitelné)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                minLines = 2,
-                            )
+                    Spacer(Modifier.height(12.dp))
+
+                    if (selectedConnectionIds.isEmpty()) {
+                        Text(
+                            "Nejprve přiřaďte alespoň jedno připojení.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        selectedConnectionIds.forEach { connId ->
+                            val connection = availableConnections.firstOrNull { it.id == connId }
+                            if (connection != null && connection.capabilities.isNotEmpty()) {
+                                ProviderResourcesCard(
+                                    connection = connection,
+                                    availableResources = availableResources,
+                                    loadingResources = loadingResources,
+                                    findLinkedProject = { capability, resourceId ->
+                                        findLinkedProject(connId, capability, resourceId)
+                                    },
+                                    onCreateProject = { resource, capability ->
+                                        scope.launch {
+                                            try {
+                                                repository.projects.saveProject(
+                                                    ProjectDto(
+                                                        name = resource.name,
+                                                        description = resource.description,
+                                                        clientId = client.id,
+                                                        connectionCapabilities = listOf(
+                                                            ProjectConnectionCapabilityDto(
+                                                                connectionId = connId,
+                                                                capability = capability,
+                                                                enabled = true,
+                                                                resourceIdentifier = resource.id,
+                                                                selectedResources = listOf(resource.id),
+                                                            ),
+                                                        ),
+                                                        resources = listOf(
+                                                            ProjectResourceDto(
+                                                                connectionId = connId,
+                                                                capability = capability,
+                                                                resourceIdentifier = resource.id,
+                                                                displayName = resource.name,
+                                                            ),
+                                                        ),
+                                                    ),
+                                                )
+                                                loadProjects()
+                                            } catch (_: Exception) {
+                                            }
+                                        }
+                                    },
+                                )
+                            }
                         }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        repository.projects.saveProject(
-                                            ProjectDto(
-                                                name = newProjectName,
-                                                description = newProjectDescription.ifBlank { null },
-                                                clientId = client.id,
-                                            ),
+                    }
+                }
+
+                JSection(title = "Projekty klienta") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Projekty přiřazené tomuto klientovi",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        JPrimaryButton(onClick = { showCreateProjectDialog = true }) {
+                            Text("+ Vytvořit projekt")
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (projects.isEmpty()) {
+                        Text(
+                            "Žádné projekty nejsou vytvořeny.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        projects.forEach { project ->
+                            JCard(
+                                onClick = {
+                                    // TODO: Navigate to project detail
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            project.name,
+                                            style = MaterialTheme.typography.bodyMedium,
                                         )
-                                        loadProjects()
-                                        showCreateProjectDialog = false
-                                    } catch (_: Exception) {
+                                        project.description?.let {
+                                            Text(
+                                                it,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                     }
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
-                            },
-                            enabled = newProjectName.isNotBlank(),
-                        ) {
-                            Text("Vytvořit")
+                            }
                         }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showCreateProjectDialog = false }) {
-                            Text("Zrušit")
-                        }
-                    },
-                )
+                    }
+                }
+
+                if (showCreateProjectDialog) {
+                    var newProjectName by remember { mutableStateOf("") }
+                    var newProjectDescription by remember { mutableStateOf("") }
+
+                    JFormDialog(
+                        visible = true,
+                        title = "Vytvořit nový projekt",
+                        onConfirm = {
+                            scope.launch {
+                                try {
+                                    repository.projects.saveProject(
+                                        ProjectDto(
+                                            name = newProjectName,
+                                            description = newProjectDescription.ifBlank { null },
+                                            clientId = client.id,
+                                        ),
+                                    )
+                                    loadProjects()
+                                    showCreateProjectDialog = false
+                                } catch (_: Exception) {
+                                }
+                            }
+                        },
+                        onDismiss = { showCreateProjectDialog = false },
+                        confirmEnabled = newProjectName.isNotBlank(),
+                        confirmText = "Vytvořit",
+                    ) {
+                        JTextField(
+                            value = newProjectName,
+                            onValueChange = { newProjectName = it },
+                            label = "Název projektu",
+                        )
+                        JTextField(
+                            value = newProjectDescription,
+                            onValueChange = { newProjectDescription = it },
+                            label = "Popis (volitelné)",
+                            singleLine = false,
+                            minLines = 2,
+                        )
+                    }
+                }
+
+                JSection(title = "Výchozí Git Commit Konfigurace") {
+                    Text(
+                        "Tato konfigurace bude použita pro všechny projekty klienta (pokud projekt nepřepíše).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    GitCommitConfigFields(
+                        messageFormat = gitCommitMessageFormat,
+                        onMessageFormatChange = { gitCommitMessageFormat = it },
+                        authorName = gitCommitAuthorName,
+                        onAuthorNameChange = { gitCommitAuthorName = it },
+                        authorEmail = gitCommitAuthorEmail,
+                        onAuthorEmailChange = { gitCommitAuthorEmail = it },
+                        committerName = gitCommitCommitterName,
+                        onCommitterNameChange = { gitCommitCommitterName = it },
+                        committerEmail = gitCommitCommitterEmail,
+                        onCommitterEmailChange = { gitCommitCommitterEmail = it },
+                        gpgSign = gitCommitGpgSign,
+                        onGpgSignChange = { gitCommitGpgSign = it },
+                        gpgKeyId = gitCommitGpgKeyId,
+                        onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                    )
+                }
+
+                // Bottom spacing
+                Spacer(Modifier.height(16.dp))
             }
-
-            JSection(title = "Výchozí Git Commit Konfigurace") {
-                Text(
-                    "Tato konfigurace bude použita pro všechny projekty klienta (pokud projekt nepřepíše).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                GitCommitConfigFields(
-                    messageFormat = gitCommitMessageFormat,
-                    onMessageFormatChange = { gitCommitMessageFormat = it },
-                    authorName = gitCommitAuthorName,
-                    onAuthorNameChange = { gitCommitAuthorName = it },
-                    authorEmail = gitCommitAuthorEmail,
-                    onAuthorEmailChange = { gitCommitAuthorEmail = it },
-                    committerName = gitCommitCommitterName,
-                    onCommitterNameChange = { gitCommitCommitterName = it },
-                    committerEmail = gitCommitCommitterEmail,
-                    onCommitterEmailChange = { gitCommitCommitterEmail = it },
-                    gpgSign = gitCommitGpgSign,
-                    onGpgSignChange = { gitCommitGpgSign = it },
-                    gpgKeyId = gitCommitGpgKeyId,
-                    onGpgKeyIdChange = { gitCommitGpgKeyId = it },
-                )
-            }
-
-            // Bottom spacing
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -916,56 +857,56 @@ private fun ConnectionCapabilityCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        border = CardDefaults.outlinedCardBorder(),
+    JCard(
+        onClick = { expanded = !expanded },
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .heightIn(min = JervisSpacing.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("📌", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        connection.name,
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(
-                        connection.capabilities.joinToString(", ") { it.name },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.PushPin,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    connection.name,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    connection.capabilities.joinToString(", ") { it.name },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
-            if (expanded) {
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
+        if (expanded) {
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            connection.capabilities.forEach { capability ->
+                CapabilityConfigItem(
+                    connectionId = connection.id,
+                    capability = capability,
+                    config = getConfig(capability),
+                    resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
+                    isLoadingResources = Pair(connection.id, capability) in loadingResources,
+                    onLoadResources = { onLoadResources(capability) },
+                    onUpdateConfig = onUpdateConfig,
+                    onRemoveConfig = { onRemoveConfig(capability) },
+                )
                 Spacer(Modifier.height(8.dp))
-
-                connection.capabilities.forEach { capability ->
-                    CapabilityConfigItem(
-                        connectionId = connection.id,
-                        capability = capability,
-                        config = getConfig(capability),
-                        resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
-                        isLoadingResources = Pair(connection.id, capability) in loadingResources,
-                        onLoadResources = { onLoadResources(capability) },
-                        onUpdateConfig = onUpdateConfig,
-                        onRemoveConfig = { onRemoveConfig(capability) },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
             }
         }
     }
@@ -993,36 +934,25 @@ private fun CapabilityConfigItem(
     }
 
     Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = JervisSpacing.touchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(
-                checked = isEnabled,
-                onCheckedChange = { enabled ->
-                    if (enabled) {
-                        onUpdateConfig(
-                            ClientConnectionCapabilityDto(
-                                connectionId = connectionId,
-                                capability = capability,
-                                enabled = true,
-                                indexAllResources = true,
-                                selectedResources = emptyList(),
-                            ),
-                        )
-                    } else {
-                        onRemoveConfig()
-                    }
-                },
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                getCapabilityLabel(capability),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
+        JCheckboxRow(
+            label = getCapabilityLabel(capability),
+            checked = isEnabled,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    onUpdateConfig(
+                        ClientConnectionCapabilityDto(
+                            connectionId = connectionId,
+                            capability = capability,
+                            enabled = true,
+                            indexAllResources = true,
+                            selectedResources = emptyList(),
+                        ),
+                    )
+                } else {
+                    onRemoveConfig()
+                }
+            },
+        )
 
         if (isEnabled) {
             Column(modifier = Modifier.padding(start = 40.dp)) {
@@ -1127,11 +1057,10 @@ private fun CapabilityConfigItem(
                             )
                         } else {
                             if (resources.size > 5) {
-                                OutlinedTextField(
+                                JTextField(
                                     value = resourceFilter,
                                     onValueChange = { resourceFilter = it },
-                                    label = { Text("Filtrovat...") },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    label = "Filtrovat...",
                                     singleLine = true,
                                 )
                                 Spacer(Modifier.height(4.dp))
@@ -1214,101 +1143,96 @@ private fun ProviderResourcesCard(
         Pair(connection.id, cap) in loadingResources
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        border = CardDefaults.outlinedCardBorder(),
+    JCard(
+        onClick = { expanded = !expanded },
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .heightIn(min = JervisSpacing.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        connection.name,
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(
-                        "${connection.provider.name} · $totalResources zdrojů",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (isAnyLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    connection.name,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    "${connection.provider.name} · $totalResources zdrojů",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (isAnyLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (expanded) {
+            var providerResourceFilter by remember { mutableStateOf("") }
+            val allResourceCount = connection.capabilities.sumOf { cap ->
+                (availableResources[Pair(connection.id, cap)] ?: emptyList()).size
+            }
+
+            if (allResourceCount > 5) {
+                Spacer(Modifier.height(8.dp))
+                JTextField(
+                    value = providerResourceFilter,
+                    onValueChange = { providerResourceFilter = it },
+                    label = "Filtrovat zdroje...",
+                    singleLine = true,
                 )
             }
 
-            if (expanded) {
-                var providerResourceFilter by remember { mutableStateOf("") }
-                val allResourceCount = connection.capabilities.sumOf { cap ->
-                    (availableResources[Pair(connection.id, cap)] ?: emptyList()).size
-                }
+            connection.capabilities.forEach { capability ->
+                val key = Pair(connection.id, capability)
+                val resources = availableResources[key] ?: emptyList()
+                val isLoading = key in loadingResources
 
-                if (allResourceCount > 5) {
+                val sortedFiltered = resources
+                    .sortedBy { it.name.lowercase() }
+                    .filter { res ->
+                        providerResourceFilter.isBlank() ||
+                            res.name.contains(providerResourceFilter, ignoreCase = true) ||
+                            res.id.contains(providerResourceFilter, ignoreCase = true) ||
+                            (res.description?.contains(providerResourceFilter, ignoreCase = true) == true)
+                    }
+
+                if (isLoading && resources.isEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = providerResourceFilter,
-                        onValueChange = { providerResourceFilter = it },
-                        label = { Text("Filtrovat zdroje...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-
-                connection.capabilities.forEach { capability ->
-                    val key = Pair(connection.id, capability)
-                    val resources = availableResources[key] ?: emptyList()
-                    val isLoading = key in loadingResources
-
-                    val sortedFiltered = resources
-                        .sortedBy { it.name.lowercase() }
-                        .filter { res ->
-                            providerResourceFilter.isBlank() ||
-                                res.name.contains(providerResourceFilter, ignoreCase = true) ||
-                                res.id.contains(providerResourceFilter, ignoreCase = true) ||
-                                (res.description?.contains(providerResourceFilter, ignoreCase = true) == true)
-                        }
-
-                    if (isLoading && resources.isEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Načítám ${getCapabilityLabel(capability)}...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else if (sortedFiltered.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        HorizontalDivider()
-                        Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            getCapabilityLabel(capability),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            "Načítám ${getCapabilityLabel(capability)}...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(4.dp))
+                    }
+                } else if (sortedFiltered.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        getCapabilityLabel(capability),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(4.dp))
 
-                        sortedFiltered.forEach { resource ->
-                            val linkedProject = findLinkedProject(capability, resource.id)
-                            ProviderResourceRow(
-                                resource = resource,
-                                linkedProject = linkedProject,
-                                onCreateProject = { onCreateProject(resource, capability) },
-                            )
-                        }
+                    sortedFiltered.forEach { resource ->
+                        val linkedProject = findLinkedProject(capability, resource.id)
+                        ProviderResourceRow(
+                            resource = resource,
+                            linkedProject = linkedProject,
+                            onCreateProject = { onCreateProject(resource, capability) },
+                        )
                     }
                 }
             }
@@ -1352,14 +1276,12 @@ private fun ProviderResourceRow(
                 color = MaterialTheme.colorScheme.primary,
             )
         } else {
-            Button(
+            JPrimaryButton(
                 onClick = {
                     isCreating = true
                     onCreateProject()
                 },
                 enabled = !isCreating,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier.height(36.dp),
             ) {
                 if (isCreating) {
                     CircularProgressIndicator(
@@ -1418,32 +1340,29 @@ internal fun GitCommitConfigFields(
     gpgKeyId: String,
     onGpgKeyIdChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
+    JTextField(
         value = messageFormat,
         onValueChange = onMessageFormatChange,
-        label = { Text("Formát commit message (volitelné)") },
-        placeholder = { Text("[{project}] {message}") },
-        modifier = Modifier.fillMaxWidth(),
+        label = "Formát commit message (volitelné)",
+        placeholder = "[{project}] {message}",
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
 
-    OutlinedTextField(
+    JTextField(
         value = authorName,
         onValueChange = onAuthorNameChange,
-        label = { Text("Jméno autora") },
-        placeholder = { Text("Agent Name") },
-        modifier = Modifier.fillMaxWidth(),
+        label = "Jméno autora",
+        placeholder = "Agent Name",
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
 
-    OutlinedTextField(
+    JTextField(
         value = authorEmail,
         onValueChange = onAuthorEmailChange,
-        label = { Text("Email autora") },
-        placeholder = { Text("agent@example.com") },
-        modifier = Modifier.fillMaxWidth(),
+        label = "Email autora",
+        placeholder = "agent@example.com",
     )
 
     Spacer(Modifier.height(12.dp))
@@ -1455,46 +1374,35 @@ internal fun GitCommitConfigFields(
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
 
-    OutlinedTextField(
+    JTextField(
         value = committerName,
         onValueChange = onCommitterNameChange,
-        label = { Text("Jméno committera (volitelné)") },
-        modifier = Modifier.fillMaxWidth(),
+        label = "Jméno committera (volitelné)",
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
 
-    OutlinedTextField(
+    JTextField(
         value = committerEmail,
         onValueChange = onCommitterEmailChange,
-        label = { Text("Email committera (volitelné)") },
-        modifier = Modifier.fillMaxWidth(),
+        label = "Email committera (volitelné)",
     )
 
     Spacer(Modifier.height(12.dp))
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = JervisSpacing.touchTarget),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(
-            checked = gpgSign,
-            onCheckedChange = onGpgSignChange,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text("GPG podpis commitů")
-    }
+    JCheckboxRow(
+        label = "GPG podpis commitů",
+        checked = gpgSign,
+        onCheckedChange = onGpgSignChange,
+    )
 
     if (gpgSign) {
         Spacer(Modifier.height(JervisSpacing.itemGap))
-        OutlinedTextField(
+        JTextField(
             value = gpgKeyId,
             onValueChange = onGpgKeyIdChange,
-            label = { Text("GPG Key ID") },
-            placeholder = { Text("např. ABCD1234") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "GPG Key ID",
+            placeholder = "např. ABCD1234",
         )
     }
 }

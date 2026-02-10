@@ -6,14 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +18,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.events.JervisEvent
+import com.jervis.ui.design.JDestructiveButton
+import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JSecondaryButton
+import com.jervis.ui.design.JTextField
 
 /**
  * In-app approval dialog displayed when an orchestrator interrupt arrives.
@@ -64,13 +63,15 @@ fun ApprovalNotificationDialog(
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    JTextField(
                         value = denyReason,
                         onValueChange = { denyReason = it },
+                        label = "Důvod",
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         maxLines = 5,
-                        placeholder = { Text("Napište, jak má agent pokračovat...") },
+                        singleLine = false,
+                        placeholder = "Napište, jak má agent pokračovat...",
                     )
                 }
             }
@@ -81,21 +82,18 @@ fun ApprovalNotificationDialog(
                     horizontalArrangement = Arrangement.End,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    OutlinedButton(onClick = {
+                    JSecondaryButton(onClick = {
                         showDenyInput = false
                         denyReason = ""
                     }) {
                         Text("Zpět")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(
+                    JDestructiveButton(
                         onClick = {
                             onDeny(event.taskId, denyReason)
                         },
                         enabled = denyReason.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                        ),
                     ) {
                         Text("Zamítnout")
                     }
@@ -105,16 +103,13 @@ fun ApprovalNotificationDialog(
                     horizontalArrangement = Arrangement.End,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    OutlinedButton(
+                    JSecondaryButton(
                         onClick = { showDenyInput = true },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
                     ) {
-                        Text("Zamítnout")
+                        Text("Zamítnout", color = MaterialTheme.colorScheme.error)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = {
+                    JPrimaryButton(onClick = {
                         onApprove(event.taskId)
                     }) {
                         Text("Povolit")

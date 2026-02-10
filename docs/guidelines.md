@@ -1,6 +1,6 @@
 # Jervis – Engineering & Architecture Guidelines (2026)
 
-**Status:** Production Documentation (2026-02-05)
+**Status:** Production Documentation (2026-02-10)
 **Purpose:** Single source of truth for engineering, architecture, and UI guidelines
 
 ---
@@ -399,15 +399,23 @@ suspend fun interpretRequest(): String {
 | What | Where |
 |------|-------|
 | All `J*` components + adaptive layouts | `shared/ui-common/.../design/DesignSystem.kt` |
+| Semantic colors (light/dark) | `shared/ui-common/.../design/JervisColors.kt` |
+| Responsive typography | `shared/ui-common/.../design/JervisTypography.kt` |
+| Centralized shapes | `shared/ui-common/.../design/JervisShapes.kt` |
+| Watch readiness (ComponentImportance) | `shared/ui-common/.../design/ComponentImportance.kt` |
+| Breakpoints + WindowSizeClass | `shared/ui-common/.../design/JervisBreakpoints.kt` |
 | Shared form helpers (GitCommitConfigFields, getCapabilityLabel) | `shared/ui-common/.../screens/settings/sections/ClientsSettings.kt` (internal) |
-| Icon buttons (Refresh, Delete, Edit) | `shared/ui-common/.../util/IconButtons.kt` |
-| ConfirmDialog | `shared/ui-common/.../util/ConfirmDialog.kt` |
-| StatusIndicator, SettingCard, ActionRibbon | `shared/ui-common/.../components/SettingComponents.kt` |
+| Icon buttons (Refresh, Delete, Edit) — delegate to J* | `shared/ui-common/.../util/IconButtons.kt` |
+| ConfirmDialog (Czech defaults) | `shared/ui-common/.../util/ConfirmDialog.kt` |
+| CopyableTextCard (SelectionContainer) | `shared/ui-common/.../util/CopyableTextCard.kt` |
 
 ### Core Principles
 
+- **J-prefixed components:** All UI elements use J-prefixed wrappers from `DesignSystem.kt` (`JCard`, `JTextField`, `JPrimaryButton`, etc.)
 - **Consistency:** Use shared components from `com.jervis.ui.design` (JTopBar, JSection, JActionBar, etc.)
 - **Adaptive layout:** `COMPACT_BREAKPOINT_DP = 600` – phone (<600dp) vs tablet/desktop (≥600dp)
+- **Light + Dark theme:** Auto-switches via `isSystemInDarkTheme()`, customizable via `JervisColors.kt`
+- **Material Icons:** All icons use `material-icons-extended` (ImageVector), no emoji in UI
 - **Fail-fast in UI:** Show errors via `JErrorState`, never hide
 - **Touch targets ≥ 44dp:** `JervisSpacing.touchTarget` – all clickable elements
 - **No secrets masking:** Passwords, tokens, keys always visible (private app)
@@ -445,7 +453,7 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │    Example: UserTasksScreen.kt, ProjectGroupsSettings.kt            │
 │                                                                     │
 │  Flat list with per-row actions (connections)?                       │
-│    → LazyColumn + Card(outlinedCardBorder) + JActionBar at top      │
+│    → LazyColumn + JCard + JActionBar at top                         │
 │    Example: ConnectionsSettings.kt                                  │
 │                                                                     │
 │  Simple scrollable form (general settings, whisper config)?          │
@@ -470,20 +478,20 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 
 | Component | Purpose | Key params |
 |-----------|---------|------------|
-| `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon`, `categoryTitle`, `categoryDescription`, `content` |
+| `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon: @Composable (T) -> Unit`, `categoryTitle`, `categoryDescription`, `content` |
 | `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
 | `JDetailScreen` | Edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
-| `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon`, `title`, `subtitle?`, `onClick`, `trailing` |
+| `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon: @Composable () -> Unit`, `title`, `subtitle?`, `onClick`, `trailing` |
 | `JVerticalSplitLayout` | Draggable vertical split (top/bottom) | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
 
 ### Pattern 1: Category-Based Settings
 
 ```kotlin
-enum class SettingsCategory(val title: String, val icon: String, val description: String) {
-    GENERAL("Obecné", "⚙️", "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti a projekty", "🏢", "Správa klientů, projektů a jejich konfigurace."),
-    CONNECTIONS("Připojení", "🔌", "Technické parametry připojení."),
-    CODING_AGENTS("Coding Agenti", "🤖", "Konfigurace coding agentů."),
+enum class SettingsCategory(val title: String, val icon: ImageVector, val description: String) {
+    GENERAL("Obecné", Icons.Default.Settings, "Základní nastavení aplikace a vzhledu."),
+    CLIENTS("Klienti a projekty", Icons.Default.Business, "Správa klientů, projektů a jejich konfigurace."),
+    CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení."),
+    CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Konfigurace coding agentů."),
 }
 
 @Composable
@@ -497,7 +505,7 @@ fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
         onSelect = { selectedIndex = it },
         onBack = onBack,
         title = "Nastavení",
-        categoryIcon = { it.icon },
+        categoryIcon = { Icon(it.icon, contentDescription = it.title) },
         categoryTitle = { it.title },
         categoryDescription = { it.description },
         content = { category -> SettingsContent(category, repository) },
@@ -526,9 +534,8 @@ JListDetailLayout(
         }
     },
     listItem = { client ->
-        Card(
+        JCard(
             modifier = Modifier.fillMaxWidth().clickable { selectedClient = client },
-            border = CardDefaults.outlinedCardBorder(),
         ) {
             Row(
                 modifier = Modifier.padding(16.dp).heightIn(min = JervisSpacing.touchTarget),
@@ -564,7 +571,7 @@ JDetailScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         JSection(title = "Základní údaje") {
-            OutlinedTextField(value = name, onValueChange = { name = it },
+            JTextField(value = name, onValueChange = { name = it },
                 label = { Text("Název") }, modifier = Modifier.fillMaxWidth())
         }
         JSection(title = "Git Commit Konfigurace") {
@@ -600,15 +607,15 @@ Column(modifier = Modifier.fillMaxSize()) {
         modifier = Modifier.weight(1f),
     ) {
         items(data) { item ->
-            Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder()) {
+            JCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     // ... content rows ...
                     Row(Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                         JPrimaryButton(onClick = { ... }) { Text("Akce") }
-                        Button(onClick = { ... }, colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )) { Icon(Icons.Default.Delete, contentDescription = "Smazat") }
+                        JDestructiveButton(onClick = { ... }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Smazat")
+                        }
                     }
                 }
             }
@@ -733,20 +740,31 @@ class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
 ### Card & Spacing Standards
 
 ```kotlin
-// ALL list item cards:
-Card(modifier = Modifier.fillMaxWidth(), border = CardDefaults.outlinedCardBorder())
+// ALL list item cards — use JCard (replaces raw Card(outlinedCardBorder)):
+JCard(modifier = Modifier.fillMaxWidth()) { ... }
 
 // Spacing constants:
 JervisSpacing.outerPadding   // 10.dp - screen margins
 JervisSpacing.sectionPadding // 12.dp - JSection internal
+JervisSpacing.sectionGap     // 16.dp - between form sections
+JervisSpacing.fieldGap       // 8.dp  - between fields in a section
 JervisSpacing.itemGap        // 8.dp  - between items in LazyColumn
 JervisSpacing.touchTarget    // 44.dp - minimum clickable height
+JervisSpacing.watchTouchTarget // 56.dp - watch-sized touch target
 
 COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 
-// Between form sections: Arrangement.spacedBy(16.dp)
-// Between fields in a section: Spacer(Modifier.height(JervisSpacing.itemGap))
+// Between form sections: Arrangement.spacedBy(JervisSpacing.sectionGap)
+// Between fields in a section: Spacer(Modifier.height(JervisSpacing.fieldGap))
 ```
+
+### Button Types
+
+| Button type | Component |
+|-------------|-----------|
+| Primary action | `JPrimaryButton` |
+| Secondary / cancel | `JSecondaryButton` or `JTextButton` |
+| Destructive | `JDestructiveButton` |
 
 ### Typography Quick Reference
 
@@ -763,7 +781,13 @@ COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 
 | Don't | Do instead |
 |-------|-----------|
-| `Card(elevation = ..., colors = surfaceVariant)` | `Card(border = outlinedCardBorder())` |
+| `Card(elevation = ..., colors = surfaceVariant)` | `JCard(...)` |
+| Raw `Card(border = outlinedCardBorder())` | `JCard(...)` |
+| Raw `OutlinedTextField(...)` | `JTextField(...)` (except inside ExposedDropdownMenuBox needing menuAnchor) |
+| Raw `Button(colors = error)` | `JDestructiveButton(...)` |
+| Raw `OutlinedButton(...)` | `JSecondaryButton(...)` |
+| Emoji icons in UI (`🔄`, `🗑️`, `✏️`) | Material Icons via `JIconButton(icon = Icons.Default.Refresh)` etc. |
+| `String` icon params in components | `@Composable () -> Unit` or `ImageVector` |
 | `Box { CircularProgressIndicator() }` | `JCenteredLoading()` |
 | Inline save/cancel below form | `JDetailScreen(onSave, onBack)` |
 | Fixed sidebar without adaptive | `JAdaptiveSidebarLayout` |
@@ -836,12 +860,12 @@ COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 
 ### Required Components
 
-- `com.jervis.ui.util.DeleteIconButton` - For all delete buttons (per-row)
-- `com.jervis.ui.util.ConfirmDialog` - For all delete confirmations
-- `com.jervis.ui.util.CopyableTextCard` - For all text content with copy functionality
+- `com.jervis.ui.design.*` -- ALL J-prefixed components (buttons, cards, forms, dialogs, layout)
+- `com.jervis.ui.util.ConfirmDialog` -- Delete confirmations (Czech defaults)
+- `com.jervis.ui.util.CopyableTextCard` -- Text with SelectionContainer wrapping
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2026-02-04
+**Document Version:** 3.0
+**Last Updated:** 2026-02-10
 **Applies To:** All engineering, architecture, and UI development in Jervis

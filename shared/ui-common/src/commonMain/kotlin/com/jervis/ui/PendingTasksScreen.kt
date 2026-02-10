@@ -11,16 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -41,7 +34,6 @@ import com.jervis.ui.design.*
 import com.jervis.ui.util.*
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PendingTasksScreen(
     repository: JervisRepository,
@@ -99,9 +91,8 @@ fun PendingTasksScreen(
             )
         },
         snackbarHost = {
-            SnackbarHost(
+            JSnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.padding(16.dp),
             )
         },
     ) { padding ->
@@ -117,18 +108,20 @@ fun PendingTasksScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
                 ) {
-                    FilterDropdown(
-                        label = "Typ úlohy",
-                        items = taskTypes,
+                    JDropdown(
+                        items = listOf<String?>(null) + taskTypes,
                         selectedItem = selectedTaskType,
                         onItemSelected = { selectedTaskType = it },
+                        label = "Typ úlohy",
+                        itemLabel = { it ?: "Vše" },
                         modifier = Modifier.weight(1f),
                     )
-                    FilterDropdown(
-                        label = "Stav",
-                        items = taskStates,
+                    JDropdown(
+                        items = listOf<String?>(null) + taskStates,
                         selectedItem = selectedState,
                         onItemSelected = { selectedState = it },
+                        label = "Stav",
+                        itemLabel = { it ?: "Vše" },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -154,15 +147,17 @@ fun PendingTasksScreen(
                 }
 
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
-                    ) {
-                        items(tasks) { task ->
-                            PendingTaskCard(
-                                task = task,
-                                onDelete = { pendingDeleteTaskId = task.id },
-                            )
+                    SelectionContainer {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                        ) {
+                            items(tasks) { task ->
+                                PendingTaskCard(
+                                    task = task,
+                                    onDelete = { pendingDeleteTaskId = task.id },
+                                )
+                            }
                         }
                     }
                 }
@@ -190,9 +185,8 @@ private fun PendingTaskCard(
     task: PendingTaskDto,
     onDelete: () -> Unit,
 ) {
-    Card(
+    JCard(
         modifier = Modifier.fillMaxWidth(),
-        border = CardDefaults.outlinedCardBorder(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Header: task type + delete button
@@ -269,54 +263,6 @@ private fun PendingTaskCard(
                     text = "Přílohy: ${task.attachments.size}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FilterDropdown(
-    label: String,
-    items: List<String>,
-    selectedItem: String?,
-    onItemSelected: (String?) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        OutlinedTextField(
-            value = selectedItem ?: "Vše",
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text("Vše") },
-                onClick = {
-                    onItemSelected(null)
-                    expanded = false
-                },
-            )
-            items.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item) },
-                    onClick = {
-                        onItemSelected(item)
-                        expanded = false
-                    },
                 )
             }
         }

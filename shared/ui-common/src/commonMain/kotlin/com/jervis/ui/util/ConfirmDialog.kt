@@ -2,9 +2,8 @@ package com.jervis.ui.util
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,16 +16,32 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import com.jervis.ui.design.JDestructiveButton
+import com.jervis.ui.design.JPrimaryButton
+import com.jervis.ui.design.JTextButton
 
+/**
+ * Confirm dialog with Czech defaults and keyboard support (Enter/Space/Escape).
+ *
+ * @param visible Whether the dialog is shown
+ * @param title Dialog title
+ * @param message Dialog message body
+ * @param confirmText Confirm button label (default: "Smazat" for destructive, "Potvrdit" otherwise)
+ * @param dismissText Dismiss button label (default: "Zrušit")
+ * @param onConfirm Called when user confirms
+ * @param onDismiss Called when user dismisses
+ * @param isDestructive Whether the confirm action is destructive (red button)
+ */
 @Composable
 fun ConfirmDialog(
     visible: Boolean,
     title: String,
     message: String,
-    confirmText: String = "Delete",
+    confirmText: String = "Smazat",
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     isDestructive: Boolean = true,
+    dismissText: String = "Zrušit",
 ) {
     if (!visible) return
 
@@ -65,12 +80,21 @@ fun ConfirmDialog(
                         }
                     }
             ) {
-                Button(
-                    onClick = onConfirm,
-                    colors = if (isDestructive) ButtonDefaults.buttonColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-                ) { Text(confirmText) }
+                if (isDestructive) {
+                    JDestructiveButton(onClick = onConfirm) {
+                        Text(confirmText)
+                    }
+                } else {
+                    JPrimaryButton(onClick = onConfirm) {
+                        Text(confirmText)
+                    }
+                }
             }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = {
+            JTextButton(onClick = onDismiss) {
+                Text(dismissText)
+            }
+        }
     )
 }

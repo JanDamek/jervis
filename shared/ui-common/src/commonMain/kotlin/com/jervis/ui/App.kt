@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.design.JervisTheme
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.notification.ApprovalNotificationDialog
@@ -63,7 +64,7 @@ fun App(
         }
     }
 
-    MaterialTheme {
+    JervisTheme {
       Surface(
           modifier = Modifier.fillMaxSize(),
           color = MaterialTheme.colorScheme.background,

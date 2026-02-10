@@ -1,21 +1,16 @@
 package com.jervis.ui.util
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -35,13 +30,12 @@ interface ClipboardHandler {
 }
 
 /**
- * Standard template for displaying copyable text content with copy icon in top-right corner.
- * Used across all screens for consistent UI.
+ * Card displaying selectable text content with title.
+ * Text is natively selectable (long-press on mobile, click+drag on desktop).
+ * Uses outlined card style per design system.
  *
  * @param title Title displayed at the top of the card
  * @param content Text content to display (can be multiline)
- * @param containerColor Background color of the card
- * @param contentColor Text color
  * @param modifier Optional modifier for the card
  * @param useMonospace Whether to use monospace font for content (default: false)
  */
@@ -54,50 +48,31 @@ fun CopyableTextCard(
     modifier: Modifier = Modifier,
     useMonospace: Boolean = false,
 ) {
-    val clipboard = rememberClipboardManager()
-
-    Card(
+    OutlinedCard(
         modifier = modifier.fillMaxWidth(),
-        colors =
-            CardDefaults.cardColors(
-                containerColor = containerColor,
-            ),
+        border = CardDefaults.outlinedCardBorder(),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = containerColor,
+        ),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header with title and copy icon
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = contentColor,
-                )
-                IconButton(
-                    onClick = { clipboard.setText(AnnotatedString(content)) },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Text(
-                        "📋",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = contentColor,
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Selectable content
+            // Selectable content — no copy button, native text selection only
             SelectionContainer {
                 Text(
                     text = content,
-                    style =
-                        if (useMonospace) {
-                            MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-                        } else {
-                            MaterialTheme.typography.bodySmall
-                        },
+                    style = if (useMonospace) {
+                        MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                    } else {
+                        MaterialTheme.typography.bodySmall
+                    },
                     color = contentColor,
                 )
             }
