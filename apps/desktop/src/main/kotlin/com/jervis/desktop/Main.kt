@@ -169,6 +169,7 @@ fun main() =
                         repository = repository,
                         navigator = navigator,
                         onOpenDebugWindow = { showDebug = true },
+                        onRefreshConnection = { connectionManager.forceReconnect() },
                     )
                 } else {
                     ConnectionStatusScreen(connectionManager.status, serverBaseUrl)

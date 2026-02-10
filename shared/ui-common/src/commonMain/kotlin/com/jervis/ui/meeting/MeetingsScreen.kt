@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1549,8 +1550,9 @@ private fun meetingTypeLabel(type: MeetingTypeEnum): String =
 
 /**
  * Card showing correction questions from the agent.
- * Each question has options (radio) or a free text input.
- * User answers are submitted as correction rules.
+ * Each question has its own submit button for individual correction,
+ * plus a bulk "submit all" button at the bottom.
+ * Card is height-limited and scrollable when there are many questions.
  */
 @Composable
 private fun CorrectionQuestionsCard(
@@ -1564,35 +1566,64 @@ private fun CorrectionQuestionsCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Fixed header
             Text(
-                text = "Agent potrebuje vase upesneni",
+                text = "Agent potřebuje vaše upřesnění",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Opravte nebo potvdte spravny tvar nasledujicich vyrazu:",
+                text = "Opravte nebo potvrďte správný tvar následujících výrazů:",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(12.dp))
 
-            questions.forEach { question ->
-                CorrectionQuestionItem(
-                    question = question,
-                    currentAnswer = answers.value[question.questionId] ?: "",
-                    onAnswerChanged = { newAnswer ->
-                        answers.value = answers.value.toMutableMap().apply {
-                            put(question.questionId, newAnswer)
-                        }
-                    },
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            // Scrollable questions area
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                questions.forEachIndexed { index, question ->
+                    CorrectionQuestionItem(
+                        question = question,
+                        currentAnswer = answers.value[question.questionId] ?: "",
+                        onAnswerChanged = { newAnswer ->
+                            answers.value = answers.value.toMutableMap().apply {
+                                put(question.questionId, newAnswer)
+                            }
+                        },
+                        onSubmitSingle = {
+                            val corrected = answers.value[question.questionId]?.trim()
+                            if (!corrected.isNullOrBlank()) {
+                                onSubmitAnswers(
+                                    listOf(
+                                        CorrectionAnswerDto(
+                                            questionId = question.questionId,
+                                            segmentIndex = question.segmentIndex,
+                                            original = question.originalText,
+                                            corrected = corrected,
+                                        ),
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                    if (index < questions.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                        )
+                    }
+                }
             }
 
+            // Bulk submit
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1620,7 +1651,7 @@ private fun CorrectionQuestionsCard(
                     },
                     enabled = allAnswered,
                 ) {
-                    Text("Odeslat odpovedi")
+                    Text("Odeslat vše")
                 }
             }
         }
@@ -1684,6 +1715,7 @@ private fun CorrectionQuestionItem(
     question: CorrectionQuestionDto,
     currentAnswer: String,
     onAnswerChanged: (String) -> Unit,
+    onSubmitSingle: () -> Unit,
 ) {
     Column {
         Text(
@@ -1692,7 +1724,7 @@ private fun CorrectionQuestionItem(
             fontWeight = FontWeight.Medium,
         )
         Text(
-            text = "Puvodne: \"${question.originalText}\"",
+            text = "Původně: \"${question.originalText}\"",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1713,13 +1745,25 @@ private fun CorrectionQuestionItem(
             }
         }
 
-        // Free text input (always shown, pre-filled if option selected)
-        OutlinedTextField(
-            value = currentAnswer,
-            onValueChange = onAnswerChanged,
-            label = { Text("Spravny tvar") },
+        // Free text input + individual submit button
+        Row(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            singleLine = true,
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = currentAnswer,
+                onValueChange = onAnswerChanged,
+                label = { Text("Správný tvar") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            TextButton(
+                onClick = onSubmitSingle,
+                enabled = currentAnswer.isNotBlank(),
+            ) {
+                Text("Odeslat")
+            }
+        }
     }
 }

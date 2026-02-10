@@ -16,7 +16,8 @@ fun MainContent(
     repository: JervisRepository,
     navigator: AppNavigator,
     requestedScreen: Screen? = null,
-    onOpenDebugWindow: () -> Unit = {}
+    onOpenDebugWindow: () -> Unit = {},
+    onRefreshConnection: (() -> Unit)? = null,
 ) {
     // Navigate to requested screen when it changes
     LaunchedEffect(requestedScreen) {
@@ -31,6 +32,7 @@ fun MainContent(
         defaultClientId = null,
         defaultProjectId = null,
         navigator = navigator,
-        onOpenDebugWindow = onOpenDebugWindow
+        onOpenDebugWindow = onOpenDebugWindow,
+        onRefreshConnection = onRefreshConnection,
     )
 }

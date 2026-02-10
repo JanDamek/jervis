@@ -219,6 +219,17 @@ class ConnectionManager(
     }
 
     /**
+     * Force a full reconnect (new HttpClient + RPC services).
+     * Called by MainViewModel when it detects a dead RPC connection.
+     */
+    fun forceReconnect() {
+        scope.launch {
+            println("=== ConnectionManager: Full reconnect triggered ===")
+            connect()
+        }
+    }
+
+    /**
      * Manually disconnect
      */
     fun disconnect() {
