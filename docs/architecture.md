@@ -212,12 +212,15 @@ to share Ollama GPU access. The Kotlin server delegates to it via REST.
 
 ```
 RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORRECTING → CORRECTED → INDEXED
-                                                                     │    ↑         │
-                                                                     │    │         │
-                                                              CORRECTION_REVIEW    │
-                                                              (questions pending)   │
-                                                                     │              │
-                                                                     └──── FAILED ──┘
+                                                       ↑              │    ↑         │
+                                                       │              │    │         │
+                                                       │       CORRECTION_REVIEW    │
+                                                       │       (questions pending)   │
+                                                       │         │    │              │
+                                                       │         │    └──── FAILED ──┘
+                                                       │         │
+                                        all known ─────┘         └─── any "Nevím" → CORRECTING
+                                        (KB rules + re-correct)       (retranscribe + targeted)
 ```
 
 ### Correction Flow
@@ -516,6 +519,7 @@ Kotlin Server (BackgroundEngine)
 - **Safety net**: BackgroundEngine polls every 60s to catch missed callbacks (network failure, process restart)
 - **Heartbeat**: OrchestratorHeartbeatTracker tracks last progress timestamp; 10 min without heartbeat = dead
 - **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
+- **task_id convention**: `task_id` sent to Python in `OrchestrateRequestDto` is `task.id.toString()` (MongoDB document `_id`). Python sends this same `task_id` back in all callbacks. `OrchestratorStatusHandler` resolves it via `taskRepository.findById(TaskId(ObjectId(taskId)))`. The `correlationId` field on `TaskDocument` is a separate identifier used for idempotency/deduplication, NOT sent to Python.
 
 ### State Persistence
 

@@ -88,13 +88,14 @@ POST /approve/{thread_id}    # Approval response od uživatele (resume z interru
 GET  /health                 # Health check
 ```
 
-**Komunikační model (full request, no callbacks):**
+**Komunikační model (push-based, Python → Kotlin callbacks):**
 - Kotlin → Python: `POST /orchestrate/stream` s kompletním `OrchestrateRequest`
-  (rules, workspace, task info – vše upfront)
-- Python → UI: SSE `/stream/{thread_id}` pro progress
-- Kotlin polls: `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()`
+  (rules, workspace, task info – vše upfront, `task_id` = MongoDB ObjectId z `TaskDocument._id`)
+- Python → Kotlin: **push-based callbacky** (`kotlin_client.py`):
+  - `POST /internal/orchestrator-progress` — node transition events (heartbeat pro liveness detection)
+  - `POST /internal/orchestrator-status` — completion/error/interrupt + task state transition
+- Safety-net: Kotlin polls `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()` každých 60s
 - Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
-- **Žádné Python → Kotlin callbacky** (kotlin_client.py je minimální)
 
 **LangGraph StateGraph (10 nodes):**
 ```
