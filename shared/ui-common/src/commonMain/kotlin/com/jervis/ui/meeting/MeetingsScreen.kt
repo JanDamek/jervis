@@ -1550,8 +1550,8 @@ private fun meetingTypeLabel(type: MeetingTypeEnum): String =
 
 /**
  * Card showing correction questions from the agent.
- * Each question has its own submit button for individual correction,
- * plus a bulk "submit all" button at the bottom.
+ * Each question can be confirmed individually (collapses to compact view).
+ * Only the final "Odeslat vše" button sends all confirmed answers to the backend.
  * Card is height-limited and scrollable when there are many questions.
  */
 @Composable
@@ -1561,6 +1561,11 @@ private fun CorrectionQuestionsCard(
 ) {
     // Track answers: questionId -> corrected text
     val answers = remember { mutableStateOf(questions.associate { it.questionId to "" }) }
+    // Track which questions are confirmed (collapsed)
+    val confirmed = remember { mutableStateOf(emptySet<String>()) }
+
+    val confirmedCount = confirmed.value.size
+    val totalCount = questions.size
 
     Card(
         colors = CardDefaults.cardColors(
@@ -1575,9 +1580,9 @@ private fun CorrectionQuestionsCard(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Opravte nebo potvrďte správný tvar následujících výrazů:",
+                text = "Opravte nebo potvrďte správný tvar ($confirmedCount/$totalCount potvrzeno):",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1590,51 +1595,42 @@ private fun CorrectionQuestionsCard(
                     .verticalScroll(rememberScrollState()),
             ) {
                 questions.forEachIndexed { index, question ->
+                    val isConfirmed = question.questionId in confirmed.value
                     CorrectionQuestionItem(
                         question = question,
                         currentAnswer = answers.value[question.questionId] ?: "",
+                        isConfirmed = isConfirmed,
                         onAnswerChanged = { newAnswer ->
                             answers.value = answers.value.toMutableMap().apply {
                                 put(question.questionId, newAnswer)
                             }
                         },
-                        onSubmitSingle = {
-                            val corrected = answers.value[question.questionId]?.trim()
-                            if (!corrected.isNullOrBlank()) {
-                                onSubmitAnswers(
-                                    listOf(
-                                        CorrectionAnswerDto(
-                                            questionId = question.questionId,
-                                            segmentIndex = question.segmentIndex,
-                                            original = question.originalText,
-                                            corrected = corrected,
-                                        ),
-                                    ),
-                                )
-                            }
+                        onConfirm = {
+                            confirmed.value = confirmed.value + question.questionId
+                        },
+                        onEdit = {
+                            confirmed.value = confirmed.value - question.questionId
                         },
                     )
                     if (index < questions.lastIndex) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
+                            modifier = Modifier.padding(vertical = 6.dp),
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                         )
                     }
                 }
             }
 
-            // Bulk submit
+            // Submit all confirmed answers
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                val allAnswered = questions.all { q ->
-                    (answers.value[q.questionId] ?: "").isNotBlank()
-                }
                 TextButton(
                     onClick = {
                         val answerDtos = questions.mapNotNull { q ->
+                            if (q.questionId !in confirmed.value) return@mapNotNull null
                             val corrected = answers.value[q.questionId]?.trim()
                             if (!corrected.isNullOrBlank()) {
                                 CorrectionAnswerDto(
@@ -1647,11 +1643,13 @@ private fun CorrectionQuestionsCard(
                                 null
                             }
                         }
-                        onSubmitAnswers(answerDtos)
+                        if (answerDtos.isNotEmpty()) {
+                            onSubmitAnswers(answerDtos)
+                        }
                     },
-                    enabled = allAnswered,
+                    enabled = confirmedCount > 0,
                 ) {
-                    Text("Odeslat vše")
+                    Text("Odeslat vše ($confirmedCount)")
                 }
             }
         }
@@ -1714,55 +1712,84 @@ private fun SegmentCorrectionDialog(
 private fun CorrectionQuestionItem(
     question: CorrectionQuestionDto,
     currentAnswer: String,
+    isConfirmed: Boolean,
     onAnswerChanged: (String) -> Unit,
-    onSubmitSingle: () -> Unit,
+    onConfirm: () -> Unit,
+    onEdit: () -> Unit,
 ) {
-    Column {
-        Text(
-            text = question.question,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-        )
-        Text(
-            text = "Původně: \"${question.originalText}\"",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        if (question.correctionOptions.isNotEmpty()) {
-            // Radio options
-            Row(
-                modifier = Modifier.padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                question.correctionOptions.forEach { option ->
-                    FilterChip(
-                        selected = currentAnswer == option,
-                        onClick = { onAnswerChanged(option) },
-                        label = { Text(option) },
-                    )
-                }
-            }
-        }
-
-        // Free text input + individual submit button
+    if (isConfirmed) {
+        // Collapsed confirmed view — single row with answer summary
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onEdit() }
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = currentAnswer,
-                onValueChange = onAnswerChanged,
-                label = { Text("Správný tvar") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "\"${question.originalText}\" → \"$currentAnswer\"",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "\u2713",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp),
             )
-            TextButton(
-                onClick = onSubmitSingle,
-                enabled = currentAnswer.isNotBlank(),
+        }
+    } else {
+        // Expanded edit view
+        Column {
+            Text(
+                text = question.question,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "Původně: \"${question.originalText}\"",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (question.correctionOptions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    question.correctionOptions.forEach { option ->
+                        FilterChip(
+                            selected = currentAnswer == option,
+                            onClick = { onAnswerChanged(option) },
+                            label = { Text(option) },
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Odeslat")
+                OutlinedTextField(
+                    value = currentAnswer,
+                    onValueChange = onAnswerChanged,
+                    label = { Text("Správný tvar") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+                TextButton(
+                    onClick = onConfirm,
+                    enabled = currentAnswer.isNotBlank(),
+                ) {
+                    Text("Potvrdit")
+                }
             }
         }
     }
