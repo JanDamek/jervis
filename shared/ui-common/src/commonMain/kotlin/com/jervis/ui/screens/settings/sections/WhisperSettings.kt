@@ -186,7 +186,7 @@ fun WhisperSettings(repository: JervisRepository) {
                             onValueChange = { beamSize = it },
                             valueRange = 1f..10f,
                             steps = 8,
-                            valueLabel = "${beamSize.roundToInt()}",
+                            valueLabel = { "${it.roundToInt()}" },
                             description = "Vyšší = přesnější, ale pomalejší",
                         )
                         Spacer(Modifier.height(JervisSpacing.itemGap))
@@ -217,7 +217,7 @@ fun WhisperSettings(repository: JervisRepository) {
                             onValueChange = { noSpeechThreshold = it },
                             valueRange = 0f..1f,
                             steps = 9,
-                            valueLabel = "${ (noSpeechThreshold * 10).toInt() / 10.0 }",
+                            valueLabel = { "${ (it * 10).toInt() / 10.0 }" },
                             description = "Segmenty s pravděpodobností ticha nad tímto prahem budou přeskočeny",
                         )
                     }
@@ -230,7 +230,7 @@ fun WhisperSettings(repository: JervisRepository) {
                             onValueChange = { maxParallelJobs = it },
                             valueRange = 1f..10f,
                             steps = 8,
-                            valueLabel = "${maxParallelJobs.roundToInt()}",
+                            valueLabel = { "${it.roundToInt()}" },
                             description = "Kolik nahrávek se přepisuje současně",
                         )
                     }

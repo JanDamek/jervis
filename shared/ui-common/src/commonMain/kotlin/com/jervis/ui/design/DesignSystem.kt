@@ -331,24 +331,6 @@ fun JPrimaryButton(
     )
 }
 
-/** Backward-compat overload with non-RowScope content. */
-@Composable
-fun JPrimaryButton(
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        content()
-    }
-}
 
 @Composable
 fun JSecondaryButton(
