@@ -154,6 +154,23 @@ class OrchestratorStatusHandler(
             } catch (e: Exception) {
                 logger.error(e) { "Failed to emit orchestrator result for task ${task.id}" }
             }
+
+            // Persist assistant response to DB so it survives reconnects
+            try {
+                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                chatMessageRepository.save(
+                    com.jervis.entity.ChatMessageDocument(
+                        taskId = task.id,
+                        correlationId = task.correlationId,
+                        role = com.jervis.entity.MessageRole.ASSISTANT,
+                        content = resultSummary,
+                        sequence = sequence,
+                    ),
+                )
+                logger.info { "ASSISTANT_MESSAGE_SAVED | taskId=${task.id} | sequence=$sequence" }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to save assistant message for task ${task.id}" }
+            }
         }
 
         // Check if new user messages arrived during orchestration (inline messages)
@@ -200,6 +217,38 @@ class OrchestratorStatusHandler(
     private suspend fun handleError(task: TaskDocument, error: String?) {
         val errorMsg = error ?: "Unknown orchestrator error"
         logger.error { "ORCHESTRATOR_ERROR: taskId=${task.id} error=$errorMsg" }
+
+        // Emit error to chat stream + persist for FOREGROUND tasks
+        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+            val errorContent = "Chyba orchestrátoru: $errorMsg"
+            try {
+                agentOrchestratorRpc.emitToChatStream(
+                    clientId = task.clientId.toString(),
+                    projectId = task.projectId?.toString(),
+                    response = com.jervis.dto.ChatResponseDto(
+                        message = errorContent,
+                        type = com.jervis.dto.ChatResponseType.ERROR,
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to emit error to chat for task ${task.id}" }
+            }
+            try {
+                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                chatMessageRepository.save(
+                    com.jervis.entity.ChatMessageDocument(
+                        taskId = task.id,
+                        correlationId = task.correlationId,
+                        role = com.jervis.entity.MessageRole.ASSISTANT,
+                        content = errorContent,
+                        sequence = sequence,
+                        metadata = mapOf("status" to "error"),
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to save error message for task ${task.id}" }
+            }
+        }
 
         userTaskService.failAndEscalateToUserTask(
             task = task,
