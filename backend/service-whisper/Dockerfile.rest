@@ -11,7 +11,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir "numpy<2.0" && \
-    pip install --no-cache-dir faster-whisper fastapi uvicorn python-multipart
+    pip install --no-cache-dir faster-whisper fastapi uvicorn python-multipart sse-starlette
 
 WORKDIR /opt/jervis/whisper
 

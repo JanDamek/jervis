@@ -2,16 +2,20 @@
 Whisper REST server for Jervis.
 
 Persistent FastAPI service that exposes the same Whisper transcription capabilities
-as the K8s Job variant, but via REST API. Intended for deployment on a dedicated
-machine with sufficient RAM (e.g. 192.168.100.117).
+as the K8s Job variant, but via REST API with SSE streaming for progress updates.
 
 Endpoints:
-    POST /transcribe  – Upload audio file + JSON options → transcription result
+    POST /transcribe  – Upload audio file + JSON options → SSE stream of progress + result
     GET  /health      – Health check
 
+SSE event types:
+    progress  – {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}
+    result    – Full Whisper result JSON (same as whisper_runner.py output)
+    error     – {"error": "description"}
+
 The audio file is uploaded as multipart/form-data, options as a JSON string field.
-Response is the same JSON as whisper_runner.py produces.
 """
+import asyncio
 import json
 import os
 import shutil
@@ -26,6 +30,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 
 # Import the whisper_runner functions directly (same directory)
 import whisper_runner
@@ -41,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Jervis Whisper REST Service",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -58,84 +63,157 @@ async def transcribe(
     options: str = Form(default="{}", description="JSON string with transcription options"),
 ):
     """
-    Transcribe an uploaded audio file using Whisper.
+    Transcribe an uploaded audio file using Whisper with SSE streaming.
+
+    Returns a Server-Sent Events stream with three event types:
+    - "progress": periodic updates with percent, segments_done, elapsed_seconds
+    - "result": final transcription result (same JSON as whisper_runner.py)
+    - "error": error details if transcription fails
 
     The options JSON supports the same parameters as whisper_runner.py:
-    - task: "transcribe" | "translate"
-    - model: "tiny" | "base" | "small" | "medium" | "large-v3"
-    - language: ISO 639-1 code or null for auto-detect
-    - beam_size: 1-10
-    - vad_filter: boolean
-    - word_timestamps: boolean
-    - initial_prompt: vocabulary hints string
-    - condition_on_previous_text: boolean
-    - no_speech_threshold: 0.0-1.0
-    - extraction_ranges: [{start, end, segment_index}, ...] for re-transcription
+    - task, model, language, beam_size, vad_filter, word_timestamps,
+      initial_prompt, condition_on_previous_text, no_speech_threshold,
+      extraction_ranges
     """
-    work_dir = tempfile.mkdtemp(prefix="whisper_rest_")
+    # Parse options early to fail fast on invalid JSON
     try:
-        # Parse options
+        opts = json.loads(options)
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid options JSON: {e}")
+
+    # Save uploaded audio to temp dir (must happen before we enter the generator,
+    # because UploadFile is only readable in the request context)
+    work_dir = tempfile.mkdtemp(prefix="whisper_rest_")
+    audio_ext = Path(audio.filename or "audio.wav").suffix or ".wav"
+    audio_path = os.path.join(work_dir, f"input{audio_ext}")
+    with open(audio_path, "wb") as f:
+        shutil.copyfileobj(audio.file, f)
+
+    file_size = os.path.getsize(audio_path)
+    request_id = uuid.uuid4().hex[:8]
+    model_name = opts.get("model", "base")
+    task_name = opts.get("task", "transcribe")
+
+    print(
+        f"[{request_id}] Transcription request: model={model_name}, task={task_name}, "
+        f"file={audio.filename} ({file_size} bytes)",
+        flush=True,
+    )
+
+    async def event_generator():
         try:
-            opts = json.loads(options)
-        except (json.JSONDecodeError, ValueError) as e:
-            raise HTTPException(status_code=400, detail=f"Invalid options JSON: {e}")
+            # Set up progress file inside work_dir
+            progress_path = os.path.join(work_dir, "progress.json")
+            opts["progress_file"] = progress_path
 
-        # Save uploaded audio to temp file
-        audio_ext = Path(audio.filename or "audio.wav").suffix or ".wav"
-        audio_path = os.path.join(work_dir, f"input{audio_ext}")
-        with open(audio_path, "wb") as f:
-            shutil.copyfileobj(audio.file, f)
+            # Run transcription in a thread (CPU-bound) and poll progress
+            loop = asyncio.get_event_loop()
+            result_container = {}
+            error_container = {}
+            done_event = asyncio.Event()
 
-        file_size = os.path.getsize(audio_path)
-        request_id = uuid.uuid4().hex[:8]
-        model_name = opts.get("model", "base")
-        task = opts.get("task", "transcribe")
+            def run_in_thread():
+                try:
+                    result_container["result"] = run_whisper(audio_path, opts)
+                except Exception as e:
+                    error_container["error"] = str(e)
+                    traceback.print_exc()
+                finally:
+                    # Signal that transcription is done
+                    loop.call_soon_threadsafe(done_event.set)
 
-        print(
-            f"[{request_id}] Transcription request: model={model_name}, task={task}, "
-            f"file={audio.filename} ({file_size} bytes), options={opts}",
-            flush=True,
-        )
+            # Start transcription in background thread
+            loop.run_in_executor(None, run_in_thread)
 
-        # Set up progress file inside work_dir
-        progress_path = os.path.join(work_dir, "progress.json")
-        opts["progress_file"] = progress_path
+            # Poll progress file and stream SSE events
+            last_percent = -1.0
+            while not done_event.is_set():
+                # Wait up to 3 seconds for completion, then send progress
+                try:
+                    await asyncio.wait_for(done_event.wait(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    pass
 
-        start_time = time.time()
+                # Read progress from file
+                if os.path.exists(progress_path):
+                    try:
+                        with open(progress_path) as pf:
+                            progress = json.load(pf)
+                        percent = progress.get("percent", 0)
+                        if percent != last_percent:
+                            last_percent = percent
+                            yield {
+                                "event": "progress",
+                                "data": json.dumps({
+                                    "percent": progress.get("percent", 0),
+                                    "segments_done": progress.get("segments_done", 0),
+                                    "elapsed_seconds": progress.get("elapsed_seconds", 0),
+                                }),
+                            }
+                    except (json.JSONDecodeError, OSError):
+                        pass  # File being written, skip this cycle
 
-        # Run transcription using whisper_runner logic directly
-        result = run_whisper(audio_path, opts)
+            # Transcription done — send result or error
+            if "error" in error_container:
+                error_msg = error_container["error"]
+                print(f"[{request_id}] Transcription failed: {error_msg}", flush=True)
+                yield {
+                    "event": "error",
+                    "data": json.dumps({
+                        "text": "",
+                        "segments": [],
+                        "error": f"Whisper REST server error: {error_msg}",
+                    }),
+                }
+            else:
+                result = result_container.get("result", {})
+                if result.get("error"):
+                    print(f"[{request_id}] Transcription error: {result['error']}", flush=True)
+                    yield {
+                        "event": "error",
+                        "data": json.dumps(result),
+                    }
+                else:
+                    print(
+                        f"[{request_id}] Transcription complete: "
+                        f"{len(result.get('segments', []))} segments, "
+                        f"{len(result.get('text', ''))} chars",
+                        flush=True,
+                    )
+                    # Send final 100% progress
+                    yield {
+                        "event": "progress",
+                        "data": json.dumps({
+                            "percent": 100.0,
+                            "segments_done": len(result.get("segments", [])),
+                            "elapsed_seconds": 0,
+                        }),
+                    }
+                    yield {
+                        "event": "result",
+                        "data": json.dumps(result, ensure_ascii=False),
+                    }
 
-        elapsed = time.time() - start_time
-        print(
-            f"[{request_id}] Transcription complete in {elapsed:.1f}s: "
-            f"{len(result.get('segments', []))} segments, "
-            f"{len(result.get('text', ''))} chars",
-            flush=True,
-        )
+        except Exception as e:
+            traceback.print_exc()
+            yield {
+                "event": "error",
+                "data": json.dumps({
+                    "text": "",
+                    "segments": [],
+                    "error": f"Whisper REST server error: {str(e)}",
+                }),
+            }
+        finally:
+            # Clean up temp files
+            shutil.rmtree(work_dir, ignore_errors=True)
 
-        return JSONResponse(content=result)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={
-                "text": "",
-                "segments": [],
-                "error": f"Whisper REST server error: {str(e)}",
-            },
-        )
-    finally:
-        # Clean up temp files
-        shutil.rmtree(work_dir, ignore_errors=True)
+    return EventSourceResponse(event_generator())
 
 
 def run_whisper(audio_path: str, opts: dict) -> dict:
     """
-    Run Whisper transcription in-process.
+    Run Whisper transcription in-process (blocking, CPU-bound).
     Reuses whisper_runner.py logic but captures output as dict instead of stdout.
     """
     from faster_whisper import WhisperModel
@@ -218,7 +296,7 @@ def run_whisper(audio_path: str, opts: dict) -> dict:
         all_text.append(seg.text)
 
         now = time.time()
-        if progress_file and total_duration and (now - last_progress_time) >= 5:
+        if progress_file and total_duration and (now - last_progress_time) >= 3:
             percent = min(99.9, (seg.end / total_duration) * 100)
             elapsed = now - start_time
             whisper_runner.write_progress(progress_file, percent, len(out_segments), elapsed)

@@ -250,27 +250,33 @@ All models are pre-downloaded in the Docker image (no HuggingFace download at ru
 When `deploymentMode = REST_REMOTE`:
 - `WhisperJobRunner` sends the audio file to the remote Whisper REST service via `WhisperRestClient`
 - Audio is uploaded as HTTP multipart (`POST /transcribe`) with options as a JSON form field
-- The REST server runs `whisper_runner.py` in-process and returns the same JSON result format
-- No PVC, no K8s Job, no progress file polling — result comes back in the HTTP response
+- The REST server runs `whisper_runner.py` in a background thread and returns an **SSE stream**:
+  - `event: progress` — periodic updates: `{"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}`
+  - `event: result` — final transcription JSON (same format as whisper_runner.py output)
+  - `event: error` — error details if transcription fails
+- `WhisperRestClient` reads the SSE stream, emits progress via `NotificationRpcImpl` (same as K8s mode)
+- No PVC, no K8s Job — progress and result come via SSE stream, no HTTP timeout risk
 - Health check available at `GET /health`
 
 **Docker image:** `jervis-whisper-rest` (built via `k8s/build_whisper_rest.sh`)
 **Dockerfile:** `backend/service-whisper/Dockerfile.rest`
 **Port:** 8786 (configurable via `WHISPER_REST_PORT` env var)
 
-### Progress Tracking (K8S_JOB mode)
+### Progress Tracking
 
-The Whisper container writes a progress file on PVC (`meeting_{id}_progress.json`) updated every 5 seconds:
+**K8S_JOB mode:** The Whisper container writes a progress file on PVC (`meeting_{id}_progress.json`) updated every 5 seconds:
 ```json
 {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "updated_at": 1738000000.0}
 ```
 The server-side `WhisperJobRunner` reads this file during K8s Job polling (every 10s) and emits
 `MeetingTranscriptionProgress` events via `NotificationRpcImpl` for real-time UI updates.
+
+**REST_REMOTE mode:** The REST server streams SSE `progress` events every ~3 seconds.
+`WhisperRestClient` reads these events and calls `buildProgressCallback()` which emits the same
+`MeetingTranscriptionProgress` notifications — UI progress works identically in both modes.
+
 State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED, etc.) emit
 `MeetingStateChanged` events so the meeting list/detail view updates without polling.
-
-> **Note:** In REST_REMOTE mode, progress tracking is not available — the client waits for the
-> full HTTP response. The UI will show "transcribing" state until completion.
 
 ### Key Files
 

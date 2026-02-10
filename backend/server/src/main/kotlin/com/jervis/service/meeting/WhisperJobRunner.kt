@@ -36,8 +36,7 @@ private val json = Json { ignoreUnknownKeys = true }
  * 3. **Local subprocess** (development, not in K8s) — runs whisper_runner.py directly
  *
  * Reads configurable parameters from [WhisperSettingsDocument] via [WhisperSettingsRpcImpl].
- * Progress tracking (K8s Job mode only): the Whisper container writes a progress JSON file on PVC
- * that this runner reads during polling to log transcription progress.
+ * Progress tracking: K8s Job mode uses PVC file polling, REST mode uses SSE streaming events.
  */
 @Service
 class WhisperJobRunner(
@@ -140,10 +139,15 @@ class WhisperJobRunner(
         // Build options JSON for whisper_runner.py
         val optionsJson = buildOptionsJson(settings, progressFile.toString(), autoPrompt)
 
-        // REST_REMOTE mode: send audio over HTTP instead of K8s Job / local subprocess
+        // REST_REMOTE mode: send audio over HTTP SSE stream instead of K8s Job / local subprocess
         if (settings.deploymentMode == "rest_remote") {
             logger.info { "Using REST remote mode: ${settings.restRemoteUrl}" }
-            return whisperRestClient.transcribe(settings.restRemoteUrl, audioFilePath, optionsJson)
+            return whisperRestClient.transcribe(
+                baseUrl = settings.restRemoteUrl,
+                audioFilePath = audioFilePath,
+                optionsJson = optionsJson,
+                onProgress = buildProgressCallback(meetingId, clientId),
+            )
         }
 
         try {
@@ -221,11 +225,16 @@ class WhisperJobRunner(
         // Build options with high-accuracy overrides
         val optionsJson = buildRetranscribeOptionsJson(progressFile.toString(), autoPrompt, rangesJson)
 
-        // REST_REMOTE mode: send audio over HTTP instead of K8s Job / local subprocess
+        // REST_REMOTE mode: send audio over HTTP SSE stream instead of K8s Job / local subprocess
         val settings = whisperSettingsRpc.getSettingsDocument()
         if (settings.deploymentMode == "rest_remote") {
             logger.info { "Using REST remote mode for retranscription: ${settings.restRemoteUrl}" }
-            return whisperRestClient.transcribe(settings.restRemoteUrl, audioFilePath, optionsJson)
+            return whisperRestClient.transcribe(
+                baseUrl = settings.restRemoteUrl,
+                audioFilePath = audioFilePath,
+                optionsJson = optionsJson,
+                onProgress = buildProgressCallback(meetingId, clientId),
+            )
         }
 
         try {
@@ -632,6 +641,27 @@ class WhisperJobRunner(
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Build a progress callback for REST mode that emits transcription progress
+     * notifications via the same notification system as K8s Job polling.
+     */
+    private fun buildProgressCallback(
+        meetingId: String?,
+        clientId: String?,
+    ): (suspend (Double, Int, Double) -> Unit)? {
+        if (meetingId == null || clientId == null) return null
+        return { percent, segmentsDone, elapsedSeconds ->
+            logger.info { "Whisper REST progress: $percent% ($segmentsDone segments, ${elapsedSeconds.toLong()}s)" }
+            notificationRpc.emitMeetingTranscriptionProgress(
+                meetingId = meetingId,
+                clientId = clientId,
+                percent = percent,
+                segmentsDone = segmentsDone,
+                elapsedSeconds = elapsedSeconds,
+            )
         }
     }
 
