@@ -25,6 +25,17 @@ enum class WhisperTask(val displayName: String) {
 }
 
 /**
+ * Whisper deployment mode.
+ * K8S_JOB: Runs as a short-lived K8s Job (requires sufficient cluster RAM).
+ * REST_REMOTE: Calls a persistent Whisper REST service on a remote host.
+ */
+@Serializable
+enum class WhisperDeploymentMode(val displayName: String, val description: String) {
+    K8S_JOB("Kubernetes Job", "Spouští se jako K8s Job v clusteru (vyžaduje dostatek RAM)"),
+    REST_REMOTE("Vzdálený REST server", "Volá vzdálený Whisper server přes REST API"),
+}
+
+/**
  * Global Whisper transcription settings.
  * Singleton document – one configuration for the entire system.
  */
@@ -52,6 +63,10 @@ data class WhisperSettingsDto(
     val timeoutMultiplier: Int = 3,
     /** Minimum timeout in seconds */
     val minTimeoutSeconds: Int = 600,
+    /** Deployment mode: K8s Job or remote REST service */
+    val deploymentMode: WhisperDeploymentMode = WhisperDeploymentMode.K8S_JOB,
+    /** Remote Whisper REST server URL (used when deploymentMode = REST_REMOTE) */
+    val restRemoteUrl: String = "http://192.168.100.117:8786",
 )
 
 /**
@@ -71,4 +86,6 @@ data class WhisperSettingsUpdateDto(
     val maxParallelJobs: Int? = null,
     val timeoutMultiplier: Int? = null,
     val minTimeoutSeconds: Int? = null,
+    val deploymentMode: WhisperDeploymentMode? = null,
+    val restRemoteUrl: String? = null,
 )

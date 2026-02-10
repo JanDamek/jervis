@@ -49,6 +49,9 @@ echo ""
 "${K8S_DIR}/build_whisper.sh"
 echo ""
 
+"${K8S_DIR}/build_whisper_rest.sh"
+echo ""
+
 echo ""
 echo "=== ✓ All services built and deployed successfully ==="
 echo ""

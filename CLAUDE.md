@@ -71,6 +71,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - DTOs: `shared/common-dto/`, Repository: `shared/domain/`
 - Whisper settings: `shared/common-dto/.../whisper/WhisperSettingsDtos.kt`, `backend/server/.../rpc/WhisperSettingsRpcImpl.kt`
 - Whisper runner: `backend/service-whisper/whisper_runner.py`, `backend/service-whisper/entrypoint-whisper-job.sh`
+- Whisper REST server: `backend/service-whisper/whisper_rest_server.py`, `backend/service-whisper/Dockerfile.rest`
+- Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
 
 ## Build Notes
 

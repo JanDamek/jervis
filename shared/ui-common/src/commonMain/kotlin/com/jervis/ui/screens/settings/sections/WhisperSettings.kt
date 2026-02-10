@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.whisper.WhisperDeploymentMode
 import com.jervis.dto.whisper.WhisperModelSize
 import com.jervis.dto.whisper.WhisperSettingsDto
 import com.jervis.dto.whisper.WhisperSettingsUpdateDto
@@ -66,6 +67,8 @@ fun WhisperSettings(repository: JervisRepository) {
     var conditionOnPreviousText by remember { mutableStateOf(true) }
     var noSpeechThreshold by remember { mutableStateOf(0.6f) }
     var maxParallelJobs by remember { mutableStateOf(3f) }
+    var deploymentMode by remember { mutableStateOf(WhisperDeploymentMode.K8S_JOB) }
+    var restRemoteUrl by remember { mutableStateOf("http://192.168.100.117:8786") }
 
     fun applyFromDto(dto: WhisperSettingsDto) {
         model = dto.model
@@ -77,6 +80,8 @@ fun WhisperSettings(repository: JervisRepository) {
         conditionOnPreviousText = dto.conditionOnPreviousText
         noSpeechThreshold = dto.noSpeechThreshold.toFloat()
         maxParallelJobs = dto.maxParallelJobs.toFloat()
+        deploymentMode = dto.deploymentMode
+        restRemoteUrl = dto.restRemoteUrl
     }
 
     LaunchedEffect(Unit) {
@@ -107,6 +112,8 @@ fun WhisperSettings(repository: JervisRepository) {
                         conditionOnPreviousText = conditionOnPreviousText,
                         noSpeechThreshold = noSpeechThreshold.toDouble(),
                         maxParallelJobs = maxParallelJobs.roundToInt(),
+                        deploymentMode = deploymentMode,
+                        restRemoteUrl = restRemoteUrl,
                     ),
                 )
                 settings = updated
@@ -145,6 +152,33 @@ fun WhisperSettings(repository: JervisRepository) {
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // === Deployment Mode Section ===
+                    JSection(title = "Režim nasazení") {
+                        JDropdown(
+                            items = WhisperDeploymentMode.entries.toList(),
+                            selectedItem = deploymentMode,
+                            onItemSelected = { deploymentMode = it },
+                            label = "Režim",
+                            itemLabel = { "${it.displayName} — ${it.description}" },
+                        )
+                        if (deploymentMode == WhisperDeploymentMode.REST_REMOTE) {
+                            Spacer(Modifier.height(JervisSpacing.itemGap))
+                            JTextField(
+                                value = restRemoteUrl,
+                                onValueChange = { restRemoteUrl = it },
+                                label = "URL vzdáleného serveru",
+                                placeholder = "http://192.168.100.117:8786",
+                                singleLine = true,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Adresa Whisper REST serveru. Audio se odesílá přes HTTP, výsledek se vrací jako JSON.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
                     // === Model & Task Section ===
                     JSection(title = "Model a úloha") {
                         JDropdown(
@@ -225,13 +259,17 @@ fun WhisperSettings(repository: JervisRepository) {
                     // === Performance Section ===
                     JSection(title = "Výkon") {
                         JSlider(
-                            label = "Max paralelních jobů",
+                            label = "Max paralelních přepisů",
                             value = maxParallelJobs,
                             onValueChange = { maxParallelJobs = it },
                             valueRange = 1f..10f,
                             steps = 8,
                             valueLabel = { "${it.roundToInt()}" },
-                            description = "Kolik nahrávek se přepisuje současně",
+                            description = if (deploymentMode == WhisperDeploymentMode.K8S_JOB) {
+                                "Kolik K8s Jobů se spouští současně"
+                            } else {
+                                "Kolik požadavků se odesílá na REST server současně"
+                            },
                         )
                     }
 

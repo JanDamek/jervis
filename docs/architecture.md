@@ -193,9 +193,24 @@ Weaviate and python-arango clients are thread-safe for read operations. Write op
 
 ### Overview
 
-Audio recordings are transcribed using **faster-whisper** (CTranslate2-optimized OpenAI Whisper) running
-as K8s Jobs (in-cluster) or Python subprocess (local dev). Settings are stored in MongoDB (`whisper_settings`
-collection, singleton document) and configurable via UI (**Settings → Whisper**).
+Audio recordings are transcribed using **faster-whisper** (CTranslate2-optimized OpenAI Whisper).
+Two deployment modes are supported, configurable via UI (**Settings → Whisper → Režim nasazení**):
+
+1. **K8S_JOB** (default): Runs as short-lived K8s Jobs in-cluster (or Python subprocess in local dev).
+   Requires sufficient cluster RAM for the chosen model. Uses shared PVC for audio/result files.
+
+2. **REST_REMOTE**: Calls a persistent Whisper REST server on a dedicated machine via HTTP.
+   Audio is uploaded as multipart/form-data, result returned as JSON. No PVC sharing needed.
+   Ideal when K8s cluster lacks RAM but a separate machine has plenty.
+
+Settings are stored in MongoDB (`whisper_settings` collection, singleton document).
+
+### Deployment Mode Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Deployment mode | `K8S_JOB` | `K8S_JOB` = K8s Jobs in cluster, `REST_REMOTE` = remote REST server |
+| REST remote URL | `http://192.168.100.117:8786` | URL of the Whisper REST service (only used in REST_REMOTE mode) |
 
 ### Configurable Parameters (UI)
 
@@ -210,11 +225,11 @@ collection, singleton document) and configurable via UI (**Settings → Whisper*
 | Initial prompt | auto | Auto-populated from KB correction rules (per client/project) |
 | Condition on previous | true | Use previous segment as context |
 | No-speech threshold | 0.6 | Skip segments above this silence probability |
-| Max parallel jobs | 3 | Concurrent K8s Whisper Jobs (Semaphore) |
+| Max parallel jobs | 3 | Concurrent K8s Whisper Jobs / REST requests |
 | Timeout multiplier | 3 | Timeout = audio_duration × multiplier |
 | Min timeout | 600s | Minimum job timeout |
 
-### K8s Job Resource Limits
+### K8s Job Resource Limits (K8S_JOB mode only)
 
 Resource limits are set dynamically based on model size via `WhisperJobRunner.resourcesForModel()`:
 
@@ -230,7 +245,20 @@ requires ~10GB RAM; the previous hardcoded 2Gi limit caused OOM kills (exit=137)
 
 All models are pre-downloaded in the Docker image (no HuggingFace download at runtime).
 
-### Progress Tracking
+### REST Remote Mode
+
+When `deploymentMode = REST_REMOTE`:
+- `WhisperJobRunner` sends the audio file to the remote Whisper REST service via `WhisperRestClient`
+- Audio is uploaded as HTTP multipart (`POST /transcribe`) with options as a JSON form field
+- The REST server runs `whisper_runner.py` in-process and returns the same JSON result format
+- No PVC, no K8s Job, no progress file polling — result comes back in the HTTP response
+- Health check available at `GET /health`
+
+**Docker image:** `jervis-whisper-rest` (built via `k8s/build_whisper_rest.sh`)
+**Dockerfile:** `backend/service-whisper/Dockerfile.rest`
+**Port:** 8786 (configurable via `WHISPER_REST_PORT` env var)
+
+### Progress Tracking (K8S_JOB mode)
 
 The Whisper container writes a progress file on PVC (`meeting_{id}_progress.json`) updated every 5 seconds:
 ```json
@@ -241,20 +269,29 @@ The server-side `WhisperJobRunner` reads this file during K8s Job polling (every
 State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED, etc.) emit
 `MeetingStateChanged` events so the meeting list/detail view updates without polling.
 
+> **Note:** In REST_REMOTE mode, progress tracking is not available — the client waits for the
+> full HTTP response. The UI will show "transcribing" state until completion.
+
 ### Key Files
 
 | File | Purpose |
 |------|---------|
 | `backend/service-whisper/whisper_runner.py` | Python entry point — faster-whisper with progress tracking |
+| `backend/service-whisper/whisper_rest_server.py` | FastAPI REST wrapper around whisper_runner (REST_REMOTE mode) |
 | `backend/service-whisper/entrypoint-whisper-job.sh` | K8s Job entrypoint — env parsing, error handling |
-| `backend/server/.../service/meeting/WhisperJobRunner.kt` | K8s Job orchestration, polling, settings integration |
+| `backend/service-whisper/Dockerfile` | Docker image for K8s Job mode |
+| `backend/service-whisper/Dockerfile.rest` | Docker image for REST server mode (FastAPI + uvicorn) |
+| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Orchestration — routes to K8s Job, REST, or local subprocess |
+| `backend/server/.../service/meeting/WhisperRestClient.kt` | Ktor HTTP client for REST_REMOTE mode |
 | `backend/server/.../service/meeting/MeetingTranscriptionService.kt` | High-level transcription API |
 | `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | 4 pipelines: transcribe → correct → index → purge |
 | `backend/server/.../entity/WhisperSettingsDocument.kt` | MongoDB singleton settings document |
 | `backend/server/.../rpc/WhisperSettingsRpcImpl.kt` | RPC service for settings CRUD |
 | `shared/common-api/.../service/IWhisperSettingsService.kt` | kRPC interface |
-| `shared/common-dto/.../dto/whisper/WhisperSettingsDtos.kt` | Settings DTOs + enums |
+| `shared/common-dto/.../dto/whisper/WhisperSettingsDtos.kt` | Settings DTOs + enums (incl. WhisperDeploymentMode) |
 | `shared/ui-common/.../settings/sections/WhisperSettings.kt` | Settings UI composable |
+| `k8s/build_whisper.sh` | Build script for K8s Job image |
+| `k8s/build_whisper_rest.sh` | Build script for REST server image |
 
 ---
 
@@ -347,7 +384,7 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 | `backend/service-orchestrator/app/whisper/correction_agent.py` | Python correction agent — KB loading, LLM calls, interactive questions, targeted correction |
 | `backend/service-orchestrator/app/main.py` | Python endpoints incl. `/correction/correct-targeted` |
 | `backend/server/.../service/meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling, retranscribe+correct flow |
-| `backend/server/.../service/meeting/WhisperJobRunner.kt` | K8s Whisper jobs — includes `retranscribe()` for audio extraction + high-accuracy re-transcription |
+| `backend/server/.../service/meeting/WhisperJobRunner.kt` | Whisper orchestration (K8s Job / REST / local) — includes `retranscribe()` for audio extraction + high-accuracy re-transcription |
 | `backend/service-whisper/whisper_runner.py` | Whisper transcription script — supports `extraction_ranges` for partial re-transcription |
 | `backend/server/.../configuration/PythonOrchestratorClient.kt` | REST client for Python correction endpoints incl. `correctTargeted()` |
 | `shared/common-api/.../service/ITranscriptCorrectionService.kt` | RPC interface for correction CRUD |

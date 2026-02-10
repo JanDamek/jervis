@@ -1,5 +1,6 @@
 package com.jervis.rpc
 
+import com.jervis.dto.whisper.WhisperDeploymentMode
 import com.jervis.dto.whisper.WhisperModelSize
 import com.jervis.dto.whisper.WhisperSettingsDto
 import com.jervis.dto.whisper.WhisperSettingsUpdateDto
@@ -40,10 +41,12 @@ class WhisperSettingsRpcImpl(
             maxParallelJobs = (request.maxParallelJobs ?: existing.maxParallelJobs).coerceIn(1, 10),
             timeoutMultiplier = (request.timeoutMultiplier ?: existing.timeoutMultiplier).coerceIn(1, 10),
             minTimeoutSeconds = (request.minTimeoutSeconds ?: existing.minTimeoutSeconds).coerceIn(60, 3600),
+            deploymentMode = request.deploymentMode?.toModeString() ?: existing.deploymentMode,
+            restRemoteUrl = request.restRemoteUrl?.ifBlank { null } ?: existing.restRemoteUrl,
         )
 
         repository.save(updated)
-        logger.info { "Whisper settings updated: model=${updated.model}, task=${updated.task}, lang=${updated.language}, parallel=${updated.maxParallelJobs}" }
+        logger.info { "Whisper settings updated: model=${updated.model}, task=${updated.task}, lang=${updated.language}, parallel=${updated.maxParallelJobs}, mode=${updated.deploymentMode}, restUrl=${updated.restRemoteUrl}" }
 
         return updated.toDto()
     }
@@ -67,6 +70,8 @@ class WhisperSettingsRpcImpl(
         maxParallelJobs = maxParallelJobs,
         timeoutMultiplier = timeoutMultiplier,
         minTimeoutSeconds = minTimeoutSeconds,
+        deploymentMode = if (deploymentMode == "rest_remote") WhisperDeploymentMode.REST_REMOTE else WhisperDeploymentMode.K8S_JOB,
+        restRemoteUrl = restRemoteUrl,
     )
 
     private fun WhisperModelSize.toModelString() = when (this) {
@@ -80,5 +85,10 @@ class WhisperSettingsRpcImpl(
     private fun WhisperTask.toTaskString() = when (this) {
         WhisperTask.TRANSCRIBE -> "transcribe"
         WhisperTask.TRANSLATE -> "translate"
+    }
+
+    private fun WhisperDeploymentMode.toModeString() = when (this) {
+        WhisperDeploymentMode.K8S_JOB -> "k8s_job"
+        WhisperDeploymentMode.REST_REMOTE -> "rest_remote"
     }
 }

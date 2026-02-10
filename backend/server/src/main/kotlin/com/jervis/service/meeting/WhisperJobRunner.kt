@@ -30,13 +30,13 @@ private val logger = KotlinLogging.logger {}
 private val json = Json { ignoreUnknownKeys = true }
 
 /**
- * Runs Whisper transcription as a K8s Job (in-cluster) or subprocess (local dev).
+ * Runs Whisper transcription via one of three modes:
+ * 1. **K8s Job** (in-cluster, `deploymentMode=k8s_job`) — spawns a K8s Job with PVC audio/result sharing
+ * 2. **REST Remote** (`deploymentMode=rest_remote`) — sends audio to a persistent Whisper REST server via HTTP
+ * 3. **Local subprocess** (development, not in K8s) — runs whisper_runner.py directly
  *
  * Reads configurable parameters from [WhisperSettingsDocument] via [WhisperSettingsRpcImpl].
- * Audio file must already exist on PVC at the given path.
- * Result is written to per-meeting file: meeting_{id}_transcript.json.
- *
- * Progress tracking: the Whisper container writes a progress JSON file on PVC
+ * Progress tracking (K8s Job mode only): the Whisper container writes a progress JSON file on PVC
  * that this runner reads during polling to log transcription progress.
  */
 @Service
@@ -44,6 +44,7 @@ class WhisperJobRunner(
     private val whisperSettingsRpc: WhisperSettingsRpcImpl,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val orchestratorClient: PythonOrchestratorClient,
+    private val whisperRestClient: WhisperRestClient,
 ) {
 
     companion object {
@@ -70,9 +71,15 @@ class WhisperJobRunner(
     }
 
     /**
-     * Check if Whisper transcription is available (K8s API accessible in-cluster, always true locally).
+     * Check if Whisper transcription is available.
+     * REST_REMOTE: checks /health on remote server.
+     * K8S_JOB: checks K8s API accessibility (always true locally).
      */
     suspend fun isAvailable(): Boolean {
+        val settings = whisperSettingsRpc.getSettingsDocument()
+        if (settings.deploymentMode == "rest_remote") {
+            return whisperRestClient.isHealthy(settings.restRemoteUrl)
+        }
         if (!IN_CLUSTER) return true
         return try {
             withContext(Dispatchers.IO) {
@@ -132,6 +139,12 @@ class WhisperJobRunner(
 
         // Build options JSON for whisper_runner.py
         val optionsJson = buildOptionsJson(settings, progressFile.toString(), autoPrompt)
+
+        // REST_REMOTE mode: send audio over HTTP instead of K8s Job / local subprocess
+        if (settings.deploymentMode == "rest_remote") {
+            logger.info { "Using REST remote mode: ${settings.restRemoteUrl}" }
+            return whisperRestClient.transcribe(settings.restRemoteUrl, audioFilePath, optionsJson)
+        }
 
         try {
             if (IN_CLUSTER) {
@@ -207,6 +220,13 @@ class WhisperJobRunner(
 
         // Build options with high-accuracy overrides
         val optionsJson = buildRetranscribeOptionsJson(progressFile.toString(), autoPrompt, rangesJson)
+
+        // REST_REMOTE mode: send audio over HTTP instead of K8s Job / local subprocess
+        val settings = whisperSettingsRpc.getSettingsDocument()
+        if (settings.deploymentMode == "rest_remote") {
+            logger.info { "Using REST remote mode for retranscription: ${settings.restRemoteUrl}" }
+            return whisperRestClient.transcribe(settings.restRemoteUrl, audioFilePath, optionsJson)
+        }
 
         try {
             if (IN_CLUSTER) {
