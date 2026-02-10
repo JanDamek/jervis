@@ -763,9 +763,17 @@ Same layout but chat panel has fixed 180dp height (no interactive splitter).
 
 **TranscriptSegmentRow** – each row layout: `[time (52dp)] [text (weight 1f)] [edit button] [play/stop button]`
 - Text is always selectable/copyable (no correction mode toggle needed)
-- Edit button opens `SegmentCorrectionDialog` for inline text correction
+- Edit button opens `SegmentCorrectionDialog` with `SegmentEditState` (original + corrected text + timing)
 - Play/Stop button plays the audio range from this segment's `startSec` to the next segment's `startSec`
 - `playingSegmentIndex` state highlights the currently playing segment's play button
+
+**SegmentCorrectionDialog** – redesigned dialog for segment editing:
+- Shows read-only **original (raw) text** in a `Card(surfaceVariant)` with `SelectionContainer` for copy
+- Play button next to "Original:" label plays segment audio range
+- Editable `OutlinedTextField` pre-filled with **corrected text** (from `correctedTranscriptSegments` if exists, else raw)
+- Confirm button enabled only when text is non-blank and differs from initial
+- On confirm: auto-switches to "Opraveny" (corrected) view via `showCorrected = true`
+- State: `SegmentEditState(segmentIndex, originalText, editableText, startSec, endSec)`
 
 **AudioPlayer** – `expect class` with platform actuals:
 - `play(audioData)` – full audio playback
@@ -1123,5 +1131,5 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 │   ├── BrowserHelper.kt             ← expect fun openUrlInBrowser
 │   └── FilePickers.kt               ← expect fun pickTextFileContent
 ├── MainScreen.kt                    ← MainScreenView: adaptive sidebar + chat (MainMenuItem enum)
-└── App.kt                           ← Root composable
+└── App.kt                           ← Root composable (remember(repository) keys MainViewModel for reconnection)
 ```

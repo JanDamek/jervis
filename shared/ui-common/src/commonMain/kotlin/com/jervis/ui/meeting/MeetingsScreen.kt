@@ -714,8 +714,8 @@ private fun MeetingDetailView(
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
-    // Segment click correction: stores (segmentIndex, segmentText)
-    var segmentForCorrection by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    // Segment click correction: stores full edit state with original + corrected text + timing
+    var segmentForCorrection by remember { mutableStateOf<SegmentEditState?>(null) }
     // Overflow menu for compact screens
     var showOverflowMenu by remember { mutableStateOf(false) }
     // Splitter fraction for expanded mode
@@ -880,7 +880,20 @@ private fun MeetingDetailView(
                         showCorrected = showCorrected,
                         onShowCorrectedChange = { showCorrected = it },
                         playingSegmentIndex = playingSegmentIndex,
-                        onSegmentEdit = { index, seg -> segmentForCorrection = index to seg.text },
+                        onSegmentEdit = { index, seg ->
+                            val rawSeg = meeting.transcriptSegments.getOrNull(index)
+                            val correctedSeg = meeting.correctedTranscriptSegments.getOrNull(index)
+                            val segments = if (showCorrected && meeting.correctedTranscriptSegments.isNotEmpty())
+                                meeting.correctedTranscriptSegments else meeting.transcriptSegments
+                            val nextStart = segments.getOrNull(index + 1)?.startSec ?: seg.endSec
+                            segmentForCorrection = SegmentEditState(
+                                segmentIndex = index,
+                                originalText = rawSeg?.text ?: seg.text,
+                                editableText = correctedSeg?.text ?: rawSeg?.text ?: seg.text,
+                                startSec = seg.startSec,
+                                endSec = nextStart,
+                            )
+                        },
                         onSegmentPlay = onSegmentPlay,
                         onRetranscribe = onRetranscribe,
                         onRecorrect = onRecorrect,
@@ -911,7 +924,20 @@ private fun MeetingDetailView(
                             showCorrected = showCorrected,
                             onShowCorrectedChange = { showCorrected = it },
                             playingSegmentIndex = playingSegmentIndex,
-                            onSegmentEdit = { index, seg -> segmentForCorrection = index to seg.text },
+                            onSegmentEdit = { index, seg ->
+                                val rawSeg = meeting.transcriptSegments.getOrNull(index)
+                                val correctedSeg = meeting.correctedTranscriptSegments.getOrNull(index)
+                                val segments = if (showCorrected && meeting.correctedTranscriptSegments.isNotEmpty())
+                                    meeting.correctedTranscriptSegments else meeting.transcriptSegments
+                                val nextStart = segments.getOrNull(index + 1)?.startSec ?: seg.endSec
+                                segmentForCorrection = SegmentEditState(
+                                    segmentIndex = index,
+                                    originalText = rawSeg?.text ?: seg.text,
+                                    editableText = correctedSeg?.text ?: rawSeg?.text ?: seg.text,
+                                    startSec = seg.startSec,
+                                    endSec = nextStart,
+                                )
+                            },
                             onSegmentPlay = onSegmentPlay,
                             onRetranscribe = onRetranscribe,
                             onRecorrect = onRecorrect,
@@ -933,14 +959,18 @@ private fun MeetingDetailView(
         }
     }
 
-    // Correction dialog for segment click — pre-fills corrected with original text
+    // Correction dialog for segment click — shows original + editable corrected text + audio playback
     if (segmentForCorrection != null) {
-        val (segIndex, segText) = segmentForCorrection!!
+        val state = segmentForCorrection!!
         SegmentCorrectionDialog(
-            segmentText = segText,
+            originalText = state.originalText,
+            editableText = state.editableText,
+            isPlayingSegment = playingSegmentIndex == state.segmentIndex,
+            onPlayToggle = { onSegmentPlay(state.segmentIndex, state.startSec, state.endSec) },
             onConfirm = { correctedText ->
-                onApplySegmentCorrection(segIndex, correctedText)
+                onApplySegmentCorrection(state.segmentIndex, correctedText)
                 segmentForCorrection = null
+                showCorrected = true
             },
             onDismiss = { segmentForCorrection = null },
         )
@@ -1693,31 +1723,84 @@ private fun CorrectionQuestionsCard(
 }
 
 /**
- * Simple dialog for correcting a single transcript segment.
- * Pre-fills with the original text so the user just edits it.
+ * State for segment editing dialog — carries both raw and corrected text + timing for audio playback.
+ */
+private data class SegmentEditState(
+    val segmentIndex: Int,
+    val originalText: String,
+    val editableText: String,
+    val startSec: Double,
+    val endSec: Double,
+)
+
+/**
+ * Dialog for correcting a single transcript segment.
+ * Shows original (raw) text as read-only reference with play button,
+ * and an editable field pre-filled with the corrected text.
  */
 @Composable
 private fun SegmentCorrectionDialog(
-    segmentText: String,
+    originalText: String,
+    editableText: String,
+    isPlayingSegment: Boolean,
+    onPlayToggle: () -> Unit,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var correctedText by remember { mutableStateOf(segmentText) }
+    var correctedText by remember { mutableStateOf(editableText) }
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Opravit segment") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Original text (read-only) with play button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Original:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    IconButton(
+                        onClick = onPlayToggle,
+                        modifier = Modifier.size(JervisSpacing.touchTarget),
+                    ) {
+                        Text(
+                            text = if (isPlayingSegment) "\u23F9" else "\u25B6",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isPlayingSegment) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = originalText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
+
+                // Editable corrected text
                 Text(
-                    text = "Upravte text segmentu:",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Opraveny text:",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = correctedText,
                     onValueChange = { correctedText = it },
-                    label = { Text("Text") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                     maxLines = 5,
@@ -1727,11 +1810,11 @@ private fun SegmentCorrectionDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (correctedText.isNotBlank() && correctedText != segmentText) {
+                    if (correctedText.isNotBlank() && correctedText != editableText) {
                         onConfirm(correctedText.trim())
                     }
                 },
-                enabled = correctedText.isNotBlank() && correctedText != segmentText,
+                enabled = correctedText.isNotBlank() && correctedText != editableText,
             ) {
                 Text("Ulozit")
             }

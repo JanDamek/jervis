@@ -127,6 +127,50 @@ For each client, Jervis creates **3 ArangoDB objects**:
 
 ---
 
+## KB Service Concurrency Model
+
+### Problem
+
+The KB service (`service-knowledgebase`) uses synchronous Weaviate, ArangoDB, and Ollama embedding
+clients inside `async def` FastAPI handlers. A single long ingest operation (30-180s) blocks the
+event loop and starves all other requests (queries, list, retrieve).
+
+### Solution: `asyncio.to_thread()` + Batch Embeddings + Workers
+
+Three changes make the service non-blocking:
+
+1. **`asyncio.to_thread()` wrapping** — All blocking Weaviate and ArangoDB calls are wrapped in
+   `asyncio.to_thread()`, which runs them in Python's default thread pool. The event loop stays
+   free to serve queries while ingest runs in a background thread.
+
+2. **Batch embeddings** — `RagService.ingest()` uses `embed_documents([chunks])` instead of
+   per-chunk `embed_query(chunk)` loops. This is a single Ollama call for all chunks instead of N calls.
+
+3. **4 uvicorn workers** — Increased from 2 to 4 workers for better concurrency across processes.
+
+### What stays async (not wrapped)
+
+- LLM calls (`await self.llm.ainvoke()`) — already async via LangChain
+- `AliasRegistry` — already async
+- Progress callbacks — fire-and-forget, fine as-is
+
+### Thread safety
+
+Weaviate and python-arango clients are thread-safe for read operations. Write operations
+(batch insert, update) are isolated per-request. The thread pool size is adjustable via
+`loop.set_default_executor()` if needed.
+
+### Key files
+
+| File | Change |
+|------|--------|
+| `backend/service-knowledgebase/app/services/rag_service.py` | `asyncio.to_thread()` around all Weaviate + embedding calls, batch `embed_documents()` |
+| `backend/service-knowledgebase/app/services/graph_service.py` | `asyncio.to_thread()` around all ArangoDB calls |
+| `backend/service-knowledgebase/app/services/knowledge_service.py` | `asyncio.to_thread()` around ArangoDB crawl-URL tracking |
+| `backend/service-knowledgebase/Dockerfile` | uvicorn workers 2 → 4 |
+
+---
+
 ## Vision Processing Pipeline
 
 ### Problem Statement
@@ -169,6 +213,22 @@ collection, singleton document) and configurable via UI (**Settings → Whisper*
 | Max parallel jobs | 3 | Concurrent K8s Whisper Jobs (Semaphore) |
 | Timeout multiplier | 3 | Timeout = audio_duration × multiplier |
 | Min timeout | 600s | Minimum job timeout |
+
+### K8s Job Resource Limits
+
+Resource limits are set dynamically based on model size via `WhisperJobRunner.resourcesForModel()`:
+
+| Model | Memory Request | Memory Limit |
+|-------|---------------|--------------|
+| tiny, base | 512Mi | 2Gi |
+| small | 1Gi | 3Gi |
+| medium | 2Gi | 6Gi |
+| large-v3 | 4Gi | 12Gi |
+
+CPU: 500m request / 2 cores limit for all models. The `large-v3` model (used by retranscription)
+requires ~10GB RAM; the previous hardcoded 2Gi limit caused OOM kills (exit=137).
+
+All models are pre-downloaded in the Docker image (no HuggingFace download at runtime).
 
 ### Progress Tracking
 

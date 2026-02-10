@@ -123,7 +123,7 @@ class WhisperJobRunner(
 
         try {
             if (IN_CLUSTER) {
-                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId)
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId, modelName = settings.model)
             } else {
                 runLocal(audioFilePath, resultFile, optionsJson)
             }
@@ -198,7 +198,7 @@ class WhisperJobRunner(
 
         try {
             if (IN_CLUSTER) {
-                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId)
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId, modelName = "large-v3")
             } else {
                 runLocal(audioFilePath, resultFile, optionsJson)
             }
@@ -434,6 +434,19 @@ class WhisperJobRunner(
         }
     }
 
+    /**
+     * Returns (memoryRequest, memoryLimit) for a given Whisper model.
+     * Larger models need more RAM to avoid OOM kills.
+     */
+    private fun resourcesForModel(modelName: String): Pair<String, String> =
+        when (modelName) {
+            "tiny", "base" -> "512Mi" to "2Gi"
+            "small"        -> "1Gi" to "3Gi"
+            "medium"       -> "2Gi" to "6Gi"
+            "large-v3"     -> "4Gi" to "12Gi"
+            else           -> "512Mi" to "2Gi"
+        }
+
     private suspend fun runK8sJob(
         audioFilePath: String,
         workspacePath: String,
@@ -443,10 +456,12 @@ class WhisperJobRunner(
         optionsJson: String,
         meetingId: String? = null,
         clientId: String? = null,
+        modelName: String = "base",
     ) {
         val jobName = "whisper-${UUID.randomUUID().toString().substring(0, 8)}"
 
-        logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath)" }
+        val (memReq, memLimit) = resourcesForModel(modelName)
+        logger.info { "Creating Whisper K8s Job: $jobName (audio=$audioFilePath, workspace=$workspacePath, model=$modelName, mem=$memReq/$memLimit)" }
 
         val job = JobBuilder()
             .withNewMetadata()
@@ -484,9 +499,9 @@ class WhisperJobRunner(
                                     .build(),
                             )
                             .withNewResources()
-                                .addToRequests("memory", io.fabric8.kubernetes.api.model.Quantity("256Mi"))
+                                .addToRequests("memory", io.fabric8.kubernetes.api.model.Quantity(memReq))
                                 .addToRequests("cpu", io.fabric8.kubernetes.api.model.Quantity("500m"))
-                                .addToLimits("memory", io.fabric8.kubernetes.api.model.Quantity("2Gi"))
+                                .addToLimits("memory", io.fabric8.kubernetes.api.model.Quantity(memLimit))
                                 .addToLimits("cpu", io.fabric8.kubernetes.api.model.Quantity("2"))
                             .endResources()
                         .endContainer()
