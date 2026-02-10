@@ -91,7 +91,7 @@ class CorrectionAgent:
             },
         }
 
-        async with httpx.AsyncClient(timeout=30) as http:
+        async with httpx.AsyncClient(timeout=120) as http:
             resp = await http.post(f"{self.kb_url}/ingest", json=ingest_payload)
             resp.raise_for_status()
 
@@ -107,7 +107,7 @@ class CorrectionAgent:
 
     async def delete_correction(self, source_urn: str) -> dict:
         """Delete a correction from KB."""
-        async with httpx.AsyncClient(timeout=30) as http:
+        async with httpx.AsyncClient(timeout=120) as http:
             resp = await http.post(
                 f"{self.kb_url}/purge",
                 json={"sourceUrn": source_urn},
@@ -122,7 +122,7 @@ class CorrectionAgent:
         max_results: int = 100,
     ) -> list[dict]:
         """List all corrections for a client/project from KB."""
-        async with httpx.AsyncClient(timeout=30) as http:
+        async with httpx.AsyncClient(timeout=120) as http:
             resp = await http.post(
                 f"{self.kb_url}/chunks/by-kind",
                 json={
