@@ -65,6 +65,9 @@ class ProjectRules(BaseModel):
     forbidden_files: list[str] = Field(default_factory=lambda: ["*.env", "secrets/*"])
     max_changed_files: int = 20
     auto_push: bool = False
+    auto_use_anthropic: bool = False
+    auto_use_openai: bool = False
+    auto_use_gemini: bool = False
 
 
 # --- Task Models ---

@@ -412,6 +412,9 @@ data class ProjectRulesDto(
     @SerialName("forbidden_files") val forbiddenFiles: List<String> = listOf("*.env", "secrets/*"),
     @SerialName("max_changed_files") val maxChangedFiles: Int = 20,
     @SerialName("auto_push") val autoPush: Boolean = false,
+    @SerialName("auto_use_anthropic") val autoUseAnthropic: Boolean = false,
+    @SerialName("auto_use_openai") val autoUseOpenai: Boolean = false,
+    @SerialName("auto_use_gemini") val autoUseGemini: Boolean = false,
 )
 
 @Serializable

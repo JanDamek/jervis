@@ -27,6 +27,10 @@ data class ClientDto(
     val gitCommitGpgKeyId: String? = null,
     // Connection capabilities (defaults for all projects)
     val connectionCapabilities: List<ClientConnectionCapabilityDto> = emptyList(),
+    // Cloud model policy (defaults for all projects)
+    val autoUseAnthropic: Boolean = false,
+    val autoUseOpenai: Boolean = false,
+    val autoUseGemini: Boolean = false,
 )
 
 /**

@@ -44,7 +44,7 @@ class ProjectService(
                 groupId = project.groupId,
                 communicationLanguageEnum = project.communicationLanguageEnum,
                 buildConfig = project.buildConfig,
-                costPolicy = project.costPolicy,
+                cloudModelPolicy = project.cloudModelPolicy,
                 gitCommitConfig = project.gitCommitConfig,
                 connectionCapabilities = project.connectionCapabilities,
                 resources = project.resources,

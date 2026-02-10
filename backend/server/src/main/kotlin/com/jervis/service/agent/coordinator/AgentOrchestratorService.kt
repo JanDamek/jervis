@@ -12,7 +12,10 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
+import com.jervis.entity.CloudModelPolicy
 import com.jervis.mapper.toAgentContextJson
+import com.jervis.repository.ClientRepository
+import com.jervis.repository.ProjectRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.environment.EnvironmentService
@@ -40,6 +43,8 @@ class AgentOrchestratorService(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
     private val environmentService: EnvironmentService,
+    private val clientRepository: ClientRepository,
+    private val projectRepository: ProjectRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -296,6 +301,12 @@ class AgentOrchestratorService(
     ): ProjectRulesDto {
         val prefs = preferenceService.getAllPreferences(clientId, projectId)
 
+        // Load cloud model policy: project overrides client
+        val client = clientId?.let { clientRepository.findById(it) }
+        val project = projectId?.let { projectRepository.findById(it) }
+        val clientPolicy = client?.cloudModelPolicy ?: CloudModelPolicy()
+        val effectivePolicy = project?.cloudModelPolicy ?: clientPolicy
+
         return ProjectRulesDto(
             branchNaming = prefs["orchestrator.branch_naming"] ?: "task/{taskId}",
             commitPrefix = prefs["orchestrator.commit_prefix"] ?: "task({taskId}):",
@@ -313,6 +324,9 @@ class AgentOrchestratorService(
                 ?: listOf("*.env", "secrets/*"),
             maxChangedFiles = prefs["orchestrator.max_changed_files"]?.toIntOrNull() ?: 20,
             autoPush = prefs["orchestrator.auto_push"]?.toBoolean() ?: false,
+            autoUseAnthropic = effectivePolicy.autoUseAnthropic,
+            autoUseOpenai = effectivePolicy.autoUseOpenai,
+            autoUseGemini = effectivePolicy.autoUseGemini,
         )
     }
 

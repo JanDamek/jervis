@@ -7,6 +7,7 @@ import com.jervis.dto.ProjectConnectionCapabilityDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ProjectResourceDto
 import com.jervis.dto.ResourceLinkDto
+import com.jervis.entity.CloudModelPolicy
 import com.jervis.entity.GitCommitConfig
 import com.jervis.entity.ProjectConnectionCapability
 import com.jervis.entity.ProjectDocument
@@ -32,6 +33,9 @@ fun ProjectDocument.toDto(): ProjectDto =
         connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
         resources = this.resources.map { it.toDto() },
         resourceLinks = this.resourceLinks.map { it.toDto() },
+        autoUseAnthropic = this.cloudModelPolicy?.autoUseAnthropic,
+        autoUseOpenai = this.cloudModelPolicy?.autoUseOpenai,
+        autoUseGemini = this.cloudModelPolicy?.autoUseGemini,
     )
 
 fun ProjectDto.toDocument(): ProjectDocument {
@@ -63,7 +67,15 @@ fun ProjectDto.toDocument(): ProjectDocument {
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
         buildConfig = null, // TODO: Map buildConfig
-        costPolicy = com.jervis.entity.ProjectCostPolicy(),
+        cloudModelPolicy = if (autoUseAnthropic != null || autoUseOpenai != null || autoUseGemini != null) {
+            CloudModelPolicy(
+                autoUseAnthropic = autoUseAnthropic ?: false,
+                autoUseOpenai = autoUseOpenai ?: false,
+                autoUseGemini = autoUseGemini ?: false,
+            )
+        } else {
+            null
+        },
         gitCommitConfig = gitCommitConfig,
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
         resources = this.resources.map { it.toEntity() },

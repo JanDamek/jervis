@@ -1,19 +1,17 @@
 """LLM provider abstraction using litellm.
 
-Supports local Ollama models and cloud providers (Anthropic, Google).
-Implements EscalationPolicy for tier selection.
+Supports local Ollama models and cloud providers (Anthropic, OpenAI, Google).
+Implements EscalationPolicy for local-first tier selection with cloud fallback.
 
 ALL calls use streaming + heartbeat liveness detection:
 - No hard timeouts on LLM calls
 - Liveness = tokens keep arriving
 - If no token for HEARTBEAT_DEAD_SECONDS → HeartbeatTimeoutError
 
-IMPORTANT – Cloud models are NOT failure fallbacks.
-Cloud tiers exist only for legitimate capability needs:
-- Ultra-large context (>49k tokens → Gemini 1M)
-- Critical architecture/design decisions
-- Explicit user preference for quality
-Local model failures are NEVER escalated to cloud.
+Cloud model usage:
+- Always try local Ollama first
+- Cloud only on local failure, with per-provider settings
+- Three cloud providers: Anthropic (reasoning), OpenAI (code editing), Gemini (large context)
 """
 
 from __future__ import annotations
@@ -59,7 +57,7 @@ TIER_CONFIG: dict[ModelTier, dict] = {
         "model": f"anthropic/{settings.default_cloud_model}",
     },
     ModelTier.CLOUD_CODING: {
-        "model": f"anthropic/{settings.default_cloud_model}",
+        "model": f"openai/{settings.default_openai_model}",
     },
     ModelTier.CLOUD_PREMIUM: {
         "model": f"anthropic/{settings.default_premium_model}",
@@ -71,54 +69,76 @@ TIER_CONFIG: dict[ModelTier, dict] = {
 
 
 class EscalationPolicy:
-    """Decides when to use cloud models instead of local.
+    """Local-first model selection. Cloud only via explicit policy check."""
 
-    RULES (invariant):
-    - Local models (Ollama) are the DEFAULT – always used when sufficient
-    - Cloud models are NEVER failure fallbacks for local models
-    - Cloud is used ONLY for legitimate capability needs:
-      1. Ultra-large context (>49k tokens) → CLOUD_LARGE_CONTEXT (Gemini, 1M)
-      2. Critical architecture/design → CLOUD_REASONING / CLOUD_PREMIUM
-      3. Critical code changes → CLOUD_CODING
-      4. Explicit user preference "quality" → CLOUD_REASONING
-    - Gemini is ONLY for context that exceeds local capacity (absolute necessity)
-    """
-
-    def select_tier(
-        self,
-        task_type: str,
-        complexity: Complexity,
-        context_tokens: int = 0,
-        user_preference: str = "balanced",
-    ) -> ModelTier:
-        # 1. Ultra-large context → Gemini (only when absolutely necessary)
-        if context_tokens > 49_000:
-            return ModelTier.CLOUD_LARGE_CONTEXT
-
-        # 2. User explicitly wants quality → cloud reasoning
-        if user_preference == "quality":
-            return ModelTier.CLOUD_REASONING
-
-        # 3. Critical complexity → cloud
-        if complexity == Complexity.CRITICAL:
-            if task_type in ("architecture", "design_review"):
-                return ModelTier.CLOUD_PREMIUM
-            return ModelTier.CLOUD_CODING
-
-        # 4. Complex architecture → cloud reasoning
-        if task_type in ("architecture", "design_review") and complexity == Complexity.COMPLEX:
-            return ModelTier.CLOUD_REASONING
-
-        # 5. Complex code changes → cloud coding
-        if task_type == "code_change" and complexity == Complexity.COMPLEX:
-            return ModelTier.CLOUD_CODING
-
-        # 6. Default: local tiers based on context size
+    def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
+        """Always returns a local tier based on context size."""
         if context_tokens > 32_000:
             return ModelTier.LOCAL_LARGE
         if context_tokens > 8_000:
             return ModelTier.LOCAL_STANDARD
         return ModelTier.LOCAL_FAST
+
+    def suggest_cloud_tier(
+        self,
+        context_tokens: int = 0,
+        auto_providers: set[str] | None = None,
+        task_type: str = "general",
+    ) -> ModelTier | None:
+        """Suggest best cloud tier based on enabled providers and task type.
+
+        Returns None if no suitable provider is auto-enabled.
+        """
+        providers = auto_providers or set()
+
+        # Large context → Gemini only
+        if context_tokens > 49_000:
+            return ModelTier.CLOUD_LARGE_CONTEXT if "gemini" in providers else None
+
+        has_anthropic = "anthropic" in providers
+        has_openai = "openai" in providers
+
+        # Both → pick by task type
+        if has_anthropic and has_openai:
+            if task_type in ("architecture", "design_review", "decomposition"):
+                return ModelTier.CLOUD_REASONING   # Anthropic
+            return ModelTier.CLOUD_CODING           # OpenAI
+
+        if has_anthropic:
+            return ModelTier.CLOUD_REASONING
+        if has_openai:
+            return ModelTier.CLOUD_CODING
+
+        return None  # No auto-enabled provider
+
+    def get_available_providers(self) -> set[str]:
+        """Providers with API keys configured (can be used via user approval)."""
+        available = set()
+        if settings.anthropic_api_key:
+            available.add("anthropic")
+        if settings.openai_api_key:
+            available.add("openai")
+        if settings.google_api_key:
+            available.add("gemini")
+        return available
+
+    def best_available_cloud_tier(
+        self, context_tokens: int = 0, task_type: str = "general",
+    ) -> ModelTier | None:
+        """Best cloud tier from ANY configured provider (for interrupt description)."""
+        return self.suggest_cloud_tier(
+            context_tokens, self.get_available_providers(), task_type,
+        )
+
+    def select_tier(
+        self,
+        task_type: str = "general",
+        complexity: Complexity = Complexity.MEDIUM,
+        context_tokens: int = 0,
+        user_preference: str = "balanced",
+    ) -> ModelTier:
+        """Backward-compatible: always returns local tier."""
+        return self.select_local_tier(context_tokens)
 
 
 class LLMProvider:

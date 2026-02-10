@@ -348,7 +348,8 @@ ANTHROPIC_API_KEY        jervis-secrets      Pay-per-token pro Claude CLI + Aide
 | `GOOGLE_API_KEY` | **Gemini API** | Orchestrátor – CLOUD_LARGE_CONTEXT tier (>49k tokenů) |
 
 **Orchestrátorova vlastní logika** (`llm/provider.py`):
-- Decompose + plan běží na **Ollama** (LOCAL_FAST / LOCAL_STANDARD / LOCAL_LARGE)
+- Clarify, decompose + plan běží na **Ollama** (LOCAL_FAST / LOCAL_STANDARD / LOCAL_LARGE)
+- Clarify node vždy LOCAL_STANDARD — je to lehký triage krok, nepotřebuje cloud
 - Cloud modely **NEJSOU failure fallback** pro lokální modely
 - Cloud se použije JEN pro legitimní potřeby:
   - Ultra-large context (>49k tokenů) → **Gemini** (CLOUD_LARGE_CONTEXT, až 1M tokenů)
@@ -596,3 +597,67 @@ POST /approve/{thread_id} {approved, reason}
 | Nový task, orchestrátor busy | Kotlin: count > 0 → skip. Python: 429 (fallback) |
 | Approval, orchestrátor busy (jiný task) | POST /approve OK, _resume čeká na semaphore |
 | Approval, orchestrátor volný | POST /approve OK, resume okamžitě |
+
+## 12. Cloud Model Policy – per-provider escalation
+
+### 12.1 Princip
+
+Orchestrátor **vždy zkusí lokální Ollama model nejdříve**. Cloud modely se použijí pouze při:
+- Selhání lokálního modelu (HeartbeatTimeout, prázdná odpověď, error)
+- Kontextu > 49k tokenů (nelze lokálně)
+
+### 12.2 Tři cloud provideři
+
+| Provider | Tier | Síla | Kdy |
+|----------|------|------|-----|
+| **Anthropic** (Claude) | `CLOUD_REASONING` | Reasoning, analýza, architektura | `architecture`, `design_review`, `decomposition` |
+| **OpenAI** (GPT-4o) | `CLOUD_CODING` | Kód, strukturovaný výstup | `code_change`, `planning`, default |
+| **Gemini** (2.5 Pro) | `CLOUD_LARGE_CONTEXT` | 1M token context | POUZE kontext > 49k tokenů |
+
+### 12.3 Nastavení
+
+- `CloudModelPolicy` — 3 booleany: `autoUseAnthropic`, `autoUseOpenai`, `autoUseGemini`
+- **Client level**: výchozí pro všechny projekty klienta
+- **Project level**: nullable override (null = dědí z klienta)
+- Předáváno v `ProjectRulesDto` → Python `ProjectRules`
+
+### 12.4 Rozhodovací flow
+
+```
+LLM volání v nodu
+  │
+  ├─ kontext ≤ 49k → LOCAL tier
+  │     ├─ úspěch → hotovo
+  │     └─ selhání
+  │           ├─ prompt říká "použi cloud" → auto-eskalace (všichni konfigurovaní)
+  │           ├─ auto_use_* zapnuto → auto-eskalace (příslušný provider)
+  │           ├─ API klíč existuje → interrupt() zeptá se uživatele
+  │           └─ žádné klíče → error
+  │
+  └─ kontext > 49k → nelze lokálně
+        ├─ auto_use_gemini → auto CLOUD_LARGE_CONTEXT
+        ├─ prompt říká "použi cloud" → auto CLOUD_LARGE_CONTEXT
+        ├─ google_api_key existuje → interrupt() zeptá se
+        └─ žádný Gemini klíč → error
+
+```
+
+### 12.5 Klíčové funkce (nodes.py)
+
+- `_detect_cloud_prompt(query)` — detekce "použi cloud" v dotazu
+- `_auto_providers(rules)` — set auto-povolených providerů z ProjectRules
+- `_llm_with_cloud_fallback(state, messages, ...)` — hlavní helper: local → cloud fallback
+- `_escalate_to_cloud(task, auto_providers, ...)` — auto/interrupt logika
+
+### 12.6 Konfigurace (config.py)
+
+```python
+openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+default_openai_model: str = os.getenv("DEFAULT_OPENAI_MODEL", "gpt-4o")
+```
+
+### 12.7 Interrupt pro cloud schválení
+
+Existující `ApprovalNotificationDialog` zvládne `action: "cloud_model"` automaticky:
+- Popis: "Lokální model selhal: ...\nPovolit použití cloud modelu Anthropic Claude (reasoning)?"
+- Uživatel schválí/zamítne → resume flow pokračuje

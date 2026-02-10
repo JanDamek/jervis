@@ -35,6 +35,7 @@ data class ClientDocument(
      * Projects can override these with their own capability assignments.
      */
     val connectionCapabilities: List<ClientConnectionCapability> = emptyList(),
+    val cloudModelPolicy: CloudModelPolicy = CloudModelPolicy(),
 )
 
 /**

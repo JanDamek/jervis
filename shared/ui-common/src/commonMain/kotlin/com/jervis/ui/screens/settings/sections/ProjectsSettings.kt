@@ -163,6 +163,16 @@ internal fun ProjectEditForm(
     var gitCommitGpgSign by remember { mutableStateOf(project.gitCommitGpgSign ?: false) }
     var gitCommitGpgKeyId by remember { mutableStateOf(project.gitCommitGpgKeyId ?: "") }
 
+    // Cloud model policy override
+    var overrideCloudPolicy by remember {
+        mutableStateOf(
+            project.autoUseAnthropic != null || project.autoUseOpenai != null || project.autoUseGemini != null,
+        )
+    }
+    var autoUseAnthropic by remember { mutableStateOf(project.autoUseAnthropic ?: false) }
+    var autoUseOpenai by remember { mutableStateOf(project.autoUseOpenai ?: false) }
+    var autoUseGemini by remember { mutableStateOf(project.autoUseGemini ?: false) }
+
     val scope = rememberCoroutineScope()
 
     // Load client, groups and connections
@@ -255,6 +265,9 @@ internal fun ProjectEditForm(
                     gitCommitCommitterEmail = if (useCustomGitConfig) gitCommitCommitterEmail.ifBlank { null } else null,
                     gitCommitGpgSign = if (useCustomGitConfig) gitCommitGpgSign else null,
                     gitCommitGpgKeyId = if (useCustomGitConfig) gitCommitGpgKeyId.ifBlank { null } else null,
+                    autoUseAnthropic = if (overrideCloudPolicy) autoUseAnthropic else null,
+                    autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
+                    autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
                 ),
             )
         },
@@ -437,6 +450,48 @@ internal fun ProjectEditForm(
                             onGpgSignChange = { gitCommitGpgSign = it },
                             gpgKeyId = gitCommitGpgKeyId,
                             onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                        )
+                    }
+                }
+
+                JSection(title = "Cloud modely – přepsání") {
+                    Text(
+                        "Standardně se používá konfigurace z klienta. Zde můžete přepsat pro tento projekt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    JCheckboxRow(
+                        label = "Přepsat konfiguraci klienta",
+                        checked = overrideCloudPolicy,
+                        onCheckedChange = {
+                            overrideCloudPolicy = it
+                            if (!it) {
+                                autoUseAnthropic = false
+                                autoUseOpenai = false
+                                autoUseGemini = false
+                            }
+                        },
+                    )
+
+                    if (overrideCloudPolicy) {
+                        Spacer(Modifier.height(12.dp))
+                        JCheckboxRow(
+                            label = "Anthropic (Claude) – reasoning, analýza, architektura",
+                            checked = autoUseAnthropic,
+                            onCheckedChange = { autoUseAnthropic = it },
+                        )
+                        JCheckboxRow(
+                            label = "OpenAI (GPT-4o) – editace kódu, strukturovaný výstup",
+                            checked = autoUseOpenai,
+                            onCheckedChange = { autoUseOpenai = it },
+                        )
+                        JCheckboxRow(
+                            label = "Google Gemini – pouze pro extrémní kontext (>49k tokenů)",
+                            checked = autoUseGemini,
+                            onCheckedChange = { autoUseGemini = it },
                         )
                     }
                 }

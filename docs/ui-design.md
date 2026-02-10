@@ -52,6 +52,13 @@ All new UI work MUST follow these patterns to keep the app visually and ergonomi
      ```
    - **Inheritance**: If project doesn't have a capability configured, it inherits from client
    - **Can override client's Git commit configuration** (when `null`, inherits from client)
+   - **Can override client's Cloud Model Policy** (`cloudModelPolicy: CloudModelPolicy?`, `null` = inherit)
+
+5. **CloudModelPolicy** – Per-provider auto-escalation toggles
+   - `autoUseAnthropic: Boolean` – auto-escalate to Anthropic Claude on local failure
+   - `autoUseOpenai: Boolean` – auto-escalate to OpenAI GPT-4o on local failure
+   - `autoUseGemini: Boolean` – auto-escalate to Gemini for large context (>49k tokens)
+   - Client level: defaults for all projects. Project level: nullable override.
 
 **UI Workflow:**
 1. In **Settings -> Pripojeni** create technical connections (e.g., GitHub, Atlassian)
@@ -62,6 +69,7 @@ All new UI work MUST follow these patterns to keep the app visually and ergonomi
    - Override client's capability configuration if needed
    - Select specific resource (repo, Jira project, Confluence space) for each capability
 4. Project can override client's Git configuration (checkbox "Prepsat konfiguraci klienta")
+5. Cloud model policy: In client form "Cloud modely" section — 3 checkboxes for auto-escalation. Project can override with "Přepsat konfiguraci klienta" checkbox.
 
 ---
 
@@ -200,7 +208,7 @@ Foundation files are in the `design/` directory (see Section 10).
 
 | Component | Purpose | Key params |
 |-----------|---------|------------|
-| `JTopBar` | Navigation bar with IconButton + ArrowBack icon; uses `surfaceVariant` background for visual separation from content in both light and dark themes | `title`, `onBack?`, `actions` |
+| `JTopBar` | Navigation bar with IconButton + ArrowBack icon; uses `surfaceContainerHigh` background for subtle elevation in dark theme | `title`, `onBack?`, `actions` |
 | `JSection` | Visual grouping with title and padding | `title`, `content` |
 | `JActionBar` | Right-aligned action buttons bar | `modifier`, `content: RowScope` |
 | `JVerticalSplitLayout` | Two-pane vertical split with draggable handle | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
@@ -210,7 +218,7 @@ Foundation files are in the `design/` directory (see Section 10).
 | Component | Purpose | Key params |
 |-----------|---------|------------|
 | `JCenteredLoading` | Centered circular progress | -- |
-| `JErrorState` | Error message + retry button | `message`, `onRetry?` |
+| `JErrorState` | Error message (selectable via `SelectionContainer`) + retry button | `message`, `onRetry?` |
 | `JEmptyState` | Empty data state with icon (2 overloads) | `message`, `icon` |
 
 ### 3.3) Adaptive Layout Components
@@ -645,6 +653,14 @@ Shows live agent status card, two separate pending queues (Frontend/Backend), an
 | |                task preview text...        Fronta: 1       | |
 | +------------------------------------------------------------+ |
 |                                                               |
+| +-- OrchestratorProgressCard (if active) -------------------+ |
+| | Orchestrace                          Cil 1/3              | |
+| | [spinner] Planovani kroku                                 | |
+| |           Analyzing project structure...                   | |
+| | Krok 2/5                                      35%         | |
+| | [===========                              ] progress bar  | |
+| +------------------------------------------------------------+ |
+|                                                               |
 | Frontend (2)                  <- FOREGROUND queue             |
 | +-- QueueItemRow ----------------------------------------+   |
 | | ... ProjectX       [up] [down] [->]                    |   |
@@ -829,7 +845,7 @@ Same layout but chat panel has fixed 180dp height (no interactive splitter).
 | TRANSCRIBING | `JCenteredLoading` + text "Probiha prepis..." |
 | CORRECTING | `JCenteredLoading` + text "Probiha korekce prepisu..." |
 | CORRECTION_REVIEW | `CorrectionQuestionsCard` + best-effort corrected transcript |
-| FAILED | Error message in `error` color |
+| FAILED | Error card (`errorContainer`) with selectable text + "Přepsat znovu" button + "Zamítnout" (dismiss, only if transcript exists) |
 | TRANSCRIBED | Raw transcript only (via `TranscriptPanel`) |
 | CORRECTED / INDEXED | `FilterChip` toggle (Opraveny / Surovy) + "Prepsat znovu" button + `TranscriptPanel` |
 
@@ -852,6 +868,7 @@ Same layout but chat panel has fixed 180dp height (no interactive splitter).
 - Play button next to "Original:" label plays segment audio range
 - Editable `JTextField` pre-filled with **corrected text** (from `correctedTranscriptSegments` if exists, else raw)
 - Confirm button enabled only when text is non-blank and differs from initial
+- "Přepsat segment" button: retranscribes this segment via Whisper (calls `retranscribeSegments` RPC)
 - On confirm: auto-switches to "Opraveny" (corrected) view via `showCorrected = true`
 - State: `SegmentEditState(segmentIndex, originalText, editableText, startSec, endSec)`
 
@@ -1245,8 +1262,46 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- CopyableTextCard.kt          <- CopyableTextCard (SelectionContainer + outlinedCardBorder)
 |   +-- BrowserHelper.kt             <- expect fun openUrlInBrowser
 |   +-- FilePickers.kt               <- expect fun pickTextFileContent
-+-- App.kt                           <- Root composable (JervisTheme wrapper, global SelectionContainer)
++-- App.kt                           <- Root composable (JervisTheme wrapper)
 ```
+
+## 11) Cloud Model Policy Settings
+
+Cloud model auto-escalation toggles in client/project edit forms.
+
+### Client level (defaults)
+
+In `ClientEditForm` (`ClientsSettings.kt`), section "Cloud modely":
+
+```kotlin
+JSection(title = "Cloud modely") {
+    Text("Automatická eskalace na cloud modely při selhání lokálního modelu.")
+    JCheckboxRow(label = "Anthropic (Claude) – reasoning, analýza", checked/onChange)
+    JCheckboxRow(label = "OpenAI (GPT-4o) – editace kódu", checked/onChange)
+    JCheckboxRow(label = "Google Gemini – extrémní kontext (>49k)", checked/onChange)
+}
+```
+
+DTO fields: `autoUseAnthropic: Boolean`, `autoUseOpenai: Boolean`, `autoUseGemini: Boolean`
+
+### Project level (override)
+
+In `ProjectEditForm` (`ProjectsSettings.kt`), section "Cloud modely – přepsání":
+
+```kotlin
+JSection(title = "Cloud modely – přepsání") {
+    Text("Standardně se používá konfigurace z klienta.")
+    JCheckboxRow(label = "Přepsat konfiguraci klienta", checked = overrideCloudPolicy)
+    if (overrideCloudPolicy) {
+        // Same 3 checkboxes as client form
+    }
+}
+```
+
+DTO fields: `autoUseAnthropic: Boolean?`, `autoUseOpenai: Boolean?`, `autoUseGemini: Boolean?`
+(null = inherit from client)
+
+When "Přepsat konfiguraci klienta" unchecked → all nulls sent → entity stores `cloudModelPolicy = null`.
 
 **Deleted files** (no longer exist):
 - `components/SettingComponents.kt` -- SettingCard, StatusIndicator, ActionRibbon replaced by JCard, JStatusBadge, JDetailScreen

@@ -27,6 +27,10 @@ data class ProjectDto(
     // Multi-resource model with N:M linking
     val resources: List<ProjectResourceDto> = emptyList(),
     val resourceLinks: List<ResourceLinkDto> = emptyList(),
+    // Cloud model policy override (null = inherit from client)
+    val autoUseAnthropic: Boolean? = null,
+    val autoUseOpenai: Boolean? = null,
+    val autoUseGemini: Boolean? = null,
 )
 
 /**

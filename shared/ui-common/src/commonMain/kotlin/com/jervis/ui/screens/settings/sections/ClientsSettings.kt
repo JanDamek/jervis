@@ -368,6 +368,11 @@ private fun ClientEditForm(
     var gitCommitGpgSign by remember { mutableStateOf(client.gitCommitGpgSign) }
     var gitCommitGpgKeyId by remember { mutableStateOf(client.gitCommitGpgKeyId ?: "") }
 
+    // Cloud model policy
+    var autoUseAnthropic by remember { mutableStateOf(client.autoUseAnthropic) }
+    var autoUseOpenai by remember { mutableStateOf(client.autoUseOpenai) }
+    var autoUseGemini by remember { mutableStateOf(client.autoUseGemini) }
+
     // Connections
     var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toMutableSet()) }
     var availableConnections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
@@ -482,6 +487,9 @@ private fun ClientEditForm(
                     gitCommitCommitterEmail = gitCommitCommitterEmail.ifBlank { null },
                     gitCommitGpgSign = gitCommitGpgSign,
                     gitCommitGpgKeyId = gitCommitGpgKeyId.ifBlank { null },
+                    autoUseAnthropic = autoUseAnthropic,
+                    autoUseOpenai = autoUseOpenai,
+                    autoUseGemini = autoUseGemini,
                 ),
             )
         },
@@ -834,6 +842,30 @@ private fun ClientEditForm(
                         onGpgSignChange = { gitCommitGpgSign = it },
                         gpgKeyId = gitCommitGpgKeyId,
                         onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                    )
+                }
+
+                JSection(title = "Cloud modely") {
+                    Text(
+                        "Automatická eskalace na cloud modely při selhání lokálního modelu.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    JCheckboxRow(
+                        label = "Anthropic (Claude) – reasoning, analýza, architektura",
+                        checked = autoUseAnthropic,
+                        onCheckedChange = { autoUseAnthropic = it },
+                    )
+                    JCheckboxRow(
+                        label = "OpenAI (GPT-4o) – editace kódu, strukturovaný výstup",
+                        checked = autoUseOpenai,
+                        onCheckedChange = { autoUseOpenai = it },
+                    )
+                    JCheckboxRow(
+                        label = "Google Gemini – pouze pro extrémní kontext (>49k tokenů)",
+                        checked = autoUseGemini,
+                        onCheckedChange = { autoUseGemini = it },
                     )
                 }
 

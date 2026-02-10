@@ -67,6 +67,136 @@ def select_agent(complexity: Complexity, preference: str = "auto") -> AgentType:
     return AgentType.CLAUDE
 
 
+# --- Cloud escalation helpers ---
+
+_CLOUD_KEYWORDS = [
+    "use cloud", "použi cloud", "použij cloud",
+    "cloud model", "cloud modely",
+    "použij anthropic", "použi anthropic",
+    "použij openai", "použi openai",
+]
+
+
+def _detect_cloud_prompt(query: str) -> bool:
+    """Detect if user explicitly requested cloud model usage."""
+    return any(kw in query.lower() for kw in _CLOUD_KEYWORDS)
+
+
+def _auto_providers(rules: ProjectRules) -> set[str]:
+    """Build set of auto-enabled cloud providers from project rules."""
+    providers = set()
+    if rules.auto_use_anthropic:
+        providers.add("anthropic")
+    if rules.auto_use_openai:
+        providers.add("openai")
+    if rules.auto_use_gemini:
+        providers.add("gemini")
+    return providers
+
+
+async def _llm_with_cloud_fallback(
+    state: dict,
+    messages: list,
+    context_tokens: int = 0,
+    task_type: str = "general",
+    max_tokens: int = 8192,
+    temperature: float = 0.1,
+    tools: list | None = None,
+) -> object:
+    """Call LLM: local first, cloud fallback with policy checks."""
+    rules = ProjectRules(**state["rules"])
+    task = CodingTask(**state["task"])
+    allow_cloud_prompt = state.get("allow_cloud_prompt", False)
+    escalation = llm_provider.escalation
+
+    auto = _auto_providers(rules)
+    if allow_cloud_prompt:
+        auto = auto | escalation.get_available_providers()
+
+    # Pre-flight: context too large for local?
+    if context_tokens > 49_000:
+        return await _escalate_to_cloud(
+            task, auto, escalation, context_tokens, task_type,
+            messages, max_tokens, temperature, tools,
+            reason="Context příliš velký pro lokální model (>49k tokenů)",
+        )
+
+    # Try local
+    local_tier = escalation.select_local_tier(context_tokens)
+    try:
+        response = await llm_provider.completion(
+            messages=messages, tier=local_tier,
+            max_tokens=max_tokens, temperature=temperature, tools=tools,
+        )
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            raise ValueError("Empty response from local model")
+        return response
+    except Exception as e:
+        logger.warning("Local LLM failed (tier=%s): %s", local_tier.value, e)
+        return await _escalate_to_cloud(
+            task, auto, escalation, context_tokens, task_type,
+            messages, max_tokens, temperature, tools,
+            reason=f"Lokální model selhal: {str(e)[:200]}",
+        )
+
+
+async def _escalate_to_cloud(
+    task: CodingTask,
+    auto_providers: set[str],
+    escalation,
+    context_tokens: int,
+    task_type: str,
+    messages: list,
+    max_tokens: int,
+    temperature: float,
+    tools: list | None,
+    reason: str,
+) -> object:
+    """Escalate to cloud with auto/interrupt logic."""
+
+    # 1. Try auto-enabled providers
+    auto_tier = escalation.suggest_cloud_tier(context_tokens, auto_providers, task_type)
+    if auto_tier:
+        logger.info("Auto-escalating to %s (auto_providers=%s)", auto_tier.value, auto_providers)
+        return await llm_provider.completion(
+            messages=messages, tier=auto_tier,
+            max_tokens=max_tokens, temperature=temperature, tools=tools,
+        )
+
+    # 2. Check if any provider is available at all (has API key)
+    available_tier = escalation.best_available_cloud_tier(context_tokens, task_type)
+    if not available_tier:
+        raise RuntimeError(
+            f"{reason}. Žádný cloud provider není nakonfigurován (chybí API klíče)."
+        )
+
+    # 3. Ask user via interrupt
+    tier_label = {
+        ModelTier.CLOUD_REASONING: "Anthropic Claude (reasoning)",
+        ModelTier.CLOUD_CODING: "OpenAI GPT-4o (code)",
+        ModelTier.CLOUD_LARGE_CONTEXT: "Google Gemini (large context)",
+        ModelTier.CLOUD_PREMIUM: "Anthropic Opus (premium)",
+    }.get(available_tier, available_tier.value)
+
+    approval = interrupt({
+        "type": "approval_request",
+        "action": "cloud_model",
+        "description": f"{reason}\nPovolit použití cloud modelu {tier_label}?",
+        "task_id": task.id,
+        "cloud_tier": available_tier.value,
+    })
+
+    if not approval.get("approved", False):
+        raise RuntimeError(f"{reason}. Uživatel zamítl eskalaci na cloud.")
+
+    logger.info("Cloud escalation approved by user → %s", available_tier.value)
+    return await llm_provider.completion(
+        messages=messages, tier=available_tier,
+        max_tokens=max_tokens, temperature=temperature, tools=tools,
+    )
+
+
 # --- Node: clarify ---
 
 async def clarify(state: dict) -> dict:
@@ -100,12 +230,10 @@ async def clarify(state: dict) -> dict:
     if env_data:
         env_summary = f"\nEnvironment: {json.dumps(env_data, default=str)[:500]}"
 
-    # 3. Ask LLM to assess complexity and whether clarification is needed
-    tier = llm_provider.select_tier(
-        task_type="architecture",
-        complexity=Complexity.COMPLEX,
-    )
+    # 3. Detect cloud prompt for downstream nodes
+    allow_cloud_prompt = _detect_cloud_prompt(task.query)
 
+    # 4. Ask LLM to assess complexity and whether clarification is needed
     context_section = ""
     if project_context:
         # Truncate to avoid overflowing context window
@@ -147,8 +275,9 @@ async def clarify(state: dict) -> dict:
         },
     ]
 
-    response = await llm_provider.completion(
-        messages=messages, tier=tier, max_tokens=4096,
+    response = await _llm_with_cloud_fallback(
+        state={**state, "allow_cloud_prompt": allow_cloud_prompt},
+        messages=messages, task_type="clarification", max_tokens=4096,
     )
     content = response.choices[0].message.content
 
@@ -166,6 +295,7 @@ async def clarify(state: dict) -> dict:
     result: dict = {
         "project_context": project_context,
         "task_complexity": complexity,
+        "allow_cloud_prompt": allow_cloud_prompt,
     }
 
     if not needs_clarification or not questions_raw:
@@ -226,11 +356,6 @@ async def decompose(state: dict) -> dict:
         complexity = Complexity(raw_complexity)
     except ValueError:
         complexity = Complexity.MEDIUM
-
-    tier = llm_provider.select_tier(
-        task_type="decomposition",
-        complexity=complexity,
-    )
 
     # Build context sections for the prompt
     context_parts: list[str] = []
@@ -297,8 +422,8 @@ async def decompose(state: dict) -> dict:
         },
     ]
 
-    response = await llm_provider.completion(
-        messages=messages, tier=tier, max_tokens=8192,
+    response = await _llm_with_cloud_fallback(
+        state=state, messages=messages, task_type="decomposition", max_tokens=8192,
     )
     content = response.choices[0].message.content
 
@@ -410,11 +535,6 @@ async def plan_steps(state: dict) -> dict:
     idx = state["current_goal_index"]
     goal = goals[idx]
 
-    tier = llm_provider.select_tier(
-        task_type="planning",
-        complexity=goal.complexity,
-    )
-
     agent_type = select_agent(goal.complexity, task.agent_preference)
 
     # Build context sections
@@ -476,8 +596,8 @@ async def plan_steps(state: dict) -> dict:
         },
     ]
 
-    response = await llm_provider.completion(
-        messages=messages, tier=tier, max_tokens=8192,
+    response = await _llm_with_cloud_fallback(
+        state=state, messages=messages, task_type="planning", max_tokens=8192,
     )
     content = response.choices[0].message.content
 

@@ -6,6 +6,7 @@ import com.jervis.dto.ClientConnectionCapabilityDto
 import com.jervis.dto.ClientDto
 import com.jervis.entity.ClientConnectionCapability
 import com.jervis.entity.ClientDocument
+import com.jervis.entity.CloudModelPolicy
 import com.jervis.entity.GitCommitConfig
 import org.bson.types.ObjectId
 
@@ -26,6 +27,9 @@ fun ClientDocument.toDto(): ClientDto =
         gitCommitGpgSign = this.gitCommitConfig?.gpgSign ?: false,
         gitCommitGpgKeyId = this.gitCommitConfig?.gpgKeyId,
         connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
+        autoUseAnthropic = this.cloudModelPolicy.autoUseAnthropic,
+        autoUseOpenai = this.cloudModelPolicy.autoUseOpenai,
+        autoUseGemini = this.cloudModelPolicy.autoUseGemini,
     )
 
 fun ClientDto.toDocument(): ClientDocument {
@@ -56,6 +60,11 @@ fun ClientDto.toDocument(): ClientDocument {
         connectionIds = this.connectionIds.map { ObjectId(it) },
         gitCommitConfig = gitCommitConfig,
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
+        cloudModelPolicy = CloudModelPolicy(
+            autoUseAnthropic = this.autoUseAnthropic,
+            autoUseOpenai = this.autoUseOpenai,
+            autoUseGemini = this.autoUseGemini,
+        ),
     )
 }
 

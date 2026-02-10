@@ -30,7 +30,7 @@ data class ProjectDocument(
     val description: String? = null,
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     val buildConfig: ProjectBuildConfig? = null,
-    val costPolicy: ProjectCostPolicy = ProjectCostPolicy(),
+    val cloudModelPolicy: CloudModelPolicy? = null, // null = inherit from client
     val gitCommitConfig: GitCommitConfig? = null, // Overrides client's config
     /**
      * Connection capabilities assigned to this project.
@@ -42,16 +42,6 @@ data class ProjectDocument(
     val resources: List<ProjectResource> = emptyList(),
     /** N:M links between resources (e.g., repo ↔ issue tracker) */
     val resourceLinks: List<ResourceLink> = emptyList(),
-)
-
-/**
- * Budget and model routing policy for a project.
- */
-data class ProjectCostPolicy(
-    val allowCloudModels: Boolean = false,
-    val monthlyBudgetLimit: Double = 0.0, // 0.0 = unlimited or inherited
-    val allowedCloudProviders: List<String> = emptyList(), // e.g. ["anthropic", "openai", "google"]
-    val requireApprovalForCloudSpend: Boolean = true,
 )
 
 /**
