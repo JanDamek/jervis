@@ -174,8 +174,7 @@ class ConnectionRpcImpl(
                 ?: throw IllegalArgumentException("Connection not found: $id")
 
         return try {
-            val client = providerRegistry.getClient(connection.provider)
-            val result = client.testConnection(connection.toTestRequest())
+            val result = providerRegistry.withClient(connection.provider) { it.testConnection(connection.toTestRequest()) }
             connection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
             connectionService.save(connection)
             result
@@ -205,8 +204,7 @@ class ConnectionRpcImpl(
                 ?: throw IllegalArgumentException("Connection not found: $connectionId")
 
         return try {
-            val client = providerRegistry.getClient(connection.provider)
-            client.listResources(connection.toListResourcesRequest(capability))
+            providerRegistry.withClient(connection.provider) { it.listResources(connection.toListResourcesRequest(capability)) }
         } catch (e: Exception) {
             logger.error(e) { "Failed to list resources for connection ${connection.id}" }
             emptyList()

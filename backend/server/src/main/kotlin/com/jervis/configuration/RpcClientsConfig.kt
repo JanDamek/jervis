@@ -29,6 +29,7 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
+import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import kotlin.time.Duration.Companion.seconds
@@ -38,6 +39,8 @@ import kotlin.time.Duration.Companion.seconds
 class RpcClientsConfig(
     private val endpoints: EndpointProperties,
 ) {
+    private val logger = LoggerFactory.getLogger(RpcClientsConfig::class.java)
+
     private var _tikaClient: ITikaClient? = null
     private var _knowledgeService: KnowledgeService? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
@@ -71,55 +74,79 @@ class RpcClientsConfig(
     @Bean
     fun tikaClient(): ITikaClient =
         object : ITikaClient {
-            override suspend fun process(request: com.jervis.common.dto.TikaProcessRequest) = getTika().process(request)
+            override suspend fun process(request: com.jervis.common.dto.TikaProcessRequest) =
+                withAutoReconnect({ _tikaClient = null }) { getTika().process(request) }
         }
 
     @Bean
     fun atlassianClient(): IAtlassianClient =
         object : IAtlassianClient {
-            override suspend fun getMyself(request: AtlassianMyselfRequest) = getAtlassian().getMyself(request)
-            override suspend fun searchJiraIssues(request: JiraSearchRequest) = getAtlassian().searchJiraIssues(request)
-            override suspend fun getJiraIssue(request: JiraIssueRequest) = getAtlassian().getJiraIssue(request)
-            override suspend fun searchConfluencePages(request: ConfluenceSearchRequest) = getAtlassian().searchConfluencePages(request)
-            override suspend fun getConfluencePage(request: ConfluencePageRequest) = getAtlassian().getConfluencePage(request)
-            override suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest) = getAtlassian().downloadJiraAttachment(request)
-            override suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest) = getAtlassian().downloadConfluenceAttachment(request)
+            override suspend fun getMyself(request: AtlassianMyselfRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().getMyself(request) }
+            override suspend fun searchJiraIssues(request: JiraSearchRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().searchJiraIssues(request) }
+            override suspend fun getJiraIssue(request: JiraIssueRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().getJiraIssue(request) }
+            override suspend fun searchConfluencePages(request: ConfluenceSearchRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().searchConfluencePages(request) }
+            override suspend fun getConfluencePage(request: ConfluencePageRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().getConfluencePage(request) }
+            override suspend fun downloadJiraAttachment(request: JiraAttachmentDownloadRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().downloadJiraAttachment(request) }
+            override suspend fun downloadConfluenceAttachment(request: ConfluenceAttachmentDownloadRequest) =
+                withAutoReconnect({ _atlassianClient = null }) { getAtlassian().downloadConfluenceAttachment(request) }
         }
 
     @Bean
     fun bugTrackerClient(): IBugTrackerClient =
         object : IBugTrackerClient {
-            override suspend fun getUser(request: BugTrackerUserRequest) = getBugTracker().getUser(request)
-            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getBugTracker().searchIssues(request)
-            override suspend fun getIssue(request: BugTrackerIssueRequest) = getBugTracker().getIssue(request)
-            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getBugTracker().listProjects(request)
+            override suspend fun getUser(request: BugTrackerUserRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().getUser(request) }
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().searchIssues(request) }
+            override suspend fun getIssue(request: BugTrackerIssueRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().getIssue(request) }
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().listProjects(request) }
         }
 
     @Bean
     fun githubBugTrackerClient(): IBugTrackerClient =
         object : IBugTrackerClient {
-            override suspend fun getUser(request: BugTrackerUserRequest) = getGitHubBugTracker().getUser(request)
-            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getGitHubBugTracker().searchIssues(request)
-            override suspend fun getIssue(request: BugTrackerIssueRequest) = getGitHubBugTracker().getIssue(request)
-            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getGitHubBugTracker().listProjects(request)
+            override suspend fun getUser(request: BugTrackerUserRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().getUser(request) }
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().searchIssues(request) }
+            override suspend fun getIssue(request: BugTrackerIssueRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().getIssue(request) }
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().listProjects(request) }
         }
 
     @Bean
     fun gitlabBugTrackerClient(): IBugTrackerClient =
         object : IBugTrackerClient {
-            override suspend fun getUser(request: BugTrackerUserRequest) = getGitLabBugTracker().getUser(request)
-            override suspend fun searchIssues(request: BugTrackerSearchRequest) = getGitLabBugTracker().searchIssues(request)
-            override suspend fun getIssue(request: BugTrackerIssueRequest) = getGitLabBugTracker().getIssue(request)
-            override suspend fun listProjects(request: BugTrackerProjectsRequest) = getGitLabBugTracker().listProjects(request)
+            override suspend fun getUser(request: BugTrackerUserRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().getUser(request) }
+            override suspend fun searchIssues(request: BugTrackerSearchRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().searchIssues(request) }
+            override suspend fun getIssue(request: BugTrackerIssueRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().getIssue(request) }
+            override suspend fun listProjects(request: BugTrackerProjectsRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().listProjects(request) }
         }
 
     @Bean
     fun wikiClient(): IWikiClient =
         object : IWikiClient {
-            override suspend fun getUser(request: WikiUserRequest) = getWiki().getUser(request)
-            override suspend fun searchPages(request: WikiSearchRequest) = getWiki().searchPages(request)
-            override suspend fun getPage(request: WikiPageRequest) = getWiki().getPage(request)
-            override suspend fun listSpaces(request: WikiSpacesRequest) = getWiki().listSpaces(request)
+            override suspend fun getUser(request: WikiUserRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().getUser(request) }
+            override suspend fun searchPages(request: WikiSearchRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().searchPages(request) }
+            override suspend fun getPage(request: WikiPageRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().getPage(request) }
+            override suspend fun listSpaces(request: WikiSpacesRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().listSpaces(request) }
         }
 
     @Bean
@@ -176,6 +203,20 @@ class RpcClientsConfig(
     private fun getWiki(): IWikiClient =
         _wikiClient ?: synchronized(this) {
             _wikiClient ?: createRpcClient<IWikiClient>(atlassianUrl()).also { _wikiClient = it }
+        }
+
+    private suspend inline fun <T> withAutoReconnect(
+        crossinline resetter: () -> Unit,
+        crossinline block: suspend () -> T,
+    ): T =
+        try {
+            block()
+        } catch (e: IllegalStateException) {
+            if ("cancelled" in (e.message ?: "").lowercase()) {
+                logger.warn("RpcClient cancelled, reconnecting: ${e.message}")
+                resetter()
+                block()
+            } else throw e
         }
 
     private inline fun <@Rpc reified T : Any> createRpcClient(baseUrl: String): T {

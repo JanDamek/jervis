@@ -65,6 +65,19 @@ class ProviderRegistry(
 
     fun getClientOrNull(provider: ProviderEnum): IProviderService? = clients[provider]
 
+    suspend fun <T> withClient(provider: ProviderEnum, block: suspend (IProviderService) -> T): T {
+        val client = getClient(provider)
+        return try {
+            block(client)
+        } catch (e: IllegalStateException) {
+            if ("cancelled" in (e.message ?: "").lowercase()) {
+                logger.warn { "RpcClient cancelled for $provider, reconnecting" }
+                reconnect(provider)
+                block(getClient(provider))
+            } else throw e
+        }
+    }
+
     fun getDescriptor(provider: ProviderEnum): ProviderDescriptor =
         descriptors[provider] ?: throw IllegalStateException("Provider $provider not registered. Available: ${descriptors.keys}")
 
