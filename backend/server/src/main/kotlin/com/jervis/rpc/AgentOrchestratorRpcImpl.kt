@@ -299,9 +299,12 @@ class AgentOrchestratorRpcImpl(
                     when (currentState) {
                         com.jervis.dto.TaskStateEnum.DISPATCHED_GPU,
                         com.jervis.dto.TaskStateEnum.ERROR,
+                        com.jervis.dto.TaskStateEnum.READY_FOR_QUALIFICATION,
+                        com.jervis.dto.TaskStateEnum.QUALIFYING,
                         -> {
+                            // FOREGROUND chat tasks skip qualification — go directly to GPU
                             logger.info {
-                                "RESETTING_COMPLETED_TASK | taskId=$currentTaskId | oldState=$currentState | session=$sessionKey"
+                                "RESETTING_TASK_TO_GPU | taskId=$currentTaskId | oldState=$currentState | session=$sessionKey"
                             }
                             com.jervis.dto.TaskStateEnum.READY_FOR_GPU
                         }
@@ -319,8 +322,9 @@ class AgentOrchestratorRpcImpl(
                         }
 
                         else -> {
-                            logger.warn { "TASK_STILL_PROCESSING | taskId=$currentTaskId | state=$currentState | session=$sessionKey" }
-                            currentState
+                            // For any other state (RUNNING, etc.), force reset to READY_FOR_GPU
+                            logger.warn { "FORCE_RESETTING_TASK | taskId=$currentTaskId | oldState=$currentState | session=$sessionKey" }
+                            com.jervis.dto.TaskStateEnum.READY_FOR_GPU
                         }
                     }
 
