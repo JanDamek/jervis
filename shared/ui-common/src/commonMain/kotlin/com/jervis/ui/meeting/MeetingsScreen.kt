@@ -33,6 +33,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -1093,7 +1094,7 @@ private fun AgentChatPanel(
     val displayMessages = remember(chatHistory, pendingMessage) {
         val messages = chatHistory.toMutableList()
         // Add pending message only if it's not already persisted
-        if (pendingMessage != null && messages.none { it.role == "user" && it.text == pendingMessage.text && it.timestamp == pendingMessage.timestamp }) {
+        if (pendingMessage != null && messages.none { it.role == com.jervis.dto.meeting.CorrectionChatRole.USER && it.text == pendingMessage.text && it.timestamp == pendingMessage.timestamp }) {
             messages.add(pendingMessage)
         }
         messages
@@ -1194,7 +1195,7 @@ private fun AgentChatPanel(
  */
 @Composable
 private fun ChatMessageBubble(message: CorrectionChatMessageDto) {
-    val isUser = message.role == "user"
+    val isUser = message.role == com.jervis.dto.meeting.CorrectionChatRole.USER
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1655,13 +1656,22 @@ private fun CorrectionQuestionsCard(
                         onClick = {
                             val answerDtos = questions.mapNotNull { q ->
                                 if (q.questionId !in confirmed.value) return@mapNotNull null
-                                val corrected = answers.value[q.questionId]?.trim()
-                                if (!corrected.isNullOrBlank()) {
+                                val rawAnswer = answers.value[q.questionId]?.trim()
+                                val isNevim = rawAnswer == "\u0000"
+                                if (isNevim) {
+                                    // "Nevim" → send empty corrected string
                                     CorrectionAnswerDto(
                                         questionId = q.questionId,
                                         segmentIndex = q.segmentIndex,
                                         original = q.originalText,
-                                        corrected = corrected,
+                                        corrected = "",
+                                    )
+                                } else if (!rawAnswer.isNullOrBlank()) {
+                                    CorrectionAnswerDto(
+                                        questionId = q.questionId,
+                                        segmentIndex = q.segmentIndex,
+                                        original = q.originalText,
+                                        corrected = rawAnswer,
                                     )
                                 } else {
                                     null
@@ -1743,6 +1753,7 @@ private fun CorrectionQuestionItem(
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val isNevim = currentAnswer == "\u0000"
     if (isConfirmed) {
         // Collapsed confirmed view — single row with answer summary
         Row(
@@ -1755,9 +1766,17 @@ private fun CorrectionQuestionItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "\"${question.originalText}\" → \"$currentAnswer\"",
+                    text = if (isNevim) {
+                        "\"${question.originalText}\" → přepíše se znovu"
+                    } else {
+                        "\"${question.originalText}\" → \"$currentAnswer\""
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isNevim) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1804,15 +1823,23 @@ private fun CorrectionQuestionItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
-                    value = currentAnswer,
+                    value = if (isNevim) "" else currentAnswer,
                     onValueChange = onAnswerChanged,
                     label = { Text("Správný tvar") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
+                OutlinedButton(
+                    onClick = {
+                        onAnswerChanged("\u0000")
+                        onConfirm()
+                    },
+                ) {
+                    Text("Nevím")
+                }
                 TextButton(
                     onClick = onConfirm,
-                    enabled = currentAnswer.isNotBlank(),
+                    enabled = currentAnswer.isNotBlank() && !isNevim,
                 ) {
                     Text("Potvrdit")
                 }

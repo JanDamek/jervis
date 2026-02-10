@@ -233,8 +233,34 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 9. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
 10. If questions exist: state → CORRECTION_REVIEW (best-effort corrections + questions stored)
 11. If no questions: state → CORRECTED
-12. User answers questions in UI → answers saved as KB correction rules → state reset to TRANSCRIBED → re-run
+12. User answers questions in UI:
+    - **All answers known** → saved as KB correction rules → state reset to TRANSCRIBED → full re-correction with new rules
+    - **Any "Nevím" (unknown) answers** → retranscribe + targeted correction flow (see below)
 13. Downstream indexing picks up CORRECTED meetings for KB ingestion
+
+### "Nevím" Re-transcription + Targeted Correction
+
+When user answers "Nevím" (I don't know) to correction questions, the system re-transcribes unclear audio:
+
+1. Known answers are saved as KB rules (same as before)
+2. State → CORRECTING
+3. Audio ranges ±10s around "Nevím" segments are extracted via ffmpeg (in Whisper container)
+4. Extracted audio re-transcribed with Whisper **large-v3, beam_size=10** (best CPU accuracy)
+5. Result segments merged: user corrections + new Whisper text + untouched segments
+6. Merged segments sent to Python `CorrectionAgent.correct_targeted()` — only retranscribed segments go through LLM
+7. State → CORRECTED (or CORRECTION_REVIEW if agent has new questions)
+
+**Whisper retranscription settings** (overrides global settings for maximum accuracy):
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| model | large-v3 | Best accuracy |
+| beam_size | 10 | Maximum search breadth |
+| vad_filter | true | Skip silence |
+| condition_on_previous_text | true | Use context |
+| no_speech_threshold | 0.3 | Lower = fewer skipped segments |
+
+**Error handling**: Connection errors reset to CORRECTION_REVIEW (preserves questions for retry). Other errors → FAILED.
 
 ### Liveness & Recovery
 
@@ -255,9 +281,12 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 
 | File | Purpose |
 |------|---------|
-| `backend/service-orchestrator/app/whisper/correction_agent.py` | Python correction agent — KB loading, LLM calls, interactive questions |
-| `backend/server/.../service/meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling |
-| `backend/server/.../configuration/PythonOrchestratorClient.kt` | REST client for Python correction endpoints |
+| `backend/service-orchestrator/app/whisper/correction_agent.py` | Python correction agent — KB loading, LLM calls, interactive questions, targeted correction |
+| `backend/service-orchestrator/app/main.py` | Python endpoints incl. `/correction/correct-targeted` |
+| `backend/server/.../service/meeting/TranscriptCorrectionService.kt` | Kotlin delegation to Python orchestrator, question handling, retranscribe+correct flow |
+| `backend/server/.../service/meeting/WhisperJobRunner.kt` | K8s Whisper jobs — includes `retranscribe()` for audio extraction + high-accuracy re-transcription |
+| `backend/service-whisper/whisper_runner.py` | Whisper transcription script — supports `extraction_ranges` for partial re-transcription |
+| `backend/server/.../configuration/PythonOrchestratorClient.kt` | REST client for Python correction endpoints incl. `correctTargeted()` |
 | `shared/common-api/.../service/ITranscriptCorrectionService.kt` | RPC interface for correction CRUD |
 | `shared/common-dto/.../dto/meeting/MeetingDtos.kt` | `MeetingStateEnum` (incl. CORRECTION_REVIEW), `CorrectionQuestionDto`, `CorrectionAnswerDto` |
 | `shared/ui-common/.../meeting/CorrectionsScreen.kt` | Corrections management UI |

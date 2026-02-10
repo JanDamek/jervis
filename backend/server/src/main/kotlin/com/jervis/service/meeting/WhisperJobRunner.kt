@@ -13,6 +13,7 @@ import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -143,6 +144,104 @@ class WhisperJobRunner(
                 Files.deleteIfExists(progressFile)
             }
         }
+    }
+
+    /**
+     * Re-transcribe specific audio ranges with high-accuracy settings.
+     *
+     * Used for "Nevim" (I don't know) answers: extracts audio around unclear segments,
+     * re-transcribes with large-v3 + beam_size=10 for best accuracy.
+     *
+     * @param audioFilePath Source audio file on PVC
+     * @param workspacePath Workspace directory on PVC
+     * @param extractionRanges Time ranges to extract: [{start, end, segment_index}, ...]
+     * @return WhisperResult with text_by_segment mapping segment indices to re-transcribed text
+     */
+    suspend fun retranscribe(
+        audioFilePath: String,
+        workspacePath: String,
+        extractionRanges: List<ExtractionRange>,
+        meetingId: String? = null,
+        clientId: String? = null,
+        projectId: String? = null,
+    ): WhisperResult {
+        val autoPrompt = buildInitialPromptFromCorrections(clientId, projectId)
+
+        val audioPath = Paths.get(audioFilePath)
+        val resultFileName = audioPath.fileName.toString().replace(".wav", "_retranscribe.json")
+        val resultFile = audioPath.parent.resolve(resultFileName)
+        val progressFile = audioPath.parent.resolve(resultFileName.replace("_retranscribe.json", "_retranscribe_progress.json"))
+
+        withContext(Dispatchers.IO) {
+            Files.createDirectories(resultFile.parent)
+            Files.deleteIfExists(resultFile)
+            Files.deleteIfExists(progressFile)
+        }
+
+        // Total extracted audio duration for timeout calculation
+        val totalExtractedSeconds = extractionRanges.sumOf { it.end - it.start }.toLong()
+        // large-v3 on CPU is ~5-10x real-time, use generous timeout
+        val timeoutSeconds = (totalExtractedSeconds * 15).coerceAtLeast(600L)
+
+        logger.info {
+            "Retranscription: ${extractionRanges.size} ranges, " +
+                "${totalExtractedSeconds}s extracted audio, timeout=${timeoutSeconds}s"
+        }
+
+        // Build extraction ranges JSON for whisper_runner.py
+        val rangesJson = extractionRanges.joinToString(",", "[", "]") { r ->
+            """{"start":${r.start},"end":${r.end},"segment_index":${r.segmentIndex}}"""
+        }
+
+        // Build options with high-accuracy overrides
+        val optionsJson = buildRetranscribeOptionsJson(progressFile.toString(), autoPrompt, rangesJson)
+
+        try {
+            if (IN_CLUSTER) {
+                runK8sJob(audioFilePath, workspacePath, timeoutSeconds, resultFile, progressFile, optionsJson, meetingId, clientId)
+            } else {
+                runLocal(audioFilePath, resultFile, optionsJson)
+            }
+
+            return withContext(Dispatchers.IO) {
+                if (Files.exists(resultFile)) {
+                    val content = Files.readString(resultFile)
+                    json.decodeFromString<WhisperResult>(content)
+                } else {
+                    WhisperResult(text = "", segments = emptyList(), error = "Retranscription completed but no result file found")
+                }
+            }
+        } finally {
+            withContext(Dispatchers.IO) {
+                Files.deleteIfExists(resultFile)
+                Files.deleteIfExists(progressFile)
+            }
+        }
+    }
+
+    /**
+     * Build options JSON for retranscription with high-accuracy overrides.
+     * Uses large-v3, beam_size=10, lower no_speech_threshold.
+     */
+    private fun buildRetranscribeOptionsJson(
+        progressFilePath: String,
+        initialPrompt: String?,
+        extractionRangesJson: String,
+    ): String {
+        val parts = mutableListOf<String>()
+        parts.add(""""task":"transcribe"""")
+        parts.add(""""model":"large-v3"""")
+        parts.add(""""beam_size":10""")
+        parts.add(""""vad_filter":true""")
+        parts.add(""""word_timestamps":false""")
+        parts.add(""""condition_on_previous_text":true""")
+        parts.add(""""no_speech_threshold":0.3""")
+        parts.add(""""progress_file":"${progressFilePath.replace("\"", "\\\"")}"""")
+        parts.add(""""extraction_ranges":$extractionRangesJson""")
+        initialPrompt?.let {
+            parts.add(""""initial_prompt":"${it.replace("\"", "\\\"")}"""")
+        }
+        return "{${parts.joinToString(",")}}"
     }
 
     /**
@@ -541,6 +640,9 @@ data class WhisperResult(
     val language: String? = null,
     val languageProbability: Double? = null,
     val duration: Double? = null,
+    /** Retranscription mode: segment_index → re-transcribed text */
+    @SerialName("text_by_segment")
+    val textBySegment: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -556,4 +658,11 @@ data class WhisperProgress(
     val segmentsDone: Int = 0,
     val elapsedSeconds: Double = 0.0,
     val updatedAt: Double = 0.0,
+)
+
+/** Time range for audio extraction (retranscription). */
+data class ExtractionRange(
+    val start: Double,
+    val end: Double,
+    val segmentIndex: Int,
 )

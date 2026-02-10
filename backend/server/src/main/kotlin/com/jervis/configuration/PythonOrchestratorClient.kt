@@ -223,6 +223,17 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
+     * Run targeted correction on retranscribed + user-corrected segments.
+     */
+    suspend fun correctTargeted(request: CorrectionTargetedRequestDto): CorrectionResultDto {
+        logger.info { "CORRECTION_TARGETED: ${request.segments.size} segments, ${request.retranscribedIndices.size} retranscribed" }
+        return client.post("$apiBaseUrl/correction/correct-targeted") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
      * Delete a correction rule from KB.
      */
     suspend fun deleteCorrection(sourceUrn: String): Boolean {
@@ -340,6 +351,16 @@ data class CorrectionChunkMetadataDto(
 @Serializable
 data class CorrectionDeleteRequestDto(
     @SerialName("sourceUrn") val sourceUrn: String,
+)
+
+@Serializable
+data class CorrectionTargetedRequestDto(
+    @SerialName("clientId") val clientId: String,
+    @SerialName("projectId") val projectId: String? = null,
+    @SerialName("meetingId") val meetingId: String? = null,
+    val segments: List<CorrectionSegmentDto>,
+    @SerialName("retranscribedIndices") val retranscribedIndices: List<Int>,
+    @SerialName("userCorrectedIndices") val userCorrectedIndices: Map<String, String> = emptyMap(),
 )
 
 @Serializable

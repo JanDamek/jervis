@@ -278,6 +278,75 @@ class CorrectionAgent:
         logger.warning("All instruction correction attempts failed")
         return {"segments": segments, "newRules": [], "status": "failed", "summary": "Oprava se nezdarila."}
 
+    async def correct_targeted(
+        self,
+        client_id: str,
+        project_id: str | None,
+        segments: list[dict],
+        retranscribed_indices: list[int],
+        user_corrected_indices: dict[str, str],
+        meeting_id: str | None = None,
+    ) -> dict:
+        """
+        Targeted correction: only process retranscribed segments via LLM.
+
+        User corrections are applied directly (no LLM needed).
+        Retranscribed segments are sent to the correction agent for cleanup.
+        Untouched segments pass through as-is.
+        """
+        # Apply user corrections directly
+        for idx_str, text in user_corrected_indices.items():
+            idx = int(idx_str)
+            if 0 <= idx < len(segments):
+                segments[idx]["text"] = text
+
+        # If no retranscribed segments, we're done
+        if not retranscribed_indices:
+            return {"segments": segments, "questions": [], "status": "success"}
+
+        corrections = await self._load_corrections(client_id, project_id)
+        correction_prompt = self._format_corrections_for_prompt(corrections)
+
+        # Build full transcript context from all segments
+        full_text = " ".join(s["text"] for s in segments)
+
+        # Extract only the retranscribed segments for LLM correction
+        affected = [segments[i] for i in retranscribed_indices if 0 <= i < len(segments)]
+
+        await self._emit_correction_progress(
+            meeting_id, client_id, 0, 1,
+            f"Cílená korekce {len(affected)} segmentů",
+        )
+
+        chunk_result = await self._correct_chunk_interactive(
+            affected, correction_prompt, full_text,
+            meeting_id=meeting_id, client_id=client_id,
+            chunk_idx=0, total_chunks=1,
+        )
+
+        # Merge corrected segments back into the full list
+        corrected_by_index = {}
+        for seg in chunk_result["segments"]:
+            seg_idx = seg.get("i")
+            if seg_idx is not None:
+                corrected_by_index[seg_idx] = seg["text"]
+
+        for idx in retranscribed_indices:
+            if idx in corrected_by_index:
+                segments[idx]["text"] = corrected_by_index[idx]
+
+        await self._emit_correction_progress(
+            meeting_id, client_id, 1, 1,
+            "Cílená korekce dokončena",
+        )
+
+        status = "needs_input" if chunk_result.get("questions") else "success"
+        return {
+            "segments": segments,
+            "questions": chunk_result.get("questions", []),
+            "status": status,
+        }
+
     async def apply_answers_as_corrections(
         self,
         client_id: str,

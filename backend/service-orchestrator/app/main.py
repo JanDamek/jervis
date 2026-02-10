@@ -532,6 +532,28 @@ async def correct_with_instruction(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/correction/correct-targeted")
+async def correct_targeted(request: dict):
+    """Targeted correction for retranscribed segments.
+
+    User corrections are applied directly, retranscribed segments go through
+    the correction agent. Untouched segments pass through as-is.
+    """
+    try:
+        result = await correction_agent.correct_targeted(
+            client_id=request["clientId"],
+            project_id=request.get("projectId"),
+            segments=request["segments"],
+            retranscribed_indices=request.get("retranscribedIndices", []),
+            user_corrected_indices=request.get("userCorrectedIndices", {}),
+            meeting_id=request.get("meetingId"),
+        )
+        return result
+    except Exception as e:
+        logger.exception("Failed targeted correction")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/correction/answer")
 async def answer_correction_questions(request: dict):
     """Store user answers as correction rules in KB.
