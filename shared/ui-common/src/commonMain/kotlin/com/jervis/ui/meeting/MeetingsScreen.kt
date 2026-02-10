@@ -772,6 +772,11 @@ private fun MeetingDetailView(
                         IconButton(onClick = onCorrections) {
                             Text("\uD83D\uDCD6", style = MaterialTheme.typography.bodyLarge)
                         }
+                        if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                            IconButton(onClick = onRetranscribe) {
+                                Text("\uD83D\uDD04", style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
                         IconButton(onClick = onRefresh) {
                             Text("\u21BB", style = MaterialTheme.typography.bodyLarge)
                         }
@@ -782,10 +787,12 @@ private fun MeetingDetailView(
                 },
             )
 
-            // Metadata header (scrollable with content on compact, fixed on expanded)
+            // Metadata header — scrollable when content overflows (error messages, correction questions)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = JervisSpacing.outerPadding),
             ) {
                 Row(
@@ -832,7 +839,7 @@ private fun MeetingDetailView(
                     )
                 }
 
-                // Error message
+                // Error message with retranscribe action
                 if (meeting.state == MeetingStateEnum.FAILED) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
@@ -841,12 +848,17 @@ private fun MeetingDetailView(
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = meeting.errorMessage ?: "Neznama chyba",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(12.dp),
-                        )
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = meeting.errorMessage ?: "Neznámá chyba",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(onClick = onRetranscribe) {
+                                Text("Přepsat znovu")
+                            }
+                        }
                     }
                 }
 
@@ -1563,6 +1575,8 @@ private fun CorrectionQuestionsCard(
     val answers = remember { mutableStateOf(questions.associate { it.questionId to "" }) }
     // Track which questions are confirmed (collapsed)
     val confirmed = remember { mutableStateOf(emptySet<String>()) }
+    // Immediate UI feedback on submit
+    var isSubmitting by remember { mutableStateOf(false) }
 
     val confirmedCount = confirmed.value.size
     val totalCount = questions.size
@@ -1571,85 +1585,97 @@ private fun CorrectionQuestionsCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
         ),
-        modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Fixed header
-            Text(
-                text = "Agent potřebuje vaše upřesnění",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Opravte nebo potvrďte správný tvar ($confirmedCount/$totalCount potvrzeno):",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Scrollable questions area
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
+        if (isSubmitting) {
+            // Immediate feedback — show loading state
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                questions.forEachIndexed { index, question ->
-                    val isConfirmed = question.questionId in confirmed.value
-                    CorrectionQuestionItem(
-                        question = question,
-                        currentAnswer = answers.value[question.questionId] ?: "",
-                        isConfirmed = isConfirmed,
-                        onAnswerChanged = { newAnswer ->
-                            answers.value = answers.value.toMutableMap().apply {
-                                put(question.questionId, newAnswer)
-                            }
-                        },
-                        onConfirm = {
-                            confirmed.value = confirmed.value + question.questionId
-                        },
-                        onEdit = {
-                            confirmed.value = confirmed.value - question.questionId
-                        },
-                    )
-                    if (index < questions.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 6.dp),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                Text(
+                    text = "Odesílám odpovědi...",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        } else {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Fixed header
+                Text(
+                    text = "Agent potřebuje vaše upřesnění",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Opravte nebo potvrďte správný tvar ($confirmedCount/$totalCount potvrzeno):",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Questions area (outer metadata column handles scrolling)
+                Column {
+                    questions.forEachIndexed { index, question ->
+                        val isConfirmed = question.questionId in confirmed.value
+                        CorrectionQuestionItem(
+                            question = question,
+                            currentAnswer = answers.value[question.questionId] ?: "",
+                            isConfirmed = isConfirmed,
+                            onAnswerChanged = { newAnswer ->
+                                answers.value = answers.value.toMutableMap().apply {
+                                    put(question.questionId, newAnswer)
+                                }
+                            },
+                            onConfirm = {
+                                confirmed.value = confirmed.value + question.questionId
+                            },
+                            onEdit = {
+                                confirmed.value = confirmed.value - question.questionId
+                            },
                         )
+                        if (index < questions.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                            )
+                        }
                     }
                 }
-            }
 
-            // Submit all confirmed answers
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = {
-                        val answerDtos = questions.mapNotNull { q ->
-                            if (q.questionId !in confirmed.value) return@mapNotNull null
-                            val corrected = answers.value[q.questionId]?.trim()
-                            if (!corrected.isNullOrBlank()) {
-                                CorrectionAnswerDto(
-                                    questionId = q.questionId,
-                                    segmentIndex = q.segmentIndex,
-                                    original = q.originalText,
-                                    corrected = corrected,
-                                )
-                            } else {
-                                null
-                            }
-                        }
-                        if (answerDtos.isNotEmpty()) {
-                            onSubmitAnswers(answerDtos)
-                        }
-                    },
-                    enabled = confirmedCount > 0,
+                // Submit all confirmed answers
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Text("Odeslat vše ($confirmedCount)")
+                    TextButton(
+                        onClick = {
+                            val answerDtos = questions.mapNotNull { q ->
+                                if (q.questionId !in confirmed.value) return@mapNotNull null
+                                val corrected = answers.value[q.questionId]?.trim()
+                                if (!corrected.isNullOrBlank()) {
+                                    CorrectionAnswerDto(
+                                        questionId = q.questionId,
+                                        segmentIndex = q.segmentIndex,
+                                        original = q.originalText,
+                                        corrected = corrected,
+                                    )
+                                } else {
+                                    null
+                                }
+                            }
+                            if (answerDtos.isNotEmpty()) {
+                                isSubmitting = true
+                                onSubmitAnswers(answerDtos)
+                            }
+                        },
+                        enabled = confirmedCount > 0,
+                    ) {
+                        Text("Odeslat vše ($confirmedCount)")
+                    }
                 }
             }
         }
