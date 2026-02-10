@@ -197,7 +197,7 @@ class AgentOrchestratorService(
         }
 
         val request = OrchestrateRequestDto(
-            taskId = task.correlationId,
+            taskId = task.id.toString(),
             clientId = task.clientId.toString(),
             projectId = task.projectId?.toString(),
             workspacePath = resolveWorkspacePath(task),
