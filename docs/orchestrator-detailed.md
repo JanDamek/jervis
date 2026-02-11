@@ -1550,3 +1550,127 @@ backend/server/src/main/kotlin/com/jervis/
 │       ├── ChatMessageService.kt        # Message CRUD service
 │       └── ChatHistoryService.kt        # History payload + async compression
 ```
+
+---
+
+## Common Bugs and Fixes
+
+### Respond Node Tool-Use Loop (Fixed 2026-02-11)
+
+**Symptom:** Agent executes 1 tool call, then immediately logs "max iterations (5) reached" and returns answer.
+
+**Root Cause:** Incorrect indentation in `respond.py`. The "max iterations reached" block (lines 180-192) was INSIDE the while loop instead of OUTSIDE. This caused it to execute after EVERY tool execution instead of only when the loop limit was reached.
+
+**Incorrect Code:**
+```python
+while iteration < _MAX_TOOL_ITERATIONS:
+    iteration += 1
+    response = await llm_with_cloud_fallback(...)
+    
+    if not tool_calls or finish_reason == "stop":
+        return {"final_result": message.content}
+    
+    # Execute tools
+    for tool_call in tool_calls:
+        result = execute_tool(...)
+        messages.append({"role": "tool", ...})
+    
+    # ❌ WRONG - This is INSIDE the while loop!
+    logger.warning("Respond: max iterations reached")
+    final_response = await llm_with_cloud_fallback(...)
+    return {"final_result": answer}
+```
+
+**Fixed Code:**
+```python
+while iteration < _MAX_TOOL_ITERATIONS:
+    iteration += 1
+    response = await llm_with_cloud_fallback(...)
+    
+    if not tool_calls or finish_reason == "stop":
+        return {"final_result": message.content}
+    
+    # Execute tools
+    for tool_call in tool_calls:
+        result = execute_tool(...)
+        messages.append({"role": "tool", ...})
+    # Continue loop - will call LLM again with tool results
+
+# ✅ CORRECT - This is OUTSIDE the while loop
+logger.warning("Respond: max iterations reached")
+final_response = await llm_with_cloud_fallback(...)
+return {"final_result": answer}
+```
+
+**Fix:** De-indent the "max iterations" block by one level (4 spaces) so it executes only AFTER the while loop exits.
+
+**Commit:** `6f257acd` — "fix: chat UI improvements and respond loop bug"
+
+### Empty Response from LLM with Tool Calls (Fixed 2026-02-11)
+
+**Symptom:** Error "Empty response from local model" when LLM makes a tool call.
+
+**Root Cause:** Validation in `_helpers.py` line 85-87 only checked `message.content`, which is None/empty when the LLM calls a tool. The actual response is in `message.tool_calls`, not `content`.
+
+**Incorrect Code:**
+```python
+content = response.choices[0].message.content
+if not content or not content.strip():
+    raise ValueError("Empty response from local model")  # ❌ WRONG
+```
+
+**Fixed Code:**
+```python
+message = response.choices[0].message
+content = message.content
+tool_calls = getattr(message, "tool_calls", None)
+
+# Valid response = has content OR has tool_calls
+if (not content or not content.strip()) and not tool_calls:
+    raise ValueError("Empty response from local model")  # ✅ CORRECT
+```
+
+**Fix:** Accept either `content` OR `tool_calls` as a valid response. Only raise error if BOTH are missing.
+
+**Commit:** `60205503` — "fix: accept tool_calls as valid LLM response"
+
+---
+
+## Architecture Decisions
+
+### PVC for Orchestrator: NO (Decided 2026-02-11)
+
+**Question:** Should orchestrator have PVC mount for filesystem tools access?
+
+**Decision:** **NO** — Orchestrator should remain stateless and use knowledge APIs instead.
+
+**Reasoning:**
+
+1. **Separation of Concerns:**
+   - Orchestrator = BRAIN (decides what to do)
+   - Coding Agents = HANDS (execute tasks, access code)
+   - Filesystem access is agent responsibility, not orchestrator
+
+2. **Scalability:**
+   - Stateless orchestrator can scale horizontally
+   - PVC would tie orchestrator to specific nodes
+   - Multiple orchestrator pods would need shared PVC (complexity)
+
+3. **Security:**
+   - Orchestrator with filesystem access = larger attack surface
+   - Agents already have controlled workspace access
+   - Principle of least privilege
+
+4. **Existing Solutions:**
+   - **Knowledge Base:** Indexed, searchable project knowledge (fast)
+   - **web_search:** External information via SearXNG
+   - **kb_search:** Internal project-specific knowledge
+   - **Coding agents:** Direct code access when needed
+
+**Alternative Approach:**
+If orchestrator needs code exploration:
+1. Use `kb_search` tool for indexed knowledge
+2. Dispatch to coding agent (aider/openhands) for deeper exploration
+3. Agent can use filesystem tools and report back
+
+**Conclusion:** Keep orchestrator stateless. Use tools (web_search, kb_search) + agent dispatch for information gathering.

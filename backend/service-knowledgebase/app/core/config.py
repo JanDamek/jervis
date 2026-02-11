@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     #   "write" — ingest, crawl, purge, alias/register, alias/merge
     KB_MODE: str = "all"
 
+    # -- Concurrency limits -----------------------------------------------------
+    # Read operations: high concurrency for fast retrieval (orchestrator, agents)
+    # Write operations: limited concurrency to prevent resource exhaustion
+    MAX_CONCURRENT_READS: int = 40   # Max parallel read requests
+    MAX_CONCURRENT_WRITES: int = 10  # Max parallel write requests (queue others)
+
     class Config:
         env_file = ".env"
 
