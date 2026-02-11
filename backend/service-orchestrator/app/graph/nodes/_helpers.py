@@ -82,8 +82,12 @@ async def llm_with_cloud_fallback(
             messages=messages, tier=local_tier,
             max_tokens=max_tokens, temperature=temperature, tools=tools,
         )
-        content = response.choices[0].message.content
-        if not content or not content.strip():
+        message = response.choices[0].message
+        content = message.content
+        tool_calls = getattr(message, "tool_calls", None)
+
+        # Valid response = has content OR has tool_calls
+        if (not content or not content.strip()) and not tool_calls:
             raise ValueError("Empty response from local model")
         return response
     except Exception as e:
