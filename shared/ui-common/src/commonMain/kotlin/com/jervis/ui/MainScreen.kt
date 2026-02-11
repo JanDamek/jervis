@@ -455,8 +455,8 @@ private fun ChatMessageItem(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(
-                    start = if (isMe) 48.dp else 0.dp,
-                    end = if (!isMe) 48.dp else 0.dp,
+                    start = if (isMe) 120.dp else 0.dp,
+                    end = if (!isMe) 120.dp else 0.dp,
                 ),
             horizontalArrangement =
                 if (isMe) {
@@ -475,7 +475,7 @@ private fun ChatMessageItem(
                                 MaterialTheme.colorScheme.secondaryContainer
                             },
                     ),
-                modifier = Modifier.widthIn(max = 280.dp),
+                modifier = Modifier.widthIn(max = 600.dp),
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
