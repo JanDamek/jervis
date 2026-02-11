@@ -43,6 +43,7 @@ class RpcClientsConfig(
 
     private var _tikaClient: ITikaClient? = null
     private var _knowledgeService: KnowledgeService? = null
+    private var _knowledgeServiceRead: KnowledgeService? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
@@ -69,6 +70,28 @@ class RpcClientsConfig(
                 spec: TraversalSpec,
             ): List<GraphNode> = getKnowledgeService().traverse(clientId, startKey, spec)
             override suspend fun purge(sourceUrn: String): Boolean = getKnowledgeService().purge(sourceUrn)
+        }
+
+    /**
+     * Read-only Knowledge Base client – uses the dedicated read instance
+     * (jervis-knowledgebase-read) for retrieve/traverse operations.
+     * Falls back to the write instance URL if knowledgebaseRead is not configured.
+     */
+    @Bean("knowledgeServiceRead")
+    fun knowledgeServiceRead(): KnowledgeService =
+        object : KnowledgeService {
+            override suspend fun ingest(request: IngestRequest): IngestResult =
+                throw UnsupportedOperationException("Read-only KB client cannot ingest")
+            override suspend fun ingestFull(request: FullIngestRequest): FullIngestResult =
+                throw UnsupportedOperationException("Read-only KB client cannot ingestFull")
+            override suspend fun retrieve(request: RetrievalRequest): EvidencePack = getKnowledgeServiceRead().retrieve(request)
+            override suspend fun traverse(
+                clientId: ClientId,
+                startKey: String,
+                spec: TraversalSpec,
+            ): List<GraphNode> = getKnowledgeServiceRead().traverse(clientId, startKey, spec)
+            override suspend fun purge(sourceUrn: String): Boolean =
+                throw UnsupportedOperationException("Read-only KB client cannot purge")
         }
 
     @Bean
@@ -157,6 +180,8 @@ class RpcClientsConfig(
             }
             override suspend fun reconnectKnowledgebase() {
                 _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
+                val readUrl = endpoints.knowledgebaseRead.baseUrl.ifBlank { endpoints.knowledgebase.baseUrl }
+                _knowledgeServiceRead = KnowledgeServiceRestClient(readUrl)
             }
         }
 
@@ -169,6 +194,13 @@ class RpcClientsConfig(
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
                 ?: KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl).also { _knowledgeService = it }
+        }
+
+    private fun getKnowledgeServiceRead(): KnowledgeService =
+        _knowledgeServiceRead ?: synchronized(this) {
+            val readUrl = endpoints.knowledgebaseRead.baseUrl.ifBlank { endpoints.knowledgebase.baseUrl }
+            _knowledgeServiceRead
+                ?: KnowledgeServiceRestClient(readUrl).also { _knowledgeServiceRead = it }
         }
 
     private fun atlassianUrl(): String =

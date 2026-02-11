@@ -1,3 +1,10 @@
+"""Knowledge Base API routes.
+
+Routes are split into read_router and write_router so the KB service can run
+in read-only or write-only mode via the KB_MODE environment variable.
+The legacy `router` includes both for backward compatibility (KB_MODE=all).
+"""
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
@@ -12,61 +19,16 @@ from app.services.clients.joern_client import JoernResultDto
 from typing import List, Optional
 import json
 
-router = APIRouter()
 service = KnowledgeService()
 
-@router.post("/ingest", response_model=IngestResult)
-async def ingest(request: IngestRequest):
-    try:
-        return await service.ingest(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# ---------------------------------------------------------------------------
+# READ router — retrieve, search, traverse, graph, alias/resolve, chunks
+# ---------------------------------------------------------------------------
 
-@router.post("/ingest/file", response_model=IngestResult)
-async def ingest_file(
-    file: UploadFile = File(...),
-    clientId: str = Form(...),
-    projectId: str = Form(None),
-    groupId: str = Form(None),
-    sourceUrn: str = Form(None),
-    kind: str = Form("file"),
-    metadata: str = Form("{}")
-):
-    try:
-        meta = json.loads(metadata)
+read_router = APIRouter()
 
-        request = IngestRequest(
-            clientId=clientId,
-            projectId=projectId,
-            groupId=groupId,
-            sourceUrn=sourceUrn or file.filename,
-            kind=kind,
-            content="", # Will be filled by Tika
-            metadata=meta
-        )
-        
-        content = await file.read()
-        return await service.ingest_file(content, file.filename, request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/crawl", response_model=IngestResult)
-async def crawl(request: CrawlRequest):
-    try:
-        return await service.crawl(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/purge", response_model=PurgeResult)
-async def purge(request: PurgeRequest):
-    """Delete all RAG chunks and clean graph refs for a sourceUrn."""
-    try:
-        result = await service.purge(request.sourceUrn)
-        return PurgeResult(status="success", **result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/retrieve", response_model=EvidencePack)
+@read_router.post("/retrieve", response_model=EvidencePack)
 async def retrieve(request: RetrievalRequest):
     """
     Standard hybrid retrieval.
@@ -80,7 +42,7 @@ async def retrieve(request: RetrievalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/retrieve/simple", response_model=EvidencePack)
+@read_router.post("/retrieve/simple", response_model=EvidencePack)
 async def retrieve_simple(request: RetrievalRequest):
     """
     Simple RAG-only retrieval without graph expansion.
@@ -93,7 +55,7 @@ async def retrieve_simple(request: RetrievalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/retrieve/hybrid", response_model=EvidencePack)
+@read_router.post("/retrieve/hybrid", response_model=EvidencePack)
 async def retrieve_hybrid(request: HybridRetrievalRequest):
     """
     Advanced hybrid retrieval with full control over settings.
@@ -131,14 +93,15 @@ async def retrieve_hybrid(request: HybridRetrievalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/traverse", response_model=List[GraphNode])
+@read_router.post("/traverse", response_model=List[GraphNode])
 async def traverse(request: TraversalRequest):
     try:
         return await service.traverse(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/analyze/code", response_model=JoernResultDto)
+
+@read_router.post("/analyze/code", response_model=JoernResultDto)
 async def analyze_code(query: str, workspacePath: str = ""):
     try:
         return await service.analyze_code(query, workspacePath)
@@ -146,7 +109,7 @@ async def analyze_code(query: str, workspacePath: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/graph/node/{node_key}", response_model=Optional[GraphNode])
+@read_router.get("/graph/node/{node_key}", response_model=Optional[GraphNode])
 async def get_graph_node(
     node_key: str,
     clientId: str = "",
@@ -160,7 +123,7 @@ async def get_graph_node(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/graph/search", response_model=List[GraphNode])
+@read_router.get("/graph/search", response_model=List[GraphNode])
 async def search_graph_nodes(
     query: str,
     clientId: str = "",
@@ -183,7 +146,7 @@ async def search_graph_nodes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/graph/node/{node_key}/evidence")
+@read_router.get("/graph/node/{node_key}/evidence")
 async def get_node_evidence(node_key: str, clientId: str = ""):
     """Get RAG chunks that support a graph node."""
     try:
@@ -196,9 +159,7 @@ async def get_node_evidence(node_key: str, clientId: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# === Query Analysis Endpoints ===
-
-@router.get("/query/entities")
+@read_router.get("/query/entities")
 async def extract_query_entities(query: str):
     """
     Extract entities from a query string.
@@ -217,9 +178,7 @@ async def extract_query_entities(query: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# === Alias Management Endpoints ===
-
-@router.get("/alias/resolve")
+@read_router.get("/alias/resolve")
 async def resolve_alias(alias: str, clientId: str = ""):
     """
     Resolve an alias to its canonical key.
@@ -233,43 +192,7 @@ async def resolve_alias(alias: str, clientId: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/alias/register")
-async def register_alias(
-    alias: str,
-    canonical: str = None,
-    clientId: str = ""
-):
-    """
-    Register an alias in the registry.
-
-    If canonical is not provided, the alias becomes its own canonical.
-    """
-    try:
-        result = await service.graph_service.alias_registry.register(clientId, alias, canonical)
-        return {"alias": alias, "canonical": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/alias/merge")
-async def merge_aliases(
-    sourceKey: str,
-    targetKey: str,
-    clientId: str = ""
-):
-    """
-    Merge two entities: all aliases pointing to source → point to target.
-
-    Use this when you discover that two entities are actually the same.
-    """
-    try:
-        count = await service.graph_service.alias_registry.merge(clientId, sourceKey, targetKey)
-        return {"merged": count, "source": sourceKey, "target": targetKey}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/alias/list/{canonical_key}")
+@read_router.get("/alias/list/{canonical_key}")
 async def list_aliases(canonical_key: str, clientId: str = ""):
     """Get all aliases that point to a canonical key."""
     try:
@@ -279,7 +202,7 @@ async def list_aliases(canonical_key: str, clientId: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/alias/stats")
+@read_router.get("/alias/stats")
 async def alias_stats(clientId: str = ""):
     """Get statistics about the alias registry for a client."""
     try:
@@ -288,7 +211,67 @@ async def alias_stats(clientId: str = ""):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/ingest/full", response_model=FullIngestResult)
+
+@read_router.post("/chunks/by-kind")
+async def list_chunks_by_kind(request: ListByKindRequest):
+    """List all RAG chunks matching a specific kind with tenant filtering."""
+    try:
+        results = await service.rag_service.list_by_kind(
+            client_id=request.clientId,
+            project_id=request.projectId,
+            kind=request.kind,
+            limit=request.maxResults,
+        )
+        return {"chunks": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# WRITE router — ingest, crawl, purge, alias/register, alias/merge
+# ---------------------------------------------------------------------------
+
+write_router = APIRouter()
+
+
+@write_router.post("/ingest", response_model=IngestResult)
+async def ingest(request: IngestRequest):
+    try:
+        return await service.ingest(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/file", response_model=IngestResult)
+async def ingest_file(
+    file: UploadFile = File(...),
+    clientId: str = Form(...),
+    projectId: str = Form(None),
+    groupId: str = Form(None),
+    sourceUrn: str = Form(None),
+    kind: str = Form("file"),
+    metadata: str = Form("{}")
+):
+    try:
+        meta = json.loads(metadata)
+
+        request = IngestRequest(
+            clientId=clientId,
+            projectId=projectId,
+            groupId=groupId,
+            sourceUrn=sourceUrn or file.filename,
+            kind=kind,
+            content="", # Will be filled by Tika
+            metadata=meta
+        )
+
+        content = await file.read()
+        return await service.ingest_file(content, file.filename, request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/full", response_model=FullIngestResult)
 async def ingest_full(
     clientId: str = Form(...),
     sourceUrn: str = Form(...),
@@ -300,7 +283,6 @@ async def ingest_full(
     metadata: str = Form("{}"),
     attachments: List[UploadFile] = File(default=[])
 ):
-
     """
     Full document ingestion with attachments.
 
@@ -335,16 +317,64 @@ async def ingest_full(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/chunks/by-kind")
-async def list_chunks_by_kind(request: ListByKindRequest):
-    """List all RAG chunks matching a specific kind with tenant filtering."""
+@write_router.post("/crawl", response_model=IngestResult)
+async def crawl(request: CrawlRequest):
     try:
-        results = await service.rag_service.list_by_kind(
-            client_id=request.clientId,
-            project_id=request.projectId,
-            kind=request.kind,
-            limit=request.maxResults,
-        )
-        return {"chunks": results}
+        return await service.crawl(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/purge", response_model=PurgeResult)
+async def purge(request: PurgeRequest):
+    """Delete all RAG chunks and clean graph refs for a sourceUrn."""
+    try:
+        result = await service.purge(request.sourceUrn)
+        return PurgeResult(status="success", **result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/alias/register")
+async def register_alias(
+    alias: str,
+    canonical: str = None,
+    clientId: str = ""
+):
+    """
+    Register an alias in the registry.
+
+    If canonical is not provided, the alias becomes its own canonical.
+    """
+    try:
+        result = await service.graph_service.alias_registry.register(clientId, alias, canonical)
+        return {"alias": alias, "canonical": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/alias/merge")
+async def merge_aliases(
+    sourceKey: str,
+    targetKey: str,
+    clientId: str = ""
+):
+    """
+    Merge two entities: all aliases pointing to source → point to target.
+
+    Use this when you discover that two entities are actually the same.
+    """
+    try:
+        count = await service.graph_service.alias_registry.merge(clientId, sourceKey, targetKey)
+        return {"merged": count, "source": sourceKey, "target": targetKey}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Legacy combined router (backward compat for KB_MODE=all)
+# ---------------------------------------------------------------------------
+
+router = APIRouter()
+router.include_router(read_router)
+router.include_router(write_router)

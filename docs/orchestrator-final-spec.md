@@ -59,6 +59,8 @@ backend/
         provider.py               # litellm wrapper + EscalationPolicy
       tools/
         __init__.py
+        definitions.py            # Tool schemas (web_search, kb_search)
+        executor.py               # Tool execution (SearXNG, KB retrieve)
         kotlin_client.py          # REST client pro Kotlin server internal API
     requirements.txt
     Dockerfile
@@ -97,19 +99,31 @@ GET  /health                 # Health check
 - Safety-net: Kotlin polls `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()` každých 60s
 - Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
 
-**LangGraph StateGraph (10 nodes):**
+**LangGraph StateGraph (12 nodes):**
 ```
-[clarify] → [decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
-                  ↑                               ↑                             │
-                  │                               │                        [next_step]
-                  │                               │                             │
-                  └── [advance_goal] ←── more goals ────────────────────────────┤
-                                                  │                             │
-                                         [advance_step] ← more steps ──────────┘
-                                                                                │
-                                                                                ↓ (all done)
-                                                                     [git_operations] → [report]
+                    ┌── question? ──► [respond] ──► END
+                    │                  (web_search, kb_search tools)
+[router] ──────────┤
+                    │                  ┌── coding task
+                    └── coding? ──────►[clarify] → [decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
+                                            ↑                               ↑                             │
+                                            │                               │                        [next_step]
+                                            │                               │                             │
+                                            └── [advance_goal] ←── more goals ────────────────────────────┤
+                                                                            │                             │
+                                                                   [advance_step] ← more steps ──────────┘
+                                                                                                          │
+                                                                                                          ↓ (all done)
+                                                                                               [git_operations] → [report]
 ```
+
+**Routing**: `router` node uses `route_entry()` heuristic to decide:
+- **Question** (starts with question words, ends with `?`, no coding verbs) → `respond` node
+- **Coding task** → `clarify` node (full pipeline)
+
+**Respond node**: Agentic tool-use loop (max 5 iterations). LLM has `web_search` (SearXNG) and
+`kb_search` (Knowledge Base) tools. After tool results are gathered, LLM formulates a final
+answer. Returns `{"final_result": content, "artifacts": []}` directly to END.
 
 `clarify` may `interrupt()` for user questions (resumes after answers), or pass through for simple tasks.
 
@@ -326,7 +340,8 @@ Env var               Odkud                 K čemu
 ORCHESTRATOR_PORT     app_orchestrator.yaml  FastAPI port (8090)
 MONGODB_URL           jervis-secrets         Persistent checkpointer (AsyncMongoDBSaver)
 KOTLIN_SERVER_URL     app_orchestrator.yaml  REST API Kotlin serveru (http://jervis-server:5500)
-KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB service (http://jervis-knowledgebase:8080)
+KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB read service (http://jervis-knowledgebase-read:8080)
+SEARXNG_URL           app_orchestrator.yaml  Web search SearXNG (http://192.168.100.117:30053)
 K8S_NAMESPACE         app_orchestrator.yaml  Namespace pro K8s Jobs (jervis)
 DATA_ROOT             app_orchestrator.yaml  Sdílený PVC (/opt/jervis/data)
 OLLAMA_URL            app_orchestrator.yaml  Lokální LLM (http://192.168.100.117:11434)

@@ -7,7 +7,8 @@ Tenant context is injected via environment variables:
     CLIENT_ID  – required, scopes data to client
     PROJECT_ID – optional, further scopes to project
     GROUP_ID   – optional, enables cross-project KB visibility within group
-    KB_URL     – Knowledge Base service URL
+    KB_URL     – Knowledge Base service URL (read instance for retrieve/search)
+    KB_WRITE_URL – Knowledge Base write instance URL (for ingest/store, falls back to KB_URL)
 
 Scope hierarchy:
     global (clientId="") → client (clientId=X) → project (clientId=X, projectId=Y)
@@ -34,7 +35,8 @@ app = Server("jervis-kb")
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
 PROJECT_ID = os.environ.get("PROJECT_ID") or None
 GROUP_ID = os.environ.get("GROUP_ID") or None
-KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8080")
+KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase-read:8080")
+KB_WRITE_URL = os.environ.get("KB_WRITE_URL", KB_URL)
 
 
 def _resolve_scope(scope: str = "auto") -> tuple[str, str | None, str | None]:
@@ -256,7 +258,7 @@ async def kb_store(
     client_id, project_id, group_id = _resolve_scope("auto")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{KB_URL}/ingest",
+            f"{KB_WRITE_URL}/ingest",
             json={
                 "clientId": client_id,
                 "projectId": project_id,

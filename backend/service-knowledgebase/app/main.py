@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import router
+from app.core.config import settings
 
 # Configure root logger
 logging.basicConfig(
@@ -31,22 +31,29 @@ class _HealthCheckAccessFilter(logging.Filter):
 async def lifespan(app: FastAPI):
     # Startup: apply filter when uvicorn's access logger is guaranteed to exist
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
-    logger.info("Knowledge Service ready")
+    logger.info("Knowledge Service ready (mode=%s)", settings.KB_MODE)
     yield
 
 
 app = FastAPI(title="Knowledge Service", version="1.0.0", lifespan=lifespan)
 
-app.include_router(router, prefix="/api/v1")
+# Conditionally include routers based on KB_MODE
+if settings.KB_MODE in ("all", "read"):
+    from app.api.routes import read_router
+    app.include_router(read_router, prefix="/api/v1")
+
+if settings.KB_MODE in ("all", "write"):
+    from app.api.routes import write_router
+    app.include_router(write_router, prefix="/api/v1")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "mode": settings.KB_MODE}
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": "knowledgebase-python"}
+    return {"status": "ok", "service": "knowledgebase-python", "mode": settings.KB_MODE}
 
 if __name__ == "__main__":
     import uvicorn
