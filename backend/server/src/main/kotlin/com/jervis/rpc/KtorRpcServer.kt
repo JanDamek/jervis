@@ -198,7 +198,7 @@ class KtorRpcServer(
                                     orchestratorWorkflowTracker.addStep(
                                         taskId = body.taskId,
                                         node = body.node,
-                                        tools = emptyList(), // TODO: extract tools from LangGraph state
+                                        tools = emptyList(), // Tools extraction not yet implemented
                                     )
                                     launch {
                                         notificationRpcImpl.emitOrchestratorTaskProgress(
