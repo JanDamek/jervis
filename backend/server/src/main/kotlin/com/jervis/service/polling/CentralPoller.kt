@@ -2,14 +2,15 @@ package com.jervis.service.polling
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.SourceUrn
-import com.jervis.configuration.properties.PollingProperties
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.AuthTypeEnum
+import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
-import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderEnum
+import com.jervis.entity.PollingIntervalSettingsDocument
 import com.jervis.entity.connection.ConnectionDocument
 import com.jervis.repository.ClientRepository
+import com.jervis.repository.PollingIntervalSettingsRepository
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.oauth2.OAuth2Service
@@ -59,7 +60,7 @@ class CentralPoller(
     private val projectRepository: ProjectRepository,
     private val handlers: List<PollingHandler>,
     private val userTaskService: UserTaskService,
-    private val pollingProperties: PollingProperties,
+    private val pollingIntervalSettingsRepository: PollingIntervalSettingsRepository,
     private val oauth2Service: OAuth2Service,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -99,6 +100,9 @@ class CentralPoller(
         val startTime = Instant.now()
         val jobs = mutableListOf<Job>()
         val connectionDocuments = mutableListOf<ConnectionDocument>()
+
+        // Refresh interval settings from DB at the start of each cycle
+        refreshIntervalCache()
 
         logger.debug { "=== Starting polling cycle ===" }
 
@@ -318,13 +322,36 @@ class CentralPoller(
             sourceUrn = SourceUrn.unknownSource(),
         )
 
-    private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration =
-        when (connectionDocument.protocol) {
-            ProtocolEnum.HTTP -> pollingProperties.http
-            ProtocolEnum.IMAP -> pollingProperties.imap
-            ProtocolEnum.POP3 -> pollingProperties.pop3
-            ProtocolEnum.SMTP -> Duration.ofDays(365) // SMTP is for sending only
+    /** Cached intervals from DB, refreshed every poll cycle. */
+    private var cachedIntervals: Map<String, Int> = PollingIntervalSettingsDocument.DEFAULT_INTERVALS
+
+    private suspend fun refreshIntervalCache() {
+        try {
+            val doc = pollingIntervalSettingsRepository.findById(PollingIntervalSettingsDocument.SINGLETON_ID)
+            if (doc != null) {
+                cachedIntervals = doc.intervals
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to load polling interval settings, using cached/defaults" }
         }
+    }
+
+    private fun getPollingInterval(connectionDocument: ConnectionDocument): Duration {
+        // Determine the primary capability for this connection
+        val capability = connectionDocument.availableCapabilities.firstOrNull {
+            it != ConnectionCapability.EMAIL_SEND // EMAIL_SEND is not polled
+        }
+
+        if (capability == null) {
+            return Duration.ofDays(365) // No pollable capability
+        }
+
+        val minutes = cachedIntervals[capability.name]
+            ?: PollingIntervalSettingsDocument.DEFAULT_INTERVALS[capability.name]
+            ?: 30
+
+        return Duration.ofMinutes(minutes.toLong())
+    }
 }
 
 /**

@@ -491,6 +491,7 @@ enum class SettingsCategory(val title: String, val icon: ImageVector, val descri
     GENERAL("Obecné", Icons.Default.Settings, "Základní nastavení aplikace a vzhledu."),
     CLIENTS("Klienti a projekty", Icons.Default.Business, "Správa klientů, projektů a jejich konfigurace."),
     CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení."),
+    INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek."),
     CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Konfigurace coding agentů."),
 }
 

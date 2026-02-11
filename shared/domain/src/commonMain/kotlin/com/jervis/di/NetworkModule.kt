@@ -16,6 +16,7 @@ import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
+import com.jervis.service.IPollingIntervalService
 import com.jervis.service.IProjectGroupService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
@@ -224,6 +225,9 @@ object NetworkModule {
         var whisperSettingsService: IWhisperSettingsService =
             initialRpcClient.withService<IWhisperSettingsService>()
             private set
+        var pollingIntervalService: IPollingIntervalService =
+            initialRpcClient.withService<IPollingIntervalService>()
+            private set
         var projectGroupService: IProjectGroupService = initialRpcClient.withService<IProjectGroupService>()
             private set
         var environmentService: IEnvironmentService = initialRpcClient.withService<IEnvironmentService>()
@@ -253,6 +257,7 @@ object NetworkModule {
             integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>()
             whisperSettingsService = rpcClient.withService<IWhisperSettingsService>()
+            pollingIntervalService = rpcClient.withService<IPollingIntervalService>()
             projectGroupService = rpcClient.withService<IProjectGroupService>()
             environmentService = rpcClient.withService<IEnvironmentService>()
             meetingService = rpcClient.withService<IMeetingService>()
