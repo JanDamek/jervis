@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +57,7 @@ enum class SettingsCategory(
     CLIENTS("Klienti a projekty", Icons.Default.Business, "Správa klientů, projektů a jejich konfigurace."),
     PROJECT_GROUPS("Skupiny projektů", Icons.Default.Folder, "Logické seskupení projektů se sdílenou KB."),
     CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení (Atlassian, Git, Email)."),
+    INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek (Git, Jira, Wiki, Email)."),
     ENVIRONMENTS("Prostředí", Icons.Default.Language, "Definice K8s prostředí pro testování."),
     CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
     WHISPER("Whisper", Icons.Default.Mic, "Nastavení přepisu řeči na text a konfigurace modelu."),
@@ -97,6 +99,7 @@ private fun SettingsContent(
         SettingsCategory.CLIENTS -> ClientsSettings(repository)
         SettingsCategory.PROJECT_GROUPS -> ProjectGroupsSettings(repository)
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
+        SettingsCategory.INDEXING -> IndexingSettings(repository)
         SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(repository)
         SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
         SettingsCategory.WHISPER -> WhisperSettings(repository)

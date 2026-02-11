@@ -119,6 +119,7 @@ class ConnectionManager(
                         bugTrackerSetup = services!!.bugTrackerSetupService,
                         codingAgents = services!!.codingAgentSettingsService,
                         whisperSettings = services!!.whisperSettingsService,
+                        pollingIntervals = services!!.pollingIntervalService,
                         meetings = services!!.meetingService,
                         transcriptCorrections = services!!.transcriptCorrectionService,
                         deviceTokens = services!!.deviceTokenService,

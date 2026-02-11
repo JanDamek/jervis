@@ -12,6 +12,7 @@ import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
 import com.jervis.service.INotificationService
 import com.jervis.service.IPendingTaskService
+import com.jervis.service.IPollingIntervalService
 import com.jervis.service.IProjectGroupService
 import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
@@ -40,6 +41,7 @@ class JervisRepository(
     val bugTrackerSetup: IBugTrackerSetupService,
     val codingAgents: ICodingAgentSettingsService,
     val whisperSettings: IWhisperSettingsService,
+    val pollingIntervals: IPollingIntervalService,
     val meetings: IMeetingService,
     val transcriptCorrections: ITranscriptCorrectionService,
     val deviceTokens: IDeviceTokenService,
