@@ -509,7 +509,7 @@ Env var               Odkud                 K čemu
 ORCHESTRATOR_PORT     app_orchestrator.yaml  FastAPI port (8090)
 MONGODB_URL           jervis-secrets         Persistent checkpointer (AsyncMongoDBSaver)
 KOTLIN_SERVER_URL     app_orchestrator.yaml  REST API Kotlin serveru (http://jervis-server:5500)
-KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB read service (http://jervis-knowledgebase-read:8080)
+KNOWLEDGEBASE_URL     app_orchestrator.yaml  KB service (http://jervis-knowledgebase:8080)
 SEARXNG_URL           app_orchestrator.yaml  Web search SearXNG (http://192.168.100.117:30053)
 K8S_NAMESPACE         app_orchestrator.yaml  Namespace pro K8s Jobs (jervis)
 DATA_ROOT             app_orchestrator.yaml  Sdílený PVC (/opt/jervis/data)

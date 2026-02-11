@@ -24,8 +24,7 @@ data class EndpointProperties(
     val lmStudio: Host,              // LM Studio (desktop dev)
     val searxng: Host,               // SearXNG web search
     val tika: Host,                  // Apache Tika document extraction (WebSocket)
-    val knowledgebase: Host,         // Python KB microservice – write (HTTP)
-    val knowledgebaseRead: Host = Host(""),  // Python KB microservice – read (HTTP, falls back to knowledgebase)
+    val knowledgebase: Host,         // Python KB microservice (HTTP)
     val orchestrator: Host = Host("http://localhost:8090"),  // Python orchestrator (HTTP)
     val providers: Map<String, String> = emptyMap(),  // Git provider WebSocket URLs (github, gitlab, atlassian)
 ) {

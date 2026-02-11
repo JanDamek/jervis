@@ -35,16 +35,10 @@ docker push "${IMAGE_VERSIONED}"
 docker push "${IMAGE_LATEST}"
 echo "✓ Docker images pushed"
 
-# Deploy WRITE instance
-echo "Step 3/4: Deploying WRITE instance to Kubernetes..."
+# Deploy to Kubernetes
+echo "Step 3/3: Deploying to Kubernetes..."
 kubectl apply -f "${PROJECT_ROOT}/k8s/app_knowledgebase.yaml" -n "${NAMESPACE}"
 kubectl set image deployment/jervis-knowledgebase knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}
 kubectl rollout status deployment/jervis-knowledgebase -n ${NAMESPACE}
 
-# Deploy READ instance (same image, different KB_MODE)
-echo "Step 4/4: Deploying READ instance to Kubernetes..."
-kubectl apply -f "${PROJECT_ROOT}/k8s/app_knowledgebase_read.yaml" -n "${NAMESPACE}"
-kubectl set image deployment/jervis-knowledgebase-read knowledgebase-read=${IMAGE_VERSIONED} -n ${NAMESPACE}
-kubectl rollout status deployment/jervis-knowledgebase-read -n ${NAMESPACE}
-
-echo "=== ✓ ${SERVICE_NAME} (write + read) complete ==="
+echo "=== ✓ ${SERVICE_NAME} complete ==="

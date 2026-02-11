@@ -35,7 +35,7 @@ app = Server("jervis-kb")
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
 PROJECT_ID = os.environ.get("PROJECT_ID") or None
 GROUP_ID = os.environ.get("GROUP_ID") or None
-KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase-read:8080")
+KB_URL = os.environ.get("KB_URL", "http://jervis-knowledgebase:8080")
 KB_WRITE_URL = os.environ.get("KB_WRITE_URL", KB_URL)
 
 

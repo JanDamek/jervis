@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Knowledge Base (runs on port 8080)
     knowledgebase_url: str = os.getenv(
-        "KNOWLEDGEBASE_URL", "http://jervis-knowledgebase-read:8080"
+        "KNOWLEDGEBASE_URL", "http://jervis-knowledgebase:8080"
     )
 
     # SearXNG web search (runs on port 30053)

@@ -163,9 +163,7 @@ data:
       tika:
         baseUrl: ws://jervis-tika:8081/              # Document extraction
       knowledgebase:
-        baseUrl: http://jervis-knowledgebase:8080/        # Python KB write (backward compat)
-      knowledgebaseRead:
-        baseUrl: http://jervis-knowledgebase-read:8080/   # Python KB read (retrieve/search)
+        baseUrl: http://jervis-knowledgebase:8080/        # Python KB (RAG+Graph)
       orchestrator:
         baseUrl: http://jervis-orchestrator:8090/    # Python orchestrator (LangGraph)
       providers:

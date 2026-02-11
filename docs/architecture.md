@@ -135,27 +135,22 @@ The KB service (`service-knowledgebase`) uses synchronous Weaviate, ArangoDB, an
 clients inside `async def` FastAPI handlers. A single long ingest operation (30-180s) blocks the
 event loop and starves all other requests (queries, list, retrieve).
 
-### Solution: Read/Write Deployment Split + `asyncio.to_thread()`
+### Solution: Horizontal Scaling + `asyncio.to_thread()`
 
-The KB service is deployed as **two separate K8s Deployments** from the same Docker image,
-controlled by the `KB_MODE` environment variable:
+The KB service is deployed as a **single K8s Deployment** with multiple replicas (3 pods).
+All pods expose all endpoints (read + write). K8s service load-balancing distributes requests
+across pods naturally.
 
-| Deployment | `KB_MODE` | Service Name | Endpoints | Purpose |
-|------------|-----------|--------------|-----------|---------|
-| `jervis-knowledgebase` | `write` | `jervis-knowledgebase:8080` | ingest, crawl, purge, alias/register, alias/merge | Indexing (long-running, CPU-heavy) |
-| `jervis-knowledgebase-read` | `read` | `jervis-knowledgebase-read:8080` | retrieve, traverse, graph/*, alias/resolve, chunks/* | Agent queries (fast, latency-sensitive) |
-
-**Route registration** (`app/main.py`): Based on `KB_MODE`, only the relevant FastAPI router is
-included. `read_router` and `write_router` are defined in `app/api/routes.py`. Mode `all` (default
-for local dev) includes both.
+**Deployment:** `jervis-knowledgebase` with `replicas: 3`
+**Service:** `jervis-knowledgebase:8080` (round-robin to all 3 pods)
+**Endpoints:** All pods expose both read (retrieve, traverse, graph/*, alias/resolve, chunks/*)
+and write (ingest, crawl, purge, alias/register, alias/merge)
 
 **Callers:**
-- Orchestrator + MCP server → read instance (`jervis-knowledgebase-read:8080`)
-- Kotlin indexers → write instance (`jervis-knowledgebase:8080`)
-- Kotlin retrieve operations → read instance via `@Qualifier("knowledgeServiceRead")` bean
+- Orchestrator, MCP server, Kotlin indexers, Kotlin retrieve operations → all use `jervis-knowledgebase:8080`
+- K8s automatically distributes load across 3 pods
 
-**Build scripts:** `k8s/build_kb.sh` deploys both write and read instances. `k8s/build_kb_read.sh`
-deploys only the read instance (for quick restarts without affecting ingest).
+**Build script:** `k8s/build_kb.sh` builds Docker image and deploys to K8s with 3 replicas.
 
 ### Additional: `asyncio.to_thread()` + Batch Embeddings + Workers
 
