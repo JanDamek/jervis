@@ -25,6 +25,19 @@ data class GitBranchInfo(
 )
 
 /**
+ * Class/type extracted from source code (e.g., via tree-sitter).
+ */
+@Serializable
+data class GitClassInfo(
+    val name: String,
+    val qualifiedName: String = "",
+    val filePath: String,
+    val visibility: String = "public",
+    val isInterface: Boolean = false,
+    val methods: List<String> = emptyList(),
+)
+
+/**
  * Request for direct structural ingest of git repository.
  *
  * Bypasses LLM entity extraction — creates graph nodes directly
@@ -39,5 +52,6 @@ data class GitStructureIngestRequest(
     val defaultBranch: String = "main",
     val branches: List<GitBranchInfo> = emptyList(),
     val files: List<GitFileInfo> = emptyList(),
+    val classes: List<GitClassInfo> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 )

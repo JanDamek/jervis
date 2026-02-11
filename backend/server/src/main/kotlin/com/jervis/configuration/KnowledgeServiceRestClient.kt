@@ -264,6 +264,16 @@ class KnowledgeServiceRestClient(
                     sizeBytes = f.sizeBytes,
                 )
             },
+            classes = request.classes.map { c ->
+                PythonGitClassInfo(
+                    name = c.name,
+                    qualifiedName = c.qualifiedName,
+                    filePath = c.filePath,
+                    visibility = c.visibility,
+                    isInterface = c.isInterface,
+                    methods = c.methods,
+                )
+            },
             metadata = request.metadata,
         )
 
@@ -441,6 +451,7 @@ private data class PythonGitStructureIngestRequest(
     val defaultBranch: String = "main",
     val branches: List<PythonGitBranchInfo> = emptyList(),
     val files: List<PythonGitFileInfo> = emptyList(),
+    val classes: List<PythonGitClassInfo> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 )
 
@@ -458,6 +469,16 @@ private data class PythonGitFileInfo(
     val extension: String = "",
     val language: String = "",
     val sizeBytes: Long = 0,
+)
+
+@Serializable
+private data class PythonGitClassInfo(
+    val name: String,
+    val qualifiedName: String = "",
+    val filePath: String,
+    val visibility: String = "public",
+    val isInterface: Boolean = false,
+    val methods: List<String> = emptyList(),
 )
 
 @Serializable
