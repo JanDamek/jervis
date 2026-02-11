@@ -20,6 +20,7 @@ class TaskSchedulingRpcImpl(
         projectId: String?,
         taskName: String,
         content: String,
+        scheduledAtEpochMs: Long?,
         cronExpression: String?,
         correlationId: String?,
     ): ScheduledTaskDto =
@@ -29,7 +30,7 @@ class TaskSchedulingRpcImpl(
                 projectId = projectId?.let { ProjectId(ObjectId(it)) },
                 content = content,
                 taskName = taskName,
-                scheduledAt = Instant.now(),
+                scheduledAt = scheduledAtEpochMs?.let { Instant.ofEpochMilli(it) } ?: Instant.now(),
                 cronExpression = cronExpression,
                 correlationId = correlationId,
             ).toDto()
