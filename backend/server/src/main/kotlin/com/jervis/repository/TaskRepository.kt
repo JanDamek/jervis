@@ -134,4 +134,14 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         state: TaskStateEnum,
         now: Instant,
     ): Flow<TaskDocument>
+
+    /**
+     * Find all scheduled tasks due for dispatch (scheduledAt <= threshold).
+     * Used by BackgroundEngine scheduler loop.
+     */
+    suspend fun findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
+        scheduledAt: Instant,
+        type: TaskTypeEnum,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
 }
