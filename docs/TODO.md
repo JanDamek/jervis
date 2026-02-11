@@ -37,6 +37,57 @@ které budou implementovány jako separate tickety.
 
 ---
 
+## Orchestrator & Agent Flow
+
+### User Interaction Pause/Resume
+
+**Problém:**
+- Když agent (OpenHands, Claude, Junie) potřebuje user input, posílá dotaz do chatu
+- **Orchestrator thread stále běží a blokuje se** - čeká na odpověď
+- Orchestrator nemůže zpracovávat další tasky pro backend
+- Agent nemá důvod dál běžet, měl by se zastavit
+- Chybí status `WAITING_FOR_USER_INPUT`
+
+**Současné chování:**
+1. Agent pošle message do chatu (ask_user tool)
+2. Orchestrator thread **běží dál a blokuje**
+3. User odpoví v chatu
+4. Odpověď se vrátí do agenta
+5. Thread se uvolní
+
+**Požadované chování:**
+1. Agent pošle message do chatu (ask_user tool)
+2. Orchestrator nastaví task status → `WAITING_FOR_USER_INPUT`
+3. **Thread se ukončí** (uvolní orchestrator pro další práci)
+4. LangGraph checkpoint se uloží do MongoDB
+5. User odpoví v chatu
+6. Backend detekuje odpověď → zavolá orchestrator API `/resume/{thread_id}`
+7. Orchestrator načte checkpoint a pokračuje od ask_user node
+
+**Implementace:**
+1. Přidat `WAITING_FOR_USER_INPUT` do TaskStatus enum (Kotlin + Python)
+2. Python orchestrator: `ask_user` tool node nastaví status a vrátí `interrupt()`
+3. LangGraph checkpoint se automaticky uloží
+4. Kotlin: nový endpoint `POST /chat/{taskId}/user-message` - přijme odpověď, zavolá orchestrator `/resume`
+5. Python: endpoint `POST /resume/{thread_id}` - načte checkpoint, pokračuje
+6. UI: když task je WAITING_FOR_USER_INPUT, zobrazit input pole v chatu
+
+**Soubory:**
+- `shared/common-dto/.../TaskDto.kt` – přidat `WAITING_FOR_USER_INPUT` status
+- `backend/service-orchestrator/app/models.py` – přidat status do TaskStatus enum
+- `backend/service-orchestrator/app/graph/nodes/` – ask_user node s interrupt()
+- `backend/service-orchestrator/app/main.py` – POST `/resume/{thread_id}` endpoint
+- `backend/server/.../rpc/AgentOrchestratorRpcImpl.kt` – nový `resumeWithUserInput()` method
+- `shared/ui-common/.../ChatScreen.kt` – input pole pro WAITING_FOR_USER_INPUT tasky
+
+**Priorita:** High
+**Complexity:** Medium
+**Status:** Planned
+
+**Poznámka:** Toto je kritické pro multi-tasking orchestratoru. Jeden blokovaný task nesmí zastavit zpracování ostatních tasků.
+
+---
+
 ## Další TODOs
 
 _(Další features se budou přidávat sem podle potřeby)_
