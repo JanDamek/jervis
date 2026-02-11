@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicReference
  * - GPU tasks processed only during idle time (no user requests)
  * - Preemption: User requests to immediately interrupt background tasks
  *
- * THREE INDEPENDENT LOOPS:
+ * FOUR INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
  *    - Creates Graph nodes and RAG chunks with chunking for large documents
  *    - Routes tasks: DONE (simple) or READY_FOR_GPU (complex)
@@ -101,7 +101,7 @@ class BackgroundEngine(
             return
         }
 
-        logger.info { "BackgroundEngine starting - initializing three independent loops..." }
+        logger.info { "BackgroundEngine starting - initializing four independent loops..." }
 
         // Recover tasks stuck in transient states from previous pod crash
         scope.launch {
@@ -148,7 +148,17 @@ class BackgroundEngine(
                 }
             }
 
-        logger.info { "BackgroundEngine initialization complete - all loops launched with singleton guarantee" }
+        schedulerJob =
+            scope.launch {
+                try {
+                    logger.info { "Scheduler loop STARTED (dispatches scheduled tasks ${schedulerAdvance.toMinutes()}min in advance)" }
+                    runSchedulerLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Scheduler loop FAILED to start!" }
+                }
+            }
+
+        logger.info { "BackgroundEngine initialization complete - all four loops launched with singleton guarantee" }
     }
 
     @PreDestroy
@@ -615,6 +625,120 @@ class BackgroundEngine(
                 ) + pendingItems,
             ),
         )
+    }
+
+    /**
+     * Scheduler loop – dispatches scheduled tasks when their scheduledAt time approaches.
+     *
+     * Checks every 60s for SCHEDULED_TASK documents in state NEW where
+     * scheduledAt <= now + schedulerAdvance (10 min).
+     *
+     * For one-shot tasks: transitions to READY_FOR_QUALIFICATION (enters normal pipeline).
+     * For recurring tasks (cronExpression): creates a copy for execution and updates
+     * the original with the next scheduled time.
+     */
+    private suspend fun runSchedulerLoop() {
+        delay(backgroundProperties.waitOnStartup)
+
+        while (scope.isActive) {
+            try {
+                val dispatchThreshold = java.time.Instant.now().plus(schedulerAdvance)
+
+                val dueTasks = taskRepository.findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc(
+                    scheduledAt = dispatchThreshold,
+                    type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
+                    state = TaskStateEnum.NEW,
+                )
+
+                var dispatched = 0
+                dueTasks.collect { task ->
+                    try {
+                        dispatchScheduledTask(task)
+                        dispatched++
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to dispatch scheduled task ${task.id} (${task.taskName})" }
+                    }
+                }
+
+                if (dispatched > 0) {
+                    logger.info { "SCHEDULER_LOOP: dispatched $dispatched scheduled task(s)" }
+                }
+
+                delay(60_000) // Check every 60s
+            } catch (e: CancellationException) {
+                logger.info { "Scheduler loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error in scheduler loop" }
+                delay(60_000)
+            }
+        }
+    }
+
+    /**
+     * Dispatch a single scheduled task into the processing pipeline.
+     *
+     * One-shot (no cron): Transition task NEW → READY_FOR_QUALIFICATION, clear scheduledAt.
+     * Recurring (cron): Keep original task with next scheduledAt, create a new task for execution.
+     */
+    private suspend fun dispatchScheduledTask(task: TaskDocument) {
+        val cron = task.cronExpression
+
+        if (cron.isNullOrBlank()) {
+            // One-shot: transition directly into the pipeline
+            val dispatched = task.copy(
+                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                scheduledAt = null, // No longer scheduled
+            )
+            taskRepository.save(dispatched)
+            taskNotifier.notifyNewTask()
+            logger.info {
+                "SCHEDULED_DISPATCH: one-shot task ${task.id} '${task.taskName}' → READY_FOR_QUALIFICATION"
+            }
+        } else {
+            // Recurring: calculate next run time and create execution copy
+            val nextRun = try {
+                val cronExpr = org.springframework.scheduling.support.CronExpression.parse(cron)
+                val next = cronExpr.next(java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.now(),
+                    java.time.ZoneId.systemDefault(),
+                ))
+                next?.atZone(java.time.ZoneId.systemDefault())?.toInstant()
+            } catch (e: Exception) {
+                logger.warn { "Invalid cron expression '$cron' for task ${task.id}, treating as one-shot" }
+                null
+            }
+
+            // Create execution copy (enters pipeline)
+            val executionTask = TaskDocument(
+                type = task.type,
+                taskName = task.taskName,
+                content = task.content,
+                clientId = task.clientId,
+                projectId = task.projectId,
+                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                correlationId = "${task.correlationId}:${java.time.Instant.now().epochSecond}",
+                sourceUrn = task.sourceUrn,
+            )
+            taskRepository.save(executionTask)
+            taskNotifier.notifyNewTask()
+
+            if (nextRun != null) {
+                // Update original with next scheduled time (stays in NEW)
+                taskRepository.save(task.copy(scheduledAt = nextRun))
+                logger.info {
+                    "SCHEDULED_DISPATCH: recurring task ${task.id} '${task.taskName}' → " +
+                        "execution copy ${executionTask.id}, next run at $nextRun"
+                }
+            } else {
+                // Cron parse failed, remove the original
+                taskRepository.delete(task)
+                logger.info {
+                    "SCHEDULED_DISPATCH: recurring task ${task.id} '${task.taskName}' → " +
+                        "execution copy ${executionTask.id}, no next run (deleted original)"
+                }
+            }
+        }
     }
 
     /**

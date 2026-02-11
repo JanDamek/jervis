@@ -235,6 +235,7 @@ class WikiContinuousIndexer(
                         pageId = doc.pageId,
                     ),
                 attachments = attachmentMetadata,
+                taskName = doc.title.take(120).ifBlank { "Confluence page ${doc.pageId}" },
             )
 
             // Convert to INDEXED state - delete full content, keep minimal tracking

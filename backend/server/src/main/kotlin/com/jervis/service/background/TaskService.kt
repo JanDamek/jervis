@@ -53,6 +53,7 @@ class TaskService(
         projectId: ProjectId? = null,
         state: TaskStateEnum = TaskStateEnum.READY_FOR_QUALIFICATION,
         attachments: List<AttachmentMetadata> = emptyList(),
+        taskName: String? = null,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -61,6 +62,7 @@ class TaskService(
         val task =
             TaskDocument(
                 type = taskType,
+                taskName = taskName ?: "Unnamed Task",
                 content = cleanContent,
                 projectId = projectId,
                 clientId = clientId,

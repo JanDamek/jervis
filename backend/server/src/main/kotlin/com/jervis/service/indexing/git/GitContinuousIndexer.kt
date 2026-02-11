@@ -196,6 +196,7 @@ class GitContinuousIndexer(
                 projectId = project.id,
                 commitHash = "overview-$branch",
             ),
+            taskName = "Repo overview: ${resource.resourceIdentifier}/$branch",
         )
 
         logger.info { "Created branch overview task for ${resource.resourceIdentifier}/$branch" }
@@ -242,6 +243,7 @@ class GitContinuousIndexer(
                 projectId = ProjectId(projectId),
                 commitHash = doc.commitHash,
             ),
+            taskName = "${doc.commitHash.take(8)}: ${doc.message.take(100)}",
         )
 
         stateManager.markAsIndexed(doc)
