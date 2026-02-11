@@ -144,24 +144,35 @@ class AgentOrchestratorRpcImpl(
 
                     logger.info { "EMITTING_HISTORY | session=$sessionKey | taskId=${activeTask.id} | messages=${messages.size}" }
 
-                    messages.forEach { msg: ChatMessageDto ->
+                    // Load full message documents to access metadata (workflow steps)
+                    val messageDocuments =
+                        chatMessageRepository
+                            .findByTaskIdOrderBySequenceAsc(activeTask.id)
+                            .toList()
+                            .takeLast(actualLimit)
+
+                    messageDocuments.forEach { msgDoc ->
                         val responseType =
-                            when (msg.role) {
-                                com.jervis.dto.ChatRole.USER -> ChatResponseType.USER_MESSAGE
+                            when (msgDoc.role) {
+                                com.jervis.entity.MessageRole.USER -> ChatResponseType.USER_MESSAGE
                                 else -> ChatResponseType.FINAL
                             }
 
                         emit(
                             ChatResponseDto(
-                                message = msg.content,
+                                message = msgDoc.content,
                                 type = responseType,
                                 metadata =
                                     mutableMapOf(
-                                        "sender" to msg.role.name.lowercase(),
-                                        "timestamp" to msg.timestamp,
+                                        "sender" to msgDoc.role.name.lowercase(),
+                                        "timestamp" to msgDoc.timestamp.toString(),
                                         "fromHistory" to "true",
                                     ).apply {
-                                        msg.correlationId?.let { put("correlationId", it) }
+                                        put("correlationId", msgDoc.correlationId)
+                                        // Include workflow steps if present
+                                        msgDoc.metadata["workflowSteps"]?.let { workflowStepsJson ->
+                                            put("workflowSteps", workflowStepsJson)
+                                        }
                                     },
                             ),
                         )

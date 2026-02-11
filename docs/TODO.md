@@ -92,31 +92,98 @@ které budou implementovány jako separate tickety.
 
 ### Populate Workflow Steps in Chat Messages
 
-**Status:** Partially implemented - UI ready, data connection needed
+**Status:** ✅ Implemented - workflow steps displayed in chat
 
 **Hotovo:**
 - ✅ ChatMessage DTO extended with `workflowSteps: List<WorkflowStep>`
 - ✅ UI component `WorkflowStepsDisplay` shows steps, tools, status
 - ✅ Icons for step status (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending)
+- ✅ `OrchestratorWorkflowTracker` - backend in-memory tracker for workflow steps
+- ✅ `/internal/orchestrator-progress` endpoint tracks nodes per task
+- ✅ `OrchestratorStatusHandler` attaches workflow steps to final message
+- ✅ `ChatMessageDocument.metadata` stores serialized workflow steps
+- ✅ `ChatMessageDto` extended with metadata field
+- ✅ `MainViewModel` deserializes workflow steps from metadata
+- ✅ Node names mapped to Czech labels (intake → "Analýza úlohy", etc.)
 
-**TODO:**
-- Kotlin backend: při finalizaci chat response (OrchestratorStatusHandler) sesbírat workflow steps z orchestrator progress events
-- MainViewModel: trackovat průběh nodes do temporary storage
-- Když přijde FINAL message, attachnout workflow steps
-- Map node names na české labely (intake → "Analýza úlohy", evidence_pack → "Shromažďování kontextu", respond → "Generování odpovědi")
-- Extrahovat použité tools z každého node (např. `github_search`, `read_file`, `web_search`)
+**TODO (enhancement):**
+- Extrahovat použité tools z každého node (např. `github_search`, `read_file`, `web_search`) - requires LangGraph state access
 
 **Soubory:**
-- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - collect workflow steps
-- `shared/ui-common/.../MainViewModel.kt` - track progress, attach to final message
-- `backend/service-orchestrator/app/graph/nodes/` - node labeling
+- `backend/server/.../service/agent/coordinator/OrchestratorWorkflowTracker.kt` - NEW tracker
+- `backend/server/.../rpc/KtorRpcServer.kt` - progress endpoint updates tracker
+- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - attaches steps to final message
+- `shared/ui-common/.../MainViewModel.kt` - deserializes workflow steps
+- `shared/common-dto/.../ChatMessageDto.kt` - metadata field added
 
-**Priorita:** Medium
+**Priorita:** ~~Medium~~ **Done**
 **Complexity:** Simple
 
 ---
 
 ## Agent Memory & Knowledge
+
+### User Context & Preferences Ingestion
+
+**Problém:**
+- Když uživatel poskytne kontext ("jsem z Palkovic", "máme traktor z Montfildu", "preferuji Kotlin idiomaticky"), agent si to nepamatuje pro budoucí konverzace
+- Tyto informace se ztratí po komprimaci chat history
+- Agent nemá strukturovaný způsob, jak ukládat a vyhledávat user preferences a context
+- **Chybí kategorizace ("škatulky")** - agent nedokáže správně najít relevantní context
+
+**Architektura:**
+
+**Kategorie KB entit pro user context:**
+1. **User Preferences** - coding style, tooling, workflow preferences
+   - `preferuji Kotlin idiomaticky, ne Java styl`
+   - `používám IntelliJ IDEA`
+   - `commit messages v angličtině`
+
+2. **Domain Context** - business domain, industry, vertical
+   - `jsme z Palkovic` (location)
+   - `máme traktor z Montfildu` (equipment, vendor)
+   - `vyvíjíme AI asistenta pro software engineering`
+
+3. **Team & Organization** - people, roles, processes
+   - `Jan je tech lead`
+   - `používáme Scrum s 2-week sprinty`
+   - `code review povinné před merge`
+
+4. **Technical Stack** - frameworks, libraries, patterns
+   - `Kotlin Multiplatform`
+   - `Compose for UI`
+   - `MongoDB + ArangoDB`
+
+**Implementace:**
+1. **Real-time extraction** - během konverzace detekovat user context pomocí LLM
+   - Patterns: "jsem z...", "používám...", "preferuji...", "máme..."
+   - Extract entity type + value
+
+2. **Immediate KB ingestion** - uložit do KB okamžitě (ne čekat na task completion)
+   - Category-based indexing (User Preferences, Domain Context, atd.)
+   - Graph connections: user → preference → context
+
+3. **Semantic search** - embeddings pro context retrieval
+   - Při orchestraci načíst relevantní user context
+   - "Coding style preferences" → vyhledá "preferuji Kotlin idiomaticky"
+
+4. **Context injection** - přidat do system promptu pro agenty
+   - Dynamicky sestavit context block z KB
+   - Relevantní pro aktuální úkol
+
+**Soubory:**
+- `backend/service-orchestrator/app/context/extractor.py` - LLM-based context extraction
+- `backend/service-knowledgebase/app/services/user_context_service.py` - category-based ingestion
+- `backend/service-knowledgebase/app/models/context_categories.py` - enum for categories
+- `backend/service-orchestrator/app/context/injector.py` - inject context into prompts
+
+**Priorita:** High
+**Complexity:** Medium
+**Status:** Planned
+
+**Poznámka:** Toto je kritické pro long-term agent personalization. Agent musí znát user preferences a domain context, aby poskytoval relevantní odpovědi bez opakování stejných dotazů.
+
+---
 
 ### Dvouúrovňová paměťová architektura
 

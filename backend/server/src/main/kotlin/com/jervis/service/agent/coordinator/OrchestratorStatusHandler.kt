@@ -36,6 +36,7 @@ class OrchestratorStatusHandler(
     private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: ChatMessageRepository,
     private val chatHistoryService: ChatHistoryService,
+    private val workflowTracker: OrchestratorWorkflowTracker,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -192,8 +193,14 @@ class OrchestratorStatusHandler(
             }
 
             // Persist assistant response to DB so it survives reconnects
+            // Attach workflow steps to final message for UI display
             try {
                 val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                val workflowStepsJson = workflowTracker.getStepsAsJson(task.id.value.toString())
+                val metadata = if (workflowStepsJson != null) {
+                    mapOf("workflowSteps" to workflowStepsJson)
+                } else emptyMap()
+
                 chatMessageRepository.save(
                     com.jervis.entity.ChatMessageDocument(
                         taskId = task.id,
@@ -201,9 +208,13 @@ class OrchestratorStatusHandler(
                         role = com.jervis.entity.MessageRole.ASSISTANT,
                         content = resultSummary,
                         sequence = sequence,
+                        metadata = metadata,
                     ),
                 )
-                logger.info { "ASSISTANT_MESSAGE_SAVED | taskId=${task.id} | sequence=$sequence" }
+                logger.info { "ASSISTANT_MESSAGE_SAVED | taskId=${task.id} | sequence=$sequence | workflowSteps=${workflowStepsJson != null}" }
+
+                // Clear workflow steps after saving
+                workflowTracker.clearSteps(task.id.value.toString())
             } catch (e: Exception) {
                 logger.error(e) { "Failed to save assistant message for task ${task.id}" }
             }

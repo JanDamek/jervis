@@ -15,7 +15,8 @@ fun ChatMessageDocument.toDto(): ChatMessageDto = ChatMessageDto(
     },
     content = this.content,
     timestamp = this.timestamp.toString(),
-    correlationId = this.correlationId
+    correlationId = this.correlationId,
+    metadata = this.metadata,
 )
 
 fun AttachmentDto.toDomain(): AttachmentMetadata = AttachmentMetadata(

@@ -16,4 +16,5 @@ data class ChatMessageDto(
     val content: String = "",
     val timestamp: String = "", // ISO-8601 format
     val correlationId: String? = null,
+    val metadata: Map<String, String> = emptyMap(),
 )

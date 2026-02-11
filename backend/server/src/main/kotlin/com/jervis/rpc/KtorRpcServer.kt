@@ -52,6 +52,7 @@ class KtorRpcServer(
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
     private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
+    private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val properties: KtorClientProperties,
@@ -193,6 +194,12 @@ class KtorRpcServer(
                                 try {
                                     val body = call.receive<OrchestratorProgressCallback>()
                                     orchestratorHeartbeatTracker.updateHeartbeat(body.taskId)
+                                    // Track workflow step for final message
+                                    orchestratorWorkflowTracker.addStep(
+                                        taskId = body.taskId,
+                                        node = body.node,
+                                        tools = emptyList(), // TODO: extract tools from LangGraph state
+                                    )
                                     launch {
                                         notificationRpcImpl.emitOrchestratorTaskProgress(
                                             taskId = body.taskId,

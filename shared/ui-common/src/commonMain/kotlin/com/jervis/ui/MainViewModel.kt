@@ -67,6 +67,20 @@ class MainViewModel(
             }
         }
 
+    /**
+     * Deserialize workflow steps from metadata.
+     * Metadata contains "workflowSteps" key with JSON-serialized List<WorkflowStep>.
+     */
+    private fun parseWorkflowSteps(metadata: Map<String, String>): List<ChatMessage.WorkflowStep> {
+        val json = metadata["workflowSteps"] ?: return emptyList()
+        return try {
+            kotlinx.serialization.json.Json.decodeFromString<List<ChatMessage.WorkflowStep>>(json)
+        } catch (e: Exception) {
+            println("Failed to deserialize workflow steps: ${e.message}")
+            emptyList()
+        }
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + exceptionHandler)
 
     // UI State
@@ -966,6 +980,7 @@ class MainViewModel(
                         contextId = projectId,
                         messageType = messageType,
                         metadata = response.metadata,
+                        workflowSteps = parseWorkflowSteps(response.metadata),
                     ),
                 )
             }
@@ -999,8 +1014,9 @@ class MainViewModel(
                         text = msg.content,
                         contextId = projectId,
                         messageType = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
-                        metadata = emptyMap(),
+                        metadata = msg.metadata,
                         timestamp = msg.timestamp,
+                        workflowSteps = parseWorkflowSteps(msg.metadata),
                     )
                 }
             _chatMessages.value = newMessages
