@@ -169,6 +169,7 @@ fun SchedulerScreen(
                             projectId = projectId,
                             taskName = name,
                             content = content,
+                            scheduledAtEpochMs = null,
                             cronExpression = cron,
                             correlationId = null,
                         )

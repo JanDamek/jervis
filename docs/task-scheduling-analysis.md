@@ -49,11 +49,13 @@ scheduled tasks stayed in `state=NEW` forever and were never processed.
 
 **Fix:** Resolved by implementing the scheduler loop (issue #1).
 
-### 4. Tracker endpoints are Phase 2 placeholders
+### 4. RPC hardcoded `scheduledAt = Instant.now()`
 
-**Status:** Not addressed in this PR. The scheduler loop handles dispatch,
-but tracker-related REST endpoints (progress tracking, manual retry, etc.)
-remain as future work.
+**Root cause:** `ITaskSchedulingService.scheduleTask()` didn't accept `scheduledAt` parameter.
+`TaskSchedulingRpcImpl` hardcoded `Instant.now()` — clients couldn't schedule tasks for the future.
+
+**Fix:** Added `scheduledAtEpochMs: Long?` to RPC interface. When `null`, falls back to `Instant.now()`.
+UI updated to pass `null` (immediate), but the API now supports future scheduling.
 
 ---
 
@@ -64,6 +66,9 @@ remain as future work.
 | `BackgroundEngine.kt` | Added 4th scheduler loop, `runSchedulerLoop()`, `dispatchScheduledTask()` |
 | `TaskService.kt` | Added `taskName` parameter to `createTask()` |
 | `TaskRepository.kt` | Added `findByScheduledAtLessThanEqualAndTypeAndStateOrderByScheduledAtAsc()` |
+| `ITaskSchedulingService.kt` | Added `scheduledAtEpochMs: Long?` parameter |
+| `TaskSchedulingRpcImpl.kt` | Use `scheduledAtEpochMs` instead of hardcoded `Instant.now()` |
+| `SchedulerScreen.kt` | Pass `scheduledAtEpochMs = null` |
 | `EmailContinuousIndexer.kt` | Pass `taskName = doc.subject` |
 | `MeetingContinuousIndexer.kt` | Pass `taskName = meeting.title` |
 | `GitContinuousIndexer.kt` | Pass `taskName` for overview and commit tasks |
