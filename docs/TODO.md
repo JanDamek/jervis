@@ -116,6 +116,70 @@ které budou implementovány jako separate tickety.
 
 ---
 
+## Agent Memory & Knowledge
+
+### Dvouúrovňová paměťová architektura
+
+**Problém:**
+- Agent má jen **chat history** (krátkodobá paměť) - komprese starých zpráv do `ChatSummaryDocument`
+- **Chybí KB ingestion** dokončených tasků - dlouhodobá strukturovaná paměť
+- Když agent dokončí úkol, výsledek se neukládá do KB pro budoucí použití
+
+**Architektura:**
+
+**1. Local Memory (Chat History)** - krátkodobá, dočasná
+- Průběžná konverzace (back-and-forth)
+- MongoDB `ChatMessageDocument` + `ChatSummaryDocument` (komprese)
+- **Levné**, rychlé, dočasné
+- ✅ **Již implementováno** (`ChatHistoryService`)
+
+**2. Knowledge Base** - dlouhodobá, strukturovaná
+- **Jen významné celky** co dávají smysl jako celek
+- Dokončené úkoly, implementace, rozhodnutí
+- Code patterns, best practices, lessons learned
+- ArangoDB graph + Weaviate embeddings
+- **Drahé** (embedding, graph), trvalé
+- ❌ **CHYBÍ ingestion dokončených tasků**
+
+**Kdy ukládat do KB:**
+- ✅ Task COMPLETED → extract outcomes, ingest to KB
+- ✅ Architektonické rozhodnutí přijato
+- ✅ Bug vyřešen (root cause + fix)
+- ✅ Feature implementován (design + code)
+- ❌ Nedokončená konverzace
+- ❌ Exploratorní dotazy ("co je X?")
+- ❌ Back-and-forth debugging (to je pro chat history)
+
+**Co extrahovat z dokončeného tasku:**
+1. **Outcome summary** - co bylo vyřešeno, jak
+2. **Key decisions** - proč zvoleno řešení X místo Y
+3. **Code patterns** - použité patterns, best practices
+4. **Artifacts** - changed files, PRs, commits
+5. **Related entities** - project, client, capabilities
+6. **Lessons learned** - co fungovalo, co ne
+
+**Implementace:**
+1. `OrchestratorStatusHandler` - když task → COMPLETED, trigger KB ingestion
+2. `TaskFinalizationService` - extract meaningful data z chat history
+3. LLM-based summarization - distill conversation → structured outcome
+4. `KnowledgeService.ingestTaskOutcome()` - ingest do KB
+5. Graph connections - task → project → client → capabilities
+6. Embeddings - outcome summary pro semantic search
+
+**Soubory:**
+- `backend/server/.../service/task/TaskFinalizationService.kt` - extract outcomes
+- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - trigger ingestion
+- `backend/service-knowledgebase/app/api/routes.py` - POST `/ingest-task-outcome`
+- `backend/service-orchestrator/app/summarization/` - LLM summarization
+
+**Priorita:** High
+**Complexity:** Medium
+**Status:** Planned
+
+**Poznámka:** Toto je kritické pro long-term agent memory. Agent si musí pamatovat co udělal, aby se z toho učil a neřešil stejné problémy znovu.
+
+---
+
 ## Další TODOs
 
 _(Další features se budou přidávat sem podle potřeby)_
