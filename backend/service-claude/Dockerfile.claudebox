@@ -1,0 +1,17 @@
+# ClaudeBox-style Claude CLI Agent for Jervis
+# Inspired by https://github.com/RchGrav/claudebox
+
+FROM node:20-slim
+
+# Install Claude CLI globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create workspace directory
+WORKDIR /app
+
+# Entrypoint supports both coding mode and MCP mode
+# Usage:
+#   CODING: docker run ... claude --dangerously-skip-permissions
+#   MCP:    docker run ... /entrypoint-mcp.sh
+ENTRYPOINT ["claude"]
+CMD ["--dangerously-skip-permissions"]

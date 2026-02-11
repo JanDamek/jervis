@@ -166,6 +166,11 @@ coding-tools:
     default-model: claude-3-5-sonnet-20241022
     paid-provider: anthropic
     paid-model: claude-3-5-sonnet-20241022
+  claude:
+    default-provider: anthropic    # Claude CLI agent (cloud only)
+    default-model: claude-3-5-sonnet-20241022
+    paid-provider: anthropic
+    paid-model: claude-3-5-sonnet-20241022
 
 # -- Microservice endpoints (local dev) ----------------------------------------
 # In production, these are K8s service names (see k8s/configmap.yaml).
