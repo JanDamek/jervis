@@ -1327,17 +1327,18 @@ fun JDetailScreen(
 fun JVerticalSplitLayout(
     splitFraction: Float,
     onSplitChange: (Float) -> Unit,
-    topContent: @Composable () -> Unit,
-    bottomContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    topContent: @Composable (Modifier) -> Unit,
+    bottomContent: @Composable (Modifier) -> Unit,
 ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeight = maxHeight
         val topHeight = totalHeight * splitFraction
         val bottomHeight = totalHeight * (1f - splitFraction)
 
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxWidth().height(topHeight)) {
-                topContent()
+                topContent(Modifier.fillMaxSize())
             }
             Box(
                 modifier = Modifier
@@ -1346,7 +1347,7 @@ fun JVerticalSplitLayout(
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
             Box(modifier = Modifier.fillMaxWidth().height(bottomHeight)) {
-                bottomContent()
+                bottomContent(Modifier.fillMaxSize())
             }
         }
     }
