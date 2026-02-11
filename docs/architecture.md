@@ -135,7 +135,29 @@ The KB service (`service-knowledgebase`) uses synchronous Weaviate, ArangoDB, an
 clients inside `async def` FastAPI handlers. A single long ingest operation (30-180s) blocks the
 event loop and starves all other requests (queries, list, retrieve).
 
-### Solution: `asyncio.to_thread()` + Batch Embeddings + Workers
+### Solution: Read/Write Deployment Split + `asyncio.to_thread()`
+
+The KB service is deployed as **two separate K8s Deployments** from the same Docker image,
+controlled by the `KB_MODE` environment variable:
+
+| Deployment | `KB_MODE` | Service Name | Endpoints | Purpose |
+|------------|-----------|--------------|-----------|---------|
+| `jervis-knowledgebase` | `write` | `jervis-knowledgebase:8080` | ingest, crawl, purge, alias/register, alias/merge | Indexing (long-running, CPU-heavy) |
+| `jervis-knowledgebase-read` | `read` | `jervis-knowledgebase-read:8080` | retrieve, traverse, graph/*, alias/resolve, chunks/* | Agent queries (fast, latency-sensitive) |
+
+**Route registration** (`app/main.py`): Based on `KB_MODE`, only the relevant FastAPI router is
+included. `read_router` and `write_router` are defined in `app/api/routes.py`. Mode `all` (default
+for local dev) includes both.
+
+**Callers:**
+- Orchestrator + MCP server → read instance (`jervis-knowledgebase-read:8080`)
+- Kotlin indexers → write instance (`jervis-knowledgebase:8080`)
+- Kotlin retrieve operations → read instance via `@Qualifier("knowledgeServiceRead")` bean
+
+**Build scripts:** `k8s/build_kb.sh` deploys both write and read instances. `k8s/build_kb_read.sh`
+deploys only the read instance (for quick restarts without affecting ingest).
+
+### Additional: `asyncio.to_thread()` + Batch Embeddings + Workers
 
 Three changes make the service non-blocking:
 
@@ -589,6 +611,10 @@ with the Kotlin server via REST.
 **Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
 to do and WHEN; agents just execute.
 
+**Dual-path routing**: Simple questions (search queries, factual lookups) are routed to a
+`respond` node with web search + KB search tools. Coding tasks go through the full pipeline
+(clarify → decompose → plan → execute → evaluate).
+
 ### Architecture (Push-Based Communication)
 
 ```
@@ -666,8 +692,10 @@ Two layers:
 |------|---------|
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency (Semaphore), MongoDB lifecycle |
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, checkpointing |
-| `backend/service-orchestrator/app/graph/nodes.py` | Node functions: decompose, plan, execute, evaluate, git_ops |
-| `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
+| `backend/service-orchestrator/app/graph/nodes.py` | Node functions: router, respond, clarify, decompose, plan, execute, evaluate, git_ops |
+| `backend/service-orchestrator/app/tools/definitions.py` | Tool schemas (web_search, kb_search) for respond node |
+| `backend/service-orchestrator/app/tools/executor.py` | Tool execution: SearXNG web search, KB retrieve |
+| `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers, SearXNG URL) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
 | `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), heartbeat-based stuck detection |
 | `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |

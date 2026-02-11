@@ -4,7 +4,8 @@ Each function takes OrchestratorState and returns a partial state update.
 Orchestrator is the brain – agent is just the executor.
 
 Flow:
-    clarify → decompose → select_goal → plan_steps → execute_step → evaluate
+    router ──→ respond → END                                  (simple questions)
+         └──→ clarify → decompose → select_goal → plan_steps → execute_step → evaluate
                   ↑                                                      │
                   └──── advance_goal ←── (more goals) ──────── next_step ┤
                                           ↓ (all done)                   │
@@ -128,8 +129,10 @@ async def _llm_with_cloud_fallback(
             messages=messages, tier=local_tier,
             max_tokens=max_tokens, temperature=temperature, tools=tools,
         )
-        content = response.choices[0].message.content
-        if not content or not content.strip():
+        message = response.choices[0].message
+        content = message.content
+        tool_calls = getattr(message, 'tool_calls', None)
+        if (not content or not content.strip()) and not tool_calls:
             raise ValueError("Empty response from local model")
         return response
     except Exception as e:
@@ -195,6 +198,182 @@ async def _escalate_to_cloud(
         messages=messages, tier=available_tier,
         max_tokens=max_tokens, temperature=temperature, tools=tools,
     )
+
+
+# --- Node: router (entry point) ---
+
+_CODING_VERBS = {
+    "implement", "implementuj", "fix", "oprav", "add", "přidej", "create",
+    "vytvoř", "refactor", "refaktoruj", "update", "uprav", "write", "napiš",
+    "delete", "smaž", "remove", "odstraň", "rename", "přejmenuj",
+    "change", "změň", "deploy", "nasaď", "build", "compile",
+    "migrate", "migruj", "configure", "nakonfiguruj", "setup",
+}
+
+_QUESTION_PREFIXES = (
+    "co ", "co?", "jak ", "kde ", "kdo ", "kdy ", "proč ", "kolik ",
+    "what ", "how ", "where ", "who ", "when ", "why ", "which ",
+    "can ", "could ", "is ", "are ", "do ", "does ", "najdi ", "find ",
+    "hledej ", "search ", "vyhledej ", "popiš ", "explain ", "tell ",
+    "řekni ", "ukaž ", "show ",
+)
+
+
+def router_node(state: dict) -> dict:
+    """No-op entry node for conditional routing."""
+    return {}
+
+
+def route_entry(state: dict) -> str:
+    """Route to 'respond' for simple questions or 'clarify' for coding tasks.
+
+    Heuristic:
+    - If the query contains coding action verbs → clarify (coding pipeline)
+    - If the query looks like a question → respond (tool-using answer)
+    - Default: clarify (coding pipeline is the primary use case)
+    """
+    task = CodingTask(**state["task"])
+    query = task.query.strip()
+    query_lower = query.lower()
+
+    # Check for coding action verbs
+    words = set(re.split(r"[\s,.;:!?]+", query_lower))
+    if words & _CODING_VERBS:
+        logger.info("Router → clarify (coding verbs detected)")
+        return "clarify"
+
+    # Check for question patterns
+    if query.endswith("?") or query_lower.startswith(_QUESTION_PREFIXES):
+        logger.info("Router → respond (question pattern detected)")
+        return "respond"
+
+    # Default: coding pipeline
+    logger.info("Router → clarify (default)")
+    return "clarify"
+
+
+# --- Node: respond (tool-using answer for simple questions) ---
+
+_RESPOND_SYSTEM_PROMPT = """\
+You are Jervis, an AI assistant. You do NOT have direct internet access.
+You have two tools available:
+- web_search: Search the internet via SearXNG for current information (businesses, \
+addresses, phone numbers, news, prices, opening hours, etc.)
+- kb_search: Search the internal Knowledge Base for project documentation, \
+architecture, coding conventions, meeting notes, and other ingested content.
+
+Rules:
+- USE TOOLS to find real information. NEVER fabricate addresses, phone numbers, \
+URLs, or factual data.
+- If you cannot find the answer even after using tools, say so honestly.
+- ALWAYS respond in the user's language (usually Czech).
+- Be concise and helpful. Cite sources when available.
+"""
+
+_MAX_TOOL_ITERATIONS = 5
+
+
+async def respond(state: dict) -> dict:
+    """Handle simple questions with an agentic tool-use loop.
+
+    The LLM can call web_search and kb_search tools iteratively
+    to gather information before producing a final answer.
+    Max 5 tool iterations to prevent infinite loops.
+
+    Returns:
+        Partial state with final_result and artifacts set.
+    """
+    from app.tools.definitions import ALL_RESPOND_TOOLS
+    from app.tools.executor import execute_tool
+
+    task = CodingTask(**state["task"])
+    allow_cloud_prompt = _detect_cloud_prompt(task.query)
+
+    messages: list[dict] = [
+        {"role": "system", "content": _RESPOND_SYSTEM_PROMPT},
+        {"role": "user", "content": task.query},
+    ]
+
+    for iteration in range(_MAX_TOOL_ITERATIONS):
+        response = await _llm_with_cloud_fallback(
+            state={**state, "allow_cloud_prompt": allow_cloud_prompt},
+            messages=messages,
+            task_type="respond",
+            max_tokens=4096,
+            temperature=0.3,
+            tools=ALL_RESPOND_TOOLS,
+        )
+
+        message = response.choices[0].message
+        tool_calls = getattr(message, 'tool_calls', None)
+
+        if not tool_calls:
+            # LLM produced a final text answer
+            content = message.content or ""
+            logger.info(
+                "Respond: final answer after %d tool iterations (%d chars)",
+                iteration, len(content),
+            )
+            return {"final_result": content, "artifacts": []}
+
+        # Append assistant message with tool_calls
+        # Build a serializable dict for the message
+        assistant_msg: dict = {"role": "assistant", "content": message.content or ""}
+        assistant_msg["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,
+                },
+            }
+            for tc in tool_calls
+        ]
+        messages.append(assistant_msg)
+
+        # Execute each tool call and append results
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+
+            logger.info(
+                "Respond: tool_call %s(%s) [iteration %d]",
+                tc.function.name, tc.function.arguments[:100], iteration,
+            )
+
+            result = await execute_tool(
+                tool_name=tc.function.name,
+                arguments=args,
+                client_id=task.client_id,
+                project_id=task.project_id,
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+
+    # Max iterations reached — force a final answer without tools
+    logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
+    messages.append({
+        "role": "user",
+        "content": "Provide your final answer based on the information gathered so far.",
+    })
+
+    response = await _llm_with_cloud_fallback(
+        state={**state, "allow_cloud_prompt": allow_cloud_prompt},
+        messages=messages,
+        task_type="respond",
+        max_tokens=4096,
+        temperature=0.3,
+    )
+
+    content = response.choices[0].message.content or "Unable to generate answer."
+    return {"final_result": content, "artifacts": []}
 
 
 # --- Node: clarify ---

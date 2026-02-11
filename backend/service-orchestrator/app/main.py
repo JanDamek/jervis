@@ -255,6 +255,8 @@ async def orchestrate_stream(request: OrchestrateRequest):
 
 # Human-readable node messages for progress reporting
 _NODE_MESSAGES = {
+    "router": "Analyzing request...",
+    "respond": "Answering your question...",
     "clarify": "Analyzing task complexity...",
     "decompose": "Breaking down into goals...",
     "select_goal": "Selecting next goal...",

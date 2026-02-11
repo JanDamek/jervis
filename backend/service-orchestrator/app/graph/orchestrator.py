@@ -1,7 +1,8 @@
 """LangGraph StateGraph – main orchestrator workflow.
 
 Flow:
-    clarify → decompose → select_goal → plan_steps → execute_step → evaluate
+    router ──→ respond → END                                  (simple questions)
+         └──→ clarify → decompose → select_goal → plan_steps → execute_step → evaluate
                   ↑                                                      │
                   └──── advance_goal ←── (more goals) ──────── next_step ┤
                                           ↓ (all done)                   │
@@ -9,7 +10,9 @@ Flow:
                                                                          │
                                                                   execute_step ←┘
 
-Nodes (10):
+Nodes (12):
+    router         — entry point, routes to respond or clarify
+    respond        — tool-using answer for simple questions (web_search, kb_search)
     clarify        — fetch KB context, detect complexity, optionally ask user
     decompose      — break user query into goals (context-aware)
     select_goal    — pick current goal, validate dependencies
@@ -85,6 +88,9 @@ from app.graph.nodes import (
     next_step,
     plan_steps,
     report,
+    respond,
+    route_entry,
+    router_node,
     select_goal,
 )
 from app.models import CodingTask, OrchestrateRequest, ProjectRules
@@ -132,7 +138,9 @@ def build_orchestrator_graph() -> StateGraph:
     - Coding agents are hands (execute specific steps)
     - Git operations: orchestrator DECIDES, agent EXECUTES
 
-    Nodes (10):
+    Nodes (12):
+        router        — entry point, routes to respond or clarify
+        respond       — tool-using answer for simple questions (web_search, kb_search)
         clarify       — fetch KB context, detect complexity, optionally ask user
         decompose     — break user query into goals (context-aware)
         select_goal   — pick current goal, validate dependencies
@@ -147,6 +155,8 @@ def build_orchestrator_graph() -> StateGraph:
     graph = StateGraph(OrchestratorState)
 
     # Add nodes
+    graph.add_node("router", router_node)
+    graph.add_node("respond", respond)
     graph.add_node("clarify", clarify)
     graph.add_node("decompose", decompose)
     graph.add_node("select_goal", select_goal)
@@ -158,8 +168,21 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("git_operations", git_operations)
     graph.add_node("report", report)
 
-    # Set entry point — clarify runs first
-    graph.set_entry_point("clarify")
+    # Entry point — router decides respond vs clarify
+    graph.set_entry_point("router")
+
+    # Conditional routing from entry
+    graph.add_conditional_edges(
+        "router",
+        route_entry,
+        {
+            "respond": "respond",
+            "clarify": "clarify",
+        },
+    )
+
+    # Respond → END (short-circuit for simple questions)
+    graph.add_edge("respond", END)
 
     # Linear edges
     graph.add_edge("clarify", "decompose")
@@ -299,6 +322,7 @@ async def run_orchestration_streaming(
     }
 
     _KNOWN_NODES = {
+        "router", "respond",
         "clarify", "decompose", "select_goal", "plan_steps",
         "execute_step", "evaluate", "git_operations", "report",
     }

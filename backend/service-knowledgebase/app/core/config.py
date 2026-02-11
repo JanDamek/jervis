@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     OCR_TEXT_THRESHOLD: int = 100      # Min chars for OCR to be considered sufficient
     OCR_PRINTABLE_RATIO: float = 0.85  # Min ratio of printable chars (0.0–1.0)
 
+    # -- Deployment mode --------------------------------------------------------
+    # Controls which route groups are registered:
+    #   "all"   — all endpoints (default, backward compat, local dev)
+    #   "read"  — retrieve, search, traverse, alias/resolve, graph, chunks
+    #   "write" — ingest, crawl, purge, alias/register, alias/merge
+    KB_MODE: str = "all"
+
     class Config:
         env_file = ".env"
 

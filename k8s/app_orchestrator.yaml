@@ -33,7 +33,9 @@ spec:
             - name: KOTLIN_SERVER_URL
               value: "http://jervis-server:5500"
             - name: KNOWLEDGEBASE_URL
-              value: "http://jervis-knowledgebase:8080"
+              value: "http://jervis-knowledgebase-read:8080"
+            - name: SEARXNG_URL
+              value: "http://192.168.100.117:30053"
             - name: K8S_NAMESPACE
               value: "jervis"
             - name: DATA_ROOT
