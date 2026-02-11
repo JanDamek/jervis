@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated
-
 from pydantic import BaseModel, Field
 
 
@@ -40,6 +38,29 @@ class ModelTier(str, Enum):
     CLOUD_CODING = "cloud_coding"           # Anthropic — critical code changes
     CLOUD_PREMIUM = "cloud_premium"         # Anthropic Opus — last resort, critical
     CLOUD_LARGE_CONTEXT = "cloud_large_context"  # Gemini — ultra-large context (1M tokens)
+
+
+class TaskCategory(str, Enum):
+    """What kind of task the orchestrator is handling."""
+    ADVICE = "advice"              # Answer/analysis (LLM + KB), no coding
+    SINGLE_TASK = "single_task"    # Single issue/task — may or may not involve coding
+    EPIC = "epic"                  # Multi-issue epic — batch execution in waves
+    GENERATIVE = "generative"      # Design + generate epics/tasks + execute
+
+
+class TaskAction(str, Enum):
+    """What SINGLE_TASK needs to resolve it."""
+    RESPOND = "respond"            # Answer/analysis (LLM + KB)
+    CODE = "code"                  # Coding agent needed
+    TRACKER_OPS = "tracker_ops"    # Create/update issues in tracker
+    MIXED = "mixed"                # Combination of above
+
+
+class StepType(str, Enum):
+    """Type of execution step."""
+    RESPOND = "respond"            # Analytical — LLM + KB directly
+    CODE = "code"                  # Coding agent via K8s Job
+    TRACKER = "tracker"            # Tracker operations via Kotlin API
 
 
 class RiskLevel(str, Enum):
@@ -79,6 +100,8 @@ class CodingTask(BaseModel):
     id: str
     client_id: str
     project_id: str | None = None
+    client_name: str | None = None
+    project_name: str | None = None
     workspace_path: str
     query: str
     agent_preference: str = "auto"
@@ -95,12 +118,14 @@ class Goal(BaseModel):
 
 
 class CodingStep(BaseModel):
-    """One step in the execution plan for a coding agent."""
+    """One step in the execution plan."""
 
     index: int
     instructions: str
-    agent_type: AgentType
+    step_type: StepType = StepType.CODE
+    agent_type: AgentType = AgentType.CLAUDE
     files: list[str] = Field(default_factory=list)
+    tracker_operations: list[dict] = Field(default_factory=list)  # For TRACKER steps
 
 
 class StepResult(BaseModel):
@@ -131,6 +156,20 @@ class ClarificationQuestion(BaseModel):
     question: str
     options: list[str] = Field(default_factory=list)  # Suggested answers (empty = freeform)
     required: bool = True
+
+
+# --- Evidence Pack ---
+
+
+class EvidencePack(BaseModel):
+    """Collected evidence for task processing."""
+
+    kb_results: list[dict] = Field(default_factory=list)
+    tracker_artifacts: list[dict] = Field(default_factory=list)
+    chat_history_summary: str = ""
+    external_refs: list[str] = Field(default_factory=list)
+    facts: list[str] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
 
 
 # --- Cross-goal Context ---
@@ -167,6 +206,37 @@ class ApprovalResponse(BaseModel):
     reason: str | None = None
 
 
+# --- Chat History ---
+
+
+class ChatHistoryMessage(BaseModel):
+    """Single verbatim message from recent conversation history."""
+
+    role: str
+    content: str
+    timestamp: str
+    sequence: int
+
+
+class ChatSummaryBlock(BaseModel):
+    """Compressed summary of an older block of messages."""
+
+    sequence_range: str  # "1-20"
+    summary: str
+    key_decisions: list[str] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+    is_checkpoint: bool = False
+    checkpoint_reason: str | None = None
+
+
+class ChatHistoryPayload(BaseModel):
+    """Full chat history context for orchestrator."""
+
+    recent_messages: list[ChatHistoryMessage] = Field(default_factory=list)
+    summary_blocks: list[ChatSummaryBlock] = Field(default_factory=list)
+    total_message_count: int = 0
+
+
 # --- API Request/Response ---
 
 
@@ -176,11 +246,15 @@ class OrchestrateRequest(BaseModel):
     task_id: str
     client_id: str
     project_id: str | None = None
+    client_name: str | None = None
+    project_name: str | None = None
     workspace_path: str
     query: str
     agent_preference: str = "auto"
     rules: ProjectRules = Field(default_factory=ProjectRules)
     environment: dict | None = None  # Resolved environment context from server
+    jervis_project_id: str | None = None  # JERVIS internal project for planning
+    chat_history: ChatHistoryPayload | None = None  # Conversation context
 
 
 class OrchestrateResponse(BaseModel):

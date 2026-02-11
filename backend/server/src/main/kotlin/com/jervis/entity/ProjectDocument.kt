@@ -42,6 +42,8 @@ data class ProjectDocument(
     val resources: List<ProjectResource> = emptyList(),
     /** N:M links between resources (e.g., repo ↔ issue tracker) */
     val resourceLinks: List<ResourceLink> = emptyList(),
+    /** JERVIS internal project for orchestrator planning. Max 1 per client. */
+    val isJervisInternal: Boolean = false,
 )
 
 /**

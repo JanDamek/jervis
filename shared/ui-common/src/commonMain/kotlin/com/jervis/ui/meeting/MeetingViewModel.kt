@@ -538,6 +538,17 @@ class MeetingViewModel(
         }
     }
 
+    fun stopTranscription(meetingId: String) {
+        scope.launch {
+            try {
+                meetingService.stopTranscription(meetingId)
+                doRefreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při zastavení přepisu: ${e.message}"
+            }
+        }
+    }
+
     fun retranscribeMeeting(meetingId: String) {
         scope.launch {
             try {

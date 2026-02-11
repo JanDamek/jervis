@@ -126,137 +126,126 @@ Text: {text}
             logger.warning("LLM extraction failed: %s", e)
             return 0, 0, []
 
-        local_nodes = 0
-        local_edges = 0
         entity_keys = []
         label_to_key = {}  # Map original labels to canonical keys
-        nodes_collection = self.db.collection("KnowledgeNodes")
-        edges_collection = self.db.collection("KnowledgeEdges")
 
-        # 2. Process Nodes with normalization and alias resolution
+        # Phase 1: Resolve aliases (async) and prepare node data
+        resolved_nodes = []
         for node in data.get("nodes", []):
             label = node.get('label', '').strip()
             if not label:
                 continue
 
-            # Normalize entity type
             entity_type = normalize_entity_type(node.get('type', 'entity'))
-
-            # Build normalized key: type:label
             raw_key = build_graph_key(entity_type, label)
             if not raw_key:
                 continue
 
-            # Resolve through alias registry (may return different canonical key)
+            # Resolve through alias registry (async — must stay outside thread)
             canonical_key = await self.alias_registry.resolve(request.clientId, raw_key)
-
-            # Register this raw_key → canonical_key mapping
             await self.alias_registry.register(request.clientId, raw_key, canonical_key)
 
-            # Store mapping for edge resolution
             label_to_key[label.lower()] = canonical_key
             entity_keys.append(canonical_key)
+            resolved_nodes.append((node, label, entity_type, canonical_key))
 
-            # Use canonical key for node storage
-            # Extract just the value part for ArangoDB key (remove colons)
-            arango_key = canonical_key.replace(":", "__")
-
-            if nodes_collection.has(arango_key):
-                # Node exists - append chunk IDs to ragChunks (merge)
-                if chunk_ids:
-                    try:
-                        existing = nodes_collection.get(arango_key)
-                        existing_chunks = set(existing.get("ragChunks", []))
-                        new_chunks = existing_chunks | set(chunk_ids)
-                        # Also update description if new one is longer
-                        new_desc = node.get('description', '')
-                        old_desc = existing.get('description', '')
-                        update_doc = {
-                            "_key": arango_key,
-                            "ragChunks": list(new_chunks)
-                        }
-                        if len(new_desc) > len(old_desc):
-                            update_doc["description"] = new_desc
-                        nodes_collection.update(update_doc)
-                    except Exception:
-                        pass
-            else:
-                # Create new node with ragChunks
-                doc = {
-                    "_key": arango_key,
-                    "canonicalKey": canonical_key,  # Store original namespace:value format
-                    "label": label,
-                    "type": entity_type,
-                    "description": node.get('description', ''),
-                    "clientId": request.clientId,
-                    "projectId": request.projectId or "",
-                    "groupId": request.groupId or "",
-                    "ragChunks": chunk_ids or [],
-                }
-                try:
-                    nodes_collection.insert(doc)
-                    local_nodes += 1
-                except Exception:
-                    pass
-
-        # 3. Process Edges with evidence tracking
+        # Phase 2: Prepare edge data (pure computation, no DB)
+        edge_specs = []
         for edge in data.get("edges", []):
             source_label = edge.get('source', '').strip().lower()
             target_label = edge.get('target', '').strip().lower()
             relation = edge.get('relation', '').strip()
-
             if not (source_label and target_label and relation):
                 continue
-
-            # Resolve labels to canonical keys
             source_key = label_to_key.get(source_label)
             target_key = label_to_key.get(target_label)
-
             if not source_key or not target_key:
                 continue
+            edge_specs.append((edge, source_key, target_key, relation))
 
-            # Convert to ArangoDB keys
-            source_arango = source_key.replace(":", "__")
-            target_arango = target_key.replace(":", "__")
+        # Phase 3: All ArangoDB ops in one thread call
+        def _arango_upsert():
+            nodes_collection = self.db.collection("KnowledgeNodes")
+            edges_collection = self.db.collection("KnowledgeEdges")
+            local_nodes = 0
+            local_edges = 0
 
-            # Normalize relation
-            relation_normalized = normalize_graph_ref(relation)
-
-            edge_key = f"{source_arango}_{relation_normalized}_{target_arango}"
-
-            # Check if both nodes exist
-            if not (nodes_collection.has(source_arango) and nodes_collection.has(target_arango)):
-                continue
-
-            if edges_collection.has(edge_key):
-                # Edge exists - append chunk IDs to evidenceChunkIds (merge)
-                if chunk_ids:
+            for node, label, entity_type, canonical_key in resolved_nodes:
+                arango_key = canonical_key.replace(":", "__")
+                if nodes_collection.has(arango_key):
+                    if chunk_ids:
+                        try:
+                            existing = nodes_collection.get(arango_key)
+                            existing_chunks = set(existing.get("ragChunks", []))
+                            new_chunks = existing_chunks | set(chunk_ids)
+                            new_desc = node.get('description', '')
+                            old_desc = existing.get('description', '')
+                            update_doc = {
+                                "_key": arango_key,
+                                "ragChunks": list(new_chunks)
+                            }
+                            if len(new_desc) > len(old_desc):
+                                update_doc["description"] = new_desc
+                            nodes_collection.update(update_doc)
+                        except Exception:
+                            pass
+                else:
+                    doc = {
+                        "_key": arango_key,
+                        "canonicalKey": canonical_key,
+                        "label": label,
+                        "type": entity_type,
+                        "description": node.get('description', ''),
+                        "clientId": request.clientId,
+                        "projectId": request.projectId or "",
+                        "groupId": request.groupId or "",
+                        "ragChunks": chunk_ids or [],
+                    }
                     try:
-                        existing = edges_collection.get(edge_key)
-                        existing_evidence = set(existing.get("evidenceChunkIds", []))
-                        new_evidence = existing_evidence | set(chunk_ids)
-                        edges_collection.update({
-                            "_key": edge_key,
-                            "evidenceChunkIds": list(new_evidence)
-                        })
+                        nodes_collection.insert(doc)
+                        local_nodes += 1
                     except Exception:
                         pass
-            else:
-                # Create new edge with evidence
-                edge_doc = {
-                    "_key": edge_key,
-                    "_from": f"KnowledgeNodes/{source_arango}",
-                    "_to": f"KnowledgeNodes/{target_arango}",
-                    "relation": relation,
-                    "relationNormalized": relation_normalized,
-                    "evidenceChunkIds": chunk_ids or [],
-                }
-                try:
-                    edges_collection.insert(edge_doc)
-                    local_edges += 1
-                except Exception:
-                    pass
 
+            for edge, source_key, target_key, relation in edge_specs:
+                source_arango = source_key.replace(":", "__")
+                target_arango = target_key.replace(":", "__")
+                relation_normalized = normalize_graph_ref(relation)
+                edge_key = f"{source_arango}_{relation_normalized}_{target_arango}"
+
+                if not (nodes_collection.has(source_arango) and nodes_collection.has(target_arango)):
+                    continue
+
+                if edges_collection.has(edge_key):
+                    if chunk_ids:
+                        try:
+                            existing = edges_collection.get(edge_key)
+                            existing_evidence = set(existing.get("evidenceChunkIds", []))
+                            new_evidence = existing_evidence | set(chunk_ids)
+                            edges_collection.update({
+                                "_key": edge_key,
+                                "evidenceChunkIds": list(new_evidence)
+                            })
+                        except Exception:
+                            pass
+                else:
+                    edge_doc = {
+                        "_key": edge_key,
+                        "_from": f"KnowledgeNodes/{source_arango}",
+                        "_to": f"KnowledgeNodes/{target_arango}",
+                        "relation": relation,
+                        "relationNormalized": relation_normalized,
+                        "evidenceChunkIds": chunk_ids or [],
+                    }
+                    try:
+                        edges_collection.insert(edge_doc)
+                        local_edges += 1
+                    except Exception:
+                        pass
+
+            return local_nodes, local_edges
+
+        local_nodes, local_edges = await asyncio.to_thread(_arango_upsert)
         return local_nodes, local_edges, entity_keys
 
     async def purge_chunk_refs(self, deleted_chunk_ids: list[str]) -> tuple[int, int, int, int]:
@@ -271,58 +260,61 @@ Text: {text}
             return 0, 0, 0, 0
 
         deleted_set = set(deleted_chunk_ids)
-        nodes_collection = self.db.collection("KnowledgeNodes")
-        edges_collection = self.db.collection("KnowledgeEdges")
 
-        nodes_cleaned = 0
-        edges_cleaned = 0
-        nodes_deleted = 0
-        edges_deleted = 0
+        def _purge():
+            nodes_collection = self.db.collection("KnowledgeNodes")
+            edges_collection = self.db.collection("KnowledgeEdges")
 
-        # Clean nodes: remove deleted chunk IDs from ragChunks
-        try:
-            cursor = self.db.aql.execute(
-                "FOR doc IN KnowledgeNodes FILTER LENGTH(doc.ragChunks) > 0 RETURN doc"
-            )
-            for doc in cursor:
-                rag_chunks = doc.get("ragChunks", [])
-                remaining = [c for c in rag_chunks if c not in deleted_set]
-                if len(remaining) < len(rag_chunks):
-                    if remaining:
-                        nodes_collection.update({"_key": doc["_key"], "ragChunks": remaining})
-                        nodes_cleaned += 1
-                    else:
-                        # No remaining evidence - delete node
-                        try:
-                            nodes_collection.delete(doc["_key"])
-                            nodes_deleted += 1
-                        except Exception:
-                            pass
-        except Exception as e:
-            logger.warning("Failed to clean node chunk refs: %s", e)
+            nodes_cleaned = 0
+            edges_cleaned = 0
+            nodes_deleted = 0
+            edges_deleted = 0
 
-        # Clean edges: remove deleted chunk IDs from evidenceChunkIds
-        try:
-            cursor = self.db.aql.execute(
-                "FOR doc IN KnowledgeEdges FILTER LENGTH(doc.evidenceChunkIds) > 0 RETURN doc"
-            )
-            for doc in cursor:
-                evidence_ids = doc.get("evidenceChunkIds", [])
-                remaining = [c for c in evidence_ids if c not in deleted_set]
-                if len(remaining) < len(evidence_ids):
-                    if remaining:
-                        edges_collection.update({"_key": doc["_key"], "evidenceChunkIds": remaining})
-                        edges_cleaned += 1
-                    else:
-                        # No remaining evidence - delete edge
-                        try:
-                            edges_collection.delete(doc["_key"])
-                            edges_deleted += 1
-                        except Exception:
-                            pass
-        except Exception as e:
-            logger.warning("Failed to clean edge chunk refs: %s", e)
+            # Clean nodes: remove deleted chunk IDs from ragChunks
+            try:
+                cursor = self.db.aql.execute(
+                    "FOR doc IN KnowledgeNodes FILTER LENGTH(doc.ragChunks) > 0 RETURN doc"
+                )
+                for doc in cursor:
+                    rag_chunks = doc.get("ragChunks", [])
+                    remaining = [c for c in rag_chunks if c not in deleted_set]
+                    if len(remaining) < len(rag_chunks):
+                        if remaining:
+                            nodes_collection.update({"_key": doc["_key"], "ragChunks": remaining})
+                            nodes_cleaned += 1
+                        else:
+                            try:
+                                nodes_collection.delete(doc["_key"])
+                                nodes_deleted += 1
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.warning("Failed to clean node chunk refs: %s", e)
 
+            # Clean edges: remove deleted chunk IDs from evidenceChunkIds
+            try:
+                cursor = self.db.aql.execute(
+                    "FOR doc IN KnowledgeEdges FILTER LENGTH(doc.evidenceChunkIds) > 0 RETURN doc"
+                )
+                for doc in cursor:
+                    evidence_ids = doc.get("evidenceChunkIds", [])
+                    remaining = [c for c in evidence_ids if c not in deleted_set]
+                    if len(remaining) < len(evidence_ids):
+                        if remaining:
+                            edges_collection.update({"_key": doc["_key"], "evidenceChunkIds": remaining})
+                            edges_cleaned += 1
+                        else:
+                            try:
+                                edges_collection.delete(doc["_key"])
+                                edges_deleted += 1
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.warning("Failed to clean edge chunk refs: %s", e)
+
+            return nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted
+
+        nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted = await asyncio.to_thread(_purge)
         logger.info("Graph purge: nodes_cleaned=%d nodes_deleted=%d edges_cleaned=%d edges_deleted=%d",
                      nodes_cleaned, nodes_deleted, edges_cleaned, edges_deleted)
         return nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted
@@ -335,15 +327,18 @@ Text: {text}
         Used for retrieving evidence text for a node.
         """
         try:
-            # Resolve key through alias registry
+            # Resolve key through alias registry (async — stays outside thread)
             canonical_key = await self.alias_registry.resolve(client_id, node_key)
             arango_key = canonical_key.replace(":", "__")
 
-            nodes_collection = self.db.collection("KnowledgeNodes")
-            if nodes_collection.has(arango_key):
-                doc = nodes_collection.get(arango_key)
-                return doc.get("ragChunks", [])
-            return []
+            def _fetch():
+                nodes_collection = self.db.collection("KnowledgeNodes")
+                if nodes_collection.has(arango_key):
+                    doc = nodes_collection.get(arango_key)
+                    return doc.get("ragChunks", [])
+                return []
+
+            return await asyncio.to_thread(_fetch)
         except Exception:
             return []
 
@@ -353,12 +348,15 @@ Text: {text}
 
         Used for verifying and explaining relationships.
         """
-        try:
+        def _fetch():
             edges_collection = self.db.collection("KnowledgeEdges")
             if edges_collection.has(edge_key):
                 doc = edges_collection.get(edge_key)
                 return doc.get("evidenceChunkIds", [])
             return []
+
+        try:
+            return await asyncio.to_thread(_fetch)
         except Exception:
             return []
 
@@ -374,7 +372,7 @@ Text: {text}
         #   (clientId == "" OR clientId == NULL OR clientId == @clientId)
         #   AND (projectId == "" OR projectId == NULL OR projectId == @projectId)
 
-        # Resolve startKey through alias registry
+        # Resolve startKey through alias registry (async — stays outside thread)
         canonical_key = await self.alias_registry.resolve(request.clientId, request.startKey)
         arango_key = canonical_key.replace(":", "__")
 
@@ -389,12 +387,10 @@ Text: {text}
             client_expr = "(v.clientId == '' OR v.clientId == null OR v.clientId == @clientId)"
             bind_vars["clientId"] = request.clientId
         else:
-            # No client = only global data
             client_expr = "(v.clientId == '' OR v.clientId == null)"
 
         if request.projectId:
             if request.groupId:
-                # Group cross-visibility: include project's own data + other projects in same group
                 project_expr = (
                     "(v.projectId == '' OR v.projectId == null "
                     "OR v.projectId == @projectId "
@@ -407,10 +403,8 @@ Text: {text}
                 bind_vars["projectId"] = request.projectId
             filter_expr = f"({client_expr} AND {project_expr})"
         else:
-            # No project = don't filter by project
             filter_expr = client_expr
 
-        # Note: direction and depth must be static in AQL, cannot be bind vars
         # Validate direction to prevent injection
         direction = request.spec.direction.upper()
         if direction not in ("OUTBOUND", "INBOUND", "ANY"):
@@ -424,7 +418,7 @@ Text: {text}
         RETURN v
         """
 
-        try:
+        def _execute():
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             nodes = []
             for doc in cursor:
@@ -435,6 +429,9 @@ Text: {text}
                     properties=doc
                 ))
             return nodes
+
+        try:
+            return await asyncio.to_thread(_execute)
         except Exception as e:
             logger.warning("Traversal failed: %s", e)
             return []
@@ -446,7 +443,7 @@ Text: {text}
         The key is resolved through alias registry to find canonical key.
         Returns None if node doesn't exist or is not accessible.
         """
-        # Resolve key through alias registry
+        # Resolve key through alias registry (async — stays outside thread)
         canonical_key = await self.alias_registry.resolve(client_id, key)
         arango_key = canonical_key.replace(":", "__")
 
@@ -481,7 +478,7 @@ Text: {text}
         RETURN doc
         """
 
-        try:
+        def _execute():
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             docs = list(cursor)
             if docs:
@@ -493,6 +490,9 @@ Text: {text}
                     properties=doc
                 )
             return None
+
+        try:
+            return await asyncio.to_thread(_execute)
         except Exception as e:
             logger.warning("Get node failed: %s", e)
             return None
@@ -549,7 +549,7 @@ Text: {text}
         RETURN doc
         """
 
-        try:
+        def _execute():
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             nodes = []
             for doc in cursor:
@@ -560,6 +560,9 @@ Text: {text}
                     properties=doc
                 ))
             return nodes
+
+        try:
+            return await asyncio.to_thread(_execute)
         except Exception as e:
             logger.warning("Search nodes failed: %s", e)
             return []

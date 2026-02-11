@@ -260,6 +260,46 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: orchestrator creates tracker issues
+                            post("/internal/tracker/create-issue") {
+                                try {
+                                    val body = call.receive<TrackerCreateIssueRequest>()
+                                    // TODO Phase 2: delegate to provider service via ProviderRegistry
+                                    logger.info { "TRACKER_CREATE: title='${body.title}' project=${body.projectId}" }
+                                    call.respondText(
+                                        "{\"ok\":true,\"message\":\"Issue creation placeholder\"}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to create tracker issue" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator updates tracker issues
+                            post("/internal/tracker/update-issue") {
+                                try {
+                                    val body = call.receive<TrackerUpdateIssueRequest>()
+                                    // TODO Phase 2: delegate to provider service via ProviderRegistry
+                                    logger.info { "TRACKER_UPDATE: issue=${body.issueKey} project=${body.projectId}" }
+                                    call.respondText(
+                                        "{\"ok\":true,\"message\":\"Issue update placeholder\"}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to update tracker issue" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -341,4 +381,23 @@ data class OrchestratorStatusCallback(
     val interruptDescription: String? = null,
     val branch: String? = null,
     val artifacts: List<String> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class TrackerCreateIssueRequest(
+    val clientId: String,
+    val projectId: String? = null,
+    val title: String,
+    val description: String = "",
+    val type: String = "task",
+    val parentKey: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class TrackerUpdateIssueRequest(
+    val clientId: String,
+    val projectId: String? = null,
+    val issueKey: String,
+    val status: String? = null,
+    val comment: String? = null,
 )

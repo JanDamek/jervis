@@ -14,11 +14,12 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.entity.CloudModelPolicy
 import com.jervis.mapper.toAgentContextJson
-import com.jervis.repository.ClientRepository
-import com.jervis.repository.ProjectRepository
 import com.jervis.repository.TaskRepository
+import com.jervis.service.client.ClientService
+import com.jervis.service.project.ProjectService
 import com.jervis.service.background.TaskService
 import com.jervis.service.environment.EnvironmentService
+import com.jervis.service.chat.ChatHistoryService
 import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
 import mu.KotlinLogging
@@ -43,8 +44,9 @@ class AgentOrchestratorService(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
     private val environmentService: EnvironmentService,
-    private val clientRepository: ClientRepository,
-    private val projectRepository: ProjectRepository,
+    private val clientService: ClientService,
+    private val projectService: ProjectService,
+    private val chatHistoryService: ChatHistoryService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -202,14 +204,44 @@ class AgentOrchestratorService(
             }
         }
 
+        // Resolve JERVIS internal project for orchestrator planning
+        val jervisProjectId = try {
+            projectService.getOrCreateJervisProject(task.clientId).id.toString()
+        } catch (e: Exception) {
+            logger.warn { "Failed to resolve JERVIS internal project: ${e.message}" }
+            null
+        }
+
+        // Resolve client/project names for orchestrator context
+        val clientName = try {
+            clientService.getClientByIdOrNull(task.clientId)?.name
+        } catch (e: Exception) { null }
+        val projectName = task.projectId?.let { pid ->
+            try {
+                projectService.getProjectByIdOrNull(pid)?.name
+            } catch (e: Exception) { null }
+        }
+
+        // Load chat history for conversation context
+        val chatHistory = try {
+            chatHistoryService.prepareChatHistoryPayload(task.id)
+        } catch (e: Exception) {
+            logger.warn { "Failed to load chat history for task ${task.id}: ${e.message}" }
+            null
+        }
+
         val request = OrchestrateRequestDto(
             taskId = task.id.toString(),
             clientId = task.clientId.toString(),
             projectId = task.projectId?.toString(),
+            clientName = clientName,
+            projectName = projectName,
             workspacePath = resolveWorkspacePath(task),
             query = userInput,
             rules = rules,
             environment = environmentJson,
+            jervisProjectId = jervisProjectId,
+            chatHistory = chatHistory,
         )
 
         val streamResponse = pythonOrchestratorClient.orchestrateStream(request)
@@ -285,7 +317,10 @@ class AgentOrchestratorService(
             )
         }
 
-        val updatedTask = task.copy(state = TaskStateEnum.PYTHON_ORCHESTRATING)
+        val updatedTask = task.copy(
+            state = TaskStateEnum.PYTHON_ORCHESTRATING,
+            orchestrationStartedAt = java.time.Instant.now(),
+        )
         taskRepository.save(updatedTask)
 
         logger.info { "PYTHON_RESUMED: taskId=${task.id} threadId=$threadId clarification=$wasClarification" }
@@ -303,8 +338,8 @@ class AgentOrchestratorService(
         val prefs = preferenceService.getAllPreferences(clientId, projectId)
 
         // Load cloud model policy: project overrides client
-        val client = clientId?.let { clientRepository.findById(it) }
-        val project = projectId?.let { projectRepository.findById(it) }
+        val client = clientId?.let { clientService.getClientByIdOrNull(it) }
+        val project = projectId?.let { projectService.getProjectByIdOrNull(it) }
         val clientPolicy = client?.cloudModelPolicy ?: CloudModelPolicy()
         val effectivePolicy = project?.cloudModelPolicy ?: clientPolicy
 

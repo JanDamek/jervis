@@ -16,6 +16,12 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ConnectionRepository : CoroutineCrudRepository<ConnectionDocument, ConnectionId> {
     /**
+     * Find connection by ID. Use this instead of the inherited findById(ConnectionId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     */
+    suspend fun getById(id: ConnectionId): ConnectionDocument?
+
+    /**
      * Find all connections by state.
      * Uses an explicit query because 'state' is defined in subclasses, not on sealed class.
      */

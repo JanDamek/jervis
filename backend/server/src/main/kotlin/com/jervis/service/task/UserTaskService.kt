@@ -108,7 +108,7 @@ class UserTaskService(
 
     suspend fun getTaskById(taskId: TaskId) = getTaskByIdOrNull(taskId)
 
-    suspend fun getTaskByIdOrNull(taskId: TaskId): TaskDocument? = userTaskRepository.findAll().toList().find { it.id == taskId }
+    suspend fun getTaskByIdOrNull(taskId: TaskId): TaskDocument? = userTaskRepository.getById(taskId)
 
     suspend fun deleteTaskById(id: TaskId) {
         getTaskByIdOrNull(id)?.let { userTaskRepository.delete(it) }

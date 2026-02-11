@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,6 +56,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
@@ -115,7 +124,7 @@ fun MainScreenView(
     onAgentStatusClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().imePadding()) {
         ChatContent(
             clients = clients,
             projects = projects,
@@ -396,8 +405,27 @@ private fun ChatMessageItem(
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
 
-    // Progress messages are displayed differently (compact, with spinner)
-    if (message.messageType == ChatMessage.MessageType.PROGRESS) {
+    // Error messages with red styling
+    if (message.messageType == ChatMessage.MessageType.ERROR) {
+        Row(
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    } else if (message.messageType == ChatMessage.MessageType.PROGRESS) {
         Row(
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.Start,
@@ -608,7 +636,23 @@ private fun InputArea(
             modifier =
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 56.dp, max = 120.dp),
+                    .heightIn(min = 56.dp, max = 120.dp)
+                    .onPreviewKeyEvent { keyEvent ->
+                        if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
+                            if (keyEvent.isShiftPressed) {
+                                // Shift+Enter → new line (let the event pass through)
+                                false
+                            } else {
+                                // Enter → send message
+                                if (enabled && inputText.isNotBlank()) {
+                                    onSendClick()
+                                }
+                                true // consume the event
+                            }
+                        } else {
+                            false
+                        }
+                    },
             maxLines = 4,
             singleLine = false,
         )

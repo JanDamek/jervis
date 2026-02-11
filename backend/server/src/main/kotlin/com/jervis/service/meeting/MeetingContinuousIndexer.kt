@@ -388,40 +388,39 @@ class MeetingContinuousIndexer(
                 .findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.UPLOADED)
                 .toList()
 
-            if (meetings.isEmpty()) {
-                delay(POLL_DELAY_MS)
-                continue
-            }
+            if (meetings.isNotEmpty()) {
+                logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (max parallel: $currentMaxParallelJobs)" }
 
-            logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (max parallel: $currentMaxParallelJobs)" }
+                for (meeting in meetings) {
+                    val meetingIdStr = meeting.id.toHexString()
+                    // Skip if already being processed by another coroutine
+                    if (!processingMeetingIds.add(meetingIdStr)) {
+                        logger.debug { "Meeting $meetingIdStr already being processed, skipping" }
+                        continue
+                    }
 
-            for (meeting in meetings) {
-                val meetingIdStr = meeting.id.toHexString()
-                // Skip if already being processed by another coroutine
-                if (!processingMeetingIds.add(meetingIdStr)) {
-                    logger.debug { "Meeting $meetingIdStr already being processed, skipping" }
-                    continue
-                }
-
-                transcriptionSemaphore.acquire()
-                scope.launch {
-                    try {
-                        // Re-read from DB to avoid race with stuck detection or other pipelines
-                        val fresh = meetingRepository.findById(meeting.id)
-                        if (fresh == null || fresh.state != MeetingStateEnum.UPLOADED) {
-                            logger.debug { "Meeting $meetingIdStr no longer UPLOADED (now ${fresh?.state}), skipping" }
-                            return@launch
+                    transcriptionSemaphore.acquire()
+                    scope.launch {
+                        try {
+                            // Re-read from DB to avoid race with stuck detection or other pipelines
+                            val fresh = meetingRepository.findById(meeting.id)
+                            if (fresh == null || fresh.state != MeetingStateEnum.UPLOADED) {
+                                logger.debug { "Meeting $meetingIdStr no longer UPLOADED (now ${fresh?.state}), skipping" }
+                                return@launch
+                            }
+                            meetingTranscriptionService.transcribe(fresh)
+                        } catch (e: Exception) {
+                            logger.error(e) { "Failed to transcribe meeting $meetingIdStr" }
+                            markAsFailed(meeting, "Transcription error: ${e.message}")
+                        } finally {
+                            processingMeetingIds.remove(meetingIdStr)
+                            transcriptionSemaphore.release()
                         }
-                        meetingTranscriptionService.transcribe(fresh)
-                    } catch (e: Exception) {
-                        logger.error(e) { "Failed to transcribe meeting $meetingIdStr" }
-                        markAsFailed(meeting, "Transcription error: ${e.message}")
-                    } finally {
-                        processingMeetingIds.remove(meetingIdStr)
-                        transcriptionSemaphore.release()
                     }
                 }
             }
+
+            delay(POLL_DELAY_MS)
         }
     }
 
@@ -501,7 +500,7 @@ class MeetingContinuousIndexer(
                 title = meeting.title,
             ),
             projectId = meeting.projectId,
-            taskName = meeting.title.take(120).ifBlank { "Meeting ${meeting.id}" },
+            taskName = (meeting.title ?: "Meeting ${meeting.id}").take(120),
         )
 
         meetingRepository.save(meeting.copy(state = MeetingStateEnum.INDEXED))

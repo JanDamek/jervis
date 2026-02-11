@@ -33,6 +33,7 @@ class AgentOrchestratorRpcImpl(
     private val taskService: com.jervis.service.background.TaskService,
     private val projectService: com.jervis.service.project.ProjectService,
     private val taskNotifier: com.jervis.service.background.TaskNotifier,
+    private val pythonOrchestratorClient: com.jervis.configuration.PythonOrchestratorClient,
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -145,8 +146,8 @@ class AgentOrchestratorRpcImpl(
 
                     messages.forEach { msg: ChatMessageDto ->
                         val responseType =
-                            when (msg.role.lowercase()) {
-                                "user" -> ChatResponseType.USER_MESSAGE
+                            when (msg.role) {
+                                com.jervis.dto.ChatRole.USER -> ChatResponseType.USER_MESSAGE
                                 else -> ChatResponseType.FINAL
                             }
 
@@ -156,7 +157,7 @@ class AgentOrchestratorRpcImpl(
                                 type = responseType,
                                 metadata =
                                     mutableMapOf(
-                                        "sender" to msg.role,
+                                        "sender" to msg.role.name.lowercase(),
                                         "timestamp" to msg.timestamp,
                                         "fromHistory" to "true",
                                     ).apply {
@@ -525,7 +526,7 @@ class AgentOrchestratorRpcImpl(
         logger.info { "REORDER_TASK | taskId=$taskId | newPosition=$newPosition" }
 
         val taskIdTyped = com.jervis.common.types.TaskId.fromString(taskId)
-        val task = taskRepository.findById(taskIdTyped)
+        val task = taskRepository.getById(taskIdTyped)
             ?: run {
                 logger.warn { "REORDER_TASK_NOT_FOUND | taskId=$taskId" }
                 return
@@ -550,7 +551,7 @@ class AgentOrchestratorRpcImpl(
         logger.info { "MOVE_TASK | taskId=$taskId | targetMode=$targetMode" }
 
         val taskIdTyped = com.jervis.common.types.TaskId.fromString(taskId)
-        val task = taskRepository.findById(taskIdTyped)
+        val task = taskRepository.getById(taskIdTyped)
             ?: run {
                 logger.warn { "MOVE_TASK_NOT_FOUND | taskId=$taskId" }
                 return
@@ -578,6 +579,16 @@ class AgentOrchestratorRpcImpl(
         } catch (e: Exception) {
             logger.warn(e) { "Failed to emit queue status after move" }
         }
+    }
+
+    override suspend fun cancelOrchestration(taskId: String) {
+        val taskIdTyped = com.jervis.common.types.TaskId.fromString(taskId)
+        val task = taskRepository.getById(taskIdTyped)
+            ?: throw IllegalArgumentException("Task not found: $taskId")
+        val threadId = task.orchestratorThreadId
+            ?: throw IllegalStateException("Task has no orchestrator thread: $taskId")
+        pythonOrchestratorClient.cancelOrchestration(threadId)
+        logger.info { "ORCHESTRATION_CANCELLED: taskId=$taskId threadId=$threadId" }
     }
 
     // --- Internal Helpers ---

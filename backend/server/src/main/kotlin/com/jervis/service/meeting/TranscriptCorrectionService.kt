@@ -422,6 +422,170 @@ class TranscriptCorrectionService(
         }
     }
 
+    /**
+     * Retranscribe specific segments by index (user-initiated from UI).
+     * Similar to retranscribeAndCorrect but with explicit segment indices.
+     */
+    suspend fun retranscribeSelectedSegments(meetingId: String, segmentIndices: List<Int>) {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        val meetingIdStr = meeting.id.toHexString()
+        val clientIdStr = meeting.clientId.toString()
+
+        val baseSegments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments }
+        require(baseSegments.isNotEmpty()) { "Meeting has no transcript segments" }
+
+        // Set CORRECTING state
+        val correcting = meetingRepository.save(
+            meeting.copy(
+                state = MeetingStateEnum.CORRECTING,
+                stateChangedAt = java.time.Instant.now(),
+            ),
+        )
+        notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.CORRECTING.name, meeting.title)
+
+        try {
+            // Build extraction ranges with ±10s padding
+            val paddingSec = 10.0
+            val extractionRanges = segmentIndices.map { idx ->
+                val seg = baseSegments.getOrNull(idx)
+                    ?: throw IllegalStateException("Segment index $idx out of range")
+                ExtractionRange(
+                    start = (seg.startSec - paddingSec).coerceAtLeast(0.0),
+                    end = seg.endSec + paddingSec,
+                    segmentIndex = idx,
+                )
+            }
+
+            val audioFilePath = meeting.audioFilePath
+                ?: throw IllegalStateException("Meeting ${meeting.id} has no audio file")
+            val workspacePath = java.nio.file.Paths.get(audioFilePath).parent.toString()
+
+            logger.info {
+                "Retranscribing ${extractionRanges.size} segments for meeting $meetingIdStr " +
+                    "(indices: $segmentIndices)"
+            }
+
+            val whisperResult = whisperJobRunner.retranscribe(
+                audioFilePath = audioFilePath,
+                workspacePath = workspacePath,
+                extractionRanges = extractionRanges,
+                meetingId = meetingIdStr,
+                clientId = clientIdStr,
+                projectId = meeting.projectId?.toString(),
+            )
+
+            if (whisperResult.error != null) {
+                throw RuntimeException("Retranscription failed: ${whisperResult.error}")
+            }
+
+            val retranscribedSegments = whisperResult.textBySegment.mapKeys { it.key.toInt() }
+
+            // Merge: retranscribed text replaces original, rest unchanged
+            val allSegments = baseSegments.mapIndexed { i, seg ->
+                val corrSeg = CorrectionSegmentDto(
+                    i = i,
+                    startSec = seg.startSec,
+                    endSec = seg.endSec,
+                    text = seg.text,
+                    speaker = seg.speaker,
+                )
+                if (retranscribedSegments.containsKey(i)) {
+                    corrSeg.copy(text = retranscribedSegments[i]!!.trim())
+                } else {
+                    corrSeg
+                }
+            }
+
+            // Targeted correction
+            val correctionResult = orchestratorClient.correctTargeted(
+                CorrectionTargetedRequestDto(
+                    clientId = clientIdStr,
+                    projectId = meeting.projectId?.toString(),
+                    meetingId = meetingIdStr,
+                    segments = allSegments,
+                    retranscribedIndices = retranscribedSegments.keys.toList(),
+                    userCorrectedIndices = emptyMap(),
+                ),
+            )
+
+            val correctedSegments = correctionResult.segments.mapIndexed { i, corrSeg ->
+                val original = baseSegments.getOrNull(i)
+                TranscriptSegment(
+                    startSec = original?.startSec ?: corrSeg.startSec,
+                    endSec = original?.endSec ?: corrSeg.endSec,
+                    text = corrSeg.text,
+                    speaker = original?.speaker ?: corrSeg.speaker,
+                )
+            }
+            val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
+
+            val questions = correctionResult.questions.map { q ->
+                CorrectionQuestion(
+                    questionId = q.id,
+                    segmentIndex = q.i,
+                    originalText = q.original,
+                    correctionOptions = q.options,
+                    question = q.question,
+                    context = q.context,
+                )
+            }
+
+            val newState = if (questions.isNotEmpty()) {
+                MeetingStateEnum.CORRECTION_REVIEW
+            } else {
+                MeetingStateEnum.CORRECTED
+            }
+
+            meetingRepository.save(
+                correcting.copy(
+                    state = newState,
+                    stateChangedAt = java.time.Instant.now(),
+                    correctedTranscriptText = correctedText,
+                    correctedTranscriptSegments = correctedSegments,
+                    correctionQuestions = questions,
+                    errorMessage = null,
+                ),
+            )
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, newState.name, meeting.title)
+
+            logger.info {
+                "Segment retranscription complete for meeting $meetingIdStr: " +
+                    "state=$newState, segments=${segmentIndices}, ${correctedText.length} chars"
+            }
+        } catch (e: Exception) {
+            if (isConnectionError(e)) {
+                logger.warn(e) { "Connection error during segment retranscription for meeting $meetingIdStr" }
+                val previousState = if (meeting.correctedTranscriptSegments.isNotEmpty()) {
+                    MeetingStateEnum.CORRECTED
+                } else {
+                    MeetingStateEnum.TRANSCRIBED
+                }
+                meetingRepository.save(
+                    correcting.copy(
+                        state = previousState,
+                        stateChangedAt = java.time.Instant.now(),
+                    ),
+                )
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, previousState.name, meeting.title)
+            } else {
+                logger.error(e) { "Segment retranscription failed for meeting $meetingIdStr" }
+                meetingRepository.save(
+                    correcting.copy(
+                        state = MeetingStateEnum.FAILED,
+                        stateChangedAt = java.time.Instant.now(),
+                        errorMessage = "Segment retranscription error: ${e.message}",
+                    ),
+                )
+                notificationRpc.emitMeetingStateChanged(
+                    meetingIdStr, clientIdStr, MeetingStateEnum.FAILED.name, meeting.title, e.message,
+                )
+            }
+        }
+    }
+
     private fun isConnectionError(e: Exception): Boolean {
         val cause = e.cause ?: e
         return cause is ConnectException ||

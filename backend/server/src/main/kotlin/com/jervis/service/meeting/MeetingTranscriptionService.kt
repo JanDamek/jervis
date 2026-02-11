@@ -61,8 +61,14 @@ class MeetingTranscriptionService(
 
             if (!result.error.isNullOrBlank()) {
                 logger.error { "Whisper returned error for meeting ${meeting.id}: ${result.error}" }
+                // Re-read from DB — state may have been changed by stopTranscription()
+                val current = meetingRepository.findById(meeting.id) ?: return transcribing
+                if (current.state != MeetingStateEnum.TRANSCRIBING) {
+                    logger.info { "Meeting ${meeting.id} state changed to ${current.state} during transcription, skipping FAILED transition" }
+                    return current
+                }
                 val failed = meetingRepository.save(
-                    transcribing.copy(
+                    current.copy(
                         state = MeetingStateEnum.FAILED,
                         stateChangedAt = Instant.now(),
                         errorMessage = "Whisper error: ${result.error}",
@@ -98,8 +104,14 @@ class MeetingTranscriptionService(
             return transcribed
         } catch (e: Exception) {
             logger.error(e) { "Transcription failed for meeting ${meeting.id}" }
+            // Re-read from DB — state may have been changed by stopTranscription()
+            val current = meetingRepository.findById(meeting.id) ?: return transcribing
+            if (current.state != MeetingStateEnum.TRANSCRIBING) {
+                logger.info { "Meeting ${meeting.id} state changed to ${current.state} during transcription, skipping FAILED transition" }
+                return current
+            }
             val failed = meetingRepository.save(
-                transcribing.copy(
+                current.copy(
                     state = MeetingStateEnum.FAILED,
                     stateChangedAt = Instant.now(),
                     errorMessage = "Transcription error: ${e.message}",

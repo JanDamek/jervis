@@ -66,7 +66,7 @@ class TaskManagementService(
         newScheduledAt: Instant,
     ): TaskDocument? =
         withContext(Dispatchers.IO) {
-            val task = scheduledTaskRepository.findAll().toList().find { it.id == taskId } ?: return@withContext null
+            val task = scheduledTaskRepository.getById(taskId) ?: return@withContext null
             val updated = task.copy(scheduledAt = newScheduledAt)
             scheduledTaskRepository.save(updated)
         }
@@ -76,7 +76,7 @@ class TaskManagementService(
      */
     suspend fun cancelTask(taskId: TaskId): Boolean =
         withContext(Dispatchers.IO) {
-            val task = scheduledTaskRepository.findAll().toList().find { it.id == taskId }
+            val task = scheduledTaskRepository.getById(taskId)
             if (task != null) {
                 scheduledTaskRepository.delete(task)
                 logger.info { "Cancelled/deleted task: $taskId" }

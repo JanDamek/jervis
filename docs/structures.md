@@ -62,12 +62,15 @@
         │ • Preemption: interrupted by user       │
         └─────────────────────────────────────────┘
                     ↓
-        ┌─────────────────────────────────────────┐
-        │ Python Orchestrator (LangGraph)          │
-        │ • Loads task context from TaskMemory    │
-        │ • Focus on analysis/actions             │
-        │ • No redundant structuring work         │
-        └─────────────────────────────────────────┘
+        ┌──────────────────────────────────────────────────┐
+        │ Python Orchestrator (LangGraph, KB-First)        │
+        │ • 4 task categories: ADVICE, SINGLE_TASK,        │
+        │   EPIC, GENERATIVE                               │
+        │ • Hierarchical context: step→goal→epic           │
+        │ • MongoDB context store (orchestrator_context)   │
+        │ • Distributed lock for multi-pod                 │
+        │ • KB-only communication (no direct PVC access)   │
+        └──────────────────────────────────────────────────┘
 ```
 
 ### Key Components

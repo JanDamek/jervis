@@ -102,6 +102,16 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
+     * Cancel a running orchestration.
+     */
+    suspend fun cancelOrchestration(threadId: String) {
+        logger.info { "PYTHON_ORCHESTRATOR_CANCEL: threadId=$threadId" }
+        client.post("$apiBaseUrl/cancel/$threadId") {
+            contentType(ContentType.Application.Json)
+        }
+    }
+
+    /**
      * Resume a paused orchestration from checkpoint.
      */
     suspend fun resume(threadId: String): OrchestrateResponseDto {
@@ -228,6 +238,20 @@ class PythonOrchestratorClient(baseUrl: String) {
     suspend fun correctTargeted(request: CorrectionTargetedRequestDto): CorrectionResultDto {
         logger.info { "CORRECTION_TARGETED: ${request.segments.size} segments, ${request.retranscribedIndices.size} retranscribed" }
         return client.post("$apiBaseUrl/correction/correct-targeted") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    // --- Chat History Compression ---
+
+    /**
+     * Compress a block of chat messages into a summary using LLM.
+     * Called asynchronously after orchestration completes.
+     */
+    suspend fun compressChat(request: CompressChatRequestDto): CompressChatResponseDto {
+        logger.info { "COMPRESS_CHAT: taskId=${request.taskId} messages=${request.messages.size}" }
+        return client.post("$apiBaseUrl/internal/compress-chat") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
@@ -393,11 +417,15 @@ data class OrchestrateRequestDto(
     @SerialName("task_id") val taskId: String,
     @SerialName("client_id") val clientId: String,
     @SerialName("project_id") val projectId: String? = null,
+    @SerialName("client_name") val clientName: String? = null,
+    @SerialName("project_name") val projectName: String? = null,
     @SerialName("workspace_path") val workspacePath: String,
     val query: String,
     @SerialName("agent_preference") val agentPreference: String = "auto",
     val rules: ProjectRulesDto = ProjectRulesDto(),
     val environment: kotlinx.serialization.json.JsonObject? = null,
+    @SerialName("jervis_project_id") val jervisProjectId: String? = null,
+    @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
 )
 
 @Serializable
@@ -453,4 +481,50 @@ data class ApprovalResponseDto(
     val approved: Boolean,
     val modification: String? = null,
     val reason: String? = null,
+)
+
+// --- Chat History DTOs ---
+
+@Serializable
+data class ChatHistoryPayloadDto(
+    @SerialName("recent_messages") val recentMessages: List<ChatHistoryMessageDto>,
+    @SerialName("summary_blocks") val summaryBlocks: List<ChatSummaryBlockDto> = emptyList(),
+    @SerialName("total_message_count") val totalMessageCount: Long = 0,
+)
+
+@Serializable
+data class ChatHistoryMessageDto(
+    val role: String,
+    val content: String,
+    val timestamp: String,
+    val sequence: Long,
+)
+
+@Serializable
+data class ChatSummaryBlockDto(
+    @SerialName("sequence_range") val sequenceRange: String,
+    val summary: String,
+    @SerialName("key_decisions") val keyDecisions: List<String> = emptyList(),
+    val topics: List<String> = emptyList(),
+    @SerialName("is_checkpoint") val isCheckpoint: Boolean = false,
+    @SerialName("checkpoint_reason") val checkpointReason: String? = null,
+)
+
+// --- Chat Compression DTOs ---
+
+@Serializable
+data class CompressChatRequestDto(
+    val messages: List<ChatHistoryMessageDto>,
+    @SerialName("previous_summary") val previousSummary: String? = null,
+    @SerialName("client_id") val clientId: String,
+    @SerialName("task_id") val taskId: String,
+)
+
+@Serializable
+data class CompressChatResponseDto(
+    val summary: String,
+    @SerialName("key_decisions") val keyDecisions: List<String> = emptyList(),
+    val topics: List<String> = emptyList(),
+    @SerialName("is_checkpoint") val isCheckpoint: Boolean = false,
+    @SerialName("checkpoint_reason") val checkpointReason: String? = null,
 )

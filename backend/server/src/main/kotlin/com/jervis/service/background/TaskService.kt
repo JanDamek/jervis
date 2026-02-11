@@ -306,7 +306,7 @@ class TaskService(
      */
     suspend fun returnToQueue(task: TaskDocument) {
         // Reload from DB to get current state (caller may have stale in-memory object)
-        val current = task.id?.let { taskRepository.findById(it) } ?: task
+        val current = task.id?.let { taskRepository.getById(it) } ?: task
         if (current.state != TaskStateEnum.QUALIFYING) {
             logger.warn {
                 "Cannot return task to queue - expected QUALIFYING but was ${current.state}: ${current.id}"
@@ -475,6 +475,24 @@ class TaskService(
 
         if (qualifyingCount > 0) {
             logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → READY_FOR_QUALIFICATION" }
+        }
+
+        // Reset PYTHON_ORCHESTRATING → READY_FOR_GPU (stuck after pod restart)
+        val orchestratingQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.PYTHON_ORCHESTRATING.name)
+                .and("createdAt").lt(staleThreshold),
+        )
+        val orchestratingUpdate = Update()
+            .set("state", TaskStateEnum.READY_FOR_GPU.name)
+            .unset("orchestratorThreadId")
+            .unset("orchestrationStartedAt")
+        val orchestratingResult = mongoTemplate.updateMulti(orchestratingQuery, orchestratingUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        val orchestratingCount = orchestratingResult.modifiedCount.toInt()
+        resetCount += orchestratingCount
+
+        if (orchestratingCount > 0) {
+            logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PYTHON_ORCHESTRATING tasks → READY_FOR_GPU" }
         }
 
         return resetCount

@@ -10,10 +10,18 @@ import org.springframework.stereotype.Repository
 /**
  * Repository for Client documents.
  * Uses CoroutineCrudRepository (NOT ReactiveMongoRepository!) for proper Kotlin Flow support.
- * NOTE: ID type is ObjectId, not ClientId (inline value classes don't work well with Spring Data)
+ * NOTE: Do NOT use the inherited findById() — it causes AopInvocationException at runtime
+ * with Kotlin inline value class IDs. Use getById() defined here instead.
  */
 @Repository
 interface ClientRepository : CoroutineCrudRepository<ClientDocument, ClientId> {
+    /**
+     * Find client by ID. Use this instead of the inherited findById(ClientId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     * Spring Data derives the query from the method name — no @Query needed.
+     */
+    suspend fun getById(id: ClientId): ClientDocument?
+
     /**
      * Find all clients that use the specified connection as Flow.
      */

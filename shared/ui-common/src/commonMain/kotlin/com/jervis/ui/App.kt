@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +30,6 @@ import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.notification.ApprovalNotificationDialog
 import com.jervis.ui.screens.*
-import androidx.compose.foundation.text.selection.SelectionContainer
 
 /**
  * Root Compose Application
@@ -67,10 +67,9 @@ fun App(
 
     JervisTheme {
       Surface(
-          modifier = Modifier.fillMaxSize(),
+          modifier = Modifier.fillMaxSize().safeDrawingPadding(),
           color = MaterialTheme.colorScheme.background,
       ) {
-        SelectionContainer {
         val clients by viewModel.clients.collectAsState()
         val projects by viewModel.projects.collectAsState()
         val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -241,7 +240,6 @@ fun App(
                     }
                 }
             }
-        }
         }
       }
     }

@@ -58,7 +58,7 @@ class ClientService(
 
     suspend fun getClientById(id: ClientId): ClientDocument = getClientByIdOrNull(id) ?: throw ClientNotFoundException(id)
 
-    suspend fun getClientByIdOrNull(id: ClientId): ClientDocument? = clientRepository.findAll().toList().find { it.id == id }
+    suspend fun getClientByIdOrNull(id: ClientId): ClientDocument? = clientRepository.getById(id)
 }
 
 class ClientNotFoundException(

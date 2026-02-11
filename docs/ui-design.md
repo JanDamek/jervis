@@ -473,6 +473,12 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
 
 **Implementation:** `MainScreenView` in `MainScreen.kt` uses a simple `Column` layout. `SelectorsRow` contains client/project selectors + a `DropdownMenu` with `MainMenuItem` enum entries. Each item renders `Icon(item.icon, ...)` + `Text(item.title)` and navigates via `onNavigate(screen)`.
 
+**Chat message types** (`ChatMessage.MessageType`):
+- `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
+- `PROGRESS` — compact row with `CircularProgressIndicator` (16dp) + bodySmall text
+- `FINAL` — assistant bubble (secondaryContainer, left-aligned)
+- `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
+
 ### 5.2) Entity List -> Detail Screen
 
 ```
@@ -640,61 +646,92 @@ Column(modifier = Modifier.fillMaxSize()) {
 }
 ```
 
-### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`)
+### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`) — Accordion Layout
 
 Full-screen view accessed by clicking the `AgentStatusRow` on the main screen.
-Shows live agent status card, two separate pending queues (Frontend/Backend), and in-memory activity log (max 200 entries, since restart, no persistence).
+Uses an **accordion (harmonika) layout** with 4 sections — only one expanded at a time.
+Clicking a collapsed header expands it and collapses the previously expanded section.
+
+**Sections**: Agent (default expanded), Frontend, Backend, Historie
 
 ```
+State: Agent expanded (default)
 +-- JTopBar ("Aktivita agenta", onBack) ----------------------+
+| V Agent                          <- expanded header          |
+|--------------------------------------------------------------|
 |                                                               |
-| +-- CurrentStatusCard --------------------------------------+ |
-| | [spinner/dot]  Zpracovava se / Agent je necinny           | |
-| |                Asistent | ProjectName                      | |
-| |                task preview text...        Fronta: 1       | |
-| +------------------------------------------------------------+ |
+|  Bezi: bms / Chat                                            |
+|  "Co se dnes udalo na rannim..."                             |
 |                                                               |
-| +-- OrchestratorProgressCard (if active) -------------------+ |
-| | Orchestrace                          Cil 1/3              | |
-| | [spinner] Planovani kroku                                 | |
-| |           Analyzing project structure...                   | |
-| | Krok 2/5                                      35%         | |
-| | [===========                              ] progress bar  | |
-| +------------------------------------------------------------+ |
+|  Cil 1/3                                     [X stop]        |
+|  [spinner] Planovani kroku                                   |
+|            Analyzing project structure...                      |
+|  Krok 2/5                                    35%             |
+|  [===========                           ] progress bar       |
 |                                                               |
-| Frontend (2)                  <- FOREGROUND queue             |
-| +-- QueueItemRow ----------------------------------------+   |
-| | ... ProjectX       [up] [down] [->]                    |   |
-| |    co jsem kupoval v alze?                             |   |
-| |-------------------------------------------------------|   |
-| | ... ProjectY       [up] [down] [->]                    |   |
-| |    priprav report za leden...                          |   |
-| +--------------------------------------------------------+   |
+|--------------------------------------------------------------|
+| > Frontend (3)                   <- collapsed, 44dp, badge   |
+|--------------------------------------------------------------|
+| > Backend (1)                    <- collapsed, 44dp, badge   |
+|--------------------------------------------------------------|
+| > Historie (18)                  <- collapsed, 44dp, badge   |
++--------------------------------------------------------------+
+
+State: Frontend expanded
++-- JTopBar ("Aktivita agenta", onBack) ----------------------+
+| V Frontend (3)                   <- expanded header          |
+|--------------------------------------------------------------|
+|  Chat . bms                                                  |
+|  Co se dnes udalo na rannim stand...                         |
+|  ─────────────────────────────────                           |
+|  Chat . bms                                                  |
+|  Shrn vysledky sprintu                                       |
+|  ─────────────────────────────────                           |
+|  Chat . bms                                                  |
+|  Vyres UFO-24                                                |
 |                                                               |
-| Backend (1)                   <- BACKGROUND queue             |
-| +-- QueueItemRow ----------------------------------------+   |
-| | ... ProjectZ       [up] [down] [<-]                    |   |
-| |    index wiki pages...                                 |   |
-| +--------------------------------------------------------+   |
-|                                                               |
-| Historie aktivity                                             |
-| +-- LazyColumn (newest first) ----------------------------+   |
-| | 14:23:05  >  Asistent  ProjectX  Zpracovani ulohy      |   |
-| | 14:22:58  ok Wiki  ProjectY   Uloha dokoncena           |   |
-| | 14:20:11  >  Wiki  ProjectY   Wiki indexing...          |   |
-| +----------------------------------------------------------+   |
-+---------------------------------------------------------------+
+|--------------------------------------------------------------|
+| [spinner] Agent                  <- collapsed + spinner      |
+|--------------------------------------------------------------|
+| > Backend (1)                    <- collapsed                |
+|--------------------------------------------------------------|
+| > Historie (18)                  <- collapsed                |
++--------------------------------------------------------------+
 ```
 
-**QueueItemRow** -- Each pending task row includes:
-- Up/down arrow buttons for reordering within the same queue
-- Switch button (-> in Frontend, <- in Backend) to move the task between queues
-- All buttons use `JIconButton` (44dp touch target)
+**AccordionSectionHeader** — shared header composable:
+- `Surface` with `clickable`, min height 44dp
+- Expanded: `surfaceContainerHigh` background, `KeyboardArrowDown` icon
+- Collapsed: `surface` background, `KeyboardArrowRight` icon
+- Badge chip (count > 0): `tertiaryContainer` background, `labelSmall`
+- AGENT section collapsed: `CircularProgressIndicator(16dp)` if running, `●` dot if idle
+
+**AgentSectionContent** — when running:
+- Project name, task type, task preview
+- Orchestrator progress: goal/step counters, node spinner, status message, progress bar
+- Stop button (`cancelOrchestration`)
+- When idle: `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
+
+**QueueSectionContent** (Frontend / Backend):
+- `LazyColumn` with max 5 items via `items.take(5)`
+- `CompactQueueItemRow`: type+project (labelSmall), preview (bodySmall, 1 line, ellipsis)
+- If > 5 items: "... a dalsich N uloh" text below
+- If empty: `JEmptyState`
+
+**HistorySectionContent** — grouped by tasks:
+- `LazyColumn` with `TaskHistoryItem` composables
+- Each item: task preview, project name, time range (start – end)
+- Click to expand/collapse node list (animated)
+- Nodes: `✓` done, `⟳` running, `○` pending
+- Newest task on top
 
 **Data models** (`com.jervis.ui.model.AgentActivityEntry`):
 - `AgentActivityEntry`: `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED), `description`, `projectName?`, `taskType?`, `clientId?`
-- `PendingQueueItem`: `taskId`, `preview` (task content first 60 chars), `projectName`, `processingMode` (FOREGROUND/BACKGROUND), `queuePosition`
-- Stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
+- `PendingQueueItem`: `taskId`, `preview`, `projectName`, `processingMode` (FOREGROUND/BACKGROUND), `queuePosition`
+- `TaskHistoryEntry`: `taskId`, `taskPreview`, `projectName?`, `startTime`, `endTime?`, `status` (running/done/error), `nodes: List<NodeEntry>`
+- `NodeEntry`: `node` (key), `label` (Czech), `status` (DONE/RUNNING/PENDING)
+- Activity log stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
+- Task history stored in `MainViewModel.taskHistory: StateFlow<List<TaskHistoryEntry>>`, populated from `OrchestratorTaskProgress` and `OrchestratorTaskStatusChange` events
 
 **Dual-queue state** in `MainViewModel`:
 - `foregroundQueue: StateFlow<List<PendingQueueItem>>` -- user-initiated tasks (FOREGROUND)
@@ -806,6 +843,10 @@ Compact (<600dp):
 
 **MeetingDetailView** uses a split layout with transcript on top and agent chat on bottom:
 
+**PipelineProgress** shows pipeline state with optional controls:
+- When `state == TRANSCRIBING`: a stop button (`Icons.Default.Stop`, error-tinted) appears on the right side. Calls `viewModel.stopTranscription()` which resets the meeting to UPLOADED and deletes the K8s Whisper job.
+- Below the status text: last transcript segment text preview (`bodySmall`, `alpha(0.7f)`, `maxLines = 2`) gives real-time feedback on transcription progress.
+
 ```
 Expanded (>=600dp):
 +--------------------------------------------------+
@@ -843,7 +884,7 @@ Same layout but chat panel has fixed 180dp height (no interactive splitter).
 |-------|-------------|
 | RECORDING | Text "Probiha nahravani..." |
 | UPLOADING / UPLOADED | Text "Ceka na prepis..." |
-| TRANSCRIBING | `JCenteredLoading` + text "Probiha prepis..." |
+| TRANSCRIBING | `JCenteredLoading` + text "Probiha prepis..." + stop button ("Zastavit") + last segment preview |
 | CORRECTING | `JCenteredLoading` + text "Probiha korekce prepisu..." |
 | CORRECTION_REVIEW | `CorrectionQuestionsCard` + best-effort corrected transcript |
 | FAILED | Error card (`errorContainer`) with selectable text + "Přepsat znovu" button + "Zamítnout" (dismiss, only if transcript exists) |

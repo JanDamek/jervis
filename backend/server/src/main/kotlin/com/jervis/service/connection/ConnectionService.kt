@@ -39,14 +39,9 @@ class ConnectionService(
     /**
      * Find a connection by ID.
      *
-     * NOTE: Spring Data MongoDB has issues with @JvmInline value classes as ID.
-     * Workaround: Load all and filter in-memory (acceptable since connections are few).
+     * Uses custom getById() to avoid AOP proxy issues with Kotlin inline value classes.
      */
-    suspend fun findById(id: ConnectionId): ConnectionDocument? {
-        val connections = mutableListOf<ConnectionDocument>()
-        repository.findAll().collect { connections.add(it) }
-        return connections.find { it.id == id }
-    }
+    suspend fun findById(id: ConnectionId): ConnectionDocument? = repository.getById(id)
 
     /**
      * Find all VALID connections as Flow.

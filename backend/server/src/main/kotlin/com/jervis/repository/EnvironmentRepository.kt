@@ -15,6 +15,12 @@ import org.springframework.stereotype.Repository
 @Repository
 interface EnvironmentRepository : CoroutineCrudRepository<EnvironmentDocument, EnvironmentId> {
     /**
+     * Find environment by ID. Use this instead of the inherited findById(EnvironmentId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     */
+    suspend fun getById(id: EnvironmentId): EnvironmentDocument?
+
+    /**
      * Find all environments for a given client.
      */
     fun findByClientId(clientId: ClientId): Flow<EnvironmentDocument>

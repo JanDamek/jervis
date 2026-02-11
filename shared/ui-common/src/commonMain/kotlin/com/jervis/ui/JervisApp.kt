@@ -118,6 +118,7 @@ fun JervisApp(
                 bugTrackerSetup = currentServices.bugTrackerSetupService,
                 codingAgents = currentServices.codingAgentSettingsService,
                 whisperSettings = currentServices.whisperSettingsService,
+                pollingIntervals = currentServices.pollingIntervalService,
                 meetings = currentServices.meetingService,
                 transcriptCorrections = currentServices.transcriptCorrectionService,
                 deviceTokens = currentServices.deviceTokenService,

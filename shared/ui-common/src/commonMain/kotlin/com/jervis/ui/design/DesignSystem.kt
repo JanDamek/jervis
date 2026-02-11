@@ -180,10 +180,10 @@ fun JTopBar(
         },
         actions = actions,
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
         ),
     )
 }
@@ -212,11 +212,13 @@ fun JErrorState(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            SelectionContainer {
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             if (onRetry != null) {
                 Spacer(Modifier.height(JervisSpacing.itemGap))
                 JTextButton(onClick = onRetry) { Text("Znovu") }
@@ -814,7 +816,7 @@ fun JSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     modifier: Modifier = Modifier,
     steps: Int = 0,
-    valueLabel: (Float) -> String = { "%.1f".format(it) },
+    valueLabel: (Float) -> String = { ((it * 10).toInt() / 10.0).toString() },
     description: String? = null,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {

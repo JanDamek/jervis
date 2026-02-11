@@ -14,6 +14,12 @@ import java.time.Instant
 
 @Repository
 interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
+    /**
+     * Find task by ID. Use this instead of the inherited findById(TaskId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     */
+    suspend fun getById(id: TaskId): TaskDocument?
+
     suspend fun findAllByOrderByCreatedAtAsc(): Flow<TaskDocument>
 
     suspend fun findByStateOrderByCreatedAtAsc(state: TaskStateEnum): Flow<TaskDocument>

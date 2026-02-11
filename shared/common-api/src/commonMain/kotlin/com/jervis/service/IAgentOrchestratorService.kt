@@ -53,4 +53,9 @@ interface IAgentOrchestratorService {
      * @param targetMode "FOREGROUND" or "BACKGROUND"
      */
     suspend fun moveTask(taskId: String, targetMode: String)
+
+    /**
+     * Cancel a running orchestration for a given task.
+     */
+    suspend fun cancelOrchestration(taskId: String)
 }

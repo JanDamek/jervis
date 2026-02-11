@@ -7,7 +7,11 @@ import com.jervis.repository.ChatMessageRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.AgentOrchestratorRpcImpl
 import com.jervis.service.background.TaskService
+import com.jervis.service.chat.ChatHistoryService
 import com.jervis.service.task.UserTaskService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -31,6 +35,7 @@ class OrchestratorStatusHandler(
     private val userTaskService: UserTaskService,
     private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: ChatMessageRepository,
+    private val chatHistoryService: ChatHistoryService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -61,7 +66,7 @@ class OrchestratorStatusHandler(
         artifacts: List<String> = emptyList(),
     ) {
         val task = try {
-            taskRepository.findById(TaskId(ObjectId(taskId)))
+            taskRepository.getById(TaskId(ObjectId(taskId)))
         } catch (e: Exception) {
             logger.warn { "ORCHESTRATOR_STATUS_HANDLER: invalid taskId=$taskId" }
             return
@@ -80,7 +85,7 @@ class OrchestratorStatusHandler(
 
         when (status) {
             "running" -> {
-                // Still working — skip
+                // Still working — no state change needed (heartbeat tracking handles liveness)
             }
             "interrupted" -> handleInterrupted(task, interruptAction, interruptDescription)
             "done" -> handleDone(task, summary)
@@ -113,6 +118,50 @@ class OrchestratorStatusHandler(
             )
         }
 
+        // FOREGROUND tasks: emit clarification/approval to chat directly.
+        // User responds in chat → task gets reused → resumePythonOrchestrator() via orchestratorThreadId.
+        // No USER_TASK needed — the chat IS the interaction channel.
+        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+            // Emit clarification to chat stream as ASSISTANT message
+            try {
+                agentOrchestratorRpc.emitToChatStream(
+                    clientId = task.clientId.toString(),
+                    projectId = task.projectId?.toString(),
+                    response = com.jervis.dto.ChatResponseDto(description),
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to emit clarification to chat for task ${task.id}" }
+            }
+
+            // Persist as assistant message so it survives reconnects
+            try {
+                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                chatMessageRepository.save(
+                    com.jervis.entity.ChatMessageDocument(
+                        taskId = task.id,
+                        correlationId = task.correlationId,
+                        role = com.jervis.entity.MessageRole.ASSISTANT,
+                        content = description,
+                        sequence = sequence,
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to save clarification message for task ${task.id}" }
+            }
+
+            // Set to DISPATCHED_GPU — keeps orchestratorThreadId for resume.
+            // When user types next message in chat, existing task gets reused → resume.
+            val updatedTask = task.copy(
+                state = TaskStateEnum.DISPATCHED_GPU,
+                pendingUserQuestion = pendingQuestion,
+            )
+            taskRepository.save(updatedTask)
+
+            logger.info { "ORCHESTRATOR_INTERRUPTED_CHAT: taskId=${task.id} action=$action phase=$phase → DISPATCHED_GPU (chat clarification)" }
+            return
+        }
+
+        // BACKGROUND tasks: escalate to USER_TASK (existing behavior)
         userTaskService.failAndEscalateToUserTask(
             task = task,
             reason = "ORCHESTRATOR_INTERRUPT",
@@ -122,21 +171,8 @@ class OrchestratorStatusHandler(
             isApproval = action != "clarify",
         )
 
-        // Also emit progress to chat for FOREGROUND tasks
-        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-            try {
-                agentOrchestratorRpc.emitProgress(
-                    clientId = task.clientId.toString(),
-                    projectId = task.projectId?.toString(),
-                    message = if (phase == "clarification")
-                        "Orchestrátor potřebuje upřesnění" else
-                        "Orchestrátor potřebuje schválení: $action",
-                    metadata = mapOf("phase" to phase, "action" to action),
-                )
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to emit interrupt notification for task ${task.id}" }
-            }
-        }
+        // BACKGROUND: agent is now truly idle (task escalated to user)
+        emitQueueIdle(task)
 
         logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$action phase=$phase → USER_TASK" }
     }
@@ -211,6 +247,20 @@ class OrchestratorStatusHandler(
             }
         }
 
+        // Emit idle queue status — orchestration finished
+        if (!hasInlineMessages) {
+            emitQueueIdle(task)
+        }
+
+        // Async: compress chat history if needed (non-blocking)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                chatHistoryService.compressIfNeeded(task.id, task.clientId.toString())
+            } catch (e: Exception) {
+                logger.warn(e) { "Async chat compression failed for task ${task.id}" }
+            }
+        }
+
         logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages" }
     }
 
@@ -255,5 +305,37 @@ class OrchestratorStatusHandler(
             reason = "PYTHON_ORCHESTRATOR_ERROR",
         )
         taskService.updateState(task, TaskStateEnum.ERROR)
+
+        // Emit idle queue status — orchestration errored out
+        emitQueueIdle(task)
+    }
+
+    /**
+     * Emit idle queue status to UI — orchestration is no longer running.
+     * Simplified emission (no pending item details); next BackgroundEngine
+     * queue status will provide full info.
+     */
+    private suspend fun emitQueueIdle(task: TaskDocument) {
+        try {
+            agentOrchestratorRpc.emitQueueStatus(
+                task.clientId.toString(),
+                com.jervis.dto.ChatResponseDto(
+                    message = "Queue status update",
+                    type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
+                    metadata = mapOf(
+                        "runningProjectId" to "none",
+                        "runningProjectName" to "",
+                        "runningTaskPreview" to "",
+                        "runningTaskType" to "",
+                        "runningTaskId" to "",
+                        "queueSize" to "0",
+                        "pendingItemCount" to "0",
+                        "backgroundItemCount" to "0",
+                    ),
+                ),
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to emit idle queue status for task ${task.id}" }
+        }
     }
 }

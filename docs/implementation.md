@@ -248,6 +248,22 @@ Visibility:
 - [ ] Returning to app triggers refresh
 - [ ] Connection updates without manual refresh
 
+### OAuth2 Token Refresh in Git Operations
+
+`GitRepositoryService.syncRepository()` calls `oauth2Service.refreshAccessToken(connection)` before
+any git clone/fetch. If the token was refreshed (returns `true`), the connection is re-read from DB
+to pick up the new `bearerToken`. This prevents "HTTP Basic: Access denied" errors from GitLab when
+OAuth2 tokens expire (typically 2 hours).
+
+### Git Auth Failure → Connection Invalidation
+
+When `GitAuthenticationException` is thrown during git sync (clone or fetch), both `syncAllProjects()`
+and `syncProjectRepositories()` now:
+1. Log the auth error
+2. Mark the connection as `INVALID` via `invalidateConnection()`
+3. Record an error log via `ErrorLogService.recordError()` for UI visibility
+4. Skip INVALID connections on subsequent sync attempts (early return in `syncRepository()`)
+
 ### Post-Deployment: OAuth2 Monitoring
 
 #### Logs to Monitor
@@ -263,6 +279,8 @@ Visibility:
 - "Connection test failed: [error message]" → Check network/credentials
 - "State not found or expired" → State token lost (likely restart)
 - "BeanInstantiationException" → MongoDB sealed class issue (run migration)
+- "Auth failed for {repo}: ..." → OAuth2 token expired and refresh failed, connection marked INVALID
+- "Connection {id} ({name}) marked INVALID" → Credentials no longer valid
 ```
 
 #### Metrics to Track
@@ -469,6 +487,39 @@ connection:
 
 > Authoritative spec: [orchestrator-final-spec.md](orchestrator-final-spec.md).
 
+### KB-First Architecture (Redesign)
+
+The orchestrator has been redesigned with a KB-first architecture:
+
+**4 task categories** with intelligent routing:
+- **ADVICE**: Direct LLM + KB answer (no coding, no K8s Jobs)
+- **SINGLE_TASK**: May or may not code — step types: respond, code, tracker_ops, mixed
+- **EPIC**: Batch execution in waves from tracker issues
+- **GENERATIVE**: Design full structure from high-level goal, then execute
+
+**Key principle**: SINGLE_TASK is NOT just coding. It can be managerial, analytical, or planning.
+
+**Modular node files** (`app/graph/nodes/`):
+- `intake.py` — 4-category classification, mandatory clarification via `interrupt()`
+- `evidence.py` — Parallel KB + tracker artifact fetch (EvidencePack)
+- `respond.py` — ADVICE + analytical response (LLM + KB, no K8s)
+- `plan.py` — Multi-type planning (respond/code/tracker/mixed)
+- `execute.py` — Step dispatch by type (respond/code/tracker)
+- `evaluate.py` — Evaluation + routing
+- `git_ops.py` — Git operations with approval gates
+- `finalize.py` — Final report generation
+- `coding.py` — Coding pipeline (decompose, select_goal, plan_steps)
+- `epic.py` — EPIC: plan_epic, execute_wave, verify_wave
+- `design.py` — GENERATIVE: design (generate epic structure from goal)
+
+**Hierarchical context management** (`app/context/`):
+- `context_store.py` — MongoDB `orchestrator_context` collection, 30-day TTL
+- `context_assembler.py` — Per-node LLM context assembly (step/goal/epic levels)
+- `agent_result_parser.py` — Normalize variable agent responses
+- `distributed_lock.py` — MongoDB distributed lock for multi-pod concurrency
+
+**JERVIS Internal Project**: Each client gets max 1 `isJervisInternal=true` project (auto-created on first orchestration) for orchestrator tracker/wiki operations. `ProjectDocument.isJervisInternal` field, `ProjectRepository.findByClientIdAndIsJervisInternal()`, `ProjectService.getOrCreateJervisProject()`.
+
 ### State Persistence Design Decision
 
 **Problem**: MemorySaver (in-memory) loses all graph state on Python restart.
@@ -518,7 +569,8 @@ Only one Python orchestration runs at a time:
    - Handles HTTP 429 from `orchestrateStream()` → return false
 
 2. **Python guard** (`main.py`):
-   - `asyncio.Semaphore(1)` – `/orchestrate/stream` returns 429 if busy
+   - `asyncio.Semaphore(1)` – single-pod fallback (kept for local dev)
+   - `DistributedLock` – MongoDB-based lock for multi-pod deployments
    - `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
    - `/health` returns `{"busy": true/false}` for diagnostics
 
@@ -529,8 +581,57 @@ Only one Python orchestration runs at a time:
 
 - `TaskStateEnum.PYTHON_ORCHESTRATING`: New state for dispatched tasks
 - `TaskDocument.orchestratorThreadId`: Links to LangGraph checkpoint
-- MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument)
+- `OrchestrateRequestDto.jervisProjectId`: JERVIS internal project for tracker ops
+- `OrchestrateRequestDto.chatHistory`: Conversation context (recent messages + compressed summaries)
+- MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument), `orchestrator_context` (hierarchical context), `orchestrator_locks` (distributed lock), `chat_messages` (conversation messages), `chat_summaries` (compressed history blocks)
 - K8s env: `MONGODB_URL` in `k8s/app_orchestrator.yaml` (from secrets)
+- Kotlin internal API endpoints: `/internal/tracker/create-issue`, `/internal/tracker/update-issue` (placeholders, Phase 2 delegation)
+
+### Chat Context Persistence Implementation
+
+**Goal:** Agent maintains conversation memory across orchestration sessions.
+
+**Kotlin side:**
+- `ChatSummaryDocument` — MongoDB entity for compressed chat blocks (`chat_summaries` collection)
+- `ChatSummaryRepository` — Spring Data repository with `findByTaskIdOrderBySequenceEndAsc`, `findFirstByTaskIdOrderBySequenceEndDesc`
+- `ChatHistoryService` — two operations:
+  - `prepareChatHistoryPayload(taskId)` — loads last 20 messages + up to 15 summary blocks → `ChatHistoryPayloadDto`
+  - `compressIfNeeded(taskId, clientId)` — async after orchestration: if >20 unsummarized messages, calls Python LLM to compress
+- `AgentOrchestratorService.dispatchToPythonOrchestrator()` — attaches `chatHistory` to request
+- `OrchestratorStatusHandler.handleDone()` — launches async `compressIfNeeded()` via `CoroutineScope(Dispatchers.IO)`
+
+**Python side:**
+- `ChatHistoryPayload`, `ChatHistoryMessage`, `ChatSummaryBlock` — Pydantic models in `models.py`
+- `OrchestrateRequest.chat_history` — optional field, passed to `OrchestratorState`
+- `POST /internal/compress-chat` — endpoint in `main.py` using `LOCAL_FAST` LLM tier
+- Node usage: `intake` (last 5 for classification), `respond` (full context), `evidence` (summary), `plan` (key decisions), `finalize` (conversation stats)
+
+**Compression algorithm:**
+1. After orchestration completes → `handleDone()` → async `compressIfNeeded()`
+2. Find last summarized sequence (`ChatSummaryRepository.findFirstByTaskIdOrderBySequenceEndDesc`)
+3. Count unsummarized messages before recent window (total - 20)
+4. If ≥20 unsummarized → POST `/internal/compress-chat` → store `ChatSummaryDocument`
+5. Non-blocking: compression failure is logged but doesn't affect user
+
+---
+
+## Meeting Transcription: Stop & Race Condition Guard
+
+### stopTranscription API
+
+`IMeetingService.stopTranscription(meetingId: String): Boolean` allows the user to cancel an in-progress Whisper transcription.
+
+**Flow (MeetingRpcImpl):**
+1. Re-reads meeting from DB; returns `false` if state is not `TRANSCRIBING`
+2. Calls `WhisperJobRunner.deleteJobForMeeting(meetingId)` (best-effort) -- deletes any K8s Job with label `meeting-id` matching, using `BACKGROUND` propagation policy
+3. Resets meeting state to `UPLOADED`
+4. Emits notification so UI refreshes
+
+**UI:** `MeetingViewModel.stopTranscription()` calls the RPC method. `PipelineProgress` shows a red stop button (`Icons.Default.Stop`) when `state == TRANSCRIBING`.
+
+### Race Condition Guard in MeetingTranscriptionService
+
+When a Whisper job completes or fails, the result handler in `MeetingTranscriptionService` re-reads the meeting from DB before writing the outcome. If the state has already changed (e.g., user stopped transcription and reset to `UPLOADED`), the handler skips the `FAILED` / result transition to avoid overwriting the user's action.
 
 ---
 

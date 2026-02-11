@@ -242,6 +242,14 @@ class BackgroundEngine(
     private suspend fun runExecutionLoop() {
         while (scope.isActive) {
             try {
+                // 0. Skip if Python orchestrator is already processing a task
+                //    Ollama can only handle one LLM call at a time — no point dispatching more
+                val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+                if (orchestratingCount > 0) {
+                    delay(5_000)
+                    continue
+                }
+
                 // 1. Check for FOREGROUND tasks first (chat messages have priority)
                 var task = taskService.getNextForegroundTask()
 
@@ -310,36 +318,24 @@ class BackgroundEngine(
                     val finalResponse = agentOrchestrator.run(task, task.content, onProgress)
 
                     // Check if task was dispatched to Python orchestrator (fire-and-forget)
-                    val freshTask = taskRepository.findById(task.id)
+                    val freshTask = taskRepository.getById(task.id)
                     if (freshTask?.state == TaskStateEnum.PYTHON_ORCHESTRATING) {
                         logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
                         taskService.setRunningTask(null)
-                        emitIdleQueueStatus(task.clientId)
+                        // Don't emit idle — orchestrator is still running.
+                        // OrchestratorStatusHandler emits idle when orchestration finishes.
                         return@launch
                     }
 
                     // Dispatch to orchestrator failed — task still DISPATCHED_GPU, reset for retry
+                    // This is a TEMPORARY condition (orchestrator busy/down) — silent retry, NO chat emission
                     if (freshTask?.state == TaskStateEnum.DISPATCHED_GPU && finalResponse.message.isNotBlank()) {
-                        logger.warn { "PYTHON_DISPATCH_FAILED: taskId=${task.id} — resetting to READY_FOR_GPU for retry" }
+                        logger.info { "PYTHON_DISPATCH_BUSY: taskId=${task.id} — resetting to READY_FOR_GPU for silent retry" }
                         taskRepository.save(freshTask.copy(state = TaskStateEnum.READY_FOR_GPU))
                         taskService.setRunningTask(null)
-
-                        // Inform user about the issue
-                        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-                            try {
-                                agentOrchestratorRpc.emitToChatStream(
-                                    clientId = task.clientId.toString(),
-                                    projectId = task.projectId?.toString(),
-                                    response = finalResponse,
-                                )
-                            } catch (e: Exception) {
-                                logger.warn(e) { "Failed to emit dispatch failure to chat" }
-                            }
-                        }
-
                         emitIdleQueueStatus(task.clientId)
-                        // Brief delay to avoid tight retry loop when orchestrator is down
-                        delay(10_000)
+                        // Wait before retry to avoid tight loop when orchestrator is busy
+                        delay(15_000)
                         return@launch
                     }
 
@@ -564,6 +560,7 @@ class BackgroundEngine(
                                 "runningProjectName" to projectName,
                                 "runningTaskPreview" to taskPreview,
                                 "runningTaskType" to taskTypeLabel,
+                                "runningTaskId" to runningTask.id.toString(),
                                 "queueSize" to queueSize.toString(),
                             ) + pendingItems,
                     )
@@ -618,9 +615,10 @@ class BackgroundEngine(
                 type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
                 metadata = mapOf(
                     "runningProjectId" to "none",
-                    "runningProjectName" to "None",
+                    "runningProjectName" to "",
                     "runningTaskPreview" to "",
                     "runningTaskType" to "",
+                    "runningTaskId" to "",
                     "queueSize" to remainingQueueSize.toString(),
                 ) + pendingItems,
             ),
@@ -829,6 +827,28 @@ class BackgroundEngine(
         }
 
         val state = status["status"] ?: "unknown"
+
+        // If Python says "running" but we have no heartbeat and task has been orchestrating
+        // for longer than the threshold, it's stale (checkpoint says running but nothing is active)
+        if (state == "running" && lastHeartbeat == null) {
+            val orchestrationAge = task.orchestrationStartedAt?.let {
+                java.time.Duration.between(it, now).toMinutes()
+            } ?: Long.MAX_VALUE
+            if (orchestrationAge >= HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
+                logger.warn {
+                    "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but no heartbeat " +
+                        "for ${orchestrationAge}min → resetting to READY_FOR_GPU"
+                }
+                val resetTask = task.copy(
+                    state = TaskStateEnum.READY_FOR_GPU,
+                    orchestratorThreadId = null,
+                    orchestrationStartedAt = null,
+                )
+                taskRepository.save(resetTask)
+                orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
+                return
+            }
+        }
 
         // Delegate to shared handler
         orchestratorStatusHandler.handleStatusChange(

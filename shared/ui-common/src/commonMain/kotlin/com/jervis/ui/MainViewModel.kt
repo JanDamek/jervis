@@ -11,7 +11,10 @@ import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.model.AgentActivityEntry
 import com.jervis.ui.model.AgentActivityLog
+import com.jervis.ui.model.NodeEntry
+import com.jervis.ui.model.NodeStatus
 import com.jervis.ui.model.PendingQueueItem
+import com.jervis.ui.model.TaskHistoryEntry
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
@@ -156,6 +159,15 @@ class MainViewModel(
     // Orchestrator task progress (push-based from Python via Kotlin)
     private val _orchestratorProgress = MutableStateFlow<OrchestratorProgressInfo?>(null)
     val orchestratorProgress: StateFlow<OrchestratorProgressInfo?> = _orchestratorProgress.asStateFlow()
+
+    // Task history — COMPLETED tasks only (not shown while running)
+    private val _taskHistory = MutableStateFlow<List<TaskHistoryEntry>>(emptyList())
+    val taskHistory: StateFlow<List<TaskHistoryEntry>> = _taskHistory.asStateFlow()
+
+    // Running task nodes — visible in Agent section, moved to _taskHistory on finalize
+    private val _runningTaskNodes = MutableStateFlow<List<NodeEntry>>(emptyList())
+    val runningTaskNodes: StateFlow<List<NodeEntry>> = _runningTaskNodes.asStateFlow()
+    private var runningTaskStartTime: String? = null
 
     // Platform notification manager
     val notificationManager = PlatformNotificationManager()
@@ -328,19 +340,31 @@ class MainViewModel(
                     stepIndex = event.stepIndex,
                     totalSteps = event.totalSteps,
                 )
+                updateTaskHistory(event.taskId, event.node)
             }
 
             is JervisEvent.OrchestratorTaskStatusChange -> {
                 when (event.status) {
-                    "done", "error" -> {
+                    "done" -> {
                         // Clear progress — orchestration finished
+                        // FINAL chat message arrives via chat stream
                         _orchestratorProgress.value = null
+                        finalizeTaskHistory(event.taskId, event.status)
+                    }
+                    "error" -> {
+                        _orchestratorProgress.value = null
+                        finalizeTaskHistory(event.taskId, event.status)
+                        // Replace PROGRESS with error in chat
+                        replaceChatProgress("Chyba při zpracování úlohy", ChatMessage.MessageType.ERROR)
                     }
                     "interrupted" -> {
                         // Keep progress visible but update message
                         _orchestratorProgress.value = _orchestratorProgress.value?.copy(
                             message = "Čekám na schválení...",
                         )
+                        finalizeTaskHistory(event.taskId, "interrupted")
+                        // Update chat PROGRESS message
+                        replaceChatProgress("Čekám na vaše schválení...", ChatMessage.MessageType.PROGRESS)
                     }
                 }
             }
@@ -371,6 +395,20 @@ class MainViewModel(
     }
 
     /**
+     * Cancel a running orchestration.
+     */
+    fun cancelOrchestration(taskId: String) {
+        scope.launch {
+            try {
+                repository.agentOrchestrator.cancelOrchestration(taskId)
+                _orchestratorProgress.value = null
+            } catch (e: Exception) {
+                println("Failed to cancel orchestration: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Deny an approval request with a reason from the in-app dialog.
      * The reason becomes a clarification user task for the orchestrator.
      */
@@ -396,6 +434,109 @@ class MainViewModel(
      */
     fun dismissApprovalDialog() {
         _approvalDialogEvent.value = null
+    }
+
+    /** Node name to Czech label for orchestrator pipeline steps. */
+    private val nodeLabels = mapOf(
+        "intake" to "Analýza úlohy",
+        "evidence" to "Shromažďování kontextu",
+        "evidence_pack" to "Shromažďování kontextu",
+        "plan" to "Plánování",
+        "plan_steps" to "Plánování kroků",
+        "execute" to "Provádění",
+        "execute_step" to "Provádění kroku",
+        "evaluate" to "Vyhodnocení",
+        "finalize" to "Dokončení",
+        "respond" to "Generování odpovědi",
+        "clarify" to "Upřesnění",
+        "decompose" to "Dekompozice na cíle",
+        "select_goal" to "Výběr cíle",
+        "advance_step" to "Další krok",
+        "advance_goal" to "Další cíl",
+        "git_operations" to "Git operace",
+        "report" to "Generování reportu",
+    )
+
+    /**
+     * Accumulate orchestrator node progress for the running task.
+     * Does NOT add to _taskHistory — that happens only in finalizeTaskHistory().
+     */
+    private fun updateTaskHistory(taskId: String, node: String) {
+        val label = nodeLabels[node] ?: node
+        val current = _runningTaskNodes.value.toMutableList()
+
+        // Mark previous RUNNING nodes as DONE
+        for (i in current.indices) {
+            if (current[i].status == NodeStatus.RUNNING) {
+                current[i] = current[i].copy(status = NodeStatus.DONE)
+            }
+        }
+
+        // Add node if not present, or update its status
+        val existingIdx = current.indexOfFirst { it.node == node }
+        if (existingIdx < 0) {
+            current.add(NodeEntry(node = node, label = label, status = NodeStatus.RUNNING))
+        } else {
+            current[existingIdx] = current[existingIdx].copy(status = NodeStatus.RUNNING)
+        }
+
+        _runningTaskNodes.value = current
+
+        // Record start time on first node
+        if (runningTaskStartTime == null) {
+            runningTaskStartTime = AgentActivityEntry.formatNow()
+        }
+    }
+
+    /**
+     * Replace the current PROGRESS chat message with new text/type,
+     * or remove it if no replacement needed.
+     */
+    private fun replaceChatProgress(text: String, messageType: ChatMessage.MessageType) {
+        val messages = _chatMessages.value.toMutableList()
+        val progressIdx = messages.indexOfLast { it.messageType == ChatMessage.MessageType.PROGRESS }
+        if (progressIdx >= 0) {
+            messages[progressIdx] = ChatMessage(
+                from = ChatMessage.Sender.Assistant,
+                text = text,
+                contextId = _selectedProjectId.value,
+                messageType = messageType,
+            )
+            _chatMessages.value = messages
+        }
+    }
+
+    /**
+     * Create a history entry from accumulated nodes when orchestration completes.
+     * This is the ONLY place where entries are added to _taskHistory.
+     */
+    private fun finalizeTaskHistory(taskId: String, status: String) {
+        val nodes = _runningTaskNodes.value
+        if (nodes.isEmpty()) return
+
+        val finalNodes = nodes.map { n ->
+            if (n.status == NodeStatus.RUNNING) n.copy(status = NodeStatus.DONE) else n
+        }
+        val preview = _runningTaskPreview.value ?: "Zpracování úlohy"
+        val projectName = _runningProjectName.value
+
+        val entry = TaskHistoryEntry(
+            taskId = taskId,
+            taskPreview = preview,
+            projectName = projectName,
+            startTime = runningTaskStartTime ?: AgentActivityEntry.formatNow(),
+            endTime = AgentActivityEntry.formatNow(),
+            status = status,
+            nodes = finalNodes,
+        )
+
+        val history = _taskHistory.value.toMutableList()
+        history.add(0, entry) // newest first
+        _taskHistory.value = history
+
+        // Reset accumulator
+        _runningTaskNodes.value = emptyList()
+        runningTaskStartTime = null
     }
 
     private fun subscribeToQueueStatus(clientId: String) {
@@ -479,6 +620,9 @@ class MainViewModel(
                             _runningProjectName.value = newProjectName
                             _runningTaskPreview.value = newTaskPreview
                             _runningTaskType.value = newTaskType
+
+                            // No backfill needed — history entries are created only on finalize,
+                            // by which time _runningTaskPreview is already set from queue status
 
                             // Parse FOREGROUND pending queue items from metadata
                             val pendingCount = response.metadata["pendingItemCount"]?.toIntOrNull() ?: 0
@@ -724,6 +868,10 @@ class MainViewModel(
                     ChatMessage.MessageType.FINAL
                 }
 
+                ChatResponseType.ERROR -> {
+                    ChatMessage.MessageType.ERROR
+                }
+
                 ChatResponseType.CHAT_CHANGED -> {
                     println("=== Chat session changed, reloading history... ===")
                     reloadHistory(clientId, projectId)
@@ -821,6 +969,19 @@ class MainViewModel(
                     ),
                 )
             }
+
+            ChatMessage.MessageType.ERROR -> {
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                messages.add(
+                    ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = response.message,
+                        contextId = projectId,
+                        messageType = messageType,
+                        metadata = response.metadata,
+                    ),
+                )
+            }
         }
         _chatMessages.value = messages
     }
@@ -834,10 +995,10 @@ class MainViewModel(
             val newMessages =
                 history.messages.map { msg ->
                     ChatMessage(
-                        from = if (msg.role == "user") ChatMessage.Sender.Me else ChatMessage.Sender.Assistant,
+                        from = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.Sender.Me else ChatMessage.Sender.Assistant,
                         text = msg.content,
                         contextId = projectId,
-                        messageType = if (msg.role == "user") ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
+                        messageType = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
                         metadata = emptyMap(),
                         timestamp = msg.timestamp,
                     )

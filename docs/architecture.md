@@ -611,19 +611,26 @@ with the Kotlin server via REST.
 **Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
 to do and WHEN; agents just execute.
 
+<<<<<<< Updated upstream
 **Dual-path routing**: Simple questions (search queries, factual lookups) are routed to a
 `respond` node with web search + KB search tools. Coding tasks go through the full pipeline
 (clarify → decompose → plan → execute → evaluate).
 
 ### Architecture (Push-Based Communication)
+=======
+### Architecture (KB-First, Push-Based Communication)
+>>>>>>> Stashed changes
 
 ```
 Kotlin Server (BackgroundEngine)
     │
     ├── POST /orchestrate/stream ──► Python Orchestrator (LangGraph)
     │   (fire-and-forget,               │
-    │    returns thread_id)              ├── decompose → plan → execute → evaluate
-    │                                    │   (K8s Jobs for coding agents)
+    │    returns thread_id)              ├── intake → evidence → route
+    │                                    │   ├── ADVICE → respond → finalize
+    │                                    │   ├── SINGLE_TASK → plan → execute loop → finalize
+    │                                    │   ├── EPIC → plan_epic → execution waves
+    │                                    │   └── GENERATIVE → design → execution
     │                                    │
     │   ◄── POST /internal/             │   Python pushes progress on each node:
     │       orchestrator-progress ──────│   - node name, message, goal/step indices
@@ -632,7 +639,7 @@ Kotlin Server (BackgroundEngine)
     │   ◄── POST /internal/             │   Python pushes status on completion:
     │       orchestrator-status ────────│   - done/error/interrupted + details
     │   (completion/error/interrupt)      │
-    │                                    └── interrupt() for commit/push approval
+    │                                    └── interrupt() for approval (commit/push/epic plan)
     ├── POST /approve/{thread_id} ──► resume from checkpoint
     │   (after USER_TASK response)
     │
@@ -643,6 +650,12 @@ Kotlin Server (BackgroundEngine)
     └── TaskDocument (MongoDB) = SSOT for lifecycle state
 ```
 
+**4 task categories** with intelligent routing:
+- **ADVICE**: Direct LLM + KB answer (no coding, no K8s Jobs)
+- **SINGLE_TASK**: May or may not code — step types: respond, code, tracker_ops, mixed
+- **EPIC**: Batch execution in waves from tracker issues
+- **GENERATIVE**: Design full structure from high-level goal, then execute
+
 **Communication model**: Push-based (Python → Kotlin) with 60s safety-net polling.
 - **Primary**: Python pushes `orchestrator-progress` on each node transition and `orchestrator-status` on completion
 - **Safety net**: BackgroundEngine polls every 60s to catch missed callbacks (network failure, process restart)
@@ -650,12 +663,50 @@ Kotlin Server (BackgroundEngine)
 - **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
 - **task_id convention**: `task_id` sent to Python in `OrchestrateRequestDto` is `task.id.toString()` (MongoDB document `_id`). Python sends this same `task_id` back in all callbacks. `OrchestratorStatusHandler` resolves it via `taskRepository.findById(TaskId(ObjectId(taskId)))`. The `correlationId` field on `TaskDocument` is a separate identifier used for idempotency/deduplication, NOT sent to Python.
 
+**JERVIS Internal Project**: Each client has max 1 `isJervisInternal=true` project. Auto-created on first orchestration for tracker/wiki operations.
+
 ### State Persistence
 
 - **TaskDocument** (Kotlin/MongoDB): SSOT for task lifecycle, `orchestratorThreadId`, USER_TASK state
 - **LangGraph checkpoints** (Python/MongoDB): Graph execution state, auto-saved after every node
 - **Checkpointer**: `AsyncMongoDBSaver` from `langgraph-checkpoint-mongodb` (same MongoDB instance)
 - Thread ID is the link between TaskDocument and LangGraph checkpoint
+
+### Chat Context Persistence
+
+Agent memory across conversations — the orchestrator receives full conversation context with each dispatch.
+
+**Three layers:**
+1. **Recent messages** (verbatim): Last 20 `ChatMessageDocument` records sent as-is in `OrchestrateRequestDto.chat_history`
+2. **Rolling summaries** (compressed): `ChatSummaryDocument` collection — LLM-compressed blocks of 20 messages each
+3. **Search** (Phase 2): MongoDB full-text search for on-demand old context retrieval
+
+**Data flow:**
+```
+User sends message → Kotlin saves ChatMessageDocument
+    ↓
+AgentOrchestratorService.dispatchToPythonOrchestrator()
+    → ChatHistoryService.prepareChatHistoryPayload(taskId)
+    → OrchestrateRequestDto.chat_history = { recent_messages, summary_blocks, total_message_count }
+    ↓
+Python orchestrator uses chat_history in nodes:
+    - intake.py: last 5 messages for classification context ("continuation" vs "new topic")
+    - respond.py: full conversation context (summaries + recent) in LLM prompt
+    - evidence.py: populates EvidencePack.chat_history_summary
+    - plan.py: key decisions from summaries for planning continuity
+    - finalize.py: conversation context in final report
+    ↓
+After orchestration completes (handleDone()):
+    → async: ChatHistoryService.compressIfNeeded(taskId)
+    → if >20 unsummarized messages → POST /internal/compress-chat (Python LLM)
+    → Store ChatSummaryDocument in MongoDB
+```
+
+**Token budget:** ~4000 tokens total (2000 recent + 1500 summaries + 500 decisions)
+
+**MongoDB collections:**
+- `chat_messages` — individual messages (existing)
+- `chat_summaries` — compressed summary blocks (new, compound index on `taskId + sequenceEnd`)
 
 ### Task State Machine (Python orchestrator path)
 
@@ -690,6 +741,7 @@ Two layers:
 
 | File | Purpose |
 |------|---------|
+<<<<<<< Updated upstream
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency (Semaphore), MongoDB lifecycle |
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, checkpointing |
 | `backend/service-orchestrator/app/graph/nodes.py` | Node functions: router, respond, clarify, decompose, plan, execute, evaluate, git_ops |
@@ -697,6 +749,16 @@ Two layers:
 | `backend/service-orchestrator/app/tools/executor.py` | Tool execution: SearXNG web search, KB retrieve |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers, SearXNG URL) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
+=======
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency, MongoDB lifecycle |
+| `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, 4-category routing, checkpointing |
+| `backend/service-orchestrator/app/graph/nodes/` | Modular nodes: intake, evidence, respond, plan, execute, evaluate, git_ops, finalize, coding, epic, design |
+| `backend/service-orchestrator/app/context/context_store.py` | MongoDB hierarchical context store (orchestrator_context) |
+| `backend/service-orchestrator/app/context/distributed_lock.py` | MongoDB distributed lock for multi-pod concurrency |
+| `backend/service-orchestrator/app/context/context_assembler.py` | Per-node LLM context assembly (step/goal/epic levels) |
+| `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
+| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, JERVIS project resolution, concurrency guard |
+>>>>>>> Stashed changes
 | `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), heartbeat-based stuck detection |
 | `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |
 | `backend/server/.../OrchestratorHeartbeatTracker.kt` | In-memory liveness detection for orchestrator tasks |

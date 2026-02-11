@@ -28,7 +28,7 @@ class ProjectGroupService(
         }
 
     suspend fun getGroupByIdOrNull(id: ProjectGroupId): ProjectGroupDocument? =
-        projectGroupRepository.findById(id)
+        projectGroupRepository.getById(id)
 
     suspend fun saveGroup(group: ProjectGroupDocument): ProjectGroupDocument {
         val existing = getGroupByIdOrNull(group.id)

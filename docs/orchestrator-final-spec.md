@@ -37,16 +37,35 @@
 
 ```
 backend/
-  service-orchestrator/           # NOVÝ – Python orchestrator
+  service-orchestrator/           # Python orchestrator (KB-first architecture)
     app/
       __init__.py
       main.py                     # FastAPI + SSE endpoints
       config.py                   # Konfigurace (env vars)
-      models.py                   # Pydantic modely (state, rules, tasks)
+      models.py                   # Pydantic modely (TaskCategory, TaskAction, EvidencePack, ...)
       graph/
         __init__.py
-        orchestrator.py           # LangGraph StateGraph – hlavní flow
-        nodes.py                  # Nodes: plan, execute, evaluate, git_ops
+        orchestrator.py           # LangGraph StateGraph – 4-category routing, OrchestratorState
+        nodes/                    # Modular node files (one per concern)
+          __init__.py             # Re-exports
+          _helpers.py             # Shared LLM helpers, JSON parsing, cloud escalation
+          intake.py               # Intent detection, 4-category classification, mandatory clarification
+          evidence.py             # Parallel KB + tracker artifact fetch (EvidencePack)
+          respond.py              # ADVICE + analytical response (LLM + KB)
+          plan.py                 # Multi-type planning (respond/code/tracker/mixed)
+          execute.py              # Step dispatch by type (respond/code/tracker)
+          evaluate.py             # Evaluation + routing (next_step, advance_step, advance_goal)
+          git_ops.py              # Git operations with approval gates
+          finalize.py             # Final report generation
+          coding.py               # Coding pipeline (decompose, select_goal, plan_steps)
+          epic.py                 # EPIC: plan_epic, execute_wave, verify_wave
+          design.py               # GENERATIVE: design (epic generation from goal)
+      context/
+        __init__.py
+        context_store.py          # MongoDB orchestrator_context (hierarchical, TTL 30d)
+        agent_result_parser.py    # Normalize variable agent responses
+        context_assembler.py      # Per-node LLM context assembly (step/goal/epic)
+        distributed_lock.py       # MongoDB distributed lock for multi-pod
       agents/
         __init__.py
         job_runner.py             # K8s Job CRUD + log streaming
@@ -62,6 +81,8 @@ backend/
         definitions.py            # Tool schemas (web_search, kb_search)
         executor.py               # Tool execution (SearXNG, KB retrieve)
         kotlin_client.py          # REST client pro Kotlin server internal API
+      whisper/
+        correction_agent.py       # Transcript correction agent (shares Ollama GPU)
     requirements.txt
     Dockerfile
 
@@ -87,8 +108,16 @@ POST /orchestrate/stream     # Spustí orchestraci (fire-and-forget – vrátí 
 GET  /status/{thread_id}     # Status polling (running/interrupted/done/error)
 GET  /stream/{thread_id}     # SSE stream progress
 POST /approve/{thread_id}    # Approval response od uživatele (resume z interrupt)
+POST /cancel/{thread_id}     # Cancel running orchestration (asyncio task cancellation)
 GET  /health                 # Health check
 ```
+
+**Cancellation flow:**
+- UI → Kotlin RPC `cancelOrchestration(taskId)` → Kotlin resolves `orchestratorThreadId` from TaskDocument
+- Kotlin → Python `POST /cancel/{thread_id}` → Python cancels asyncio task, pushes error status back to Kotlin
+- Python reports `status="error"` with `error="Orchestrace zrušena uživatelem"` via push callback
+
+**Recursion limit:** `recursion_limit=150` in all LangGraph config dicts (default 25 is too low for 5+ goals with multi-step execution).
 
 **Komunikační model (push-based, Python → Kotlin callbacks):**
 - Kotlin → Python: `POST /orchestrate/stream` s kompletním `OrchestrateRequest`
@@ -99,6 +128,7 @@ GET  /health                 # Health check
 - Safety-net: Kotlin polls `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()` každých 60s
 - Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
 
+<<<<<<< Updated upstream
 **LangGraph StateGraph (12 nodes):**
 ```
                     ┌── question? ──► [respond] ──► END
@@ -126,6 +156,72 @@ GET  /health                 # Health check
 answer. Returns `{"final_result": content, "artifacts": []}` directly to END.
 
 `clarify` may `interrupt()` for user questions (resumes after answers), or pass through for simple tasks.
+=======
+**LangGraph StateGraph (KB-First Architecture, 14 nodes):**
+
+4 task categories with intelligent routing:
+
+| Category | Examples | Flow |
+|----------|----------|------|
+| **ADVICE** | "napiš odpověď", "shrň meeting" | intake → evidence → respond → finalize → END |
+| **SINGLE_TASK** | "vyřeš UFO-24", "naplánuj opravu" | intake → evidence → plan → execute/respond → finalize → END |
+| **EPIC** | "vezmi celý epic, implementuj po dávkách" | intake → evidence → plan_epic → select_goal → ... → finalize → END |
+| **GENERATIVE** | "navrhni epiky + tasky + implementuj" | intake → evidence → design → select_goal → ... → finalize → END |
+
+```
+[intake] → [evidence_pack] ─┬─ ADVICE ──────→ [respond] ──────────────────────→ [finalize] → END
+                              ├─ SINGLE_TASK ──→ [plan] → [execute_step loop] ─→ [finalize] → END
+                              ├─ EPIC ─────────→ [plan_epic] → [select_goal] → ...
+                              └─ GENERATIVE ───→ [design] → [select_goal] → ...
+
+Coding execution loop (shared by SINGLE_TASK/code, EPIC, GENERATIVE):
+  [select_goal] → [plan_steps] → [execute_step] → [evaluate]
+       ↑                                              │
+       │                                         [next_step]
+       │                                              │
+       └── [advance_goal] ←── more goals ─────────────┤
+                                                      │
+                               [advance_step] ← more steps
+                                                      │
+                                                      ↓ (all done)
+                                           [git_operations] → [finalize]
+```
+
+`intake` classifies tasks into 4 categories + detects mandatory clarification.
+`evidence_pack` fetches KB context and tracker artifacts in parallel.
+`respond` handles ADVICE and analytical SINGLE_TASK responses directly (LLM + KB, no K8s Jobs).
+`plan` handles SINGLE_TASK with step types: respond, code, tracker, mixed.
+`plan_epic` fetches tracker issues, builds waves, and gates with interrupt() approval.
+`design` generates a full epic structure from a high-level goal, then gates with interrupt().
+
+**Modular node files** (`app/graph/nodes/`):
+```
+app/graph/nodes/
+  __init__.py          # Re-exports
+  _helpers.py          # Shared LLM helpers, JSON parsing, cloud escalation
+  intake.py            # 4-category classification, mandatory clarification
+  evidence.py          # KB + tracker artifact fetch
+  respond.py           # ADVICE + analytical response
+  plan.py              # Multi-type planning (respond/code/tracker/mixed)
+  execute.py           # Step dispatch (respond/code/tracker)
+  evaluate.py          # Evaluation + routing (next_step, advance_step, advance_goal)
+  git_ops.py           # Git operations with approval gates
+  finalize.py          # Final report
+  coding.py            # Coding pipeline (decompose, select_goal, plan_steps)
+  epic.py              # EPIC: plan_epic, execute_wave, verify_wave
+  design.py            # GENERATIVE: design (epic generation)
+```
+
+**Context management** (`app/context/`):
+```
+app/context/
+  __init__.py
+  context_store.py          # MongoDB orchestrator_context collection (hierarchical)
+  agent_result_parser.py    # Normalize variable agent responses
+  context_assembler.py      # Build per-node LLM context (step/goal/epic levels)
+  distributed_lock.py       # MongoDB distributed lock for multi-pod concurrency
+```
+>>>>>>> Stashed changes
 
 **State model:**
 ```python
@@ -134,17 +230,26 @@ class OrchestratorState(TypedDict, total=False):
     task: dict               # CodingTask serialized
     rules: dict              # ProjectRules serialized
     environment: dict | None # Resolved K8s environment context
+    jervis_project_id: str | None  # JERVIS internal project for tracker ops
 
-    # Clarification (populated by clarify node)
-    clarification_questions: list | None   # Questions for the user
-    clarification_response: dict | None    # User's answers
-    project_context: str | None            # KB-fetched project overview
-    task_complexity: str | None            # Auto-detected: simple/medium/complex/critical
+    # Intake (4-category routing)
+    task_category: str | None       # TaskCategory: advice/single_task/epic/generative
+    task_action: str | None         # TaskAction: respond/code/tracker_ops/mixed
+    external_refs: list | None      # Extracted ticket IDs, URLs
+    evidence_pack: dict | None      # EvidencePack from evidence node
+    needs_clarification: bool
+
+    # Clarification
+    clarification_questions: list | None
+    clarification_response: dict | None
+    project_context: str | None
+    task_complexity: str | None
+    allow_cloud_prompt: bool
 
     # Goals & steps
     goals: list              # list[Goal]
     current_goal_index: int
-    steps: list              # list[CodingStep]
+    steps: list              # list[CodingStep] (now with step_type: respond/code/tracker)
     current_step_index: int
     step_results: list       # list[StepResult]
     goal_summaries: list     # list[GoalSummary] – cross-goal context
@@ -156,6 +261,24 @@ class OrchestratorState(TypedDict, total=False):
     error: str | None
     evaluation: dict | None
 ```
+
+**JERVIS Internal Project:**
+
+Each client has max 1 project with `isJervisInternal = true` — an internal workspace for orchestrator planning (tracker, wiki). Auto-created on first orchestration via `ProjectService.getOrCreateJervisProject()`. The project ID is passed to Python as `jervis_project_id` in `OrchestrateRequestDto`.
+
+**Hierarchical context management:**
+
+| Level | What LLM sees | Source | Max size |
+|-------|---------------|--------|----------|
+| Step (current) | Full instructions + KB context + prev step summary | State + KB | ~8k tokens |
+| Goal (current) | Step names + status + 1 sentence per step | State (goal_summaries) | ~500 chars |
+| Epic (all) | Only goal names + status (PENDING/DONE/FAIL) | State (goals list) | ~50 chars/goal |
+
+Operational context (plans, results, summaries) stored in MongoDB `orchestrator_context` collection. Valuable insights (analyses, architectural decisions) also saved to KB for semantic search in future tasks.
+
+**Multi-pod support:**
+
+MongoDB distributed lock (`orchestrator_locks` collection) replaces `asyncio.Semaphore` for multi-pod deployments. Lock acquired atomically via `findOneAndUpdate`, heartbeat every 10s, stale recovery after 5 min.
 
 #### B. K8s Job Runner (`agents/job_runner.py`)
 
@@ -212,6 +335,35 @@ Orchestrator před spuštěním agenta dotáže KB a vrátí kontext jako markdo
 ```python
 # models.py
 
+class TaskCategory(str, Enum):
+    """4 task categories for intelligent routing."""
+    ADVICE = "advice"           # Direct answer (LLM + KB)
+    SINGLE_TASK = "single_task" # May or may not code
+    EPIC = "epic"               # Batch execution in waves
+    GENERATIVE = "generative"   # Design + approve + execute
+
+class TaskAction(str, Enum):
+    """What SINGLE_TASK needs to resolve."""
+    RESPOND = "respond"         # Answer/analysis (LLM + KB)
+    CODE = "code"               # Coding agent
+    TRACKER_OPS = "tracker_ops" # Create/update issues
+    MIXED = "mixed"             # Combination
+
+class StepType(str, Enum):
+    """What a step does."""
+    RESPOND = "respond"         # LLM answer
+    CODE = "code"               # K8s Job
+    TRACKER = "tracker"         # Kotlin tracker API
+
+class EvidencePack(BaseModel):
+    """Collected evidence from KB + tracker + refs."""
+    kb_results: list[dict] = []
+    tracker_artifacts: list[dict] = []
+    chat_history_summary: str = ""
+    external_refs: list[str] = []
+    facts: list[str] = []
+    unknowns: list[str] = []
+
 class ProjectRules(BaseModel):
     """Pravidla klienta/projektu – načtená z DB."""
     branch_naming: str = "task/{taskId}"
@@ -224,6 +376,9 @@ class ProjectRules(BaseModel):
     forbidden_files: list[str] = ["*.env", "secrets/*"]
     max_changed_files: int = 20
     auto_push: bool = False
+    auto_use_anthropic: bool = False
+    auto_use_openai: bool = False
+    auto_use_gemini: bool = False
 
 class CodingTask(BaseModel):
     """Task pro orchestrator."""
@@ -232,22 +387,36 @@ class CodingTask(BaseModel):
     project_id: str | None = None
     workspace_path: str
     query: str
-    agent_preference: str = "auto"  # "auto" | "aider" | "claude" | "openhands" | "junie"
+    agent_preference: str = "auto"
+
+class OrchestrateRequest(BaseModel):
+    """Request z Kotlin serveru."""
+    task_id: str
+    client_id: str
+    project_id: str | None = None
+    workspace_path: str
+    query: str
+    agent_preference: str = "auto"
+    rules: ProjectRules = ProjectRules()
+    environment: dict | None = None
+    jervis_project_id: str | None = None  # JERVIS internal project
 
 class Goal(BaseModel):
     """Jeden cíl rozložený z user query."""
     id: str
     title: str
     description: str
-    complexity: str  # "simple" | "medium" | "complex" | "critical"
+    complexity: Complexity  # simple/medium/complex/critical
     dependencies: list[str] = []
 
 class CodingStep(BaseModel):
-    """Jeden krok plánu pro coding agenta."""
+    """Jeden krok plánu — supports multiple step types."""
     index: int
     instructions: str
-    agent_type: str
+    agent_type: str = "claude"
     files: list[str] = []
+    step_type: StepType = StepType.CODE
+    tracker_operations: list[dict] = []
 
 class StepResult(BaseModel):
     """Výsledek jednoho kroku."""
@@ -259,7 +428,7 @@ class StepResult(BaseModel):
 
 class ApprovalRequest(BaseModel):
     """Žádost o schválení od uživatele."""
-    action_type: str   # "commit" | "push" | "code_change" | ...
+    action_type: str   # "commit" | "push" | "epic_plan" | "generative_design" | ...
     description: str
     details: dict = {}
     risk_level: str = "MEDIUM"
@@ -520,27 +689,27 @@ READY_FOR_GPU
 
 ### 10.3 Clarification flow (odlišný od approval)
 
-Clarify node (`clarify`) může přerušit graf pro upřesňující otázky **před plánováním**.
+Intake node (`intake`) může přerušit graf pro upřesňující otázky **před plánováním** — mandatory clarification when `goal_clear=false`.
 Odlišnosti od approval flow:
 
-| Aspekt | Clarification | Approval |
-|--------|---------------|----------|
-| **Node** | `clarify` | `git_operations` |
-| **Kdy** | Před decompose | Před commit/push |
-| **interrupt action** | `"clarify"` | `"commit"` / `"push"` |
-| **pendingQuestion prefix** | Bez prefixu | `"Schválení: ..."` |
-| **Resume handling** | `approved=true`, celý userInput jako reason | Parsování ano/ne z userInput |
+| Aspekt | Clarification | Approval | Epic/Design Approval |
+|--------|---------------|----------|---------------------|
+| **Node** | `intake` | `git_operations` | `plan_epic` / `design` |
+| **Kdy** | Před evidence_pack | Před commit/push | Před execution |
+| **interrupt action** | `"clarify"` | `"commit"` / `"push"` | `"epic_plan"` / `"generative_design"` |
+| **pendingQuestion prefix** | Bez prefixu | `"Schválení: ..."` | `"Schválení: ..."` |
+| **Resume handling** | `approved=true`, celý userInput jako reason | Parsování ano/ne z userInput | Parsování ano/ne |
 
-**Flow:**
-1. `clarify` node volá KB pro project context + LLM pro analýzu
-2. Pokud `needs_clarification=true` → `interrupt({"action": "clarify", ...})`
+**Clarification Flow:**
+1. `intake` node classifies task into 4 categories + detects if `goal_clear=false`
+2. Pokud `goal_clear=false` → `interrupt({"action": "clarify", ...})` IHNED
 3. BackgroundEngine detekuje `interrupted`, action=`clarify`
 4. `pendingQuestion` = otázky **bez** prefixu "Schválení:"
 5. Uživatel odpoví → `resumePythonOrchestrator()`
 6. Detekce: `pendingQuestion` nezačíná "Schválení:" → clarification
 7. `approve(threadId, approved=true, reason=userInput)` — celý input je odpověď
 8. Python obnoví graf → odpovědi uloženy do `clarification_response`
-9. `decompose` čte `clarification_response` + `project_context` + `task_complexity`
+9. `evidence_pack` → routing → appropriate category path
 
 ### 10.4 Cross-goal context (GoalSummary)
 
@@ -571,17 +740,16 @@ class GoalSummary(BaseModel):
 ### 11.1 Proč
 
 LLM (Ollama/Anthropic) nezvládá efektivně více souběžných požadavků.
-Python orchestrátor **smí zpracovávat maximálně jednu orchestraci najednou**.
+Python orchestrátor **smí zpracovávat maximálně jednu orchestraci najednou** (across ALL pods).
 
-### 11.2 Dvě vrstvy kontroly
+### 11.2 Tři vrstvy kontroly
 
 ```
-Vrstva 1: Kotlin (early guard)                    Vrstva 2: Python (definitivní)
-─────────────────────────────                      ────────────────────────────────
-dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)
-  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429 if busy
-  → return false (skip dispatch)                   POST /approve → runs in background with semaphore
-                                                   GET /health → {"busy": true/false}
+Vrstva 1: Kotlin (early guard)                    Vrstva 2: Python (in-process)        Vrstva 3: MongoDB (multi-pod)
+─────────────────────────────                      ────────────────────────────────      ────────────────────────────
+dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)                 DistributedLock (orchestrator_locks)
+  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429       findOneAndUpdate + heartbeat 10s
+  → return false (skip dispatch)                   GET /health → {"busy": true/false}    stale recovery after 5 min
 ```
 
 **Kotlin vrstva** (`AgentOrchestratorService`):
@@ -589,10 +757,18 @@ dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)
 - Pokud > 0, vrátí false → task zůstane READY_FOR_GPU → BackgroundEngine retry
 - Reaguje na HTTP 429 z `orchestrateStream()` → vrátí false
 
-**Python vrstva** (`main.py`):
+**Python in-process vrstva** (`main.py`):
 - `asyncio.Semaphore(1)` – `/orchestrate/stream` a `/orchestrate` vrátí 429 pokud busy
 - `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
 - `/health` vrací `{"busy": true/false}` pro diagnostiku
+
+**MongoDB distributed lock** (`app/context/distributed_lock.py`):
+- Collection `orchestrator_locks`, single document `_id: "orchestration_slot"`
+- Lock acquired atomically via `findOneAndUpdate` (condition: `locked_by: null`)
+- Heartbeat every 10s updates `locked_at` to prevent stale detection
+- Stale lock recovery: locks older than 5 min without heartbeat are force-acquired
+- Pod ID from `HOSTNAME` env var (K8s pod name)
+- On startup: auto-recover stale locks from crashed pods
 
 ### 11.3 Resume po approval (fire-and-forget)
 

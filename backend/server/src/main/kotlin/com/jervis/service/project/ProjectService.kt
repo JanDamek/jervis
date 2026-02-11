@@ -94,5 +94,25 @@ class ProjectService(
         }
 
     suspend fun getProjectByIdOrNull(projectId: ProjectId): ProjectDocument? =
-        projectRepository.findAll().toList().find { it.id == projectId }
+        projectRepository.getById(projectId)
+
+    /**
+     * Get or create the JERVIS internal project for a client.
+     * Max 1 internal project per client. Auto-created on first orchestration.
+     */
+    suspend fun getOrCreateJervisProject(clientId: ClientId): ProjectDocument {
+        val existing = projectRepository.findByClientIdAndIsJervisInternal(clientId, true)
+        if (existing != null) return existing
+
+        val project = ProjectDocument(
+            clientId = clientId,
+            name = "JERVIS Internal",
+            description = "Interní projekt pro plánování a orchestraci",
+            isJervisInternal = true,
+        )
+        val saved = projectRepository.save(project)
+        directoryStructureService.ensureProjectDirectories(saved.clientId, saved.id)
+        logger.info { "Auto-created JERVIS internal project for client $clientId" }
+        return saved
+    }
 }

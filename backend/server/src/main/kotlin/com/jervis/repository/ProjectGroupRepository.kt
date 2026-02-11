@@ -13,6 +13,12 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ProjectGroupRepository : CoroutineCrudRepository<ProjectGroupDocument, ProjectGroupId> {
     /**
+     * Find project group by ID. Use this instead of the inherited findById(ProjectGroupId) to avoid
+     * AOP proxy issues with Kotlin inline value classes.
+     */
+    suspend fun getById(id: ProjectGroupId): ProjectGroupDocument?
+
+    /**
      * Find all project groups for a given client.
      */
     fun findByClientId(clientId: ClientId): Flow<ProjectGroupDocument>

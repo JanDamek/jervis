@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 
@@ -57,28 +58,33 @@ class RagService:
             Tuple of (chunk_count, list of chunk UUIDs)
         """
         chunks = self.text_splitter.split_text(request.content)
-        collection = self.client.collections.get("KnowledgeChunk")
 
-        chunk_ids = []
-        with collection.batch.dynamic() as batch:
-            for chunk in chunks:
-                chunk_id = str(uuid.uuid4())
-                vector = self.embeddings.embed_query(chunk)
-                batch.add_object(
-                    uuid=chunk_id,
-                    properties={
-                        "content": chunk,
-                        "sourceUrn": request.sourceUrn,
-                        "clientId": request.clientId,
-                        "projectId": request.projectId or "",
-                        "groupId": request.groupId or "",
-                        "kind": request.kind or "",
-                        "graphRefs": graph_refs or [],
-                    },
-                    vector=vector
-                )
-                chunk_ids.append(chunk_id)
+        # Batch embed all chunks at once (instead of per-chunk embed_query)
+        vectors = await asyncio.to_thread(self.embeddings.embed_documents, chunks)
 
+        def _weaviate_batch_insert():
+            collection = self.client.collections.get("KnowledgeChunk")
+            chunk_ids = []
+            with collection.batch.dynamic() as batch:
+                for i, chunk in enumerate(chunks):
+                    chunk_id = str(uuid.uuid4())
+                    batch.add_object(
+                        uuid=chunk_id,
+                        properties={
+                            "content": chunk,
+                            "sourceUrn": request.sourceUrn,
+                            "clientId": request.clientId,
+                            "projectId": request.projectId or "",
+                            "groupId": request.groupId or "",
+                            "kind": request.kind or "",
+                            "graphRefs": graph_refs or [],
+                        },
+                        vector=vectors[i]
+                    )
+                    chunk_ids.append(chunk_id)
+            return chunk_ids
+
+        chunk_ids = await asyncio.to_thread(_weaviate_batch_insert)
         return len(chunk_ids), chunk_ids
 
     async def update_chunk_graph_refs(self, chunk_id: str, graph_refs: list[str]) -> bool:
@@ -87,12 +93,15 @@ class RagService:
 
         Called after graph extraction to link chunks to discovered entities.
         """
-        try:
+        def _update():
             collection = self.client.collections.get("KnowledgeChunk")
             collection.data.update(
                 uuid=chunk_id,
                 properties={"graphRefs": graph_refs}
             )
+
+        try:
+            await asyncio.to_thread(_update)
             return True
         except Exception as e:
             logger.warning("Failed to update chunk graphRefs: %s", e)
@@ -104,23 +113,24 @@ class RagService:
 
         Used for evidence retrieval from graph nodes.
         """
-        collection = self.client.collections.get("KnowledgeChunk")
-        results = []
+        def _fetch():
+            collection = self.client.collections.get("KnowledgeChunk")
+            results = []
+            for chunk_id in chunk_ids:
+                try:
+                    obj = collection.query.fetch_object_by_id(chunk_id)
+                    if obj:
+                        results.append({
+                            "id": chunk_id,
+                            "content": obj.properties.get("content", ""),
+                            "sourceUrn": obj.properties.get("sourceUrn", ""),
+                            "graphRefs": obj.properties.get("graphRefs", []),
+                        })
+                except Exception:
+                    pass
+            return results
 
-        for chunk_id in chunk_ids:
-            try:
-                obj = collection.query.fetch_object_by_id(chunk_id)
-                if obj:
-                    results.append({
-                        "id": chunk_id,
-                        "content": obj.properties.get("content", ""),
-                        "sourceUrn": obj.properties.get("sourceUrn", ""),
-                        "graphRefs": obj.properties.get("graphRefs", []),
-                    })
-            except Exception:
-                pass
-
-        return results
+        return await asyncio.to_thread(_fetch)
 
     async def purge_by_source(self, source_urn: str) -> tuple[int, list[str]]:
         """
@@ -129,24 +139,24 @@ class RagService:
         Returns:
             Tuple of (chunks_deleted, list of deleted chunk UUIDs)
         """
-        collection = self.client.collections.get("KnowledgeChunk")
+        def _purge():
+            collection = self.client.collections.get("KnowledgeChunk")
+            response = collection.query.fetch_objects(
+                filters=wvq.Filter.by_property("sourceUrn").equal(source_urn),
+                limit=10000,
+                return_properties=["sourceUrn"],
+            )
+            deleted_ids = []
+            for obj in response.objects:
+                chunk_id = str(obj.uuid)
+                try:
+                    collection.data.delete_by_id(obj.uuid)
+                    deleted_ids.append(chunk_id)
+                except Exception as e:
+                    logger.warning("Failed to delete chunk %s: %s", chunk_id, e)
+            return deleted_ids
 
-        # Find all chunks with this sourceUrn
-        response = collection.query.fetch_objects(
-            filters=wvq.Filter.by_property("sourceUrn").equal(source_urn),
-            limit=10000,
-            return_properties=["sourceUrn"],
-        )
-
-        deleted_ids = []
-        for obj in response.objects:
-            chunk_id = str(obj.uuid)
-            try:
-                collection.data.delete_by_id(obj.uuid)
-                deleted_ids.append(chunk_id)
-            except Exception as e:
-                logger.warning("Failed to delete chunk %s: %s", chunk_id, e)
-
+        deleted_ids = await asyncio.to_thread(_purge)
         logger.info("Purged %d RAG chunks for sourceUrn=%s", len(deleted_ids), source_urn)
         return len(deleted_ids), deleted_ids
 
@@ -158,70 +168,77 @@ class RagService:
         limit: int = 100,
     ) -> list[dict]:
         """List all chunks matching a specific kind, with tenant filtering."""
-        collection = self.client.collections.get("KnowledgeChunk")
+        def _query():
+            collection = self.client.collections.get("KnowledgeChunk")
 
-        # Build filter list — Weaviate TEXT fields can't filter by empty string
-        parts = [wvq.Filter.by_property("kind").equal(kind)]
-        if client_id:
-            parts.append(wvq.Filter.by_property("clientId").equal(client_id))
-        if project_id:
-            parts.append(wvq.Filter.by_property("projectId").equal(project_id))
+            # Build filter list — Weaviate TEXT fields can't filter by empty string
+            parts = [wvq.Filter.by_property("kind").equal(kind)]
+            if client_id:
+                parts.append(wvq.Filter.by_property("clientId").equal(client_id))
+            if project_id:
+                parts.append(wvq.Filter.by_property("projectId").equal(project_id))
 
-        filters = wvq.Filter.all_of(parts) if len(parts) > 1 else parts[0]
+            filters = wvq.Filter.all_of(parts) if len(parts) > 1 else parts[0]
 
-        response = collection.query.fetch_objects(
-            filters=filters,
-            limit=limit,
-            return_properties=["content", "sourceUrn", "clientId", "projectId", "kind"],
-        )
-
-        results = []
-        for obj in response.objects:
-            results.append({
-                "content": obj.properties.get("content", ""),
-                "sourceUrn": obj.properties.get("sourceUrn", ""),
-                "metadata": obj.properties,
-            })
-        return results
-
-    async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
-        vector = self.embeddings.embed_query(request.query)
-        collection = self.client.collections.get("KnowledgeChunk")
-
-        # Tenant filtering — Weaviate TEXT fields can't filter by empty string,
-        # so we only add filters for non-empty values
-        parts = []
-        if request.clientId:
-            parts.append(wvq.Filter.by_property("clientId").equal(request.clientId))
-        if request.projectId:
-            project_alternatives = [
-                wvq.Filter.by_property("projectId").equal(request.projectId),
-            ]
-            if request.groupId:
-                project_alternatives.append(
-                    wvq.Filter.by_property("groupId").equal(request.groupId),
-                )
-            parts.append(
-                wvq.Filter.any_of(project_alternatives) if len(project_alternatives) > 1
-                else project_alternatives[0]
+            response = collection.query.fetch_objects(
+                filters=filters,
+                limit=limit,
+                return_properties=["content", "sourceUrn", "clientId", "projectId", "kind"],
             )
 
-        filters = wvq.Filter.all_of(parts) if len(parts) > 1 else (parts[0] if parts else None)
+            results = []
+            for obj in response.objects:
+                results.append({
+                    "content": obj.properties.get("content", ""),
+                    "sourceUrn": obj.properties.get("sourceUrn", ""),
+                    "metadata": obj.properties,
+                })
+            return results
 
-        response = collection.query.near_vector(
-            near_vector=vector,
-            limit=request.maxResults,
-            filters=filters,
-            return_metadata=wvq.MetadataQuery(distance=True)
-        )
-        
+        return await asyncio.to_thread(_query)
+
+    async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
+        vector = await asyncio.to_thread(self.embeddings.embed_query, request.query)
+
+        def _weaviate_query():
+            collection = self.client.collections.get("KnowledgeChunk")
+
+            # Tenant filtering — Weaviate TEXT fields can't filter by empty string,
+            # so we only add filters for non-empty values
+            parts = []
+            if request.clientId:
+                parts.append(wvq.Filter.by_property("clientId").equal(request.clientId))
+            if request.projectId:
+                project_alternatives = [
+                    wvq.Filter.by_property("projectId").equal(request.projectId),
+                ]
+                if request.groupId:
+                    project_alternatives.append(
+                        wvq.Filter.by_property("groupId").equal(request.groupId),
+                    )
+                parts.append(
+                    wvq.Filter.any_of(project_alternatives) if len(project_alternatives) > 1
+                    else project_alternatives[0]
+                )
+
+            filters = wvq.Filter.all_of(parts) if len(parts) > 1 else (parts[0] if parts else None)
+
+            return collection.query.near_vector(
+                near_vector=vector,
+                limit=request.maxResults,
+                filters=filters,
+                return_metadata=wvq.MetadataQuery(distance=True)
+            )
+
+        response = await asyncio.to_thread(_weaviate_query)
+
         items = []
         for obj in response.objects:
             items.append(EvidenceItem(
                 content=obj.properties["content"],
-                score=1.0 - (obj.metadata.distance or 0.0), 
+                score=1.0 - (obj.metadata.distance or 0.0),
                 sourceUrn=obj.properties["sourceUrn"],
                 metadata=obj.properties
             ))
-            
+
         return EvidencePack(items=items)

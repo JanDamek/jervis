@@ -262,13 +262,4 @@ private fun IntervalRow(
     }
 }
 
-/**
- * Human-readable Czech label for ConnectionCapability in indexing context.
- */
-private fun getCapabilityLabel(capability: ConnectionCapability): String = when (capability) {
-    ConnectionCapability.REPOSITORY -> "Git repozitáře"
-    ConnectionCapability.BUGTRACKER -> "Bug tracker"
-    ConnectionCapability.WIKI -> "Wiki"
-    ConnectionCapability.EMAIL_READ -> "E-mail"
-    ConnectionCapability.EMAIL_SEND -> "E-mail (odesílání)"
-}
+// Uses getCapabilityLabel from ClientsSettings.kt (internal)

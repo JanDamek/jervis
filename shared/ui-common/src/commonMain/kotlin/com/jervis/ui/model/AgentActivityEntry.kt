@@ -85,3 +85,35 @@ class AgentActivityLog(private val maxSize: Int = 200) {
         _entries.clear()
     }
 }
+
+/**
+ * Status of a node in the orchestrator pipeline history.
+ */
+enum class NodeStatus {
+    DONE,
+    RUNNING,
+    PENDING,
+}
+
+/**
+ * A single node (step) in an orchestrator pipeline execution.
+ */
+data class NodeEntry(
+    val node: String,
+    val label: String,
+    val status: NodeStatus = NodeStatus.PENDING,
+)
+
+/**
+ * A completed or in-progress task with its orchestrator pipeline nodes.
+ * Used in the History section of AgentWorkloadScreen.
+ */
+data class TaskHistoryEntry(
+    val taskId: String,
+    val taskPreview: String,
+    val projectName: String?,
+    val startTime: String,
+    val endTime: String? = null,
+    val status: String = "running", // "running", "done", "error"
+    val nodes: List<NodeEntry> = emptyList(),
+)

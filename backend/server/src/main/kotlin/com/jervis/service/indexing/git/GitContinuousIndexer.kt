@@ -102,7 +102,7 @@ class GitContinuousIndexer(
         branch: String,
         commits: List<GitCommitDocument>,
     ) {
-        val project = projectRepository.findAll().toList().find { it.id.value == projectId }
+        val project = projectRepository.getById(com.jervis.common.types.ProjectId(projectId))
         if (project == null) {
             logger.warn { "Project $projectId not found, skipping commits" }
             commits.forEach { stateManager.markAsFailed(it, "Project not found") }
@@ -243,7 +243,7 @@ class GitContinuousIndexer(
                 projectId = ProjectId(projectId),
                 commitHash = doc.commitHash,
             ),
-            taskName = "${doc.commitHash.take(8)}: ${doc.message.take(100)}",
+            taskName = "${doc.commitHash.take(8)}: ${(doc.message ?: "").take(100)}",
         )
 
         stateManager.markAsIndexed(doc)

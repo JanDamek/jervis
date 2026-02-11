@@ -9,7 +9,10 @@ import com.jervis.repository.ProjectRepository
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.indexing.git.state.GitCommitInfo
 import com.jervis.service.indexing.git.state.GitCommitStateManager
+import com.jervis.service.error.ErrorLogService
+import com.jervis.service.oauth2.OAuth2Service
 import com.jervis.service.storage.DirectoryStructureService
+import com.jervis.dto.connection.ConnectionStateEnum
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -71,6 +75,8 @@ class GitRepositoryService(
     private val projectRepository: ProjectRepository,
     private val connectionService: ConnectionService,
     private val commitStateManager: GitCommitStateManager,
+    private val oauth2Service: OAuth2Service,
+    private val errorLogService: ErrorLogService,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -101,6 +107,10 @@ class GitRepositoryService(
             for (resource in repoResources) {
                 try {
                     syncRepository(project, resource)
+                } catch (e: GitAuthenticationException) {
+                    logger.error { "Auth failed for ${resource.resourceIdentifier}: ${e.message}" }
+                    invalidateConnection(resource.connectionId)
+                    errorLogService.recordError(e, project.clientId.value, project.id.value)
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to sync repo ${resource.resourceIdentifier} for project ${project.name}" }
                 }
@@ -117,6 +127,10 @@ class GitRepositoryService(
         for (resource in repoResources) {
             try {
                 syncRepository(project, resource)
+            } catch (e: GitAuthenticationException) {
+                logger.error { "Auth failed for ${resource.resourceIdentifier}: ${e.message}" }
+                invalidateConnection(resource.connectionId)
+                errorLogService.recordError(e, project.clientId.value, project.id.value)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to sync repo ${resource.resourceIdentifier} for project ${project.name}" }
             }
@@ -130,10 +144,23 @@ class GitRepositoryService(
         project: ProjectDocument,
         resource: ProjectResource,
     ) {
-        val connection = connectionService.findById(ConnectionId(resource.connectionId))
-        if (connection == null) {
+        val initialConnection = connectionService.findById(ConnectionId(resource.connectionId))
+        if (initialConnection == null) {
             logger.warn { "Connection ${resource.connectionId} not found for resource ${resource.resourceIdentifier}" }
             return
+        }
+
+        // Skip INVALID connections
+        if (initialConnection.state == ConnectionStateEnum.INVALID) {
+            logger.info { "Skipping sync for INVALID connection ${initialConnection.id} (${initialConnection.name})" }
+            return
+        }
+
+        // Refresh OAuth2 token if expired (before using bearerToken for git ops)
+        val connection = if (oauth2Service.refreshAccessToken(initialConnection)) {
+            connectionService.findById(ConnectionId(resource.connectionId))!!
+        } else {
+            initialConnection
         }
 
         val repoUrl = buildRepoUrl(connection, resource)
@@ -158,6 +185,17 @@ class GitRepositoryService(
         val defaultBranch = detectDefaultBranch(repoDir)
         checkoutBranch(repoDir, defaultBranch)
         discoverNewCommits(project, resource, repoDir, defaultBranch)
+    }
+
+    /**
+     * Mark a connection as INVALID if it isn't already.
+     */
+    private suspend fun invalidateConnection(connectionId: ObjectId) {
+        val conn = connectionService.findById(ConnectionId(connectionId)) ?: return
+        if (conn.state != ConnectionStateEnum.INVALID) {
+            connectionService.save(conn.copy(state = ConnectionStateEnum.INVALID))
+            logger.warn { "Connection ${conn.id} (${conn.name}) marked INVALID" }
+        }
     }
 
     /**

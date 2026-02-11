@@ -52,4 +52,10 @@ interface IMeetingService {
     suspend fun permanentlyDeleteMeeting(meetingId: String): Boolean
 
     suspend fun listDeletedMeetings(clientId: String, projectId: String?): List<MeetingDto>
+
+    suspend fun dismissMeetingError(meetingId: String): Boolean
+
+    suspend fun retranscribeSegments(meetingId: String, segmentIndices: List<Int>): Boolean
+
+    suspend fun stopTranscription(meetingId: String): Boolean
 }

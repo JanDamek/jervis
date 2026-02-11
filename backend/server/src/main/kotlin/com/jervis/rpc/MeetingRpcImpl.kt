@@ -41,6 +41,8 @@ class MeetingRpcImpl(
     private val knowledgeService: com.jervis.knowledgebase.KnowledgeService,
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val orchestratorClient: PythonOrchestratorClient,
+    private val whisperJobRunner: com.jervis.service.meeting.WhisperJobRunner,
+    private val notificationRpc: NotificationRpcImpl,
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
@@ -371,6 +373,51 @@ class MeetingRpcImpl(
         return true
     }
 
+    override suspend fun dismissMeetingError(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state != MeetingStateEnum.FAILED) {
+            throw IllegalStateException("Meeting is not in FAILED state")
+        }
+        if (meeting.transcriptSegments.isEmpty()) {
+            throw IllegalStateException("Cannot dismiss: no transcript exists. Use retranscribe instead.")
+        }
+
+        val targetState = when {
+            meeting.correctedTranscriptSegments.isNotEmpty() -> MeetingStateEnum.CORRECTED
+            else -> MeetingStateEnum.TRANSCRIBED
+        }
+
+        meetingRepository.save(
+            meeting.copy(
+                state = targetState,
+                errorMessage = null,
+                stateChangedAt = Instant.now(),
+            ),
+        )
+        logger.info { "Dismissed error for meeting $meetingId, reset to $targetState" }
+        return true
+    }
+
+    override suspend fun retranscribeSegments(meetingId: String, segmentIndices: List<Int>): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state !in listOf(
+                MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTION_REVIEW,
+                MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED,
+            )
+        ) {
+            throw IllegalStateException("Cannot retranscribe segments in state ${meeting.state}")
+        }
+
+        transcriptCorrectionService.retranscribeSelectedSegments(meetingId, segmentIndices)
+        return true
+    }
+
     override suspend fun applySegmentCorrection(
         meetingId: String,
         segmentIndex: Int,
@@ -421,6 +468,34 @@ class MeetingRpcImpl(
 
         logger.info { "Applied segment correction for meeting $meetingId: segment $segmentIndex" }
         return saved.toDto()
+    }
+
+    override suspend fun stopTranscription(meetingId: String): Boolean {
+        val id = ObjectId(meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+
+        if (meeting.state != MeetingStateEnum.TRANSCRIBING) {
+            throw IllegalStateException("Meeting is not in TRANSCRIBING state: ${meeting.state}")
+        }
+
+        // Delete K8s job (best-effort)
+        whisperJobRunner.deleteJobForMeeting(meetingId)
+
+        // Reset to UPLOADED for re-transcription
+        meetingRepository.save(
+            meeting.copy(
+                state = MeetingStateEnum.UPLOADED,
+                stateChangedAt = Instant.now(),
+                errorMessage = null,
+            ),
+        )
+
+        notificationRpc.emitMeetingStateChanged(
+            meetingId, meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
+        )
+        logger.info { "Stopped transcription for meeting $meetingId, reset to UPLOADED" }
+        return true
     }
 
     override suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto {
@@ -558,7 +633,7 @@ private fun MeetingDocument.toDto(): MeetingDto =
         },
         correctionChatHistory = correctionChatHistory.map { msg ->
             CorrectionChatMessageDto(
-                role = msg.role,
+                role = if (msg.role == "user") com.jervis.dto.meeting.CorrectionChatRole.USER else com.jervis.dto.meeting.CorrectionChatRole.AGENT,
                 text = msg.text,
                 timestamp = msg.timestamp.toString(),
                 rulesCreated = msg.rulesCreated,

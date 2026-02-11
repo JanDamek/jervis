@@ -286,6 +286,49 @@ class WhisperJobRunner(
     }
 
     /**
+     * Delete all active Whisper K8s Jobs for a meeting. Best-effort — logs errors but doesn't throw.
+     * Returns true if at least one job was deleted.
+     */
+    suspend fun deleteJobForMeeting(meetingId: String): Boolean {
+        if (!IN_CLUSTER) return false
+        return withContext(Dispatchers.IO) {
+            try {
+                buildK8sClient().use { client ->
+                    val jobs = client.batch().v1().jobs()
+                        .inNamespace(K8S_NAMESPACE)
+                        .withLabel("app", "jervis-whisper")
+                        .withLabel("meeting-id", meetingId)
+                        .list()
+                        .items
+
+                    if (jobs.isEmpty()) {
+                        logger.info { "No Whisper K8s Jobs found for meeting $meetingId" }
+                        return@withContext false
+                    }
+
+                    for (job in jobs) {
+                        val jobName = job.metadata.name
+                        try {
+                            client.batch().v1().jobs()
+                                .inNamespace(K8S_NAMESPACE)
+                                .withName(jobName)
+                                .withPropagationPolicy(io.fabric8.kubernetes.api.model.DeletionPropagation.BACKGROUND)
+                                .delete()
+                            logger.info { "Deleted Whisper K8s Job $jobName for meeting $meetingId" }
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Failed to delete Whisper K8s Job $jobName" }
+                        }
+                    }
+                    true
+                }
+            } catch (e: Exception) {
+                logger.warn(e) { "Error deleting Whisper K8s Jobs for meeting $meetingId" }
+                false
+            }
+        }
+    }
+
+    /**
      * Find an active (non-completed, non-failed) Whisper K8s Job for a specific meeting.
      * Returns the job name if found, null otherwise.
      */

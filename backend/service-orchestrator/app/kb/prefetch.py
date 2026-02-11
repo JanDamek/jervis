@@ -36,7 +36,7 @@ async def prefetch_kb_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    async with httpx.AsyncClient(timeout=15) as http:
+    async with httpx.AsyncClient(timeout=10) as http:
         # 1. Relevant knowledge for the task
         resp = await http.post(
             f"{kb_url}/retrieve",
@@ -152,7 +152,7 @@ async def fetch_project_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    async with httpx.AsyncClient(timeout=20) as http:
+    async with httpx.AsyncClient(timeout=10) as http:
         # 1. Project structure from code graph (files + classes)
         file_nodes = await _graph_search(
             http, kb_url, query="", node_type="file",

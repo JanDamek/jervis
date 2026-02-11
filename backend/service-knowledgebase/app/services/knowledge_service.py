@@ -67,27 +67,35 @@ class KnowledgeService:
     async def _is_url_indexed(self, client_id: str, url: str) -> bool:
         """Check if URL was already crawled and indexed."""
         normalized = self._normalize_url(url)
-        col = self._arango_db.collection("CrawledUrls")
-        cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
-        return len(list(cursor)) > 0
+
+        def _check():
+            col = self._arango_db.collection("CrawledUrls")
+            cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
+            return len(list(cursor)) > 0
+
+        return await asyncio.to_thread(_check)
 
     async def _mark_url_indexed(self, client_id: str, url: str, depth: int):
         """Mark URL as crawled/indexed."""
         normalized = self._normalize_url(url)
-        col = self._arango_db.collection("CrawledUrls")
-        try:
-            col.insert({
-                "clientId": client_id,
-                "normalizedUrl": normalized,
-                "originalUrl": url,
-                "depth": depth,
-                "indexedAt": datetime.utcnow().isoformat(),
-            })
-        except Exception:
-            # Already exists (unique index), update timestamp
-            cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
-            for doc in cursor:
-                col.update({"_key": doc["_key"], "indexedAt": datetime.utcnow().isoformat()})
+
+        def _mark():
+            col = self._arango_db.collection("CrawledUrls")
+            try:
+                col.insert({
+                    "clientId": client_id,
+                    "normalizedUrl": normalized,
+                    "originalUrl": url,
+                    "depth": depth,
+                    "indexedAt": datetime.utcnow().isoformat(),
+                })
+            except Exception:
+                # Already exists (unique index), update timestamp
+                cursor = col.find({"clientId": client_id, "normalizedUrl": normalized}, limit=1)
+                for doc in cursor:
+                    col.update({"_key": doc["_key"], "indexedAt": datetime.utcnow().isoformat()})
+
+        await asyncio.to_thread(_mark)
 
     async def ingest(self, request: IngestRequest) -> IngestResult:
         """

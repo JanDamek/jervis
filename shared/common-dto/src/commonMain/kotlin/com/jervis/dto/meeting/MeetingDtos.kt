@@ -104,8 +104,14 @@ data class MeetingFinalizeDto(
 )
 
 @Serializable
+enum class CorrectionChatRole {
+    @kotlinx.serialization.SerialName("user") USER,
+    @kotlinx.serialization.SerialName("agent") AGENT,
+}
+
+@Serializable
 data class CorrectionChatMessageDto(
-    val role: String,              // "user" or "agent"
+    val role: CorrectionChatRole,
     val text: String,
     val timestamp: String,         // ISO 8601
     val rulesCreated: Int = 0,

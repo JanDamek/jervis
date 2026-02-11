@@ -204,6 +204,7 @@ fun MeetingsScreen(
             onRetranscribeSegment = { segmentIndex ->
                 viewModel.retranscribeSegment(currentDetail.id, segmentIndex)
             },
+            onStopTranscription = { viewModel.stopTranscription(currentDetail.id) },
         )
         return
     }
@@ -691,6 +692,7 @@ private fun MeetingDetailView(
     onSegmentPlay: (segmentIndex: Int, startSec: Double, endSec: Double) -> Unit = { _, _, _ -> },
     onDismissError: () -> Unit = {},
     onRetranscribeSegment: (segmentIndex: Int) -> Unit = {},
+    onStopTranscription: () -> Unit = {},
     errorMessage: String? = null,
     onDismissViewError: () -> Unit = {},
 ) {
@@ -845,6 +847,8 @@ private fun MeetingDetailView(
                     transcriptionPercent = transcriptionPercent,
                     correctionProgress = correctionProgress,
                     stateChangedAt = meeting.stateChangedAt,
+                    lastSegmentText = meeting.transcriptSegments.lastOrNull()?.text,
+                    onStopTranscription = onStopTranscription,
                 )
 
                 // Correction questions card (when agent needs user input)
@@ -1349,6 +1353,8 @@ private fun PipelineProgress(
     transcriptionPercent: Double? = null,
     correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     stateChangedAt: String? = null,
+    lastSegmentText: String? = null,
+    onStopTranscription: () -> Unit = {},
 ) {
     if (state == MeetingStateEnum.RECORDING) return
 
@@ -1484,6 +1490,7 @@ private fun PipelineProgress(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
                         LinearProgressIndicator(
@@ -1508,8 +1515,30 @@ private fun PipelineProgress(
                             state == MeetingStateEnum.INDEXED -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
+                        modifier = Modifier.weight(1f),
                     )
+                    // Stop button when transcribing
+                    if (state == MeetingStateEnum.TRANSCRIBING) {
+                        JIconButton(
+                            onClick = onStopTranscription,
+                            icon = Icons.Default.Stop,
+                            contentDescription = "Zastavit přepis",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
+            }
+
+            // Last transcribed segment preview
+            if (!lastSegmentText.isNullOrBlank()) {
+                Text(
+                    text = lastSegmentText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
     }
