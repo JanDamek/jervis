@@ -176,6 +176,7 @@ async def respond(state: dict) -> dict:
                 "name": tool_name,
                 "content": result,
             })
+        # Continue loop - will call LLM again with tool results
 
     # Max iterations reached → return best effort answer
     logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)

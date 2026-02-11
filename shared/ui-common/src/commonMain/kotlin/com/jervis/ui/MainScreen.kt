@@ -28,7 +28,9 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
@@ -47,6 +49,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -449,7 +452,12 @@ private fun ChatMessageItem(
     } else {
         // standard chat bubble
         Row(
-            modifier = modifier.fillMaxWidth(),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(
+                    start = if (isMe) 48.dp else 0.dp,
+                    end = if (!isMe) 48.dp else 0.dp,
+                ),
             horizontalArrangement =
                 if (isMe) {
                     Arrangement.End
@@ -521,6 +529,8 @@ private fun WorkflowStepsDisplay(
     steps: List<ChatMessage.WorkflowStep>,
     modifier: Modifier = Modifier,
 ) {
+    var expandedStepIndices by remember { mutableStateOf(setOf<Int>()) }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -531,44 +541,76 @@ private fun WorkflowStepsDisplay(
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
 
-        steps.forEach { step ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // Status icon
-                Icon(
-                    when (step.status) {
-                        ChatMessage.StepStatus.COMPLETED -> Icons.Default.Check
-                        ChatMessage.StepStatus.FAILED -> Icons.Default.Close
-                        ChatMessage.StepStatus.IN_PROGRESS -> Icons.Default.Refresh
-                        ChatMessage.StepStatus.PENDING -> Icons.Default.Schedule
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(12.dp),
-                    tint = when (step.status) {
-                        ChatMessage.StepStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-                        ChatMessage.StepStatus.FAILED -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-
-                // Step label
-                Text(
-                    text = step.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    modifier = Modifier.weight(1f),
-                )
-
-                // Tools used (if any)
-                if (step.tools.isNotEmpty()) {
-                    Text(
-                        text = step.tools.joinToString(", "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+        steps.forEachIndexed { index, step ->
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    // Status icon
+                    Icon(
+                        when (step.status) {
+                            ChatMessage.StepStatus.COMPLETED -> Icons.Default.Check
+                            ChatMessage.StepStatus.FAILED -> Icons.Default.Close
+                            ChatMessage.StepStatus.IN_PROGRESS -> Icons.Default.Refresh
+                            ChatMessage.StepStatus.PENDING -> Icons.Default.Schedule
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = when (step.status) {
+                            ChatMessage.StepStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                            ChatMessage.StepStatus.FAILED -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
+
+                    // Step label
+                    Text(
+                        text = step.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    // Expand/collapse arrow for tools (if any)
+                    if (step.tools.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                expandedStepIndices = if (index in expandedStepIndices) {
+                                    expandedStepIndices - index
+                                } else {
+                                    expandedStepIndices + index
+                                }
+                            },
+                            modifier = Modifier.size(20.dp),
+                        ) {
+                            Icon(
+                                if (index in expandedStepIndices) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (index in expandedStepIndices) "Skrýt nástroje" else "Zobrazit nástroje",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+
+                // Tools list (collapsible)
+                if (step.tools.isNotEmpty() && index in expandedStepIndices) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 18.dp, top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        step.tools.forEach { tool ->
+                            Text(
+                                text = "\u2022 $tool",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
                 }
             }
         }
