@@ -7,6 +7,10 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.ProjectResource
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.GitStructureIngestRequest
+import com.jervis.knowledgebase.model.GitBranchInfo
+import com.jervis.knowledgebase.model.GitFileInfo
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.indexing.git.state.GitCommitDocument
@@ -55,6 +59,7 @@ class GitContinuousIndexer(
     private val taskService: TaskService,
     private val gitRepositoryService: GitRepositoryService,
     private val projectRepository: ProjectRepository,
+    private val knowledgeService: KnowledgeService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -128,6 +133,8 @@ class GitContinuousIndexer(
         if (isInitialIndex) {
             // Create a rich overview document for the branch
             createBranchOverviewTask(project, repoResource, repoDir, branch, commits.first())
+            // Create structural graph nodes (repository, branches, files) — no LLM
+            createStructuralIndexTask(project, repoResource, repoDir, branch, commits.first())
         }
 
         // Process individual commits (newest first, limit to avoid flooding)
@@ -200,6 +207,60 @@ class GitContinuousIndexer(
         )
 
         logger.info { "Created branch overview task for ${resource.resourceIdentifier}/$branch" }
+    }
+
+    /**
+     * Create structural graph nodes for the repository directly via KB RPC.
+     *
+     * Bypasses LLM — sends structured data (files, branches) to KB service
+     * which creates ArangoDB graph nodes for repository→branch→file hierarchy.
+     * This enables the orchestrator to search for files/classes by branch.
+     */
+    private suspend fun createStructuralIndexTask(
+        project: ProjectDocument,
+        resource: ProjectResource,
+        repoDir: Path,
+        branch: String,
+        triggerCommit: GitCommitDocument,
+    ) {
+        try {
+            val defaultBranch = gitRepositoryService.detectDefaultBranch(repoDir)
+            val files = gitRepositoryService.getFileListWithMetadata(repoDir)
+            val branches = gitRepositoryService.getBranchMetadata(repoDir, defaultBranch)
+
+            val request = GitStructureIngestRequest(
+                clientId = triggerCommit.clientId,
+                projectId = project.id.value.toHexString(),
+                repositoryIdentifier = resource.resourceIdentifier,
+                branch = branch,
+                defaultBranch = defaultBranch,
+                branches = branches.map { b ->
+                    GitBranchInfo(
+                        name = b.name,
+                        isDefault = b.isDefault,
+                        status = b.status,
+                        lastCommitHash = b.lastCommitHash,
+                    )
+                },
+                files = files.map { f ->
+                    GitFileInfo(
+                        path = f.path,
+                        extension = f.extension,
+                        language = f.language,
+                        sizeBytes = f.sizeBytes,
+                    )
+                },
+            )
+
+            val result = knowledgeService.ingestGitStructure(request)
+            logger.info {
+                "Structural ingest for ${resource.resourceIdentifier}/$branch: " +
+                    "nodes=${result.nodesCreated} edges=${result.edgesCreated} " +
+                    "files=${result.filesIndexed} updated=${result.nodesUpdated}"
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Structural ingest failed for ${resource.resourceIdentifier}/$branch" }
+        }
     }
 
     /**

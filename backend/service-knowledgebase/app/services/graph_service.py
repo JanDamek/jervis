@@ -504,6 +504,7 @@ Text: {text}
         project_id: str = None,
         group_id: str = None,
         node_type: str = None,
+        branch_name: str = None,
         limit: int = 20
     ) -> list[GraphNode]:
         """
@@ -542,6 +543,11 @@ Text: {text}
             filter_expr += " AND doc.type == @nodeType"
             bind_vars["nodeType"] = node_type
 
+        # Optional branch filter (for branch-scoped nodes: file, class, method)
+        if branch_name:
+            filter_expr += " AND doc.branchName == @branchName"
+            bind_vars["branchName"] = branch_name
+
         aql = f"""
         FOR doc IN KnowledgeNodes
         FILTER LOWER(doc.label) LIKE @query AND {filter_expr}
@@ -566,3 +572,275 @@ Text: {text}
         except Exception as e:
             logger.warning("Search nodes failed: %s", e)
             return []
+
+    # -----------------------------------------------------------------------
+    # Structural ingest helpers (git repository structure, no LLM involved)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _safe_arango_key(parts: list[str], max_len: int = 200) -> str:
+        """Build a safe ArangoDB _key from parts, hashing if too long.
+
+        ArangoDB _key max is 254 bytes. We use 200 as threshold to leave
+        room for edge key prefixes that concatenate multiple node keys.
+        """
+        import hashlib
+        key = "__".join(parts)
+        key = key.replace(":", "__").replace("/", "_").replace(".", "_").replace("-", "_")
+        # Remove non-alphanumeric except underscore
+        key = "".join(c for c in key if c.isalnum() or c == "_")
+        if len(key) > max_len:
+            h = hashlib.sha256(key.encode()).hexdigest()[:16]
+            key = key[:max_len - 17] + "_" + h
+        return key
+
+    def _make_repo_key(self, repo_identifier: str) -> str:
+        return self._safe_arango_key(["repository", repo_identifier])
+
+    def _make_branch_key(self, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["branch", branch_name, project_id])
+
+    def _make_file_key(self, file_path: str, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["file", file_path, "branch", branch_name, project_id])
+
+    def _make_class_key(self, qualified_name: str, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["class", qualified_name, "branch", branch_name, project_id])
+
+    async def ingest_git_structure(
+        self,
+        client_id: str,
+        project_id: str,
+        repo_identifier: str,
+        branch: str,
+        default_branch: str,
+        branches: list[dict],
+        files: list[dict],
+        classes: list[dict] = None,
+    ) -> dict:
+        """Create graph nodes/edges for repository structure. No LLM involved.
+
+        Args:
+            client_id: Client ID
+            project_id: Project ID
+            repo_identifier: Repository identifier (e.g., "myorg/myrepo")
+            branch: The branch currently being indexed
+            default_branch: The repository's default branch name
+            branches: List of branch info dicts {name, isDefault, status, lastCommitHash}
+            files: List of file info dicts {path, extension, language, sizeBytes}
+            classes: Optional list of class info dicts {name, qualifiedName, filePath, visibility}
+
+        Returns:
+            Dict with counts: nodes_created, edges_created, nodes_updated, etc.
+        """
+        classes = classes or []
+        repo_key = self._make_repo_key(repo_identifier)
+        current_branch_key = self._make_branch_key(branch, project_id)
+
+        def _upsert():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            created = 0
+            updated = 0
+            edges = 0
+
+            # 1. Upsert repository node
+            if not nodes_col.has(repo_key):
+                nodes_col.insert({
+                    "_key": repo_key,
+                    "canonicalKey": f"repository:{repo_identifier}",
+                    "label": repo_identifier,
+                    "type": "repository",
+                    "defaultBranch": default_branch,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "groupId": "",
+                    "ragChunks": [],
+                })
+                created += 1
+            else:
+                nodes_col.update({
+                    "_key": repo_key,
+                    "defaultBranch": default_branch,
+                })
+                updated += 1
+
+            # 2. Upsert branch nodes from branch list
+            for b in branches:
+                b_key = self._make_branch_key(b["name"], project_id)
+                if not nodes_col.has(b_key):
+                    nodes_col.insert({
+                        "_key": b_key,
+                        "canonicalKey": f"branch:{b['name']}:{project_id}",
+                        "label": b["name"],
+                        "type": "branch",
+                        "branchName": b["name"],
+                        "isDefault": b.get("isDefault", False),
+                        "status": b.get("status", "active"),
+                        "lastCommitHash": b.get("lastCommitHash", ""),
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    nodes_col.update({
+                        "_key": b_key,
+                        "status": b.get("status", "active"),
+                        "lastCommitHash": b.get("lastCommitHash", ""),
+                    })
+                    updated += 1
+                # repo -> branch edge
+                e_key = self._safe_arango_key([repo_key, "has_branch", b_key])
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{repo_key}",
+                            "_to": f"KnowledgeNodes/{b_key}",
+                            "relation": "has_branch",
+                            "relationNormalized": "has_branch",
+                            "evidenceChunkIds": [],
+                        })
+                        edges += 1
+                    except Exception:
+                        pass
+
+            # 3. Upsert current branch node (ensure it exists)
+            if not nodes_col.has(current_branch_key):
+                nodes_col.insert({
+                    "_key": current_branch_key,
+                    "canonicalKey": f"branch:{branch}:{project_id}",
+                    "label": branch,
+                    "type": "branch",
+                    "branchName": branch,
+                    "isDefault": branch == default_branch,
+                    "status": "active",
+                    "fileCount": len(files),
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "groupId": "",
+                    "ragChunks": [],
+                })
+                created += 1
+                # repo -> current branch edge
+                e_key = self._safe_arango_key([repo_key, "has_branch", current_branch_key])
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{repo_key}",
+                            "_to": f"KnowledgeNodes/{current_branch_key}",
+                            "relation": "has_branch",
+                            "relationNormalized": "has_branch",
+                            "evidenceChunkIds": [],
+                        })
+                        edges += 1
+                    except Exception:
+                        pass
+            else:
+                nodes_col.update({
+                    "_key": current_branch_key,
+                    "fileCount": len(files),
+                    "status": "active",
+                })
+                updated += 1
+
+            # 4. Upsert file nodes (limit to 500 per branch)
+            for f in files[:500]:
+                f_key = self._make_file_key(f["path"], branch, project_id)
+                if not nodes_col.has(f_key):
+                    nodes_col.insert({
+                        "_key": f_key,
+                        "canonicalKey": f"file:{f['path']}:branch:{branch}:{project_id}",
+                        "label": f["path"],
+                        "type": "file",
+                        "path": f["path"],
+                        "extension": f.get("extension", ""),
+                        "language": f.get("language", ""),
+                        "branchName": branch,
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    updated += 1
+                # branch -> file edge
+                e_key = self._safe_arango_key([current_branch_key, "contains_file", f_key], max_len=250)
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{current_branch_key}",
+                            "_to": f"KnowledgeNodes/{f_key}",
+                            "relation": "contains_file",
+                            "relationNormalized": "contains_file",
+                            "evidenceChunkIds": [],
+                        })
+                        edges += 1
+                    except Exception:
+                        pass
+
+            # 5. Upsert class nodes (from tree-sitter)
+            for cls in classes:
+                qname = cls.get("qualifiedName") or cls["name"]
+                c_key = self._make_class_key(qname, branch, project_id)
+                if not nodes_col.has(c_key):
+                    nodes_col.insert({
+                        "_key": c_key,
+                        "canonicalKey": f"class:{qname}:branch:{branch}:{project_id}",
+                        "label": cls["name"],
+                        "type": "class",
+                        "qualifiedName": qname,
+                        "filePath": cls.get("filePath", ""),
+                        "branchName": branch,
+                        "isInterface": cls.get("isInterface", False),
+                        "visibility": cls.get("visibility", "public"),
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    updated += 1
+                # file -> class edge
+                if cls.get("filePath"):
+                    f_key = self._make_file_key(cls["filePath"], branch, project_id)
+                    e_key = self._safe_arango_key([f_key, "contains", c_key], max_len=250)
+                    if nodes_col.has(f_key) and not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{f_key}",
+                                "_to": f"KnowledgeNodes/{c_key}",
+                                "relation": "contains",
+                                "relationNormalized": "contains",
+                                "evidenceChunkIds": [],
+                            })
+                            edges += 1
+                        except Exception:
+                            pass
+
+            return created, updated, edges
+
+        nodes_created, nodes_updated, edges_created = await asyncio.to_thread(_upsert)
+
+        logger.info(
+            "Git structure ingest: repo=%s branch=%s nodes_created=%d "
+            "nodes_updated=%d edges=%d files=%d classes=%d",
+            repo_identifier, branch, nodes_created, nodes_updated,
+            edges_created, len(files), len(classes),
+        )
+
+        return {
+            "nodes_created": nodes_created,
+            "edges_created": edges_created,
+            "nodes_updated": nodes_updated,
+            "repository_key": repo_key,
+            "branch_key": current_branch_key,
+            "files_indexed": min(len(files), 500),
+            "classes_indexed": len(classes),
+        }

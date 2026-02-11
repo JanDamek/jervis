@@ -139,16 +139,37 @@ props: { name: String, signature: String, returnType: String, isConstructor: Boo
 
 #### VCS - Version Control
 ```kotlin
+// Repository (one per connected repository)
+nodeKey: "repository__{org}_{repo}"
+type: "repository"
+props: { label: String, defaultBranch: String, techStack: String?, clientId: String, projectId: String }
+
+// Git Branch (scoped to projectId — same name can exist in different projects)
+nodeKey: "branch__{branchName}__{projectId}"
+type: "branch"
+props: { branchName: String, isDefault: Boolean, status: String, lastCommitHash: String?, fileCount: Int,
+         clientId: String, projectId: String }
+
+// Git File (scoped to branch+project — different content per branch)
+nodeKey: "file__{path}__branch__{branchName}__{projectId}"
+type: "file"
+props: { path: String, extension: String, language: String?, branchName: String,
+         clientId: String, projectId: String }
+
+// Git Class (scoped to branch+project, extracted by tree-sitter)
+nodeKey: "class__{className}__branch__{branchName}__{projectId}"
+type: "class"
+props: { qualifiedName: String?, filePath: String, branchName: String, visibility: String?,
+         clientId: String, projectId: String }
+
 // Git Commit
 nodeKey: "commit::{commitHash}"
 type: "commit"
 props: { hash: String, message: String, authorName: String, timestamp: Instant, branchName: String? }
-
-// Git Branch
-nodeKey: "branch::{branchName}"
-type: "branch"
-props: { name: String, isDefault: Boolean, lastCommitHash: String, createdAt: Instant? }
 ```
+
+> **Key length guard**: ArangoDB `_key` max 254 bytes. Keys exceeding 200 chars get
+> a SHA-256 suffix via `_safe_arango_key()` helper in `graph_service.py`.
 
 #### ISSUE TRACKING - Jira, GitHub Issues
 ```kotlin
@@ -192,11 +213,16 @@ method --[calls]--> method
 
 #### VCS Relationships
 ```kotlin
-// Git structure
+// Repository structure (structural ingest — POST /ingest/git-structure)
+repository --[has_branch]--> branch
+branch --[contains_file]--> file
+branch --[has_commit]--> commit
+file --[contains]--> class
+
+// Git commit relationships (commit-level ingest)
 commit --[modifies]--> file
 commit --[creates]--> file
 commit --[parent]--> commit
-branch --[contains]--> commit
 ```
 
 #### ISSUE TRACKING Relationships

@@ -6,7 +6,8 @@ from urllib.parse import urlparse, urlunparse
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
-    FullIngestRequest, FullIngestResult, AttachmentResult
+    FullIngestRequest, FullIngestResult, AttachmentResult,
+    GitStructureIngestRequest, GitStructureIngestResult,
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
@@ -454,12 +455,23 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
 
+        # Detect if this content is assigned to the owning client/project
+        is_assigned_to_me = self._check_assignment(
+            summary_result.get("assignedTo"),
+            request.clientId,
+            request.metadata,
+        )
+
         logger.info("Full ingest complete source=%s chunks=%d nodes=%d edges=%d "
-                     "attachments_ok=%d attachments_fail=%d actionable=%s",
+                     "attachments_ok=%d attachments_fail=%d actionable=%s "
+                     "deadline=%s assigned=%s urgency=%s",
                      request.sourceUrn, ingest_result.chunks_count,
                      ingest_result.nodes_created, ingest_result.edges_created,
                      attachments_processed, attachments_failed,
-                     summary_result["hasActionableContent"])
+                     summary_result["hasActionableContent"],
+                     summary_result.get("hasFutureDeadline", False),
+                     is_assigned_to_me,
+                     summary_result.get("urgency", "normal"))
 
         return FullIngestResult(
             status="success",
@@ -471,7 +483,11 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             summary=summary_result["summary"],
             entities=summary_result["entities"],
             hasActionableContent=summary_result["hasActionableContent"],
-            suggestedActions=summary_result["suggestedActions"]
+            suggestedActions=summary_result["suggestedActions"],
+            hasFutureDeadline=summary_result.get("hasFutureDeadline", False),
+            suggestedDeadline=summary_result.get("suggestedDeadline"),
+            isAssignedToMe=is_assigned_to_me,
+            urgency=summary_result.get("urgency", "normal"),
         )
 
     async def _generate_summary(
@@ -481,7 +497,8 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         subject: str = None
     ) -> dict:
         """
-        Generate summary and detect actionable content using LLM.
+        Generate summary, detect actionable content, deadlines,
+        and assignment using LLM.
         """
         import json
 
@@ -503,7 +520,11 @@ Respond with JSON:
     "summary": "2-3 sentence summary of the main points",
     "entities": ["list", "of", "key", "entities", "mentioned"],
     "hasActionableContent": true/false,
-    "suggestedActions": ["action1", "action2"]
+    "suggestedActions": ["action1", "action2"],
+    "hasFutureDeadline": true/false,
+    "suggestedDeadline": "ISO-8601 datetime or null",
+    "assignedTo": "person or team name, or null",
+    "urgency": "urgent/normal/low"
 }}
 
 hasActionableContent is TRUE if:
@@ -514,6 +535,20 @@ hasActionableContent is TRUE if:
 - This is a meeting action item
 - This requires some follow-up action
 
+hasFutureDeadline is TRUE if:
+- Content mentions a specific future deadline or due date
+- A sprint end date, milestone, or release date is referenced
+- "by Friday", "due March 15", "deadline: 2025-04-01", etc.
+
+suggestedDeadline: If hasFutureDeadline is true, provide the deadline as ISO-8601 datetime string (e.g., "2025-04-01T00:00:00"). If unclear, set null.
+
+assignedTo: Extract the person or team this task/issue is assigned to. Look for patterns like "assigned to X", "assignee: X", "@mentions", "please X do this". Set null if no assignment found.
+
+urgency:
+- "urgent" if marked as urgent/critical/blocker/P0, or has very near deadline (<24h)
+- "normal" for regular tasks, standard priority
+- "low" for nice-to-have, low priority, informational
+
 suggestedActions examples: "reply_email", "review_code", "fix_issue", "answer_question", "schedule_meeting"
 
 Respond ONLY with valid JSON."""
@@ -523,13 +558,20 @@ Respond ONLY with valid JSON."""
                         settings.INGEST_MODEL_COMPLEX, source_type)
             response = await llm.ainvoke(prompt)
             result = json.loads(response.content)
-            logger.info("Summary generated entities=%d actionable=%s",
-                        len(result.get("entities", [])), result.get("hasActionableContent", False))
+            logger.info("Summary generated entities=%d actionable=%s deadline=%s urgency=%s",
+                        len(result.get("entities", [])),
+                        result.get("hasActionableContent", False),
+                        result.get("hasFutureDeadline", False),
+                        result.get("urgency", "normal"))
             return {
                 "summary": result.get("summary", "No summary available"),
                 "entities": result.get("entities", []),
                 "hasActionableContent": result.get("hasActionableContent", False),
-                "suggestedActions": result.get("suggestedActions", [])
+                "suggestedActions": result.get("suggestedActions", []),
+                "hasFutureDeadline": result.get("hasFutureDeadline", False),
+                "suggestedDeadline": result.get("suggestedDeadline"),
+                "assignedTo": result.get("assignedTo"),
+                "urgency": result.get("urgency", "normal"),
             }
         except Exception as e:
             logger.warning("Summary generation failed: %s", e)
@@ -537,6 +579,73 @@ Respond ONLY with valid JSON."""
                 "summary": f"Content from {source_type}: {subject or 'No subject'}",
                 "entities": [],
                 "hasActionableContent": False,
-                "suggestedActions": []
+                "suggestedActions": [],
+                "hasFutureDeadline": False,
+                "suggestedDeadline": None,
+                "assignedTo": None,
+                "urgency": "normal",
             }
+
+    @staticmethod
+    def _check_assignment(
+        assigned_to: str | None,
+        client_id: str,
+        metadata: dict,
+    ) -> bool:
+        """Check if the LLM-extracted assignedTo matches the owning client/project.
+
+        Compares the extracted assignee against:
+        - clientId (often the team/org name)
+        - metadata fields: clientName, projectName, teamName
+        """
+        if not assigned_to:
+            return False
+        assigned_lower = assigned_to.lower().strip()
+        if not assigned_lower:
+            return False
+
+        candidates = {client_id.lower()} if client_id else set()
+        for field in ("clientName", "projectName", "teamName"):
+            val = metadata.get(field, "")
+            if val:
+                candidates.add(val.lower())
+
+        return any(c and c in assigned_lower for c in candidates)
+
+    async def ingest_git_structure(
+        self,
+        request: GitStructureIngestRequest,
+    ) -> GitStructureIngestResult:
+        """Ingest repository structure directly into graph (no LLM).
+
+        Creates repository, branch, file, and class nodes with edges.
+        Called from Kotlin GitContinuousIndexer via RPC.
+        """
+        logger.info(
+            "Git structure ingest started repo=%s branch=%s files=%d classes=%d",
+            request.repositoryIdentifier, request.branch,
+            len(request.files), len(request.classes),
+        )
+
+        result = await self.graph_service.ingest_git_structure(
+            client_id=request.clientId,
+            project_id=request.projectId,
+            repo_identifier=request.repositoryIdentifier,
+            branch=request.branch,
+            default_branch=request.defaultBranch,
+            branches=[b.model_dump() for b in request.branches],
+            files=[f.model_dump() for f in request.files],
+            classes=[c.model_dump() for c in request.classes],
+        )
+
+        return GitStructureIngestResult(
+            status="success",
+            nodes_created=result["nodes_created"],
+            edges_created=result["edges_created"],
+            nodes_updated=result["nodes_updated"],
+            repository_key=result["repository_key"],
+            branch_key=result["branch_key"],
+            files_indexed=result["files_indexed"],
+            classes_indexed=result["classes_indexed"],
+        )
 

@@ -457,6 +457,107 @@ echo "password=${connection.password}"
     }
 
     /**
+     * Structured file metadata for git structural ingest.
+     */
+    data class GitFileMetadata(
+        val path: String,
+        val extension: String,
+        val language: String,
+        val sizeBytes: Long,
+    )
+
+    /**
+     * Structured branch metadata for git structural ingest.
+     */
+    data class GitBranchMetadata(
+        val name: String,
+        val isDefault: Boolean,
+        val status: String = "active",
+        val lastCommitHash: String = "",
+    )
+
+    /**
+     * Get all tracked files with metadata for structural KB ingest.
+     *
+     * Returns structured file info (path, extension, language, size).
+     * Excludes common non-source directories.
+     */
+    fun getFileListWithMetadata(repoDir: Path): List<GitFileMetadata> {
+        val result = executeGitCommand(
+            listOf("git", "ls-files"),
+            workingDir = repoDir,
+        )
+        if (!result.success) return emptyList()
+
+        val excludeDirs = setOf(
+            "node_modules/", "build/", "target/", ".gradle/", ".idea/",
+            "dist/", "out/", "__pycache__/", ".tox/", "vendor/", ".venv/",
+        )
+
+        return result.output.lines()
+            .filter { it.isNotBlank() }
+            .filter { path -> excludeDirs.none { path.startsWith(it) } }
+            .mapNotNull { path ->
+                val file = repoDir.resolve(path)
+                val ext = path.substringAfterLast('.', "")
+                val lang = extensionToLanguage(ext)
+                val size = try { java.nio.file.Files.size(file) } catch (_: Exception) { 0L }
+                GitFileMetadata(
+                    path = path,
+                    extension = ext,
+                    language = lang,
+                    sizeBytes = size,
+                )
+            }
+    }
+
+    /**
+     * Get metadata for all remote branches.
+     */
+    fun getBranchMetadata(repoDir: Path, defaultBranch: String): List<GitBranchMetadata> {
+        val branchNames = listRemoteBranches(repoDir)
+        return branchNames.map { name ->
+            val hashResult = executeGitCommand(
+                listOf("git", "rev-parse", "origin/$name"),
+                workingDir = repoDir,
+            )
+            GitBranchMetadata(
+                name = name,
+                isDefault = name == defaultBranch,
+                status = "active",
+                lastCommitHash = if (hashResult.success) hashResult.output.trim().take(40) else "",
+            )
+        }
+    }
+
+    private fun extensionToLanguage(ext: String): String = when (ext.lowercase()) {
+        "kt", "kts" -> "kotlin"
+        "java" -> "java"
+        "py" -> "python"
+        "ts", "tsx" -> "typescript"
+        "js", "jsx" -> "javascript"
+        "go" -> "go"
+        "rs" -> "rust"
+        "rb" -> "ruby"
+        "cs" -> "csharp"
+        "cpp", "cc", "cxx", "c" -> "c/c++"
+        "swift" -> "swift"
+        "scala" -> "scala"
+        "groovy" -> "groovy"
+        "sh", "bash" -> "shell"
+        "sql" -> "sql"
+        "html", "htm" -> "html"
+        "css", "scss", "sass" -> "css"
+        "json" -> "json"
+        "yaml", "yml" -> "yaml"
+        "xml" -> "xml"
+        "md" -> "markdown"
+        "proto" -> "protobuf"
+        "gradle" -> "gradle"
+        else -> ""
+    }
+
+    /**
      * Get the file tree of the repository (for KB indexation).
      */
     fun getFileTree(repoDir: Path, maxDepth: Int = 4): String {

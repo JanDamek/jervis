@@ -469,8 +469,11 @@ class OrchestratorState(TypedDict, total=False):
     evidence_pack: dict | None          # EvidencePack.model_dump()
     needs_clarification: bool
 
+    # --- Branch awareness ---
+    target_branch: str | None           # Branch detected from user query (e.g. "feature/auth")
+
     # --- Clarification (from intake interrupt/resume) ---
-    project_context: str | None         # KB project context (fetched in intake)
+    project_context: str | None         # KB project context (fetched in intake, branch-aware)
     task_complexity: str | None         # "simple" | "medium" | "complex" | "critical"
     clarification_questions: list | None
     clarification_response: dict | None # User's answers after resume
@@ -499,26 +502,29 @@ class OrchestratorState(TypedDict, total=False):
 ### 7.1 intake
 
 **Soubor**: `app/graph/nodes/intake.py`
-**Účel**: Klasifikace úlohy, detekce intentu, povinná klarifikace
+**Účel**: Klasifikace úlohy, detekce intentu, branch detection, povinná klarifikace
 
 **Kroky**:
-1. Fetch project context z KB (`fetch_project_context`)
-2. Build environment summary (pokud `state.environment` existuje)
-3. Detekce cloud promptu (`detect_cloud_prompt` — keywords "use cloud", "použi cloud" atd.)
-4. Build context section — client/project names + KB context
-5. Recent conversation context (posledních 5 zpráv z `chat_history` pro klasifikaci)
-6. LLM structured output — JSON s klasifikací
+1. **Detekce target branch** z query (`_detect_branch_reference`) — hledá vzory:
+   - Explicitní: `"on branch feature/auth"`, `"branch: main"`, `"na větvi develop"`
+   - Branch prefixy: `feature/*`, `fix/*`, `hotfix/*`, `release/*`
+   - Známé názvy: `main`, `master`, `develop`, `staging`, `production`
+2. Fetch project context z KB (`fetch_project_context`, **branch-aware** — předá `target_branch`)
+3. Build environment summary (pokud `state.environment` existuje)
+4. Detekce cloud promptu (`detect_cloud_prompt` — keywords "use cloud", "použi cloud" atd.)
+5. Build context section — client/project names + KB context (s branch info)
+6. Recent conversation context (posledních 5 zpráv z `chat_history` pro klasifikaci)
+7. LLM structured output — JSON s klasifikací
 
 **LLM prompt vyžaduje**:
 ```json
 {
-  "task_category": "advice|single_task|epic|generative",
-  "task_action": "respond|code|tracker_ops|mixed",
-  "external_refs": ["UFO-24"],
+  "category": "advice|single_task|epic|generative",
+  "action": "respond|code|tracker_ops|mixed",
   "complexity": "simple|medium|complex|critical",
   "goal_clear": true,
-  "clarification_questions": [...],
-  "reasoning": "..."
+  "external_refs": ["UFO-24"],
+  "clarification_questions": [...]
 }
 ```
 
@@ -529,7 +535,7 @@ class OrchestratorState(TypedDict, total=False):
 - Kotlin: FOREGROUND → emitne do chatu + DISPATCHED_GPU; BACKGROUND → USER_TASK
 - Po resume: `clarification_response` obsahuje user's answers
 
-**Output**: `task_category`, `task_action`, `external_refs`, `task_complexity`, `project_context`, `allow_cloud_prompt`, `needs_clarification`
+**Output**: `task_category`, `task_action`, `external_refs`, `task_complexity`, `project_context`, `allow_cloud_prompt`, `needs_clarification`, **`target_branch`**
 
 ### 7.2 evidence_pack
 
@@ -769,11 +775,15 @@ async def _iter_with_heartbeat(stream):
 3. Architecture decisions (3 results, project-level)
 4. File-specific knowledge (2 results per file, max 3 soubory)
 
-**`fetch_project_context()`** — pro orchestrátor (intake, decompose):
-1. Project structure via graph search (files + classes)
-2. Architecture & modules (5 results, graph expansion)
-3. Coding conventions (3 results, client-level)
-4. Task-relevant context (5 results, confidence 0.6, graph expansion)
+**`fetch_project_context(target_branch=...)`** — pro orchestrátor (intake, decompose):
+1. **Repository & branch structure** — graph search pro `repository` a `branch` node types
+   - Zobrazí available branches s `← TARGET` marker pro detekovanou branch
+2. **Project structure** — files + classes (branch-scoped pokud `target_branch` specifikován)
+   - Používá `_graph_search_branch_aware()` s `branchName` query parametrem
+   - File/class nodes annotovány `[branch: main]` pokud není target branch fixní
+3. Architecture & modules (5 results, graph expansion)
+4. Coding conventions (3 results, client-level)
+5. Task-relevant context (5 results, confidence 0.6, graph expansion)
 
 ### 9.2 KB API volání
 

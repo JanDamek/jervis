@@ -128,6 +128,7 @@ async def fetch_project_context(
     client_id: str,
     project_id: str | None,
     task_description: str,
+    target_branch: str | None = None,
 ) -> str:
     """Query KB for project-level overview — structure, architecture, conventions.
 
@@ -136,15 +137,17 @@ async def fetch_project_context(
     context for coding agents, this fetches a broad project overview.
 
     Queries:
-    1. Graph search: file/class nodes → project structure overview
-    2. Architecture & modules (semantic search)
-    3. Coding conventions (client-level)
-    4. Task-relevant context (semantic search)
+    1. Repository & branch structure (graph nodes)
+    2. File/class nodes (branch-scoped if target_branch specified)
+    3. Architecture & modules (semantic search)
+    4. Coding conventions (client-level)
+    5. Task-relevant context (semantic search)
 
     Args:
         client_id: Client ID for scoping.
         project_id: Project ID (optional).
         task_description: User's task query for context relevance.
+        target_branch: Target branch name (optional, for branch-aware context).
 
     Returns:
         Markdown string with project context, or empty string if KB is empty.
@@ -153,34 +156,90 @@ async def fetch_project_context(
     sections: list[str] = []
 
     async with httpx.AsyncClient(timeout=10) as http:
-        # 1. Project structure from code graph (files + classes)
-        file_nodes = await _graph_search(
-            http, kb_url, query="", node_type="file",
-            client_id=client_id, project_id=project_id, limit=50,
+        # 1. Repository & branch structure
+        repo_nodes = await _graph_search(
+            http, kb_url, query="", node_type="repository",
+            client_id=client_id, project_id=project_id, limit=5,
         )
-        class_nodes = await _graph_search(
+        branch_nodes = await _graph_search(
+            http, kb_url, query="", node_type="branch",
+            client_id=client_id, project_id=project_id, limit=20,
+        )
+
+        if repo_nodes or branch_nodes:
+            sections.append("## Repository Structure")
+            if repo_nodes:
+                for node in repo_nodes:
+                    label = node.get("label", "?")
+                    props = node.get("properties", {})
+                    tech = props.get("techStack", "")
+                    default_br = props.get("defaultBranch", "")
+                    line = f"- **{label}**"
+                    if tech:
+                        line += f" ({tech})"
+                    if default_br:
+                        line += f" [default: {default_br}]"
+                    sections.append(line)
+
+            if branch_nodes:
+                sections.append("### Branches")
+                for node in branch_nodes:
+                    label = node.get("label", "?")
+                    props = node.get("properties", {})
+                    is_default = props.get("isDefault", False)
+                    status = props.get("status", "")
+                    file_count = props.get("fileCount", 0)
+                    marker = " (default)" if is_default else ""
+                    target_marker = " ← TARGET" if label == target_branch else ""
+                    line = f"- {label}{marker}{target_marker}"
+                    if file_count:
+                        line += f" [{file_count} files]"
+                    if status and status != "active":
+                        line += f" ({status})"
+                    sections.append(line)
+
+        # 2. Project structure from code graph (files + classes)
+        # If target_branch specified, scope to that branch; otherwise get all
+        file_nodes = await _graph_search_branch_aware(
+            http, kb_url, query="", node_type="file",
+            client_id=client_id, project_id=project_id,
+            branch_name=target_branch, limit=50,
+        )
+        class_nodes = await _graph_search_branch_aware(
             http, kb_url, query="", node_type="class",
-            client_id=client_id, project_id=project_id, limit=30,
+            client_id=client_id, project_id=project_id,
+            branch_name=target_branch, limit=30,
         )
 
         if file_nodes or class_nodes:
-            sections.append("## Project Structure (from code graph)")
+            branch_label = f" (branch: {target_branch})" if target_branch else ""
+            sections.append(f"## Project Structure{branch_label}")
             if file_nodes:
                 sections.append("### Files")
                 for node in file_nodes:
                     label = node.get("label", "?")
-                    sections.append(f"- {label}")
+                    props = node.get("properties", {})
+                    branch = props.get("branchName", "")
+                    annotation = f" [branch: {branch}]" if branch and not target_branch else ""
+                    sections.append(f"- {label}{annotation}")
             if class_nodes:
                 sections.append("### Classes")
                 for node in class_nodes:
                     label = node.get("label", "?")
-                    desc = node.get("properties", {}).get("description", "")
+                    props = node.get("properties", {})
+                    desc = props.get("description", "")
+                    branch = props.get("branchName", "")
+                    file_path = props.get("filePath", "")
                     line = f"- {label}"
+                    if file_path:
+                        line += f" (`{file_path}`)"
+                    if branch and not target_branch:
+                        line += f" [branch: {branch}]"
                     if desc:
                         line += f" — {desc[:100]}"
                     sections.append(line)
 
-        # 2. Architecture & modules (semantic search)
+        # 3. Architecture & modules (semantic search)
         if project_id:
             resp = await http.post(
                 f"{kb_url}/retrieve",
@@ -201,7 +260,7 @@ async def fetch_project_context(
                     content = item.get("content", "")[:300]
                     sections.append(f"- **{source}**: {content}")
 
-        # 3. Coding conventions (client-level)
+        # 4. Coding conventions (client-level)
         resp = await http.post(
             f"{kb_url}/retrieve/simple",
             json={
@@ -218,7 +277,7 @@ async def fetch_project_context(
             for item in conventions:
                 sections.append(f"- {item.get('content', '')[:200]}")
 
-        # 4. Task-relevant context
+        # 5. Task-relevant context
         resp = await http.post(
             f"{kb_url}/retrieve",
             json={
@@ -242,9 +301,10 @@ async def fetch_project_context(
     context = "\n".join(sections) if sections else ""
     if context:
         logger.info(
-            "KB project context: %d sections, %d chars",
+            "KB project context: %d sections, %d chars, branch=%s",
             len(sections),
             len(context),
+            target_branch,
         )
     return context
 
@@ -268,6 +328,48 @@ async def _graph_search(
     if project_id:
         params["projectId"] = project_id
 
-    resp = await http.get(f"{kb_url}/graph/search", params=params)
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp = await http.get(f"{kb_url}/graph/search", params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.debug("Graph search failed (type=%s): %s", node_type, e)
+        return []
+
+
+async def _graph_search_branch_aware(
+    http: httpx.AsyncClient,
+    kb_url: str,
+    query: str,
+    node_type: str,
+    client_id: str,
+    project_id: str | None,
+    branch_name: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Search KB graph nodes with optional branch filter.
+
+    When branch_name is specified, only returns nodes scoped to that branch.
+    This uses the branchName query parameter added to GET /graph/search.
+    """
+    params: dict = {
+        "query": query,
+        "nodeType": node_type,
+        "clientId": client_id,
+        "limit": limit,
+    }
+    if project_id:
+        params["projectId"] = project_id
+    if branch_name:
+        params["branchName"] = branch_name
+
+    try:
+        resp = await http.get(f"{kb_url}/graph/search", params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.debug(
+            "Branch-aware graph search failed (type=%s, branch=%s): %s",
+            node_type, branch_name, e,
+        )
+        return []

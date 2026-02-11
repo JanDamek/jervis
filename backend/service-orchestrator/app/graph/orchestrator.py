@@ -1,22 +1,5 @@
 """LangGraph StateGraph – main orchestrator workflow (KB-first architecture).
 
-<<<<<<< Updated upstream
-Flow:
-    router ──→ respond → END                                  (simple questions)
-         └──→ clarify → decompose → select_goal → plan_steps → execute_step → evaluate
-                  ↑                                                      │
-                  └──── advance_goal ←── (more goals) ──────── next_step ┤
-                                          ↓ (all done)                   │
-                                   git_operations → report → END   advance_step
-                                                                         │
-                                                                  execute_step ←┘
-
-Nodes (12):
-    router         — entry point, routes to respond or clarify
-    respond        — tool-using answer for simple questions (web_search, kb_search)
-    clarify        — fetch KB context, detect complexity, optionally ask user
-    decompose      — break user query into goals (context-aware)
-=======
 Flow (4 task categories):
     intake → evidence_pack → route ─┬─ ADVICE ──────→ respond ──────────────────────→ finalize → END
                                      ├─ SINGLE_TASK ──→ plan → dispatch_or_respond ─→ finalize → END
@@ -33,7 +16,6 @@ Nodes:
     respond        — answer ADVICE + analytical queries directly (LLM + KB)
     plan           — multi-type planning for SINGLE_TASK (respond/code/tracker/mixed)
     decompose      — break coding task into goals (SINGLE_TASK/code)
->>>>>>> Stashed changes
     select_goal    — pick current goal, validate dependencies
     plan_steps     — create execution steps with cross-goal context
     execute_step   — run one step (dispatch by step type: respond/code/tracker)
@@ -111,6 +93,9 @@ class OrchestratorState(TypedDict, total=False):
     evidence_pack: dict | None          # EvidencePack from evidence node
     needs_clarification: bool
 
+    # --- Branch awareness ---
+    target_branch: str | None           # Branch detected from user query or context
+
     # --- Existing (from clarify) ---
     project_context: str | None
     task_complexity: str | None
@@ -133,29 +118,6 @@ class OrchestratorState(TypedDict, total=False):
     error: str | None
     evaluation: dict | None
 
-<<<<<<< Updated upstream
-from app.config import settings
-from app.graph.nodes import (
-    advance_goal,
-    advance_step,
-    clarify,
-    decompose,
-    evaluate,
-    execute_step,
-    git_operations,
-    next_step,
-    plan_steps,
-    report,
-    respond,
-    route_entry,
-    router_node,
-    select_goal,
-)
-from app.models import CodingTask, OrchestrateRequest, ProjectRules
-
-logger = logging.getLogger(__name__)
-=======
->>>>>>> Stashed changes
 
 # MongoDB checkpointer – initialized in main.py lifespan
 _checkpointer: MongoDBSaver | None = None
@@ -193,34 +155,6 @@ def get_checkpointer() -> MongoDBSaver | None:
 def build_orchestrator_graph() -> StateGraph:
     """Build the LangGraph StateGraph with 4-category routing.
 
-<<<<<<< Updated upstream
-    The graph implements the centrally-controlled coding workflow:
-    - Orchestrator is the brain (decides what, when, conditions)
-    - Coding agents are hands (execute specific steps)
-    - Git operations: orchestrator DECIDES, agent EXECUTES
-
-    Nodes (12):
-        router        — entry point, routes to respond or clarify
-        respond       — tool-using answer for simple questions (web_search, kb_search)
-        clarify       — fetch KB context, detect complexity, optionally ask user
-        decompose     — break user query into goals (context-aware)
-        select_goal   — pick current goal, validate dependencies
-        plan_steps    — create execution steps with cross-goal context
-        execute_step  — run one coding step via K8s Job
-        evaluate      — check step result against rules
-        advance_step  — increment step index
-        advance_goal  — increment goal index, build GoalSummary
-        git_operations — commit/push with approval gates
-        report        — generate final summary
-    """
-    graph = StateGraph(OrchestratorState)
-
-    # Add nodes
-    graph.add_node("router", router_node)
-    graph.add_node("respond", respond)
-    graph.add_node("clarify", clarify)
-    graph.add_node("decompose", decompose)
-=======
     Graph structure:
         intake → evidence_pack → route_by_category
             → ADVICE:       respond → finalize → END
@@ -237,7 +171,6 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("evidence_pack", evidence_pack)
     graph.add_node("respond", respond)
     graph.add_node("plan", plan)
->>>>>>> Stashed changes
     graph.add_node("select_goal", select_goal)
     graph.add_node("plan_steps", plan_steps)
     graph.add_node("execute_step", execute_step)
@@ -250,26 +183,8 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("plan_epic", plan_epic)
     graph.add_node("design", design)
 
-<<<<<<< Updated upstream
-    # Entry point — router decides respond vs clarify
-    graph.set_entry_point("router")
-
-    # Conditional routing from entry
-    graph.add_conditional_edges(
-        "router",
-        route_entry,
-        {
-            "respond": "respond",
-            "clarify": "clarify",
-        },
-    )
-
-    # Respond → END (short-circuit for simple questions)
-    graph.add_edge("respond", END)
-=======
     # --- Entry point ---
     graph.set_entry_point("intake")
->>>>>>> Stashed changes
 
     # intake → evidence_pack
     graph.add_edge("intake", "evidence_pack")
@@ -427,6 +342,8 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "external_refs": None,
         "evidence_pack": None,
         "needs_clarification": False,
+        # Branch awareness
+        "target_branch": None,
         # Clarification
         "clarification_questions": None,
         "clarification_response": None,
@@ -491,16 +408,10 @@ async def run_orchestration_streaming(
     }
 
     _KNOWN_NODES = {
-<<<<<<< Updated upstream
-        "router", "respond",
-        "clarify", "decompose", "select_goal", "plan_steps",
-        "execute_step", "evaluate", "git_operations", "report",
-=======
         "intake", "evidence_pack", "respond", "plan",
         "select_goal", "plan_steps", "execute_step", "evaluate",
         "advance_step", "advance_goal", "git_operations", "finalize",
         "plan_epic", "design",
->>>>>>> Stashed changes
     }
 
     async for event in graph.astream_events(initial_state, config=config, version="v2"):
