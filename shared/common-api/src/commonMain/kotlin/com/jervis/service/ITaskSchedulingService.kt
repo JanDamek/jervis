@@ -10,6 +10,7 @@ interface ITaskSchedulingService {
         projectId: String?,
         taskName: String,
         content: String,
+        scheduledAtEpochMs: Long?,
         cronExpression: String?,
         correlationId: String?,
     ): ScheduledTaskDto
