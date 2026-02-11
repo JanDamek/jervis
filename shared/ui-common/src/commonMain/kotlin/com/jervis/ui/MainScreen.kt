@@ -26,10 +26,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Settings
@@ -500,6 +504,71 @@ private fun ChatMessageItem(
                             )
                         }
                     }
+
+                    // Show workflow steps for Assistant messages
+                    if (!isMe && message.workflowSteps.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        WorkflowStepsDisplay(message.workflowSteps)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowStepsDisplay(
+    steps: List<ChatMessage.WorkflowStep>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "Použité kroky:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
+
+        steps.forEach { step ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // Status icon
+                Icon(
+                    when (step.status) {
+                        ChatMessage.StepStatus.COMPLETED -> Icons.Default.Check
+                        ChatMessage.StepStatus.FAILED -> Icons.Default.Close
+                        ChatMessage.StepStatus.IN_PROGRESS -> Icons.Default.Refresh
+                        ChatMessage.StepStatus.PENDING -> Icons.Default.Schedule
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = when (step.status) {
+                        ChatMessage.StepStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                        ChatMessage.StepStatus.FAILED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+
+                // Step label
+                Text(
+                    text = step.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.weight(1f),
+                )
+
+                // Tools used (if any)
+                if (step.tools.isNotEmpty()) {
+                    Text(
+                        text = step.tools.joinToString(", "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    )
                 }
             }
         }

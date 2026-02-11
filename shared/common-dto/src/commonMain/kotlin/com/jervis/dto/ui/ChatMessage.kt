@@ -11,6 +11,7 @@ data class ChatMessage(
     val timestamp: String? = null,
     val messageType: MessageType = MessageType.FINAL,
     val metadata: Map<String, String> = emptyMap(),
+    val workflowSteps: List<WorkflowStep> = emptyList(),
 ) {
     @Serializable
     enum class Sender { Me, Assistant }
@@ -21,5 +22,21 @@ data class ChatMessage(
         PROGRESS,     // Intermediate progress update
         FINAL,        // Final answer
         ERROR,        // Error message (displayed with red styling)
+    }
+
+    @Serializable
+    data class WorkflowStep(
+        val node: String,           // Node name (intake, evidence_pack, respond, etc.)
+        val label: String,          // Human-readable label (Analýza úlohy, Shromažďování kontextu)
+        val status: StepStatus = StepStatus.COMPLETED,
+        val tools: List<String> = emptyList(),  // Tools used in this step
+    )
+
+    @Serializable
+    enum class StepStatus {
+        PENDING,
+        IN_PROGRESS,
+        COMPLETED,
+        FAILED,
     }
 }
