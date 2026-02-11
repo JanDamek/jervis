@@ -1674,3 +1674,35 @@ If orchestrator needs code exploration:
 3. Agent can use filesystem tools and report back
 
 **Conclusion:** Keep orchestrator stateless. Use tools (web_search, kb_search) + agent dispatch for information gathering.
+
+---
+
+## TODO / Future Improvements
+
+### Short-Term Conversation Memory (Priority: HIGH)
+
+**Problem:** Agent doesn't retain context from previous iterations in the same conversation. When user references something from earlier messages (e.g., "read REST" referring to KB REST service discussed 3 iterations ago), agent loses context.
+
+**Example:**
+- Iteration 1: User discusses "KB read REST endpoint timing out"
+- Iteration 5: User says "fix the read REST timeout" 
+- Agent doesn't connect "read REST" → "KB read REST endpoint"
+
+**Solution:** Implement short-term memory window:
+- Keep last N conversation turns (e.g., 5-10) in agent's working memory
+- Include in system prompt or context for each LLM call
+- Use lightweight summarization for older context to save tokens
+- Store in state: `recent_context` field with last 10 user+assistant exchanges
+
+**Benefits:**
+- More natural conversation flow
+- No need to repeat full context in every message
+- Agent understands references like "that endpoint", "the bug we discussed", etc.
+
+**Implementation Notes:**
+- Already have `chat_history` with summaries in orchestrator state
+- Need to extract last N raw messages (not just summaries)
+- Add to respond.py, plan.py, and other conversational nodes
+- Token budget: ~500-1000 tokens for recent context
+
+**Priority:** HIGH — significantly improves UX for multi-turn conversations
