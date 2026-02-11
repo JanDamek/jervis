@@ -68,6 +68,7 @@ class AgentOrchestratorService(
             sourceUrn = SourceUrn.chat(clientId),
             state = TaskStateEnum.READY_FOR_GPU,
             attachments = attachments,
+            taskName = normalizedText.take(80).lines().first(),
         )
     }
 

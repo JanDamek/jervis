@@ -501,6 +501,7 @@ class MeetingContinuousIndexer(
                 title = meeting.title,
             ),
             projectId = meeting.projectId,
+            taskName = meeting.title.take(120).ifBlank { "Meeting ${meeting.id}" },
         )
 
         meetingRepository.save(meeting.copy(state = MeetingStateEnum.INDEXED))

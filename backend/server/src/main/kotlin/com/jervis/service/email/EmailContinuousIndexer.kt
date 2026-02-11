@@ -164,6 +164,7 @@ class EmailContinuousIndexer(
                         subject = doc.subject ?: "",
                     ),
                 projectId = doc.projectId,
+                taskName = doc.subject?.take(120) ?: "Email from ${doc.from}",
             )
 
             markAsIndexed(doc)

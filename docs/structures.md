@@ -313,6 +313,14 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 - **Max iterations:** 10 (for chunking loops)
 - **Concurrency:** 10 parallel KB requests (matching CPU Ollama `OLLAMA_NUM_PARALLEL=10`)
 
+### Scheduler Loop (Task Dispatch)
+
+- **Interval:** 60 seconds
+- **Advance dispatch:** 10 minutes before `scheduledAt`
+- **One-shot tasks:** Transitions `NEW → READY_FOR_QUALIFICATION`, clears `scheduledAt`
+- **Recurring tasks (cron):** Creates execution copy → `READY_FOR_QUALIFICATION`, updates original with next `scheduledAt` via `CronExpression.next()`
+- **Invalid cron:** Falls back to one-shot behavior (deletes original after creating execution copy)
+
 ### Execution Loop (GPU)
 
 - **Trigger:** Runs ONLY when idle (no user requests for 30s)
@@ -359,6 +367,12 @@ READY_FOR_GPU → DISPATCHED_GPU (atomic findAndModify) → PYTHON_ORCHESTRATING
                     │                     │
                     │                     └── new messages arrived? → READY_FOR_GPU (auto-requeue)
                     └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
+
+Scheduled tasks:
+NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10min
+    ├── one-shot: NEW → READY_FOR_QUALIFICATION (scheduledAt cleared)
+    └── recurring (cron): original stays NEW (scheduledAt = next cron run),
+                          execution copy → READY_FOR_QUALIFICATION
 ```
 
 ### K8s Resilience
@@ -453,5 +467,5 @@ OLLAMA_KV_CACHE_TYPE=q8_0
 
 ---
 
-**Document Version:** 4.1
-**Last Updated:** 2026-02-10
+**Document Version:** 4.2
+**Last Updated:** 2026-02-11

@@ -151,6 +151,7 @@ class BugTrackerContinuousIndexer(
                     connectionId = doc.connectionId.value,
                     issueKey = doc.issueKey,
                 ),
+                taskName = "${doc.issueKey}: ${(issue?.title ?: doc.summary).take(100)}",
             )
 
             stateManager.markAsIndexed(doc)
@@ -215,6 +216,7 @@ class BugTrackerContinuousIndexer(
                     connectionId = doc.connectionId.value,
                     issueKey = doc.issueKey,
                 ),
+                taskName = "${doc.issueKey}: ${(issue?.title ?: doc.summary).take(100)}",
             )
 
             stateManager.markAsIndexed(doc)
@@ -349,6 +351,7 @@ class BugTrackerContinuousIndexer(
                         issueKey = doc.issueKey,
                     ),
                 attachments = attachmentMetadata,
+                taskName = "${doc.issueKey}: ${(issueDetails.fields.summary ?: doc.summary).take(100)}",
             )
 
             // Convert to INDEXED state - delete full content, keep minimal tracking
