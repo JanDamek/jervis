@@ -16,7 +16,7 @@ from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 20  # Generous limit for complex multi-step research
+_MAX_TOOL_ITERATIONS = 5
 
 
 async def respond(state: dict) -> dict:
@@ -103,10 +103,6 @@ async def respond(state: dict) -> dict:
                 "IMPORTANT: Use tools when you need information. Do NOT guess or hallucinate.\n"
                 "If the KB context provided is insufficient, use kb_search to find more.\n"
                 "If you need current/external information, use web_search.\n\n"
-                "For code investigation: If the user asks about code structure, implementation details, "
-                "or specific files in the repository, you can suggest that they rephrase their request "
-                "as a coding task (e.g., 'analyze the code and find...') so that coding agents "
-                "(aider, openhands) can be used for deeper code exploration.\n\n"
                 "Be concise, helpful, and factual. Use Czech language in your response.\n"
                 "After gathering information via tools, provide a clear answer based on the findings."
             ),
@@ -181,16 +177,16 @@ async def respond(state: dict) -> dict:
                 "content": result,
             })
 
-# Max iterations reached → return best effort answer
-logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
-final_response = await llm_with_cloud_fallback(
-    state={**state, "allow_cloud_prompt": allow_cloud_prompt},
-    messages=messages + [{
-        "role": "system",
-        "content": "Provide your final answer now based on the information gathered. Do not call more tools."
-    }],
-    task_type="conversational",
-    max_tokens=4096,
-)
-answer = final_response.choices[0].message.content or ""
-return {"final_result": answer}
+    # Max iterations reached → return best effort answer
+    logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
+    final_response = await llm_with_cloud_fallback(
+        state={**state, "allow_cloud_prompt": allow_cloud_prompt},
+        messages=messages + [{
+            "role": "system",
+            "content": "Provide your final answer now based on the information gathered. Do not call more tools."
+        }],
+        task_type="conversational",
+        max_tokens=4096,
+    )
+    answer = final_response.choices[0].message.content or ""
+    return {"final_result": answer}
