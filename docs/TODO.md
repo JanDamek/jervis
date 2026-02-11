@@ -88,6 +88,34 @@ které budou implementovány jako separate tickety.
 
 ---
 
+## UI & UX
+
+### Populate Workflow Steps in Chat Messages
+
+**Status:** Partially implemented - UI ready, data connection needed
+
+**Hotovo:**
+- ✅ ChatMessage DTO extended with `workflowSteps: List<WorkflowStep>`
+- ✅ UI component `WorkflowStepsDisplay` shows steps, tools, status
+- ✅ Icons for step status (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending)
+
+**TODO:**
+- Kotlin backend: při finalizaci chat response (OrchestratorStatusHandler) sesbírat workflow steps z orchestrator progress events
+- MainViewModel: trackovat průběh nodes do temporary storage
+- Když přijde FINAL message, attachnout workflow steps
+- Map node names na české labely (intake → "Analýza úlohy", evidence_pack → "Shromažďování kontextu", respond → "Generování odpovědi")
+- Extrahovat použité tools z každého node (např. `github_search`, `read_file`, `web_search`)
+
+**Soubory:**
+- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - collect workflow steps
+- `shared/ui-common/.../MainViewModel.kt` - track progress, attach to final message
+- `backend/service-orchestrator/app/graph/nodes/` - node labeling
+
+**Priorita:** Medium
+**Complexity:** Simple
+
+---
+
 ## Další TODOs
 
 _(Další features se budou přidávat sem podle potřeby)_
