@@ -186,3 +186,184 @@ class JoernClient:
         }
 
         Path(result_file).write_text(json.dumps(result))
+
+    # -----------------------------------------------------------------------
+    # CPG Export — generates pruned Code Property Graph for ArangoDB ingest
+    # -----------------------------------------------------------------------
+
+    async def run_cpg_export(self, workspace_path: str) -> dict:
+        """Run Joern CPG export against a project directory.
+
+        Uses the baked-in cpg-export-query.sc script (not ad-hoc query).
+        Returns parsed CPG data with methods, types, calls, and typeRefs.
+
+        Args:
+            workspace_path: Absolute path to the project directory on PVC
+
+        Returns:
+            Dict with keys: methods, types, calls, typeRefs
+        """
+        jervis_dir = Path(workspace_path) / ".jervis"
+        jervis_dir.mkdir(parents=True, exist_ok=True)
+
+        export_file = jervis_dir / "cpg-export.json"
+        status_file = jervis_dir / "cpg-export-status.json"
+
+        # Clean up previous results
+        for f in [export_file, status_file]:
+            if f.exists():
+                f.unlink()
+
+        try:
+            if IN_CLUSTER:
+                await self._run_cpg_export_k8s(workspace_path)
+            else:
+                await self._run_cpg_export_local(workspace_path)
+
+            # Read CPG export from PVC
+            if export_file.exists():
+                data = json.loads(export_file.read_text())
+                logger.info(
+                    "CPG export loaded: %d methods, %d types, %d calls, %d typeRefs",
+                    len(data.get("methods", [])),
+                    len(data.get("types", [])),
+                    len(data.get("calls", [])),
+                    len(data.get("typeRefs", [])),
+                )
+                return data
+            else:
+                # Check status file for error details
+                stderr = ""
+                if status_file.exists():
+                    status = json.loads(status_file.read_text())
+                    stderr = status.get("stderr", "")
+                raise RuntimeError(f"CPG export completed but no export file found. stderr: {stderr[:500]}")
+        except Exception as e:
+            logger.error(f"CPG export failed: {e}")
+            raise
+        finally:
+            # Clean up status file (keep export file for debugging)
+            if status_file.exists():
+                try:
+                    status_file.unlink()
+                except Exception:
+                    pass
+
+    async def _run_cpg_export_k8s(self, workspace_path: str):
+        """Create K8s Job for CPG export with custom entrypoint."""
+        try:
+            from kubernetes import client, config
+            from kubernetes.client.rest import ApiException
+        except ImportError:
+            raise RuntimeError("kubernetes package not installed")
+
+        config.load_incluster_config()
+        batch_v1 = client.BatchV1Api()
+
+        import uuid
+        job_name = f"joern-cpg-{uuid.uuid4().hex[:8]}"
+
+        job = client.V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=client.V1ObjectMeta(
+                name=job_name,
+                namespace=K8S_NAMESPACE,
+                labels={"app": "jervis-joern", "type": "cpg-export"},
+            ),
+            spec=client.V1JobSpec(
+                ttl_seconds_after_finished=300,
+                backoff_limit=0,
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels={"app": "jervis-joern", "type": "cpg-export"},
+                    ),
+                    spec=client.V1PodSpec(
+                        restart_policy="Never",
+                        containers=[
+                            client.V1Container(
+                                name="joern",
+                                image=JOERN_IMAGE,
+                                # Override entrypoint to use CPG export script
+                                command=["/opt/jervis/entrypoint-joern-cpg-export.sh"],
+                                env=[
+                                    client.V1EnvVar(name="WORKSPACE", value=workspace_path),
+                                ],
+                                volume_mounts=[
+                                    client.V1VolumeMount(
+                                        name="data",
+                                        mount_path=PVC_MOUNT,
+                                    ),
+                                ],
+                                resources=client.V1ResourceRequirements(
+                                    requests={"memory": "1Gi", "cpu": "1"},
+                                    limits={"memory": "6Gi", "cpu": "4"},
+                                ),
+                            ),
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="data",
+                                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=PVC_NAME,
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        )
+
+        logger.info(f"Creating Joern CPG Export K8s Job: {job_name}")
+        batch_v1.create_namespaced_job(namespace=K8S_NAMESPACE, body=job)
+
+        # Wait for job completion (poll every 10s, timeout 5min)
+        timeout = 300
+        poll_interval = 10
+        elapsed = 0
+
+        while elapsed < timeout:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            try:
+                status = batch_v1.read_namespaced_job_status(name=job_name, namespace=K8S_NAMESPACE)
+            except ApiException as e:
+                logger.warning(f"Failed to read CPG export job status: {e}")
+                continue
+
+            if status.status.succeeded and status.status.succeeded > 0:
+                logger.info(f"Joern CPG Export Job {job_name} completed successfully")
+                return
+
+            if status.status.failed and status.status.failed > 0:
+                raise RuntimeError(f"Joern CPG Export Job {job_name} failed")
+
+        raise TimeoutError(f"Joern CPG Export Job {job_name} timed out after {timeout}s")
+
+    async def _run_cpg_export_local(self, workspace_path: str):
+        """Run CPG export locally via subprocess (for development)."""
+        joern_home = os.getenv("JOERN_HOME", "")
+        joern_bin = os.path.join(joern_home, "joern-cli", "joern") if joern_home else "joern"
+
+        # Use the same export script path as in the Docker image
+        export_script = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "..", "service-joern", "cpg-export-query.sc"
+        )
+        if not os.path.exists(export_script):
+            raise RuntimeError(f"CPG export script not found at {export_script}")
+
+        cmd = [joern_bin, "--script", export_script, "--param", f"inputPath={workspace_path}"]
+        logger.info(f"Running Joern CPG export locally: {' '.join(cmd)}")
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+
+        if proc.returncode != 0:
+            stderr = stderr_bytes.decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(f"Joern CPG export failed (exit={proc.returncode}): {stderr}")

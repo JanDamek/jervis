@@ -4,6 +4,8 @@ import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
+import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestResult
 import com.jervis.knowledgebase.model.IngestRequest
@@ -50,6 +52,15 @@ interface KnowledgeService {
      * Called from GitContinuousIndexer during initial branch index.
      */
     suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult
+
+    /**
+     * Run Joern CPG deep analysis and import semantic edges.
+     *
+     * Dispatches Joern K8s Job to generate CPG, then imports pruned edges
+     * (calls, extends, uses_type) into ArangoDB graph.
+     * Requires that structural ingest (tree-sitter) has already run.
+     */
+    suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult
 
     /**
      * Purge all KB data (RAG chunks + graph refs) for a given sourceUrn.

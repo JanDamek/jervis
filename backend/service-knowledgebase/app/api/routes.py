@@ -14,6 +14,7 @@ from app.api.models import (
     PurgeRequest, PurgeResult,
     ListByKindRequest,
     GitStructureIngestRequest, GitStructureIngestResult,
+    CpgIngestRequest, CpgIngestResult,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -333,6 +334,24 @@ async def ingest_git_structure(request: GitStructureIngestRequest):
     """
     try:
         return await service.ingest_git_structure(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/cpg", response_model=CpgIngestResult)
+async def ingest_cpg(request: CpgIngestRequest):
+    """Import Joern CPG deep analysis into knowledge graph.
+
+    Runs Joern CPG export (K8s Job) and imports semantic edges:
+    - calls: method → method (call graph)
+    - extends: class → class (inheritance)
+    - uses_type: class → class (type references)
+
+    Called from Kotlin GitContinuousIndexer after structural index completes.
+    Requires that tree-sitter structural ingest has already created method/class nodes.
+    """
+    try:
+        return await service.ingest_cpg(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

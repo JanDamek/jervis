@@ -2,6 +2,8 @@ package com.jervis.configuration
 
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.EvidenceItem
 import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.knowledgebase.model.FullIngestRequest
@@ -274,6 +276,12 @@ class KnowledgeServiceRestClient(
                     methods = c.methods,
                 )
             },
+            fileContents = request.fileContents.map { fc ->
+                PythonGitFileContent(
+                    path = fc.path,
+                    content = fc.content,
+                )
+            },
             metadata = request.metadata,
         )
 
@@ -296,6 +304,37 @@ class KnowledgeServiceRestClient(
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingest git structure to knowledgebase: ${e.message}" }
             GitStructureIngestResult(
+                status = "error: ${e.message}",
+            )
+        }
+    }
+
+    override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult {
+        logger.debug { "Calling knowledgebase ingestCpg: project=${request.projectId} branch=${request.branch}" }
+
+        val pythonRequest = PythonCpgIngestRequest(
+            clientId = request.clientId,
+            projectId = request.projectId,
+            branch = request.branch,
+            workspacePath = request.workspacePath,
+        )
+
+        return try {
+            val response: PythonCpgIngestResult = client.post("$apiBaseUrl/ingest/cpg") {
+                contentType(ContentType.Application.Json)
+                setBody(pythonRequest)
+            }.body()
+
+            CpgIngestResult(
+                status = response.status,
+                methodsEnriched = response.methodsEnriched,
+                extendsEdges = response.extendsEdges,
+                callsEdges = response.callsEdges,
+                usesTypeEdges = response.usesTypeEdges,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ingest CPG to knowledgebase: ${e.message}" }
+            CpgIngestResult(
                 status = "error: ${e.message}",
             )
         }
@@ -452,6 +491,7 @@ private data class PythonGitStructureIngestRequest(
     val branches: List<PythonGitBranchInfo> = emptyList(),
     val files: List<PythonGitFileInfo> = emptyList(),
     val classes: List<PythonGitClassInfo> = emptyList(),
+    val fileContents: List<PythonGitFileContent> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 )
 
@@ -482,6 +522,12 @@ private data class PythonGitClassInfo(
 )
 
 @Serializable
+private data class PythonGitFileContent(
+    val path: String,
+    val content: String,
+)
+
+@Serializable
 private data class PythonGitStructureIngestResult(
     val status: String,
     @SerialName("nodes_created")
@@ -498,4 +544,25 @@ private data class PythonGitStructureIngestResult(
     val filesIndexed: Int = 0,
     @SerialName("classes_indexed")
     val classesIndexed: Int = 0,
+)
+
+@Serializable
+private data class PythonCpgIngestRequest(
+    val clientId: String,
+    val projectId: String,
+    val branch: String,
+    val workspacePath: String,
+)
+
+@Serializable
+private data class PythonCpgIngestResult(
+    val status: String,
+    @SerialName("methods_enriched")
+    val methodsEnriched: Int = 0,
+    @SerialName("extends_edges")
+    val extendsEdges: Int = 0,
+    @SerialName("calls_edges")
+    val callsEdges: Int = 0,
+    @SerialName("uses_type_edges")
+    val usesTypeEdges: Int = 0,
 )

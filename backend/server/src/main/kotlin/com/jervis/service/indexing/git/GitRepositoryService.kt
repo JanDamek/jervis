@@ -530,6 +530,61 @@ echo "password=${connection.password}"
         }
     }
 
+    /**
+     * Read source file contents for tree-sitter parsing in KB service.
+     *
+     * Filters to source-code-only files (with recognized language),
+     * sorts by size ascending (smallest first for broader coverage),
+     * and enforces limits:
+     * - Max 150 files
+     * - Max 50KB per file
+     * - Max ~5MB total payload
+     */
+    fun readSourceFileContents(
+        files: List<GitFileMetadata>,
+        repoDir: Path,
+    ): List<Pair<String, String>> {
+        val maxFiles = 150
+        val maxFileBytes = 50 * 1024L       // 50KB per file
+        val maxTotalBytes = 5 * 1024 * 1024L // 5MB total
+
+        // Only source files with recognized language
+        val sourceFiles = files
+            .filter { it.language.isNotEmpty() }
+            .filter { it.language !in setOf("json", "yaml", "xml", "markdown", "html", "css", "sql", "shell", "gradle", "protobuf") }
+            .filter { it.sizeBytes in 1..maxFileBytes }
+            .sortedBy { it.sizeBytes }
+            .take(maxFiles)
+
+        val result = mutableListOf<Pair<String, String>>()
+        var totalBytes = 0L
+
+        for (fileMeta in sourceFiles) {
+            if (totalBytes >= maxTotalBytes) break
+            try {
+                val file = repoDir.resolve(fileMeta.path)
+                if (!java.nio.file.Files.exists(file)) continue
+                val size = java.nio.file.Files.size(file)
+                if (size > maxFileBytes || size == 0L) continue
+
+                val content = file.toFile().readText(Charsets.UTF_8)
+                val truncated = if (content.length > maxFileBytes.toInt()) {
+                    content.substring(0, maxFileBytes.toInt())
+                } else {
+                    content
+                }
+
+                totalBytes += truncated.length
+                result.add(fileMeta.path to truncated)
+            } catch (e: Exception) {
+                // Skip files that can't be read (binary, encoding issues, etc.)
+                continue
+            }
+        }
+
+        return result
+    }
+
     private fun extensionToLanguage(ext: String): String = when (ext.lowercase()) {
         "kt", "kts" -> "kotlin"
         "java" -> "java"

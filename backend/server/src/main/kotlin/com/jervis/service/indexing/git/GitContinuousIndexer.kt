@@ -8,8 +8,10 @@ import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.ProjectResource
 import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.CpgIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
 import com.jervis.knowledgebase.model.GitBranchInfo
+import com.jervis.knowledgebase.model.GitFileContent
 import com.jervis.knowledgebase.model.GitFileInfo
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
@@ -135,6 +137,8 @@ class GitContinuousIndexer(
             createBranchOverviewTask(project, repoResource, repoDir, branch, commits.first())
             // Create structural graph nodes (repository, branches, files) — no LLM
             createStructuralIndexTask(project, repoResource, repoDir, branch, commits.first())
+            // Dispatch Joern CPG deep analysis (async, after structural nodes exist)
+            createCpgAnalysisTask(project, repoDir, branch, commits.first())
         }
 
         // Process individual commits (newest first, limit to avoid flooding)
@@ -228,6 +232,10 @@ class GitContinuousIndexer(
             val files = gitRepositoryService.getFileListWithMetadata(repoDir)
             val branches = gitRepositoryService.getBranchMetadata(repoDir, defaultBranch)
 
+            // Read source file contents for tree-sitter parsing in KB service
+            val fileContents = gitRepositoryService.readSourceFileContents(files, repoDir)
+            logger.debug { "Read ${fileContents.size} source file contents for tree-sitter (${fileContents.sumOf { it.second.length }} bytes)" }
+
             val request = GitStructureIngestRequest(
                 clientId = triggerCommit.clientId,
                 projectId = project.id.value.toHexString(),
@@ -250,6 +258,9 @@ class GitContinuousIndexer(
                         sizeBytes = f.sizeBytes,
                     )
                 },
+                fileContents = fileContents.map { (path, content) ->
+                    GitFileContent(path = path, content = content)
+                },
             )
 
             val result = knowledgeService.ingestGitStructure(request)
@@ -260,6 +271,44 @@ class GitContinuousIndexer(
             }
         } catch (e: Exception) {
             logger.error(e) { "Structural ingest failed for ${resource.resourceIdentifier}/$branch" }
+        }
+    }
+
+    /**
+     * Dispatch Joern CPG deep analysis for a branch.
+     *
+     * Runs after structural ingest (tree-sitter) completes, so method/class
+     * nodes already exist in ArangoDB. Joern adds semantic edges:
+     * - calls (method → method call graph)
+     * - extends (class → class inheritance)
+     * - uses_type (class → class type references)
+     *
+     * This is async and may take 60-120s for medium repos.
+     */
+    private suspend fun createCpgAnalysisTask(
+        project: ProjectDocument,
+        repoDir: Path,
+        branch: String,
+        triggerCommit: GitCommitDocument,
+    ) {
+        try {
+            val request = CpgIngestRequest(
+                clientId = triggerCommit.clientId,
+                projectId = project.id.value.toHexString(),
+                branch = branch,
+                workspacePath = repoDir.toAbsolutePath().toString(),
+            )
+
+            val result = knowledgeService.ingestCpg(request)
+            logger.info {
+                "CPG analysis for ${project.name}/$branch: " +
+                    "methods_enriched=${result.methodsEnriched} " +
+                    "calls=${result.callsEdges} extends=${result.extendsEdges} " +
+                    "uses_type=${result.usesTypeEdges}"
+            }
+        } catch (e: Exception) {
+            // CPG analysis failure is non-fatal — structural graph is still usable
+            logger.error(e) { "CPG analysis failed for ${project.name}/$branch (non-fatal)" }
         }
     }
 

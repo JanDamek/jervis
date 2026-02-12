@@ -38,10 +38,23 @@ data class GitClassInfo(
 )
 
 /**
+ * Source code content for a single file (for tree-sitter parsing in KB service).
+ */
+@Serializable
+data class GitFileContent(
+    val path: String,
+    val content: String,
+)
+
+/**
  * Request for direct structural ingest of git repository.
  *
  * Bypasses LLM entity extraction — creates graph nodes directly
  * from structured repository data (files, branches, classes).
+ *
+ * fileContents: Optional source code content for tree-sitter parsing.
+ * When provided, KB service invokes tree-sitter to extract classes, methods,
+ * and imports. Limited to top 150 source files, max 50KB per file.
  */
 @Serializable
 data class GitStructureIngestRequest(
@@ -53,5 +66,6 @@ data class GitStructureIngestRequest(
     val branches: List<GitBranchInfo> = emptyList(),
     val files: List<GitFileInfo> = emptyList(),
     val classes: List<GitClassInfo> = emptyList(),
+    val fileContents: List<GitFileContent> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
 )

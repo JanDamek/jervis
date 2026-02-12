@@ -8,6 +8,7 @@ from app.api.models import (
     TraversalRequest, GraphNode, CrawlRequest,
     FullIngestRequest, FullIngestResult, AttachmentResult,
     GitStructureIngestRequest, GitStructureIngestResult,
+    CpgIngestRequest, CpgIngestResult,
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
@@ -618,13 +619,14 @@ Respond ONLY with valid JSON."""
     ) -> GitStructureIngestResult:
         """Ingest repository structure directly into graph (no LLM).
 
-        Creates repository, branch, file, and class nodes with edges.
+        Creates repository, branch, file, class, and method nodes with edges.
+        When fileContents are provided, invokes tree-sitter for richer extraction.
         Called from Kotlin GitContinuousIndexer via RPC.
         """
         logger.info(
-            "Git structure ingest started repo=%s branch=%s files=%d classes=%d",
+            "Git structure ingest started repo=%s branch=%s files=%d classes=%d file_contents=%d",
             request.repositoryIdentifier, request.branch,
-            len(request.files), len(request.classes),
+            len(request.files), len(request.classes), len(request.fileContents),
         )
 
         result = await self.graph_service.ingest_git_structure(
@@ -636,6 +638,7 @@ Respond ONLY with valid JSON."""
             branches=[b.model_dump() for b in request.branches],
             files=[f.model_dump() for f in request.files],
             classes=[c.model_dump() for c in request.classes],
+            file_contents=[fc.model_dump() for fc in request.fileContents],
         )
 
         return GitStructureIngestResult(
@@ -647,5 +650,61 @@ Respond ONLY with valid JSON."""
             branch_key=result["branch_key"],
             files_indexed=result["files_indexed"],
             classes_indexed=result["classes_indexed"],
+            methods_indexed=result.get("methods_indexed", 0),
+        )
+
+    async def ingest_cpg(
+        self,
+        request: CpgIngestRequest,
+    ) -> CpgIngestResult:
+        """Run Joern CPG export and import semantic edges into graph.
+
+        Orchestrates the full CPG pipeline:
+        1. Dispatch Joern K8s Job (or local subprocess) to generate CPG
+        2. Read pruned CPG export JSON
+        3. Import semantic edges (calls, extends, uses_type) into ArangoDB
+
+        Called from Kotlin GitContinuousIndexer after structural ingest completes.
+        """
+        logger.info(
+            "CPG ingest started project=%s branch=%s workspace=%s",
+            request.projectId, request.branch, request.workspacePath,
+        )
+
+        # 1. Run Joern CPG export (K8s Job or local subprocess)
+        cpg_data = await self.joern_client.run_cpg_export(request.workspacePath)
+
+        logger.info(
+            "CPG export complete: methods=%d types=%d calls=%d typeRefs=%d",
+            len(cpg_data.get("methods", [])),
+            len(cpg_data.get("types", [])),
+            len(cpg_data.get("calls", [])),
+            len(cpg_data.get("typeRefs", [])),
+        )
+
+        # 2. Import into ArangoDB graph
+        result = await self.graph_service.ingest_cpg_export(
+            client_id=request.clientId,
+            project_id=request.projectId,
+            branch=request.branch,
+            cpg_data=cpg_data,
+        )
+
+        logger.info(
+            "CPG ingest complete project=%s branch=%s "
+            "methods_enriched=%d extends=%d calls=%d uses_type=%d",
+            request.projectId, request.branch,
+            result.get("methods_enriched", 0),
+            result.get("extends_edges", 0),
+            result.get("calls_edges", 0),
+            result.get("uses_type_edges", 0),
+        )
+
+        return CpgIngestResult(
+            status="success",
+            methods_enriched=result.get("methods_enriched", 0),
+            extends_edges=result.get("extends_edges", 0),
+            calls_edges=result.get("calls_edges", 0),
+            uses_type_edges=result.get("uses_type_edges", 0),
         )
 

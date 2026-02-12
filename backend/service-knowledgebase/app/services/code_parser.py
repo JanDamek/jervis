@@ -146,8 +146,128 @@ def parse_files(files: list[tuple[str, str]], max_files: int = 100) -> list[Clas
     return all_classes
 
 
+def parse_file_imports(file_path: str, content: str) -> list[str]:
+    """Extract import statements from a source file.
+
+    Returns list of qualified import names (e.g., "com.jervis.service.UserService").
+    Used to create 'imports' edges in the knowledge graph.
+    """
+    lang = detect_language(file_path)
+    if not lang:
+        return []
+
+    parser = _get_parser(lang)
+    if not parser:
+        return []
+
+    try:
+        tree = parser.parse(content.encode("utf-8"))
+        root = tree.root_node
+
+        if lang == "kotlin":
+            return _extract_imports_kotlin(root, content)
+        elif lang == "java":
+            return _extract_imports_java(root, content)
+        elif lang == "python":
+            return _extract_imports_python(root, content)
+        elif lang in ("typescript", "javascript"):
+            return _extract_imports_typescript(root, content)
+        elif lang == "go":
+            return _extract_imports_go(root, content)
+        else:
+            return []
+    except Exception as e:
+        logger.warning("Failed to extract imports from %s: %s", file_path, e)
+        return []
+
+
 # ---------------------------------------------------------------------------
-# Language-specific extractors
+# Import extractors
+# ---------------------------------------------------------------------------
+
+def _extract_imports_kotlin(root, source: str) -> list[str]:
+    """Extract import statements from Kotlin source."""
+    imports = []
+    for node in root.children:
+        if node.type == "import_list":
+            for imp in node.children:
+                if imp.type == "import_header":
+                    for child in imp.children:
+                        if child.type == "identifier":
+                            imports.append(_text(child, source))
+        elif node.type == "import_header":
+            for child in node.children:
+                if child.type == "identifier":
+                    imports.append(_text(child, source))
+    return imports
+
+
+def _extract_imports_java(root, source: str) -> list[str]:
+    """Extract import statements from Java source."""
+    imports = []
+    for node in root.children:
+        if node.type == "import_declaration":
+            for child in node.children:
+                if child.type == "scoped_identifier":
+                    imports.append(_text(child, source))
+    return imports
+
+
+def _extract_imports_python(root, source: str) -> list[str]:
+    """Extract import statements from Python source."""
+    imports = []
+    for node in root.children:
+        if node.type == "import_statement":
+            # import foo.bar
+            for child in node.children:
+                if child.type == "dotted_name":
+                    imports.append(_text(child, source))
+        elif node.type == "import_from_statement":
+            # from foo.bar import Baz
+            module = ""
+            names = []
+            for child in node.children:
+                if child.type == "dotted_name":
+                    if not module:
+                        module = _text(child, source)
+                    else:
+                        names.append(_text(child, source))
+                elif child.type == "import_prefix":
+                    pass  # relative import dots
+            if module and names:
+                for name in names:
+                    imports.append(f"{module}.{name}")
+            elif module:
+                imports.append(module)
+    return imports
+
+
+def _extract_imports_typescript(root, source: str) -> list[str]:
+    """Extract import statements from TypeScript/JavaScript source."""
+    imports = []
+    for node in _find_descendants(root, "import_statement"):
+        for child in node.children:
+            if child.type == "string":
+                # Strip quotes from import path
+                path = _text(child, source).strip("'\"")
+                imports.append(path)
+    return imports
+
+
+def _extract_imports_go(root, source: str) -> list[str]:
+    """Extract import statements from Go source."""
+    imports = []
+    for node in _find_descendants(root, "import_declaration"):
+        for spec in _find_descendants(node, "import_spec"):
+            for child in spec.children:
+                if child.type == "interpreted_string_literal":
+                    path = _text(child, source).strip('"')
+                    imports.append(path)
+    return imports
+
+
+# ---------------------------------------------------------------------------
+# Language-specific class extractors
 # ---------------------------------------------------------------------------
 
 def _text(node, source: str) -> str:

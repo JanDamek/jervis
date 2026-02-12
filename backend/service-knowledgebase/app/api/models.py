@@ -315,12 +315,22 @@ class GitClassInfo(BaseModel):
     methods: List[str] = []  # Method names
 
 
+class GitFileContent(BaseModel):
+    """Source code content for a single file (for tree-sitter parsing)."""
+    path: str
+    content: str
+
+
 class GitStructureIngestRequest(BaseModel):
     """
     Request for direct structural ingest of git repository.
 
     Bypasses LLM entity extraction — creates graph nodes directly
     from structured repository data (files, branches, classes).
+
+    fileContents: Source code content for tree-sitter parsing.
+    When provided, KB service invokes tree-sitter to extract classes, methods,
+    and imports — creating richer graph nodes (method, has_method, imports edges).
 
     Multi-tenant scoping: same rules as IngestRequest.
     """
@@ -331,7 +341,8 @@ class GitStructureIngestRequest(BaseModel):
     defaultBranch: str = "main"
     branches: List[GitBranchInfo] = []
     files: List[GitFileInfo] = []
-    classes: List[GitClassInfo] = []  # From tree-sitter analysis
+    classes: List[GitClassInfo] = []  # From tree-sitter analysis (or empty if fileContents provided)
+    fileContents: List[GitFileContent] = []  # Source code for tree-sitter parsing
     metadata: Dict[str, Any] = {}
 
     @model_validator(mode='after')
@@ -353,4 +364,39 @@ class GitStructureIngestResult(BaseModel):
     branch_key: str = ""
     files_indexed: int = 0
     classes_indexed: int = 0
+    methods_indexed: int = 0
+
+
+# === Joern CPG Ingest Models ===
+
+class CpgIngestRequest(BaseModel):
+    """
+    Request to import Joern CPG export into knowledge graph.
+
+    Called after Joern K8s Job completes. The cpgData contains pruned CPG
+    with methods, types, calls, and typeRefs from Joern analysis.
+
+    Multi-tenant scoping: same rules as GitStructureIngestRequest.
+    """
+    clientId: str
+    projectId: str
+    branch: str
+    workspacePath: str  # Path to project on PVC (for Joern execution)
+
+    @model_validator(mode='after')
+    def validate_tenant_hierarchy(self):
+        if not self.clientId:
+            raise ValueError("clientId is required for CPG ingest")
+        if not self.projectId:
+            raise ValueError("projectId is required for CPG ingest")
+        return self
+
+
+class CpgIngestResult(BaseModel):
+    """Result of Joern CPG ingest."""
+    status: str
+    methods_enriched: int = 0
+    extends_edges: int = 0
+    calls_edges: int = 0
+    uses_type_edges: int = 0
 
