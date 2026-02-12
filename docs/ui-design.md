@@ -1067,8 +1067,8 @@ Shows filterable list of pending tasks with delete capability. Uses **Pattern D*
 
 ### 5.9) Indexing Queue Screen
 
-Dashboard showing the indexing pipeline state. Items grouped by connection with expandable cards.
-Single search field filters across all connection groups. KB queue section collapsed by default.
+Dashboard showing the full indexing pipeline with hierarchical connection view and 4 pipeline stage sections.
+Single search field filters across ALL sections (connection groups + pipeline stages). Pipeline sections collapsible.
 
 ```
 +---------------------------------------------------------------+
@@ -1077,42 +1077,79 @@ Single search field filters across all connection groups. KB queue section colla
 | [Refresh]                                                     |
 | [Hledat ___________________________] [Search]                 |
 +---------------------------------------------------------------+
-| JCard (expandable): GitHub  REPOSITORY,BUGTRACKER  12  Za 8m  |
-|   [v]                                                         |
-|   ├─ [Code] fix: login bug · Klient1 · Projekt  |  git  NEW  |
-|   ├─ [Bug] JIRA-123 summary · Klient1  |  Jira  NEW         |
-|   └─ ...a dalsich 9                                           |
+| JCard: GitHub (12)                                   [v]      |
+|   ├─ BUGTRACKER (5)  Za 8m  [Clock] [▶ Spustit]              |
+|   │   ├─ Commerzbank (3)                             [v]      |
+|   │   │   ├─ [Bug] GH-123 summary  |  GitHub  NEW            |
+|   │   │   └─ [Bug] GH-456 login bug  |  GitHub  NEW          |
+|   │   └─ ClientX (2)                                 [>]      |
+|   └─ REPOSITORY (7)  Za 3m  [Clock] [▶ Spustit]              |
+|       ├─ Commerzbank (5)                             [v]      |
+|       │   ├─ [Code] fix: auth  |  git  NEW                   |
+|       │   └─ ...a dalsich 3                                   |
+|       └─ ClientY (2)                                 [>]      |
 +---------------------------------------------------------------+
-| JCard (expandable): IMAP Mail  EMAIL_READ  5  Za 1m           |
-|   [v]                                                         |
-|   ├─ [Mail] Re: Meeting · Klient2  |  Email  NEW             |
-|   └─ [Mail] Invoice #42 · Klient2  |  Email  NEW             |
-+---------------------------------------------------------------+
-| JCard (expandable, collapsed): Git  REPOSITORY  3              |
-|   [>]                                                         |
+| JCard: IMAP Mail (5)                                 [>]      |
 +---------------------------------------------------------------+
 |                                                               |
-| JCard (collapsed by default): Odeslano do KB (150) [>]        |
-|   ├─ [Bug] JIRA-100 · Jira · Klient1  |  Pred 5 min  10 min |
-|   ├─ [Mail] Subject · Email · Klient2  |  Pred 2 h  120 min  |
-|   └─ ...a dalsich 130                                         |
+| ── Pipeline ──                                                |
+|                                                               |
+| JCard: Zpracovává KB (3)                             [v]      |
+|   ├─ [Bug] GH-100 · GitHub · Commerzbank  | Indexuje          |
+|   └─ [Mail] Subject · Email · Klient2  | Indexuje             |
++---------------------------------------------------------------+
+| JCard: Čeká na KB (150)                              [v]      |
+|   ├─ [▲][▼][⇑] [Bug] GH-200 · Commerzbank  | Čeká  #1       |
+|   ├─ [▲][▼][⇑] [Mail] Re: Q1 · Klient2  | Opakuje (3x) 2m  |
+|   └─ [< 1/8 >]  pagination controls                          |
++---------------------------------------------------------------+
+| JCard: Čeká na orchestrátor (8)                      [>]      |
++---------------------------------------------------------------+
+| JCard: Zpracovává orchestrátor (2)                   [>]      |
 +---------------------------------------------------------------+
 ```
 
+**Hierarchy: Connection → Capability → Client**
+
+Three-level expandable tree inside each connection card:
+1. **ConnectionGroupCard** -- connection name, provider icon, total item count
+2. **CapabilityGroupSection** -- capability label+icon, item count, next check time (clickable → `PollingIntervalDialog`), "Spustit teď" button (triggers source polling)
+3. **ClientGroupSection** -- client name, item count, expandable list of `QueueItemRow`
+
+**Pipeline sections (4 stages):**
+1. **Zpracovává KB** (QUALIFYING) -- items currently being indexed by Ollama
+2. **Čeká na KB** (READY_FOR_QUALIFICATION) -- waiting + retrying items, with pagination + reorder controls (up/down arrows, prioritize button)
+3. **Čeká na orchestrátor** (READY_FOR_GPU) -- qualified, waiting for Python execution
+4. **Zpracovává orchestrátor** (DISPATCHED_GPU / PYTHON_ORCHESTRATING) -- currently executing
+
 **Key components:**
-- `ConnectionGroupCard` -- expandable `JCard` per connection: provider icon, name, capabilities, item count, next check time (clickable → `PollingIntervalDialog`)
-- `QueueItemRow` -- row with type icon, title, client·project, sourceUrn badge, state
-- `KbQueueSection` -- collapsed-by-default `JCard` showing KB items with timing info
-- `PollingIntervalDialog` -- `JFormDialog` to change global polling interval per capability
+- `ConnectionGroupCard` -- expandable `JCard` with 3-level hierarchy (connection → capability → client)
+- `CapabilityGroupSection` -- capability header with next-check time, PlayArrow "Spustit teď" button
+- `ClientGroupSection` -- client name header with expandable item list
+- `QueueItemRow` -- row with type icon, title, sourceUrn badge, state
+- `PipelineSection` -- collapsible section for pipeline stage with optional pagination and reorder controls
+- `PipelineItemRow` -- row with state badge (Czech labels), reorder arrows, prioritize button, retry info display
+- `PollingIntervalDialog` -- `JFormDialog` to change polling interval per capability
 - `IndexingItemType` enum with `.icon()` / `.label()` helpers
 
-**Data:**
-- `IndexingDashboardDto` with `connectionGroups: List<ConnectionIndexingGroupDto>`, `kbQueue: List<KbQueueItemDto>`, `kbQueueTotalCount`
-- `ConnectionIndexingGroupDto` with `connectionId`, `connectionName`, `provider`, `capabilities`, `lastPolledAt?`, `nextCheckAt?`, `intervalMinutes`, `items`, `totalItemCount`
-- `KbQueueItemDto` with `id`, `type`, `title`, `connectionName`, `clientName`, `sourceUrn?`, `indexedAt?`, `waitingDurationMinutes?`
-- `IndexingQueueItemDto` with `sourceUrn?` field for KB reference
+**Reorder controls** (on "Čeká na KB" items):
+- Up/Down arrows (KeyboardArrowUp/Down) for position adjustment
+- Prioritize button (VerticalAlignTop) moves item to position 1
+- Calls `reorderKbQueueItem(taskId, newPosition)` or `prioritizeKbQueueItem(taskId)` RPC
 
-**RPC:** `IIndexingQueueService.getIndexingDashboard(search, kbPageSize)` (single call replaces 3 old calls)
+**Pipeline state labels (Czech):**
+- WAITING → "Čeká", QUALIFYING → "Indexuje", RETRYING → "Opakuje (Nx) Za Ym"
+- READY_FOR_GPU → "Připraven", DISPATCHED_GPU → "Odesláno", PYTHON_ORCHESTRATING → "Orchestrátor"
+
+**Data:**
+- `IndexingDashboardDto` with `connectionGroups`, `kbWaiting`, `kbProcessing`, `executionWaiting`, `executionRunning` (each with counts), `kbPage`, `kbPageSize`
+- `ConnectionIndexingGroupDto` with `connectionId`, `connectionName`, `provider`, `lastPolledAt?`, `capabilityGroups: List<CapabilityGroupDto>`, `totalItemCount`
+- `CapabilityGroupDto` with `capability`, `nextCheckAt?`, `intervalMinutes`, `clients: List<ClientItemGroupDto>`, `totalItemCount`
+- `ClientItemGroupDto` with `clientId`, `clientName`, `items: List<IndexingQueueItemDto>`, `totalItemCount`
+- `PipelineItemDto` with `id`, `type`, `title`, `connectionName`, `clientName`, `sourceUrn?`, `pipelineState`, `retryCount`, `nextRetryAt?`, `taskId?`, `queuePosition?`
+
+**RPC:** `IIndexingQueueService.getIndexingDashboard(search, kbPage, kbPageSize)` -- single call returns hierarchy + all pipeline stages
+Additional RPCs: `triggerIndexNow(connectionId, capability)`, `reorderKbQueueItem(taskId, newPosition)`, `prioritizeKbQueueItem(taskId)`
 Legacy: `getPendingItems()` / `getIndexedItems()` kept for backward compat
 
 ---
@@ -1402,8 +1439,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- CodingAgentsSettings.kt <- Coding agent config
 |   |       +-- IndexingSettings.kt     <- Indexing intervals config
 |   |       +-- WhisperSettings.kt      <- Whisper transcription config
-|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (single getIndexingDashboard call)
-|   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, KbQueueSection, PollingIntervalDialog (internal)
+|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
+|   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
 +-- MainScreen.kt                      <- Public entry point (ViewModel -> MainScreenView)
 +-- MainViewModel.kt                   <- Main ViewModel (user actions, state)

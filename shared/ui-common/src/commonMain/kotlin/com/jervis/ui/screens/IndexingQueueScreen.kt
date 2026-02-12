@@ -13,7 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,8 +54,17 @@ fun IndexingQueueScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
-    var kbExpanded by remember { mutableStateOf(false) }
     var intervalDialog by remember { mutableStateOf<IntervalDialogState?>(null) }
+
+    // Section expansion states
+    var kbProcessingExpanded by remember { mutableStateOf(true) }
+    var kbWaitingExpanded by remember { mutableStateOf(true) }
+    var executionWaitingExpanded by remember { mutableStateOf(false) }
+    var executionRunningExpanded by remember { mutableStateOf(false) }
+
+    // KB pagination
+    var kbPage by remember { mutableStateOf(0) }
+    val kbPageSize = 20
 
     val scope = rememberCoroutineScope()
 
@@ -62,7 +73,7 @@ fun IndexingQueueScreen(
             isLoading = true
             error = null
             try {
-                dashboard = repository.indexingQueue.getIndexingDashboard(search, 20)
+                dashboard = repository.indexingQueue.getIndexingDashboard(search, kbPage, kbPageSize)
             } catch (e: Exception) {
                 error = "Chyba: ${e.message}"
             } finally {
@@ -123,7 +134,7 @@ fun IndexingQueueScreen(
                 dashboard != null -> {
                     val data = dashboard!!
 
-                    // ── Connection groups ──
+                    // ── Connection groups (hierarchical) ──
                     if (data.connectionGroups.isEmpty()) {
                         item {
                             JEmptyState("Žádné položky k indexaci", icon = "📋")
@@ -136,26 +147,103 @@ fun IndexingQueueScreen(
                             ConnectionGroupCard(
                                 group = group,
                                 onIntervalClick = { capability ->
+                                    val capGroup = group.capabilityGroups.find { it.capability == capability.name }
                                     intervalDialog = IntervalDialogState(
                                         capability = capability,
-                                        currentIntervalMinutes = group.intervalMinutes,
+                                        currentIntervalMinutes = capGroup?.intervalMinutes ?: 30,
                                     )
+                                },
+                                onTriggerNow = { connectionId, capability ->
+                                    scope.launch {
+                                        try {
+                                            repository.indexingQueue.triggerIndexNow(connectionId, capability)
+                                            loadDashboard()
+                                        } catch (_: Exception) {
+                                            // ignore
+                                        }
+                                    }
                                 },
                             )
                         }
                     }
 
-                    // ── Spacer before KB section ──
+                    // ── Pipeline sections ──
                     item { Spacer(Modifier.height(JervisSpacing.sectionGap)) }
 
-                    // ── KB Queue section (collapsed by default) ──
+                    // 1. KB Processing (QUALIFYING)
+                    if (data.kbProcessingCount > 0) {
+                        item {
+                            PipelineSection(
+                                title = "Zpracovává KB (${data.kbProcessingCount})",
+                                items = data.kbProcessing,
+                                expanded = kbProcessingExpanded,
+                                onToggle = { kbProcessingExpanded = !kbProcessingExpanded },
+                                accentColor = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
+                    }
+
+                    // 2. KB Waiting (READY_FOR_QUALIFICATION) - with pagination + reorder
                     item {
-                        KbQueueSection(
-                            items = data.kbQueue,
-                            totalCount = data.kbQueueTotalCount,
-                            expanded = kbExpanded,
-                            onToggle = { kbExpanded = !kbExpanded },
+                        PipelineSection(
+                            title = "Čeká na KB (${data.kbWaitingTotalCount})",
+                            items = data.kbWaiting,
+                            expanded = kbWaitingExpanded,
+                            onToggle = { kbWaitingExpanded = !kbWaitingExpanded },
+                            totalCount = data.kbWaitingTotalCount,
+                            currentPage = data.kbPage,
+                            pageSize = data.kbPageSize,
+                            onPageChange = { newPage ->
+                                kbPage = newPage
+                                loadDashboard()
+                            },
+                            onPrioritize = { taskId ->
+                                scope.launch {
+                                    try {
+                                        repository.indexingQueue.prioritizeKbQueueItem(taskId)
+                                        loadDashboard()
+                                    } catch (_: Exception) {
+                                        // ignore
+                                    }
+                                }
+                            },
+                            onReorder = { taskId, newPosition ->
+                                scope.launch {
+                                    try {
+                                        repository.indexingQueue.reorderKbQueueItem(taskId, newPosition)
+                                        loadDashboard()
+                                    } catch (_: Exception) {
+                                        // ignore
+                                    }
+                                }
+                            },
+                            showReorderControls = true,
                         )
+                    }
+
+                    // 3. Execution Waiting (READY_FOR_GPU)
+                    if (data.executionWaitingCount > 0) {
+                        item {
+                            PipelineSection(
+                                title = "Čeká na orchestrátor (${data.executionWaitingCount})",
+                                items = data.executionWaiting,
+                                expanded = executionWaitingExpanded,
+                                onToggle = { executionWaitingExpanded = !executionWaitingExpanded },
+                            )
+                        }
+                    }
+
+                    // 4. Execution Running (DISPATCHED_GPU + PYTHON_ORCHESTRATING)
+                    if (data.executionRunningCount > 0) {
+                        item {
+                            PipelineSection(
+                                title = "Zpracovává orchestrátor (${data.executionRunningCount})",
+                                items = data.executionRunning,
+                                expanded = executionRunningExpanded,
+                                onToggle = { executionRunningExpanded = !executionRunningExpanded },
+                                accentColor = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
             }
