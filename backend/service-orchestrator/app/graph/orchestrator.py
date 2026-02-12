@@ -367,12 +367,40 @@ async def run_orchestration(
 ) -> dict:
     """Execute the full orchestration workflow (blocking)."""
     graph = get_orchestrator_graph()
-    initial_state = _build_initial_state(request)
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-    logger.info("Starting orchestration: task=%s thread=%s", request.task_id, thread_id)
+    # Check if checkpoint exists for this thread
+    existing_state = await get_graph_state(thread_id)
 
-    final_state = await graph.ainvoke(initial_state, config=config)
+    if existing_state and existing_state.values and existing_state.next:
+        # Checkpoint exists AND graph is NOT finished → resume
+        logger.info(
+            "Resuming from checkpoint: task=%s thread=%s (checkpoint at node: %s)",
+            request.task_id,
+            thread_id,
+            existing_state.next,
+        )
+        # Only update chat_history and task query, preserve everything else
+        state_update = {
+            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "task": {
+                **existing_state.values.get("task", {}),
+                "query": request.query,  # Update query with new user message
+            },
+        }
+        final_state = await graph.ainvoke(state_update, config=config)
+    else:
+        # No checkpoint OR graph finished → fresh start with full initial state
+        if existing_state and existing_state.values:
+            logger.info(
+                "Previous execution completed, starting new: task=%s thread=%s",
+                request.task_id,
+                thread_id,
+            )
+        else:
+            logger.info("Starting fresh orchestration: task=%s thread=%s", request.task_id, thread_id)
+        initial_state = _build_initial_state(request)
+        final_state = await graph.ainvoke(initial_state, config=config)
 
     logger.info(
         "Orchestration complete: task=%s result=%s",
@@ -389,10 +417,38 @@ async def run_orchestration_streaming(
 ) -> AsyncIterator[dict]:
     """Execute orchestration with streaming node events."""
     graph = get_orchestrator_graph()
-    initial_state = _build_initial_state(request)
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-    logger.info("Starting streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
+    # Check if checkpoint exists for this thread
+    existing_state = await get_graph_state(thread_id)
+
+    if existing_state and existing_state.values and existing_state.next:
+        # Checkpoint exists AND graph is NOT finished → resume
+        logger.info(
+            "Resuming from checkpoint (streaming): task=%s thread=%s (checkpoint at node: %s)",
+            request.task_id,
+            thread_id,
+            existing_state.next,
+        )
+        # Only update chat_history and task query, preserve everything else
+        state_to_use = {
+            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "task": {
+                **existing_state.values.get("task", {}),
+                "query": request.query,  # Update query with new user message
+            },
+        }
+    else:
+        # No checkpoint OR graph finished → fresh start with full initial state
+        if existing_state and existing_state.values:
+            logger.info(
+                "Previous execution completed, starting new (streaming): task=%s thread=%s",
+                request.task_id,
+                thread_id,
+            )
+        else:
+            logger.info("Starting fresh streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
+        state_to_use = _build_initial_state(request)
 
     # Track state for progress info
     tracked = {
@@ -409,7 +465,7 @@ async def run_orchestration_streaming(
         "plan_epic", "design",
     }
 
-    async for event in graph.astream_events(initial_state, config=config, version="v2"):
+    async for event in graph.astream_events(state_to_use, config=config, version="v2"):
         kind = event.get("event", "")
         name = event.get("name", "")
 
