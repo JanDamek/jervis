@@ -14,12 +14,15 @@ import kotlin.concurrent.thread
  * Mic capture: TargetDataLine from default or selected mixer.
  * System audio: User must select a virtual audio device (e.g., BlackHole on macOS,
  * Stereo Mix on Windows, PulseAudio monitor on Linux) from the device list.
+ *
+ * Supports incremental upload: [getAndClearBuffer] returns raw PCM accumulated since last call.
+ * Server owns the WAV header — clients send only raw PCM data.
+ * On [stopRecording], returns only the un-uploaded tail from the chunk buffer.
  */
 actual class AudioRecorder actual constructor() {
 
     private var targetLine: TargetDataLine? = null
     private var recordingThread: Thread? = null
-    private val buffer = ByteArrayOutputStream()
     private val chunkBuffer = ByteArrayOutputStream()
     private val chunkLock = Any()
 
@@ -28,8 +31,6 @@ actual class AudioRecorder actual constructor() {
 
     @Volatile
     private var startTimeMs = 0L
-
-    private var currentFormat: JvmAudioFormat? = null
 
     actual fun getAvailableInputDevices(): List<AudioDevice> {
         val devices = mutableListOf<AudioDevice>()
@@ -90,7 +91,6 @@ actual class AudioRecorder actual constructor() {
             true,
             false,
         )
-        currentFormat = format
         val lineInfo = DataLine.Info(TargetDataLine::class.java, format)
 
         try {
@@ -112,18 +112,14 @@ actual class AudioRecorder actual constructor() {
             _isRecording = true
             startTimeMs = System.currentTimeMillis()
 
-            buffer.reset()
             synchronized(chunkLock) { chunkBuffer.reset() }
 
-            // Write WAV header placeholder
-            writeWavHeader(buffer, config.sampleRate, config.channels)
-
+            // No WAV header — server owns the header, clients send raw PCM only.
             recordingThread = thread(name = "AudioRecorder-JVM") {
                 val readBuffer = ByteArray(4096)
                 while (_isRecording) {
                     val read = targetLine?.read(readBuffer, 0, readBuffer.size) ?: -1
                     if (read > 0) {
-                        buffer.write(readBuffer, 0, read)
                         synchronized(chunkLock) {
                             chunkBuffer.write(readBuffer, 0, read)
                         }
@@ -151,15 +147,15 @@ actual class AudioRecorder actual constructor() {
         targetLine?.close()
         targetLine = null
 
-        val result = buffer.toByteArray()
-        buffer.reset()
-        synchronized(chunkLock) { chunkBuffer.reset() }
-
-        if (result.size > 44) {
-            fixWavHeader(result)
+        // Return only the remaining un-uploaded tail from the chunk buffer.
+        // The bulk of the recording was already sent incrementally via getAndClearBuffer().
+        val remaining = synchronized(chunkLock) {
+            val data = chunkBuffer.toByteArray()
+            chunkBuffer.reset()
+            data
         }
 
-        return result
+        return if (remaining.isNotEmpty()) remaining else null
     }
 
     actual fun getAndClearBuffer(): ByteArray? {
@@ -205,53 +201,4 @@ actual class AudioRecorder actual constructor() {
             else -> AudioDeviceType.UNKNOWN
         }
     }
-
-    private fun writeWavHeader(out: ByteArrayOutputStream, sampleRate: Int, channels: Int) {
-        val bitsPerSample = 16
-        val byteRate = sampleRate * channels * bitsPerSample / 8
-        val blockAlign = channels * bitsPerSample / 8
-
-        out.write("RIFF".toByteArray())
-        out.write(intToBytes(0))
-        out.write("WAVE".toByteArray())
-
-        out.write("fmt ".toByteArray())
-        out.write(intToBytes(16))
-        out.write(shortToBytes(1))
-        out.write(shortToBytes(channels.toShort()))
-        out.write(intToBytes(sampleRate))
-        out.write(intToBytes(byteRate))
-        out.write(shortToBytes(blockAlign.toShort()))
-        out.write(shortToBytes(bitsPerSample.toShort()))
-
-        out.write("data".toByteArray())
-        out.write(intToBytes(0))
-    }
-
-    private fun fixWavHeader(data: ByteArray) {
-        val dataSize = data.size - 44
-        val fileSize = data.size - 8
-
-        data[4] = (fileSize and 0xFF).toByte()
-        data[5] = ((fileSize shr 8) and 0xFF).toByte()
-        data[6] = ((fileSize shr 16) and 0xFF).toByte()
-        data[7] = ((fileSize shr 24) and 0xFF).toByte()
-
-        data[40] = (dataSize and 0xFF).toByte()
-        data[41] = ((dataSize shr 8) and 0xFF).toByte()
-        data[42] = ((dataSize shr 16) and 0xFF).toByte()
-        data[43] = ((dataSize shr 24) and 0xFF).toByte()
-    }
-
-    private fun intToBytes(value: Int): ByteArray = byteArrayOf(
-        (value and 0xFF).toByte(),
-        ((value shr 8) and 0xFF).toByte(),
-        ((value shr 16) and 0xFF).toByte(),
-        ((value shr 24) and 0xFF).toByte(),
-    )
-
-    private fun shortToBytes(value: Short): ByteArray = byteArrayOf(
-        (value.toInt() and 0xFF).toByte(),
-        ((value.toInt() shr 8) and 0xFF).toByte(),
-    )
 }

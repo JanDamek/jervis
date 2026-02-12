@@ -30,8 +30,9 @@ import platform.Foundation.timeIntervalSince1970
 /**
  * iOS AudioRecorder using AVAudioRecorder (file-based).
  *
- * Records to a temporary WAV file. On stop, reads the file into a ByteArray.
- * More reliable than AVAudioEngine for simple recording use cases.
+ * Records to a temporary WAV file. Supports incremental reads via [getAndClearBuffer]
+ * which reads newly-written bytes from the file since the last read.
+ * On [stopRecording], returns only the unread tail bytes.
  *
  * System audio capture is NOT supported on iOS (platform limitation).
  */
@@ -44,6 +45,9 @@ actual class AudioRecorder actual constructor() {
     @kotlin.concurrent.Volatile
     private var _isRecording = false
     private var startTimeMs = 0L
+
+    /** Byte offset into the temp file up to which data has already been read. */
+    private var lastReadOffset: Long = 0L
 
     actual fun getAvailableInputDevices(): List<AudioDevice> {
         return listOf(
@@ -112,6 +116,9 @@ actual class AudioRecorder actual constructor() {
 
             _isRecording = true
             startTimeMs = (NSDate().timeIntervalSince1970 * 1000).toLong()
+            // Skip the 44-byte WAV header written by AVAudioRecorder —
+            // the server writes its own header, clients send raw PCM only.
+            lastReadOffset = 44L
 
             true
         } catch (e: Exception) {
@@ -132,25 +139,27 @@ actual class AudioRecorder actual constructor() {
         val url = tempFileUrl ?: return null
         tempFileUrl = null
 
+        // Return only the unread tail (data accumulated since the last getAndClearBuffer call)
         return try {
-            val data: NSData = NSData.dataWithContentsOfURL(url) ?: return null
-            val size = data.length.toInt()
-            if (size <= 44) return null
-
-            val bytes = ByteArray(size)
-            bytes.usePinned {
-                platform.posix.memcpy(it.addressOf(0), data.bytes, data.length)
-            }
-            bytes
+            readBytesFrom(url, lastReadOffset)
         } catch (e: Exception) {
             null
+        } finally {
+            lastReadOffset = 0L
         }
     }
 
     actual fun getAndClearBuffer(): ByteArray? {
-        // File-based recording — chunked access not supported.
-        // Full data is returned on stopRecording().
-        return null
+        if (!_isRecording) return null
+        val url = tempFileUrl ?: return null
+
+        return try {
+            val newBytes = readBytesFrom(url, lastReadOffset) ?: return null
+            lastReadOffset += newBytes.size
+            newBytes
+        } catch (e: Exception) {
+            null
+        }
     }
 
     actual val isRecording: Boolean
@@ -169,5 +178,29 @@ actual class AudioRecorder actual constructor() {
         }
         recorder?.stop()
         recorder = null
+    }
+
+    /**
+     * Read bytes from [url] starting at [fromOffset].
+     * Returns null if no new data is available.
+     */
+    private fun readBytesFrom(url: NSURL, fromOffset: Long): ByteArray? {
+        val data: NSData = NSData.dataWithContentsOfURL(url) ?: return null
+        val totalSize = data.length.toLong()
+        if (totalSize <= fromOffset) return null
+
+        val newSize = (totalSize - fromOffset).toInt()
+        val bytes = ByteArray(newSize)
+        bytes.usePinned { pinned ->
+            val srcPtr = data.bytes?.let {
+                it as kotlinx.cinterop.CPointer<kotlinx.cinterop.ByteVar>
+            } ?: return null
+            platform.posix.memcpy(
+                pinned.addressOf(0),
+                srcPtr + fromOffset,
+                newSize.toULong(),
+            )
+        }
+        return bytes
     }
 }

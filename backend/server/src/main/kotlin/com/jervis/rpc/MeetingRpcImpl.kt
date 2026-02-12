@@ -10,6 +10,7 @@ import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingStateEnum
+import com.jervis.dto.meeting.MeetingUploadStateDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.entity.meeting.CorrectionChatMessage
 import com.jervis.entity.meeting.MeetingDocument
@@ -60,9 +61,9 @@ class MeetingRpcImpl(
         val audioFileName = "meeting_${meetingId.toHexString()}.wav"
         val audioFilePath = meetingsDir.resolve(audioFileName)
 
-        // Create empty audio file
+        // Create audio file with WAV header (clients send raw PCM chunks, server owns the header)
         withContext(Dispatchers.IO) {
-            Files.createFile(audioFilePath)
+            Files.write(audioFilePath, createWavHeader(), StandardOpenOption.CREATE_NEW)
         }
 
         val document = MeetingDocument(
@@ -89,6 +90,12 @@ class MeetingRpcImpl(
 
         if (meeting.state != MeetingStateEnum.RECORDING && meeting.state != MeetingStateEnum.UPLOADING) {
             throw IllegalStateException("Meeting ${chunk.meetingId} is not in recording/uploading state: ${meeting.state}")
+        }
+
+        // Idempotency: skip chunks already received (prevents duplicates on retry)
+        if (chunk.chunkIndex < meeting.chunkCount) {
+            logger.info { "Skipping duplicate chunk ${chunk.chunkIndex} for meeting ${chunk.meetingId} (already have ${meeting.chunkCount} chunks)" }
+            return true
         }
 
         val audioFilePath = meeting.audioFilePath
@@ -123,12 +130,18 @@ class MeetingRpcImpl(
             ?: throw IllegalStateException("Meeting not found: ${request.meetingId}")
 
         // Compute duration from actual WAV file size (16kHz, 16-bit, mono = 32000 bytes/sec)
+        // and fix the WAV header with actual data size
         val fileDuration = withContext(Dispatchers.IO) {
             meeting.audioFilePath?.let { path ->
                 val file = java.nio.file.Paths.get(path)
                 if (Files.exists(file)) {
                     val fileSize = Files.size(file)
-                    if (fileSize > 44) (fileSize - 44) / 32000 else request.durationSeconds
+                    if (fileSize > 44) {
+                        fixWavHeader(file, fileSize)
+                        (fileSize - 44) / 32000
+                    } else {
+                        request.durationSeconds
+                    }
                 } else {
                     request.durationSeconds
                 }
@@ -498,6 +511,17 @@ class MeetingRpcImpl(
         return true
     }
 
+    override suspend fun getUploadState(meetingId: String): MeetingUploadStateDto {
+        val meeting = meetingRepository.findById(ObjectId(meetingId))
+            ?: throw IllegalStateException("Meeting not found: $meetingId")
+        return MeetingUploadStateDto(
+            meetingId = meeting.id.toHexString(),
+            state = meeting.state,
+            chunkCount = meeting.chunkCount,
+            audioSizeBytes = meeting.audioSizeBytes,
+        )
+    }
+
     override suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto {
         val id = ObjectId(meetingId)
         val meeting = meetingRepository.findById(id)
@@ -588,6 +612,68 @@ class MeetingRpcImpl(
                 "${result.newRules.size} new rules saved, ${correctedText.length} chars"
         }
         return saved.toDto()
+    }
+}
+
+/** Create a 44-byte WAV header for 16kHz mono 16-bit PCM. Data size is 0 (fixed on finalize). */
+private fun createWavHeader(sampleRate: Int = 16000, channels: Int = 1, bitsPerSample: Int = 16): ByteArray {
+    val byteRate = sampleRate * channels * bitsPerSample / 8
+    val blockAlign = channels * bitsPerSample / 8
+    val header = ByteArray(44)
+
+    fun putInt(offset: Int, value: Int) {
+        header[offset] = (value and 0xFF).toByte()
+        header[offset + 1] = ((value shr 8) and 0xFF).toByte()
+        header[offset + 2] = ((value shr 16) and 0xFF).toByte()
+        header[offset + 3] = ((value shr 24) and 0xFF).toByte()
+    }
+    fun putShort(offset: Int, value: Int) {
+        header[offset] = (value and 0xFF).toByte()
+        header[offset + 1] = ((value shr 8) and 0xFF).toByte()
+    }
+
+    // RIFF header
+    "RIFF".toByteArray().copyInto(header, 0)
+    putInt(4, 0) // placeholder — fixed on finalize
+    "WAVE".toByteArray().copyInto(header, 8)
+
+    // fmt sub-chunk
+    "fmt ".toByteArray().copyInto(header, 12)
+    putInt(16, 16) // sub-chunk size
+    putShort(20, 1) // PCM format
+    putShort(22, channels)
+    putInt(24, sampleRate)
+    putInt(28, byteRate)
+    putShort(32, blockAlign)
+    putShort(34, bitsPerSample)
+
+    // data sub-chunk
+    "data".toByteArray().copyInto(header, 36)
+    putInt(40, 0) // placeholder — fixed on finalize
+
+    return header
+}
+
+/** Fix WAV header sizes in-place for a file with known total size. */
+private fun fixWavHeader(file: java.nio.file.Path, fileSize: Long) {
+    val dataSize = (fileSize - 44).toInt()
+    val riffSize = (fileSize - 8).toInt()
+
+    val raf = java.io.RandomAccessFile(file.toFile(), "rw")
+    raf.use {
+        // RIFF chunk size at offset 4
+        it.seek(4)
+        it.write(riffSize and 0xFF)
+        it.write((riffSize shr 8) and 0xFF)
+        it.write((riffSize shr 16) and 0xFF)
+        it.write((riffSize shr 24) and 0xFF)
+
+        // data chunk size at offset 40
+        it.seek(40)
+        it.write(dataSize and 0xFF)
+        it.write((dataSize shr 8) and 0xFF)
+        it.write((dataSize shr 16) and 0xFF)
+        it.write((dataSize shr 24) and 0xFF)
     }
 }
 

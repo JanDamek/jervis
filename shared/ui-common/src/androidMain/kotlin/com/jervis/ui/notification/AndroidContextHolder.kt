@@ -1,6 +1,8 @@
 package com.jervis.ui.notification
 
 import android.content.Context
+import com.jervis.ui.storage.PendingMessageStorage
+import com.jervis.ui.storage.RecordingStateStorage
 
 /**
  * Holds reference to application context for notification services.
@@ -14,5 +16,7 @@ object AndroidContextHolder {
 
     fun initialize(context: Context) {
         applicationContext = context.applicationContext
+        PendingMessageStorage.init(applicationContext)
+        RecordingStateStorage.init(applicationContext)
     }
 }

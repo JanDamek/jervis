@@ -5,6 +5,7 @@ import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
+import com.jervis.dto.meeting.MeetingUploadStateDto
 import kotlinx.rpc.annotations.Rpc
 
 /**
@@ -58,4 +59,6 @@ interface IMeetingService {
     suspend fun retranscribeSegments(meetingId: String, segmentIndices: List<Int>): Boolean
 
     suspend fun stopTranscription(meetingId: String): Boolean
+
+    suspend fun getUploadState(meetingId: String): MeetingUploadStateDto
 }
