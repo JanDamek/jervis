@@ -7,17 +7,16 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.jervis.ui.notification.AndroidContextHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Foreground service that keeps audio recording alive when the app is backgrounded
@@ -54,6 +53,25 @@ class RecordingForegroundService : Service() {
 
         private var currentTitle: String = "Nahravani"
 
+        private fun getAppIconBitmap(context: Context): Bitmap? {
+            return try {
+                val drawable = context.packageManager.getApplicationIcon(context.applicationInfo)
+                if (drawable is BitmapDrawable) {
+                    drawable.bitmap
+                } else {
+                    val bitmap = Bitmap.createBitmap(
+                        drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888,
+                    )
+                    val canvas = Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    bitmap
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
         private fun buildNotification(context: Context, durationSeconds: Long, title: String): Notification {
             val stopIntent = Intent(context, RecordingStopReceiver::class.java).apply {
                 action = ACTION_STOP
@@ -82,6 +100,7 @@ class RecordingForegroundService : Service() {
 
             return NotificationCompat.Builder(context, CHANNEL_RECORDING)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setLargeIcon(getAppIconBitmap(context))
                 .setContentTitle(title)
                 .setContentText(timeText)
                 .setOngoing(true)

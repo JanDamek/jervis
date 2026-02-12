@@ -126,3 +126,11 @@ data class AudioChunkDto(
     val mimeType: String = "audio/wav",
     val isLast: Boolean = false,
 )
+
+@Serializable
+data class MeetingUploadStateDto(
+    val meetingId: String,
+    val state: MeetingStateEnum,
+    val chunkCount: Int,
+    val audioSizeBytes: Long,
+)

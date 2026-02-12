@@ -89,6 +89,7 @@ import com.jervis.ui.design.JTextButton
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JVerticalSplitLayout
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.ui.storage.RecordingState
 import com.jervis.ui.util.ConfirmDialog
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -124,6 +125,7 @@ fun MeetingsScreen(
     val correctionProgress by viewModel.correctionProgress.collectAsState()
     val pendingChatMessage by viewModel.pendingChatMessage.collectAsState()
     val error by viewModel.error.collectAsState()
+    val uploadState by viewModel.uploadState.collectAsState()
 
     // Filter state — pre-filled from main window selection
     var filterClientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id) }
@@ -135,7 +137,16 @@ fun MeetingsScreen(
     var showTrash by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
+    var interruptedRecording by remember { mutableStateOf<RecordingState?>(null) }
     val audioRecorder = remember { AudioRecorder() }
+
+    // Check for interrupted recording on startup
+    LaunchedEffect(Unit) {
+        val state = viewModel.checkForInterruptedRecording()
+        if (state != null) {
+            interruptedRecording = state
+        }
+    }
 
     // Load meetings + projects when filter changes
     LaunchedEffect(filterClientId, filterProjectId, showTrash) {
@@ -295,6 +306,37 @@ fun MeetingsScreen(
                 }
             }
 
+            // Upload state indicator (during recording — retrying / failed)
+            if (isRecording && !showTrash) {
+                when (val state = uploadState) {
+                    is UploadState.Retrying -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = "Odesílání se opakuje (${state.attempt}/${state.maxAttempts})…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
+                    }
+                    is UploadState.RetryFailed -> {
+                        Text(
+                            text = "Odesílání se nezdařilo. Data jsou uložena na serveru.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    }
+                    else -> {} // Idle, Uploading — no extra indicator needed
+                }
+            }
+
             // Error display
             error?.let { errorMsg ->
                 Text(
@@ -424,6 +466,27 @@ fun MeetingsScreen(
             viewModel.permanentlyDeleteMeeting(meetingId)
         },
         onDismiss = { showPermanentDeleteConfirmDialog = null },
+    )
+
+    // Interrupted recording resume dialog
+    ConfirmDialog(
+        visible = interruptedRecording != null,
+        title = "Nalezena přerušená nahrávka",
+        message = "Byla nalezena nedokončená nahrávka${interruptedRecording?.title?.let { " „$it"" } ?: ""}. " +
+            "Částečná data jsou uložena na serveru. Chcete nahrávku dokončit?",
+        confirmText = "Dokončit",
+        isDestructive = false,
+        dismissText = "Zahodit",
+        onConfirm = {
+            val state = interruptedRecording ?: return@ConfirmDialog
+            interruptedRecording = null
+            viewModel.resumeInterruptedUpload(state)
+        },
+        onDismiss = {
+            val state = interruptedRecording ?: return@ConfirmDialog
+            interruptedRecording = null
+            viewModel.discardInterruptedRecording(state)
+        },
     )
 }
 
