@@ -10,7 +10,7 @@ import json
 import logging
 
 from app.models import CodingTask
-from app.graph.nodes._helpers import llm_with_cloud_fallback
+from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool
 
@@ -74,10 +74,15 @@ async def respond(state: dict) -> dict:
             history_parts.append(
                 f"{prefix}Messages {block['sequence_range']}: {block['summary']}"
             )
-        # Recent messages (verbatim)
+        # Recent messages (verbatim) — FILTER OUT ERROR MESSAGES
         for msg in (chat_history.get("recent_messages") or []):
+            content = msg.get("content", "")
+            # Skip error messages (JSON error objects or error text)
+            if is_error_message(content):
+                logger.debug("Filtering out error message from chat history: %s", content[:100])
+                continue
             label = {"user": "Uživatel", "assistant": "Jervis"}.get(msg["role"], msg["role"])
-            history_parts.append(f"{label}: {msg['content']}")
+            history_parts.append(f"{label}: {content}")
         if history_parts:
             context_parts.append("## Conversation History\n" + "\n\n".join(history_parts))
 

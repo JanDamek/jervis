@@ -14,6 +14,7 @@ from app.graph.nodes._helpers import (
     llm_with_cloud_fallback,
     parse_json_response,
     detect_cloud_prompt,
+    is_error_message,
 )
 from app.kb.prefetch import fetch_project_context
 from app.models import TaskCategory, TaskAction, Complexity
@@ -128,15 +129,21 @@ async def intake(state: dict) -> dict:
     if project_context:
         context_parts.append(f"Project context (from KB):\n{project_context[:2000]}")
 
-    # Recent chat for continuity
+    # Recent chat for continuity — FILTER OUT ERROR MESSAGES
     if chat_history:
         recent = chat_history.get("recent_messages", [])
         if recent:
-            recent_text = "\n".join(
-                f"[{m.get('role', '?')}] {m.get('content', '')[:200]}"
-                for m in recent[-5:]
-            )
-            context_parts.append(f"Recent conversation:\n{recent_text}")
+            # Filter out error messages from recent history
+            valid_messages = [
+                m for m in recent[-5:]
+                if not is_error_message(m.get("content", ""))
+            ]
+            if valid_messages:
+                recent_text = "\n".join(
+                    f"[{m.get('role', '?')}] {m.get('content', '')[:200]}"
+                    for m in valid_messages
+                )
+                context_parts.append(f"Recent conversation:\n{recent_text}")
 
     context_block = "\n\n".join(context_parts)
 

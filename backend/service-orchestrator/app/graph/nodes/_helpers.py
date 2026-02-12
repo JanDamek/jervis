@@ -21,6 +21,39 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 
+# --- Chat history filtering ---
+
+
+def is_error_message(content: str) -> bool:
+    """Check if message content is an error message that should be filtered out.
+
+    Error messages have these patterns:
+    - JSON with "error" key: {"error": {"type": "...", "message": "..."}}
+    - Plain text starting with "Error:" or "ERROR:"
+    - Contains "llm_call_failed" or "Operation not allowed"
+    """
+    if not content or not isinstance(content, str):
+        return False
+
+    content_lower = content.lower().strip()
+
+    # JSON error object
+    if content_lower.startswith("{") and '"error"' in content_lower:
+        return True
+
+    # Plain text errors
+    if content_lower.startswith("error:") or content_lower.startswith("chyba:"):
+        return True
+
+    # Specific error signatures
+    if "llm_call_failed" in content_lower:
+        return True
+    if "operation not allowed" in content_lower:
+        return True
+
+    return False
+
+
 # --- Cloud escalation helpers ---
 
 _CLOUD_KEYWORDS = [

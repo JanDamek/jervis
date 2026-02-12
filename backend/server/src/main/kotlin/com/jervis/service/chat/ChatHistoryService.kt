@@ -35,6 +35,38 @@ class ChatHistoryService(
     companion object {
         const val RECENT_MESSAGE_COUNT = 20
         const val MAX_SUMMARY_BLOCKS = 15
+
+        /**
+         * Check if message content is an error message that should be filtered out.
+         *
+         * Error messages have these patterns:
+         * - JSON with "error" key: {"error": {"type": "...", "message": "..."}}
+         * - Plain text starting with "Error:" or "Chyba:"
+         * - Contains "llm_call_failed" or "Operation not allowed"
+         */
+        private fun isErrorMessage(content: String): Boolean {
+            val contentLower = content.trim().lowercase()
+
+            // JSON error object
+            if (contentLower.startsWith("{") && "\"error\"" in contentLower) {
+                return true
+            }
+
+            // Plain text errors (Czech + English)
+            if (contentLower.startsWith("error:") || contentLower.startsWith("chyba:")) {
+                return true
+            }
+
+            // Specific error signatures
+            if ("llm_call_failed" in contentLower) {
+                return true
+            }
+            if ("operation not allowed" in contentLower) {
+                return true
+            }
+
+            return false
+        }
     }
 
     /**
@@ -54,14 +86,23 @@ class ChatHistoryService(
 
         val totalCount = allMessages.size.toLong()
 
-        // Recent messages: last 20
-        val recentMessages = allMessages.takeLast(RECENT_MESSAGE_COUNT).map { msg ->
-            ChatHistoryMessageDto(
-                role = msg.role.name.lowercase(),
-                content = msg.content,
-                timestamp = DateTimeFormatter.ISO_INSTANT.format(msg.timestamp),
-                sequence = msg.sequence,
-            )
+        // Recent messages: last 20 — FILTER OUT ERROR MESSAGES
+        val recentMessages = allMessages
+            .takeLast(RECENT_MESSAGE_COUNT)
+            .filterNot { isErrorMessage(it.content) }  // Filter out error messages
+            .map { msg ->
+                ChatHistoryMessageDto(
+                    role = msg.role.name.lowercase(),
+                    content = msg.content,
+                    timestamp = DateTimeFormatter.ISO_INSTANT.format(msg.timestamp),
+                    sequence = msg.sequence,
+                )
+            }
+
+        if (recentMessages.isEmpty() && allMessages.isNotEmpty()) {
+            logger.warn {
+                "CHAT_HISTORY_ALL_ERRORS | taskId=$taskId | All recent messages were errors, filtered out"
+            }
         }
 
         // Summary blocks: existing compressed summaries
