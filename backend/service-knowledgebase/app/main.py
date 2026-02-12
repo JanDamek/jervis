@@ -45,24 +45,23 @@ async def lifespan(app: FastAPI):
     rag_service = RagService()
     graph_service = GraphService()
 
-    # Initialize extraction queue ONLY for write mode
+    # Initialize extraction queue and worker ONLY for write mode
     extraction_queue = None
+    worker = None
     if settings.KB_MODE in ("all", "write"):
         from app.services.llm_extraction_queue import LLMExtractionQueue
+        from app.services.llm_extraction_worker import LLMExtractionWorker
+
         queue_file = Path("/opt/jervis/data/extraction-queue.json")
         extraction_queue = LLMExtractionQueue(queue_file)
+        worker = LLMExtractionWorker(extraction_queue, graph_service, rag_service)
+        await worker.start()
+        logger.info("LLM extraction worker started with queue at %s", queue_file)
 
     knowledge_service = KnowledgeService(extraction_queue=extraction_queue)
 
     # Initialize global service in routes module
     routes.service = knowledge_service
-
-    # Start background worker ONLY in write mode (needs both graph and rag services)
-    worker = None
-    if settings.KB_MODE in ("all", "write"):
-        worker = LLMExtractionWorker(extraction_queue, graph_service, rag_service)
-        await worker.start()
-        logger.info("LLM extraction worker started with queue at %s", queue_file)
 
     # Store in app state for access
     app.state.extraction_queue = extraction_queue
