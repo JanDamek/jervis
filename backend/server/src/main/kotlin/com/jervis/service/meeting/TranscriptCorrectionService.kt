@@ -207,21 +207,32 @@ class TranscriptCorrectionService(
             logger.info { "Saved ${knownAnswers.size} known answers as KB rules for meeting $meetingId" }
         }
 
-        // 2. All known → existing flow (reset to TRANSCRIBED for full re-correction)
+        // 2. All known → apply corrections in-place (no re-correction needed)
         if (unknownAnswers.isEmpty()) {
+            val baseSegments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments }.toMutableList()
+
+            for (answer in knownAnswers) {
+                val idx = answer.segmentIndex
+                if (idx in baseSegments.indices) {
+                    baseSegments[idx] = baseSegments[idx].copy(text = answer.corrected)
+                }
+            }
+
+            val correctedText = baseSegments.joinToString(" ") { it.text.trim() }
             meetingRepository.save(
                 meeting.copy(
-                    state = MeetingStateEnum.TRANSCRIBED,
-                    correctedTranscriptText = null,
-                    correctedTranscriptSegments = emptyList(),
+                    state = MeetingStateEnum.CORRECTED,
+                    stateChangedAt = java.time.Instant.now(),
+                    correctedTranscriptText = correctedText,
+                    correctedTranscriptSegments = baseSegments,
                     correctionQuestions = emptyList(),
                     errorMessage = null,
                 ),
             )
             notificationRpc.emitMeetingStateChanged(
-                meetingId, meeting.clientId.toString(), MeetingStateEnum.TRANSCRIBED.name, meeting.title,
+                meetingId, meeting.clientId.toString(), MeetingStateEnum.CORRECTED.name, meeting.title,
             )
-            logger.info { "All answers known for meeting $meetingId, reset to TRANSCRIBED for re-correction" }
+            logger.info { "All ${knownAnswers.size} answers applied in-place for meeting $meetingId → CORRECTED" }
             return true
         }
 

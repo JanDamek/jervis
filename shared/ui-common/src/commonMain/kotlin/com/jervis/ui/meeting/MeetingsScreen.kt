@@ -87,6 +87,8 @@ import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JTextButton
 import com.jervis.ui.design.JTopBar
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.jervis.ui.design.JVerticalSplitLayout
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.util.ConfirmDialog
@@ -702,11 +704,15 @@ private fun MeetingDetailView(
     var segmentForCorrection by remember { mutableStateOf<SegmentEditState?>(null) }
     // Overflow menu for compact screens
     var showOverflowMenu by remember { mutableStateOf(false) }
-    // Splitter fraction for expanded mode
+    // Splitter fraction for expanded mode (transcript/chat split)
     var splitFraction by remember { mutableStateOf(0.7f) }
+    // Splitter fraction for correction panel (metadata+corrections / transcript+chat)
+    val hasCorrectionQuestions = meeting.state == MeetingStateEnum.CORRECTION_REVIEW && meeting.correctionQuestions.isNotEmpty()
+    var correctionSplitFraction by remember { mutableStateOf(0.4f) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
+        val totalHeightPx = constraints.maxHeight.toFloat()
 
         Column(modifier = Modifier.fillMaxSize()) {
             // Top bar
@@ -807,10 +813,14 @@ private fun MeetingDetailView(
             }
 
             // Metadata header — scrollable when content overflows (error messages, correction questions)
+            // When correction questions are present, this section becomes resizable via splitter
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 450.dp)
+                    .then(
+                        if (hasCorrectionQuestions) Modifier.weight(correctionSplitFraction)
+                        else Modifier.heightIn(max = 450.dp)
+                    )
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = JervisSpacing.outerPadding),
             ) {
@@ -857,6 +867,9 @@ private fun MeetingDetailView(
                     CorrectionQuestionsCard(
                         questions = meeting.correctionQuestions,
                         onSubmitAnswers = onAnswerQuestions,
+                        segments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments },
+                        playingSegmentIndex = playingSegmentIndex,
+                        onSegmentPlay = onSegmentPlay,
                     )
                 }
 
@@ -895,12 +908,39 @@ private fun MeetingDetailView(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
+            // Draggable divider when correction questions panel is shown
+            if (hasCorrectionQuestions) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .pointerInput(totalHeightPx) {
+                            detectDragGestures { _, dragAmount ->
+                                val delta = dragAmount.y / totalHeightPx
+                                correctionSplitFraction = (correctionSplitFraction + delta).coerceIn(0.15f, 0.7f)
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(40.dp)
+                            .height(3.dp)
+                            .background(
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                shape = MaterialTheme.shapes.small,
+                            ),
+                    )
+                }
+            }
+
             // Split layout: transcript on top, chat on bottom
             if (isCompact) {
                 // Compact mode: vertical column, fixed chat height
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(if (hasCorrectionQuestions) 1f - correctionSplitFraction else 1f)
                         .fillMaxWidth(),
                 ) {
                     // Transcript panel (takes remaining space)
@@ -946,7 +986,7 @@ private fun MeetingDetailView(
                 JVerticalSplitLayout(
                     splitFraction = splitFraction,
                     onSplitChange = { splitFraction = it },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier.weight(if (hasCorrectionQuestions) 1f - correctionSplitFraction else 1f).fillMaxWidth(),
                     topContent = { mod ->
                         TranscriptPanel(
                             meeting = meeting,
@@ -1529,8 +1569,8 @@ private fun PipelineProgress(
                 }
             }
 
-            // Last transcribed segment preview
-            if (!lastSegmentText.isNullOrBlank()) {
+            // Last transcribed segment preview — only show during active transcription
+            if (!lastSegmentText.isNullOrBlank() && state == MeetingStateEnum.TRANSCRIBING) {
                 Text(
                     text = lastSegmentText,
                     style = MaterialTheme.typography.bodySmall,
@@ -1649,6 +1689,9 @@ private fun meetingTypeLabel(type: MeetingTypeEnum): String =
 private fun CorrectionQuestionsCard(
     questions: List<CorrectionQuestionDto>,
     onSubmitAnswers: (List<CorrectionAnswerDto>) -> Unit,
+    segments: List<TranscriptSegmentDto> = emptyList(),
+    playingSegmentIndex: Int = -1,
+    onSegmentPlay: (segmentIndex: Int, startSec: Double, endSec: Double) -> Unit = { _, _, _ -> },
 ) {
     // Track answers: questionId -> corrected text
     val answers = remember { mutableStateOf(questions.associate { it.questionId to "" }) }
@@ -1713,6 +1756,15 @@ private fun CorrectionQuestionsCard(
                             },
                             onEdit = {
                                 confirmed.value = confirmed.value - question.questionId
+                            },
+                            isPlayingSegment = playingSegmentIndex == question.segmentIndex,
+                            onPlayToggle = {
+                                val seg = segments.getOrNull(question.segmentIndex)
+                                if (seg != null) {
+                                    val paddedStart = (seg.startSec - 10.0).coerceAtLeast(0.0)
+                                    val paddedEnd = seg.endSec + 10.0
+                                    onSegmentPlay(question.segmentIndex, paddedStart, paddedEnd)
+                                }
                             },
                         )
                         if (index < questions.lastIndex) {
@@ -1871,6 +1923,8 @@ private fun CorrectionQuestionItem(
     onAnswerChanged: (String) -> Unit,
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
+    isPlayingSegment: Boolean = false,
+    onPlayToggle: () -> Unit = {},
 ) {
     val isNevim = currentAnswer == "\u0000"
     if (isConfirmed) {
@@ -1910,11 +1964,25 @@ private fun CorrectionQuestionItem(
     } else {
         // Expanded edit view
         Column {
-            Text(
-                text = question.question,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = question.question,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                JIconButton(
+                    onClick = onPlayToggle,
+                    icon = if (isPlayingSegment) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlayingSegment) "Zastavit" else "Přehrát",
+                    tint = if (isPlayingSegment) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = "Původně: \"${question.originalText}\"",
                 style = MaterialTheme.typography.bodySmall,

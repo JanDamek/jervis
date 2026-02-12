@@ -72,11 +72,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -1332,7 +1334,9 @@ fun JVerticalSplitLayout(
     bottomContent: @Composable (Modifier) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val totalHeightPx = constraints.maxHeight.toFloat()
         val totalHeight = maxHeight
+        val dividerHeight = 6.dp
         val topHeight = totalHeight * splitFraction
         val bottomHeight = totalHeight * (1f - splitFraction)
 
@@ -1343,9 +1347,28 @@ fun JVerticalSplitLayout(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
+                    .height(dividerHeight)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+                    .pointerInput(Unit) {
+                        detectDragGestures { _, dragAmount ->
+                            val delta = dragAmount.y / totalHeightPx
+                            val newFraction = (splitFraction + delta).coerceIn(0.1f, 0.9f)
+                            onSplitChange(newFraction)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                // Visual drag handle indicator
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(3.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            shape = MaterialTheme.shapes.small,
+                        ),
+                )
+            }
             Box(modifier = Modifier.fillMaxWidth().height(bottomHeight)) {
                 bottomContent(Modifier.fillMaxSize())
             }

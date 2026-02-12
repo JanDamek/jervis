@@ -976,23 +976,34 @@ Accessible via the book icon in MeetingDetailView action bar.
 
 ### 5.8.1) Correction Questions Card
 
-Inline card shown in MeetingDetailView when `state == CORRECTION_REVIEW`. Displays questions from the correction agent when it's uncertain about proper nouns or terminology.
+Inline card shown in MeetingDetailView when `state == CORRECTION_REVIEW`. Displays questions from the correction agent when it's uncertain about proper nouns or terminology. The card is in a resizable panel (draggable divider) so users can adjust the split between corrections and transcript.
 
 ```
 +-- Card (tertiaryContainer) ------------------------------------+
 | Agent potrebuje vase upesneni                                   |
-| Opravte nebo potvdte spravny tvar nasledujicich vyrazu:        |
+| Opravte nebo potvdte spravny tvar (0/N potvrzeno):             |
 |                                                                 |
-| Is this "Jan Damek" or "Jan Dameck"?                           |
+| Correct spelling?                              [Play/Stop]     |
 | Puvodne: "jan damek"                                           |
 | [Jan Damek] [Jan Dameck]    <- FilterChip options              |
-| [____Spravny tvar____]      <- free text input                 |
+| [____Spravny tvar____]  [Nevim]  [Potvrdit]                   |
 |                                                                 |
-|                                    [Odeslat odpovedi]          |
+| "jan damek" -> "Jan Damek"                              [✓]   |
+|                                    [Odeslat vse (N)]           |
 +-----------------------------------------------------------------+
+======== draggable divider (resizable) =========
 ```
 
-Answers are saved as KB correction rules and the meeting resets to TRANSCRIBED for re-correction.
+**Correction flow:**
+- Each question has a **play button** (±10s audio around the segment) so users can listen before deciding.
+- **Potvrdit** confirms the correction locally (collapses to summary row).
+- **Nevím** marks the segment for re-transcription with Whisper large-v3 (beam_size=10, ±10s audio extraction).
+- **Odeslat vše** submits all confirmed answers:
+  - Known corrections are applied **in-place** to the transcript segments (no full re-correction).
+  - Each correction is saved as a KB rule for future use.
+  - "Nevím" segments trigger targeted re-transcription + correction.
+- The LLM agent **filters out** questions whose `original` text matches existing KB correction rules, preventing re-asking of already-corrected terms.
+- The pipeline progress bar clears the last transcription segment preview once transcription is complete.
 
 ### 5.8) Pending Tasks Screen (`PendingTasksScreen.kt`)
 

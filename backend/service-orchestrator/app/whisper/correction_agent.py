@@ -186,6 +186,9 @@ class CorrectionAgent:
             corrected_segments.extend(chunk_result["segments"])
             all_questions.extend(chunk_result["questions"])
 
+        # Filter out questions whose originals are already known KB corrections
+        all_questions = self._filter_known_questions(all_questions, corrections)
+
         # Emit 100% when done
         await self._emit_correction_progress(
             meeting_id, client_id, total_chunks, total_chunks,
@@ -340,10 +343,15 @@ class CorrectionAgent:
             "Cílená korekce dokončena",
         )
 
-        status = "needs_input" if chunk_result.get("questions") else "success"
+        # Filter out questions whose originals are already known KB corrections
+        questions = self._filter_known_questions(
+            chunk_result.get("questions", []), corrections,
+        )
+
+        status = "needs_input" if questions else "success"
         return {
             "segments": segments,
-            "questions": chunk_result.get("questions", []),
+            "questions": questions,
             "status": status,
         }
 
@@ -371,6 +379,27 @@ class CorrectionAgent:
             results.append(result)
         logger.info("Stored %d correction rules from user answers", len(results))
         return results
+
+    def _filter_known_questions(
+        self, questions: list[dict], corrections: list[dict],
+    ) -> list[dict]:
+        """Remove questions whose original text matches a known KB correction rule.
+
+        This prevents re-asking about terms the user has already corrected.
+        """
+        if not corrections or not questions:
+            return questions
+        known_originals = {c["original"].lower().strip() for c in corrections}
+        filtered = [
+            q for q in questions
+            if q.get("original", "").lower().strip() not in known_originals
+        ]
+        if len(filtered) < len(questions):
+            logger.info(
+                "Filtered %d known questions (had %d, now %d)",
+                len(questions) - len(filtered), len(questions), len(filtered),
+            )
+        return filtered
 
     async def _load_corrections(
         self,
