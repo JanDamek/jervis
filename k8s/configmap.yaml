@@ -232,5 +232,4 @@ data:
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
   SEARXNG_URL: "http://192.168.100.117:30053"
   # -- Ollama endpoints -------------------------------------------------------
-  OLLAMA_URL: "http://192.168.100.117:11434"
   OLLAMA_API_BASE: "http://192.168.100.117:11434"

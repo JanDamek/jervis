@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     # LLM providers
-    ollama_url: str = os.getenv("OLLAMA_URL", "http://192.168.100.117:11434")
+    ollama_url: str = os.getenv("OLLAMA_API_BASE", "http://192.168.100.117:11434")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
