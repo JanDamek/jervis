@@ -1045,49 +1045,53 @@ Shows filterable list of pending tasks with delete capability. Uses **Pattern D*
 
 ### 5.9) Indexing Queue Screen
 
-Read-only dashboard showing the indexing pipeline state. Three vertical sections, each with its own quick search filter.
+Dashboard showing the indexing pipeline state. Items grouped by connection with expandable cards.
+Single search field filters across all connection groups. KB queue section collapsed by default.
 
 ```
 +---------------------------------------------------------------+
 | JTopBar: "Fronta indexace"                        [<- Zpet]   |
 +---------------------------------------------------------------+
 | [Refresh]                                                     |
+| [Hledat ___________________________] [Search]                 |
 +---------------------------------------------------------------+
-| JSection: "Pripojeni"                                         |
-| +----------------------------------------------------------+  |
-| | [Hledat pripojeni ___________________________]           |  |
-| | +-- JCard: GitHub (VALID) -- REPOSITORY, BUGTRACKER      |  |
-| | +-- JCard: IMAP Mail (VALID) -- EMAIL_READ               |  |
-| +----------------------------------------------------------+  |
+| JCard (expandable): GitHub  REPOSITORY,BUGTRACKER  12  Za 8m  |
+|   [v]                                                         |
+|   ├─ [Code] fix: login bug · Klient1 · Projekt  |  git  NEW  |
+|   ├─ [Bug] JIRA-123 summary · Klient1  |  Jira  NEW         |
+|   └─ ...a dalsich 9                                           |
 +---------------------------------------------------------------+
-| JSection: "Ceka na indexaci (42)"                             |
-| +----------------------------------------------------------+  |
-| | [Hledat ___________________________] [Search]            |  |
-| | +-- JCard: [Code] commit msg | GitHub | Klient1 | Proj  |  |
-| | +-- JCard: [Mail] Email subject | Gmail | Klient2        |  |
-| |                              Strana 1 / 3  [<] [>]       |  |
-| +----------------------------------------------------------+  |
+| JCard (expandable): IMAP Mail  EMAIL_READ  5  Za 1m           |
+|   [v]                                                         |
+|   ├─ [Mail] Re: Meeting · Klient2  |  Email  NEW             |
+|   └─ [Mail] Invoice #42 · Klient2  |  Email  NEW             |
 +---------------------------------------------------------------+
-| JSection: "Odeslano do KB (150)"                              |
-| +----------------------------------------------------------+  |
-| | [Hledat ___________________________] [Search]            |  |
-| | +-- JCard: [Bug] JIRA-123 | Jira | Klient2 | Projekt    |  |
-| |                              Strana 1 / 8  [<] [>]       |  |
-| +----------------------------------------------------------+  |
+| JCard (expandable, collapsed): Git  REPOSITORY  3              |
+|   [>]                                                         |
++---------------------------------------------------------------+
+|                                                               |
+| JCard (collapsed by default): Odeslano do KB (150) [>]        |
+|   ├─ [Bug] JIRA-100 · Jira · Klient1  |  Pred 5 min  10 min |
+|   ├─ [Mail] Subject · Email · Klient2  |  Pred 2 h  120 min  |
+|   └─ ...a dalsich 130                                         |
 +---------------------------------------------------------------+
 ```
 
 **Key components:**
-- `ConnectionCard` -- `JCard` showing connection name, provider, state, capabilities
-- `QueueItemCard` -- `JCard` with type icon (Code/Email/BugReport/Description), title, connection/client/project, state badge
-- Server-side pagination for pending/indexed sections (page size 20)
-- Client-side filtering for connections, server-side search for queue items
-- `IndexingItemType` enum with icon/label helpers
+- `ConnectionGroupCard` -- expandable `JCard` per connection: provider icon, name, capabilities, item count, next check time (clickable → `PollingIntervalDialog`)
+- `QueueItemRow` -- row with type icon, title, client·project, sourceUrn badge, state
+- `KbQueueSection` -- collapsed-by-default `JCard` showing KB items with timing info
+- `PollingIntervalDialog` -- `JFormDialog` to change global polling interval per capability
+- `IndexingItemType` enum with `.icon()` / `.label()` helpers
 
-**Data:** `IndexingQueueItemDto` with `id`, `type`, `connectionName`, `connectionId`, `clientName`, `projectName?`, `title`, `createdAt?`, `state`, `errorMessage?`
-Paginated via `IndexingQueuePageDto` with `items`, `totalCount`, `page`, `pageSize`.
+**Data:**
+- `IndexingDashboardDto` with `connectionGroups: List<ConnectionIndexingGroupDto>`, `kbQueue: List<KbQueueItemDto>`, `kbQueueTotalCount`
+- `ConnectionIndexingGroupDto` with `connectionId`, `connectionName`, `provider`, `capabilities`, `lastPolledAt?`, `nextCheckAt?`, `intervalMinutes`, `items`, `totalItemCount`
+- `KbQueueItemDto` with `id`, `type`, `title`, `connectionName`, `clientName`, `sourceUrn?`, `indexedAt?`, `waitingDurationMinutes?`
+- `IndexingQueueItemDto` with `sourceUrn?` field for KB reference
 
-**RPC:** `IIndexingQueueService.getPendingItems(page, pageSize, search)` / `getIndexedItems(page, pageSize, search)`
+**RPC:** `IIndexingQueueService.getIndexingDashboard(search, kbPageSize)` (single call replaces 3 old calls)
+Legacy: `getPendingItems()` / `getIndexedItems()` kept for backward compat
 
 ---
 
@@ -1376,8 +1380,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- CodingAgentsSettings.kt <- Coding agent config
 |   |       +-- IndexingSettings.kt     <- Indexing intervals config
 |   |       +-- WhisperSettings.kt      <- Whisper transcription config
-|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard
-|   +-- IndexingQueueSections.kt      <- ConnectionsSection, QueueItemsSection (internal)
+|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (single getIndexingDashboard call)
+|   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, KbQueueSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
 +-- MainScreen.kt                      <- Public entry point (ViewModel -> MainScreenView)
 +-- MainViewModel.kt                   <- Main ViewModel (user actions, state)

@@ -479,9 +479,9 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │    → JVerticalSplitLayout (draggable top/bottom panels)             │
 │    Example: MeetingDetailView in MeetingsScreen.kt                  │
 │                                                                     │
-│  Read-only dashboard with paginated sections + search?              │
-│    → LazyColumn + JSection blocks + server-side pagination          │
-│    Example: IndexingQueueScreen.kt                                  │
+│  Dashboard grouped by entity with expandable cards?                 │
+│    → LazyColumn + expandable JCards + collapsed-by-default section  │
+│    Example: IndexingQueueScreen.kt (grouped by connection)          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
