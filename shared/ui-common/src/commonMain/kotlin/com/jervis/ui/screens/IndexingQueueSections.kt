@@ -44,10 +44,10 @@ import com.jervis.ui.design.JFormDialog
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.screens.settings.sections.getCapabilityLabel
-import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 
 // ── Connection Group Card (expandable) ──
@@ -459,9 +459,9 @@ internal fun formatNextCheck(nextCheckAt: String?): String {
     if (nextCheckAt == null) return "–"
     return try {
         val next = Instant.parse(nextCheckAt)
-        val now = kotlinx.datetime.Clock.System.now()
+        val now = Clock.System.now()
         val diff = next - now
-        val minutes = diff.inWholeMinutes
+        val minutes = diff.inWholeMinutes.toInt()
         when {
             minutes > 60 -> "Za ${minutes / 60} h ${minutes % 60} min"
             minutes > 0 -> "Za $minutes min"
@@ -479,9 +479,9 @@ internal fun formatNextCheck(nextCheckAt: String?): String {
 private fun formatRelativeTime(isoTimestamp: String): String {
     return try {
         val ts = Instant.parse(isoTimestamp)
-        val now = kotlinx.datetime.Clock.System.now()
+        val now = Clock.System.now()
         val diff = now - ts
-        val minutes = diff.inWholeMinutes
+        val minutes = diff.inWholeMinutes.toInt()
         when {
             minutes < 1 -> "Právě teď"
             minutes < 60 -> "Před $minutes min"

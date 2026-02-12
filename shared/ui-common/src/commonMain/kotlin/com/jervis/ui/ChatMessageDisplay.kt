@@ -42,8 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ui.ChatMessage
 import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.model.markdownColor
-import com.mikepenz.markdown.model.markdownTypography
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
 
 @Composable
 internal fun ChatArea(
