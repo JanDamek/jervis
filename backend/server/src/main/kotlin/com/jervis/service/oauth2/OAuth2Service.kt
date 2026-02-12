@@ -257,7 +257,7 @@ class OAuth2Service(
             // Fallback scopes
             when (provider) {
                 OAuth2Provider.GITHUB -> "repo user admin:org admin:public_key admin:repo_hook admin:org_hook gist notifications workflow write:discussion write:packages delete:packages admin:gpg_key admin:ssh_signing_key codespace project security_events"
-                OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository read_registry write_registry sudo admin_mode"
+                OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository read_registry write_registry sudo admin_mode offline_access"
                 OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
             }
@@ -267,11 +267,26 @@ class OAuth2Service(
     /**
      * Refresh an expired OAuth2 access token using the stored refresh token.
      * Returns true if the token was refreshed, false if no refresh needed or no refresh token available.
+     *
+     * Note: GitHub OAuth tokens are long-lived and don't expire, so refresh is not needed.
+     * Only Atlassian and GitLab support/require refresh tokens.
      */
     suspend fun refreshAccessToken(connection: ConnectionDocument): Boolean {
         if (connection.authType != AuthTypeEnum.OAUTH2) return false
+
+        val provider = determineProvider(connection)
+
+        // GitHub tokens don't expire and don't have refresh tokens - skip refresh
+        if (provider == OAuth2Provider.GITHUB) {
+            return false
+        }
+
+        // For providers that support refresh tokens, warn if missing
         if (connection.refreshToken == null) {
-            log.warn { "Connection ${connection.id} has no refresh token, cannot refresh" }
+            // Only log warning for providers that should have refresh tokens
+            if (provider == OAuth2Provider.ATLASSIAN || provider == OAuth2Provider.GITLAB) {
+                log.warn { "Connection ${connection.id} (${provider.name}) has no refresh token, cannot refresh. Re-authorize the connection." }
+            }
             return false
         }
 
@@ -283,7 +298,6 @@ class OAuth2Service(
 
         log.info { "Refreshing OAuth2 token for connection ${connection.id} (${connection.name})" }
 
-        val provider = determineProvider(connection)
         val providerConfig = getProviderConfig(provider)
         val tokenUrl = getTokenUrl(provider)
 
