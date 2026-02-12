@@ -341,18 +341,20 @@ class TaskService(
      * - READY_FOR_QUALIFICATION where nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
      *
      * Tasks with future nextQualificationRetryAt are hidden until their backoff window elapses.
+     * Order: queuePosition ASC NULLS LAST (manually prioritized first), then createdAt ASC (FIFO).
      */
     suspend fun findTasksForQualification(): Flow<TaskDocument> =
         flow {
             // New tasks (never retried, no nextQualificationRetryAt)
+            // Ordered by queuePosition (manually prioritized) then createdAt (FIFO)
             emitAll(
-                taskRepository.findByStateAndNextQualificationRetryAtIsNullOrderByCreatedAtAsc(
+                taskRepository.findByStateAndNextQualificationRetryAtIsNullOrderByQueuePositionAscCreatedAtAsc(
                     TaskStateEnum.READY_FOR_QUALIFICATION,
                 ),
             )
             // Retried tasks where backoff has elapsed
             emitAll(
-                taskRepository.findByStateAndNextQualificationRetryAtLessThanEqualOrderByCreatedAtAsc(
+                taskRepository.findByStateAndNextQualificationRetryAtLessThanEqualOrderByQueuePositionAscCreatedAtAsc(
                     TaskStateEnum.READY_FOR_QUALIFICATION,
                     Instant.now(),
                 ),

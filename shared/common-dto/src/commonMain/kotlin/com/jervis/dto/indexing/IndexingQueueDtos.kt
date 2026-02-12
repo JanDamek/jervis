@@ -31,7 +31,7 @@ data class IndexingQueueItemDto(
     /** NEW, INDEXED, FAILED, INDEXING */
     val state: String,
     val errorMessage: String? = null,
-    /** Source URN for KB reference (e.g. "jira::conn:abc,issueKey:PROJ-123") */
+    /** Source URN for KB reference (e.g. "github-issue::conn:abc,issueKey:PROJ-123") */
     val sourceUrn: String? = null,
 )
 
@@ -46,11 +46,40 @@ data class IndexingQueuePageDto(
     val pageSize: Int,
 )
 
-// ── Dashboard DTOs (grouped by connection) ──
+// ── Dashboard DTOs (hierarchical: connection → capability → client) ──
 
 /**
- * Group of pending indexing items belonging to a single connection.
- * Used in the dashboard view to show items grouped by their source.
+ * Items grouped by client within a capability.
+ */
+@Serializable
+data class ClientItemGroupDto(
+    val clientId: String,
+    val clientName: String,
+    /** Items for this client (may be truncated). */
+    val items: List<IndexingQueueItemDto>,
+    val totalItemCount: Int,
+)
+
+/**
+ * Items grouped by capability within a connection.
+ * Each capability has its own polling interval and next check time.
+ */
+@Serializable
+data class CapabilityGroupDto(
+    /** Capability enum name: REPOSITORY, BUGTRACKER, WIKI, EMAIL_READ */
+    val capability: String,
+    /** ISO 8601 – next scheduled poll for this capability. */
+    val nextCheckAt: String?,
+    /** Current polling interval in minutes. */
+    val intervalMinutes: Int,
+    /** Items grouped by client. */
+    val clients: List<ClientItemGroupDto>,
+    val totalItemCount: Int,
+)
+
+/**
+ * Top-level group: one connection with its capabilities and their items.
+ * Hierarchy: Connection → Capability → Client → Items
  */
 @Serializable
 data class ConnectionIndexingGroupDto(
@@ -59,25 +88,22 @@ data class ConnectionIndexingGroupDto(
     val connectionName: String,
     /** ProviderEnum name or "GIT" for synthetic group. */
     val provider: String,
-    val capabilities: List<String>,
     /** ISO 8601 – last time this connection was polled. */
     val lastPolledAt: String?,
-    /** ISO 8601 – computed: lastPolledAt + intervalMinutes. */
-    val nextCheckAt: String?,
-    /** Current polling interval in minutes for the primary capability. */
-    val intervalMinutes: Int,
-    /** Pending items in this group (may be truncated). */
-    val items: List<IndexingQueueItemDto>,
-    /** Total pending item count for this connection. */
+    /** Capabilities with their items, grouped by client. */
+    val capabilityGroups: List<CapabilityGroupDto>,
+    /** Total pending item count across all capabilities. */
     val totalItemCount: Int,
 )
 
+// ── Pipeline item DTO (used for KB queue + execution pipeline) ──
+
 /**
- * KB queue item with timing information.
- * Shows items that have been sent to KB with arrival time and wait duration.
+ * Item in the processing pipeline (KB qualification or execution).
+ * Represents a task flowing through: KB wait → KB processing → execution wait → executing.
  */
 @Serializable
-data class KbQueueItemDto(
+data class PipelineItemDto(
     val id: String,
     val type: IndexingItemType,
     val title: String,
@@ -85,19 +111,47 @@ data class KbQueueItemDto(
     val clientName: String,
     /** Source URN for KB reference. */
     val sourceUrn: String?,
-    /** ISO 8601 – when the item was marked INDEXED. */
-    val indexedAt: String?,
-    /** How long waiting for KB processing (minutes). */
-    val waitingDurationMinutes: Long?,
+    /** ISO 8601 – when the item entered this stage. */
+    val createdAt: String?,
+    /** Pipeline state: WAITING, QUALIFYING, RETRYING, READY_FOR_GPU, DISPATCHED_GPU, PYTHON_ORCHESTRATING */
+    val pipelineState: String,
+    /** Number of retry attempts (for items in backoff). */
+    val retryCount: Int = 0,
+    /** ISO 8601 – when next retry will happen (for items in backoff). */
+    val nextRetryAt: String? = null,
+    /** Error message from last attempt (for retrying items). */
+    val errorMessage: String? = null,
+    /** Task ID for reordering. */
+    val taskId: String? = null,
+    /** Queue position (null = FIFO by createdAt). */
+    val queuePosition: Int? = null,
 )
 
 /**
- * Combined dashboard response: pending items grouped by connection + KB queue.
- * Replaces the three separate calls (connections, pending, indexed) with a single call.
+ * Combined dashboard response: indexing queue + full processing pipeline.
  */
 @Serializable
 data class IndexingDashboardDto(
+    /** Pending indexing items grouped by connection → capability → client. */
     val connectionGroups: List<ConnectionIndexingGroupDto>,
-    val kbQueue: List<KbQueueItemDto>,
-    val kbQueueTotalCount: Long,
+
+    // ── KB qualification stage ──
+    /** Items waiting for KB qualification (READY_FOR_QUALIFICATION). */
+    val kbWaiting: List<PipelineItemDto>,
+    val kbWaitingTotalCount: Long,
+    /** Items currently being qualified by KB/Ollama (QUALIFYING). */
+    val kbProcessing: List<PipelineItemDto>,
+    val kbProcessingCount: Long,
+
+    // ── Execution stage ──
+    /** Items waiting for GPU execution (READY_FOR_GPU). */
+    val executionWaiting: List<PipelineItemDto>,
+    val executionWaitingCount: Long,
+    /** Items currently being executed (DISPATCHED_GPU + PYTHON_ORCHESTRATING). */
+    val executionRunning: List<PipelineItemDto>,
+    val executionRunningCount: Long,
+
+    // ── Pagination (for kbWaiting section) ──
+    val kbPage: Int = 0,
+    val kbPageSize: Int = 20,
 )

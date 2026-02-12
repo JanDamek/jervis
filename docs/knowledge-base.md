@@ -551,6 +551,59 @@ EvidencePack(
 
 ---
 
+## Qualification Queue Priority & Retry
+
+### Queue Priority / Reordering
+
+Tasks in `READY_FOR_QUALIFICATION` state are processed in order: `queuePosition ASC NULLS LAST, createdAt ASC`.
+This means manually prioritized items (those with a `queuePosition` set) are processed first, while others fall back to FIFO by creation time.
+
+**RPC endpoints:**
+- `reorderKbQueueItem(taskId, newPosition)` -- set explicit queue position
+- `prioritizeKbQueueItem(taskId)` -- move to position 1 (front of queue)
+
+The UI shows up/down arrows and a prioritize button on items in the "Čeká na KB" pipeline section.
+
+### Exponential Retry for Operational Errors
+
+When Ollama is busy or unreachable, qualification retries infinitely with DB-based exponential backoff:
+
+```
+5s → 10s → 20s → 40s → 80s → 160s → 300s (cap, retries forever at 5min)
+```
+
+**Configuration** (`QualifierProperties`):
+- `initialBackoffMs = 5000` (5 seconds)
+- `maxBackoffMs = 300000` (5 minutes)
+
+**Retriable errors** (infinite retry, never marks ERROR):
+- Timeout, connection, socket, network, prematurely closed
+- Ollama busy, queue full, too many requests
+- HTTP 429 (Too Many Requests), HTTP 503 (Service Unavailable)
+
+**Non-retriable errors** (permanent ERROR state):
+- Actual indexing/parsing errors from KB microservice
+
+**Key invariants:**
+- Items stay `READY_FOR_QUALIFICATION` with a future `nextQualificationRetryAt` during backoff (not marked FAILED)
+- Queue releases items only on restart or crash (stale task recovery in `BackgroundEngine.resetStaleTasks()`)
+- `qualificationRetries` counter tracks retry attempts (displayed in UI as "Opakuje (Nx)")
+
+### SourceUrn Provider Dispatch
+
+BugTracker and Wiki items use provider-specific SourceUrn factories:
+
+| Provider | BugTracker URN | Wiki URN |
+|----------|---------------|----------|
+| GITHUB | `SourceUrn.githubIssue()` | — |
+| GITLAB | `SourceUrn.gitlabIssue()` | — |
+| JIRA / other | `SourceUrn.jira()` | — |
+| CONFLUENCE / other | — | `SourceUrn.confluence()` |
+
+This ensures correct source type display in the indexing queue UI (e.g., GitHub Issues connections show "GitHub" not "Jira").
+
+---
+
 ## Knowledge Base Best Practices
 
 ### Key Practices
@@ -562,6 +615,8 @@ EvidencePack(
 5. **Project group cross-visibility:** Projects in same group share KB data
 6. **Fail-fast design:** Errors propagate, no silent failures
 7. **Type safety:** Explicit input/output types throughout
+8. **Infinite retry for operational errors:** Ollama busy/timeout → exponential backoff, never marks ERROR
+9. **Queue priority:** Manual reordering of qualification queue items via `queuePosition`
 
 ### Benefits
 
@@ -571,3 +626,4 @@ EvidencePack(
 4. **Flexibility:** Schema-less graph for new entity types
 5. **Performance:** Hybrid search combining semantic + structured
 6. **User priority:** Preemption ensures immediate response
+7. **Resilience:** Infinite retry with backoff ensures no items lost during Ollama overload

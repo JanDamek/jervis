@@ -142,6 +142,19 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * Find tasks for qualification with priority ordering: queuePosition ASC (nulls last), createdAt ASC.
+     * Manually prioritized items (queuePosition != null) are processed first, then FIFO.
+     */
+    suspend fun findByStateAndNextQualificationRetryAtIsNullOrderByQueuePositionAscCreatedAtAsc(
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    suspend fun findByStateAndNextQualificationRetryAtLessThanEqualOrderByQueuePositionAscCreatedAtAsc(
+        state: TaskStateEnum,
+        now: Instant,
+    ): Flow<TaskDocument>
+
+    /**
      * Find all scheduled tasks due for dispatch (scheduledAt <= threshold).
      * Used by BackgroundEngine scheduler loop.
      */

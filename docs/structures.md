@@ -335,10 +335,12 @@ Tasks with deadlines further than this are scheduled, not executed immediately.
 ### Qualification Loop (CPU)
 
 - **Interval:** 30 seconds
-- **Process:** Reads NEW documents from MongoDB, creates PendingTasks
+- **Process:** Reads READY_FOR_QUALIFICATION tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Agents:** SimpleQualifierAgent with CPU model (OLLAMA_QUALIFIER)
 - **Max iterations:** 10 (for chunking loops)
 - **Concurrency:** 10 parallel KB requests (matching CPU Ollama `OLLAMA_NUM_PARALLEL=10`)
+- **Retry:** Operational errors (Ollama busy, timeout, 429, 503) → infinite exponential backoff 5s→10s→20s→...→5min cap. Items stay READY_FOR_QUALIFICATION with future `nextQualificationRetryAt`. Non-retriable errors → permanent ERROR state.
+- **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
 
 ### Scheduler Loop (Task Dispatch)
 

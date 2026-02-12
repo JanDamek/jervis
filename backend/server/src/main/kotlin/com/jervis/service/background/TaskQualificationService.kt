@@ -99,6 +99,13 @@ class TaskQualificationService(
             message.contains("socket", ignoreCase = true) ||
             message.contains("network", ignoreCase = true) ||
             message.contains("prematurely closed", ignoreCase = true) ||
+            // Ollama busy / queue full errors (exponential retry, never marks ERROR)
+            message.contains("busy", ignoreCase = true) ||
+            message.contains("queue full", ignoreCase = true) ||
+            message.contains("too many requests", ignoreCase = true) ||
+            message.contains("429", ignoreCase = true) ||
+            message.contains("503", ignoreCase = true) ||
+            message.contains("service unavailable", ignoreCase = true) ||
             e is java.net.SocketTimeoutException ||
             e is java.net.SocketException
     }
