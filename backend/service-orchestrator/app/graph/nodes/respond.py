@@ -16,7 +16,7 @@ from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 5
+_MAX_TOOL_ITERATIONS = 25
 
 
 async def respond(state: dict) -> dict:

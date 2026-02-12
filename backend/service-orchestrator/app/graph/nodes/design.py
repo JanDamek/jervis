@@ -109,8 +109,8 @@ async def design(state: dict) -> dict:
         },
     ]
 
-    # Agentic loop (max 3 iterations for design)
-    _MAX_DESIGN_ITERATIONS = 3
+    # Agentic loop (max 25 iterations for design)
+    _MAX_DESIGN_ITERATIONS = 25
     iteration = 0
 
     while iteration < _MAX_DESIGN_ITERATIONS:

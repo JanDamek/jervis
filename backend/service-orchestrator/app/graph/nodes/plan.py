@@ -209,8 +209,8 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
         },
     ]
 
-    # Agentic loop (max 3 iterations for planning)
-    _MAX_PLANNING_ITERATIONS = 3
+    # Agentic loop (max 25 iterations for planning)
+    _MAX_PLANNING_ITERATIONS = 25
     iteration = 0
 
     while iteration < _MAX_PLANNING_ITERATIONS:
