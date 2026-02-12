@@ -54,6 +54,13 @@ class GraphService:
         Returns:
             Tuple of (nodes_created, edges_created, list of extracted entity keys)
         """
+        # Skip LLM entity extraction for simple content types (meeting transcripts, corrections)
+        # These are better served by RAG-only retrieval without graph overhead
+        skip_llm_kinds = {"meeting", "correction", "whisper"}
+        if request.kind and request.kind.lower() in skip_llm_kinds:
+            logger.info("Graph ingest skipped for kind=%s (LLM extraction disabled for this type)", request.kind)
+            return 0, 0, []
+
         # 1. Split text into chunks for processing
         chunks = self.text_splitter.split_text(request.content)
 
