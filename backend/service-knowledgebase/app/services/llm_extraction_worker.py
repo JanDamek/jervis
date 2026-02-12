@@ -2,11 +2,19 @@
 
 Continuously polls the queue and processes extraction tasks asynchronously.
 Survives restarts by loading pending tasks from PVC on startup.
+
+PRODUCTION-GRADE with:
+- Crash recovery (stale tasks reset on startup)
+- Retry logic with exponential backoff
+- Proper task state transitions
+- No task loss on worker crash
 """
 
 import asyncio
 import logging
 from pathlib import Path
+import uuid
+import socket
 
 from app.services.llm_extraction_queue import LLMExtractionQueue, ExtractionTask
 from app.services.graph_service import GraphService
@@ -24,16 +32,23 @@ class LLMExtractionWorker:
         self.rag_service = rag_service
         self.running = False
         self._task = None
+        # Worker ID for tracking which pod processes which task
+        self.worker_id = f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}"
 
     async def start(self):
-        """Start the background worker."""
+        """Start the background worker with crash recovery."""
         if self.running:
             logger.warning("Worker already running")
             return
 
+        # Recover stale tasks from previous crashes
+        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=30)
+        if recovered > 0:
+            logger.info("Worker %s recovered %d stale tasks on startup", self.worker_id, recovered)
+
         self.running = True
         self._task = asyncio.create_task(self._worker_loop())
-        logger.info("LLM extraction worker started")
+        logger.info("LLM extraction worker %s started", self.worker_id)
 
     async def stop(self):
         """Stop the background worker gracefully."""
@@ -51,50 +66,75 @@ class LLMExtractionWorker:
 
     async def _worker_loop(self):
         """Main worker loop - poll queue and process tasks."""
-        logger.info("Worker loop started, checking for pending tasks...")
+        logger.info("Worker %s loop started, checking for pending tasks...", self.worker_id)
 
-        # On startup, log queue size
-        initial_size = await self.queue.size()
-        if initial_size > 0:
-            logger.info("Found %d pending extraction tasks from previous session", initial_size)
+        # On startup, log queue stats
+        stats = await self.queue.stats()
+        if stats["total"] > 0:
+            logger.info(
+                "Queue stats on startup: total=%d pending=%d in_progress=%d failed=%d",
+                stats["total"], stats["pending"], stats["in_progress"], stats["failed"]
+            )
+
+        last_stats_log = asyncio.get_event_loop().time()
 
         while self.running:
             try:
-                # Check for next task
-                task = await self.queue.dequeue()
+                # Claim next PENDING task (marks as IN_PROGRESS)
+                task = await self.queue.dequeue(worker_id=self.worker_id, max_attempts=3)
 
                 if task is None:
-                    # Queue empty, wait before checking again
+                    # No PENDING tasks, wait before checking again
+                    # Log stats every 5 minutes when idle
+                    now = asyncio.get_event_loop().time()
+                    if now - last_stats_log > 300:  # 5 minutes
+                        stats = await self.queue.stats()
+                        if stats["total"] > 0:
+                            logger.info(
+                                "Queue stats: total=%d pending=%d in_progress=%d failed=%d",
+                                stats["total"], stats["pending"], stats["in_progress"], stats["failed"]
+                            )
+                        last_stats_log = now
+
                     await asyncio.sleep(5)
                     continue
 
                 # Process the task
                 logger.info(
-                    "Processing extraction task: source=%s kind=%s content_len=%d chunks=%d",
+                    "Worker %s processing task %s: source=%s kind=%s (attempt %d/3)",
+                    self.worker_id,
+                    task.task_id,
                     task.source_urn,
                     task.kind,
-                    len(task.content),
-                    len(task.chunk_ids),
+                    task.attempts,
                 )
 
                 try:
                     await self._process_task(task)
-                    logger.info("Successfully processed extraction task: %s", task.task_id)
+
+                    # Mark as COMPLETED (removes from queue)
+                    await self.queue.mark_completed(task.task_id)
+                    logger.info("Worker %s completed task %s", self.worker_id, task.task_id)
+
                 except Exception as e:
+                    error_msg = f"{type(e).__name__}: {str(e)}"
                     logger.error(
-                        "Failed to process extraction task %s: %s",
+                        "Worker %s failed task %s (attempt %d/3): %s",
+                        self.worker_id,
                         task.task_id,
-                        e,
+                        task.attempts,
+                        error_msg,
                         exc_info=True,
                     )
-                    # Re-queue failed task? For now, just log and continue
-                    # TODO: Implement retry logic with max attempts
+
+                    # Mark as FAILED (resets to PENDING if attempts < 3, else marks FAILED)
+                    await self.queue.mark_failed(task.task_id, error_msg, max_attempts=3)
 
             except asyncio.CancelledError:
-                logger.info("Worker loop cancelled")
+                logger.info("Worker %s loop cancelled", self.worker_id)
                 break
             except Exception as e:
-                logger.error("Error in worker loop: %s", e, exc_info=True)
+                logger.error("Error in worker %s loop: %s", self.worker_id, e, exc_info=True)
                 await asyncio.sleep(10)  # Back off on error
 
     async def _process_task(self, task: ExtractionTask):
