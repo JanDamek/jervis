@@ -283,6 +283,55 @@ které budou implementovány jako separate tickety.
 
 ---
 
+## UI & Chat Experience
+
+### Token-by-Token Chat Streaming
+
+**Problém:**
+- Chat odpovědi přicházejí jako **kompletní zprávy** po dokončení LLM generování
+- Infrastructure pro streaming existuje (`Flow<ChatResponseDto>`), ale zprávy jsou celé
+- Uživatel nevidí průběžný progress během dlouhých odpovědí
+- ChatGPT-style postupné vypisování textu je lepší UX
+
+**Současný stav:**
+- ✅ `Flow<ChatResponseDto>` subscription v UI
+- ✅ Zprávy přicházejí asynchronně (fronta funguje)
+- ❌ Orchestrator čeká na kompletní LLM response, pak emituje celou
+
+**Řešení:**
+1. **Backend streaming** - `respond.py` a další nodes musí použít LLM streaming API
+   - OpenAI: `stream=True` v chat completion
+   - Ollama: streaming endpoint
+   - Collect tokens as they arrive
+
+2. **Partial message emission** - emit `ChatResponseDto` s partial content
+   - Add `isPartial: Boolean` flag to DTO
+   - Add `messageId: String` to group partials
+   - Emit incremental chunks via `emitToChatStream()`
+
+3. **UI accumulation** - `MainViewModel` akumuluje partial messages
+   - Group by `messageId`
+   - Append text chunks to same message
+   - Mark as complete when `isPartial=false`
+
+4. **Markdown rendering** - Markdown renderer už podporuje partial content
+   - `Markdown(content = accumulatedText)` recomposes on each chunk
+   - Works seamlessly with existing implementation
+
+**Implementace:**
+- `backend/service-orchestrator/app/graph/nodes/respond.py` - streaming LLM calls
+- `backend/service-orchestrator/app/llm/provider.py` - add streaming support
+- `shared/common-dto/.../ChatMessageDto.kt` - add `isPartial`, `messageId` fields
+- `shared/ui-common/.../MainViewModel.kt` - accumulate partial messages
+
+**Priorita:** Medium
+**Complexity:** Medium
+**Status:** Planned
+
+**Poznámka:** Infrastructure už existuje, jen potřebuje backend LLM streaming + partial emit logic.
+
+---
+
 ## Další TODOs
 
 _(Další features se budou přidávat sem podle potřeby)_
