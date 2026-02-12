@@ -42,6 +42,8 @@ spec:
               value: "/opt/jervis/data"
             - name: OLLAMA_URL
               value: "http://192.168.100.117:11434"
+            - name: OLLAMA_API_BASE
+              value: "http://192.168.100.117:11434"
             - name: CONTAINER_REGISTRY
               value: "registry.damek-soft.eu/jandamek"
             - name: ANTHROPIC_API_KEY
