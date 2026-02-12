@@ -474,11 +474,12 @@ fun MeetingsScreen(
     ConfirmDialog(
         visible = interruptedRecording != null,
         title = "Nalezena přerušená nahrávka",
-        message = "Byla nalezena nedokončená nahrávka${interruptedRecording?.title?.let { " „$it"" } ?: ""}. " +
-            "Částečná data jsou uložena na serveru. Chcete nahrávku dokončit?",
+        message = buildString {
+            append("Byla nalezena nedokončená nahrávka")
+            interruptedRecording?.title?.let { append(" \"$it\"") }
+            append(". Částečná data jsou uložena na serveru. Chcete nahrávku dokončit?")
+        },
         confirmText = "Dokončit",
-        isDestructive = false,
-        dismissText = "Zahodit",
         onConfirm = {
             val state = interruptedRecording ?: return@ConfirmDialog
             interruptedRecording = null
@@ -489,6 +490,8 @@ fun MeetingsScreen(
             interruptedRecording = null
             viewModel.discardInterruptedRecording(state)
         },
+        isDestructive = false,
+        dismissText = "Zahodit",
     )
 }
 

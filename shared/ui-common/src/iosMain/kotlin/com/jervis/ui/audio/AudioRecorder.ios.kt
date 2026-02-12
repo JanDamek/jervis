@@ -190,17 +190,19 @@ actual class AudioRecorder actual constructor() {
         if (totalSize <= fromOffset) return null
 
         val newSize = (totalSize - fromOffset).toInt()
-        val bytes = ByteArray(newSize)
-        bytes.usePinned { pinned ->
-            val srcPtr = data.bytes?.let {
-                it as kotlinx.cinterop.CPointer<kotlinx.cinterop.ByteVar>
-            } ?: return null
+
+        // Copy entire data to ByteArray, then return slice from offset
+        val allBytes = ByteArray(totalSize.toInt())
+        allBytes.usePinned { pinned ->
+            val srcPtr = data.bytes ?: return null
             platform.posix.memcpy(
                 pinned.addressOf(0),
-                srcPtr + fromOffset,
-                newSize.toULong(),
+                srcPtr,
+                totalSize.toULong(),
             )
         }
-        return bytes
+
+        // Return only the new bytes from offset
+        return allBytes.sliceArray(fromOffset.toInt() until totalSize.toInt())
     }
 }

@@ -439,22 +439,22 @@ private fun QueueItemCard(item: IndexingQueueItemDto) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (item.projectName != null) {
+                    item.projectName?.let { projectName ->
                         Text(
                             text = "·",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = item.projectName,
+                            text = projectName,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                if (item.errorMessage != null) {
+                item.errorMessage?.let { errorMessage ->
                     Text(
-                        text = item.errorMessage,
+                        text = errorMessage,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         maxLines = 1,

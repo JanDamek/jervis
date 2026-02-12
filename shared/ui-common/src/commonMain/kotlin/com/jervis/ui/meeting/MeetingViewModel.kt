@@ -23,6 +23,7 @@ import com.jervis.ui.audio.RecordingServiceBridge
 import com.jervis.ui.storage.RecordingStateStorage
 import com.jervis.ui.storage.RecordingState
 import kotlinx.coroutines.CoroutineScope
+import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -281,7 +282,7 @@ class MeetingViewModel(
                         chunkIndex = 0,
                         title = title,
                         meetingType = meetingType?.name,
-                        startedAtMs = kotlinx.datetime.Clock.System.now().toEpochMilliseconds(),
+                        startedAtMs = Clock.System.now().toEpochMilliseconds(),
                     ),
                 )
 

@@ -1,5 +1,6 @@
 package com.jervis.ui.audio
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.CoreGraphics.CGSizeMake
 import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyArtist
@@ -12,6 +13,7 @@ import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 import platform.UIKit.UIImage
 
+@OptIn(ExperimentalForeignApi::class)
 actual class PlatformRecordingService actual constructor() {
 
     private val artwork: MPMediaItemArtwork? by lazy {

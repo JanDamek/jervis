@@ -91,7 +91,7 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
     SCHEDULER(Icons.Default.CalendarMonth, "Pl\u00E1nova\u010D"),
     MEETINGS(Icons.Default.Mic, "Meetingy"),
     RAG_SEARCH(Icons.Default.Search, "RAG Hled\u00E1n\u00ED"),
-    INDEXING_QUEUE(Icons.Default.Storage, "Fronta indexace"),
+    INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace"),
     ERROR_LOGS(Icons.Default.BugReport, "Chybov\u00E9 logy"),
 }
 

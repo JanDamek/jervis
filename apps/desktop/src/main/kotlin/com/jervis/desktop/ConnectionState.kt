@@ -123,6 +123,7 @@ class ConnectionManager(
                         meetings = services!!.meetingService,
                         transcriptCorrections = services!!.transcriptCorrectionService,
                         deviceTokens = services!!.deviceTokenService,
+                        indexingQueue = services!!.indexingQueueService,
                     )
 
                 // Try a simple test call to verify connectivity
