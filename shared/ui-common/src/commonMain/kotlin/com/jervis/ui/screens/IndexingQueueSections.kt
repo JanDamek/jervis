@@ -48,6 +48,7 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.milliseconds
 
 // ── Connection Group Card (expandable) ──
 
@@ -458,7 +459,7 @@ internal fun formatNextCheck(nextCheckAt: String?): String {
     if (nextCheckAt == null) return "–"
     return try {
         val next = Instant.parse(nextCheckAt)
-        val now = Clock.System.now()
+        val now = kotlinx.datetime.Clock.System.now()
         val diff = next - now
         val minutes = diff.inWholeMinutes
         when {
@@ -478,7 +479,7 @@ internal fun formatNextCheck(nextCheckAt: String?): String {
 private fun formatRelativeTime(isoTimestamp: String): String {
     return try {
         val ts = Instant.parse(isoTimestamp)
-        val now = Clock.System.now()
+        val now = kotlinx.datetime.Clock.System.now()
         val diff = now - ts
         val minutes = diff.inWholeMinutes
         when {
