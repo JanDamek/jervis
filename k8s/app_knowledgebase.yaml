@@ -1,18 +1,95 @@
+# ===== READ Deployment (5 replicas, high priority) =====
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jervis-knowledgebase
+  name: jervis-knowledgebase-read
   namespace: jervis
 spec:
   revisionHistoryLimit: 2
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels:
-      app: jervis-knowledgebase
+      app: jervis-knowledgebase-read
   template:
     metadata:
       labels:
-        app: jervis-knowledgebase
+        app: jervis-knowledgebase-read
+        kb-mode: read
+    spec:
+      priorityClassName: high-priority
+      containers:
+        - name: knowledgebase
+          image: registry.damek-soft.eu/jandamek/jervis-knowledgebase:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KB_MODE
+              value: "read"
+          envFrom:
+            - configMapRef:
+                name: jervis-knowledgebase-config
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+              # Note: Cannot be readOnly because extraction queue lock files need write access
+            - name: config
+              mountPath: /opt/jervis/knowledgebase/config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+        - name: config
+          configMap:
+            name: jervis-knowledgebase-config
+---
+# ===== WRITE Deployment (2 replicas, normal priority) =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-knowledgebase-write
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jervis-knowledgebase-write
+  template:
+    metadata:
+      labels:
+        app: jervis-knowledgebase-write
+        kb-mode: write
     spec:
       containers:
         - name: knowledgebase
@@ -20,6 +97,9 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          env:
+            - name: KB_MODE
+              value: "write"
           envFrom:
             - configMapRef:
                 name: jervis-knowledgebase-config
@@ -31,7 +111,7 @@ spec:
               readOnly: true
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 8080
             initialDelaySeconds: 60
             periodSeconds: 60
@@ -39,7 +119,7 @@ spec:
             failureThreshold: 10
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -47,10 +127,17 @@ spec:
             failureThreshold: 6
           startupProbe:
             httpGet:
-              path: /
+              path: /health
               port: 8080
             failureThreshold: 30
             periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
       volumes:
         - name: jervis-data
           persistentVolumeClaim:
@@ -59,6 +146,16 @@ spec:
           configMap:
             name: jervis-knowledgebase-config
 ---
+# ===== High Priority Class =====
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000
+globalDefault: false
+description: "High priority for read-heavy services (KB read)"
+---
+# ===== READ Service (default name) =====
 apiVersion: v1
 kind: Service
 metadata:
@@ -66,7 +163,21 @@ metadata:
   namespace: jervis
 spec:
   selector:
-    app: jervis-knowledgebase
+    app: jervis-knowledgebase-read
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# ===== WRITE Service =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-knowledgebase-write
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-knowledgebase-write
   ports:
     - name: http
       port: 8080

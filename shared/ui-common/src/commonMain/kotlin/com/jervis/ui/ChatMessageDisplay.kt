@@ -2,6 +2,7 @@ package com.jervis.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -133,28 +134,31 @@ private fun ChatMessageItem(
         }
     } else {
         // standard chat bubble - iMessage/WhatsApp style (width based on content)
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement =
-                if (isMe) {
-                    Arrangement.End
-                } else {
-                    Arrangement.Start
-                },
-        ) {
-            Card(
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor =
-                            if (isMe) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            },
-                    ),
-                modifier = Modifier
-                    .widthIn(min = 48.dp, max = 600.dp),  // Min for buttons, max for readability
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val maxBubbleWidth = maxWidth - 32.dp  // Account for LazyColumn's 16.dp padding on each side
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    if (isMe) {
+                        Arrangement.End
+                    } else {
+                        Arrangement.Start
+                    },
             ) {
+                Card(
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                if (isMe) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                        ),
+                    modifier = Modifier
+                        .widthIn(min = 48.dp, max = maxBubbleWidth),  // Responsive max width
+                ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
                 ) {
@@ -219,6 +223,7 @@ private fun ChatMessageItem(
                 }
             }
         }
+        }  // BoxWithConstraints
     }
 }
 

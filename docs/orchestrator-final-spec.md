@@ -328,6 +328,11 @@ Shell skript pro Job mode. Čte instrukce z `.jervis/`, spustí agenta, zapíše
 
 Orchestrator před spuštěním agenta dotáže KB a vrátí kontext jako markdown.
 
+**Timeout configuration:**
+- HTTP timeout: `120.0` seconds (2 minutes) for all KB queries
+- Rationale: KB operations involve Ollama embeddings and graph traversal, which can take significant time especially during high load
+- Queries: `prefetch_kb_context()` and `fetch_project_context()` use `httpx.AsyncClient(timeout=120.0)`
+
 ---
 
 ## 4. Data modely

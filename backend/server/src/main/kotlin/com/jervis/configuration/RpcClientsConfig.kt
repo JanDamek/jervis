@@ -174,8 +174,12 @@ class RpcClientsConfig(
     private fun getKnowledgeService(): KnowledgeService =
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
-                ?: KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl).also { _knowledgeService = it }
+                ?: KnowledgeServiceRestClient(kbWriteUrl()).also { _knowledgeService = it }
         }
+
+    /** KB write URL (falls back to read URL if write endpoint not configured). */
+    private fun kbWriteUrl(): String =
+        endpoints.knowledgebaseWrite?.baseUrl ?: endpoints.knowledgebase.baseUrl
 
     private fun atlassianUrl(): String =
         endpoints.providers["atlassian"] ?: throw IllegalStateException("No endpoint configured for atlassian")

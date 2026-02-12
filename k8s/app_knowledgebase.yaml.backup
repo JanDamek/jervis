@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-knowledgebase
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 3
+  selector:
+    matchLabels:
+      app: jervis-knowledgebase
+  template:
+    metadata:
+      labels:
+        app: jervis-knowledgebase
+    spec:
+      containers:
+        - name: knowledgebase
+          image: registry.damek-soft.eu/jandamek/jervis-knowledgebase:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: jervis-knowledgebase-config
+          volumeMounts:
+            - name: jervis-data
+              mountPath: /opt/jervis/data
+            - name: config
+              mountPath: /opt/jervis/knowledgebase/config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 30
+            failureThreshold: 6
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 10
+      volumes:
+        - name: jervis-data
+          persistentVolumeClaim:
+            claimName: jervis-data-pvc
+        - name: config
+          configMap:
+            name: jervis-knowledgebase-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-knowledgebase
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-knowledgebase
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

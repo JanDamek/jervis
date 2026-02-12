@@ -479,6 +479,28 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
 - `FINAL` — assistant bubble (secondaryContainer, left-aligned)
 - `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
 
+**Chat bubble layout** (`ChatMessageDisplay.kt`):
+
+iMessage/WhatsApp-style chat with content-based width:
+- **Responsive max width**: Uses `BoxWithConstraints` to calculate max width as `maxWidth - 32.dp` (accounting for LazyColumn's 16dp padding on each side)
+- **Content-based width**: `Card` with `Modifier.widthIn(min = 48.dp, max = maxBubbleWidth)` adapts to content length
+- **User messages**: Plain text, `primaryContainer` background, right-aligned
+- **Assistant messages**: Markdown rendering, `secondaryContainer` background, left-aligned
+- **Markdown support**: Uses `multiplatform-markdown-renderer:0.29.0` with Material 3 theme colors
+- **Workflow steps**: Collapsible step list with status icons (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending) and tool usage
+
+```kotlin
+// Responsive max width calculation
+BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+    val maxBubbleWidth = maxWidth - 32.dp  // Account for LazyColumn padding
+    Row(...) {
+        Card(
+            modifier = Modifier.widthIn(min = 48.dp, max = maxBubbleWidth)
+        ) { ... }
+    }
+}
+```
+
 ### 5.2) Entity List -> Detail Screen
 
 ```

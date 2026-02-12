@@ -7,33 +7,29 @@ které budou implementovány jako separate tickety.
 
 ### KB Autoscaling při Read Timeout
 
-**Problém:**
-- KB může být přetížený při velkém množství současných ingest operací
-- Orchestrator dostává read timeouts při čekání na embedding/retrieve
-- 90% času KB stojí na Ollama při embeddingu (zápis) a generování vrcholů/hran (retrieve)
-- CPU/RAM metriky nejsou indikátorem zátěže
-
-**Řešení:**
-- Orchestrator při read timeout může dynamicky zvýšit repliky KB deployment (kubectl scale)
-- Default: 1 replika
-- Max: 5 replik
-- Scale-up trigger: read timeout při komunikaci s KB
-- Scale-down: zatím bez automatiky (není dobrá metrika)
+**Status:** ✅ **IMPLEMENTED** (2026-02-12) – KB split na read/write deployments
 
 **Implementace:**
-1. Orchestrator permissions: přidat RBAC práva pro `kubectl scale deployment/jervis-knowledgebase`
-2. Python orchestrator: při timeout volat `kubectl scale --replicas=N`
-3. Exponenciální scale-up: 1 → 2 → 3 → 5 (při opakovaných timeoutech)
-4. Manual scale-down: admin musí ručně snížit, nebo timeout-based (pokud X minut žádný timeout, scale down o 1)
+- ✅ KB rozděleno na dva samostatné deployments:
+  - `jervis-knowledgebase-read`: 5 replik, `KB_MODE=read`, high priority
+  - `jervis-knowledgebase-write`: 2 repliky, `KB_MODE=write`, normal priority
+- ✅ Dva samostatné Services:
+  - `jervis-knowledgebase` → read deployment (orchestrator, retrieve operace)
+  - `jervis-knowledgebase-write` → write deployment (server indexing, ingest operace)
+- ✅ Orchestrator timeout zvýšen z 10s na 120s (pro případ velkého zatížení)
+- ✅ Server používá write endpoint pro všechny ingest operace
+- ✅ Read operace nejsou blokovány write operacemi (separate Ollama request queues)
 
 **Soubory:**
-- `k8s/rbac.yaml` – rozšířit orchestrator ServiceAccount o scale permissions
-- `backend/service-orchestrator/app/k8s/scaler.py` – KB scaling logic
-- `backend/service-orchestrator/app/kb/client.py` – catch timeout, trigger scale-up
+- `k8s/app_knowledgebase.yaml` – split deployments + services + PriorityClass
+- `backend/service-orchestrator/app/kb/prefetch.py` – timeout 120s
+- `backend/server/src/main/kotlin/com/jervis/configuration/properties/EndpointProperties.kt` – `knowledgebaseWrite` property
+- `backend/server/src/main/kotlin/com/jervis/configuration/RpcClientsConfig.kt` – write endpoint helper
+- `k8s/configmap.yaml` – separate URLs pro read/write
+- `k8s/build_kb.sh` – deploy both read+write deployments
 
-**Priorita:** Medium
+**Priorita:** ~~Medium~~ **Done**
 **Complexity:** Simple
-**Status:** Planned
 
 ---
 

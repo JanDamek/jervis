@@ -181,7 +181,9 @@ endpoints:
   tika:
     baseUrl: ws://localhost:8081/         # Document extraction (Apache Tika)
   knowledgebase:
-    baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph)
+    baseUrl: http://localhost:8080/       # Knowledge Base (Python, RAG+Graph) - read operations
+  knowledgebase-write:
+    baseUrl: http://localhost:8080/       # KB write operations (defaults to same as read in local dev)
   orchestrator:
     baseUrl: http://localhost:8090        # Python orchestrator (LangGraph)
   providers:

@@ -38,7 +38,13 @@ echo "✓ Docker images pushed"
 # Deploy to Kubernetes
 echo "Step 3/3: Deploying to Kubernetes..."
 kubectl apply -f "${PROJECT_ROOT}/k8s/app_knowledgebase.yaml" -n "${NAMESPACE}"
-kubectl set image deployment/jervis-knowledgebase knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}
-kubectl rollout status deployment/jervis-knowledgebase -n ${NAMESPACE}
+# Update both read and write deployments
+kubectl set image deployment/jervis-knowledgebase-read knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}
+kubectl set image deployment/jervis-knowledgebase-write knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}
+# Wait for rollout of both deployments
+echo "Waiting for read deployment rollout..."
+kubectl rollout status deployment/jervis-knowledgebase-read -n ${NAMESPACE}
+echo "Waiting for write deployment rollout..."
+kubectl rollout status deployment/jervis-knowledgebase-write -n ${NAMESPACE}
 
-echo "=== ✓ ${SERVICE_NAME} complete ==="
+echo "=== ✓ ${SERVICE_NAME} complete (read: 5 replicas, write: 2 replicas) ==="
