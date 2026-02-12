@@ -237,7 +237,7 @@ class GitContinuousIndexer(
             logger.debug { "Read ${fileContents.size} source file contents for tree-sitter (${fileContents.sumOf { it.second.length }} bytes)" }
 
             val request = GitStructureIngestRequest(
-                clientId = triggerCommit.clientId,
+                clientId = triggerCommit.clientId.toHexString(),
                 projectId = project.id.value.toHexString(),
                 repositoryIdentifier = resource.resourceIdentifier,
                 branch = branch,
@@ -293,7 +293,7 @@ class GitContinuousIndexer(
     ) {
         try {
             val request = CpgIngestRequest(
-                clientId = triggerCommit.clientId,
+                clientId = triggerCommit.clientId.toHexString(),
                 projectId = project.id.value.toHexString(),
                 branch = branch,
                 workspacePath = repoDir.toAbsolutePath().toString(),

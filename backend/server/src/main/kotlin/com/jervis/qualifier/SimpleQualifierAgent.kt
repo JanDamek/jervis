@@ -179,8 +179,9 @@ class SimpleQualifierAgent(
         }
 
         // Case B: Future deadline → schedule or immediate
-        if (result.hasFutureDeadline && result.suggestedDeadline != null) {
-            val deadline = parseDeadline(result.suggestedDeadline)
+        val suggestedDeadline = result.suggestedDeadline
+        if (result.hasFutureDeadline && suggestedDeadline != null) {
+            val deadline = parseDeadline(suggestedDeadline)
             if (deadline != null) {
                 val now = Instant.now()
                 val leadTime = Duration.ofDays(SCHEDULE_LEAD_DAYS)

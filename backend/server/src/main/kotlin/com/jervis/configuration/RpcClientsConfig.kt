@@ -9,9 +9,13 @@ import com.jervis.common.dto.bugtracker.*
 import com.jervis.common.dto.wiki.*
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
+import com.jervis.knowledgebase.model.GitStructureIngestRequest
+import com.jervis.knowledgebase.model.GitStructureIngestResult
 import com.jervis.knowledgebase.model.IngestRequest
 import com.jervis.knowledgebase.model.IngestResult
 import com.jervis.knowledgebase.model.RetrievalRequest
@@ -62,6 +66,8 @@ class RpcClientsConfig(
         object : KnowledgeService {
             override suspend fun ingest(request: IngestRequest): IngestResult = getKnowledgeService().ingest(request)
             override suspend fun ingestFull(request: FullIngestRequest): FullIngestResult = getKnowledgeService().ingestFull(request)
+            override suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult = getKnowledgeService().ingestGitStructure(request)
+            override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult = getKnowledgeService().ingestCpg(request)
             override suspend fun retrieve(request: RetrievalRequest): EvidencePack = getKnowledgeService().retrieve(request)
             override suspend fun traverse(
                 clientId: ClientId,
