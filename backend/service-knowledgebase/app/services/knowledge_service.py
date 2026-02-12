@@ -9,6 +9,7 @@ from app.api.models import (
     FullIngestRequest, FullIngestResult, AttachmentResult,
     GitStructureIngestRequest, GitStructureIngestResult,
     CpgIngestRequest, CpgIngestResult,
+    JoernScanRequest, JoernScanResult,
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
@@ -702,4 +703,171 @@ Respond ONLY with valid JSON."""
             calls_edges=result.get("calls_edges", 0),
             uses_type_edges=result.get("uses_type_edges", 0),
         )
+
+    async def run_joern_scan(self, request: JoernScanRequest) -> JoernScanResult:
+        """Run a pre-built Joern code analysis scan.
+
+        Uses Joern K8s Job to analyze code for security issues, dataflow,
+        callgraph, or complexity metrics.
+
+        Args:
+            request: Joern scan request with scanType and workspace path
+
+        Returns:
+            JoernScanResult with scan findings
+        """
+        # Query templates (same as MCP server)
+        QUERY_TEMPLATES = {
+            "security": """
+@main def exec(inputPath: String) = {
+  importCode(inputPath)
+  val findings = scala.collection.mutable.ListBuffer[String]()
+
+  // SQL injection: string concatenation in SQL-like calls
+  cpg.call.name(".*(?i)(query|execute|prepare).*")
+    .argument.isCallTo("<operator>.addition")
+    .l.foreach { c =>
+      findings += s"Potential SQL injection at ${c.location.filename}:${c.location.lineNumber}"
+    }
+
+  // Command injection: shell exec with dynamic input
+  cpg.call.name(".*(?i)(exec|system|popen|runtime\\\\.exec).*")
+    .l.foreach { c =>
+      findings += s"Potential command injection at ${c.location.filename}:${c.location.lineNumber}"
+    }
+
+  // Hardcoded secrets: assignments with password/secret/key in name
+  cpg.assignment.target
+    .isIdentifier.name(".*(?i)(password|secret|api_?key|token).*")
+    .l.foreach { i =>
+      findings += s"Possible hardcoded secret '${i.name}' at ${i.location.filename}:${i.location.lineNumber}"
+    }
+
+  println(findings.mkString("\\n"))
+}
+""",
+            "dataflow": """
+@main def exec(inputPath: String) = {
+  importCode(inputPath)
+  val findings = scala.collection.mutable.ListBuffer[String]()
+
+  // Identify HTTP request parameters (sources)
+  val sources = cpg.parameter
+    .name(".*(?i)(request|req|input|param|body|query).*")
+    .l
+
+  // Identify sensitive sinks
+  val sinks = cpg.call
+    .name(".*(?i)(query|execute|write|send|log|print).*")
+    .l
+
+  findings += s"Sources (HTTP inputs): ${sources.size}"
+  findings += s"Sinks (sensitive operations): ${sinks.size}"
+
+  sources.take(20).foreach { s =>
+    findings += s"  Source: ${s.name} at ${s.location.filename}:${s.location.lineNumber}"
+  }
+  sinks.take(20).foreach { s =>
+    findings += s"  Sink: ${s.name} at ${s.location.filename}:${s.location.lineNumber}"
+  }
+
+  println(findings.mkString("\\n"))
+}
+""",
+            "callgraph": """
+@main def exec(inputPath: String) = {
+  importCode(inputPath)
+  val findings = scala.collection.mutable.ListBuffer[String]()
+
+  // Method summary
+  val methods = cpg.method.nameNot("<.*>").l
+  findings += s"Total methods: ${methods.size}"
+
+  // Find methods with highest fan-out (most callees)
+  methods.sortBy(-_.callOut.size).take(20).foreach { m =>
+    val callees = m.callOut.callee.name.l.distinct
+    if (callees.nonEmpty) {
+      findings += s"${m.fullName} (${m.location.filename}:${m.location.lineNumber}) -> calls ${callees.size} methods: ${callees.take(5).mkString(", ")}${if (callees.size > 5) "..." else ""}"
+    }
+  }
+
+  // Find uncalled methods (potentially dead code)
+  val calledMethods = cpg.call.callee.fullName.toSet
+  val uncalled = methods.filterNot(m => calledMethods.contains(m.fullName))
+    .filterNot(_.name.matches(".*(?i)(main|init|constructor|test).*"))
+  findings += s"Potentially uncalled methods: ${uncalled.size}"
+  uncalled.take(10).foreach { m =>
+    findings += s"  Dead? ${m.fullName} at ${m.location.filename}:${m.location.lineNumber}"
+  }
+
+  println(findings.mkString("\\n"))
+}
+""",
+            "complexity": """
+@main def exec(inputPath: String) = {
+  importCode(inputPath)
+  val findings = scala.collection.mutable.ListBuffer[String]()
+
+  // Methods sorted by cyclomatic complexity (approximated by control structures)
+  cpg.method.nameNot("<.*>").l
+    .map { m =>
+      val controlNodes = m.ast.isControlStructure.size
+      (m, controlNodes)
+    }
+    .sortBy(-_._2)
+    .take(20)
+    .foreach { case (m, complexity) =>
+      if (complexity > 0) {
+        findings += s"Complexity ${complexity}: ${m.fullName} at ${m.location.filename}:${m.location.lineNumber} (${m.lineNumberEnd.getOrElse(0).asInstanceOf[Int] - m.lineNumber.getOrElse(0).asInstanceOf[Int]} lines)"
+      }
+    }
+
+  // Long methods (>50 lines)
+  cpg.method.nameNot("<.*>").l
+    .filter { m =>
+      val lines = m.lineNumberEnd.getOrElse(0).asInstanceOf[Int] - m.lineNumber.getOrElse(0).asInstanceOf[Int]
+      lines > 50
+    }
+    .sortBy(m => -(m.lineNumberEnd.getOrElse(0).asInstanceOf[Int] - m.lineNumber.getOrElse(0).asInstanceOf[Int]))
+    .take(10)
+    .foreach { m =>
+      val lines = m.lineNumberEnd.getOrElse(0).asInstanceOf[Int] - m.lineNumber.getOrElse(0).asInstanceOf[Int]
+      findings += s"Long method (${lines} lines): ${m.fullName} at ${m.location.filename}:${m.location.lineNumber}"
+    }
+
+  println(findings.mkString("\\n"))
+}
+""",
+        }
+
+        query = QUERY_TEMPLATES.get(request.scanType)
+        if not query:
+            return JoernScanResult(
+                status="error",
+                scanType=request.scanType,
+                output="",
+                warnings=f"Unknown scan type: {request.scanType}",
+                exitCode=1,
+            )
+
+        try:
+            # Run Joern via K8s Job
+            result = await self.joern_client.run(query, request.workspacePath)
+
+            return JoernScanResult(
+                status="success" if result.exitCode == 0 else "error",
+                scanType=request.scanType,
+                output=result.stdout or "",
+                warnings=result.stderr,
+                exitCode=result.exitCode,
+            )
+        except Exception as e:
+            logger.error(f"Joern scan failed: {e}")
+            return JoernScanResult(
+                status="error",
+                scanType=request.scanType,
+                output="",
+                warnings=str(e),
+                exitCode=1,
+            )
 

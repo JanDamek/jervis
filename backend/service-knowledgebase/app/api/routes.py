@@ -15,6 +15,7 @@ from app.api.models import (
     ListByKindRequest,
     GitStructureIngestRequest, GitStructureIngestResult,
     CpgIngestRequest, CpgIngestResult,
+    JoernScanRequest, JoernScanResult,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -232,6 +233,25 @@ async def list_chunks_by_kind(request: ListByKindRequest):
             limit=request.maxResults,
         )
         return {"chunks": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@read_router.post("/joern/scan", response_model=JoernScanResult)
+async def joern_scan(request: JoernScanRequest):
+    """
+    Run a pre-built Joern code analysis scan.
+
+    Available scan types:
+    - security: Find SQL injection, command injection, hardcoded secrets
+    - dataflow: Identify HTTP input sources and sensitive sinks
+    - callgraph: Method fan-out analysis and dead code detection
+    - complexity: Cyclomatic complexity and long method detection
+
+    Runs Joern as a K8s Job on the shared PVC.
+    """
+    try:
+        return await service.run_joern_scan(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

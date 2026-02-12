@@ -400,3 +400,37 @@ class CpgIngestResult(BaseModel):
     calls_edges: int = 0
     uses_type_edges: int = 0
 
+
+# === Joern Quick Scan Models ===
+
+class JoernScanRequest(BaseModel):
+    """
+    Request to run a pre-built Joern analysis scan.
+
+    Available scan types:
+    - security: SQL injection, command injection, hardcoded secrets
+    - dataflow: HTTP input sources and sensitive sinks
+    - callgraph: Method fan-out analysis, dead code detection
+    - complexity: Cyclomatic complexity, long method detection
+    """
+    scanType: str  # "security"|"dataflow"|"callgraph"|"complexity"
+    clientId: str
+    projectId: str
+    workspacePath: str  # Path to project on PVC
+
+    @model_validator(mode='after')
+    def validate_scan_type(self):
+        valid_types = {"security", "dataflow", "callgraph", "complexity"}
+        if self.scanType not in valid_types:
+            raise ValueError(f"scanType must be one of: {', '.join(valid_types)}")
+        return self
+
+
+class JoernScanResult(BaseModel):
+    """Result of Joern quick scan."""
+    status: str  # "success" | "error"
+    scanType: str
+    output: str  # Scan findings (stdout from Joern)
+    warnings: Optional[str] = None  # stderr from Joern
+    exitCode: int = 0
+

@@ -9,6 +9,7 @@ Phase 3 implementation.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from langgraph.types import interrupt
@@ -23,18 +24,38 @@ logger = logging.getLogger(__name__)
 
 
 async def design(state: dict) -> dict:
-    """Generate epic + task structure from high-level description.
+    """Generate epic + task structure from high-level description with tool support.
 
     Steps:
-    1. LLM generates structured epic: goals, acceptance criteria, dependencies
-    2. interrupt() for user approval of generated structure
-    3. After approval → flows into plan_epic execution
+    1. Gather tech stack and architecture info using tools
+    2. LLM generates structured epic: goals, acceptance criteria, dependencies
+    3. interrupt() for user approval of generated structure
+    4. After approval → flows into plan_epic execution
 
     The user provides a vague/ambitious goal and the orchestrator designs
     the full implementation structure before executing anything.
     """
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack", {})
+
+    # Extract IDs for tool execution
+    client_id = state.get("client_id", "")
+    project_id = state.get("project_id")
+
+    # Import tool definitions and executor
+    from app.tools.definitions import (
+        TOOL_GET_TECHNOLOGY_STACK,
+        TOOL_GET_REPOSITORY_STRUCTURE,
+        TOOL_JOERN_QUICK_SCAN,
+    )
+    from app.tools.executor import execute_tool
+    import json
+
+    DESIGN_TOOLS = [
+        TOOL_GET_TECHNOLOGY_STACK,
+        TOOL_GET_REPOSITORY_STRUCTURE,
+        TOOL_JOERN_QUICK_SCAN,  # For understanding existing architecture
+    ]
 
     # Build context from evidence pack
     kb_context = ""
@@ -49,12 +70,19 @@ async def design(state: dict) -> dict:
         {
             "role": "system",
             "content": (
-                "You are a software architect and project planner. "
-                "Given a high-level goal, design a complete implementation plan "
-                "with concrete goals (epics/stories) that can be executed by coding agents.\n\n"
-                "Each goal should be independently executable and testable.\n"
-                "Order goals by dependencies (prerequisite goals first).\n\n"
-                "Respond with JSON:\n"
+                "You are a software architect and project planner with access to tools. "
+                "You MUST understand the existing architecture BEFORE designing new features.\n\n"
+                "## MANDATORY APPROACH:\n"
+                "1. **UNDERSTAND**: Use tools to learn about the project:\n"
+                "   - get_technology_stack() — Know tech constraints and frameworks\n"
+                "   - get_repository_structure() — Understand project layout\n"
+                "   - joern_quick_scan('callgraph') — See existing architecture patterns\n\n"
+                "2. **DESIGN**: Create a complete implementation plan:\n"
+                "   - Design features that match existing tech stack\n"
+                "   - Follow established architectural patterns\n"
+                "   - Each goal should be independently executable and testable\n"
+                "   - Order goals by dependencies (prerequisite goals first)\n\n"
+                "3. **RESPOND** with JSON:\n"
                 "{\n"
                 '  "epic_title": "Short title for the epic",\n'
                 '  "epic_description": "2-3 sentence overview",\n'
@@ -68,7 +96,8 @@ async def design(state: dict) -> dict:
                 '      "dependencies": []\n'
                 "    }\n"
                 "  ]\n"
-                "}"
+                "}\n\n"
+                "CRITICAL: Understand existing architecture with tools FIRST, then design."
             ),
         },
         {
@@ -80,10 +109,69 @@ async def design(state: dict) -> dict:
         },
     ]
 
-    response = await llm_with_cloud_fallback(
-        state=state, messages=messages, task_type="planning", max_tokens=8192,
-    )
-    parsed = parse_json_response(response.choices[0].message.content)
+    # Agentic loop (max 3 iterations for design)
+    _MAX_DESIGN_ITERATIONS = 3
+    iteration = 0
+
+    while iteration < _MAX_DESIGN_ITERATIONS:
+        iteration += 1
+        logger.info("Design: iteration %d/%d", iteration, _MAX_DESIGN_ITERATIONS)
+
+        response = await llm_with_cloud_fallback(
+            state=state, messages=messages, task_type="planning",
+            max_tokens=8192, tools=DESIGN_TOOLS,
+        )
+
+        choice = response.choices[0]
+        message = choice.message
+
+        # Check for tool calls
+        tool_calls = getattr(message, "tool_calls", None)
+        if not tool_calls or choice.finish_reason == "stop":
+            # No more tool calls → final design
+            parsed = parse_json_response(message.content or "")
+            break
+
+        # Execute tool calls
+        logger.info("Design: executing %d tool calls", len(tool_calls))
+        messages.append(message.model_dump())
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+
+            logger.info("Design: calling tool %s", tool_name)
+
+            result = await execute_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                client_id=client_id,
+                project_id=project_id,
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": tool_name,
+                "content": result,
+            })
+
+    else:
+        # Max iterations reached → force final design
+        logger.warning("Design: max iterations (%d) reached, forcing design", _MAX_DESIGN_ITERATIONS)
+        final_response = await llm_with_cloud_fallback(
+            state=state,
+            messages=messages + [{
+                "role": "system",
+                "content": "Provide your final design now. Do not call more tools."
+            }],
+            task_type="planning",
+            max_tokens=8192,
+        )
+        parsed = parse_json_response(final_response.choices[0].message.content or "")
 
     epic_title = parsed.get("epic_title", "Generated Epic")
     epic_description = parsed.get("epic_description", task.query)

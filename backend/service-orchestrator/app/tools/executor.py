@@ -74,6 +74,42 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
             )
+        elif tool_name == "joern_quick_scan":
+            return await _execute_joern_quick_scan(
+                scan_type=arguments.get("scan_type", "security"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "git_branch_list":
+            return await _execute_git_branch_list(
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "get_recent_commits":
+            return await _execute_get_recent_commits(
+                limit=arguments.get("limit", 10),
+                branch=arguments.get("branch"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "get_technology_stack":
+            return await _execute_get_technology_stack(
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "get_repository_structure":
+            return await _execute_get_repository_structure(
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "code_search":
+            return await _execute_code_search(
+                query=arguments.get("query", ""),
+                language=arguments.get("language"),
+                max_results=arguments.get("max_results", 5),
+                client_id=client_id,
+                project_id=project_id,
+            )
         else:
             return f"Error: Unknown tool '{tool_name}'."
     except Exception as e:
@@ -364,5 +400,344 @@ async def _execute_get_repository_info(
             file_count = props.get("fileCount", 0)
             marker = " (default)" if is_default else ""
             lines.append(f"- {label}{marker} [{file_count} files]")
+
+    return "\n".join(lines)
+
+
+async def _execute_joern_quick_scan(
+    scan_type: str = "security",
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Run Joern code analysis scan via KB service."""
+    if not project_id:
+        return "Error: project_id required for Joern scan (no project selected)."
+
+    # Get workspace path from KB graph (repository node has workspacePath property)
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "repository",
+        "clientId": client_id,
+        "projectId": project_id,
+        "limit": 1,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            repos = resp.json()
+
+        if not repos:
+            return "Error: No repository found in Knowledge Base for this project."
+
+        workspace_path = repos[0].get("properties", {}).get("workspacePath")
+        if not workspace_path:
+            return "Error: Repository node missing workspacePath property. Ensure repository is indexed on shared PVC."
+
+        # Call KB Joern scan endpoint
+        scan_url = f"{settings.knowledgebase_url}/api/v1/joern/scan"
+        payload = {
+            "scanType": scan_type,
+            "clientId": client_id,
+            "projectId": project_id,
+            "workspacePath": workspace_path,
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:  # Joern can take time
+            resp = await client.post(scan_url, json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+
+    except httpx.TimeoutException:
+        return f"Error: Joern scan timed out after 120s for {scan_type} scan."
+    except httpx.HTTPStatusError as e:
+        return f"Error: KB Joern endpoint returned HTTP {e.response.status_code} for {scan_type} scan."
+    except Exception as e:
+        return f"Error: Joern scan failed: {str(e)[:200]}"
+
+    if result.get("status") != "success":
+        warnings = result.get("warnings", "Unknown error")
+        return f"Joern {scan_type} scan failed:\n{warnings}"
+
+    lines = [f"=== Joern {scan_type.upper()} Scan Results ===\n"]
+    output = result.get("output", "")
+    if output:
+        lines.append(output)
+    else:
+        lines.append("No findings.")
+
+    warnings = result.get("warnings")
+    if warnings:
+        lines.append(f"\nWarnings:\n{warnings}")
+
+    return "\n".join(lines)
+
+
+async def _execute_git_branch_list(
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """List all git branches from KB graph."""
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "branch",
+        "clientId": client_id,
+        "limit": 100,
+    }
+    if project_id:
+        params["projectId"] = project_id
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            branches = resp.json()
+    except Exception as e:
+        return f"Error fetching branches: {str(e)[:200]}"
+
+    if not branches:
+        return "No branches found in Knowledge Base for this project."
+
+    lines = [f"## Git Branches ({len(branches)} total)\n"]
+    for b in branches:
+        label = b.get("label", "?")
+        props = b.get("properties", {})
+        is_default = props.get("isDefault", False)
+        file_count = props.get("fileCount", 0)
+        marker = " (default)" if is_default else ""
+        lines.append(f"- {label}{marker} [{file_count} files]")
+
+    return "\n".join(lines)
+
+
+async def _execute_get_recent_commits(
+    limit: int = 10,
+    branch: str | None = None,
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Get recent commits from KB graph."""
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "commit",
+        "clientId": client_id,
+        "limit": limit,
+    }
+    if project_id:
+        params["projectId"] = project_id
+    if branch:
+        params["branchName"] = branch
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            commits = resp.json()
+    except Exception as e:
+        return f"Error fetching commits: {str(e)[:200]}"
+
+    if not commits:
+        return "No commits found in Knowledge Base for this project."
+
+    lines = [f"## Recent Commits ({len(commits)} shown)\n"]
+    for c in commits:
+        props = c.get("properties", {})
+        hash_short = props.get("hash", "?")[:8]
+        message = props.get("message", "No message")[:100]
+        author = props.get("author", "Unknown")
+        date = props.get("date", "")
+        lines.append(f"- {hash_short} | {author} | {date}")
+        lines.append(f"  {message}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+async def _execute_get_technology_stack(
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Get technology stack from repository metadata."""
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "repository",
+        "clientId": client_id,
+        "limit": 10,
+    }
+    if project_id:
+        params["projectId"] = project_id
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            repos = resp.json()
+    except Exception as e:
+        return f"Error fetching technology stack: {str(e)[:200]}"
+
+    if not repos:
+        return "No repository information found in Knowledge Base."
+
+    lines = ["## Technology Stack\n"]
+    for repo in repos:
+        label = repo.get("label", "?")
+        props = repo.get("properties", {})
+        tech = props.get("techStack", "")
+        lines.append(f"### {label}")
+        if tech:
+            lines.append(f"Technologies: {tech}")
+        else:
+            lines.append("Technology stack not yet analyzed.")
+        lines.append("")
+
+    # Also get language breakdown from file nodes
+    params["nodeType"] = "file"
+    params["limit"] = 1000
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            files = resp.json()
+
+        if files:
+            languages = {}
+            for f in files:
+                lang = f.get("properties", {}).get("language", "Unknown")
+                languages[lang] = languages.get(lang, 0) + 1
+
+            lines.append("### Programming Languages:")
+            sorted_langs = sorted(languages.items(), key=lambda x: -x[1])
+            for lang, count in sorted_langs[:10]:
+                lines.append(f"- {lang}: {count} files")
+    except Exception:
+        pass  # Language breakdown is optional
+
+    return "\n".join(lines)
+
+
+async def _execute_get_repository_structure(
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Get repository directory structure from KB."""
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "file",
+        "clientId": client_id,
+        "limit": 1000,
+    }
+    if project_id:
+        params["projectId"] = project_id
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            files = resp.json()
+    except Exception as e:
+        return f"Error fetching repository structure: {str(e)[:200]}"
+
+    if not files:
+        return "No files found in Knowledge Base for this project."
+
+    # Group files by top-level directory
+    dir_structure = {}
+    for f in files:
+        file_path = f.get("label", "")
+        if "/" in file_path:
+            top_dir = file_path.split("/")[0]
+        else:
+            top_dir = "(root)"
+
+        if top_dir not in dir_structure:
+            dir_structure[top_dir] = {"count": 0, "languages": set()}
+
+        dir_structure[top_dir]["count"] += 1
+        lang = f.get("properties", {}).get("language")
+        if lang:
+            dir_structure[top_dir]["languages"].add(lang)
+
+    lines = [f"## Repository Structure ({len(files)} files total)\n"]
+    sorted_dirs = sorted(dir_structure.items(), key=lambda x: -x[1]["count"])
+    for dir_name, info in sorted_dirs[:20]:  # Show top 20 directories
+        langs = ", ".join(sorted(info["languages"]))
+        lines.append(f"### {dir_name}/ ({info['count']} files)")
+        if langs:
+            lines.append(f"Languages: {langs}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+async def _execute_code_search(
+    query: str,
+    language: str | None = None,
+    max_results: int = 5,
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Search for code using semantic KB search with language filter."""
+    if not query.strip():
+        return "Error: Empty code search query."
+
+    url = f"{settings.knowledgebase_url}/api/v1/retrieve"
+    payload = {
+        "query": query,
+        "clientId": client_id,
+        "projectId": project_id,
+        "maxResults": max_results * 2,  # Get more, then filter
+        "minConfidence": 0.5,
+        "expandGraph": False,  # Code search doesn't need graph expansion
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException:
+        return f"Error: Code search timed out after {_TIMEOUT_KB_SEARCH}s for query: {query}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: Knowledge Base returned HTTP {e.response.status_code} for query: {query}"
+    except Exception as e:
+        return f"Error: Code search failed: {str(e)[:200]}"
+
+    items = data.get("items", [])
+
+    # Filter by language if specified
+    if language:
+        filtered = []
+        for item in items:
+            # Check if sourceUrn contains language hint or metadata
+            source = item.get("sourceUrn", "").lower()
+            if language.lower() in source:
+                filtered.append(item)
+        items = filtered
+
+    if not items:
+        lang_note = f" (language: {language})" if language else ""
+        return f"No code found for query: {query}{lang_note}"
+
+    lines = [f"## Code Search Results for: {query}\n"]
+    if language:
+        lines[0] = f"## Code Search Results for: {query} (language: {language})\n"
+
+    for i, item in enumerate(items[:max_results], 1):
+        source = item.get("sourceUrn", "unknown")
+        content = item.get("content", "")[:500]
+        score = item.get("score", 0)
+        kind = item.get("kind", "")
+        lines.append(f"### Result {i} (score: {score:.2f}, kind: {kind})")
+        lines.append(f"Source: {source}")
+        if content:
+            lines.append(f"```\n{content}\n```")
+        lines.append("")
 
     return "\n".join(lines)

@@ -133,7 +133,7 @@ async def plan(state: dict) -> dict:
 
 
 async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -> dict:
-    """Plan coding task — decompose into goals + steps."""
+    """Plan coding task — decompose into goals + steps with tool support."""
     raw_complexity = state.get("task_complexity", "medium")
     try:
         complexity = Complexity(raw_complexity)
@@ -144,19 +144,48 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
     rules = ProjectRules(**state["rules"])
     agent_type = select_agent(complexity, task.agent_preference, rules)
 
+    # Extract IDs for tool execution
+    client_id = state.get("client_id", "")
+    project_id = state.get("project_id")
+
+    # Import tool definitions and executor
+    from app.tools.definitions import (
+        TOOL_GET_REPOSITORY_STRUCTURE,
+        TOOL_LIST_PROJECT_FILES,
+        TOOL_GET_RECENT_COMMITS,
+        TOOL_GIT_BRANCH_LIST,
+        TOOL_GET_TECHNOLOGY_STACK,
+    )
+    from app.tools.executor import execute_tool
+
+    PLANNING_TOOLS = [
+        TOOL_GET_REPOSITORY_STRUCTURE,
+        TOOL_LIST_PROJECT_FILES,
+        TOOL_GET_RECENT_COMMITS,
+        TOOL_GIT_BRANCH_LIST,
+        TOOL_GET_TECHNOLOGY_STACK,
+    ]
+
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a task decomposition agent. Break down the user's coding request "
-                "into concrete, implementable goals.\n\n"
-                "Rules:\n"
-                "- Each goal will be executed by a coding agent — make goals concrete\n"
-                "- Order goals by dependency\n"
-                "- Use the dependencies field to declare prerequisite goal IDs\n"
-                "- Simple tasks may have just 1 goal\n"
-                "- If a target branch is specified, include it in instructions\n\n"
-                "Respond with JSON:\n"
+                "You are a task decomposition agent with access to tools. "
+                "You MUST gather project information BEFORE decomposing tasks.\n\n"
+                "## MANDATORY APPROACH:\n"
+                "1. **GATHER**: Use tools to understand the project:\n"
+                "   - get_repository_structure() — See project layout\n"
+                "   - list_project_files() — Know what files exist\n"
+                "   - get_recent_commits() — Understand recent work\n"
+                "   - git_branch_list() — Validate target branch exists\n"
+                "   - get_technology_stack() — Know tech constraints\n\n"
+                "2. **DECOMPOSE**: Break down the task into concrete goals:\n"
+                "   - Each goal will be executed by a coding agent\n"
+                "   - Order goals by dependency\n"
+                "   - Use the dependencies field to declare prerequisite goal IDs\n"
+                "   - Simple tasks may have just 1 goal\n"
+                "   - If a target branch is specified, include it in instructions\n\n"
+                "3. **RESPOND** with JSON:\n"
                 "{\n"
                 '  "goals": [\n'
                 '    {\n'
@@ -167,7 +196,8 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
                 '      "dependencies": []\n'
                 "    }\n"
                 "  ]\n"
-                "}"
+                "}\n\n"
+                "CRITICAL: Gather project info with tools FIRST, then decompose."
             ),
         },
         {
@@ -179,10 +209,92 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
         },
     ]
 
-    response = await llm_with_cloud_fallback(
-        state=state, messages=messages, task_type="decomposition", max_tokens=8192,
+    # Agentic loop (max 3 iterations for planning)
+    _MAX_PLANNING_ITERATIONS = 3
+    iteration = 0
+
+    while iteration < _MAX_PLANNING_ITERATIONS:
+        iteration += 1
+        logger.info("Planning: iteration %d/%d", iteration, _MAX_PLANNING_ITERATIONS)
+
+        response = await llm_with_cloud_fallback(
+            state=state, messages=messages, task_type="decomposition",
+            max_tokens=8192, tools=PLANNING_TOOLS,
+        )
+
+        choice = response.choices[0]
+        message = choice.message
+
+        # Check for tool calls
+        tool_calls = getattr(message, "tool_calls", None)
+        if not tool_calls or choice.finish_reason == "stop":
+            # No more tool calls → final decomposition
+            content = message.content or ""
+            parsed = parse_json_response(content)
+            raw_goals = parsed.get("goals", [])
+
+            goals = []
+            for g in raw_goals:
+                try:
+                    goals.append(Goal(**g))
+                except Exception as e:
+                    logger.warning("Skipping invalid goal: %s (%s)", g, e)
+
+            if not goals:
+                goals = [
+                    Goal(
+                        id="g1", title="Execute task",
+                        description=task.query, complexity=complexity,
+                    )
+                ]
+
+            logger.info("Planned %d coding goals after %d iterations", len(goals), iteration)
+
+            return {
+                "goals": [g.model_dump() for g in goals],
+                "current_goal_index": 0,
+                "steps": [],
+            }
+
+        # Execute tool calls
+        logger.info("Planning: executing %d tool calls", len(tool_calls))
+        messages.append(message.model_dump())
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+
+            logger.info("Planning: calling tool %s", tool_name)
+
+            result = await execute_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                client_id=client_id,
+                project_id=project_id,
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": tool_name,
+                "content": result,
+            })
+
+    # Max iterations reached → force final answer
+    logger.warning("Planning: max iterations (%d) reached, forcing decomposition", _MAX_PLANNING_ITERATIONS)
+    final_response = await llm_with_cloud_fallback(
+        state=state,
+        messages=messages + [{
+            "role": "system",
+            "content": "Provide your final task decomposition now. Do not call more tools."
+        }],
+        task_type="decomposition",
+        max_tokens=8192,
     )
-    content = response.choices[0].message.content
+    content = final_response.choices[0].message.content or ""
     parsed = parse_json_response(content)
     raw_goals = parsed.get("goals", [])
 
@@ -194,14 +306,7 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
             logger.warning("Skipping invalid goal: %s (%s)", g, e)
 
     if not goals:
-        goals = [
-            Goal(
-                id="g1", title="Execute task",
-                description=task.query, complexity=complexity,
-            )
-        ]
-
-    logger.info("Planned %d coding goals", len(goals))
+        goals = [Goal(id="g1", title="Execute task", description=task.query, complexity=complexity)]
 
     return {
         "goals": [g.model_dump() for g in goals],
