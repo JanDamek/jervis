@@ -67,15 +67,37 @@ class LLMExtractionQueue:
 
         # Initialize empty queue if file doesn't exist
         if not queue_file.exists():
-            self._write_queue([])
-            logger.info("Initialized empty extraction queue at %s", queue_file)
+            try:
+                self._write_queue([])
+                logger.info("Initialized empty extraction queue at %s", queue_file)
+            except FileExistsError:
+                # Another pod created it simultaneously - that's fine
+                logger.info("Queue file already exists (created by another pod)")
+            except Exception as e:
+                logger.warning("Failed to initialize queue file (may already exist): %s", e)
 
     def _write_queue(self, tasks: list[dict]) -> None:
         """Write queue to disk with atomic operation."""
-        temp_file = self.queue_file.with_suffix(".tmp")
-        with open(temp_file, "w") as f:
-            json.dump(tasks, f, indent=2)
-        temp_file.replace(self.queue_file)
+        import tempfile
+        import os
+
+        # Use atomic write with rename (works across processes/pods)
+        fd, temp_path = tempfile.mkstemp(
+            dir=self.queue_file.parent,
+            prefix=".queue-",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(tasks, f, indent=2)
+            os.replace(temp_path, self.queue_file)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+            raise
 
     def _read_queue(self) -> list[dict]:
         """Read queue from disk."""
