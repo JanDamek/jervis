@@ -122,6 +122,7 @@ fun JervisApp(
                 meetings = currentServices.meetingService,
                 transcriptCorrections = currentServices.transcriptCorrectionService,
                 deviceTokens = currentServices.deviceTokenService,
+                indexingQueue = currentServices.indexingQueueService,
             )
         }
 

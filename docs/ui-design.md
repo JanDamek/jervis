@@ -1032,6 +1032,52 @@ Shows filterable list of pending tasks with delete capability. Uses **Pattern D*
 
 **Data:** `PendingTaskDto` with `id`, `taskType`, `content`, `projectId?`, `clientId`, `createdAt`, `state`, `attachments`
 
+### 5.9) Indexing Queue Screen
+
+Read-only dashboard showing the indexing pipeline state. Three vertical sections, each with its own quick search filter.
+
+```
++---------------------------------------------------------------+
+| JTopBar: "Fronta indexace"                        [<- Zpet]   |
++---------------------------------------------------------------+
+| [Refresh]                                                     |
++---------------------------------------------------------------+
+| JSection: "Pripojeni"                                         |
+| +----------------------------------------------------------+  |
+| | [Hledat pripojeni ___________________________]           |  |
+| | +-- JCard: GitHub (VALID) -- REPOSITORY, BUGTRACKER      |  |
+| | +-- JCard: IMAP Mail (VALID) -- EMAIL_READ               |  |
+| +----------------------------------------------------------+  |
++---------------------------------------------------------------+
+| JSection: "Ceka na indexaci (42)"                             |
+| +----------------------------------------------------------+  |
+| | [Hledat ___________________________] [Search]            |  |
+| | +-- JCard: [Code] commit msg | GitHub | Klient1 | Proj  |  |
+| | +-- JCard: [Mail] Email subject | Gmail | Klient2        |  |
+| |                              Strana 1 / 3  [<] [>]       |  |
+| +----------------------------------------------------------+  |
++---------------------------------------------------------------+
+| JSection: "Odeslano do KB (150)"                              |
+| +----------------------------------------------------------+  |
+| | [Hledat ___________________________] [Search]            |  |
+| | +-- JCard: [Bug] JIRA-123 | Jira | Klient2 | Projekt    |  |
+| |                              Strana 1 / 8  [<] [>]       |  |
+| +----------------------------------------------------------+  |
++---------------------------------------------------------------+
+```
+
+**Key components:**
+- `ConnectionCard` -- `JCard` showing connection name, provider, state, capabilities
+- `QueueItemCard` -- `JCard` with type icon (Code/Email/BugReport/Description), title, connection/client/project, state badge
+- Server-side pagination for pending/indexed sections (page size 20)
+- Client-side filtering for connections, server-side search for queue items
+- `IndexingItemType` enum with icon/label helpers
+
+**Data:** `IndexingQueueItemDto` with `id`, `type`, `connectionName`, `connectionId`, `clientName`, `projectName?`, `title`, `createdAt?`, `state`, `errorMessage?`
+Paginated via `IndexingQueuePageDto` with `items`, `totalCount`, `page`, `pageSize`.
+
+**RPC:** `IIndexingQueueService.getPendingItems(page, pageSize, search)` / `getIndexedItems(page, pageSize, search)`
+
 ---
 
 ## 6) Expandable / Collapsible Sections
@@ -1289,6 +1335,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- UserTasksScreen.kt          <- User task list + detail (JListDetailLayout + JDetailScreen)
 |   +-- AgentWorkloadScreen.kt      <- Agent activity log (in-memory, click from AgentStatusRow)
 |   +-- PendingTasksScreen.kt       <- Task queue with filters, JCards, Czech labels
+|   +-- IndexingQueueScreen.kt     <- Indexing queue dashboard (connections + pending + indexed, paginated)
 |   +-- ConnectionsScreen.kt
 |   +-- meeting/
 |       +-- MeetingsScreen.kt       <- Meeting list + detail + recording controls

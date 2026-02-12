@@ -6,6 +6,7 @@ import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
+import com.jervis.service.IIndexingQueueService
 import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IMeetingService
@@ -45,4 +46,5 @@ class JervisRepository(
     val meetings: IMeetingService,
     val transcriptCorrections: ITranscriptCorrectionService,
     val deviceTokens: IDeviceTokenService,
+    val indexingQueue: IIndexingQueueService,
 )
