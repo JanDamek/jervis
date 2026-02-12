@@ -21,7 +21,8 @@ from app.services.clients.joern_client import JoernResultDto
 from typing import List, Optional
 import json
 
-service = KnowledgeService()
+# Global service - will be initialized in main.py lifespan with extraction queue
+service: KnowledgeService = None  # type: ignore
 
 # ---------------------------------------------------------------------------
 # READ router — retrieve, search, traverse, graph, alias/resolve, chunks

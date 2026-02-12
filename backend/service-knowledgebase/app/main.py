@@ -33,9 +33,46 @@ class _HealthCheckAccessFilter(logging.Filter):
 async def lifespan(app: FastAPI):
     # Startup: apply filter when uvicorn's access logger is guaranteed to exist
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
+
+    # Initialize LLM extraction queue and background worker
+    from pathlib import Path
+    from app.services.llm_extraction_queue import LLMExtractionQueue
+    from app.services.llm_extraction_worker import LLMExtractionWorker
+    from app.services.knowledge_service import KnowledgeService
+    from app.services.graph_service import GraphService
+    from app.api import routes
+
+    queue_file = Path("/opt/jervis/data/extraction-queue.json")
+    extraction_queue = LLMExtractionQueue(queue_file)
+
+    # Create services
+    from app.services.rag_service import RagService
+
+    rag_service = RagService()
+    graph_service = GraphService()
+    knowledge_service = KnowledgeService(extraction_queue=extraction_queue)
+
+    # Initialize global service in routes module
+    routes.service = knowledge_service
+
+    # Start background worker (needs both graph and rag services)
+    worker = LLMExtractionWorker(extraction_queue, graph_service, rag_service)
+    await worker.start()
+
+    # Store in app state for access
+    app.state.extraction_queue = extraction_queue
+    app.state.knowledge_service = knowledge_service
+    app.state.extraction_worker = worker
+
     logger.info("Knowledge Service ready (mode=%s, read_limit=%d, write_limit=%d)",
                 settings.KB_MODE, settings.MAX_CONCURRENT_READS, settings.MAX_CONCURRENT_WRITES)
+    logger.info("LLM extraction worker started with queue at %s", queue_file)
+
     yield
+
+    # Shutdown: stop worker gracefully
+    await worker.stop()
+    logger.info("LLM extraction worker stopped")
 
 
 # Concurrency limiters (prioritize reads over writes)

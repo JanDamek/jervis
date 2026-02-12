@@ -16,6 +16,7 @@ from app.services.hybrid_retriever import HybridRetriever
 from app.services.clients.tika_client import TikaClient
 from app.services.clients.joern_client import JoernClient, JoernResultDto
 from app.services.image_service import ImageService
+from app.services.llm_extraction_queue import LLMExtractionQueue, ExtractionTask
 from app.core.config import settings
 from app.db.arango import get_arango_db
 from langchain_community.document_loaders import RecursiveUrlLoader
@@ -25,13 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeService:
-    def __init__(self):
+    def __init__(self, extraction_queue: LLMExtractionQueue = None):
         self.rag_service = RagService()
         self.graph_service = GraphService()
         self.hybrid_retriever = HybridRetriever(self.rag_service, self.graph_service)
         self.tika_client = TikaClient()
         self.joern_client = JoernClient()
         self.image_service = ImageService()
+        self.extraction_queue = extraction_queue  # Async LLM extraction queue
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
         # LLM for ingest tasks (simple relevance check, complex summary)
@@ -101,43 +103,52 @@ class KnowledgeService:
 
     async def ingest(self, request: IngestRequest) -> IngestResult:
         """
-        Ingest content with bidirectional linking between RAG and Graph.
+        Ingest content with async LLM extraction.
 
         Flow:
-        1. RAG Ingest → get chunk IDs
-        2. Graph Ingest with chunk IDs → get entity keys (nodes link to chunks)
-        3. Update RAG chunks with entity keys (chunks link to nodes)
+        1. RAG Ingest → get chunk IDs (fast, returns immediately)
+        2. Enqueue LLM extraction task → background worker processes later
+        3. Return immediately without waiting for LLM
+
+        LLM extraction happens asynchronously:
+        - Background worker polls queue from PVC
+        - Calls graph_service.ingest() with LLM extraction
+        - Updates RAG chunks with entity keys after completion
         """
         logger.info("Ingest started  source=%s kind=%s content_len=%d",
                      request.sourceUrn, request.kind or "?", len(request.content or ""))
 
-        # 1. RAG Ingest - get chunk IDs
+        # 1. RAG Ingest - get chunk IDs (fast)
         chunks_count, chunk_ids = await self.rag_service.ingest(request)
 
-        # 2. Graph Ingest - pass chunk IDs for bidirectional linking
-        #    Graph nodes will store ragChunks = chunk_ids
-        #    Graph edges will store evidenceChunkIds = chunk_ids
-        nodes_created, edges_created, entity_keys = await self.graph_service.ingest(
-            request,
-            chunk_ids=chunk_ids
-        )
+        # 2. Enqueue LLM extraction task for background processing
+        if self.extraction_queue and chunk_ids:
+            import uuid
+            task = ExtractionTask(
+                task_id=str(uuid.uuid4()),
+                source_urn=request.sourceUrn,
+                content=request.content,
+                client_id=request.clientId,
+                project_id=request.projectId,
+                kind=request.kind,
+                chunk_ids=chunk_ids,
+                created_at=datetime.utcnow().isoformat(),
+            )
+            await self.extraction_queue.enqueue(task)
+            logger.info("Enqueued LLM extraction task for %s (queue-based async processing)", request.sourceUrn)
+        else:
+            logger.warning("Extraction queue not available or no chunks - skipping LLM extraction")
 
-        # 3. Update RAG chunks with discovered entity keys (bidirectional link)
-        #    Each chunk now knows which graph entities it references
-        if entity_keys and chunk_ids:
-            for chunk_id in chunk_ids:
-                await self.rag_service.update_chunk_graph_refs(chunk_id, entity_keys)
-
-        logger.info("Ingest complete source=%s chunks=%d nodes=%d edges=%d entities=%d",
-                     request.sourceUrn, chunks_count, nodes_created, edges_created, len(entity_keys))
+        logger.info("Ingest complete (RAG only) source=%s chunks=%d (LLM extraction queued for background)",
+                     request.sourceUrn, chunks_count)
 
         return IngestResult(
             status="success",
             chunks_count=chunks_count,
-            nodes_created=nodes_created,
-            edges_created=edges_created,
+            nodes_created=0,  # Will be updated by background worker
+            edges_created=0,  # Will be updated by background worker
             chunk_ids=chunk_ids,
-            entity_keys=entity_keys
+            entity_keys=[],  # Will be populated by background worker
         )
 
     async def ingest_file(self, file_bytes: bytes, filename: str, request: IngestRequest) -> IngestResult:
