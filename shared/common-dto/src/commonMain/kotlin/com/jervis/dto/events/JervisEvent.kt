@@ -60,6 +60,7 @@ sealed class JervisEvent {
         val percent: Double,
         val segmentsDone: Int,
         val elapsedSeconds: Double,
+        val lastSegmentText: String? = null,
         override val timestamp: String,
     ) : JervisEvent()
 

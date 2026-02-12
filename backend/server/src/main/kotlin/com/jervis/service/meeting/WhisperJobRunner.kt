@@ -694,9 +694,9 @@ class WhisperJobRunner(
     private fun buildProgressCallback(
         meetingId: String?,
         clientId: String?,
-    ): (suspend (Double, Int, Double) -> Unit)? {
+    ): (suspend (Double, Int, Double, String?) -> Unit)? {
         if (meetingId == null || clientId == null) return null
-        return { percent, segmentsDone, elapsedSeconds ->
+        return { percent, segmentsDone, elapsedSeconds, lastSegmentText ->
             logger.info { "Whisper REST progress: $percent% ($segmentsDone segments, ${elapsedSeconds.toLong()}s)" }
             notificationRpc.emitMeetingTranscriptionProgress(
                 meetingId = meetingId,
@@ -704,6 +704,7 @@ class WhisperJobRunner(
                 percent = percent,
                 segmentsDone = segmentsDone,
                 elapsedSeconds = elapsedSeconds,
+                lastSegmentText = lastSegmentText,
             )
         }
     }

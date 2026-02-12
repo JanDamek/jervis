@@ -367,7 +367,7 @@ When `deploymentMode = REST_REMOTE`:
 - `WhisperJobRunner` sends the audio file to the remote Whisper REST service via `WhisperRestClient`
 - Audio is uploaded as HTTP multipart (`POST /transcribe`) with options as a JSON form field
 - The REST server runs `whisper_runner.py` in a background thread and returns an **SSE stream**:
-  - `event: progress` — periodic updates: `{"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}`
+  - `event: progress` — periodic updates: `{"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "last_segment_text": "..."}`
   - `event: result` — final transcription JSON (same format as whisper_runner.py output)
   - `event: error` — error details if transcription fails
 - `WhisperRestClient` reads the SSE stream, emits progress via `NotificationRpcImpl` (same as K8s mode)
@@ -387,9 +387,11 @@ When `deploymentMode = REST_REMOTE`:
 The server-side `WhisperJobRunner` reads this file during K8s Job polling (every 10s) and emits
 `MeetingTranscriptionProgress` events via `NotificationRpcImpl` for real-time UI updates.
 
-**REST_REMOTE mode:** The REST server streams SSE `progress` events every ~3 seconds.
-`WhisperRestClient` reads these events and calls `buildProgressCallback()` which emits the same
-`MeetingTranscriptionProgress` notifications — UI progress works identically in both modes.
+**REST_REMOTE mode:** The REST server uses an in-memory thread-safe queue (no file I/O) to stream
+SSE `progress` events every ~3 seconds, including `last_segment_text` for live transcription preview.
+`WhisperRestClient` reads these events and calls `buildProgressCallback()` which emits
+`MeetingTranscriptionProgress` notifications (with `lastSegmentText`) — UI progress works
+identically in both modes, with the REST mode additionally showing the last transcribed text.
 
 State transitions (TRANSCRIBING → TRANSCRIBED/FAILED, CORRECTING → CORRECTED, etc.) emit
 `MeetingStateChanged` events so the meeting list/detail view updates without polling.
@@ -1057,7 +1059,7 @@ Hybrid push/local notification architecture for real-time user alerts.
 | **User Task** | `UserTaskCreated(isApproval=false)` | NORMAL | Tap to open app |
 | **Error** | `ErrorNotification` | NORMAL | Informational |
 | **Meeting State** | `MeetingStateChanged` | NORMAL | UI updates meeting list/detail in real-time |
-| **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % |
+| **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % + last segment text |
 | **Orchestrator Progress** | `OrchestratorTaskProgress` | NORMAL | UI shows node/goal/step progress |
 | **Orchestrator Status** | `OrchestratorTaskStatusChange` | NORMAL | UI shows done/error/interrupted |
 

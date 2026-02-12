@@ -69,6 +69,7 @@ fun MeetingsScreen(
     val isCorrecting by viewModel.isCorrecting.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val transcriptionProgress by viewModel.transcriptionProgress.collectAsState()
+    val transcriptionLastSegment by viewModel.transcriptionLastSegment.collectAsState()
     val correctionProgress by viewModel.correctionProgress.collectAsState()
     val pendingChatMessage by viewModel.pendingChatMessage.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -135,6 +136,7 @@ fun MeetingsScreen(
             isCorrecting = isCorrecting,
             pendingChatMessage = pendingChatMessage,
             transcriptionPercent = transcriptionProgress[currentDetail.id],
+            transcriptionLastSegment = transcriptionLastSegment[currentDetail.id],
             correctionProgress = correctionProgress[currentDetail.id],
             errorMessage = error,
             onDismissViewError = { viewModel.clearError() },

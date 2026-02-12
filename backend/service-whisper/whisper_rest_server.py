@@ -9,15 +9,18 @@ Endpoints:
     GET  /health      – Health check
 
 SSE event types:
-    progress  – {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}
+    progress  – {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "last_segment_text": "..."}
     result    – Full Whisper result JSON (same as whisper_runner.py output)
     error     – {"error": "description"}
 
 The audio file is uploaded as multipart/form-data, options as a JSON string field.
+
+Progress is streamed via an in-memory thread-safe queue (no file-based progress polling).
 """
 import asyncio
 import json
 import os
+import queue
 import shutil
 import tempfile
 import time
@@ -46,7 +49,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Jervis Whisper REST Service",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
@@ -66,7 +69,7 @@ async def transcribe(
     Transcribe an uploaded audio file using Whisper with SSE streaming.
 
     Returns a Server-Sent Events stream with three event types:
-    - "progress": periodic updates with percent, segments_done, elapsed_seconds
+    - "progress": periodic updates with percent, segments_done, elapsed_seconds, last_segment_text
     - "result": final transcription result (same JSON as whisper_runner.py)
     - "error": error details if transcription fails
 
@@ -100,13 +103,15 @@ async def transcribe(
         flush=True,
     )
 
+    # Thread-safe queue for progress updates from whisper thread → SSE generator
+    progress_queue = queue.Queue()
+
     async def event_generator():
         try:
-            # Set up progress file inside work_dir
-            progress_path = os.path.join(work_dir, "progress.json")
-            opts["progress_file"] = progress_path
+            # Remove progress_file from opts — we use in-memory queue instead
+            opts.pop("progress_file", None)
 
-            # Run transcription in a thread (CPU-bound) and poll progress
+            # Run transcription in a thread (CPU-bound)
             loop = asyncio.get_event_loop()
             result_container = {}
             error_container = {}
@@ -114,7 +119,9 @@ async def transcribe(
 
             def run_in_thread():
                 try:
-                    result_container["result"] = run_whisper(audio_path, opts)
+                    result_container["result"] = run_whisper(
+                        audio_path, opts, progress_queue,
+                    )
                 except Exception as e:
                     error_container["error"] = str(e)
                     traceback.print_exc()
@@ -125,33 +132,38 @@ async def transcribe(
             # Start transcription in background thread
             loop.run_in_executor(None, run_in_thread)
 
-            # Poll progress file and stream SSE events
+            # Read progress from queue and stream SSE events
             last_percent = -1.0
             while not done_event.is_set():
-                # Wait up to 3 seconds for completion, then send progress
+                # Wait up to 3 seconds for completion, then drain queue
                 try:
                     await asyncio.wait_for(done_event.wait(), timeout=3.0)
                 except asyncio.TimeoutError:
                     pass
 
-                # Read progress from file
-                if os.path.exists(progress_path):
+                # Drain all progress updates from queue, send the latest
+                latest_progress = None
+                while True:
                     try:
-                        with open(progress_path) as pf:
-                            progress = json.load(pf)
-                        percent = progress.get("percent", 0)
-                        if percent != last_percent:
-                            last_percent = percent
-                            yield {
-                                "event": "progress",
-                                "data": json.dumps({
-                                    "percent": progress.get("percent", 0),
-                                    "segments_done": progress.get("segments_done", 0),
-                                    "elapsed_seconds": progress.get("elapsed_seconds", 0),
-                                }),
-                            }
-                    except (json.JSONDecodeError, OSError):
-                        pass  # File being written, skip this cycle
+                        latest_progress = progress_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                if latest_progress is not None:
+                    percent = latest_progress.get("percent", 0)
+                    if percent != last_percent:
+                        last_percent = percent
+                        yield {
+                            "event": "progress",
+                            "data": json.dumps(latest_progress),
+                        }
+
+            # Drain any remaining progress updates after completion
+            while True:
+                try:
+                    progress_queue.get_nowait()
+                except queue.Empty:
+                    break
 
             # Transcription done — send result or error
             if "error" in error_container:
@@ -187,6 +199,7 @@ async def transcribe(
                             "percent": 100.0,
                             "segments_done": len(result.get("segments", [])),
                             "elapsed_seconds": 0,
+                            "last_segment_text": "",
                         }),
                     }
                     yield {
@@ -211,10 +224,13 @@ async def transcribe(
     return EventSourceResponse(event_generator())
 
 
-def run_whisper(audio_path: str, opts: dict) -> dict:
+def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dict:
     """
     Run Whisper transcription in-process (blocking, CPU-bound).
     Reuses whisper_runner.py logic but captures output as dict instead of stdout.
+
+    Progress updates are pushed to progress_queue as dicts:
+    {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "last_segment_text": "..."}
     """
     from faster_whisper import WhisperModel
 
@@ -227,7 +243,6 @@ def run_whisper(audio_path: str, opts: dict) -> dict:
     initial_prompt = opts.get("initial_prompt")
     condition_on_previous_text = opts.get("condition_on_previous_text", True)
     no_speech_threshold = opts.get("no_speech_threshold", 0.6)
-    progress_file = opts.get("progress_file")
     extraction_ranges = opts.get("extraction_ranges")
 
     # Handle extraction_ranges mode
@@ -296,15 +311,29 @@ def run_whisper(audio_path: str, opts: dict) -> dict:
         all_text.append(seg.text)
 
         now = time.time()
-        if progress_file and total_duration and (now - last_progress_time) >= 3:
+        if total_duration and (now - last_progress_time) >= 3:
             percent = min(99.9, (seg.end / total_duration) * 100)
             elapsed = now - start_time
-            whisper_runner.write_progress(progress_file, percent, len(out_segments), elapsed)
+            progress_queue.put({
+                "percent": round(percent, 1),
+                "segments_done": len(out_segments),
+                "elapsed_seconds": round(elapsed, 1),
+                "last_segment_text": seg.text.strip(),
+            })
+            print(
+                f"Progress: {percent:.1f}% ({len(out_segments)} segments, {elapsed:.0f}s elapsed)",
+                flush=True,
+            )
             last_progress_time = now
 
     elapsed = time.time() - start_time
-    if progress_file:
-        whisper_runner.write_progress(progress_file, 100.0, len(out_segments), elapsed)
+    # Final progress
+    progress_queue.put({
+        "percent": 100.0,
+        "segments_done": len(out_segments),
+        "elapsed_seconds": round(elapsed, 1),
+        "last_segment_text": "",
+    })
 
     print(
         f"Transcription complete: {len(out_segments)} segments, "

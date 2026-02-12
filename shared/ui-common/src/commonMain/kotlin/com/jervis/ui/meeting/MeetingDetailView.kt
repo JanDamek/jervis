@@ -66,6 +66,7 @@ internal fun MeetingDetailView(
     isCorrecting: Boolean,
     pendingChatMessage: CorrectionChatMessageDto? = null,
     transcriptionPercent: Double? = null,
+    transcriptionLastSegment: String? = null,
     correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     onBack: () -> Unit,
     onDelete: () -> Unit,
@@ -244,7 +245,7 @@ internal fun MeetingDetailView(
                     transcriptionPercent = transcriptionPercent,
                     correctionProgress = correctionProgress,
                     stateChangedAt = meeting.stateChangedAt,
-                    lastSegmentText = meeting.transcriptSegments.lastOrNull()?.text,
+                    lastSegmentText = transcriptionLastSegment ?: meeting.transcriptSegments.lastOrNull()?.text,
                     onStopTranscription = onStopTranscription,
                 )
 
