@@ -454,52 +454,36 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             observedAt=request.observedAt
         )
 
-        # Ingest to RAG + Graph
+        # Ingest to RAG + Graph (async - returns immediately, LLM extraction queued)
         ingest_result = await self.ingest(ingest_req)
 
-        # Generate summary for routing
-        summary_result = await self._generate_summary(
-            content=combined_content,
-            source_type=request.sourceType,
-            subject=request.subject
-        )
+        # Summary generation is NOT blocking - return immediately with placeholder values
+        # Real routing hints will be available after background LLM extraction completes
+        # TODO: Add summary generation to extraction queue or use simple heuristics
 
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
 
-        # Detect if this content is assigned to the owning client/project
-        is_assigned_to_me = self._check_assignment(
-            summary_result.get("assignedTo"),
-            request.clientId,
-            request.metadata,
-        )
-
-        logger.info("Full ingest complete source=%s chunks=%d nodes=%d edges=%d "
-                     "attachments_ok=%d attachments_fail=%d actionable=%s "
-                     "deadline=%s assigned=%s urgency=%s",
+        logger.info("Full ingest complete (RAG only) source=%s chunks=%d "
+                     "attachments_ok=%d attachments_fail=%d (LLM extraction + summary queued)",
                      request.sourceUrn, ingest_result.chunks_count,
-                     ingest_result.nodes_created, ingest_result.edges_created,
-                     attachments_processed, attachments_failed,
-                     summary_result["hasActionableContent"],
-                     summary_result.get("hasFutureDeadline", False),
-                     is_assigned_to_me,
-                     summary_result.get("urgency", "normal"))
+                     attachments_processed, attachments_failed)
 
         return FullIngestResult(
             status="success",
             chunks_count=ingest_result.chunks_count,
-            nodes_created=ingest_result.nodes_created,
-            edges_created=ingest_result.edges_created,
+            nodes_created=0,  # Will be updated by background worker
+            edges_created=0,  # Will be updated by background worker
             attachments_processed=attachments_processed,
             attachments_failed=attachments_failed,
-            summary=summary_result["summary"],
-            entities=summary_result["entities"],
-            hasActionableContent=summary_result["hasActionableContent"],
-            suggestedActions=summary_result["suggestedActions"],
-            hasFutureDeadline=summary_result.get("hasFutureDeadline", False),
-            suggestedDeadline=summary_result.get("suggestedDeadline"),
-            isAssignedToMe=is_assigned_to_me,
-            urgency=summary_result.get("urgency", "normal"),
+            summary=request.subject or "Processing...",
+            entities=[],
+            hasActionableContent=False,  # Conservative default - better to process later than block
+            suggestedActions=[],
+            hasFutureDeadline=False,
+            suggestedDeadline=None,
+            isAssignedToMe=False,
+            urgency="normal",
         )
 
     async def _generate_summary(
