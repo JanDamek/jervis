@@ -41,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ui.ChatMessage
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.model.markdownColor
+import com.mikepenz.markdown.model.markdownTypography
 
 @Composable
 internal fun ChatArea(
@@ -129,14 +132,9 @@ private fun ChatMessageItem(
             )
         }
     } else {
-        // standard chat bubble
+        // standard chat bubble - responsive layout
         Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(
-                    start = if (isMe) 120.dp else 0.dp,
-                    end = if (!isMe) 120.dp else 0.dp,
-                ),
+            modifier = modifier.fillMaxWidth(),
             horizontalArrangement =
                 if (isMe) {
                     Arrangement.End
@@ -154,7 +152,9 @@ private fun ChatMessageItem(
                                 MaterialTheme.colorScheme.secondaryContainer
                             },
                     ),
-                modifier = Modifier.widthIn(max = 600.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)  // Take up to 85% of width
+                    .widthIn(max = 800.dp),  // But never exceed 800dp for readability
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
@@ -172,12 +172,32 @@ private fun ChatMessageItem(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Selectable message text
+                    // Message content - Markdown for Assistant, plain text for User
                     SelectionContainer {
-                        Text(
-                            text = message.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        if (isMe) {
+                            // User messages - plain text
+                            Text(
+                                text = message.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        } else {
+                            // Assistant messages - Markdown rendering
+                            Markdown(
+                                content = message.text,
+                                colors = markdownColor(
+                                    text = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    codeText = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+                                ),
+                                typography = markdownTypography(
+                                    text = MaterialTheme.typography.bodyMedium,
+                                    code = MaterialTheme.typography.bodySmall,
+                                    h1 = MaterialTheme.typography.headlineMedium,
+                                    h2 = MaterialTheme.typography.headlineSmall,
+                                    h3 = MaterialTheme.typography.titleLarge,
+                                ),
+                            )
+                        }
                     }
 
                     // Show timestamp if available

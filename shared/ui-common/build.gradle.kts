@@ -66,6 +66,10 @@ if (System.getenv("DOCKER_BUILD") != "true") {
 
                 // Lifecycle ViewModel (Compose Multiplatform)
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+
+                // Markdown rendering
+                implementation("com.mikepenz:multiplatform-markdown-renderer:0.29.0")
+                implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.29.0")
             }
 
             jvmMain.dependencies {
