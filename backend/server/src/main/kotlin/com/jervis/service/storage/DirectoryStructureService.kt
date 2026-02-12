@@ -218,6 +218,16 @@ class DirectoryStructureService(
 
     fun projectGitDir(project: ProjectDocument): Path = projectGitDir(project.clientId, project.id)
 
+    fun projectGitIndexingDir(
+        clientId: ClientId,
+        projectId: ProjectId,
+    ): Path =
+        projectDir(clientId, projectId).resolve("git-indexing").also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun projectGitIndexingDir(project: ProjectDocument): Path = projectGitIndexingDir(project.clientId, project.id)
+
     fun projectUploadsDir(
         clientId: ClientId,
         projectId: ProjectId,

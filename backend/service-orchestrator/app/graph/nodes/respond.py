@@ -11,7 +11,7 @@ import logging
 
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback
-from app.tools.definitions import ALL_RESPOND_TOOLS
+from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
@@ -100,12 +100,27 @@ async def respond(state: dict) -> dict:
                 "## MANDATORY APPROACH (4-step process):\n\n"
                 "**1. UNDERSTAND**: Read the user's question carefully. Check Conversation History for context.\n\n"
                 "**2. GATHER**: Use tools to collect ALL relevant information:\n"
+                "   **Knowledge Base Tools:**\n"
                 "   - get_kb_stats() — Start HERE to see what data exists\n"
                 "   - get_indexed_items() — What has been indexed (commits, issues, etc.)\n"
                 "   - get_repository_info() — Repository structure, branches, tech stack\n"
                 "   - list_project_files() — What files exist in the project\n"
                 "   - kb_search(query) — Search for specific content\n"
                 "   - web_search(query) — External/current information\n\n"
+                "   **Direct Workspace Tools (use when KB is empty/incomplete):**\n"
+                "   - list_files(path) — List files/directories in workspace\n"
+                "   - read_file(file_path, max_lines) — Read file contents\n"
+                "   - find_files(pattern) — Find files by glob pattern (*.py, **/*.kt)\n"
+                "   - grep_files(pattern, file_pattern) — Search for text in files\n"
+                "   - file_info(path) — Get file metadata (size, modified time)\n\n"
+                "   **Git Workspace Tools:**\n"
+                "   - git_status() — Modified files, staged changes, current branch\n"
+                "   - git_log(limit, branch) — Commit history\n"
+                "   - git_diff(commit1, commit2, file_path) — Show differences\n"
+                "   - git_show(commit) — Commit details\n"
+                "   - git_blame(file_path) — File authorship info\n\n"
+                "   **Command Execution:**\n"
+                "   - execute_command(command, timeout) — Run safe shell commands (ls, grep, make, npm, pytest, etc.)\n\n"
                 "**3. ANALYZE**: Identify gaps:\n"
                 "   - Do you have enough information to answer accurately?\n"
                 "   - Are there contradictions or ambiguities?\n"
@@ -116,9 +131,12 @@ async def respond(state: dict) -> dict:
                 "   - If info is missing → Say 'I don't have this data in KB' (don't guess)\n\n"
                 "## CRITICAL RULES:\n"
                 "- NEVER answer about code/project from general knowledge\n"
-                "- ALWAYS start with get_kb_stats() or get_repository_info() for project questions\n"
+                "- ALWAYS start with get_kb_stats() for project questions\n"
+                "- If KB is empty → use workspace tools (list_files, read_file, git_status, etc.)\n"
                 "- Use MULTIPLE tools to cross-verify information\n"
-                "- If user asks 'what files', 'what's indexed', 'project structure' → use list/get tools FIRST\n"
+                "- For file contents → try kb_search first, fallback to read_file if not found\n"
+                "- For git history → try get_recent_commits first, fallback to git_log if empty\n"
+                "- Workspace tools work even when KB has no data (during learning phase)\n"
                 "- Only ask user when you have conflicting data or genuine uncertainty\n\n"
                 "## EXAMPLE:\n"
                 "User: 'v čem je aplikace napsaná?'\n"
@@ -144,22 +162,45 @@ async def respond(state: dict) -> dict:
     project_id = state.get("project_id")
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
 
-    # Agentic tool-use loop (max 5 iterations)
+    # Agentic tool-use loop (max 25 iterations)
     iteration = 0
     while iteration < _MAX_TOOL_ITERATIONS:
         iteration += 1
         logger.info("Respond: iteration %d/%d", iteration, _MAX_TOOL_ITERATIONS)
+        logger.debug("Respond: messages count=%d, total_len=%d", len(messages), sum(len(str(m)) for m in messages))
+
+        # Log full messages array structure
+        for i, msg in enumerate(messages):
+            role = msg.get("role", "?")
+            content_preview = str(msg.get("content", ""))[:200]
+            has_tool_calls = "tool_calls" in msg
+            has_tool_call_id = "tool_call_id" in msg
+            logger.debug(
+                "Respond: messages[%d] role=%s, content_len=%d, preview=%s, has_tool_calls=%s, has_tool_call_id=%s",
+                i, role, len(str(msg.get("content", ""))), content_preview, has_tool_calls, has_tool_call_id
+            )
 
         response = await llm_with_cloud_fallback(
             state={**state, "allow_cloud_prompt": allow_cloud_prompt},
             messages=messages,
             task_type="conversational",
             max_tokens=4096,
-            tools=ALL_RESPOND_TOOLS,  # Enable tool use
+            tools=ALL_RESPOND_TOOLS_FULL,  # Enable all tools (KB, web, git, filesystem)
         )
 
         choice = response.choices[0]
         message = choice.message
+
+        # DEBUG: Log full response details
+        logger.info(
+            "Respond: LLM response - finish_reason=%s, has_content=%s, content_len=%d, has_tool_calls=%s",
+            choice.finish_reason,
+            bool(message.content),
+            len(message.content or ""),
+            bool(getattr(message, "tool_calls", None)),
+        )
+        if message.content:
+            logger.info("Respond: message.content = %s", message.content[:500])
 
         # Check for tool calls
         tool_calls = getattr(message, "tool_calls", None)
@@ -191,14 +232,17 @@ async def respond(state: dict) -> dict:
             )
 
             logger.info("Respond: tool %s returned %d chars", tool_name, len(result))
+            logger.debug("Respond: tool %s full result: %s", tool_name, result)
 
             # Add tool result to messages
-            messages.append({
+            tool_result_msg = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "name": tool_name,
                 "content": result,
-            })
+            }
+            messages.append(tool_result_msg)
+            logger.debug("Respond: appended tool result message: %s", tool_result_msg)
         # Continue loop - will call LLM again with tool results
 
     # Max iterations reached → return best effort answer

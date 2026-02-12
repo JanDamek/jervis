@@ -47,6 +47,7 @@ class AgentOrchestratorService(
     private val clientService: ClientService,
     private val projectService: ProjectService,
     private val chatHistoryService: ChatHistoryService,
+    private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -189,6 +190,28 @@ class AgentOrchestratorService(
         if (!pythonOrchestratorClient.isHealthy()) {
             logger.info { "Python orchestrator not healthy, skipping" }
             return false
+        }
+
+        // Validate workspace is ready (for projects with git resources)
+        if (task.projectId != null) {
+            val project = projectService.getProjectByIdOrNull(task.projectId)
+            if (project != null) {
+                val repoResources = project.resources.filter {
+                    it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+                }
+
+                for (resource in repoResources) {
+                    val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
+                    if (workspacePath == null) {
+                        logger.warn { "Workspace not ready for project ${project.name}, resource ${resource.resourceIdentifier}" }
+                        onProgress(
+                            "Workspace se připravuje, zkuste to prosím za chvíli...",
+                            mapOf("phase" to "workspace_preparing")
+                        )
+                        return false
+                    }
+                }
+            }
         }
 
         onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrator"))

@@ -8,17 +8,18 @@
 ## Table of Contents
 
 1. [Framework Overview](#framework-overview)
-2. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
-3. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
-4. [Knowledge Graph Design](#knowledge-graph-design)
-5. [Vision Processing Pipeline](#vision-processing-pipeline)
-6. [Transcript Correction Pipeline](#transcript-correction-pipeline)
-7. [Smart Model Selector](#smart-model-selector)
-8. [Security Architecture](#security-architecture)
-9. [Coding Agents](#coding-agents)
-10. [Python Orchestrator](#python-orchestrator)
-11. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
-12. [Notification System](#notification-system)
+2. [Workspace & Directory Architecture](#workspace--directory-architecture)
+3. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
+4. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
+5. [Knowledge Graph Design](#knowledge-graph-design)
+6. [Vision Processing Pipeline](#vision-processing-pipeline)
+7. [Transcript Correction Pipeline](#transcript-correction-pipeline)
+8. [Smart Model Selector](#smart-model-selector)
+9. [Security Architecture](#security-architecture)
+10. [Coding Agents](#coding-agents)
+11. [Python Orchestrator](#python-orchestrator)
+12. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
+13. [Notification System](#notification-system)
 
 ---
 
@@ -32,6 +33,104 @@ The Jervis system is built on several key architectural patterns:
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
 - **Vision Processing**: Two-stage vision analysis for document understanding
+
+---
+
+## Workspace & Directory Architecture
+
+### Fundamental Principle
+
+**DirectoryStructureService is the SINGLE SOURCE OF TRUTH for all file system paths.**
+
+- NO hardcoded paths anywhere in the application
+- ALL path resolution goes through DirectoryStructureService
+- Future refactoring = change only DirectoryStructureService
+
+### Workspace Structure
+
+```
+{data}/clients/{clientId}/projects/{projectId}/
+├── git/
+│   └── {resourceId}/          ← AGENT/ORCHESTRATOR WORKSPACE (main working directory)
+│       ├── .git/
+│       ├── src/
+│       └── ... (full repo checkout)
+├── git-indexing/               ← INDEXING TEMPORARY WORKSPACE (new)
+│   └── {resourceId}/
+│       └── ... (checkout branches/commits for indexing)
+├── uploads/
+├── audio/
+├── documents/
+└── meetings/
+```
+
+### Critical Distinction
+
+**`git/{resourceId}/` - Agent/Orchestrator Workspace**
+- Single clone of repository at default branch
+- Orchestrator and agents work ONLY in this directory
+- MUST remain stable - no branch/commit changes during agent operation
+- Used by: Python orchestrator tools (git_status, read_file, execute_command, etc.)
+
+**`git-indexing/{resourceId}/` - Indexing Temporary Workspace**
+- Separate clone where indexing can freely checkout branches/commits
+- Used ONLY by background indexing to analyze code
+- Can be reset/recreated at any time
+- Indexing NEVER modifies agent workspace
+
+### Why Separation?
+
+**Problem:** If indexing and agents share workspace:
+- Indexing checks out branch A → agent sees wrong code
+- Agent working on files → indexing checkout conflicts
+- Race conditions between concurrent operations
+
+**Solution:** Two independent clones:
+- Agent workspace stays at HEAD of default branch
+- Indexing workspace can freely navigate history
+
+### Implementation Rules
+
+1. **DirectoryStructureService manages ALL paths:**
+   ```kotlin
+   fun projectGitDir(clientId, projectId): Path           // Agent workspace
+   fun projectGitIndexingDir(clientId, projectId): Path   // Indexing workspace
+   ```
+
+2. **GitRepositoryService (indexing):**
+   - Uses `projectGitIndexingDir()` for analysis
+   - Can checkout any branch/commit
+   - Never touches agent workspace
+
+3. **GitWorkspaceService (agent):**
+   - Ensures `projectGitDir()` is cloned and ready
+   - Tracks workspace status in DB (CLONING, READY, FAILED)
+   - Used by orchestrator pre-dispatch validation
+
+4. **Python Orchestrator Tools:**
+   - All git/FS/terminal tools work in `projectGitDir()` only
+   - Receive workspace path from Kotlin server
+   - Never construct paths themselves
+
+### Startup Flow
+
+1. **DirectoryStructureService** creates directory structure
+2. **GitWorkspaceService** (background, async):
+   - For each project with git connection → clone to `git/{resourceId}/`
+   - Update `workspaceStatus` field in ProjectDocument
+3. **GitRepositoryService** (existing indexing):
+   - Clone to `git-indexing/{resourceId}/` ✅ (refactored - complete)
+   - Index commits, branches, files
+
+### Pre-Dispatch Validation
+
+Before orchestrator dispatch:
+```kotlin
+val status = gitWorkspaceService.ensureWorkspaceReady(projectId)
+if (status != WorkspaceStatus.READY) {
+    return "Workspace se připravuje, zkus to za chvíli..."
+}
+```
 
 ---
 

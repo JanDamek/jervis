@@ -305,3 +305,279 @@ ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_GET_REPOSITORY_STRUCTURE,
     TOOL_CODE_SEARCH,
 ]
+
+# Git workspace tools (execute in agent workspace directory)
+TOOL_GIT_STATUS: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_status",
+        "description": "Get git status of the workspace (modified files, staged changes, current branch)",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
+TOOL_GIT_LOG: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_log",
+        "description": "Get git commit history with optional branch and limit",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of commits to show (default 10)",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Branch name (default current branch)",
+                },
+            },
+        },
+    },
+}
+
+TOOL_GIT_DIFF: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_diff",
+        "description": "Show differences between commits, branches, or working directory",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "commit1": {
+                    "type": "string",
+                    "description": "First commit/branch (optional, defaults to HEAD)",
+                },
+                "commit2": {
+                    "type": "string",
+                    "description": "Second commit/branch (optional, shows working dir changes if omitted)",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Specific file to diff (optional)",
+                },
+            },
+        },
+    },
+}
+
+TOOL_GIT_SHOW: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_show",
+        "description": "Show commit details and changes for a specific commit",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "commit": {
+                    "type": "string",
+                    "description": "Commit hash or reference (e.g., HEAD, HEAD~1)",
+                },
+            },
+            "required": ["commit"],
+        },
+    },
+}
+
+TOOL_GIT_BLAME: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_blame",
+        "description": "Show who last modified each line of a file (authorship info)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to file relative to workspace root",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+}
+
+GIT_WORKSPACE_TOOLS: list[dict] = [
+    TOOL_GIT_STATUS,
+    TOOL_GIT_LOG,
+    TOOL_GIT_DIFF,
+    TOOL_GIT_SHOW,
+    TOOL_GIT_BLAME,
+]
+
+# Filesystem tools (execute in agent workspace directory)
+TOOL_LIST_FILES: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_files",
+        "description": "List files and directories in the workspace or a subdirectory",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path within workspace (default: root '.')",
+                    "default": ".",
+                },
+                "show_hidden": {
+                    "type": "boolean",
+                    "description": "Include hidden files (default: false)",
+                    "default": False,
+                },
+            },
+        },
+    },
+}
+
+TOOL_READ_FILE: dict = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Read contents of a file in the workspace",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to file relative to workspace root",
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to read (default: 1000)",
+                    "default": 1000,
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+}
+
+TOOL_FIND_FILES: dict = {
+    "type": "function",
+    "function": {
+        "name": "find_files",
+        "description": "Find files by name pattern or glob in the workspace",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Filename pattern (supports wildcards: *.py, **/*.kt, etc.)",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Directory to search in (default: workspace root)",
+                    "default": ".",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default: 100)",
+                    "default": 100,
+                },
+            },
+            "required": ["pattern"],
+        },
+    },
+}
+
+TOOL_GREP_FILES: dict = {
+    "type": "function",
+    "function": {
+        "name": "grep_files",
+        "description": "Search for text/regex pattern in files within the workspace",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Text or regex pattern to search for",
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "File glob to search in (e.g., '*.py', '**/*.kt')",
+                    "default": "*",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of matches (default: 50)",
+                    "default": 50,
+                },
+                "context_lines": {
+                    "type": "integer",
+                    "description": "Number of context lines around match (default: 2)",
+                    "default": 2,
+                },
+            },
+            "required": ["pattern"],
+        },
+    },
+}
+
+TOOL_FILE_INFO: dict = {
+    "type": "function",
+    "function": {
+        "name": "file_info",
+        "description": "Get metadata about a file or directory (size, modification time, type)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to file/directory relative to workspace root",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+}
+
+FILESYSTEM_TOOLS: list[dict] = [
+    TOOL_LIST_FILES,
+    TOOL_READ_FILE,
+    TOOL_FIND_FILES,
+    TOOL_GREP_FILES,
+    TOOL_FILE_INFO,
+]
+
+# Terminal tool (execute shell commands in workspace)
+TOOL_EXECUTE_COMMAND: dict = {
+    "type": "function",
+    "function": {
+        "name": "execute_command",
+        "description": (
+            "Execute a shell command in the workspace directory. "
+            "Supported safe commands: ls, cat, head, tail, wc, grep, find, echo, pwd, "
+            "tree, file, diff, patch, make, npm, yarn, pip, python, node, javac, kotlinc, "
+            "mvn, gradle, cargo, go. "
+            "Use this for build operations, testing, or examining workspace state."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to execute (will be run in workspace directory)",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default: 30, max: 300)",
+                    "default": 30,
+                },
+            },
+            "required": ["command"],
+        },
+    },
+}
+
+TERMINAL_TOOLS: list[dict] = [
+    TOOL_EXECUTE_COMMAND,
+]
+
+ALL_RESPOND_TOOLS_WITH_GIT: list[dict] = ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS
+ALL_RESPOND_TOOLS_FULL: list[dict] = (
+    ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS + FILESYSTEM_TOOLS + TERMINAL_TOOLS
+)

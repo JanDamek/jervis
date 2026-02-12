@@ -56,7 +56,7 @@ from app.tools.kotlin_client import kotlin_client
 from app.whisper.correction_agent import correction_agent
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)

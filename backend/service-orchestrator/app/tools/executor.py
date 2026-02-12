@@ -8,6 +8,10 @@ the LLM can decide how to proceed.
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+from pathlib import Path
+from datetime import datetime
 
 import httpx
 
@@ -36,33 +40,38 @@ async def execute_tool(
     Returns:
         Formatted result string (never raises).
     """
+    logger.debug(
+        "execute_tool START: tool=%s, args=%s, client_id=%s, project_id=%s",
+        tool_name, arguments, client_id, project_id
+    )
     try:
+        result = None
         if tool_name == "web_search":
-            return await _execute_web_search(
+            result = await _execute_web_search(
                 query=arguments.get("query", ""),
                 max_results=arguments.get("max_results", 5),
             )
         elif tool_name == "kb_search":
-            return await _execute_kb_search(
+            result = await _execute_kb_search(
                 query=arguments.get("query", ""),
                 max_results=arguments.get("max_results", 5),
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "get_indexed_items":
-            return await _execute_get_indexed_items(
+            result = await _execute_get_indexed_items(
                 item_type=arguments.get("item_type", "all"),
                 limit=arguments.get("limit", 10),
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "get_kb_stats":
-            return await _execute_get_kb_stats(
+            result = await _execute_get_kb_stats(
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "list_project_files":
-            return await _execute_list_project_files(
+            result = await _execute_list_project_files(
                 branch=arguments.get("branch"),
                 file_pattern=arguments.get("file_pattern"),
                 limit=arguments.get("limit", 50),
@@ -70,51 +79,132 @@ async def execute_tool(
                 project_id=project_id,
             )
         elif tool_name == "get_repository_info":
-            return await _execute_get_repository_info(
+            result = await _execute_get_repository_info(
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "joern_quick_scan":
-            return await _execute_joern_quick_scan(
+            result = await _execute_joern_quick_scan(
                 scan_type=arguments.get("scan_type", "security"),
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "git_branch_list":
-            return await _execute_git_branch_list(
+            result = await _execute_git_branch_list(
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "get_recent_commits":
-            return await _execute_get_recent_commits(
+            result = await _execute_get_recent_commits(
                 limit=arguments.get("limit", 10),
                 branch=arguments.get("branch"),
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "get_technology_stack":
-            return await _execute_get_technology_stack(
+            result = await _execute_get_technology_stack(
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "get_repository_structure":
-            return await _execute_get_repository_structure(
+            result = await _execute_get_repository_structure(
                 client_id=client_id,
                 project_id=project_id,
             )
         elif tool_name == "code_search":
-            return await _execute_code_search(
+            result = await _execute_code_search(
                 query=arguments.get("query", ""),
                 language=arguments.get("language"),
                 max_results=arguments.get("max_results", 5),
                 client_id=client_id,
                 project_id=project_id,
             )
+        elif tool_name == "git_status":
+            result = await _execute_git_status(
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "git_log":
+            result = await _execute_git_log(
+                limit=arguments.get("limit", 10),
+                branch=arguments.get("branch"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "git_diff":
+            result = await _execute_git_diff(
+                commit1=arguments.get("commit1"),
+                commit2=arguments.get("commit2"),
+                file_path=arguments.get("file_path"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "git_show":
+            result = await _execute_git_show(
+                commit=arguments.get("commit", "HEAD"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "git_blame":
+            result = await _execute_git_blame(
+                file_path=arguments.get("file_path", ""),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "list_files":
+            result = await _execute_list_files(
+                path=arguments.get("path", "."),
+                show_hidden=arguments.get("show_hidden", False),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "read_file":
+            result = await _execute_read_file(
+                file_path=arguments.get("file_path", ""),
+                max_lines=arguments.get("max_lines", 1000),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "find_files":
+            result = await _execute_find_files(
+                pattern=arguments.get("pattern", ""),
+                path=arguments.get("path", "."),
+                max_results=arguments.get("max_results", 100),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "grep_files":
+            result = await _execute_grep_files(
+                pattern=arguments.get("pattern", ""),
+                file_pattern=arguments.get("file_pattern", "*"),
+                max_results=arguments.get("max_results", 50),
+                context_lines=arguments.get("context_lines", 2),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "file_info":
+            result = await _execute_file_info(
+                path=arguments.get("path", ""),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "execute_command":
+            result = await _execute_command(
+                command=arguments.get("command", ""),
+                timeout=arguments.get("timeout", 30),
+                client_id=client_id,
+                project_id=project_id,
+            )
         else:
-            return f"Error: Unknown tool '{tool_name}'."
+            result = f"Error: Unknown tool '{tool_name}'."
+
+        logger.debug("execute_tool END: tool=%s, result_len=%d, result=%s", tool_name, len(result), result[:500])
+        return result
     except Exception as e:
         logger.exception("Tool execution failed: %s", tool_name)
-        return f"Error executing {tool_name}: {str(e)[:300]}"
+        result = f"Error executing {tool_name}: {str(e)[:300]}"
+        logger.debug("execute_tool ERROR: tool=%s, result=%s", tool_name, result)
+        return result
 
 
 async def _execute_web_search(query: str, max_results: int = 5) -> str:
@@ -741,3 +831,624 @@ async def _execute_code_search(
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ========== Git Workspace Tools ==========
+
+
+async def _execute_git_status(
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Get git status of workspace."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short", "--branch"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            return f"Error: git status failed: {result.stderr}"
+
+        output = result.stdout.strip()
+        if not output:
+            return "## Git Status\n\nWorking tree clean, no changes."
+
+        return f"## Git Status\n\n```\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: git status timed out after 10s"
+    except Exception as e:
+        return f"Error: git status failed: {str(e)[:200]}"
+
+
+async def _execute_git_log(
+    limit: int,
+    branch: str | None,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Get git commit history."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    try:
+        cmd = ["git", "log", f"--max-count={limit}", "--pretty=format:%h - %an, %ar : %s"]
+        if branch:
+            cmd.append(branch)
+
+        result = subprocess.run(
+            cmd,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode != 0:
+            return f"Error: git log failed: {result.stderr}"
+
+        output = result.stdout.strip()
+        if not output:
+            return "## Git Log\n\nNo commits found."
+
+        return f"## Git Log ({limit} commits)\n\n```\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: git log timed out after 15s"
+    except Exception as e:
+        return f"Error: git log failed: {str(e)[:200]}"
+
+
+async def _execute_git_diff(
+    commit1: str | None,
+    commit2: str | None,
+    file_path: str | None,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Show git diff between commits or working directory."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    try:
+        cmd = ["git", "diff"]
+
+        if commit1:
+            cmd.append(commit1)
+        if commit2:
+            cmd.append(commit2)
+        if file_path:
+            cmd.extend(["--", file_path])
+
+        result = subprocess.run(
+            cmd,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+        if result.returncode != 0:
+            return f"Error: git diff failed: {result.stderr}"
+
+        output = result.stdout.strip()
+        if not output:
+            return "## Git Diff\n\nNo differences found."
+
+        # Truncate if too long
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n... (truncated, diff too large)"
+
+        return f"## Git Diff\n\n```diff\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: git diff timed out after 20s"
+    except Exception as e:
+        return f"Error: git diff failed: {str(e)[:200]}"
+
+
+async def _execute_git_show(
+    commit: str,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Show commit details and changes."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    try:
+        result = subprocess.run(
+            ["git", "show", "--stat", commit],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode != 0:
+            return f"Error: git show failed: {result.stderr}"
+
+        output = result.stdout.strip()
+
+        # Truncate if too long
+        if len(output) > 8000:
+            output = output[:8000] + "\n\n... (truncated, output too large)"
+
+        return f"## Git Show: {commit}\n\n```\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: git show timed out after 15s"
+    except Exception as e:
+        return f"Error: git show failed: {str(e)[:200]}"
+
+
+async def _execute_git_blame(
+    file_path: str,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Show git blame for a file."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not file_path:
+        return "Error: file_path required for git blame."
+
+    try:
+        # Security: prevent path traversal
+        if ".." in file_path or file_path.startswith("/"):
+            return "Error: Invalid file path (path traversal detected)."
+
+        result = subprocess.run(
+            ["git", "blame", "--", file_path],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode != 0:
+            return f"Error: git blame failed: {result.stderr}"
+
+        output = result.stdout.strip()
+
+        # Truncate if too long
+        if len(output) > 10000:
+            lines = output.split("\n")
+            output = "\n".join(lines[:200]) + "\n\n... (truncated, showing first 200 lines)"
+
+        return f"## Git Blame: {file_path}\n\n```\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: git blame timed out after 15s"
+    except Exception as e:
+        return f"Error: git blame failed: {str(e)[:200]}"
+
+
+async def _get_workspace_path(client_id: str, project_id: str | None) -> str | None:
+    """Get workspace path from KB graph (repository node)."""
+    if not project_id:
+        return None
+
+    url = f"{settings.knowledgebase_url}/api/v1/graph/search"
+    params = {
+        "query": "",
+        "nodeType": "repository",
+        "clientId": client_id,
+        "projectId": project_id,
+        "limit": 1,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            repos = resp.json()
+
+            if not repos:
+                return None
+
+            workspace_path = repos[0].get("properties", {}).get("workspacePath")
+            return workspace_path
+    except Exception as e:
+        logger.error(f"Failed to get workspace path: {e}")
+        return None
+
+
+# ========== Filesystem Tools ==========
+
+
+async def _execute_list_files(
+    path: str,
+    show_hidden: bool,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """List files and directories in workspace path."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    try:
+        # Security: prevent path traversal
+        if ".." in path or path.startswith("/"):
+            return "Error: Invalid path (path traversal detected)."
+
+        full_path = Path(workspace) / path
+        if not full_path.exists():
+            return f"Error: Path not found: {path}"
+
+        if not full_path.is_dir():
+            return f"Error: Not a directory: {path}"
+
+        items = []
+        for item in sorted(full_path.iterdir()):
+            # Skip hidden files unless requested
+            if not show_hidden and item.name.startswith("."):
+                continue
+
+            item_type = "DIR" if item.is_dir() else "FILE"
+            size = ""
+            if item.is_file():
+                try:
+                    size_bytes = item.stat().st_size
+                    if size_bytes < 1024:
+                        size = f"{size_bytes}B"
+                    elif size_bytes < 1024 * 1024:
+                        size = f"{size_bytes / 1024:.1f}KB"
+                    else:
+                        size = f"{size_bytes / (1024 * 1024):.1f}MB"
+                except Exception:
+                    size = "?"
+
+            items.append(f"[{item_type}] {item.name}" + (f" ({size})" if size else ""))
+
+        if not items:
+            return f"## Directory: {path}\n\n(empty directory)"
+
+        return f"## Directory: {path}\n\n" + "\n".join(items)
+    except Exception as e:
+        return f"Error: Failed to list files: {str(e)[:200]}"
+
+
+async def _execute_read_file(
+    file_path: str,
+    max_lines: int,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Read file contents from workspace."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not file_path:
+        return "Error: file_path required."
+
+    try:
+        # Security: prevent path traversal
+        if ".." in file_path or file_path.startswith("/"):
+            return "Error: Invalid file path (path traversal detected)."
+
+        full_path = Path(workspace) / file_path
+        if not full_path.exists():
+            return f"Error: File not found: {file_path}"
+
+        if not full_path.is_file():
+            return f"Error: Not a file: {file_path}"
+
+        # Check file size
+        size_bytes = full_path.stat().st_size
+        if size_bytes > 10 * 1024 * 1024:  # 10MB limit
+            return f"Error: File too large ({size_bytes / (1024 * 1024):.1f}MB). Max 10MB."
+
+        # Try to read as text
+        try:
+            content = full_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"Error: Binary file cannot be displayed: {file_path}"
+
+        lines = content.split("\n")
+        total_lines = len(lines)
+
+        if total_lines > max_lines:
+            content = "\n".join(lines[:max_lines])
+            truncated_msg = f"\n\n... (truncated, showing {max_lines}/{total_lines} lines)"
+        else:
+            truncated_msg = ""
+
+        return f"## File: {file_path} ({total_lines} lines)\n\n```\n{content}{truncated_msg}\n```"
+    except Exception as e:
+        return f"Error: Failed to read file: {str(e)[:200]}"
+
+
+async def _execute_find_files(
+    pattern: str,
+    path: str,
+    max_results: int,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Find files matching pattern in workspace."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not pattern:
+        return "Error: pattern required."
+
+    try:
+        # Security: prevent path traversal
+        if ".." in path or path.startswith("/"):
+            return "Error: Invalid path (path traversal detected)."
+
+        base_path = Path(workspace) / path
+        if not base_path.exists():
+            return f"Error: Path not found: {path}"
+
+        # Use glob to find files
+        matches = []
+        if "**" in pattern:
+            # Recursive glob
+            for match in base_path.glob(pattern):
+                if match.is_file():
+                    rel_path = match.relative_to(workspace)
+                    matches.append(str(rel_path))
+                    if len(matches) >= max_results:
+                        break
+        else:
+            # Non-recursive glob
+            for match in base_path.glob(pattern):
+                if match.is_file():
+                    rel_path = match.relative_to(workspace)
+                    matches.append(str(rel_path))
+                    if len(matches) >= max_results:
+                        break
+
+        if not matches:
+            return f"No files found matching pattern: {pattern}"
+
+        result_text = "\n".join(f"- {m}" for m in sorted(matches))
+        truncated = f" (showing {len(matches)}, more available)" if len(matches) == max_results else ""
+        return f"## Files matching '{pattern}'{truncated}\n\n{result_text}"
+    except Exception as e:
+        return f"Error: Failed to find files: {str(e)[:200]}"
+
+
+async def _execute_grep_files(
+    pattern: str,
+    file_pattern: str,
+    max_results: int,
+    context_lines: int,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Search for text pattern in files."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not pattern:
+        return "Error: pattern required."
+
+    try:
+        # Use grep command for efficient search
+        cmd = ["grep", "-r", "-n"]  # recursive, line numbers
+
+        # Add context lines
+        if context_lines > 0:
+            cmd.extend(["-C", str(context_lines)])
+
+        # Add file pattern
+        if file_pattern != "*":
+            cmd.extend(["--include", file_pattern])
+
+        cmd.extend([pattern, "."])
+
+        result = subprocess.run(
+            cmd,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # grep returns 1 if no matches, which is not an error
+        if result.returncode not in (0, 1):
+            return f"Error: grep failed: {result.stderr}"
+
+        if not result.stdout.strip():
+            return f"No matches found for pattern: {pattern}"
+
+        lines = result.stdout.strip().split("\n")
+        total_matches = len(lines)
+
+        if total_matches > max_results:
+            lines = lines[:max_results]
+            truncated_msg = f"\n\n... (showing {max_results}/{total_matches} matches)"
+        else:
+            truncated_msg = ""
+
+        matches_text = "\n".join(lines)
+        return f"## Matches for '{pattern}' in {file_pattern}{truncated_msg}\n\n```\n{matches_text}\n```"
+    except subprocess.TimeoutExpired:
+        return "Error: grep timed out after 30s"
+    except Exception as e:
+        return f"Error: Failed to search files: {str(e)[:200]}"
+
+
+async def _execute_file_info(
+    path: str,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Get file/directory metadata."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not path:
+        return "Error: path required."
+
+    try:
+        # Security: prevent path traversal
+        if ".." in path or path.startswith("/"):
+            return "Error: Invalid path (path traversal detected)."
+
+        full_path = Path(workspace) / path
+        if not full_path.exists():
+            return f"Error: Path not found: {path}"
+
+        stat = full_path.stat()
+        item_type = "Directory" if full_path.is_dir() else "File"
+
+        # Format size
+        size_bytes = stat.st_size
+        if size_bytes < 1024:
+            size_str = f"{size_bytes} bytes"
+        elif size_bytes < 1024 * 1024:
+            size_str = f"{size_bytes / 1024:.2f} KB"
+        else:
+            size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+
+        # Format modification time
+        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Get permissions
+        perms = oct(stat.st_mode)[-3:]
+
+        lines = [
+            f"## {item_type}: {path}",
+            "",
+            f"Type: {item_type}",
+            f"Size: {size_str}",
+            f"Modified: {mod_time}",
+            f"Permissions: {perms}",
+        ]
+
+        # For directories, count items
+        if full_path.is_dir():
+            try:
+                item_count = len(list(full_path.iterdir()))
+                lines.append(f"Items: {item_count}")
+            except Exception:
+                pass
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: Failed to get file info: {str(e)[:200]}"
+
+
+# ========== Terminal Tool ==========
+
+# Whitelist of safe command prefixes
+_SAFE_COMMANDS = {
+    "ls", "cat", "head", "tail", "wc", "grep", "find", "echo", "pwd",
+    "tree", "file", "diff", "patch", "stat", "du", "which", "whereis",
+    # Build tools
+    "make", "cmake", "npm", "yarn", "pnpm", "pip", "pipenv", "poetry",
+    "python", "python3", "node", "java", "javac", "kotlinc", "scalac",
+    "mvn", "gradle", "cargo", "go", "rustc", "gcc", "g++", "clang",
+    # Testing
+    "pytest", "jest", "mocha", "junit", "cargo test", "go test",
+    # Version control (read-only)
+    "git status", "git log", "git diff", "git show", "git branch",
+}
+
+# Dangerous command patterns to block
+_DANGEROUS_PATTERNS = [
+    "rm ", "rmdir", "mv ", "dd ", "mkfs", "format",
+    "> /dev/", "sudo", "su ", "chmod", "chown",
+    "kill", "pkill", "killall",
+    "curl", "wget", "nc ", "netcat",  # Network access
+    "|bash", "|sh", "|zsh",  # Piping to shell
+]
+
+
+async def _execute_command(
+    command: str,
+    timeout: int,
+    client_id: str,
+    project_id: str | None,
+) -> str:
+    """Execute shell command in workspace."""
+    workspace = await _get_workspace_path(client_id, project_id)
+    if not workspace:
+        return "Error: Workspace not found. Repository not cloned yet."
+
+    if not command.strip():
+        return "Error: Empty command."
+
+    # Validate timeout
+    if timeout > 300:
+        timeout = 300
+    elif timeout < 1:
+        timeout = 30
+
+    try:
+        # Security: check for dangerous patterns
+        cmd_lower = command.lower()
+        for pattern in _DANGEROUS_PATTERNS:
+            if pattern in cmd_lower:
+                return f"Error: Dangerous command blocked: '{pattern}' not allowed."
+
+        # Check if command starts with a safe prefix
+        cmd_start = command.split()[0] if command.split() else ""
+        is_safe = False
+        for safe_cmd in _SAFE_COMMANDS:
+            if cmd_start == safe_cmd or command.startswith(safe_cmd + " "):
+                is_safe = True
+                break
+
+        if not is_safe:
+            # Allow if it's a known safe pattern (e.g., "git status")
+            for safe_cmd in _SAFE_COMMANDS:
+                if command.startswith(safe_cmd):
+                    is_safe = True
+                    break
+
+        if not is_safe:
+            return (
+                f"Error: Command '{cmd_start}' not in safe command whitelist. "
+                f"Safe commands: {', '.join(sorted(_SAFE_COMMANDS))}"
+            )
+
+        # Execute command
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        # Combine stdout and stderr
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            if output:
+                output += "\n--- stderr ---\n"
+            output += result.stderr
+
+        if not output.strip():
+            output = "(no output)"
+
+        # Truncate if too long
+        if len(output) > 20000:
+            output = output[:20000] + "\n\n... (truncated, output too large)"
+
+        status = "✓" if result.returncode == 0 else f"✗ (exit code {result.returncode})"
+        return f"## Command: {command} {status}\n\n```\n{output}\n```"
+    except subprocess.TimeoutExpired:
+        return f"Error: Command timed out after {timeout}s"
+    except Exception as e:
+        return f"Error: Failed to execute command: {str(e)[:200]}"

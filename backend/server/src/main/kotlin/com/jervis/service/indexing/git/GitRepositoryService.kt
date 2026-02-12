@@ -34,6 +34,16 @@ import kotlin.io.path.exists
 private val logger = KotlinLogging.logger {}
 
 /**
+ * Type of git workspace.
+ */
+enum class WorkspaceType {
+    /** Indexing workspace - can checkout any branch/commit for analysis */
+    INDEXING,
+    /** Agent workspace - stable workspace for orchestrator/agents */
+    AGENT,
+}
+
+/**
  * Thrown when git operations fail due to authentication/authorization errors.
  * Signals that the connection credentials are invalid and should be marked INVALID.
  */
@@ -57,14 +67,17 @@ private val AUTH_ERROR_PATTERNS = listOf(
  * Manages git repository cloning, pulling, and commit discovery.
  *
  * Responsibilities:
- * 1. Clone repositories into project workspace directories on startup
+ * 1. Clone repositories into project git-indexing directories on startup
  * 2. Pull latest changes during polling cycles
  * 3. Parse git log to discover new commits per branch
  * 4. Build structured content for KB indexation (file tree, README, diffs)
  *
  * Directory layout:
- *   {data}/clients/{clientId}/projects/{projectId}/git/{resourceId}/
- *     └── (cloned repo contents)
+ *   {data}/clients/{clientId}/projects/{projectId}/git-indexing/{resourceId}/
+ *     └── (cloned repo contents - indexing workspace, can checkout any branch/commit)
+ *
+ * IMPORTANT: Uses git-indexing/ directory to avoid conflicts with agent workspace (git/).
+ * Agent workspace (git/{resourceId}/) is managed separately by GitWorkspaceService.
  *
  * Branch isolation: each branch is tracked separately in GitCommitDocument.
  * Content indexed per branch - branches never mix in KB.
@@ -91,13 +104,23 @@ class GitRepositoryService(
             try {
                 syncAllProjects()
             } catch (e: Exception) {
-                logger.error(e) { "GitRepositoryService: startup sync failed" }
+                logger.error(e) { "GitRepositoryService: indexing workspace sync failed" }
+            }
+        }
+
+        scope.launch {
+            delay(20_000) // Start slightly after indexing to avoid resource contention
+            logger.info { "GitRepositoryService: preparing all agent workspaces on startup..." }
+            try {
+                syncAllAgentWorkspaces()
+            } catch (e: Exception) {
+                logger.error(e) { "GitRepositoryService: agent workspace sync failed" }
             }
         }
     }
 
     /**
-     * Sync all projects that have REPOSITORY resources.
+     * Sync all projects that have REPOSITORY resources (indexing workspaces).
      * Called on startup and can be triggered manually.
      */
     suspend fun syncAllProjects() {
@@ -116,6 +139,30 @@ class GitRepositoryService(
                 }
             }
         }
+    }
+
+    /**
+     * Ensure all agent workspaces are cloned and ready.
+     * Called on startup to prepare workspaces for orchestrator/agent operations.
+     */
+    suspend fun syncAllAgentWorkspaces() {
+        val projects = projectRepository.findAll().toList()
+        var successCount = 0
+        var failCount = 0
+
+        for (project in projects) {
+            val repoResources = project.resources.filter { it.capability == ConnectionCapability.REPOSITORY }
+            for (resource in repoResources) {
+                val result = ensureAgentWorkspaceReady(project, resource)
+                if (result != null) {
+                    successCount++
+                } else {
+                    failCount++
+                }
+            }
+        }
+
+        logger.info { "Agent workspace sync complete: $successCount ready, $failCount failed" }
     }
 
     /**
@@ -188,6 +235,72 @@ class GitRepositoryService(
     }
 
     /**
+     * Ensure agent workspace is cloned and ready for orchestrator/agent operations.
+     * Simpler than syncRepository - just clone/pull, stay on default branch.
+     * Returns workspace path if successful, null on failure.
+     *
+     * Used before orchestrator dispatch to ensure workspace exists.
+     */
+    suspend fun ensureAgentWorkspaceReady(
+        project: ProjectDocument,
+        resource: ProjectResource,
+    ): Path? {
+        val initialConnection = connectionService.findById(ConnectionId(resource.connectionId))
+        if (initialConnection == null) {
+            logger.warn { "Connection ${resource.connectionId} not found for resource ${resource.resourceIdentifier}" }
+            return null
+        }
+
+        // Skip INVALID connections
+        if (initialConnection.state == ConnectionStateEnum.INVALID) {
+            logger.info { "Skipping agent workspace setup for INVALID connection ${initialConnection.id}" }
+            return null
+        }
+
+        // Refresh OAuth2 token if expired
+        val connection = if (oauth2Service.refreshAccessToken(initialConnection)) {
+            connectionService.findById(ConnectionId(resource.connectionId))!!
+        } else {
+            initialConnection
+        }
+
+        val repoUrl = buildRepoUrl(connection, resource)
+        if (repoUrl.isNullOrBlank()) {
+            logger.warn { "Cannot determine repo URL for ${resource.resourceIdentifier}" }
+            return null
+        }
+
+        val agentRepoDir = getAgentRepoDir(project, resource)
+
+        val isCloned = agentRepoDir.resolve(".git").exists()
+
+        try {
+            if (!isCloned) {
+                logger.info { "Cloning agent workspace ${resource.resourceIdentifier} into $agentRepoDir" }
+                cloneRepository(repoUrl, agentRepoDir, connection)
+            } else {
+                logger.debug { "Agent workspace ${resource.resourceIdentifier} already cloned, pulling latest" }
+                fetchAll(agentRepoDir, connection)
+            }
+
+            // Ensure we're on default branch
+            val defaultBranch = detectDefaultBranch(agentRepoDir)
+            checkoutBranch(agentRepoDir, defaultBranch)
+
+            logger.info { "Agent workspace ready: $agentRepoDir (branch: $defaultBranch)" }
+            return agentRepoDir
+        } catch (e: GitAuthenticationException) {
+            logger.error { "Auth failed for agent workspace ${resource.resourceIdentifier}: ${e.message}" }
+            invalidateConnection(resource.connectionId)
+            errorLogService.recordError(e, project.clientId.value, project.id.value)
+            return null
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ensure agent workspace for ${resource.resourceIdentifier}" }
+            return null
+        }
+    }
+
+    /**
      * Mark a connection as INVALID if it isn't already.
      */
     private suspend fun invalidateConnection(connectionId: ObjectId) {
@@ -200,14 +313,35 @@ class GitRepositoryService(
 
     /**
      * Get the local directory for a repository resource.
+     *
+     * @param workspaceType INDEXING (git-indexing/) or AGENT (git/)
      */
-    fun getRepoDir(project: ProjectDocument, resource: ProjectResource): Path {
-        val gitDir = directoryStructureService.projectGitDir(project.clientId, project.id)
+    fun getRepoDir(
+        project: ProjectDocument,
+        resource: ProjectResource,
+        workspaceType: WorkspaceType = WorkspaceType.INDEXING,
+    ): Path {
+        val baseDir = when (workspaceType) {
+            WorkspaceType.INDEXING -> directoryStructureService.projectGitIndexingDir(project.clientId, project.id)
+            WorkspaceType.AGENT -> directoryStructureService.projectGitDir(project.clientId, project.id)
+        }
         val safeId = resource.resourceIdentifier.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        return gitDir.resolve(safeId).also {
+        return baseDir.resolve(safeId).also {
             if (!it.exists()) Files.createDirectories(it)
         }
     }
+
+    /**
+     * Convenience method - get indexing workspace directory (default behavior).
+     */
+    fun getIndexingRepoDir(project: ProjectDocument, resource: ProjectResource): Path =
+        getRepoDir(project, resource, WorkspaceType.INDEXING)
+
+    /**
+     * Convenience method - get agent workspace directory.
+     */
+    fun getAgentRepoDir(project: ProjectDocument, resource: ProjectResource): Path =
+        getRepoDir(project, resource, WorkspaceType.AGENT)
 
     /**
      * Build full clone URL from connection + resource identifier.

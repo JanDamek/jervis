@@ -77,6 +77,7 @@ async def llm_with_cloud_fallback(
 
     # Try local
     local_tier = escalation.select_local_tier(context_tokens)
+    logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s", local_tier.value, bool(tools))
     try:
         response = await llm_provider.completion(
             messages=messages, tier=local_tier,
@@ -86,12 +87,18 @@ async def llm_with_cloud_fallback(
         content = message.content
         tool_calls = getattr(message, "tool_calls", None)
 
+        logger.debug(
+            "llm_with_cloud_fallback: local response - has_content=%s, content_len=%d, has_tool_calls=%s",
+            bool(content and content.strip()), len(content or ""), bool(tool_calls)
+        )
+
         # Valid response = has content OR has tool_calls
         if (not content or not content.strip()) and not tool_calls:
             raise ValueError("Empty response from local model")
         return response
     except Exception as e:
         logger.warning("Local LLM failed (tier=%s): %s", local_tier.value, e)
+        logger.debug("Local LLM exception details:", exc_info=True)
         return await _escalate_to_cloud(
             task, auto, escalation, context_tokens, task_type,
             messages, max_tokens, temperature, tools,

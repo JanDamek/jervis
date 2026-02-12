@@ -247,6 +247,24 @@ class LLMProvider:
 
         logger.info("LLM blocking call (tools): model=%s", config["model"])
         response = await litellm.acompletion(**kwargs)
+
+        # DEBUG: Log response details
+        try:
+            choice = response.choices[0] if response.choices else None
+            if choice:
+                msg = choice.message
+                logger.info(
+                    "LLM blocking response: finish_reason=%s, has_content=%s, content_len=%d, has_tool_calls=%s",
+                    choice.finish_reason,
+                    bool(msg.content),
+                    len(msg.content or ""),
+                    bool(getattr(msg, "tool_calls", None)),
+                )
+                if msg.content:
+                    logger.info("LLM blocking content: %s", msg.content[:500])
+        except Exception as e:
+            logger.warning("Failed to log response details: %s", e)
+
         return response
 
     async def _iter_with_heartbeat(self, stream):
