@@ -21,31 +21,16 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: jervis-orchestrator-config
           env:
-            - name: ORCHESTRATOR_PORT
-              value: "8090"
             - name: MONGODB_URL
               valueFrom:
                 secretKeyRef:
                   name: jervis-secrets
                   key: MONGODB_URL
                   optional: true
-            - name: KOTLIN_SERVER_URL
-              value: "http://jervis-server:5500"
-            - name: KNOWLEDGEBASE_URL
-              value: "http://jervis-knowledgebase:8080"
-            - name: SEARXNG_URL
-              value: "http://192.168.100.117:30053"
-            - name: K8S_NAMESPACE
-              value: "jervis"
-            - name: DATA_ROOT
-              value: "/opt/jervis/data"
-            - name: OLLAMA_URL
-              value: "http://192.168.100.117:11434"
-            - name: OLLAMA_API_BASE
-              value: "http://192.168.100.117:11434"
-            - name: CONTAINER_REGISTRY
-              value: "registry.damek-soft.eu/jandamek"
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:

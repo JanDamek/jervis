@@ -137,14 +137,6 @@ spec:
                 secretKeyRef:
                   name: jervis-oauth2-secrets
                   key: ATLASSIAN_CLIENT_SECRET
-            - name: CODING_TOOLS_JUNIE_DEFAULT_PROVIDER
-              value: "anthropic"
-            - name: CODING_TOOLS_JUNIE_DEFAULT_MODEL
-              value: "claude-3-5-sonnet-20241022"
-            - name: CODING_TOOLS_JUNIE_PAID_PROVIDER
-              value: "anthropic"
-            - name: CODING_TOOLS_JUNIE_PAID_MODEL
-              value: "claude-3-5-sonnet-20241022"
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data

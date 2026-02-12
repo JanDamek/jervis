@@ -136,7 +136,7 @@ data:
           keep-alive: 1h
           refresh-safety-factor: 0.9
 
-    # -- Coding tools (Aider, OpenHands, Claude) --------------------------------
+    # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
     coding-tools:
       aider:
         default-provider: ollama     # GPU instance (:11434)
@@ -154,6 +154,11 @@ data:
         default-model: "claude-sonnet-4-20250514"
         paid-provider: anthropic
         paid-model: "claude-sonnet-4-20250514"
+      junie:
+        default-provider: anthropic  # Junie coding agent
+        default-model: "claude-3-5-sonnet-20241022"
+        paid-provider: anthropic
+        paid-model: "claude-3-5-sonnet-20241022"
 
     # -- Microservice endpoints (K8s service names) -----------------------------
     # Ollama endpoints are in models-config.yaml, not here.
@@ -204,3 +209,28 @@ data:
   ARANGO_USER: "root"
   # -- Microservice endpoints -------------------------------------------------
   TIKA_URL: "http://192.168.100.117:8081"                      # Apache Tika
+
+---
+# =============================================================================
+# Orchestrator Microservice – Production Configuration (K8s ConfigMap)
+# Injected as env vars via envFrom in k8s/app_orchestrator.yaml.
+# Maps to Python Settings class in backend/service-orchestrator/app/config.py.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-orchestrator-config
+  namespace: jervis
+data:
+  # -- Service configuration --------------------------------------------------
+  ORCHESTRATOR_PORT: "8090"
+  K8S_NAMESPACE: "jervis"
+  DATA_ROOT: "/opt/jervis/data"
+  CONTAINER_REGISTRY: "registry.damek-soft.eu/jandamek"
+  # -- Microservice endpoints -------------------------------------------------
+  KOTLIN_SERVER_URL: "http://jervis-server:5500"
+  KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
+  SEARXNG_URL: "http://192.168.100.117:30053"
+  # -- Ollama endpoints -------------------------------------------------------
+  OLLAMA_URL: "http://192.168.100.117:11434"
+  OLLAMA_API_BASE: "http://192.168.100.117:11434"
