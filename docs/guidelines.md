@@ -727,7 +727,9 @@ class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
 }
 
 // CorrectionQuestionsCard: shown in MeetingDetailView when state == CORRECTION_REVIEW
-// Displays agent questions with options + free text input, submit button
+// Resizable panel (draggable divider) with play button per question, Nevím/Potvrdit buttons
+// Odeslat vše applies corrections in-place to segments + saves to KB (no full re-correction)
+// LLM agent filters KB-known questions automatically
 ```
 
 ### Shared Form Helpers
