@@ -1,6 +1,6 @@
 # Jervis – Engineering & Architecture Guidelines (2026)
 
-**Status:** Production Documentation (2026-02-10)
+**Status:** Production Documentation (2026-02-12)
 **Purpose:** Single source of truth for engineering, architecture, and UI guidelines
 
 ---
@@ -398,20 +398,27 @@ suspend fun interpretRequest(): String {
 
 | What | Where |
 |------|-------|
-| All `J*` components + adaptive layouts | `shared/ui-common/.../design/DesignSystem.kt` |
+| Design system – theme, spacing | `shared/ui-common/.../design/DesignTheme.kt` |
+| Design system – state components | `shared/ui-common/.../design/DesignState.kt` |
+| Design system – layout components | `shared/ui-common/.../design/DesignLayout.kt` |
+| Design system – buttons | `shared/ui-common/.../design/DesignButtons.kt` |
+| Design system – cards | `shared/ui-common/.../design/DesignCards.kt` |
+| Design system – forms | `shared/ui-common/.../design/DesignForms.kt` |
+| Design system – dialogs | `shared/ui-common/.../design/DesignDialogs.kt` |
+| Design system – data display | `shared/ui-common/.../design/DesignDataDisplay.kt` |
 | Semantic colors (light/dark) | `shared/ui-common/.../design/JervisColors.kt` |
 | Responsive typography | `shared/ui-common/.../design/JervisTypography.kt` |
 | Centralized shapes | `shared/ui-common/.../design/JervisShapes.kt` |
 | Watch readiness (ComponentImportance) | `shared/ui-common/.../design/ComponentImportance.kt` |
 | Breakpoints + WindowSizeClass | `shared/ui-common/.../design/JervisBreakpoints.kt` |
-| Shared form helpers (GitCommitConfigFields, getCapabilityLabel) | `shared/ui-common/.../screens/settings/sections/ClientsSettings.kt` (internal) |
+| Shared form helpers (GitCommitConfigFields, getCapabilityLabel) | `shared/ui-common/.../screens/settings/sections/ClientsSharedHelpers.kt` (`internal`) |
 | Icon buttons (Refresh, Delete, Edit) — delegate to J* | `shared/ui-common/.../util/IconButtons.kt` |
 | ConfirmDialog (Czech defaults) | `shared/ui-common/.../util/ConfirmDialog.kt` |
 | CopyableTextCard (SelectionContainer) | `shared/ui-common/.../util/CopyableTextCard.kt` |
 
 ### Core Principles
 
-- **J-prefixed components:** All UI elements use J-prefixed wrappers from `DesignSystem.kt` (`JCard`, `JTextField`, `JPrimaryButton`, etc.)
+- **J-prefixed components:** All UI elements use J-prefixed wrappers from `design/` package (`JCard`, `JTextField`, `JPrimaryButton`, etc.)
 - **Consistency:** Use shared components from `com.jervis.ui.design` (JTopBar, JSection, JActionBar, etc.)
 - **Adaptive layout:** `COMPACT_BREAKPOINT_DP = 600` – phone (<600dp) vs tablet/desktop (≥600dp)
 - **Light + Dark theme:** Auto-switches via `isSystemInDarkTheme()`, customizable via `JervisColors.kt`
@@ -580,7 +587,7 @@ JDetailScreen(
                 label = { Text("Název") }, modifier = Modifier.fillMaxWidth())
         }
         JSection(title = "Git Commit Konfigurace") {
-            GitCommitConfigFields(  // Shared helper from ClientsSettings.kt
+            GitCommitConfigFields(  // Shared helper from ClientsSharedHelpers.kt
                 messageFormat = ..., authorName = ..., authorEmail = ...,
                 committerName = ..., committerEmail = ...,
                 gpgSign = ..., gpgKeyId = ...,
@@ -740,9 +747,9 @@ class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
 
 | Helper | Location | Purpose |
 |--------|----------|---------|
-| `GitCommitConfigFields(...)` | `ClientsSettings.kt` (internal) | Reusable git commit config form (7 fields + GPG) |
-| `getCapabilityLabel(capability)` | `ClientsSettings.kt` (internal) | Human-readable label: BUGTRACKER→"Bug Tracker" etc. |
-| `getIndexAllLabel(capability)` | `ClientsSettings.kt` (internal) | "Indexovat všechny repozitáře" etc. |
+| `GitCommitConfigFields(...)` | `ClientsSharedHelpers.kt` (internal) | Reusable git commit config form (7 fields + GPG) |
+| `getCapabilityLabel(capability)` | `ClientsSharedHelpers.kt` (internal) | Human-readable label: BUGTRACKER→"Bug Tracker" etc. |
+| `getIndexAllLabel(capability)` | `ClientsSharedHelpers.kt` (internal) | "Indexovat všechny repozitáře" etc. |
 
 ### Card & Spacing Standards
 
@@ -800,12 +807,133 @@ COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 | Fixed sidebar without adaptive | `JAdaptiveSidebarLayout` |
 | `IconButton` without explicit 44dp size | `IconButton(Modifier.size(JervisSpacing.touchTarget))` |
 | `TopAppBar` directly | `JTopBar(title, onBack, actions)` |
-| Duplicating `getCapabilityLabel()` | Import from `ClientsSettings.kt` |
+| Duplicating `getCapabilityLabel()` | Import from `ClientsSharedHelpers.kt` |
 | Platform expect/actual for layout | `BoxWithConstraints` width check (automatic in J* components) |
 | `Row` of buttons without alignment | `JActionBar { ... }` or `Row(Arrangement.spacedBy(8.dp, Alignment.End))` |
 
 > **More patterns:** Dialog patterns (selection, multi-select, create, delete confirm),
 > screen anatomy ASCII diagrams, file structure reference → see **[`docs/ui-design.md`](ui-design.md)**
+
+### UI File Organization (KMP Compose Best Practice)
+
+#### Three-Level Decomposition
+
+Every feature screen follows a three-level structure:
+
+```
+Screen (stateful)           ← touches ViewModel, collects state, delegates to Content
+  └─ Content (stateless)    ← receives data + lambdas, orchestrates Sections
+       └─ Sections/Components (stateless) ← focused UI pieces, max ~200 lines each
+```
+
+**Screen** — one per feature, `public`. Collects `StateFlow` from ViewModel, passes data and
+callbacks down. This is the only composable that sees the ViewModel.
+
+**Content** — `internal`. Receives all data as parameters (state hoisting). Arranges sections,
+handles local UI state (expanded/collapsed, dialogs, scroll position).
+
+**Sections/Components** — `internal` or `private`. Each file contains one primary composable
+with private helpers. Focused on a single visual block (form, list, card, dialog).
+
+#### File Size Rules
+
+| Threshold | Action |
+|-----------|--------|
+| < 300 lines | OK, no splitting needed |
+| 300–500 lines | Consider splitting if file has distinct logical sections |
+| > 500 lines | Must split into separate files |
+| > 200 lines for a single composable function | Extract sub-composables |
+
+#### Package Structure
+
+Each feature screen lives in its own package under `screens/`:
+
+```
+meeting/                      ← feature package (under com.jervis.ui)
+  MeetingsScreen.kt           ← public Screen entry point
+  MeetingListItems.kt         ← internal list item composables
+  MeetingDetailView.kt        ← internal Content for detail
+  TranscriptPanel.kt          ← internal Section
+  AgentChatPanel.kt           ← internal Section
+  PipelineProgress.kt         ← internal Section
+  CorrectionQuestionsCard.kt  ← internal Component
+  SegmentCorrectionDialog.kt  ← internal dialog
+  MeetingHelpers.kt           ← internal utility functions
+  MeetingViewModel.kt         ← ViewModel
+  CorrectionViewModel.kt      ← Sub-ViewModel
+  RecordingSetupDialog.kt     ← internal dialog
+  RecordingIndicator.kt       ← internal Component
+  CorrectionsScreen.kt        ← KB correction rules CRUD
+  ...
+```
+
+**Root-level screens** (files directly in `com.jervis.ui`) should ideally be moved into
+`screens/<feature>/` packages. Currently `App.kt`, `JervisApp.kt`, and several smaller screens
+(AgentWorkloadScreen, SchedulerScreen, UserTasksScreen, etc.) remain at root level.
+The `meeting/` package is at root level (`com.jervis.ui.meeting`), not under `screens/`.
+
+#### Visibility Rules
+
+| Scope | Visibility | Example |
+|-------|-----------|---------|
+| Entry-point screen composable | `public` | `fun MeetingsScreen(...)` |
+| Design system components | `public` | `fun JCard(...)` |
+| Feature-internal sections | `internal` | `internal fun TranscriptPanel(...)` |
+| File-local helpers | `private` | `private fun formatDateTime(...)` |
+| Shared helpers across features | `internal` | `internal fun getCapabilityLabel(...)` |
+
+#### ViewModel Decomposition
+
+Large ViewModels (>500 lines) should extract logic into focused helper classes:
+
+```kotlin
+class MainViewModel(repository: JervisRepository) : ViewModel() {
+    // Delegates for distinct concerns
+    private val connectionManager = ChatConnectionManager(repository, viewModelScope)
+    private val messageHandler = ChatMessageHandler(repository)
+    private val queueManager = QueueManager(repository, viewModelScope)
+
+    // ViewModel exposes state and user actions, delegates implementation
+}
+```
+
+Helper classes are plain Kotlin classes (not ViewModels), receive dependencies via constructor,
+and expose `StateFlow` or suspend functions. They live in the same feature package.
+
+#### Design System Split
+
+The `design/` package splits components by category:
+
+```
+design/
+  DesignTheme.kt          ← JervisTheme, JervisSpacing, COMPACT_BREAKPOINT_DP
+  DesignState.kt          ← JCenteredLoading, JErrorState, JEmptyState
+  DesignLayout.kt         ← JTopBar, JSection, JActionBar, JAdaptiveSidebarLayout, etc.
+  DesignButtons.kt        ← JPrimaryButton, JSecondaryButton, JIconButton, etc.
+  DesignCards.kt          ← JCard, JListItemCard, JTableHeaderRow, JTableRowCard
+  DesignForms.kt          ← JTextField, JDropdown, JSwitch, JSlider, JCheckboxRow
+  DesignDialogs.kt        ← JConfirmDialog, JFormDialog, JSelectionDialog
+  DesignDataDisplay.kt    ← JKeyValueRow, JStatusBadge, JCodeBlock, JSnackbarHost
+  JervisColors.kt         ← (existing) Semantic colors
+  JervisTypography.kt     ← (existing) Typography
+  JervisShapes.kt         ← (existing) Shapes
+  ComponentImportance.kt  ← (existing) Watch readiness
+  JervisBreakpoints.kt   ← (existing) Breakpoints + WindowSizeClass
+```
+
+All design components remain `public` — they are the shared design system.
+
+#### Naming Conventions
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Screen entry point | `<Feature>Screen.kt` | `MeetingsScreen.kt` |
+| Content orchestrator | `<Feature>Content.kt` or `<Part>View.kt` | `MeetingDetailView.kt` |
+| UI section | `<Section>Panel.kt` or `<Section>Section.kt` | `TranscriptPanel.kt` |
+| Reusable component | `<Component>Card.kt` or `<Component>Dialog.kt` | `CorrectionQuestionsCard.kt` |
+| Helper functions | `<Feature>Helpers.kt` | `MeetingHelpers.kt` |
+| ViewModel | `<Feature>ViewModel.kt` | `MeetingViewModel.kt` |
+| ViewModel helper | `<Concern>Manager.kt` or `<Concern>Handler.kt` | `ChatConnectionManager.kt` |
 
 ---
 
@@ -875,5 +1003,5 @@ COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
 ---
 
 **Document Version:** 3.0
-**Last Updated:** 2026-02-10
+**Last Updated:** 2026-02-12
 **Applies To:** All engineering, architecture, and UI development in Jervis

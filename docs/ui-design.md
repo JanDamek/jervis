@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-10
+**Last updated:** 2026-02-12
 **Status:** Production Documentation
 
 This document is the **single source of truth** for UI guidelines, design patterns, and shared components.
@@ -201,8 +201,8 @@ Delete with confirm     -> JConfirmDialog triggered by JDeleteButton
 
 ## 3) Shared Components Reference
 
-All components live in `com.jervis.ui.design.DesignSystem.kt` unless noted otherwise.
-Foundation files are in the `design/` directory (see Section 10).
+All components live in the `com.jervis.ui.design` package, split by category (see Section 10).
+Each `Design*.kt` file groups related components (buttons, forms, cards, etc.).
 
 ### 3.1) Layout Components
 
@@ -309,7 +309,7 @@ Note: `categoryIcon` in `JAdaptiveSidebarLayout` takes a `@Composable (T) -> Uni
 | `ApprovalNotificationDialog` | Orchestrator approval dialog (approve/deny with reason) |
 | `CopyableTextCard` | `SelectionContainer` wrapping, outlinedCardBorder (no explicit copy buttons) |
 
-### 3.12) Shared Form Helpers (`com.jervis.ui.screens.settings.sections.ClientsSettings.kt`)
+### 3.12) Shared Form Helpers (`com.jervis.ui.screens.settings.sections.ClientsSharedHelpers.kt`)
 
 These are `internal` functions shared by ClientsSettings and ProjectsSettings:
 
@@ -1278,7 +1278,7 @@ When adding or modifying a settings screen:
 4. **Cards** -> Always `JCard` (never raw `Card` with manual `outlinedCardBorder()`)
 5. **Touch targets** -> All rows/buttons >= 44 dp (`JervisSpacing.touchTarget`)
 6. **Loading/Empty/Error** -> Use `JCenteredLoading` / `JEmptyState` / `JErrorState`
-7. **Git config** -> Use shared `GitCommitConfigFields()` from ClientsSettings
+7. **Git config** -> Use shared `GitCommitConfigFields()` from ClientsSharedHelpers
 8. **Capability labels** -> Use shared `getCapabilityLabel()` / `getIndexAllLabel()`
 9. **Back navigation** -> `JTopBar(onBack = ...)` or `JDetailScreen(onBack = ...)`
 10. **Forms** -> `JTextField` with label parameter (never raw `OutlinedTextField`)
@@ -1306,7 +1306,7 @@ When adding or modifying a settings screen:
 | Inline save/cancel below form | `JDetailScreen(onSave = ..., onBack = ...)` |
 | Fixed sidebar width without adaptive | `JAdaptiveSidebarLayout` |
 | `Row` of buttons without alignment | `JActionBar { ... }` or `Row(Arrangement.spacedBy(8.dp, Alignment.End))` |
-| Duplicating `getCapabilityLabel()` | Import from `ClientsSettings.kt` (internal) |
+| Duplicating `getCapabilityLabel()` | Import from `ClientsSharedHelpers.kt` (internal) |
 | `TopAppBar` directly | `JTopBar(title, onBack, actions)` |
 | Emoji strings for icons ("...") | Material `ImageVector` icons (`Icons.Default.*`) |
 | `StatusIndicator` (deleted) | `JStatusBadge(status)` |
@@ -1320,50 +1320,114 @@ When adding or modifying a settings screen:
 
 ```
 shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
-+-- design/
-|   +-- DesignSystem.kt              <- All J* components + adaptive layouts
-|   +-- JervisColors.kt              <- Semantic colors: success, warning, info + light/dark schemes
-|   +-- JervisTypography.kt          <- Responsive typography definitions
-|   +-- JervisShapes.kt              <- Centralized shape definitions
-|   +-- ComponentImportance.kt       <- ESSENTIAL/IMPORTANT/DETAIL enum + JImportance composable
-|   +-- JervisBreakpoints.kt         <- WATCH_DP/COMPACT_DP/MEDIUM_DP/EXPANDED_DP + WindowSizeClass + rememberWindowSizeClass()
++-- design/                            <- Design system (split by component category)
+|   +-- DesignTheme.kt                <- JervisTheme, JervisSpacing, COMPACT_BREAKPOINT_DP
+|   +-- DesignState.kt                <- JCenteredLoading, JErrorState, JEmptyState
+|   +-- DesignLayout.kt               <- JTopBar, JSection, JActionBar, JAdaptiveSidebarLayout, JListDetailLayout, JDetailScreen, JNavigationRow, JVerticalSplitLayout
+|   +-- DesignButtons.kt              <- JPrimaryButton, JSecondaryButton, JTextButton, JDestructiveButton, JRunTextButton, JIconButton, JRefreshButton, JDeleteButton, JEditButton, JAddButton, JRemoveIconButton
+|   +-- DesignCards.kt                <- JCard, JListItemCard, JTableHeaderRow, JTableHeaderCell, JTableRowCard
+|   +-- DesignForms.kt                <- JTextField, JDropdown, JSwitch, JSlider, JCheckboxRow
+|   +-- DesignDialogs.kt              <- JConfirmDialog, JFormDialog, JSelectionDialog
+|   +-- DesignDataDisplay.kt          <- JKeyValueRow, JStatusBadge, JCodeBlock, JSnackbarHost
+|   +-- JervisColors.kt               <- Semantic colors: success, warning, info + light/dark schemes
+|   +-- JervisTypography.kt           <- Responsive typography definitions
+|   +-- JervisShapes.kt               <- Centralized shape definitions
+|   +-- ComponentImportance.kt        <- ESSENTIAL/IMPORTANT/DETAIL enum + JImportance composable
+|   +-- JervisBreakpoints.kt          <- WATCH_DP/COMPACT_DP/MEDIUM_DP/EXPANDED_DP + WindowSizeClass + rememberWindowSizeClass()
 +-- navigation/
-|   +-- AppNavigator.kt              <- Screen enum + navigator
+|   +-- AppNavigator.kt               <- Screen sealed class + navigator
++-- meeting/                           <- Meeting feature package
+|   +-- MeetingsScreen.kt             <- Public entry point (list + routing)
+|   +-- MeetingListItems.kt           <- MeetingListItem, DeletedMeetingListItem (internal)
+|   +-- MeetingDetailView.kt          <- Detail view with split layout
+|   +-- TranscriptPanel.kt            <- Transcript segments display
+|   +-- AgentChatPanel.kt             <- Correction agent chat
+|   +-- PipelineProgress.kt           <- Pipeline state display
+|   +-- CorrectionQuestionsCard.kt    <- Correction review questions
+|   +-- SegmentCorrectionDialog.kt    <- Segment editing dialog
+|   +-- MeetingHelpers.kt             <- formatDateTime, stateIcon, stateLabel helpers (internal)
+|   +-- MeetingViewModel.kt           <- Meeting state management
+|   +-- CorrectionsScreen.kt          <- KB correction rules CRUD
+|   +-- CorrectionViewModel.kt        <- Corrections state
+|   +-- RecordingSetupDialog.kt       <- Audio device + client/project selection
+|   +-- RecordingIndicator.kt         <- Animated recording indicator
 +-- screens/
 |   +-- settings/
-|   |   +-- SettingsScreen.kt        <- JAdaptiveSidebarLayout + categories (Material Icons)
+|   |   +-- SettingsScreen.kt         <- JAdaptiveSidebarLayout + categories
 |   |   +-- sections/
-|   |       +-- ClientsSettings.kt   <- Expandable cards (clients + nested projects) + shared helpers
-|   |       +-- ProjectsSettings.kt  <- ProjectEditForm (internal, reused by ClientsSettings)
-|   |       +-- ProjectGroupsSettings.kt <- JListDetailLayout (group CRUD + shared resources)
-|   |       +-- EnvironmentsSettings.kt  <- JListDetailLayout (environment CRUD + components)
-|   |       +-- ConnectionsSettings.kt <- Flat list + per-card actions
-|   |       +-- CodingAgentsSettings.kt <- Coding agent API keys and configuration
-|   |       +-- WhisperSettings.kt    <- Whisper transcription config (model, quality, concurrency)
-|   +-- MainScreen.kt                <- Wrapper (ViewModel -> MainScreenView, MainMenuItem with Material Icons)
-|   +-- SchedulerScreen.kt          <- JListDetailLayout (task list + detail + create dialog)
-|   +-- ErrorLogsScreen.kt          <- Error logs display (replaced LogsSettings)
-|   +-- UserTasksScreen.kt          <- User task list + detail (JListDetailLayout + JDetailScreen)
-|   +-- AgentWorkloadScreen.kt      <- Agent activity log (in-memory, click from AgentStatusRow)
-|   +-- PendingTasksScreen.kt       <- Task queue with filters, JCards, Czech labels
-|   +-- IndexingQueueScreen.kt     <- Indexing queue dashboard (connections + pending + indexed, paginated)
-|   +-- ConnectionsScreen.kt
-|   +-- meeting/
-|       +-- MeetingsScreen.kt       <- Meeting list + detail + recording controls
-|       +-- MeetingViewModel.kt     <- Meeting state management
-|       +-- RecordingSetupDialog.kt <- Audio device + client/project selection
-|       +-- RecordingFinalizeDialog.kt <- Meeting type + title entry
-|       +-- RecordingIndicator.kt   <- Animated recording indicator
-|       +-- CorrectionsScreen.kt    <- KB correction rules CRUD (grouped by category)
-|       +-- CorrectionViewModel.kt  <- Corrections state (corrections, isLoading)
+|   |       +-- ClientsSettings.kt    <- Client list + expandable cards
+|   |       +-- ClientEditForm.kt     <- Client edit form (internal)
+|   |       +-- ClientEditSections.kt <- ClientConnectionsSection, ClientProjectsSection (internal)
+|   |       +-- CapabilityConfiguration.kt <- ConnectionCapabilityCard (internal)
+|   |       +-- ProviderResources.kt  <- ProviderResourcesCard (internal)
+|   |       +-- ClientsSharedHelpers.kt <- getCapabilityLabel, getIndexAllLabel, GitCommitConfigFields (internal)
+|   |       +-- ProjectsSettings.kt   <- Project list
+|   |       +-- ProjectEditForm.kt    <- Project edit form (internal)
+|   |       +-- ProjectResourceDialogs.kt <- Project resource selection dialogs (internal)
+|   |       +-- ProjectGroupsSettings.kt <- Group list
+|   |       +-- ProjectGroupEditForm.kt  <- Group edit form (internal)
+|   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
+|   |       +-- EnvironmentsSettings.kt  <- Environment list
+|   |       +-- EnvironmentEditForm.kt   <- Environment edit form (internal)
+|   |       +-- EnvironmentDialogs.kt    <- Environment create dialog (internal)
+|   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
+|   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
+|   |       +-- ConnectionFormComponents.kt <- Connection form fields (internal)
+|   |       +-- CodingAgentsSettings.kt <- Coding agent config
+|   |       +-- IndexingSettings.kt     <- Indexing intervals config
+|   |       +-- WhisperSettings.kt      <- Whisper transcription config
+|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard
+|   +-- IndexingQueueSections.kt      <- ConnectionsSection, QueueItemsSection (internal)
+|   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
++-- MainScreen.kt                      <- Public entry point (ViewModel -> MainScreenView)
++-- MainViewModel.kt                   <- Main ViewModel (user actions, state)
++-- ChatMessageDisplay.kt             <- Chat messages, workflow steps display
++-- AgentStatusRow.kt                 <- Agent status indicator row
++-- ChatInputArea.kt                  <- Message input + send button
++-- AgentWorkloadScreen.kt            <- Agent workload accordion layout
++-- AgentWorkloadSections.kt          <- Agent/queue/history sections (internal)
++-- SchedulerScreen.kt                <- Task scheduling list
++-- SchedulerComponents.kt            <- ScheduledTaskDetail, ScheduleTaskDialog (internal)
++-- RagSearchScreen.kt                <- RAG search interface
++-- UserTasksScreen.kt                <- Escalated task list + detail
++-- PendingTasksScreen.kt             <- Task queue with filters
++-- ErrorLogsScreen.kt                <- Error logs display
++-- model/
+|   +-- AgentActivityEntry.kt         <- Data models for agent activity
++-- viewmodels/
+|   +-- MainViewModel.kt              <- ViewModel wiring
++-- audio/
+|   +-- AudioPlayer.kt                <- expect class AudioPlayer
+|   +-- AudioRecorder.kt              <- expect class AudioRecorder
+|   +-- PlatformRecordingService.kt   <- Recording service bridge
+|   +-- RecordingServiceBridge.kt
++-- notification/
+|   +-- ApprovalNotificationDialog.kt <- Orchestrator approval dialog
+|   +-- NotificationActionChannel.kt
+|   +-- PlatformNotificationManager.kt
++-- storage/
+|   +-- PendingMessageStorage.kt
+|   +-- RecordingStateStorage.kt
 +-- util/
-|   +-- IconButtons.kt               <- RefreshIconButton, DeleteIconButton, EditIconButton (delegate to J* versions)
-|   +-- ConfirmDialog.kt             <- ConfirmDialog (Czech defaults, keyboard support)
-|   +-- CopyableTextCard.kt          <- CopyableTextCard (SelectionContainer + outlinedCardBorder)
-|   +-- BrowserHelper.kt             <- expect fun openUrlInBrowser
-|   +-- FilePickers.kt               <- expect fun pickTextFileContent
-+-- App.kt                           <- Root composable (JervisTheme wrapper)
+|   +-- IconButtons.kt                <- RefreshIconButton, DeleteIconButton, EditIconButton
+|   +-- ConfirmDialog.kt              <- ConfirmDialog (Czech defaults, keyboard support)
+|   +-- CopyableTextCard.kt           <- CopyableTextCard (SelectionContainer + outlinedCardBorder)
+|   +-- BrowserHelper.kt              <- expect fun openUrlInBrowser
+|   +-- FilePickers.kt                <- expect fun pickTextFileContent
++-- App.kt                            <- Root composable (navigation routing, global dialogs)
++-- JervisApp.kt                      <- App-level setup
 ```
+
+### 10.1) File Organization Rules
+
+See `docs/guidelines.md` § "UI File Organization" for the complete reference.
+
+**Summary:**
+- One feature = one package under `screens/`
+- Three-level decomposition: Screen → Content → Sections
+- File max ~300 lines, must split at 500+
+- Only Screen composable touches ViewModel
+- `internal` for feature-scoped, `private` for file-local, `public` for entry points + design system
 
 ## 11) Cloud Model Policy Settings
 
@@ -1371,7 +1435,7 @@ Cloud model auto-escalation toggles in client/project edit forms.
 
 ### Client level (defaults)
 
-In `ClientEditForm` (`ClientsSettings.kt`), section "Cloud modely":
+In `ClientEditForm` (`ClientEditForm.kt`), section "Cloud modely":
 
 ```kotlin
 JSection(title = "Cloud modely") {
@@ -1386,7 +1450,7 @@ DTO fields: `autoUseAnthropic: Boolean`, `autoUseOpenai: Boolean`, `autoUseGemin
 
 ### Project level (override)
 
-In `ProjectEditForm` (`ProjectsSettings.kt`), section "Cloud modely – přepsání":
+In `ProjectEditForm` (`ProjectEditForm.kt`), section "Cloud modely – přepsání":
 
 ```kotlin
 JSection(title = "Cloud modely – přepsání") {
