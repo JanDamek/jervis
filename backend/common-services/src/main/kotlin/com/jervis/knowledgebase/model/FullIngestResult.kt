@@ -17,5 +17,10 @@ data class FullIngestResult(
     // Routing hints
     val hasActionableContent: Boolean = false,
     val suggestedActions: List<String> = emptyList(),
+    // Scheduling hints (for three-way routing in qualifier)
+    val hasFutureDeadline: Boolean = false,
+    val suggestedDeadline: String? = null, // ISO-8601 datetime string
+    val isAssignedToMe: Boolean = false,
+    val urgency: String = "normal", // "urgent" | "normal" | "low"
     val error: String? = null,
 )

@@ -44,6 +44,7 @@ async def plan(state: dict) -> dict:
     # Task identity from top-level state
     client_name = state.get("client_name")
     project_name = state.get("project_name")
+    target_branch = state.get("target_branch")
     identity_parts = []
     if client_name:
         identity_parts.append(f"Client: {client_name}")
@@ -51,6 +52,13 @@ async def plan(state: dict) -> dict:
         identity_parts.append(f"Project: {project_name}")
     if identity_parts:
         context_parts.append("## Task Context\n" + "\n".join(identity_parts))
+
+    # Branch context — if a target branch was detected from the user query
+    if target_branch:
+        context_parts.append(
+            f"## Target Branch\nWork on branch: **{target_branch}**\n"
+            "All code changes should target this branch."
+        )
     if project_context:
         context_parts.append(f"## Project Context\n{project_context[:3000]}")
     if evidence:
@@ -146,7 +154,8 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
                 "- Each goal will be executed by a coding agent — make goals concrete\n"
                 "- Order goals by dependency\n"
                 "- Use the dependencies field to declare prerequisite goal IDs\n"
-                "- Simple tasks may have just 1 goal\n\n"
+                "- Simple tasks may have just 1 goal\n"
+                "- If a target branch is specified, include it in instructions\n\n"
                 "Respond with JSON:\n"
                 "{\n"
                 '  "goals": [\n'

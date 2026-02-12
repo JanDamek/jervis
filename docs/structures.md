@@ -272,28 +272,52 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 
 **Preemption guarantees:** User requests ALWAYS have priority over background tasks
 
-#### Routing Criteria (TaskRoutingTool)
+#### Three-Way Task Routing (SimpleQualifierAgent)
 
-**DONE (simple structuring):**
+The qualifier delegates heavy lifting to the KB microservice (`POST /ingest/full`),
+which returns routing hints: `hasActionableContent`, `isAssignedToMe`, `hasFutureDeadline`,
+`suggestedDeadline`, `urgency`.
+
+**Decision tree:**
+
+```
+KB ingest result →
+  ├─ hasActionableContent=false
+  │    → DISPATCHED_GPU (info_only — indexed, no action needed)
+  │
+  ├─ isAssignedToMe=true AND hasActionableContent=true
+  │    → READY_FOR_GPU (immediate, high priority)
+  │
+  ├─ hasFutureDeadline=true AND hasActionableContent=true
+  │    ├─ deadline < scheduleLeadDays away → READY_FOR_GPU (too close, do now)
+  │    └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
+  │         scheduledAt = deadline - scheduleLeadDays
+  │         original task → DISPATCHED_GPU (indexed, done)
+  │
+  └─ hasActionableContent=true (no assignment, no deadline)
+       → READY_FOR_GPU (execute when available)
+```
+
+**Schedule lead time**: `SCHEDULE_LEAD_DAYS = 2` (configurable per client).
+Tasks with deadlines further than this are scheduled, not executed immediately.
+
+**DISPATCHED_GPU (info_only):**
 - Document indexed and structured (Graph + RAG)
 - No action items or decisions
 - Simple informational content
 - Routine updates (status change, minor commit)
 
-**READY_FOR_GPU (complex analysis):**
-- Requires user action (reply to email, update Jira, review code)
-- Complex decision making
-- Analysis or investigation
+**READY_FOR_GPU (immediate):**
+- Assigned to the team/organization
+- Deadline too close (within schedule lead days)
+- Requires user action (reply, update, review)
 - Code changes or architectural decisions
-- Coordination of multiple entities
-- Task mentions current user or requires their expertise
+- Complex analysis or investigation
 
-**Context Summary (for READY_FOR_GPU):**
-- Brief overview of structured data
-- Key findings and action items
-- Questions requiring answer
-- Graph node keys for quick reference
-- RAG document IDs for full content retrieval
+**SCHEDULED_TASK (deferred):**
+- Has actionable content with a future deadline
+- Scheduled copy created with `scheduledAt = deadline - scheduleLeadDays`
+- BackgroundEngine scheduler loop picks these up automatically
 
 ### Benefits
 

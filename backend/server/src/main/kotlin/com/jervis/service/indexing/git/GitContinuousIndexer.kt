@@ -7,6 +7,12 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.ProjectResource
+import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.GitStructureIngestRequest
+import com.jervis.knowledgebase.model.GitBranchInfo
+import com.jervis.knowledgebase.model.GitFileContent
+import com.jervis.knowledgebase.model.GitFileInfo
 import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.indexing.git.state.GitCommitDocument
@@ -55,6 +61,7 @@ class GitContinuousIndexer(
     private val taskService: TaskService,
     private val gitRepositoryService: GitRepositoryService,
     private val projectRepository: ProjectRepository,
+    private val knowledgeService: KnowledgeService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -128,6 +135,10 @@ class GitContinuousIndexer(
         if (isInitialIndex) {
             // Create a rich overview document for the branch
             createBranchOverviewTask(project, repoResource, repoDir, branch, commits.first())
+            // Create structural graph nodes (repository, branches, files) — no LLM
+            createStructuralIndexTask(project, repoResource, repoDir, branch, commits.first())
+            // Dispatch Joern CPG deep analysis (async, after structural nodes exist)
+            createCpgAnalysisTask(project, repoDir, branch, commits.first())
         }
 
         // Process individual commits (newest first, limit to avoid flooding)
@@ -200,6 +211,105 @@ class GitContinuousIndexer(
         )
 
         logger.info { "Created branch overview task for ${resource.resourceIdentifier}/$branch" }
+    }
+
+    /**
+     * Create structural graph nodes for the repository directly via KB RPC.
+     *
+     * Bypasses LLM — sends structured data (files, branches) to KB service
+     * which creates ArangoDB graph nodes for repository→branch→file hierarchy.
+     * This enables the orchestrator to search for files/classes by branch.
+     */
+    private suspend fun createStructuralIndexTask(
+        project: ProjectDocument,
+        resource: ProjectResource,
+        repoDir: Path,
+        branch: String,
+        triggerCommit: GitCommitDocument,
+    ) {
+        try {
+            val defaultBranch = gitRepositoryService.detectDefaultBranch(repoDir)
+            val files = gitRepositoryService.getFileListWithMetadata(repoDir)
+            val branches = gitRepositoryService.getBranchMetadata(repoDir, defaultBranch)
+
+            // Read source file contents for tree-sitter parsing in KB service
+            val fileContents = gitRepositoryService.readSourceFileContents(files, repoDir)
+            logger.debug { "Read ${fileContents.size} source file contents for tree-sitter (${fileContents.sumOf { it.second.length }} bytes)" }
+
+            val request = GitStructureIngestRequest(
+                clientId = triggerCommit.clientId,
+                projectId = project.id.value.toHexString(),
+                repositoryIdentifier = resource.resourceIdentifier,
+                branch = branch,
+                defaultBranch = defaultBranch,
+                branches = branches.map { b ->
+                    GitBranchInfo(
+                        name = b.name,
+                        isDefault = b.isDefault,
+                        status = b.status,
+                        lastCommitHash = b.lastCommitHash,
+                    )
+                },
+                files = files.map { f ->
+                    GitFileInfo(
+                        path = f.path,
+                        extension = f.extension,
+                        language = f.language,
+                        sizeBytes = f.sizeBytes,
+                    )
+                },
+                fileContents = fileContents.map { (path, content) ->
+                    GitFileContent(path = path, content = content)
+                },
+            )
+
+            val result = knowledgeService.ingestGitStructure(request)
+            logger.info {
+                "Structural ingest for ${resource.resourceIdentifier}/$branch: " +
+                    "nodes=${result.nodesCreated} edges=${result.edgesCreated} " +
+                    "files=${result.filesIndexed} updated=${result.nodesUpdated}"
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Structural ingest failed for ${resource.resourceIdentifier}/$branch" }
+        }
+    }
+
+    /**
+     * Dispatch Joern CPG deep analysis for a branch.
+     *
+     * Runs after structural ingest (tree-sitter) completes, so method/class
+     * nodes already exist in ArangoDB. Joern adds semantic edges:
+     * - calls (method → method call graph)
+     * - extends (class → class inheritance)
+     * - uses_type (class → class type references)
+     *
+     * This is async and may take 60-120s for medium repos.
+     */
+    private suspend fun createCpgAnalysisTask(
+        project: ProjectDocument,
+        repoDir: Path,
+        branch: String,
+        triggerCommit: GitCommitDocument,
+    ) {
+        try {
+            val request = CpgIngestRequest(
+                clientId = triggerCommit.clientId,
+                projectId = project.id.value.toHexString(),
+                branch = branch,
+                workspacePath = repoDir.toAbsolutePath().toString(),
+            )
+
+            val result = knowledgeService.ingestCpg(request)
+            logger.info {
+                "CPG analysis for ${project.name}/$branch: " +
+                    "methods_enriched=${result.methodsEnriched} " +
+                    "calls=${result.callsEdges} extends=${result.extendsEdges} " +
+                    "uses_type=${result.usesTypeEdges}"
+            }
+        } catch (e: Exception) {
+            // CPG analysis failure is non-fatal — structural graph is still usable
+            logger.error(e) { "CPG analysis failed for ${project.name}/$branch (non-fatal)" }
+        }
     }
 
     /**

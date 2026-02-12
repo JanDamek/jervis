@@ -457,6 +457,162 @@ echo "password=${connection.password}"
     }
 
     /**
+     * Structured file metadata for git structural ingest.
+     */
+    data class GitFileMetadata(
+        val path: String,
+        val extension: String,
+        val language: String,
+        val sizeBytes: Long,
+    )
+
+    /**
+     * Structured branch metadata for git structural ingest.
+     */
+    data class GitBranchMetadata(
+        val name: String,
+        val isDefault: Boolean,
+        val status: String = "active",
+        val lastCommitHash: String = "",
+    )
+
+    /**
+     * Get all tracked files with metadata for structural KB ingest.
+     *
+     * Returns structured file info (path, extension, language, size).
+     * Excludes common non-source directories.
+     */
+    fun getFileListWithMetadata(repoDir: Path): List<GitFileMetadata> {
+        val result = executeGitCommand(
+            listOf("git", "ls-files"),
+            workingDir = repoDir,
+        )
+        if (!result.success) return emptyList()
+
+        val excludeDirs = setOf(
+            "node_modules/", "build/", "target/", ".gradle/", ".idea/",
+            "dist/", "out/", "__pycache__/", ".tox/", "vendor/", ".venv/",
+        )
+
+        return result.output.lines()
+            .filter { it.isNotBlank() }
+            .filter { path -> excludeDirs.none { path.startsWith(it) } }
+            .mapNotNull { path ->
+                val file = repoDir.resolve(path)
+                val ext = path.substringAfterLast('.', "")
+                val lang = extensionToLanguage(ext)
+                val size = try { java.nio.file.Files.size(file) } catch (_: Exception) { 0L }
+                GitFileMetadata(
+                    path = path,
+                    extension = ext,
+                    language = lang,
+                    sizeBytes = size,
+                )
+            }
+    }
+
+    /**
+     * Get metadata for all remote branches.
+     */
+    fun getBranchMetadata(repoDir: Path, defaultBranch: String): List<GitBranchMetadata> {
+        val branchNames = listRemoteBranches(repoDir)
+        return branchNames.map { name ->
+            val hashResult = executeGitCommand(
+                listOf("git", "rev-parse", "origin/$name"),
+                workingDir = repoDir,
+            )
+            GitBranchMetadata(
+                name = name,
+                isDefault = name == defaultBranch,
+                status = "active",
+                lastCommitHash = if (hashResult.success) hashResult.output.trim().take(40) else "",
+            )
+        }
+    }
+
+    /**
+     * Read source file contents for tree-sitter parsing in KB service.
+     *
+     * Filters to source-code-only files (with recognized language),
+     * sorts by size ascending (smallest first for broader coverage),
+     * and enforces limits:
+     * - Max 150 files
+     * - Max 50KB per file
+     * - Max ~5MB total payload
+     */
+    fun readSourceFileContents(
+        files: List<GitFileMetadata>,
+        repoDir: Path,
+    ): List<Pair<String, String>> {
+        val maxFiles = 150
+        val maxFileBytes = 50 * 1024L       // 50KB per file
+        val maxTotalBytes = 5 * 1024 * 1024L // 5MB total
+
+        // Only source files with recognized language
+        val sourceFiles = files
+            .filter { it.language.isNotEmpty() }
+            .filter { it.language !in setOf("json", "yaml", "xml", "markdown", "html", "css", "sql", "shell", "gradle", "protobuf") }
+            .filter { it.sizeBytes in 1..maxFileBytes }
+            .sortedBy { it.sizeBytes }
+            .take(maxFiles)
+
+        val result = mutableListOf<Pair<String, String>>()
+        var totalBytes = 0L
+
+        for (fileMeta in sourceFiles) {
+            if (totalBytes >= maxTotalBytes) break
+            try {
+                val file = repoDir.resolve(fileMeta.path)
+                if (!java.nio.file.Files.exists(file)) continue
+                val size = java.nio.file.Files.size(file)
+                if (size > maxFileBytes || size == 0L) continue
+
+                val content = file.toFile().readText(Charsets.UTF_8)
+                val truncated = if (content.length > maxFileBytes.toInt()) {
+                    content.substring(0, maxFileBytes.toInt())
+                } else {
+                    content
+                }
+
+                totalBytes += truncated.length
+                result.add(fileMeta.path to truncated)
+            } catch (e: Exception) {
+                // Skip files that can't be read (binary, encoding issues, etc.)
+                continue
+            }
+        }
+
+        return result
+    }
+
+    private fun extensionToLanguage(ext: String): String = when (ext.lowercase()) {
+        "kt", "kts" -> "kotlin"
+        "java" -> "java"
+        "py" -> "python"
+        "ts", "tsx" -> "typescript"
+        "js", "jsx" -> "javascript"
+        "go" -> "go"
+        "rs" -> "rust"
+        "rb" -> "ruby"
+        "cs" -> "csharp"
+        "cpp", "cc", "cxx", "c" -> "c/c++"
+        "swift" -> "swift"
+        "scala" -> "scala"
+        "groovy" -> "groovy"
+        "sh", "bash" -> "shell"
+        "sql" -> "sql"
+        "html", "htm" -> "html"
+        "css", "scss", "sass" -> "css"
+        "json" -> "json"
+        "yaml", "yml" -> "yaml"
+        "xml" -> "xml"
+        "md" -> "markdown"
+        "proto" -> "protobuf"
+        "gradle" -> "gradle"
+        else -> ""
+    }
+
+    /**
      * Get the file tree of the repository (for KB indexation).
      */
     fun getFileTree(repoDir: Path, maxDepth: Int = 4): String {

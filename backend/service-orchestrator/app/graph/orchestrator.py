@@ -93,6 +93,9 @@ class OrchestratorState(TypedDict, total=False):
     evidence_pack: dict | None          # EvidencePack from evidence node
     needs_clarification: bool
 
+    # --- Branch awareness ---
+    target_branch: str | None           # Branch detected from user query or context
+
     # --- Existing (from clarify) ---
     project_context: str | None
     task_complexity: str | None
@@ -339,6 +342,8 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "external_refs": None,
         "evidence_pack": None,
         "needs_clarification": False,
+        # Branch awareness
+        "target_branch": None,
         # Clarification
         "clarification_questions": None,
         "clarification_response": None,

@@ -504,6 +504,7 @@ Text: {text}
         project_id: str = None,
         group_id: str = None,
         node_type: str = None,
+        branch_name: str = None,
         limit: int = 20
     ) -> list[GraphNode]:
         """
@@ -542,6 +543,11 @@ Text: {text}
             filter_expr += " AND doc.type == @nodeType"
             bind_vars["nodeType"] = node_type
 
+        # Optional branch filter (for branch-scoped nodes: file, class, method)
+        if branch_name:
+            filter_expr += " AND doc.branchName == @branchName"
+            bind_vars["branchName"] = branch_name
+
         aql = f"""
         FOR doc IN KnowledgeNodes
         FILTER LOWER(doc.label) LIKE @query AND {filter_expr}
@@ -566,3 +572,614 @@ Text: {text}
         except Exception as e:
             logger.warning("Search nodes failed: %s", e)
             return []
+
+    # -----------------------------------------------------------------------
+    # Structural ingest helpers (git repository structure, no LLM involved)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _safe_arango_key(parts: list[str], max_len: int = 200) -> str:
+        """Build a safe ArangoDB _key from parts, hashing if too long.
+
+        ArangoDB _key max is 254 bytes. We use 200 as threshold to leave
+        room for edge key prefixes that concatenate multiple node keys.
+        """
+        import hashlib
+        key = "__".join(parts)
+        key = key.replace(":", "__").replace("/", "_").replace(".", "_").replace("-", "_")
+        # Remove non-alphanumeric except underscore
+        key = "".join(c for c in key if c.isalnum() or c == "_")
+        if len(key) > max_len:
+            h = hashlib.sha256(key.encode()).hexdigest()[:16]
+            key = key[:max_len - 17] + "_" + h
+        return key
+
+    def _make_repo_key(self, repo_identifier: str) -> str:
+        return self._safe_arango_key(["repository", repo_identifier])
+
+    def _make_branch_key(self, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["branch", branch_name, project_id])
+
+    def _make_file_key(self, file_path: str, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["file", file_path, "branch", branch_name, project_id])
+
+    def _make_class_key(self, qualified_name: str, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["class", qualified_name, "branch", branch_name, project_id])
+
+    def _make_method_key(self, class_qname: str, method_name: str, branch_name: str, project_id: str) -> str:
+        return self._safe_arango_key(["method", class_qname, method_name, "branch", branch_name, project_id])
+
+    async def ingest_git_structure(
+        self,
+        client_id: str,
+        project_id: str,
+        repo_identifier: str,
+        branch: str,
+        default_branch: str,
+        branches: list[dict],
+        files: list[dict],
+        classes: list[dict] = None,
+        file_contents: list[dict] = None,
+    ) -> dict:
+        """Create graph nodes/edges for repository structure. No LLM involved.
+
+        When file_contents are provided, invokes tree-sitter to extract classes,
+        methods, and imports — creating richer graph nodes than metadata alone.
+
+        Args:
+            client_id: Client ID
+            project_id: Project ID
+            repo_identifier: Repository identifier (e.g., "myorg/myrepo")
+            branch: The branch currently being indexed
+            default_branch: The repository's default branch name
+            branches: List of branch info dicts {name, isDefault, status, lastCommitHash}
+            files: List of file info dicts {path, extension, language, sizeBytes}
+            classes: Optional list of class info dicts {name, qualifiedName, filePath, visibility}
+            file_contents: Optional list of {path, content} dicts for tree-sitter parsing
+
+        Returns:
+            Dict with counts: nodes_created, edges_created, nodes_updated, etc.
+        """
+        classes = classes or []
+        file_contents = file_contents or []
+
+        # --- Tree-sitter parsing: extract classes + methods from source code ---
+        parsed_classes = []
+        file_imports: dict[str, list[str]] = {}  # file_path -> [import_names]
+        if file_contents:
+            try:
+                from app.services.code_parser import parse_file
+                for fc in file_contents:
+                    path = fc.get("path", "")
+                    content = fc.get("content", "")
+                    if not path or not content:
+                        continue
+                    file_classes = parse_file(path, content)
+                    for cls_info in file_classes:
+                        parsed_classes.append(cls_info.to_dict())
+                    # Collect imports per file
+                    if hasattr(file_classes[0] if file_classes else None, 'imports'):
+                        pass  # imports collected via parse_file_imports
+                    # Try extracting imports
+                    try:
+                        from app.services.code_parser import parse_file_imports
+                        imports = parse_file_imports(path, content)
+                        if imports:
+                            file_imports[path] = imports
+                    except ImportError:
+                        pass
+                logger.info(
+                    "Tree-sitter parsed %d files → %d classes",
+                    len(file_contents), len(parsed_classes),
+                )
+            except Exception as e:
+                logger.warning("Tree-sitter parsing failed, using classes from request: %s", e)
+
+        # Use tree-sitter results if available, otherwise fall back to request classes
+        effective_classes = parsed_classes if parsed_classes else classes
+
+        repo_key = self._make_repo_key(repo_identifier)
+        current_branch_key = self._make_branch_key(branch, project_id)
+
+        def _upsert():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            created = 0
+            updated = 0
+            edge_count = 0
+            methods_count = 0
+
+            # 1. Upsert repository node
+            if not nodes_col.has(repo_key):
+                nodes_col.insert({
+                    "_key": repo_key,
+                    "canonicalKey": f"repository:{repo_identifier}",
+                    "label": repo_identifier,
+                    "type": "repository",
+                    "defaultBranch": default_branch,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "groupId": "",
+                    "ragChunks": [],
+                })
+                created += 1
+            else:
+                nodes_col.update({
+                    "_key": repo_key,
+                    "defaultBranch": default_branch,
+                })
+                updated += 1
+
+            # 2. Upsert branch nodes from branch list
+            for b in branches:
+                b_key = self._make_branch_key(b["name"], project_id)
+                if not nodes_col.has(b_key):
+                    nodes_col.insert({
+                        "_key": b_key,
+                        "canonicalKey": f"branch:{b['name']}:{project_id}",
+                        "label": b["name"],
+                        "type": "branch",
+                        "branchName": b["name"],
+                        "isDefault": b.get("isDefault", False),
+                        "status": b.get("status", "active"),
+                        "lastCommitHash": b.get("lastCommitHash", ""),
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    nodes_col.update({
+                        "_key": b_key,
+                        "status": b.get("status", "active"),
+                        "lastCommitHash": b.get("lastCommitHash", ""),
+                    })
+                    updated += 1
+                # repo -> branch edge
+                e_key = self._safe_arango_key([repo_key, "has_branch", b_key])
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{repo_key}",
+                            "_to": f"KnowledgeNodes/{b_key}",
+                            "relation": "has_branch",
+                            "relationNormalized": "has_branch",
+                            "evidenceChunkIds": [],
+                        })
+                        edge_count += 1
+                    except Exception:
+                        pass
+
+            # 3. Upsert current branch node (ensure it exists)
+            if not nodes_col.has(current_branch_key):
+                nodes_col.insert({
+                    "_key": current_branch_key,
+                    "canonicalKey": f"branch:{branch}:{project_id}",
+                    "label": branch,
+                    "type": "branch",
+                    "branchName": branch,
+                    "isDefault": branch == default_branch,
+                    "status": "active",
+                    "fileCount": len(files),
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "groupId": "",
+                    "ragChunks": [],
+                })
+                created += 1
+                # repo -> current branch edge
+                e_key = self._safe_arango_key([repo_key, "has_branch", current_branch_key])
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{repo_key}",
+                            "_to": f"KnowledgeNodes/{current_branch_key}",
+                            "relation": "has_branch",
+                            "relationNormalized": "has_branch",
+                            "evidenceChunkIds": [],
+                        })
+                        edge_count += 1
+                    except Exception:
+                        pass
+            else:
+                nodes_col.update({
+                    "_key": current_branch_key,
+                    "fileCount": len(files),
+                    "status": "active",
+                })
+                updated += 1
+
+            # 4. Upsert file nodes (limit to 500 per branch)
+            for f in files[:500]:
+                f_key = self._make_file_key(f["path"], branch, project_id)
+                if not nodes_col.has(f_key):
+                    nodes_col.insert({
+                        "_key": f_key,
+                        "canonicalKey": f"file:{f['path']}:branch:{branch}:{project_id}",
+                        "label": f["path"],
+                        "type": "file",
+                        "path": f["path"],
+                        "extension": f.get("extension", ""),
+                        "language": f.get("language", ""),
+                        "branchName": branch,
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    updated += 1
+                # branch -> file edge
+                e_key = self._safe_arango_key([current_branch_key, "contains_file", f_key], max_len=250)
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{current_branch_key}",
+                            "_to": f"KnowledgeNodes/{f_key}",
+                            "relation": "contains_file",
+                            "relationNormalized": "contains_file",
+                            "evidenceChunkIds": [],
+                        })
+                        edge_count += 1
+                    except Exception:
+                        pass
+
+            # 5. Upsert class nodes (from tree-sitter or request)
+            for cls in effective_classes:
+                qname = cls.get("qualifiedName") or cls["name"]
+                c_key = self._make_class_key(qname, branch, project_id)
+                methods = cls.get("methods", [])
+                if not nodes_col.has(c_key):
+                    nodes_col.insert({
+                        "_key": c_key,
+                        "canonicalKey": f"class:{qname}:branch:{branch}:{project_id}",
+                        "label": cls["name"],
+                        "type": "class",
+                        "qualifiedName": qname,
+                        "filePath": cls.get("filePath", ""),
+                        "branchName": branch,
+                        "isInterface": cls.get("isInterface", False),
+                        "visibility": cls.get("visibility", "public"),
+                        "methodCount": len(methods),
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+                else:
+                    nodes_col.update({
+                        "_key": c_key,
+                        "methodCount": len(methods),
+                    })
+                    updated += 1
+                # file -> class edge
+                if cls.get("filePath"):
+                    f_key = self._make_file_key(cls["filePath"], branch, project_id)
+                    e_key = self._safe_arango_key([f_key, "contains", c_key], max_len=250)
+                    if nodes_col.has(f_key) and not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{f_key}",
+                                "_to": f"KnowledgeNodes/{c_key}",
+                                "relation": "contains",
+                                "relationNormalized": "contains",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
+
+                # 6. Upsert method nodes (from tree-sitter parsed classes)
+                for method_name in methods[:50]:  # Max 50 methods per class
+                    m_key = self._make_method_key(qname, method_name, branch, project_id)
+                    if not nodes_col.has(m_key):
+                        nodes_col.insert({
+                            "_key": m_key,
+                            "canonicalKey": f"method:{qname}.{method_name}:branch:{branch}:{project_id}",
+                            "label": method_name,
+                            "type": "method",
+                            "className": qname,
+                            "filePath": cls.get("filePath", ""),
+                            "branchName": branch,
+                            "clientId": client_id,
+                            "projectId": project_id,
+                            "groupId": "",
+                            "ragChunks": [],
+                        })
+                        created += 1
+                        methods_count += 1
+                    else:
+                        updated += 1
+                    # class -> method edge (has_method)
+                    e_key = self._safe_arango_key([c_key, "has_method", m_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{c_key}",
+                                "_to": f"KnowledgeNodes/{m_key}",
+                                "relation": "has_method",
+                                "relationNormalized": "has_method",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
+
+            # 7. Create import edges (file → class, from tree-sitter imports)
+            for import_file_path, import_names in file_imports.items():
+                f_key = self._make_file_key(import_file_path, branch, project_id)
+                if not nodes_col.has(f_key):
+                    continue
+                for import_name in import_names[:100]:  # Max 100 imports per file
+                    # Try to match import to an existing class node
+                    target_key = self._make_class_key(import_name, branch, project_id)
+                    if not nodes_col.has(target_key):
+                        # Try short name match (last segment)
+                        short_name = import_name.rsplit(".", 1)[-1]
+                        target_key = self._make_class_key(short_name, branch, project_id)
+                        if not nodes_col.has(target_key):
+                            continue
+                    e_key = self._safe_arango_key([f_key, "imports", target_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{f_key}",
+                                "_to": f"KnowledgeNodes/{target_key}",
+                                "relation": "imports",
+                                "relationNormalized": "imports",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
+
+            return created, updated, edge_count, methods_count
+
+        nodes_created, nodes_updated, edges_created, methods_indexed = await asyncio.to_thread(_upsert)
+
+        logger.info(
+            "Git structure ingest: repo=%s branch=%s nodes_created=%d "
+            "nodes_updated=%d edges=%d files=%d classes=%d methods=%d "
+            "file_contents=%d tree_sitter=%s",
+            repo_identifier, branch, nodes_created, nodes_updated,
+            edges_created, len(files), len(effective_classes), methods_indexed,
+            len(file_contents), bool(parsed_classes),
+        )
+
+        return {
+            "nodes_created": nodes_created,
+            "edges_created": edges_created,
+            "nodes_updated": nodes_updated,
+            "repository_key": repo_key,
+            "branch_key": current_branch_key,
+            "files_indexed": min(len(files), 500),
+            "classes_indexed": len(effective_classes),
+            "methods_indexed": methods_indexed,
+        }
+
+    # -----------------------------------------------------------------------
+    # Joern CPG ingest — enriches graph with semantic edges
+    # -----------------------------------------------------------------------
+
+    async def ingest_cpg_export(
+        self,
+        client_id: str,
+        project_id: str,
+        branch: str,
+        cpg_data: dict,
+    ) -> dict:
+        """Import pruned Joern CPG into ArangoDB.
+
+        Enriches existing nodes (from tree-sitter) and adds semantic edges:
+        - calls: method → method (call graph)
+        - extends: class → class (inheritance)
+        - uses_type: class → class (field/param type references)
+
+        Also enriches method nodes with Joern-specific data (signature).
+
+        Args:
+            client_id: Client ID
+            project_id: Project ID
+            branch: The branch analyzed
+            cpg_data: Parsed CPG export JSON with keys: methods, types, calls, typeRefs
+
+        Returns:
+            Dict with counts of edges and enrichments created.
+        """
+        methods_data = cpg_data.get("methods", [])
+        types_data = cpg_data.get("types", [])
+        calls_data = cpg_data.get("calls", [])
+        type_refs_data = cpg_data.get("typeRefs", [])
+
+        def _ingest():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            enriched = 0
+            edges_created = 0
+            nodes_created = 0
+
+            # Build lookup: Joern fullName → ArangoDB method key
+            # Joern fullName format varies: "com.pkg.Class.method:returnType(paramTypes)"
+            # We try matching by class_qname + method_name
+
+            # 1. Enrich method nodes with Joern signature
+            for m in methods_data:
+                full_name = m.get("fullName", "")
+                signature = m.get("signature", "")
+                if not full_name or not signature:
+                    continue
+
+                # Parse fullName: last segment before : is method name
+                # fullName could be "Namespace.Class.method:type(types)"
+                name_part = full_name.split(":")[0] if ":" in full_name else full_name
+                parts = name_part.rsplit(".", 1)
+                if len(parts) == 2:
+                    class_qname, method_name = parts
+                else:
+                    continue
+
+                m_key = self._make_method_key(class_qname, method_name, branch, project_id)
+                if nodes_col.has(m_key):
+                    try:
+                        nodes_col.update({
+                            "_key": m_key,
+                            "signature": signature,
+                            "joernFullName": full_name,
+                        })
+                        enriched += 1
+                    except Exception:
+                        pass
+
+            # 2. Add inheritance edges (extends) from type declarations
+            for t in types_data:
+                child_name = t.get("fullName", "")
+                parents = t.get("inheritsFrom", [])
+                if not child_name or not parents:
+                    continue
+
+                child_key = self._make_class_key(child_name, branch, project_id)
+                if not nodes_col.has(child_key):
+                    # Try short name
+                    short = child_name.rsplit(".", 1)[-1]
+                    child_key = self._make_class_key(short, branch, project_id)
+                    if not nodes_col.has(child_key):
+                        continue
+
+                for parent_name in parents:
+                    if not parent_name or parent_name in ("ANY", "Object", "java.lang.Object"):
+                        continue
+                    parent_key = self._make_class_key(parent_name, branch, project_id)
+                    if not nodes_col.has(parent_key):
+                        short_parent = parent_name.rsplit(".", 1)[-1]
+                        parent_key = self._make_class_key(short_parent, branch, project_id)
+                        if not nodes_col.has(parent_key):
+                            continue
+
+                    e_key = self._safe_arango_key([child_key, "extends", parent_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{child_key}",
+                                "_to": f"KnowledgeNodes/{parent_key}",
+                                "relation": "extends",
+                                "relationNormalized": "extends",
+                                "evidenceChunkIds": [],
+                            })
+                            edges_created += 1
+                        except Exception:
+                            pass
+
+            # 3. Add call edges (calls) from Joern call analysis
+            for c in calls_data:
+                caller_full = c.get("callerMethod", "")
+                callee_full = c.get("calledMethod", "")
+                if not caller_full or not callee_full:
+                    continue
+
+                # Parse caller and callee into class.method
+                def _parse_method_ref(full_name: str):
+                    name_part = full_name.split(":")[0] if ":" in full_name else full_name
+                    parts = name_part.rsplit(".", 1)
+                    return tuple(parts) if len(parts) == 2 else (None, None)
+
+                caller_cls, caller_method = _parse_method_ref(caller_full)
+                callee_cls, callee_method = _parse_method_ref(callee_full)
+                if not caller_cls or not callee_cls:
+                    continue
+
+                caller_key = self._make_method_key(caller_cls, caller_method, branch, project_id)
+                callee_key = self._make_method_key(callee_cls, callee_method, branch, project_id)
+
+                if not nodes_col.has(caller_key) or not nodes_col.has(callee_key):
+                    continue
+
+                e_key = self._safe_arango_key([caller_key, "calls", callee_key], max_len=250)
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{caller_key}",
+                            "_to": f"KnowledgeNodes/{callee_key}",
+                            "relation": "calls",
+                            "relationNormalized": "calls",
+                            "evidenceChunkIds": [],
+                        })
+                        edges_created += 1
+                    except Exception:
+                        pass
+
+            # 4. Add type reference edges (uses_type)
+            for ref in type_refs_data:
+                class_name = ref.get("className", "")
+                member_type = ref.get("memberType", "")
+                if not class_name or not member_type:
+                    continue
+                # Skip primitive types and common library types
+                if member_type in ("int", "long", "float", "double", "boolean", "void",
+                                   "String", "java.lang.String", "Any", "Unit",
+                                   "List", "Map", "Set", "Optional"):
+                    continue
+
+                owner_key = self._make_class_key(class_name, branch, project_id)
+                if not nodes_col.has(owner_key):
+                    short_owner = class_name.rsplit(".", 1)[-1]
+                    owner_key = self._make_class_key(short_owner, branch, project_id)
+                    if not nodes_col.has(owner_key):
+                        continue
+
+                ref_key = self._make_class_key(member_type, branch, project_id)
+                if not nodes_col.has(ref_key):
+                    short_ref = member_type.rsplit(".", 1)[-1]
+                    ref_key = self._make_class_key(short_ref, branch, project_id)
+                    if not nodes_col.has(ref_key):
+                        continue
+
+                # Don't create self-references
+                if owner_key == ref_key:
+                    continue
+
+                e_key = self._safe_arango_key([owner_key, "uses_type", ref_key], max_len=250)
+                if not edges_col.has(e_key):
+                    try:
+                        edges_col.insert({
+                            "_key": e_key,
+                            "_from": f"KnowledgeNodes/{owner_key}",
+                            "_to": f"KnowledgeNodes/{ref_key}",
+                            "relation": "uses_type",
+                            "relationNormalized": "uses_type",
+                            "evidenceChunkIds": [],
+                        })
+                        edges_created += 1
+                    except Exception:
+                        pass
+
+            return enriched, edges_created, nodes_created
+
+        enriched, edges_created, nodes_created = await asyncio.to_thread(_ingest)
+
+        logger.info(
+            "CPG ingest: branch=%s enriched=%d edges=%d nodes=%d "
+            "(methods=%d types=%d calls=%d typeRefs=%d)",
+            branch, enriched, edges_created, nodes_created,
+            len(methods_data), len(types_data), len(calls_data), len(type_refs_data),
+        )
+
+        return {
+            "methods_enriched": enriched,
+            "edges_created": edges_created,
+            "nodes_created": nodes_created,
+            "cpg_methods": len(methods_data),
+            "cpg_types": len(types_data),
+            "cpg_calls": len(calls_data),
+            "cpg_type_refs": len(type_refs_data),
+        }

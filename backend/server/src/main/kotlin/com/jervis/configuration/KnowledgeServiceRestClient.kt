@@ -2,10 +2,14 @@ package com.jervis.configuration
 
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
+import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.EvidenceItem
 import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
+import com.jervis.knowledgebase.model.GitStructureIngestRequest
+import com.jervis.knowledgebase.model.GitStructureIngestResult
 import com.jervis.knowledgebase.model.IngestRequest
 import com.jervis.knowledgebase.model.IngestResult
 import com.jervis.knowledgebase.model.RetrievalRequest
@@ -142,6 +146,10 @@ class KnowledgeServiceRestClient(
                 entities = response.entities,
                 hasActionableContent = response.hasActionableContent,
                 suggestedActions = response.suggestedActions,
+                hasFutureDeadline = response.hasFutureDeadline,
+                suggestedDeadline = response.suggestedDeadline,
+                isAssignedToMe = response.isAssignedToMe,
+                urgency = response.urgency,
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingestFull to knowledgebase: ${e.message}" }
@@ -230,6 +238,105 @@ class KnowledgeServiceRestClient(
         } catch (e: Exception) {
             logger.error(e) { "Failed to traverse knowledgebase: ${e.message}" }
             emptyList()
+        }
+    }
+
+    override suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult {
+        logger.debug { "Calling knowledgebase ingestGitStructure: repo=${request.repositoryIdentifier} branch=${request.branch}" }
+
+        val pythonRequest = PythonGitStructureIngestRequest(
+            clientId = request.clientId,
+            projectId = request.projectId,
+            repositoryIdentifier = request.repositoryIdentifier,
+            branch = request.branch,
+            defaultBranch = request.defaultBranch,
+            branches = request.branches.map { b ->
+                PythonGitBranchInfo(
+                    name = b.name,
+                    isDefault = b.isDefault,
+                    status = b.status,
+                    lastCommitHash = b.lastCommitHash,
+                )
+            },
+            files = request.files.map { f ->
+                PythonGitFileInfo(
+                    path = f.path,
+                    extension = f.extension,
+                    language = f.language,
+                    sizeBytes = f.sizeBytes,
+                )
+            },
+            classes = request.classes.map { c ->
+                PythonGitClassInfo(
+                    name = c.name,
+                    qualifiedName = c.qualifiedName,
+                    filePath = c.filePath,
+                    visibility = c.visibility,
+                    isInterface = c.isInterface,
+                    methods = c.methods,
+                )
+            },
+            fileContents = request.fileContents.map { fc ->
+                PythonGitFileContent(
+                    path = fc.path,
+                    content = fc.content,
+                )
+            },
+            metadata = request.metadata,
+        )
+
+        return try {
+            val response: PythonGitStructureIngestResult = client.post("$apiBaseUrl/ingest/git-structure") {
+                contentType(ContentType.Application.Json)
+                setBody(pythonRequest)
+            }.body()
+
+            GitStructureIngestResult(
+                status = response.status,
+                nodesCreated = response.nodesCreated,
+                edgesCreated = response.edgesCreated,
+                nodesUpdated = response.nodesUpdated,
+                repositoryKey = response.repositoryKey,
+                branchKey = response.branchKey,
+                filesIndexed = response.filesIndexed,
+                classesIndexed = response.classesIndexed,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ingest git structure to knowledgebase: ${e.message}" }
+            GitStructureIngestResult(
+                status = "error: ${e.message}",
+            )
+        }
+    }
+
+    override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult {
+        logger.debug { "Calling knowledgebase ingestCpg: project=${request.projectId} branch=${request.branch}" }
+
+        val pythonRequest = PythonCpgIngestRequest(
+            clientId = request.clientId,
+            projectId = request.projectId,
+            branch = request.branch,
+            workspacePath = request.workspacePath,
+        )
+
+        return try {
+            val response: PythonCpgIngestResult = client.post("$apiBaseUrl/ingest/cpg") {
+                contentType(ContentType.Application.Json)
+                setBody(pythonRequest)
+            }.body()
+
+            CpgIngestResult(
+                status = response.status,
+                methodsEnriched = response.methodsEnriched,
+                extendsEdges = response.extendsEdges,
+                callsEdges = response.callsEdges,
+                usesTypeEdges = response.usesTypeEdges,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ingest CPG to knowledgebase: ${e.message}" }
+            CpgIngestResult(
+                status = "error: ${e.message}",
+            )
         }
     }
 
@@ -367,4 +474,95 @@ private data class PythonFullIngestResult(
     val entities: List<String> = emptyList(),
     val hasActionableContent: Boolean = false,
     val suggestedActions: List<String> = emptyList(),
+    // Scheduling hints (three-way routing)
+    val hasFutureDeadline: Boolean = false,
+    val suggestedDeadline: String? = null,
+    val isAssignedToMe: Boolean = false,
+    val urgency: String = "normal",
+)
+
+@Serializable
+private data class PythonGitStructureIngestRequest(
+    val clientId: String,
+    val projectId: String,
+    val repositoryIdentifier: String,
+    val branch: String,
+    val defaultBranch: String = "main",
+    val branches: List<PythonGitBranchInfo> = emptyList(),
+    val files: List<PythonGitFileInfo> = emptyList(),
+    val classes: List<PythonGitClassInfo> = emptyList(),
+    val fileContents: List<PythonGitFileContent> = emptyList(),
+    val metadata: Map<String, String> = emptyMap(),
+)
+
+@Serializable
+private data class PythonGitBranchInfo(
+    val name: String,
+    val isDefault: Boolean = false,
+    val status: String = "active",
+    val lastCommitHash: String = "",
+)
+
+@Serializable
+private data class PythonGitFileInfo(
+    val path: String,
+    val extension: String = "",
+    val language: String = "",
+    val sizeBytes: Long = 0,
+)
+
+@Serializable
+private data class PythonGitClassInfo(
+    val name: String,
+    val qualifiedName: String = "",
+    val filePath: String,
+    val visibility: String = "public",
+    val isInterface: Boolean = false,
+    val methods: List<String> = emptyList(),
+)
+
+@Serializable
+private data class PythonGitFileContent(
+    val path: String,
+    val content: String,
+)
+
+@Serializable
+private data class PythonGitStructureIngestResult(
+    val status: String,
+    @SerialName("nodes_created")
+    val nodesCreated: Int = 0,
+    @SerialName("edges_created")
+    val edgesCreated: Int = 0,
+    @SerialName("nodes_updated")
+    val nodesUpdated: Int = 0,
+    @SerialName("repository_key")
+    val repositoryKey: String = "",
+    @SerialName("branch_key")
+    val branchKey: String = "",
+    @SerialName("files_indexed")
+    val filesIndexed: Int = 0,
+    @SerialName("classes_indexed")
+    val classesIndexed: Int = 0,
+)
+
+@Serializable
+private data class PythonCpgIngestRequest(
+    val clientId: String,
+    val projectId: String,
+    val branch: String,
+    val workspacePath: String,
+)
+
+@Serializable
+private data class PythonCpgIngestResult(
+    val status: String,
+    @SerialName("methods_enriched")
+    val methodsEnriched: Int = 0,
+    @SerialName("extends_edges")
+    val extendsEdges: Int = 0,
+    @SerialName("calls_edges")
+    val callsEdges: Int = 0,
+    @SerialName("uses_type_edges")
+    val usesTypeEdges: Int = 0,
 )

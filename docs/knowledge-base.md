@@ -1,6 +1,6 @@
 # Knowledge Base - Implementation and Architecture
 
-**Status:** Production Documentation (2026-02-05)
+**Status:** Production Documentation (2026-02-12)
 **Purpose:** Knowledge base implementation, graph design, and architecture
 
 ---
@@ -131,24 +131,46 @@ nodeKey: "class::com.jervis.service.UserService"
 type: "class"
 props: { name: String, qualifiedName: String, isInterface: Boolean, visibility: String, filePath: String }
 
-// Method
-nodeKey: "method::com.jervis.service.UserService.createUser"
+// Method (from tree-sitter, enriched by Joern CPG)
+nodeKey: "method__{classQualifiedName}__{methodName}__branch__{branch}__{projectId}"
 type: "method"
-props: { name: String, signature: String, returnType: String, isConstructor: Boolean, visibility: String }
+props: { label: String, className: String, filePath: String, branchName: String, signature: String? }
+// Note: signature is populated by Joern CPG analysis (Phase 2), not tree-sitter
 ```
 
 #### VCS - Version Control
 ```kotlin
+// Repository (one per connected repository)
+nodeKey: "repository__{org}_{repo}"
+type: "repository"
+props: { label: String, defaultBranch: String, techStack: String?, clientId: String, projectId: String }
+
+// Git Branch (scoped to projectId — same name can exist in different projects)
+nodeKey: "branch__{branchName}__{projectId}"
+type: "branch"
+props: { branchName: String, isDefault: Boolean, status: String, lastCommitHash: String?, fileCount: Int,
+         clientId: String, projectId: String }
+
+// Git File (scoped to branch+project — different content per branch)
+nodeKey: "file__{path}__branch__{branchName}__{projectId}"
+type: "file"
+props: { path: String, extension: String, language: String?, branchName: String,
+         clientId: String, projectId: String }
+
+// Git Class (scoped to branch+project, extracted by tree-sitter)
+nodeKey: "class__{className}__branch__{branchName}__{projectId}"
+type: "class"
+props: { qualifiedName: String?, filePath: String, branchName: String, visibility: String?,
+         clientId: String, projectId: String }
+
 // Git Commit
 nodeKey: "commit::{commitHash}"
 type: "commit"
 props: { hash: String, message: String, authorName: String, timestamp: Instant, branchName: String? }
-
-// Git Branch
-nodeKey: "branch::{branchName}"
-type: "branch"
-props: { name: String, isDefault: Boolean, lastCommitHash: String, createdAt: Instant? }
 ```
+
+> **Key length guard**: ArangoDB `_key` max 254 bytes. Keys exceeding 200 chars get
+> a SHA-256 suffix via `_safe_arango_key()` helper in `graph_service.py`.
 
 #### ISSUE TRACKING - Jira, GitHub Issues
 ```kotlin
@@ -192,11 +214,23 @@ method --[calls]--> method
 
 #### VCS Relationships
 ```kotlin
-// Git structure
+// Repository structure (structural ingest — POST /ingest/git-structure)
+repository --[has_branch]--> branch
+branch --[contains_file]--> file
+branch --[has_commit]--> commit
+file --[contains]--> class
+class --[has_method]--> method     // tree-sitter extracted
+file --[imports]--> class           // tree-sitter import analysis
+
+// Git commit relationships (commit-level ingest)
 commit --[modifies]--> file
 commit --[creates]--> file
 commit --[parent]--> commit
-branch --[contains]--> commit
+
+// Joern CPG edges (POST /ingest/cpg — deep analysis)
+method --[calls]--> method          // call graph from Joern
+class --[extends]--> class          // inheritance from Joern
+class --[uses_type]--> class        // field/param type references from Joern
 ```
 
 #### ISSUE TRACKING Relationships
@@ -231,9 +265,11 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 ### Features
 1.  **Web Crawling**: `POST /crawl` endpoint to index documentation from URLs.
 2.  **File Ingestion**: `POST /ingest/file` supports PDF, DOCX, etc. using Tika.
-3.  **Code Analysis**: `POST /analyze/code` integrates with Joern service.
+3.  **Code Analysis**: `POST /analyze/code` integrates with Joern service (ad-hoc queries).
 4.  **Image Understanding**: Automatically detects images and uses `qwen-3-vl` to generate descriptions.
 5.  **Scoped Search**: Filters results by Client, Project, and Group.
+6.  **Structural Code Ingest**: `POST /ingest/git-structure` — tree-sitter extracts classes, methods, imports from source code.
+7.  **Deep Code Analysis**: `POST /ingest/cpg` — Joern CPG export adds semantic edges (calls, extends, uses_type).
 
 ### Multi-tenant Scoping (with Project Groups)
 
@@ -257,7 +293,8 @@ gains immediate visibility in the new group via the updated `groupId` filter.
 
 ### Integration
 *   **Tika Service**: Used for text extraction (OCR).
-*   **Joern Service**: Used for deep code analysis.
+*   **Joern Service**: Used for deep code analysis (ad-hoc queries + CPG export).
+*   **Tree-sitter**: Lightweight AST parser for structural code extraction (classes, methods, imports). Bundled in KB service via `tree-sitter-languages` package.
 
 ### Relationship Extraction
 
@@ -424,8 +461,47 @@ graphRefLocks["client-abc|user:john"] = Mutex()
 
 ### GitContinuousIndexer
 
-- **Purpose:** Creates DATA_PROCESSING task from Git commits
-- **Process:** Similar to other indexers
+- **Purpose:** Creates rich KB content from Git commits with three-phase indexing
+- **Process (initial branch index):**
+  1. **Branch Overview** — repository tech stack, file tree, README, recent changes → `GIT_PROCESSING` task
+  2. **Structural Ingest** — tree-sitter extracts classes, methods, imports from source files → `POST /ingest/git-structure` → ArangoDB graph nodes (repo→branch→file→class→method)
+  3. **CPG Deep Analysis** — Joern generates Code Property Graph → `POST /ingest/cpg` → semantic edges (calls, extends, uses_type)
+- **Process (incremental commits):**
+  1. Commit diff + metadata → `GIT_PROCESSING` task → Qualifier indexes to KB
+
+#### Tree-sitter Pipeline (Phase 1 — fast, ~5s per 100 files)
+
+Kotlin sends file contents to KB service → KB invokes tree-sitter → extracts classes, methods, imports.
+
+```
+GitContinuousIndexer.createStructuralIndexTask()
+  → readSourceFileContents() — reads top 150 files (max 50KB each, 5MB total)
+  → POST /ingest/git-structure with fileContents
+  → KB service code_parser.parse_file() for each file
+  → Creates: method nodes + has_method edges + imports edges
+```
+
+Supported languages: Kotlin, Java, Python, TypeScript/JavaScript, Go, Rust.
+
+#### Joern CPG Pipeline (Phase 2 — deep, ~60-120s per project)
+
+After structural nodes exist, dispatches Joern K8s Job for semantic analysis.
+
+```
+GitContinuousIndexer.createCpgAnalysisTask()
+  → POST /ingest/cpg (clientId, projectId, branch, workspacePath)
+  → KB service dispatches JoernClient.run_cpg_export()
+    → K8s Job: joern → importCode → cpg-export-query.sc → .jervis/cpg-export.json
+  → KB reads pruned CPG JSON
+  → graph_service.ingest_cpg_export() creates edges:
+    - calls: method → method (call graph)
+    - extends: class → class (inheritance)
+    - uses_type: class → class (type references)
+```
+
+**CPG Pruning Strategy:** Only actionable edges are imported. Skipped: AST nodes, CFG/CDG edges, reaching-def edges, ARGUMENT/RECEIVER details (too granular for agent use).
+
+**Failure handling:** CPG analysis failure is non-fatal — the structural graph from tree-sitter remains fully usable.
 
 ### MeetingContinuousIndexer
 

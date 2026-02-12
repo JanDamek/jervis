@@ -13,6 +13,8 @@ from app.api.models import (
     HybridRetrievalRequest, HybridEvidenceItem, HybridEvidencePack,
     PurgeRequest, PurgeResult,
     ListByKindRequest,
+    GitStructureIngestRequest, GitStructureIngestResult,
+    CpgIngestRequest, CpgIngestResult,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -130,9 +132,14 @@ async def search_graph_nodes(
     projectId: str = None,
     groupId: str = None,
     nodeType: str = None,
+    branchName: str = None,
     limit: int = 20
 ):
-    """Search graph nodes by label with multi-tenant filtering."""
+    """Search graph nodes by label with multi-tenant filtering.
+
+    Optional branchName filter scopes results to a specific branch
+    (applies to file, class, and other branch-scoped node types).
+    """
     try:
         return await service.graph_service.search_nodes(
             query=query,
@@ -140,6 +147,7 @@ async def search_graph_nodes(
             project_id=projectId,
             group_id=groupId,
             node_type=nodeType,
+            branch_name=branchName,
             limit=limit
         )
     except Exception as e:
@@ -313,6 +321,37 @@ async def ingest_full(
             attachment_list.append((file_bytes, attachment.filename))
 
         return await service.ingest_full(request, attachment_list)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/git-structure", response_model=GitStructureIngestResult)
+async def ingest_git_structure(request: GitStructureIngestRequest):
+    """Structural ingest of git repository (no LLM).
+
+    Creates graph nodes for repository, branches, files, and classes.
+    Called from Kotlin GitContinuousIndexer during initial branch index.
+    """
+    try:
+        return await service.ingest_git_structure(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/cpg", response_model=CpgIngestResult)
+async def ingest_cpg(request: CpgIngestRequest):
+    """Import Joern CPG deep analysis into knowledge graph.
+
+    Runs Joern CPG export (K8s Job) and imports semantic edges:
+    - calls: method → method (call graph)
+    - extends: class → class (inheritance)
+    - uses_type: class → class (type references)
+
+    Called from Kotlin GitContinuousIndexer after structural index completes.
+    Requires that tree-sitter structural ingest has already created method/class nodes.
+    """
+    try:
+        return await service.ingest_cpg(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

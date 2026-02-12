@@ -186,6 +186,11 @@ class FullIngestResult(BaseModel):
     entities: List[str] = []  # Key entities found (people, projects, etc.)
     hasActionableContent: bool = False  # Hint for router
     suggestedActions: List[str] = []  # e.g., ["reply_email", "review_code"]
+    # Scheduling hints (for three-way routing in qualifier)
+    hasFutureDeadline: bool = False  # Content mentions a future deadline
+    suggestedDeadline: Optional[str] = None  # ISO-8601 datetime string
+    isAssignedToMe: bool = False  # Content is assigned to the owning client/team
+    urgency: str = "normal"  # "urgent" | "normal" | "low"
 
 
 # === Purge Models ===
@@ -280,4 +285,118 @@ class ListByKindRequest(BaseModel):
     projectId: Optional[str] = None
     kind: str
     maxResults: int = 100
+
+
+# === Git Structural Ingest Models ===
+
+class GitFileInfo(BaseModel):
+    """Metadata for a single file in a git repository."""
+    path: str
+    extension: str = ""
+    language: str = ""
+    sizeBytes: int = 0
+
+
+class GitBranchInfo(BaseModel):
+    """Metadata for a git branch."""
+    name: str
+    isDefault: bool = False
+    status: str = "active"  # "active", "merged", "stale"
+    lastCommitHash: str = ""
+
+
+class GitClassInfo(BaseModel):
+    """Class/type extracted from source code via tree-sitter."""
+    name: str
+    qualifiedName: str = ""
+    filePath: str
+    visibility: str = "public"
+    isInterface: bool = False
+    methods: List[str] = []  # Method names
+
+
+class GitFileContent(BaseModel):
+    """Source code content for a single file (for tree-sitter parsing)."""
+    path: str
+    content: str
+
+
+class GitStructureIngestRequest(BaseModel):
+    """
+    Request for direct structural ingest of git repository.
+
+    Bypasses LLM entity extraction — creates graph nodes directly
+    from structured repository data (files, branches, classes).
+
+    fileContents: Source code content for tree-sitter parsing.
+    When provided, KB service invokes tree-sitter to extract classes, methods,
+    and imports — creating richer graph nodes (method, has_method, imports edges).
+
+    Multi-tenant scoping: same rules as IngestRequest.
+    """
+    clientId: str
+    projectId: str
+    repositoryIdentifier: str  # e.g., "myorg/myrepo"
+    branch: str  # The branch being indexed
+    defaultBranch: str = "main"
+    branches: List[GitBranchInfo] = []
+    files: List[GitFileInfo] = []
+    classes: List[GitClassInfo] = []  # From tree-sitter analysis (or empty if fileContents provided)
+    fileContents: List[GitFileContent] = []  # Source code for tree-sitter parsing
+    metadata: Dict[str, Any] = {}
+
+    @model_validator(mode='after')
+    def validate_tenant_hierarchy(self):
+        if not self.clientId:
+            raise ValueError("clientId is required for git structure ingest")
+        if not self.projectId:
+            raise ValueError("projectId is required for git structure ingest")
+        return self
+
+
+class GitStructureIngestResult(BaseModel):
+    """Result of git structural ingest."""
+    status: str
+    nodes_created: int = 0
+    edges_created: int = 0
+    nodes_updated: int = 0
+    repository_key: str = ""
+    branch_key: str = ""
+    files_indexed: int = 0
+    classes_indexed: int = 0
+    methods_indexed: int = 0
+
+
+# === Joern CPG Ingest Models ===
+
+class CpgIngestRequest(BaseModel):
+    """
+    Request to import Joern CPG export into knowledge graph.
+
+    Called after Joern K8s Job completes. The cpgData contains pruned CPG
+    with methods, types, calls, and typeRefs from Joern analysis.
+
+    Multi-tenant scoping: same rules as GitStructureIngestRequest.
+    """
+    clientId: str
+    projectId: str
+    branch: str
+    workspacePath: str  # Path to project on PVC (for Joern execution)
+
+    @model_validator(mode='after')
+    def validate_tenant_hierarchy(self):
+        if not self.clientId:
+            raise ValueError("clientId is required for CPG ingest")
+        if not self.projectId:
+            raise ValueError("projectId is required for CPG ingest")
+        return self
+
+
+class CpgIngestResult(BaseModel):
+    """Result of Joern CPG ingest."""
+    status: str
+    methods_enriched: int = 0
+    extends_edges: int = 0
+    calls_edges: int = 0
+    uses_type_edges: int = 0
 
