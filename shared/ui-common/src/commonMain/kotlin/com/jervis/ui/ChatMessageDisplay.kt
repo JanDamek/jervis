@@ -132,7 +132,7 @@ private fun ChatMessageItem(
             )
         }
     } else {
-        // standard chat bubble - responsive layout
+        // standard chat bubble - iMessage/WhatsApp style (width based on content)
         Row(
             modifier = modifier.fillMaxWidth(),
             horizontalArrangement =
@@ -153,8 +153,7 @@ private fun ChatMessageItem(
                             },
                     ),
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)  // Take up to 85% of width
-                    .widthIn(max = 800.dp),  // But never exceed 800dp for readability
+                    .widthIn(min = 48.dp, max = 600.dp),  // Min for buttons, max for readability
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
