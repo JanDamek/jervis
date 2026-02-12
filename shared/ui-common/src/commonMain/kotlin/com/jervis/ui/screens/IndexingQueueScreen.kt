@@ -1,110 +1,77 @@
 package com.jervis.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.jervis.dto.connection.ConnectionResponseDto
-import com.jervis.dto.indexing.IndexingQueuePageDto
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.indexing.IndexingDashboardDto
+import com.jervis.dto.indexing.PollingIntervalUpdateDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JActionBar
+import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JErrorState
+import com.jervis.ui.design.JIconButton
 import com.jervis.ui.design.JRefreshButton
+import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import kotlinx.coroutines.launch
+
+private data class IntervalDialogState(
+    val capability: ConnectionCapability,
+    val currentIntervalMinutes: Int,
+)
 
 @Composable
 fun IndexingQueueScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
 ) {
-    // Connections section state
-    var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
-    var connectionsLoading by remember { mutableStateOf(false) }
-    var connectionsError by remember { mutableStateOf<String?>(null) }
-    var connectionsSearch by remember { mutableStateOf("") }
-
-    // Pending items section state
-    var pendingPage by remember { mutableStateOf<IndexingQueuePageDto?>(null) }
-    var pendingLoading by remember { mutableStateOf(false) }
-    var pendingError by remember { mutableStateOf<String?>(null) }
-    var pendingSearch by remember { mutableStateOf("") }
-    var pendingPageNum by remember { mutableIntStateOf(0) }
-
-    // Indexed items section state
-    var indexedPage by remember { mutableStateOf<IndexingQueuePageDto?>(null) }
-    var indexedLoading by remember { mutableStateOf(false) }
-    var indexedError by remember { mutableStateOf<String?>(null) }
-    var indexedSearch by remember { mutableStateOf("") }
-    var indexedPageNum by remember { mutableIntStateOf(0) }
+    var dashboard by remember { mutableStateOf<IndexingDashboardDto?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var search by remember { mutableStateOf("") }
+    var kbExpanded by remember { mutableStateOf(false) }
+    var intervalDialog by remember { mutableStateOf<IntervalDialogState?>(null) }
 
     val scope = rememberCoroutineScope()
 
-    fun loadConnections() {
+    fun loadDashboard() {
         scope.launch {
-            connectionsLoading = true
-            connectionsError = null
+            isLoading = true
+            error = null
             try {
-                connections = repository.connections.getAllConnections()
+                dashboard = repository.indexingQueue.getIndexingDashboard(search, 20)
             } catch (e: Exception) {
-                connectionsError = "Chyba: ${e.message}"
+                error = "Chyba: ${e.message}"
             } finally {
-                connectionsLoading = false
+                isLoading = false
             }
         }
     }
 
-    fun loadPending() {
-        scope.launch {
-            pendingLoading = true
-            pendingError = null
-            try {
-                pendingPage = repository.indexingQueue.getPendingItems(pendingPageNum, PAGE_SIZE, pendingSearch)
-            } catch (e: Exception) {
-                pendingError = "Chyba: ${e.message}"
-            } finally {
-                pendingLoading = false
-            }
-        }
-    }
-
-    fun loadIndexed() {
-        scope.launch {
-            indexedLoading = true
-            indexedError = null
-            try {
-                indexedPage = repository.indexingQueue.getIndexedItems(indexedPageNum, PAGE_SIZE, indexedSearch)
-            } catch (e: Exception) {
-                indexedError = "Chyba: ${e.message}"
-            } finally {
-                indexedLoading = false
-            }
-        }
-    }
-
-    fun loadAll() {
-        loadConnections()
-        loadPending()
-        loadIndexed()
-    }
-
-    LaunchedEffect(Unit) { loadAll() }
-    LaunchedEffect(pendingPageNum) { loadPending() }
-    LaunchedEffect(indexedPageNum) { loadIndexed() }
+    LaunchedEffect(Unit) { loadDashboard() }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -120,79 +87,105 @@ fun IndexingQueueScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = JervisSpacing.outerPadding),
-            verticalArrangement = Arrangement.spacedBy(JervisSpacing.sectionGap),
+            verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
         ) {
-            // ── Refresh bar ──
+            // ── Action bar with search ──
             item {
                 JActionBar {
-                    JRefreshButton(onClick = { loadAll() })
+                    JRefreshButton(onClick = { loadDashboard() })
                 }
             }
 
-            // ── Section 1: Polling connections ──
             item {
-                ConnectionsSection(
-                    connections = connections,
-                    isLoading = connectionsLoading,
-                    error = connectionsError,
-                    search = connectionsSearch,
-                    onSearchChange = { connectionsSearch = it },
-                    onRetry = { loadConnections() },
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                ) {
+                    JTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        label = "Hledat",
+                        modifier = Modifier.weight(1f),
+                    )
+                    JIconButton(
+                        onClick = { loadDashboard() },
+                        icon = Icons.Default.Search,
+                        contentDescription = "Hledat",
+                    )
+                }
             }
 
-            // ── Section 2: Pending items ──
-            item {
-                QueueItemsSection(
-                    title = "Čeká na indexaci",
-                    page = pendingPage,
-                    isLoading = pendingLoading,
-                    error = pendingError,
-                    search = pendingSearch,
-                    onSearchChange = { pendingSearch = it },
-                    onSearch = {
-                        pendingPageNum = 0
-                        loadPending()
-                    },
-                    pageNum = pendingPageNum,
-                    onPrevPage = { if (pendingPageNum > 0) pendingPageNum-- },
-                    onNextPage = {
-                        val totalPages = pendingPage?.let {
-                            ((it.totalCount + PAGE_SIZE - 1) / PAGE_SIZE).toInt()
-                        } ?: 1
-                        if (pendingPageNum < totalPages - 1) pendingPageNum++
-                    },
-                    onRetry = { loadPending() },
-                )
-            }
+            // ── Loading / error / content ──
+            when {
+                isLoading && dashboard == null -> item { JCenteredLoading() }
+                error != null -> item { JErrorState(error!!, onRetry = { loadDashboard() }) }
+                dashboard != null -> {
+                    val data = dashboard!!
 
-            // ── Section 3: Indexed items ──
-            item {
-                QueueItemsSection(
-                    title = "Odesláno do KB",
-                    page = indexedPage,
-                    isLoading = indexedLoading,
-                    error = indexedError,
-                    search = indexedSearch,
-                    onSearchChange = { indexedSearch = it },
-                    onSearch = {
-                        indexedPageNum = 0
-                        loadIndexed()
-                    },
-                    pageNum = indexedPageNum,
-                    onPrevPage = { if (indexedPageNum > 0) indexedPageNum-- },
-                    onNextPage = {
-                        val totalPages = indexedPage?.let {
-                            ((it.totalCount + PAGE_SIZE - 1) / PAGE_SIZE).toInt()
-                        } ?: 1
-                        if (indexedPageNum < totalPages - 1) indexedPageNum++
-                    },
-                    onRetry = { loadIndexed() },
-                )
+                    // ── Connection groups ──
+                    if (data.connectionGroups.isEmpty()) {
+                        item {
+                            JEmptyState("Žádné položky k indexaci", icon = "📋")
+                        }
+                    } else {
+                        items(
+                            items = data.connectionGroups,
+                            key = { it.connectionId.ifEmpty { "git-${it.connectionName}" } },
+                        ) { group ->
+                            ConnectionGroupCard(
+                                group = group,
+                                onIntervalClick = { capability ->
+                                    intervalDialog = IntervalDialogState(
+                                        capability = capability,
+                                        currentIntervalMinutes = group.intervalMinutes,
+                                    )
+                                },
+                            )
+                        }
+                    }
+
+                    // ── Spacer before KB section ──
+                    item { Spacer(Modifier.height(JervisSpacing.sectionGap)) }
+
+                    // ── KB Queue section (collapsed by default) ──
+                    item {
+                        KbQueueSection(
+                            items = data.kbQueue,
+                            totalCount = data.kbQueueTotalCount,
+                            expanded = kbExpanded,
+                            onToggle = { kbExpanded = !kbExpanded },
+                        )
+                    }
+                }
             }
 
             // Bottom spacing
             item { Spacer(Modifier.height(JervisSpacing.sectionGap)) }
         }
+    }
+
+    // ── Polling interval dialog ──
+    intervalDialog?.let { state ->
+        PollingIntervalDialog(
+            capability = state.capability,
+            currentIntervalMinutes = state.currentIntervalMinutes,
+            onConfirm = { newInterval ->
+                scope.launch {
+                    try {
+                        repository.pollingIntervals.updateSettings(
+                            PollingIntervalUpdateDto(
+                                intervals = mapOf(state.capability to newInterval),
+                            ),
+                        )
+                        intervalDialog = null
+                        loadDashboard()
+                    } catch (e: Exception) {
+                        // Dialog stays open on error – user can retry
+                    }
+                }
+            },
+            onDismiss = { intervalDialog = null },
+        )
     }
 }

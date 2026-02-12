@@ -25,6 +25,11 @@ interface PollingStateRepository : CoroutineCrudRepository<PollingStateDocument,
     ): PollingStateDocument?
 
     /**
+     * Find all polling states for a specific connection (across all providers/tools).
+     */
+    suspend fun findByConnectionId(connectionId: ConnectionId): List<PollingStateDocument>
+
+    /**
      * Delete all polling states for a specific connection.
      * Used when a connection is deleted.
      */
