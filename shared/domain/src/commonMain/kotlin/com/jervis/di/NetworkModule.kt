@@ -8,6 +8,7 @@ import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
+import com.jervis.service.IIndexingQueueService
 import com.jervis.service.IEnvironmentService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
@@ -239,6 +240,8 @@ object NetworkModule {
             private set
         var deviceTokenService: IDeviceTokenService = initialRpcClient.withService<IDeviceTokenService>()
             private set
+        var indexingQueueService: IIndexingQueueService = initialRpcClient.withService<IIndexingQueueService>()
+            private set
 
         fun updateFrom(rpcClient: KtorRpcClient) {
             projectService = rpcClient.withService<IProjectService>()
@@ -263,6 +266,7 @@ object NetworkModule {
             meetingService = rpcClient.withService<IMeetingService>()
             transcriptCorrectionService = rpcClient.withService<ITranscriptCorrectionService>()
             deviceTokenService = rpcClient.withService<IDeviceTokenService>()
+            indexingQueueService = rpcClient.withService<IIndexingQueueService>()
         }
     }
 

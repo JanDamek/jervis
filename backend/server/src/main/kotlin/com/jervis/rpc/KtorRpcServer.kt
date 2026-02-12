@@ -50,6 +50,7 @@ class KtorRpcServer(
     private val meetingRpcImpl: MeetingRpcImpl,
     private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
     private val deviceTokenRpcImpl: DeviceTokenRpcImpl,
+    private val indexingQueueRpcImpl: IndexingQueueRpcImpl,
     private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
     private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
@@ -333,6 +334,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
                                 registerService<com.jervis.service.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
                                 registerService<com.jervis.service.IDeviceTokenService> { deviceTokenRpcImpl }
+                                registerService<com.jervis.service.IIndexingQueueService> { indexingQueueRpcImpl }
                             }
                         }
                     }

@@ -471,6 +471,10 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 │  Vertical split with independent scrolling (transcript + chat)?     │
 │    → JVerticalSplitLayout (draggable top/bottom panels)             │
 │    Example: MeetingDetailView in MeetingsScreen.kt                  │
+│                                                                     │
+│  Read-only dashboard with paginated sections + search?              │
+│    → LazyColumn + JSection blocks + server-side pagination          │
+│    Example: IndexingQueueScreen.kt                                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 

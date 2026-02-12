@@ -32,6 +32,9 @@ sealed class Screen {
     // Meetings
     object Meetings : Screen()
 
+    // Indexing queue overview
+    object IndexingQueue : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }
