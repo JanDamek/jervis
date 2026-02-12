@@ -582,12 +582,14 @@ private fun PipelineItemRow(
         }
 
         // Prioritize button
-        if (showReorderControls && onPrioritize != null && item.taskId != null && index > 0) {
-            JIconButton(
-                onClick = { onPrioritize(item.taskId) },
-                icon = Icons.Default.VerticalAlignTop,
-                contentDescription = "Upřednostnit",
-            )
+        if (showReorderControls && onPrioritize != null && index > 0) {
+            item.taskId?.let { taskId ->
+                JIconButton(
+                    onClick = { onPrioritize(taskId) },
+                    icon = Icons.Default.VerticalAlignTop,
+                    contentDescription = "Upřednostnit",
+                )
+            }
         }
 
         Spacer(Modifier.width(4.dp))
