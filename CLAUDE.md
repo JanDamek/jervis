@@ -40,7 +40,7 @@
 
 1. Code changes done
 2. Relevant docs updated
-3. No duplicated helpers (check shared helpers in `ClientsSettings.kt`)
+3. No duplicated helpers (check shared helpers in `ClientsSharedHelpers.kt`)
 4. All interactive elements ≥ 44dp touch target
 5. Cards use `CardDefaults.outlinedCardBorder()`
 6. Loading/empty/error states use `JCenteredLoading` / `JEmptyState` / `JErrorState`
@@ -64,9 +64,9 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 
 ## Key Source Files
 
-- Design system: `shared/ui-common/.../design/DesignSystem.kt`
+- Design system: `shared/ui-common/.../design/` (DesignTheme, DesignLayout, DesignButtons, DesignCards, DesignForms, DesignDialogs, DesignDataDisplay, DesignState)
 - Settings: `shared/ui-common/.../screens/settings/SettingsScreen.kt` + `sections/`
-- Shared helpers: `sections/ClientsSettings.kt` (getCapabilityLabel, GitCommitConfigFields – `internal`)
+- Shared helpers: `sections/ClientsSharedHelpers.kt` (getCapabilityLabel, GitCommitConfigFields – `internal`)
 - Extension: `ConnectionResponseDto.displayUrl` is in ConnectionsSettings.kt (not a DTO field)
 - Navigation: `shared/ui-common/.../navigation/AppNavigator.kt`
 - DTOs: `shared/common-dto/`, Repository: `shared/domain/`
