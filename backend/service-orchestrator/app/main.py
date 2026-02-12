@@ -217,7 +217,8 @@ async def orchestrate(request: OrchestrateRequest):
 
     try:
         async with _orchestration_semaphore:
-            thread_id = f"thread-{request.task_id}-{uuid.uuid4().hex[:8]}"
+            # Use task_id as thread_id for persistent state across messages
+            thread_id = f"thread-{request.task_id}"
             final_state = await run_orchestration(request, thread_id=thread_id)
 
             # Check if graph was interrupted (approval required)
