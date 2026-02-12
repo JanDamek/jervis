@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 CORRECTION_KIND = "transcript_correction"
 CHUNK_SIZE = 20
+
+# KB operation timeouts
+_TIMEOUT_KB_READ = 120.0   # KB read operations (search, list) - generous for large result sets
+_TIMEOUT_KB_WRITE = None   # KB write operations (ingest, purge) - no timeout, can be slow
 MAX_RETRIES = 1
 # Output budget for non-reasoning model: JSON only (~4k tokens for 20 segments)
 OUTPUT_BUDGET = 8192
@@ -91,7 +95,7 @@ class CorrectionAgent:
             },
         }
 
-        async with httpx.AsyncClient(timeout=120) as http:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
             resp = await http.post(f"{self.kb_url}/ingest", json=ingest_payload)
             resp.raise_for_status()
 
@@ -107,7 +111,7 @@ class CorrectionAgent:
 
     async def delete_correction(self, source_urn: str) -> dict:
         """Delete a correction from KB."""
-        async with httpx.AsyncClient(timeout=120) as http:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
             resp = await http.post(
                 f"{self.kb_url}/purge",
                 json={"sourceUrn": source_urn},
@@ -122,7 +126,7 @@ class CorrectionAgent:
         max_results: int = 100,
     ) -> list[dict]:
         """List all corrections for a client/project from KB."""
-        async with httpx.AsyncClient(timeout=120) as http:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
             resp = await http.post(
                 f"{self.kb_url}/chunks/by-kind",
                 json={
