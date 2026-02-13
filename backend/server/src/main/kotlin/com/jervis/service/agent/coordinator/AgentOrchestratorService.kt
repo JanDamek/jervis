@@ -48,6 +48,7 @@ class AgentOrchestratorService(
     private val projectService: ProjectService,
     private val chatHistoryService: ChatHistoryService,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
+    private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -391,10 +392,10 @@ class AgentOrchestratorService(
 
     /**
      * Resolve workspace path for a task based on client/project.
+     * Returns absolute path to the project's git workspace directory.
      */
     private fun resolveWorkspacePath(task: TaskDocument): String {
-        val clientId = task.clientId.toString()
-        val projectId = task.projectId?.toString() ?: "default"
-        return "clients/$clientId/$projectId"
+        val projectId = task.projectId ?: return directoryStructureService.workspaceRoot().toString()
+        return directoryStructureService.projectGitDir(task.clientId, projectId).toString()
     }
 }
