@@ -460,7 +460,7 @@ Tasks with deadlines further than this are scheduled, not executed immediately.
 - **Preemption:** Immediately interrupted by user requests
 - **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
 - **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
-- **Stale recovery:** On pod startup, tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset
+- **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck)
 
 ### Auto-Requeue on Inline Messages
 
@@ -510,7 +510,7 @@ NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10
 
 - **Deployment strategy:** `Recreate` — old pod is stopped before new pod starts (no overlap)
 - **Atomic task claiming:** MongoDB `findAndModify` ensures only one instance processes each task
-- **Stale task recovery:** On startup, BackgroundEngine resets tasks stuck in transient states (DISPATCHED_GPU, QUALIFYING) for >10 minutes back to their retryable state
+- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (DISPATCHED_GPU, QUALIFYING) for >10 minutes back to their retryable state. FOREGROUND tasks in DISPATCHED_GPU are preserved (completed chat tasks, not stuck).
 - **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
 For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestrator-final-spec.md#9-async-dispatch--result-polling-architektura).
