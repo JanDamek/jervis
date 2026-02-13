@@ -34,6 +34,7 @@ The Jervis system is built on several key architectural patterns:
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
 - **Vision Processing**: Two-stage vision analysis for document understanding
+- **Multi-Agent Delegation**: 19 specialist agents orchestrated via delegation DAG (feature-flagged)
 
 ---
 
@@ -807,15 +808,7 @@ with the Kotlin server via REST.
 **Key principle**: Orchestrator = brain, coding agents = hands. The orchestrator decides WHAT
 to do and WHEN; agents just execute.
 
-<<<<<<< Updated upstream
-**Dual-path routing**: Simple questions (search queries, factual lookups) are routed to a
-`respond` node with web search + KB search tools. Coding tasks go through the full pipeline
-(clarify → decompose → plan → execute → evaluate).
-
-### Architecture (Push-Based Communication)
-=======
 ### Architecture (KB-First, Push-Based Communication)
->>>>>>> Stashed changes
 
 ```
 Kotlin Server (BackgroundEngine)
@@ -937,15 +930,6 @@ Two layers:
 
 | File | Purpose |
 |------|---------|
-<<<<<<< Updated upstream
-| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency (Semaphore), MongoDB lifecycle |
-| `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, checkpointing |
-| `backend/service-orchestrator/app/graph/nodes.py` | Node functions: router, respond, clarify, decompose, plan, execute, evaluate, git_ops |
-| `backend/service-orchestrator/app/tools/definitions.py` | Tool schemas (web_search, kb_search) for respond node |
-| `backend/service-orchestrator/app/tools/executor.py` | Tool execution: SearXNG web search, KB retrieve |
-| `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers, SearXNG URL) |
-| `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, concurrency guard (Kotlin side) |
-=======
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency, MongoDB lifecycle |
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, 4-category routing, checkpointing |
 | `backend/service-orchestrator/app/graph/nodes/` | Modular nodes: intake, evidence, respond, plan, execute, evaluate, git_ops, finalize, coding, epic, design |
@@ -954,7 +938,6 @@ Two layers:
 | `backend/service-orchestrator/app/context/context_assembler.py` | Per-node LLM context assembly (step/goal/epic levels) |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, JERVIS project resolution, concurrency guard |
->>>>>>> Stashed changes
 | `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), heartbeat-based stuck detection |
 | `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |
 | `backend/server/.../OrchestratorHeartbeatTracker.kt` | In-memory liveness detection for orchestrator tasks |
@@ -962,6 +945,63 @@ Two layers:
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Push client: progress + status callbacks to Kotlin |
 | `backend/service-orchestrator/app/llm/provider.py` | LLM provider with streaming + heartbeat liveness |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
+| `backend/service-orchestrator/app/agents/base.py` | BaseAgent abstract class, communication protocol, agentic loop |
+| `backend/service-orchestrator/app/agents/registry.py` | AgentRegistry singleton — agent discovery and capability listing |
+| `backend/service-orchestrator/app/agents/specialists/` | 19 specialist agents (code, git, review, test, research, tracker, wiki, docs, devops, PM, security, communication, email, calendar, admin, legal, financial, personal, learning) |
+| `backend/service-orchestrator/app/graph/nodes/plan_delegations.py` | LLM-driven agent selection and ExecutionPlan construction |
+| `backend/service-orchestrator/app/graph/nodes/execute_delegation.py` | Delegation dispatch and DAG parallel execution |
+| `backend/service-orchestrator/app/graph/nodes/synthesize.py` | Result merging, RAG cross-check, translation |
+| `backend/service-orchestrator/app/graph/dag_executor.py` | DAG executor for parallel delegation groups |
+| `backend/service-orchestrator/app/context/session_memory.py` | MongoDB session memory (7-day TTL, per-client/project) |
+| `backend/service-orchestrator/app/context/procedural_memory.py` | ArangoDB procedural memory (learned workflows) |
+| `backend/service-orchestrator/app/monitoring/delegation_metrics.py` | Per-agent delegation metrics collection |
+
+### Multi-Agent Delegation System (New)
+
+The orchestrator now supports a second execution path: the **7-node delegation graph** for multi-agent orchestration. This is controlled by the `use_delegation_graph` feature flag (default: `False`).
+
+**Delegation graph (7 nodes):**
+```
+intake → evidence_pack → plan_delegations → execute_delegation(s) → synthesize → finalize → END
+```
+
+**Key concepts:**
+- **plan_delegations**: LLM selects agents from AgentRegistry and builds an ExecutionPlan (DAG of delegations)
+- **execute_delegation**: Dispatches DelegationMessage to agents, supports parallel execution via DAG executor
+- **synthesize**: Merges AgentOutput results, performs RAG cross-check, translates to response language
+
+**19 Specialist Agents** across 4 tiers:
+
+| Tier | Agents | Purpose |
+|------|--------|---------|
+| **Tier 1 — Core** | CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent | Code, git, review, testing, KB/web research |
+| **Tier 2 — DevOps & PM** | IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent, ProjectManagementAgent, SecurityAgent | Issue tracking, wiki, docs, CI/CD, project management, security |
+| **Tier 3 — Communication** | CommunicationAgent, EmailAgent, CalendarAgent, AdministrativeAgent | Communication hub, email, calendar, admin |
+| **Tier 4 — Business** | LegalAgent, FinancialAgent, PersonalAgent, LearningAgent | Legal, financial, personal assistance, learning |
+
+**Agent Communication Protocol:**
+Agents respond in a structured compact format (STATUS/RESULT/ARTIFACTS/ISSUES/CONFIDENCE/NEEDS_VERIFICATION). No hard truncation of agent outputs — agents are instructed to be maximally compact but include ALL substantive content.
+
+**Memory Layers:**
+
+| Layer | Storage | TTL | Purpose |
+|-------|---------|-----|---------|
+| Working Memory | LangGraph state | Per-orchestration | Current delegation stack, intermediate results |
+| Session Memory | MongoDB `session_memory` | 7 days | Per-client/project recent decisions |
+| Semantic Memory | KB (Weaviate + ArangoDB) | Permanent | Facts, conventions, decisions |
+| Procedural Memory | ArangoDB `ProcedureNode` | Permanent (usage-decay) | Learned workflow procedures |
+
+**Delegation protocol:**
+- Max depth: 4 (agents can sub-delegate recursively)
+- Cycle detection prevents infinite delegation loops
+- Token budgets per depth: 48k → 16k → 8k → 4k
+- Internal chain runs in English, final response translated to detected input language
+
+**Feature flags (all default False):**
+- `use_delegation_graph` — New 7-node graph vs legacy 14-node graph
+- `use_specialist_agents` — Specialist agents vs LegacyAgent fallback
+- `use_dag_execution` — Parallel DAG delegation execution
+- `use_procedural_memory` — Learning from successful orchestrations
 
 ---
 

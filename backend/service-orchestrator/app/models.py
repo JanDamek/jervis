@@ -270,11 +270,13 @@ class OrchestrateResponse(BaseModel):
     thread_id: str | None = None
 
 
-# --- Multi-Agent Delegation System ---
+# ---------------------------------------------------------------------------
+# Domain & Delegation (Multi-Agent System)
+# ---------------------------------------------------------------------------
 
 
 class DomainType(str, Enum):
-    """Domain classification for multi-agent routing."""
+    """Domain classification for delegation routing."""
 
     CODE = "code"
     DEVOPS = "devops"
@@ -290,7 +292,7 @@ class DomainType(str, Enum):
 
 
 class DelegationStatus(str, Enum):
-    """Status of a delegation within the execution plan."""
+    """Lifecycle status of a single delegation."""
 
     PENDING = "pending"
     RUNNING = "running"
@@ -300,47 +302,39 @@ class DelegationStatus(str, Enum):
 
 
 class DelegationMessage(BaseModel):
-    """Input message for agent delegation.
-
-    Immutable contract between orchestrator and agent.
-    Internal chain runs in English; response_language controls final output.
-    """
+    """Input payload sent to a specialist agent."""
 
     delegation_id: str
     parent_delegation_id: str | None = None
-    depth: int = 0                          # 0=orchestrator, 1-4=sub-agents
+    depth: int = 0
     agent_name: str
-    task_summary: str                       # What the agent should do (ENGLISH)
-    context: str = ""                       # Token-budgeted context
+    task_summary: str
+    context: str = ""
     constraints: list[str] = Field(default_factory=list)
     expected_output: str = ""
-    response_language: str = "en"           # ISO 639-1 for final response
-    # Data isolation
+    response_language: str = "en"
     client_id: str = ""
     project_id: str | None = None
     group_id: str | None = None
 
 
 class AgentOutput(BaseModel):
-    """Output from an agent execution.
-
-    Returned to orchestrator (or parent agent) after delegation.
-    """
+    """Structured result returned by a specialist agent."""
 
     delegation_id: str
     agent_name: str
     success: bool
-    result: str = ""                        # Main output (text, summary)
+    result: str = ""
     structured_data: dict = Field(default_factory=dict)
     artifacts: list[str] = Field(default_factory=list)
     changed_files: list[str] = Field(default_factory=list)
     sub_delegations: list[str] = Field(default_factory=list)
-    confidence: float = 1.0                 # 0.0-1.0
-    needs_verification: bool = False        # Request KB cross-check
+    confidence: float = 1.0
+    needs_verification: bool = False
 
 
 class DelegationState(BaseModel):
-    """State of a single delegation within the execution plan."""
+    """Tracked state of one delegation inside the orchestrator."""
 
     delegation_id: str
     agent_name: str
@@ -358,21 +352,32 @@ class ExecutionPlan(BaseModel):
     domain: DomainType = DomainType.CODE
 
 
+class AgentCapability(BaseModel):
+    """Describes what one registered agent can do (for LLM routing)."""
+
+    name: str
+    description: str
+    domains: list[DomainType] = Field(default_factory=list)
+    can_sub_delegate: bool = True
+    max_depth: int = 4
+    tool_names: list[str] = Field(default_factory=list)
+
+
 # --- Session Memory ---
 
 
 class SessionEntry(BaseModel):
-    """One entry in session memory (per-client/project short-term cache)."""
+    """One entry in the short-lived per-client session memory."""
 
     timestamp: str
-    source: str                             # "chat" | "background" | "orchestrator_decision"
-    summary: str                            # Max 200 chars
+    source: str  # "chat" | "background" | "orchestrator_decision"
+    summary: str
     details: dict | None = None
     task_id: str | None = None
 
 
 class SessionMemoryPayload(BaseModel):
-    """Session memory for a client/project pair."""
+    """Loaded session memory for a client/project pair."""
 
     client_id: str
     project_id: str | None = None
@@ -383,7 +388,7 @@ class SessionMemoryPayload(BaseModel):
 
 
 class ProcedureStep(BaseModel):
-    """One step in a learned procedure."""
+    """Single step in a learned procedure."""
 
     agent: str
     action: str
@@ -391,39 +396,22 @@ class ProcedureStep(BaseModel):
 
 
 class ProcedureNode(BaseModel):
-    """Learned workflow procedure stored in KB (ArangoDB).
+    """A stored workflow procedure (KB Procedural Memory)."""
 
-    Orchestrator looks up procedures by trigger_pattern before planning.
-    """
-
-    trigger_pattern: str                    # e.g. "email_with_question", "task_completion"
+    trigger_pattern: str
     procedure_steps: list[ProcedureStep] = Field(default_factory=list)
     success_rate: float = 0.0
     last_used: str | None = None
     usage_count: int = 0
-    source: str = "learned"                 # "learned" | "user_defined"
+    source: str = "learned"  # "learned" | "user_defined"
     client_id: str = ""
-
-
-# --- Agent Capability ---
-
-
-class AgentCapability(BaseModel):
-    """Describes what an agent can do (for registry and LLM planning)."""
-
-    name: str
-    description: str
-    domains: list[DomainType] = Field(default_factory=list)
-    can_sub_delegate: bool = True
-    max_depth: int = 4
-    tool_names: list[str] = Field(default_factory=list)
 
 
 # --- Delegation Metrics ---
 
 
 class DelegationMetrics(BaseModel):
-    """Metrics collected for a single delegation execution."""
+    """Recorded metrics for one delegation execution."""
 
     delegation_id: str
     agent_name: str

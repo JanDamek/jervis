@@ -1,14 +1,8 @@
-"""plan_delegations node — LLM-driven agent selection and DAG construction.
+"""Plan Delegations node — LLM-driven agent selection and DAG construction.
 
-Takes the evidence pack + session/procedural memory, asks the LLM to select
-which agents to delegate to and in what order. Outputs an ExecutionPlan.
-
-This is the "brain" of the new delegation system:
-1. Reads Session Memory (recent decisions for this client/project)
-2. Reads Procedural Memory (learned workflows for similar tasks)
-3. Gets agent capabilities from AgentRegistry
-4. Asks LLM to decompose task into delegations
-5. Builds ExecutionPlan with parallel groups
+Reads the evidence pack, session memory, and procedural memory to decide
+which specialist agents to invoke and in what order. Produces an
+ExecutionPlan with parallel groups.
 """
 
 from __future__ import annotations
@@ -19,286 +13,297 @@ import uuid
 
 from app.agents.registry import AgentRegistry
 from app.config import settings
-from app.graph.nodes._helpers import llm_with_cloud_fallback
+from app.context.procedural_memory import procedural_memory
+from app.context.session_memory import session_memory_store
+from app.graph.nodes._helpers import llm_with_cloud_fallback, parse_json_response
 from app.models import (
     CodingTask,
     DelegationMessage,
+    DelegationState,
+    DelegationStatus,
     DomainType,
     ExecutionPlan,
-    ModelTier,
+    SessionEntry,
 )
+from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
 
 async def plan_delegations(state: dict) -> dict:
-    """Plan which agents to delegate to and build execution DAG.
+    """Analyse the task and produce an execution plan of agent delegations.
 
-    Input state:
-        task, evidence_pack, response_language, domain, session_memory, rules
-
-    Output state:
-        execution_plan, delegation_states
+    State reads:
+        task, evidence_pack, rules, chat_history, response_language
+    State writes:
+        execution_plan, delegation_states, domain, session_memory
     """
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack", {})
     response_language = state.get("response_language", "en")
-    domain = state.get("domain", "code")
-    session_memory = state.get("session_memory", [])
-    rules = state.get("rules", {})
 
-    # Get agent capabilities
-    registry = AgentRegistry.instance()
-    capabilities_text = registry.get_capability_summary()
+    # --- Progress ---
+    await _report(task, "Planning delegations — analysing task and selecting agents…", 30)
 
-    # Check Procedural Memory for learned workflow
-    procedure_context = ""
+    # --- Load session memory ---
+    session_payload = await session_memory_store.load(
+        client_id=task.client_id,
+        project_id=task.project_id,
+    )
+    session_entries = [e.model_dump() for e in session_payload.entries[-20:]]
+
+    # --- Check procedural memory ---
+    procedure = None
     if settings.use_procedural_memory:
-        try:
-            from app.context.procedural_memory import procedural_memory
+        # Detect trigger pattern from the task category / domain
+        trigger = _detect_trigger(state)
+        if trigger:
             procedure = await procedural_memory.find_procedure(
-                trigger_pattern=_classify_trigger(task.query, domain),
+                trigger_pattern=trigger,
                 client_id=task.client_id,
             )
             if procedure:
-                steps_text = "\n".join(
-                    f"  {i+1}. {s.agent}: {s.action}"
-                    for i, s in enumerate(procedure.procedure_steps)
+                logger.info(
+                    "Found procedure for trigger=%s (success_rate=%.2f, usage=%d)",
+                    trigger, procedure.success_rate, procedure.usage_count,
                 )
-                procedure_context = (
-                    f"\n## Learned Procedure (success rate: {procedure.success_rate:.0%})\n"
-                    f"Trigger: {procedure.trigger_pattern}\n"
-                    f"Steps:\n{steps_text}\n"
-                    f"Source: {procedure.source}\n"
-                    f"\nConsider following this learned workflow, but adapt as needed."
-                )
-        except Exception as e:
-            logger.debug("Procedural memory lookup failed: %s", e)
 
-    # Session Memory context
-    session_context = ""
-    if session_memory:
-        entries_text = "\n".join(
-            f"- [{e.get('source', '?')}] {e.get('summary', '')}"
-            for e in session_memory[-10:]  # Last 10 entries
-        )
-        session_context = f"\n## Recent Decisions (Session Memory)\n{entries_text}\n"
+    # --- Build the LLM planning prompt ---
+    registry = AgentRegistry.instance()
+    capabilities = registry.get_capability_summary()
 
-    # Evidence summary
-    evidence_context = ""
-    if evidence:
-        kb_count = len(evidence.get("kb_results", []))
-        facts = evidence.get("facts", [])
-        evidence_context = f"\n## Evidence\n- KB results: {kb_count}\n"
-        if facts:
-            evidence_context += "- Key facts:\n" + "\n".join(f"  - {f}" for f in facts[:5])
-
-    # Constraints from rules
-    constraints_text = ""
-    if rules:
-        forbidden = rules.get("forbidden_files", [])
-        if forbidden:
-            constraints_text += f"\nForbidden files: {', '.join(forbidden)}"
-        max_files = rules.get("max_changed_files", 20)
-        constraints_text += f"\nMax changed files: {max_files}"
-
-    # Build planning prompt
-    system_prompt = (
-        "You are the Jervis Orchestrator planning engine. Your job is to decompose "
-        "a user request into a list of agent delegations.\n\n"
-        f"{capabilities_text}\n"
-        "Rules:\n"
-        "- Select the MINIMUM number of agents needed\n"
-        "- Group independent delegations for parallel execution\n"
-        "- Sequential dependencies must be in separate groups\n"
-        "- Each delegation has: agent_name, task_summary, expected_output\n"
-        "- For simple queries that need only one agent, create a single delegation\n"
-        "- Always respond in valid JSON\n"
-        f"{procedure_context}"
-        f"{session_context}"
-        f"{evidence_context}"
+    system_prompt = _build_system_prompt(capabilities)
+    user_prompt = _build_user_prompt(
+        task=task,
+        evidence=evidence,
+        session_entries=session_entries,
+        procedure=procedure,
+        response_language=response_language,
     )
 
-    user_prompt = (
-        f"User request: {task.query}\n"
-        f"Domain: {domain}\n"
-        f"Client: {task.client_name or task.client_id}\n"
-        f"Project: {task.project_name or task.project_id or 'N/A'}\n"
-        f"{constraints_text}\n\n"
-        "Respond with JSON:\n"
-        "```json\n"
-        "{\n"
-        '  "delegations": [\n'
-        '    {"agent_name": "...", "task_summary": "...", "expected_output": "..."}\n'
-        "  ],\n"
-        '  "parallel_groups": [[0], [1, 2]]  // indices into delegations array\n'
-        "}\n"
-        "```"
-    )
-
-    # Call LLM for planning
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
 
+    # --- LLM call ---
     response = await llm_with_cloud_fallback(
+        state=state,
         messages=messages,
-        rules=rules,
-        task_type="decomposition",
-        context_tokens=len(system_prompt + user_prompt) // 4,
+        task_type="planning",
+        max_tokens=4096,
+    )
+    content = response.choices[0].message.content or ""
+    plan_data = parse_json_response(content)
+
+    if not plan_data or "delegations" not in plan_data:
+        logger.warning("Failed to parse delegation plan, falling back to legacy")
+        return _fallback_plan(task, response_language)
+
+    # --- Build ExecutionPlan ---
+    delegations: list[DelegationMessage] = []
+    delegation_states: dict[str, dict] = {}
+
+    for i, d in enumerate(plan_data.get("delegations", [])):
+        did = f"d-{task.id}-{i}-{uuid.uuid4().hex[:6]}"
+        msg = DelegationMessage(
+            delegation_id=did,
+            depth=0,
+            agent_name=d.get("agent", "legacy"),
+            task_summary=d.get("task", ""),
+            context=d.get("context", ""),
+            constraints=d.get("constraints", []),
+            expected_output=d.get("expected_output", ""),
+            response_language=response_language,
+            client_id=task.client_id,
+            project_id=task.project_id,
+        )
+        delegations.append(msg)
+        delegation_states[did] = DelegationState(
+            delegation_id=did,
+            agent_name=msg.agent_name,
+            status=DelegationStatus.PENDING,
+        ).model_dump()
+
+    # Parse parallel groups (list of lists of indices → delegation IDs)
+    parallel_groups: list[list[str]] = []
+    raw_groups = plan_data.get("parallel_groups", [])
+    if raw_groups:
+        for group in raw_groups:
+            ids = []
+            for idx in group:
+                if isinstance(idx, int) and idx < len(delegations):
+                    ids.append(delegations[idx].delegation_id)
+            if ids:
+                parallel_groups.append(ids)
+    else:
+        # Default: all sequential (each delegation in its own group)
+        parallel_groups = [[d.delegation_id] for d in delegations]
+
+    detected_domain = plan_data.get("domain", "code")
+    try:
+        domain = DomainType(detected_domain)
+    except ValueError:
+        domain = DomainType.CODE
+
+    plan = ExecutionPlan(
+        delegations=delegations,
+        parallel_groups=parallel_groups,
+        domain=domain,
     )
 
-    content = ""
-    if response and response.choices:
-        content = response.choices[0].message.content or ""
-
-    # Parse LLM response
-    plan = _parse_plan_response(content, task, response_language, domain)
-
-    logger.info(
-        "Plan created: %d delegations, %d parallel groups, domain=%s",
-        len(plan.delegations),
-        len(plan.parallel_groups),
-        plan.domain.value,
+    await _report(
+        task,
+        f"Plan: {len(delegations)} delegation(s) across {len(parallel_groups)} group(s) [{domain.value}]",
+        35,
     )
-
-    # Build initial delegation states
-    delegation_states = {}
-    for d in plan.delegations:
-        delegation_states[d.delegation_id] = {
-            "delegation_id": d.delegation_id,
-            "agent_name": d.agent_name,
-            "status": "pending",
-            "result_summary": None,
-            "sub_delegation_ids": [],
-            "checkpoint_data": None,
-        }
 
     return {
         "execution_plan": plan.model_dump(),
         "delegation_states": delegation_states,
-        "completed_delegations": [],
-        "delegation_results": {},
+        "domain": domain.value,
+        "session_memory": session_entries,
+        "response_language": response_language,
     }
 
 
-def _parse_plan_response(
-    content: str,
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _detect_trigger(state: dict) -> str | None:
+    """Heuristic: detect a procedural memory trigger from the task."""
+    category = state.get("task_category", "")
+    action = state.get("task_action", "")
+    query = state.get("task", {}).get("query", "").lower()
+
+    # Source-based triggers (email, issue, etc.)
+    source_type = state.get("source_type", "")
+    if source_type:
+        return f"{source_type}_indexed"
+
+    # Category-based
+    if category == "advice":
+        return "advice_query"
+    if category == "epic":
+        return "epic_execution"
+    if "review" in query or "code review" in query:
+        return "code_review"
+    if "deploy" in query:
+        return "deployment"
+    if action == "code":
+        return "coding_task"
+    return None
+
+
+def _build_system_prompt(capabilities: str) -> str:
+    return f"""You are the Orchestrator Planner. Your job is to analyse a task and decide which specialist agents to invoke.
+
+{capabilities}
+
+Respond with a JSON object:
+{{
+  "domain": "<DomainType value>",
+  "delegations": [
+    {{
+      "agent": "<agent name>",
+      "task": "<what this agent should do>",
+      "context": "<relevant context to pass>",
+      "constraints": ["<constraint>"],
+      "expected_output": "<what we expect back>"
+    }}
+  ],
+  "parallel_groups": [[0], [1, 2], [3]]
+}}
+
+Rules:
+- parallel_groups contains lists of delegation indices that can run concurrently
+- Groups execute sequentially: group[0] finishes before group[1] starts
+- Within a group, delegations run in parallel
+- Use the minimum number of agents needed
+- Prefer specific agents over the legacy fallback
+- If the task is simple advice, use just one "research" or "legacy" agent"""
+
+
+def _build_user_prompt(
     task: CodingTask,
+    evidence: dict,
+    session_entries: list[dict],
+    procedure,
     response_language: str,
-    domain: str,
-) -> ExecutionPlan:
-    """Parse LLM JSON response into ExecutionPlan."""
-    # Try to extract JSON from response
-    json_str = content
-    if "```json" in content:
-        json_str = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        json_str = content.split("```")[1].split("```")[0]
+) -> str:
+    parts = [
+        f"## Task\nQuery: {task.query}",
+        f"Client: {task.client_id}, Project: {task.project_id or 'none'}",
+        f"Response language: {response_language}",
+    ]
 
-    try:
-        data = json.loads(json_str.strip())
-    except json.JSONDecodeError:
-        logger.warning("Failed to parse plan JSON, creating single research delegation")
-        # Fallback: single research delegation
-        return _fallback_plan(task, response_language, domain)
+    if evidence:
+        kb_results = evidence.get("kb_results", [])
+        if kb_results:
+            parts.append(f"\n## KB Evidence ({len(kb_results)} results)")
+            for r in kb_results[:5]:
+                parts.append(f"- {r.get('summary', r.get('title', 'untitled'))}")
 
-    delegations: list[DelegationMessage] = []
-    raw_delegations = data.get("delegations", [])
+        facts = evidence.get("facts", [])
+        if facts:
+            parts.append(f"\n## Facts\n" + "\n".join(f"- {f}" for f in facts[:10]))
 
-    for i, raw in enumerate(raw_delegations):
-        agent_name = raw.get("agent_name", "research")
-        task_summary = raw.get("task_summary", task.query)
-        expected_output = raw.get("expected_output", "")
+    if session_entries:
+        parts.append("\n## Recent Session Memory")
+        for e in session_entries[-5:]:
+            parts.append(f"- [{e.get('source', '?')}] {e.get('summary', '')}")
 
-        delegations.append(DelegationMessage(
-            delegation_id=f"d-{uuid.uuid4().hex[:8]}",
-            depth=1,
-            agent_name=agent_name,
-            task_summary=task_summary,
-            expected_output=expected_output,
-            response_language=response_language,
-            client_id=task.client_id,
-            project_id=task.project_id,
-        ))
+    if procedure:
+        parts.append(f"\n## Known Procedure (trigger={procedure.trigger_pattern})")
+        for step in procedure.procedure_steps:
+            parts.append(f"- {step.agent}: {step.action}")
+        parts.append(f"Success rate: {procedure.success_rate:.0%}, Used {procedure.usage_count}×")
 
-    # Parse parallel groups (convert indices to delegation IDs)
-    raw_groups = data.get("parallel_groups", [])
-    parallel_groups: list[list[str]] = []
-
-    if raw_groups:
-        for group in raw_groups:
-            group_ids = []
-            for idx in group:
-                if isinstance(idx, int) and 0 <= idx < len(delegations):
-                    group_ids.append(delegations[idx].delegation_id)
-            if group_ids:
-                parallel_groups.append(group_ids)
-    else:
-        # No groups specified → all sequential
-        for d in delegations:
-            parallel_groups.append([d.delegation_id])
-
-    # Determine domain
-    try:
-        domain_enum = DomainType(domain)
-    except ValueError:
-        domain_enum = DomainType.CODE
-
-    return ExecutionPlan(
-        delegations=delegations,
-        parallel_groups=parallel_groups,
-        domain=domain_enum,
-    )
+    return "\n".join(parts)
 
 
-def _fallback_plan(
-    task: CodingTask,
-    response_language: str,
-    domain: str,
-) -> ExecutionPlan:
-    """Create a simple fallback plan with a single research delegation."""
-    delegation = DelegationMessage(
-        delegation_id=f"d-{uuid.uuid4().hex[:8]}",
-        depth=1,
-        agent_name="research",
+def _fallback_plan(task: CodingTask, response_language: str) -> dict:
+    """Produce a minimal single-agent fallback plan."""
+    did = f"d-{task.id}-fallback-{uuid.uuid4().hex[:6]}"
+    msg = DelegationMessage(
+        delegation_id=did,
+        depth=0,
+        agent_name="legacy",
         task_summary=task.query,
-        expected_output="Comprehensive answer to the user's question",
         response_language=response_language,
         client_id=task.client_id,
         project_id=task.project_id,
     )
-
-    try:
-        domain_enum = DomainType(domain)
-    except ValueError:
-        domain_enum = DomainType.RESEARCH
-
-    return ExecutionPlan(
-        delegations=[delegation],
-        parallel_groups=[[delegation.delegation_id]],
-        domain=domain_enum,
+    plan = ExecutionPlan(
+        delegations=[msg],
+        parallel_groups=[[did]],
+        domain=DomainType.CODE,
     )
+    return {
+        "execution_plan": plan.model_dump(),
+        "delegation_states": {
+            did: DelegationState(
+                delegation_id=did,
+                agent_name="legacy",
+            ).model_dump(),
+        },
+        "domain": DomainType.CODE.value,
+        "session_memory": [],
+        "response_language": response_language,
+    }
 
 
-def _classify_trigger(query: str, domain: str) -> str:
-    """Classify task into a trigger pattern for procedural memory lookup."""
-    query_lower = query.lower()
-
-    if any(w in query_lower for w in ["review", "code review", "check code"]):
-        return "code_review"
-    if any(w in query_lower for w in ["deploy", "deployment", "release"]):
-        return "deployment"
-    if any(w in query_lower for w in ["test", "testing", "coverage"]):
-        return "testing"
-    if any(w in query_lower for w in ["email", "respond", "reply"]):
-        return "email_response"
-    if any(w in query_lower for w in ["bug", "fix", "error", "issue"]):
-        return "bug_fix"
-    if any(w in query_lower for w in ["plan", "sprint", "roadmap"]):
-        return "planning"
-    if any(w in query_lower for w in ["document", "docs", "readme"]):
-        return "documentation"
-
-    return f"{domain}_general"
+async def _report(task: CodingTask, message: str, percent: int) -> None:
+    """Send progress report to Kotlin server."""
+    try:
+        await kotlin_client.report_progress(
+            task_id=task.id,
+            client_id=task.client_id,
+            node="plan_delegations",
+            message=message,
+            percent=percent,
+        )
+    except Exception:
+        pass  # Non-critical

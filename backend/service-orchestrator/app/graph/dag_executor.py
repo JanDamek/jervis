@@ -1,230 +1,144 @@
-"""DAG executor for parallel delegation execution.
+"""DAG Executor — parallel execution of delegation groups.
 
-Executes delegations in groups: delegations within a group run in parallel
-(asyncio.gather), groups themselves run sequentially.
+Executes an ExecutionPlan by processing parallel groups in order.
+Within each group, delegations run concurrently via asyncio.gather.
+Between groups, execution is sequential (group N must finish before
+group N+1 starts).
 
-Feature flag: use_dag_execution
-- True: parallel execution within groups
-- False: sequential execution (all delegations one by one)
+This module is used by the execute_delegation node when
+``settings.use_dag_execution`` is enabled.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from typing import Any
+from typing import TYPE_CHECKING
 
-from app.agents.registry import AgentRegistry
 from app.config import settings
-from app.models import (
-    AgentOutput,
-    DelegationMessage,
-    DelegationMetrics,
-    DelegationState,
-    DelegationStatus,
-    ExecutionPlan,
-)
+from app.models import AgentOutput, DelegationMessage, ExecutionPlan
+
+if TYPE_CHECKING:
+    from app.agents.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
 
 class DAGExecutor:
-    """Execute delegation plans as a DAG with parallel groups."""
-
-    def __init__(self):
-        self._registry = AgentRegistry.instance()
+    """Execute a delegation plan respecting parallel group ordering."""
 
     async def execute_plan(
         self,
         plan: ExecutionPlan,
         state: dict,
-        progress_callback: Any | None = None,
-    ) -> tuple[list[AgentOutput], dict[str, DelegationState]]:
+        registry: AgentRegistry,
+    ) -> list[tuple[str, AgentOutput]]:
         """Execute all delegations in the plan.
 
         Args:
-            plan: ExecutionPlan with delegations and parallel_groups.
-            state: Current orchestrator state.
-            progress_callback: Optional async callback(delegation_id, agent_name, status, message).
+            plan: The execution plan with delegations and parallel groups.
+            state: The orchestrator state dict.
+            registry: The agent registry for looking up agents.
 
         Returns:
-            Tuple of (list of AgentOutputs, dict of delegation_id -> DelegationState).
+            List of (delegation_id, AgentOutput) tuples in execution order.
         """
-        all_outputs: list[AgentOutput] = []
-        delegation_states: dict[str, DelegationState] = {}
+        delegation_map = {d.delegation_id: d for d in plan.delegations}
+        results: list[tuple[str, AgentOutput]] = []
 
-        # Initialize all delegation states
-        delegation_map: dict[str, DelegationMessage] = {}
-        for delegation in plan.delegations:
-            delegation_map[delegation.delegation_id] = delegation
-            delegation_states[delegation.delegation_id] = DelegationState(
-                delegation_id=delegation.delegation_id,
-                agent_name=delegation.agent_name,
-                status=DelegationStatus.PENDING,
+        for group_idx, group_ids in enumerate(plan.parallel_groups):
+            logger.info(
+                "DAGExecutor: executing group %d/%d (%d delegations)",
+                group_idx + 1, len(plan.parallel_groups), len(group_ids),
             )
 
-        if settings.use_dag_execution and plan.parallel_groups:
-            # DAG mode: execute groups in parallel
-            for group_idx, group in enumerate(plan.parallel_groups):
-                logger.info(
-                    "Executing parallel group %d/%d: %s",
-                    group_idx + 1, len(plan.parallel_groups), group,
+            if len(group_ids) == 1:
+                # Single delegation — no need for gather
+                did = group_ids[0]
+                output = await self._execute_one(
+                    did, delegation_map, registry, state,
                 )
-
-                group_delegations = [
-                    delegation_map[did]
-                    for did in group
-                    if did in delegation_map
+                results.append((did, output))
+            else:
+                # Parallel execution
+                coros = [
+                    self._execute_one(did, delegation_map, registry, state)
+                    for did in group_ids
                 ]
+                outputs = await asyncio.gather(*coros, return_exceptions=True)
 
-                if not group_delegations:
-                    continue
-
-                group_outputs = await self._execute_parallel_group(
-                    group_delegations, state, delegation_states, progress_callback,
-                )
-                all_outputs.extend(group_outputs)
-
-                # Check if any critical failure should stop execution
-                for output in group_outputs:
-                    if not output.success and output.confidence < 0.2:
-                        logger.warning(
-                            "Critical failure in delegation %s (agent=%s), "
-                            "stopping plan execution",
-                            output.delegation_id, output.agent_name,
+                for did, output_or_exc in zip(group_ids, outputs):
+                    if isinstance(output_or_exc, Exception):
+                        logger.error(
+                            "DAGExecutor: delegation %s raised: %s",
+                            did, output_or_exc,
                         )
-                        return all_outputs, delegation_states
-        else:
-            # Sequential mode: execute all delegations one by one
-            for delegation in plan.delegations:
-                output = await self._execute_single(
-                    delegation, state, delegation_states, progress_callback,
-                )
-                all_outputs.append(output)
+                        output = AgentOutput(
+                            delegation_id=did,
+                            agent_name=delegation_map.get(did, DelegationMessage(
+                                delegation_id=did, agent_name="unknown",
+                                task_summary="",
+                            )).agent_name,
+                            success=False,
+                            result=f"Exception: {output_or_exc}",
+                            confidence=0.0,
+                        )
+                    else:
+                        output = output_or_exc
+                    results.append((did, output))
 
-                # Critical failure check
-                if not output.success and output.confidence < 0.2:
-                    logger.warning(
-                        "Critical failure in delegation %s, stopping",
-                        output.delegation_id,
-                    )
-                    break
+        return results
 
-        return all_outputs, delegation_states
-
-    async def _execute_parallel_group(
+    async def _execute_one(
         self,
-        delegations: list[DelegationMessage],
+        delegation_id: str,
+        delegation_map: dict[str, DelegationMessage],
+        registry: AgentRegistry,
         state: dict,
-        delegation_states: dict[str, DelegationState],
-        progress_callback: Any | None,
-    ) -> list[AgentOutput]:
-        """Execute a group of delegations in parallel."""
-        tasks = [
-            self._execute_single(d, state, delegation_states, progress_callback)
-            for d in delegations
-        ]
-        return list(await asyncio.gather(*tasks, return_exceptions=False))
-
-    async def _execute_single(
-        self,
-        delegation: DelegationMessage,
-        state: dict,
-        delegation_states: dict[str, DelegationState],
-        progress_callback: Any | None,
     ) -> AgentOutput:
-        """Execute a single delegation."""
-        d_state = delegation_states.get(delegation.delegation_id)
-        if d_state:
-            d_state.status = DelegationStatus.RUNNING
-
-        if progress_callback:
-            await progress_callback(
-                delegation.delegation_id,
-                delegation.agent_name,
-                "running",
-                f"Starting {delegation.agent_name}...",
-            )
-
-        agent = self._registry.get(delegation.agent_name)
-        if agent is None:
-            logger.error("Agent '%s' not found in registry", delegation.agent_name)
-            output = AgentOutput(
-                delegation_id=delegation.delegation_id,
-                agent_name=delegation.agent_name,
+        """Execute a single delegation with timeout."""
+        msg = delegation_map.get(delegation_id)
+        if not msg:
+            return AgentOutput(
+                delegation_id=delegation_id,
+                agent_name="unknown",
                 success=False,
-                result=f"Agent '{delegation.agent_name}' not found in registry.",
-                confidence=0.0,
+                result=f"Delegation {delegation_id} not found.",
             )
-            if d_state:
-                d_state.status = DelegationStatus.FAILED
-                d_state.result_summary = output.result
-            return output
 
-        start_time = time.monotonic()
+        agent = registry.get(msg.agent_name)
+        if not agent:
+            agent = registry.get("legacy")
+        if not agent:
+            return AgentOutput(
+                delegation_id=delegation_id,
+                agent_name=msg.agent_name,
+                success=False,
+                result=f"Agent '{msg.agent_name}' not found.",
+            )
+
         try:
-            output = await asyncio.wait_for(
-                agent.execute(delegation, state),
+            return await asyncio.wait_for(
+                agent.execute(msg, state),
                 timeout=settings.delegation_timeout,
             )
         except asyncio.TimeoutError:
-            logger.error(
-                "Delegation %s timed out after %ds (agent=%s)",
-                delegation.delegation_id,
-                settings.delegation_timeout,
-                delegation.agent_name,
-            )
-            output = AgentOutput(
-                delegation_id=delegation.delegation_id,
-                agent_name=delegation.agent_name,
+            return AgentOutput(
+                delegation_id=delegation_id,
+                agent_name=msg.agent_name,
                 success=False,
-                result=f"Delegation timed out after {settings.delegation_timeout}s.",
+                result=f"Timed out after {settings.delegation_timeout}s.",
                 confidence=0.0,
             )
-        except Exception as e:
-            logger.error(
-                "Delegation %s failed with error: %s (agent=%s)",
-                delegation.delegation_id, e, delegation.agent_name,
-                exc_info=True,
-            )
-            output = AgentOutput(
-                delegation_id=delegation.delegation_id,
-                agent_name=delegation.agent_name,
+        except Exception as exc:
+            return AgentOutput(
+                delegation_id=delegation_id,
+                agent_name=msg.agent_name,
                 success=False,
-                result=f"Agent execution error: {e}",
+                result=f"Failed: {exc}",
                 confidence=0.0,
             )
 
-        elapsed = time.monotonic() - start_time
-        logger.info(
-            "Delegation %s completed: agent=%s, success=%s, confidence=%.2f, "
-            "elapsed=%.1fs, result_len=%d",
-            delegation.delegation_id,
-            delegation.agent_name,
-            output.success,
-            output.confidence,
-            elapsed,
-            len(output.result),
-        )
 
-        # Update state
-        if d_state:
-            d_state.status = (
-                DelegationStatus.COMPLETED if output.success
-                else DelegationStatus.FAILED
-            )
-            # Summarize result (max 500 chars for parent visibility)
-            d_state.result_summary = output.result[:500]
-            d_state.sub_delegation_ids = output.sub_delegations
-
-        if progress_callback:
-            status = "completed" if output.success else "failed"
-            await progress_callback(
-                delegation.delegation_id,
-                delegation.agent_name,
-                status,
-                d_state.result_summary if d_state else "",
-            )
-
-        return output
+# Singleton
+dag_executor = DAGExecutor()

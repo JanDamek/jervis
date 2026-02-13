@@ -1,191 +1,160 @@
 """Procedural Memory — learned workflow procedures stored in KB.
 
-Orchestrator looks up procedures by trigger_pattern before planning.
-If a procedure exists for a task type, it's used as a template for delegation.
-If not, orchestrator asks the user and stores the response as a new procedure.
+When the orchestrator encounters a task, it first checks Procedural Memory
+for a previously successful workflow pattern (e.g. "task_completion" →
+CodeReview → Deploy → Test → Close). If none exists, the orchestrator
+asks the user and stores the answer as a new procedure.
 
-Procedures are stored in ArangoDB via KB service REST API.
+Communicates with the KB service REST API (ArangoDB ProcedureNode).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime, timezone
 
 import httpx
 
 from app.config import settings
-from app.models import ProcedureNode, ProcedureStep
+from app.models import ProcedureNode
 
 logger = logging.getLogger(__name__)
 
+_PROCEDURE_ENDPOINT = "/api/v1/procedures"
+_TIMEOUT = 10.0
 
-class ProceduralMemoryStore:
-    """KB-backed procedural memory for learned workflows."""
+
+class ProceduralMemory:
+    """Client for KB service procedural memory operations."""
 
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=settings.knowledgebase_url,
-                timeout=10.0,
-            )
+    async def init(self) -> None:
+        """Initialise the HTTP client."""
+        self._client = httpx.AsyncClient(
+            base_url=settings.knowledgebase_url,
+            timeout=_TIMEOUT,
+        )
+        logger.info("Procedural memory initialised (kb_url=%s)", settings.knowledgebase_url)
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            raise RuntimeError("Procedural memory not initialised. Call init() first.")
         return self._client
+
+    # ------------------------------------------------------------------
+    # Lookup
+    # ------------------------------------------------------------------
 
     async def find_procedure(
         self,
         trigger_pattern: str,
         client_id: str,
     ) -> ProcedureNode | None:
-        """Find a procedure by trigger pattern for a specific client.
+        """Find a stored procedure by trigger pattern and client scope.
 
-        Searches KB for ProcedureNode with matching trigger_pattern.
-        Returns the best matching procedure (highest success_rate if multiple).
+        Returns the best-matching procedure, or None if not found.
+        The KB service handles fuzzy matching on trigger_pattern.
         """
         if not settings.use_procedural_memory:
             return None
 
         try:
-            client = await self._get_client()
-            response = await client.post(
-                "/api/graph/query",
-                json={
-                    "collection": "procedures",
-                    "filter": {
-                        "trigger_pattern": trigger_pattern,
-                        "client_id": client_id,
-                    },
-                    "sort": {"success_rate": -1},
-                    "limit": 1,
+            resp = await self.client.get(
+                _PROCEDURE_ENDPOINT,
+                params={
+                    "trigger": trigger_pattern,
+                    "client_id": client_id,
                 },
             )
-
-            if response.status_code != 200:
-                logger.debug(
-                    "Procedure lookup failed (status=%d): %s",
-                    response.status_code, trigger_pattern,
-                )
+            if resp.status_code == 404:
                 return None
-
-            data = response.json()
-            results = data.get("results", [])
-            if not results:
+            resp.raise_for_status()
+            data = resp.json()
+            if not data:
                 return None
-
-            # Parse procedure from KB result
-            proc_data = results[0]
-            return ProcedureNode(
-                trigger_pattern=proc_data.get("trigger_pattern", trigger_pattern),
-                procedure_steps=[
-                    ProcedureStep(**s) for s in proc_data.get("procedure_steps", [])
-                ],
-                success_rate=proc_data.get("success_rate", 0.0),
-                last_used=proc_data.get("last_used"),
-                usage_count=proc_data.get("usage_count", 0),
-                source=proc_data.get("source", "learned"),
-                client_id=proc_data.get("client_id", client_id),
-            )
-
-        except Exception as e:
-            logger.debug("Procedure lookup error for '%s': %s", trigger_pattern, e)
+            # KB may return a list — take the highest success_rate
+            if isinstance(data, list):
+                if not data:
+                    return None
+                data = max(data, key=lambda d: d.get("success_rate", 0))
+            return ProcedureNode(**data)
+        except httpx.HTTPError as exc:
+            logger.warning("Procedural memory lookup failed: %s", exc)
+            return None
+        except Exception as exc:
+            logger.warning("Procedural memory parse error: %s", exc)
             return None
 
-    async def save_procedure(
-        self,
-        procedure: ProcedureNode,
-    ) -> bool:
-        """Save a learned procedure to KB.
+    # ------------------------------------------------------------------
+    # Store
+    # ------------------------------------------------------------------
 
-        Called after successful orchestration to store the workflow pattern.
+    async def save_procedure(self, procedure: ProcedureNode) -> bool:
+        """Save a new or updated procedure to the KB.
+
+        Returns True on success.
         """
         if not settings.use_procedural_memory:
             return False
 
         try:
-            client = await self._get_client()
-            response = await client.post(
-                "/api/graph/upsert",
-                json={
-                    "collection": "procedures",
-                    "key": f"{procedure.client_id}:{procedure.trigger_pattern}",
-                    "data": procedure.model_dump(),
-                },
+            payload = procedure.model_dump()
+            payload["last_used"] = datetime.now(timezone.utc).isoformat()
+            resp = await self.client.post(
+                _PROCEDURE_ENDPOINT,
+                json=payload,
             )
-            success = response.status_code in (200, 201)
-            if success:
-                logger.info(
-                    "Procedure saved: trigger=%s client=%s steps=%d",
-                    procedure.trigger_pattern,
-                    procedure.client_id,
-                    len(procedure.procedure_steps),
-                )
-            return success
-        except Exception as e:
-            logger.debug("Failed to save procedure: %s", e)
+            resp.raise_for_status()
+            logger.info(
+                "Procedure saved: trigger=%s client=%s source=%s",
+                procedure.trigger_pattern,
+                procedure.client_id,
+                procedure.source,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Failed to save procedure: %s", exc)
             return False
 
-    async def update_usage(
+    # ------------------------------------------------------------------
+    # Feedback
+    # ------------------------------------------------------------------
+
+    async def update_success_rate(
         self,
         trigger_pattern: str,
         client_id: str,
         success: bool,
     ) -> None:
-        """Update usage stats after a procedure is used.
+        """Update the success rate of a procedure after execution.
 
-        Increments usage_count and adjusts success_rate (exponential moving average).
+        The KB service recalculates the rate based on historical data.
         """
         if not settings.use_procedural_memory:
             return
 
         try:
-            existing = await self.find_procedure(trigger_pattern, client_id)
-            if existing is None:
-                return
-
-            # Exponential moving average for success_rate
-            alpha = 0.3  # Weight of new observation
-            new_rate = alpha * (1.0 if success else 0.0) + (1 - alpha) * existing.success_rate
-
-            from datetime import datetime, timezone
-            existing.success_rate = round(new_rate, 3)
-            existing.usage_count += 1
-            existing.last_used = datetime.now(timezone.utc).isoformat()
-
-            await self.save_procedure(existing)
-
-        except Exception as e:
-            logger.debug("Failed to update procedure usage: %s", e)
-
-    async def get_procedure_context(
-        self,
-        trigger_pattern: str,
-        client_id: str,
-    ) -> str:
-        """Get procedure as formatted text for LLM context in plan_delegations."""
-        procedure = await self.find_procedure(trigger_pattern, client_id)
-        if procedure is None:
-            return ""
-
-        steps_text = "\n".join(
-            f"  {i+1}. {s.agent}: {s.action}"
-            + (f" (params: {s.parameters})" if s.parameters else "")
-            for i, s in enumerate(procedure.procedure_steps)
-        )
-
-        return (
-            f"Known procedure for '{trigger_pattern}' "
-            f"(success rate: {procedure.success_rate:.0%}, "
-            f"used {procedure.usage_count} times):\n"
-            f"{steps_text}"
-        )
-
-    async def close(self) -> None:
-        """Close HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+            await self.client.patch(
+                f"{_PROCEDURE_ENDPOINT}/feedback",
+                json={
+                    "trigger": trigger_pattern,
+                    "client_id": client_id,
+                    "success": success,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception as exc:
+            logger.warning("Procedural memory feedback failed: %s", exc)
 
 
 # Singleton
-procedural_memory = ProceduralMemoryStore()
+procedural_memory = ProceduralMemory()

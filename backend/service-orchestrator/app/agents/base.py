@@ -1,11 +1,10 @@
-"""Base agent framework for multi-agent orchestrator.
+"""Base agent framework for the multi-agent orchestrator.
 
-Every specialist agent inherits from BaseAgent and implements execute().
-The base class provides:
-- LLM calling with model tier selection and escalation
+Every specialist agent inherits from BaseAgent. The framework provides:
+- Agentic loop (LLM ↔ tool calls until done)
+- LLM calling with cloud escalation
 - Tool execution via the shared ToolExecutor
-- Sub-delegation to other agents (with depth/cycle checks)
-- System prompt construction
+- Sub-delegation with cycle detection and depth limits
 """
 
 from __future__ import annotations
@@ -14,53 +13,47 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any
 
 from app.config import settings
-from app.llm.provider import LLMProvider, llm_provider, EscalationPolicy
 from app.models import (
     AgentCapability,
     AgentOutput,
     DelegationMessage,
-    DelegationMetrics,
     DomainType,
-    ModelTier,
 )
 
 logger = logging.getLogger(__name__)
+
+# Maximum tokens in an agent response before we warn
+_MAX_RESPONSE_TOKENS = 8192
 
 
 class BaseAgent(ABC):
     """Abstract base class for all specialist agents.
 
-    Subclass contract:
-    - Set class-level: name, description, domains, tools, can_sub_delegate
-    - Implement execute() → AgentOutput
+    Subclasses must set class-level attributes and implement ``execute()``.
     """
 
-    # --- Must be set by subclass ---
+    # --- Class attributes (set by subclasses) ---
     name: str = ""
     description: str = ""
     domains: list[DomainType] = []
-    tools: list[dict] = []          # OpenAI function-calling schemas
+    tools: list[dict] = []
     can_sub_delegate: bool = True
     max_depth: int = 4
 
-    def __init__(self):
-        self._llm = llm_provider
-        self._escalation = EscalationPolicy()
-
-    # --- Public API ---
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     @abstractmethod
     async def execute(
         self, msg: DelegationMessage, state: dict,
     ) -> AgentOutput:
-        """Execute the agent's task. Must be implemented by subclass."""
-        ...
+        """Execute the delegation and return structured output."""
 
-    def get_capability(self) -> AgentCapability:
-        """Return capability descriptor for registry/LLM planning."""
+    def capability(self) -> AgentCapability:
+        """Return a serialisable description for the LLM planner."""
         return AgentCapability(
             name=self.name,
             description=self.description,
@@ -70,51 +63,177 @@ class BaseAgent(ABC):
             tool_names=[t["function"]["name"] for t in self.tools if "function" in t],
         )
 
-    # --- Shared helpers for subclasses ---
+    # ------------------------------------------------------------------
+    # Agentic loop
+    # ------------------------------------------------------------------
+
+    async def _agentic_loop(
+        self,
+        msg: DelegationMessage,
+        state: dict,
+        system_prompt: str,
+        max_iterations: int = 10,
+    ) -> AgentOutput:
+        """Core loop: LLM → tool calls → repeat → final answer.
+
+        The loop ends when the LLM produces a text response without any
+        tool calls, or when ``max_iterations`` is reached.
+        """
+        messages: list[dict] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": self._build_user_message(msg)},
+        ]
+
+        artifacts: list[str] = []
+        changed_files: list[str] = []
+        sub_delegations: list[str] = []
+
+        for iteration in range(max_iterations):
+            logger.debug(
+                "%s: agentic loop iteration %d/%d",
+                self.name, iteration + 1, max_iterations,
+            )
+
+            response = await self._call_llm(
+                messages=messages,
+                tools=self.tools if self.tools else None,
+                state=state,
+            )
+            message = response.choices[0].message
+            content = message.content or ""
+            tool_calls = getattr(message, "tool_calls", None)
+
+            # Append assistant message to conversation
+            assistant_msg: dict = {"role": "assistant", "content": content}
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ]
+            messages.append(assistant_msg)
+
+            # If no tool calls → final answer
+            if not tool_calls:
+                return AgentOutput(
+                    delegation_id=msg.delegation_id,
+                    agent_name=self.name,
+                    success=True,
+                    result=content,
+                    artifacts=artifacts,
+                    changed_files=changed_files,
+                    sub_delegations=sub_delegations,
+                )
+
+            # Execute tool calls
+            for tc in tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    fn_args = {}
+
+                tool_result = await self._execute_tool(
+                    tool_name=fn_name,
+                    arguments=fn_args,
+                    state=state,
+                    msg=msg,
+                )
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_result,
+                })
+
+        # Max iterations exhausted
+        logger.warning(
+            "%s: max iterations (%d) reached for delegation=%s",
+            self.name, max_iterations, msg.delegation_id,
+        )
+        last_content = messages[-1].get("content", "") if messages else ""
+        return AgentOutput(
+            delegation_id=msg.delegation_id,
+            agent_name=self.name,
+            success=False,
+            result=f"Max iterations ({max_iterations}) reached. Last: {last_content[:500]}",
+            artifacts=artifacts,
+            changed_files=changed_files,
+            sub_delegations=sub_delegations,
+            confidence=0.3,
+        )
+
+    # ------------------------------------------------------------------
+    # LLM calling
+    # ------------------------------------------------------------------
 
     async def _call_llm(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-        model_tier: ModelTier | None = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.1,
-    ) -> Any:
-        """Call LLM with optional tools. Selects tier based on context size if not specified."""
-        if model_tier is None:
-            # Estimate context tokens (rough: 4 chars per token)
-            total_chars = sum(len(m.get("content", "")) for m in messages)
-            model_tier = self._escalation.select_local_tier(total_chars // 4)
+        state: dict | None = None,
+        max_tokens: int = _MAX_RESPONSE_TOKENS,
+    ) -> object:
+        """Call the LLM with cloud fallback using the shared helper.
 
-        return await self._llm.completion(
+        Uses ``llm_with_cloud_fallback`` from ``_helpers`` so that the
+        same escalation logic (local → cloud → interrupt) is reused.
+        """
+        # Import here to avoid circular imports at module level
+        from app.graph.nodes._helpers import llm_with_cloud_fallback
+
+        effective_state = state or {}
+        return await llm_with_cloud_fallback(
+            state=effective_state,
             messages=messages,
-            tier=model_tier,
-            tools=tools or None,
-            temperature=temperature,
+            task_type="agent",
             max_tokens=max_tokens,
+            tools=tools,
         )
+
+    # ------------------------------------------------------------------
+    # Tool execution
+    # ------------------------------------------------------------------
 
     async def _execute_tool(
         self,
         tool_name: str,
         arguments: dict,
         state: dict,
+        msg: DelegationMessage | None = None,
     ) -> str:
-        """Execute a tool call in the agent's workspace context.
+        """Execute a tool call via the shared executor.
 
-        Uses the shared executor from app.tools.executor.
+        Returns the result as a string (never raises).
         """
         from app.tools.executor import execute_tool
 
-        client_id = state.get("task", {}).get("client_id", "")
-        project_id = state.get("task", {}).get("project_id")
+        client_id = msg.client_id if msg else state.get("task", {}).get("client_id", "")
+        project_id = msg.project_id if msg else state.get("task", {}).get("project_id")
 
-        return await execute_tool(
-            tool_name=tool_name,
-            arguments=arguments,
-            client_id=client_id,
-            project_id=project_id,
-        )
+        try:
+            result = await execute_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                client_id=client_id,
+                project_id=project_id,
+            )
+            return result if isinstance(result, str) else json.dumps(result, default=str)
+        except Exception as exc:
+            logger.warning(
+                "%s: tool %s failed: %s", self.name, tool_name, exc,
+            )
+            return f"Error executing {tool_name}: {exc}"
+
+    # ------------------------------------------------------------------
+    # Sub-delegation
+    # ------------------------------------------------------------------
 
     async def _sub_delegate(
         self,
@@ -124,51 +243,56 @@ class BaseAgent(ABC):
         parent_msg: DelegationMessage,
         state: dict,
     ) -> AgentOutput:
-        """Delegate to another agent with depth+1 and cycle detection.
+        """Delegate to another agent with cycle detection and depth check.
 
         Args:
-            target_agent_name: Name of the agent to delegate to.
-            task_summary: What the target agent should do.
+            target_agent_name: The ``name`` attribute of the target agent.
+            task_summary: What the sub-agent should do.
             context: Relevant context (token-budgeted by caller).
-            parent_msg: The DelegationMessage this agent received.
-            state: Current orchestrator state.
+            parent_msg: The delegation message of the calling agent.
+            state: Current orchestrator state dict.
 
         Returns:
-            AgentOutput from the target agent.
-
-        Raises:
-            ValueError: If max depth exceeded or cycle detected.
+            AgentOutput from the sub-agent (or a failure output on error).
         """
         from app.agents.registry import AgentRegistry
 
         # Depth check
         new_depth = parent_msg.depth + 1
         if new_depth > settings.max_delegation_depth:
+            logger.warning(
+                "%s: max delegation depth (%d) reached, cannot sub-delegate to %s",
+                self.name, settings.max_delegation_depth, target_agent_name,
+            )
             return AgentOutput(
-                delegation_id=f"sub-{uuid.uuid4().hex[:8]}",
+                delegation_id=f"depth-limit-{uuid.uuid4().hex[:8]}",
                 agent_name=target_agent_name,
                 success=False,
                 result=f"Max delegation depth ({settings.max_delegation_depth}) exceeded.",
                 confidence=0.0,
             )
 
-        # Cycle detection: walk up parent chain
-        # Simple check: target shouldn't be the same as any ancestor
-        if target_agent_name == self.name:
+        # Cycle detection — walk the delegation chain
+        delegation_stack = state.get("_delegation_stack", [])
+        if target_agent_name in delegation_stack:
+            logger.warning(
+                "%s: cycle detected — %s already in stack %s",
+                self.name, target_agent_name, delegation_stack,
+            )
             return AgentOutput(
-                delegation_id=f"sub-{uuid.uuid4().hex[:8]}",
+                delegation_id=f"cycle-{uuid.uuid4().hex[:8]}",
                 agent_name=target_agent_name,
                 success=False,
-                result=f"Cycle detected: {self.name} cannot delegate to itself.",
+                result=f"Cycle detected: {target_agent_name} already in delegation chain.",
                 confidence=0.0,
             )
 
-        # Find target agent
+        # Look up agent
         registry = AgentRegistry.instance()
-        target = registry.get(target_agent_name)
-        if target is None:
+        agent = registry.get(target_agent_name)
+        if agent is None:
             return AgentOutput(
-                delegation_id=f"sub-{uuid.uuid4().hex[:8]}",
+                delegation_id=f"unknown-{uuid.uuid4().hex[:8]}",
                 agent_name=target_agent_name,
                 success=False,
                 result=f"Agent '{target_agent_name}' not found in registry.",
@@ -176,8 +300,9 @@ class BaseAgent(ABC):
             )
 
         # Build sub-delegation message
+        sub_id = f"sub-{parent_msg.delegation_id}-{uuid.uuid4().hex[:8]}"
         sub_msg = DelegationMessage(
-            delegation_id=f"sub-{uuid.uuid4().hex[:8]}",
+            delegation_id=sub_id,
             parent_delegation_id=parent_msg.delegation_id,
             depth=new_depth,
             agent_name=target_agent_name,
@@ -191,177 +316,44 @@ class BaseAgent(ABC):
             group_id=parent_msg.group_id,
         )
 
+        # Push onto stack for cycle detection
+        sub_state = dict(state)
+        sub_state["_delegation_stack"] = delegation_stack + [self.name]
+
         logger.info(
-            "Sub-delegation: %s (depth %d) → %s (depth %d), task: %s",
-            self.name, parent_msg.depth,
-            target_agent_name, new_depth,
-            task_summary[:80],
+            "%s → %s: sub-delegating (depth=%d, id=%s)",
+            self.name, target_agent_name, new_depth, sub_id,
         )
 
         try:
-            output = await target.execute(sub_msg, state)
-            logger.info(
-                "Sub-delegation complete: %s → %s, success=%s, confidence=%.2f",
-                self.name, target_agent_name, output.success, output.confidence,
-            )
-            return output
-        except Exception as e:
+            return await agent.execute(sub_msg, sub_state)
+        except Exception as exc:
             logger.error(
-                "Sub-delegation failed: %s → %s, error: %s",
-                self.name, target_agent_name, e,
+                "%s: sub-delegation to %s failed: %s",
+                self.name, target_agent_name, exc,
             )
             return AgentOutput(
-                delegation_id=sub_msg.delegation_id,
+                delegation_id=sub_id,
                 agent_name=target_agent_name,
                 success=False,
-                result=f"Sub-delegation error: {e}",
+                result=f"Sub-delegation failed: {exc}",
                 confidence=0.0,
             )
 
-    # Communication protocol rules — every agent follows these in responses
-    _COMMUNICATION_PROTOCOL = (
-        "\n\n## Response Protocol (MANDATORY)\n"
-        "You report back to the orchestrator. Follow these rules:\n"
-        "- Be maximally COMPACT but include ALL substantive content.\n"
-        "- Never pad, never repeat the question, never add pleasantries.\n"
-        "- Use structured format:\n"
-        "  STATUS: 1 (success) | 0 (failure) | P (partial)\n"
-        "  RESULT: <your complete answer — as short as possible, as long as needed>\n"
-        "  ARTIFACTS: <list of created/changed files, commits, etc. if any>\n"
-        "  ISSUES: <problems found, blockers, risks — only if any>\n"
-        "  CONFIDENCE: <0.0-1.0>\n"
-        "  NEEDS_VERIFICATION: <true/false — set true if KB cross-check recommended>\n"
-        "- For error reports: include error type, root cause, and suggested fix.\n"
-        "- For code changes: include file paths and brief description of each change.\n"
-        "- Omit sections that are empty (e.g., skip ARTIFACTS if none).\n"
-        "- NEVER truncate your findings. The orchestrator needs complete information to decide.\n"
-    )
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-    def _build_system_prompt(self, msg: DelegationMessage) -> str:
-        """Build agent-specific system prompt.
-
-        Override in subclass for custom prompts.
-        Includes communication protocol that ensures compact but complete responses.
-        """
-        tool_descriptions = ""
-        if self.tools:
-            tool_names = [t["function"]["name"] for t in self.tools if "function" in t]
-            tool_descriptions = f"\n\nAvailable tools: {', '.join(tool_names)}"
-
-        constraints_text = ""
+    @staticmethod
+    def _build_user_message(msg: DelegationMessage) -> str:
+        """Build the initial user message from the delegation payload."""
+        parts = [f"## Task\n{msg.task_summary}"]
+        if msg.context:
+            parts.append(f"\n## Context\n{msg.context}")
         if msg.constraints:
-            constraints_text = "\n\nConstraints:\n" + "\n".join(
-                f"- {c}" for c in msg.constraints
+            parts.append(
+                "\n## Constraints\n" + "\n".join(f"- {c}" for c in msg.constraints)
             )
-
-        return (
-            f"You are {self.name}, a specialist agent in the Jervis multi-agent system.\n"
-            f"Role: {self.description}\n"
-            f"\nYou MUST respond in English (internal chain language). "
-            f"The final response will be translated to '{msg.response_language}' by the orchestrator."
-            f"{tool_descriptions}"
-            f"{constraints_text}"
-            f"{self._COMMUNICATION_PROTOCOL}"
-        )
-
-    async def _agentic_loop(
-        self,
-        msg: DelegationMessage,
-        state: dict,
-        system_prompt: str | None = None,
-        max_iterations: int = 15,
-        model_tier: ModelTier | None = None,
-    ) -> AgentOutput:
-        """Run a standard agentic loop: LLM call → tool calls → iterate.
-
-        This is the default execution pattern for most agents.
-        Override execute() for custom behavior.
-        """
-        if system_prompt is None:
-            system_prompt = self._build_system_prompt(msg)
-
-        messages: list[dict] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{msg.task_summary}\n\nContext:\n{msg.context}"},
-        ]
-
-        tools_to_use = self.tools if self.tools else None
-        final_content = ""
-        tool_call_count = 0
-
-        for iteration in range(max_iterations):
-            response = await self._call_llm(
-                messages, tools=tools_to_use,
-                model_tier=model_tier,
-            )
-
-            choice = response.choices[0] if response.choices else None
-            if choice is None:
-                break
-
-            assistant_msg = choice.message
-            content = getattr(assistant_msg, "content", None) or ""
-            tool_calls = getattr(assistant_msg, "tool_calls", None)
-
-            if content:
-                final_content = content
-
-            if not tool_calls:
-                # No more tool calls — done
-                break
-
-            # Append assistant message with tool calls
-            messages.append({
-                "role": "assistant",
-                "content": content,
-                "tool_calls": [
-                    {
-                        "id": tc.id if hasattr(tc, "id") else f"call_{iteration}_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for i, tc in enumerate(tool_calls)
-                ],
-            })
-
-            # Execute each tool call
-            for tc in tool_calls:
-                func_name = tc.function.name
-                try:
-                    func_args = json.loads(tc.function.arguments)
-                except json.JSONDecodeError:
-                    func_args = {}
-
-                tool_call_count += 1
-                logger.debug(
-                    "Agent %s tool call #%d: %s(%s)",
-                    self.name, tool_call_count, func_name,
-                    str(func_args)[:100],
-                )
-
-                result = await self._execute_tool(func_name, func_args, state)
-
-                result_str = str(result)
-                if len(result_str) > 8000:
-                    result_str = (
-                        result_str[:8000]
-                        + f"\n\n[TRUNCATED — full result was {len(result_str)} chars. "
-                        f"Request specific portions if needed.]"
-                    )
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id if hasattr(tc, "id") else f"call_{iteration}",
-                    "content": result_str,
-                })
-
-        return AgentOutput(
-            delegation_id=msg.delegation_id,
-            agent_name=self.name,
-            success=True,
-            result=final_content,
-            confidence=0.8 if final_content else 0.3,
-        )
+        if msg.expected_output:
+            parts.append(f"\n## Expected Output\n{msg.expected_output}")
+        return "\n".join(parts)

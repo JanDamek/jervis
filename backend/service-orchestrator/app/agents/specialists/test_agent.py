@@ -1,7 +1,8 @@
-"""TestAgent -- test generation, execution, and analysis.
+"""Test Agent -- test generation and execution.
 
-Generates tests for new code, runs existing test suites, analyzes
-failures, and sub-delegates to CodingAgent for fixing broken tests.
+Runs existing tests, analyzes failures, and generates new test cases.
+Can sub-delegate to CodingAgent for fixing test failures that require
+code changes.
 """
 
 from __future__ import annotations
@@ -9,147 +10,126 @@ from __future__ import annotations
 import logging
 
 from app.agents.base import BaseAgent
-from app.models import AgentOutput, DelegationMessage, DomainType, ModelTier
+from app.models import AgentOutput, DelegationMessage, DomainType
 from app.tools.definitions import (
     TOOL_EXECUTE_COMMAND,
     TOOL_READ_FILE,
+    TOOL_KB_SEARCH,
     TOOL_FIND_FILES,
-    TOOL_LIST_FILES,
+    TOOL_GREP_FILES,
 )
 
 logger = logging.getLogger(__name__)
 
-TEST_SYSTEM_PROMPT = """\
-You are the TestAgent in the Jervis multi-agent orchestrator.
 
-Your role is to ensure code quality through testing. You can:
-1. Generate tests -- Write unit/integration tests for new or changed code.
-2. Run tests -- Execute test suites and report results.
-3. Analyze failures -- Parse test output, identify root causes, suggest fixes.
-4. Verify coverage -- Check that new code has adequate test coverage.
-
-Workflow for test generation:
-1. Use find_files to locate existing test files and understand the test framework.
-2. Use read_file to examine the code that needs testing.
-3. Use list_files to understand the project structure and test directory layout.
-4. Generate tests following the project existing test patterns and conventions.
-5. Report the test file paths and a summary of what is covered.
-
-Workflow for test execution:
-1. Use find_files to locate test configuration (pytest.ini, build.gradle, etc.).
-2. Use execute_command to run the appropriate test command.
-3. Parse the output for passes, failures, and errors.
-4. For failures, use read_file to examine the failing test and source code.
-5. Produce a structured report of results.
-
-Test generation guidelines:
-- Match the project test framework (JUnit, pytest, Jest, etc.).
-- Follow existing test naming conventions.
-- Include happy path, edge cases, and error scenarios.
-- Use descriptive test names that explain what is being tested.
-- Mock external dependencies appropriately.
-- Keep tests focused -- one assertion concept per test.
-
-Output should include:
-- Test file paths (created or modified)
-- Summary of test cases and what they cover
-- Test execution results if tests were run
-- Any failures with root cause analysis
-"""
+_TEST_TOOLS: list[dict] = [
+    TOOL_EXECUTE_COMMAND,
+    TOOL_READ_FILE,
+    TOOL_KB_SEARCH,
+    TOOL_FIND_FILES,
+    TOOL_GREP_FILES,
+]
 
 
 class TestAgent(BaseAgent):
-    """Test generation, execution, and analysis specialist.
+    """Specialist agent for test generation and execution.
 
-    Generates tests following project conventions, runs test suites,
-    analyzes failures, and sub-delegates to CodingAgent for fixing
-    test failures caused by bugs in production code.
+    Discovers and runs tests, analyzes failures, and helps generate new
+    test cases. Can sub-delegate to CodingAgent for fixing test failures
+    that require source code or test code changes.
     """
 
     name = "test"
     description = (
-        "Test specialist -- generates unit/integration tests, runs test suites, "
-        "analyzes failures, and verifies coverage for new or changed code."
+        "Runs tests, analyzes failures, and generates test cases. "
+        "Can discover test frameworks, execute test suites, parse results, "
+        "and sub-delegate to CodingAgent for fixing failing tests."
     )
     domains = [DomainType.CODE]
-    tools = [
-        TOOL_EXECUTE_COMMAND,
-        TOOL_READ_FILE,
-        TOOL_FIND_FILES,
-        TOOL_LIST_FILES,
-    ]
+    tools = _TEST_TOOLS
     can_sub_delegate = True
-    max_depth = 4
 
     async def execute(
         self, msg: DelegationMessage, state: dict,
     ) -> AgentOutput:
-        """Execute testing task.
+        """Execute test operations.
 
-        Runs the agentic loop for test generation/execution. If test
-        failures are detected that stem from production code bugs,
-        sub-delegates to CodingAgent for fixes.
+        Strategy:
+        1. Discover test framework and test files.
+        2. Run tests and collect results.
+        3. If failures found and fix requested, sub-delegate to CodingAgent.
+        4. Report test results with pass/fail summary.
         """
         logger.info(
-            "TestAgent executing task: %s (delegation=%s)",
-            msg.task_summary[:80],
+            "TestAgent executing: delegation=%s, task=%s",
             msg.delegation_id,
+            msg.task_summary[:80],
         )
 
-        output = await self._agentic_loop(
-            msg=msg,
-            state=state,
-            system_prompt=TEST_SYSTEM_PROMPT,
-            max_iterations=12,
-            model_tier=ModelTier.LOCAL_LARGE,
-        )
+        enriched_context = msg.context
 
-        if output.success and self._has_production_code_failures(output.result):
-            logger.info("TestAgent found production code bugs, delegating fix")
-            fix_out = await self._sub_delegate(
+        # Sub-delegate to coding agent if task explicitly asks to fix failures
+        if self._needs_fix(msg):
+            coding_output = await self._sub_delegate(
                 target_agent_name="coding",
                 task_summary=(
-                    "Fix the production code bugs identified by test failures. "
-                    "The tests are correct -- the production code needs fixing."
+                    "Fix test failures identified during test execution: "
+                    f"{msg.task_summary}"
                 ),
-                context="Test results:\n" + output.result,
+                context=msg.context,
                 parent_msg=msg,
                 state=state,
             )
-            output.sub_delegations.append(fix_out.delegation_id)
-            if fix_out.success:
-                output.result += (
-                    "\n\n--- Production Code Fix (via CodingAgent) ---\n"
-                    + fix_out.result
+            if coding_output.success and coding_output.result:
+                enriched_context = (
+                    f"{msg.context}\n\n"
+                    f"--- Fix Result ---\n{coding_output.result}"
                 )
-                output.changed_files.extend(fix_out.changed_files)
-            else:
-                output.result += (
-                    "\n\nWARNING: Production code fix failed: "
-                    + fix_out.result
-                )
-                output.confidence = min(output.confidence, 0.5)
-                output.needs_verification = True
 
-        output.structured_data["agent_type"] = "test"
-        return output
+        enriched_msg = msg.model_copy(update={"context": enriched_context})
+
+        system_prompt = (
+            "You are the TestAgent, a specialist in test generation, execution, "
+            "and failure analysis.\n\n"
+            "Your capabilities:\n"
+            "- Discover test frameworks (pytest, jest, JUnit, Gradle test, etc.)\n"
+            "- Find test files with find_files and grep_files\n"
+            "- Run test suites with execute_command\n"
+            "- Read test source code and production code for context\n"
+            "- Search KB for testing conventions and patterns\n"
+            "- Analyze test output and diagnose failures\n\n"
+            "Test execution guidelines:\n"
+            "- First discover the test framework: look for pytest.ini, jest.config, "
+            "build.gradle, pom.xml, or similar config files\n"
+            "- Run tests with verbose output for clear failure messages\n"
+            "- Parse test output to extract pass/fail counts and failure details\n"
+            "- For failures, read the relevant test and source files\n"
+            "- Classify failures: real bugs vs flaky tests vs environment issues\n\n"
+            "Test generation guidelines:\n"
+            "- Follow existing test patterns and conventions in the project\n"
+            "- Cover happy path, edge cases, error conditions, and boundaries\n"
+            "- Use the project's preferred assertion style and mocking framework\n"
+            "- Keep tests focused, readable, and independent\n\n"
+            "Guidelines:\n"
+            "- Always report test results clearly (X passed, Y failed, Z skipped)\n"
+            "- Include failure messages and stack traces for failing tests\n"
+            "- Suggest specific fixes for each failure when possible\n"
+            "- Respond in English (internal chain language)"
+        )
+
+        return await self._agentic_loop(
+            msg=enriched_msg,
+            state=state,
+            system_prompt=system_prompt,
+            max_iterations=10,
+        )
 
     @staticmethod
-    def _has_production_code_failures(result: str) -> bool:
-        """Detect if test output suggests bugs in production code.
-
-        Looks for patterns indicating the test is correct but the
-        production code is wrong.
-        """
-        failure_indicators = [
-            "production code bug", "implementation error",
-            "source code needs fix", "expected behavior differs",
-            "assertion failed", "FAILED",
+    def _needs_fix(msg: DelegationMessage) -> bool:
+        """Heuristic: does this task ask to fix test failures?"""
+        fix_keywords = [
+            "fix test", "fix failing", "repair test", "resolve failure",
+            "make tests pass", "fix broken test",
         ]
-        result_lower = result.lower()
-        has_failures = any(i.lower() in result_lower for i in failure_indicators)
-        test_wrong = any(
-            p in result_lower
-            for p in ["test is incorrect", "fix the test", "test bug", "flaky test"]
-        )
-        return has_failures and not test_wrong
+        task_lower = msg.task_summary.lower()
+        return any(kw in task_lower for kw in fix_keywords)

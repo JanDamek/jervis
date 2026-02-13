@@ -1,7 +1,10 @@
-"""Delegation metrics — per-agent, per-delegation performance tracking.
+"""Delegation metrics collector — per-agent, per-delegation metrics.
 
-Collects metrics for monitoring, cost tracking, and performance optimization.
-Stored in MongoDB for dashboard and analysis.
+Stores execution metrics in MongoDB for analysis and optimisation.
+Tracks: duration, token count, LLM calls, success rates per agent.
+
+Collection: delegation_metrics
+TTL: 90 days
 """
 
 from __future__ import annotations
@@ -17,18 +20,18 @@ from app.models import DelegationMetrics
 logger = logging.getLogger(__name__)
 
 _COLLECTION_NAME = "delegation_metrics"
-_TTL_DAYS = 90  # Keep metrics for 90 days
+_TTL_DAYS = 90
 
 
 class DelegationMetricsCollector:
-    """Collect and store per-agent delegation metrics."""
+    """MongoDB-backed metrics collector for delegation execution."""
 
     def __init__(self) -> None:
         self._client: AsyncIOMotorClient | None = None
         self._collection: AsyncIOMotorCollection | None = None
 
     async def init(self) -> None:
-        """Initialize MongoDB connection and create indexes."""
+        """Initialise MongoDB connection and create indexes."""
         self._client = AsyncIOMotorClient(settings.mongodb_url)
         db = self._client.get_database("jervis")
         self._collection = db[_COLLECTION_NAME]
@@ -40,10 +43,13 @@ class DelegationMetricsCollector:
             [("agent_name", 1), ("start_time", -1)],
         )
         await self._collection.create_index(
-            [("created_at", 1)],
+            [("recorded_at", 1)],
             expireAfterSeconds=_TTL_DAYS * 86400,
         )
-        logger.info("Delegation metrics initialized (ttl=%dd)", _TTL_DAYS)
+        logger.info(
+            "Delegation metrics initialised (collection=%s, ttl=%dd)",
+            _COLLECTION_NAME, _TTL_DAYS,
+        )
 
     async def close(self) -> None:
         """Close MongoDB connection."""
@@ -55,34 +61,38 @@ class DelegationMetricsCollector:
     @property
     def collection(self) -> AsyncIOMotorCollection:
         if self._collection is None:
-            raise RuntimeError("Metrics collector not initialized.")
+            raise RuntimeError("Metrics collector not initialised. Call init() first.")
         return self._collection
 
+    # ------------------------------------------------------------------
+    # Recording
+    # ------------------------------------------------------------------
+
     async def record_start(
-        self,
-        delegation_id: str,
-        agent_name: str,
+        self, delegation_id: str, agent_name: str,
     ) -> None:
         """Record the start of a delegation execution."""
-        now = datetime.now(timezone.utc)
-        await self.collection.update_one(
-            {"delegation_id": delegation_id},
-            {
-                "$set": {
-                    "delegation_id": delegation_id,
-                    "agent_name": agent_name,
-                    "start_time": now.isoformat(),
-                    "success": False,
-                    "created_at": now,
+        try:
+            await self.collection.update_one(
+                {"delegation_id": delegation_id},
+                {
+                    "$set": {
+                        "delegation_id": delegation_id,
+                        "agent_name": agent_name,
+                        "start_time": datetime.now(timezone.utc).isoformat(),
+                        "success": False,
+                        "recorded_at": datetime.now(timezone.utc),
+                    },
+                    "$setOnInsert": {
+                        "token_count": 0,
+                        "llm_calls": 0,
+                        "sub_delegation_count": 0,
+                    },
                 },
-                "$setOnInsert": {
-                    "token_count": 0,
-                    "llm_calls": 0,
-                    "sub_delegation_count": 0,
-                },
-            },
-            upsert=True,
-        )
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.debug("Failed to record delegation start: %s", exc)
 
     async def record_end(
         self,
@@ -92,98 +102,74 @@ class DelegationMetricsCollector:
         llm_calls: int = 0,
         sub_delegation_count: int = 0,
     ) -> None:
-        """Record the end of a delegation execution."""
-        now = datetime.now(timezone.utc)
-        await self.collection.update_one(
-            {"delegation_id": delegation_id},
-            {
-                "$set": {
-                    "end_time": now.isoformat(),
-                    "success": success,
-                    "token_count": token_count,
-                    "llm_calls": llm_calls,
-                    "sub_delegation_count": sub_delegation_count,
-                },
-            },
-        )
-
-    async def get_agent_stats(
-        self,
-        agent_name: str,
-        days: int = 30,
-    ) -> dict:
-        """Get aggregated stats for an agent over the last N days."""
+        """Record the completion of a delegation execution."""
         try:
-            cutoff = datetime.now(timezone.utc).isoformat()
+            await self.collection.update_one(
+                {"delegation_id": delegation_id},
+                {
+                    "$set": {
+                        "end_time": datetime.now(timezone.utc).isoformat(),
+                        "success": success,
+                        "token_count": token_count,
+                        "llm_calls": llm_calls,
+                        "sub_delegation_count": sub_delegation_count,
+                        "recorded_at": datetime.now(timezone.utc),
+                    },
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to record delegation end: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
+
+    async def get_agent_stats(self, agent_name: str) -> dict:
+        """Get aggregate statistics for an agent.
+
+        Returns: {total, successful, failed, avg_duration_ms, avg_tokens}
+        """
+        try:
             pipeline = [
-                {"$match": {
-                    "agent_name": agent_name,
-                    "end_time": {"$exists": True},
-                }},
-                {"$group": {
-                    "_id": "$agent_name",
-                    "total_executions": {"$sum": 1},
-                    "successful": {"$sum": {"$cond": ["$success", 1, 0]}},
-                    "total_tokens": {"$sum": "$token_count"},
-                    "total_llm_calls": {"$sum": "$llm_calls"},
-                    "avg_tokens": {"$avg": "$token_count"},
-                }},
+                {"$match": {"agent_name": agent_name}},
+                {
+                    "$group": {
+                        "_id": "$agent_name",
+                        "total": {"$sum": 1},
+                        "successful": {
+                            "$sum": {"$cond": ["$success", 1, 0]},
+                        },
+                        "avg_tokens": {"$avg": "$token_count"},
+                        "avg_llm_calls": {"$avg": "$llm_calls"},
+                    },
+                },
             ]
             cursor = self.collection.aggregate(pipeline)
             results = await cursor.to_list(length=1)
-
-            if not results:
+            if results:
+                r = results[0]
                 return {
                     "agent_name": agent_name,
-                    "total_executions": 0,
-                    "success_rate": 0.0,
-                    "total_tokens": 0,
-                    "avg_tokens": 0,
+                    "total": r.get("total", 0),
+                    "successful": r.get("successful", 0),
+                    "failed": r.get("total", 0) - r.get("successful", 0),
+                    "avg_tokens": int(r.get("avg_tokens", 0)),
+                    "avg_llm_calls": round(r.get("avg_llm_calls", 0), 1),
                 }
+            return {"agent_name": agent_name, "total": 0}
+        except Exception as exc:
+            logger.debug("Failed to get agent stats: %s", exc)
+            return {"agent_name": agent_name, "total": 0, "error": str(exc)}
 
-            r = results[0]
-            total = r.get("total_executions", 0)
-            successful = r.get("successful", 0)
-
-            return {
-                "agent_name": agent_name,
-                "total_executions": total,
-                "success_rate": successful / total if total > 0 else 0.0,
-                "total_tokens": r.get("total_tokens", 0),
-                "avg_tokens": int(r.get("avg_tokens", 0)),
-                "total_llm_calls": r.get("total_llm_calls", 0),
-            }
-        except Exception as e:
-            logger.debug("Failed to get agent stats: %s", e)
-            return {"agent_name": agent_name, "error": str(e)}
-
-    async def get_all_stats(self) -> list[dict]:
-        """Get stats for all agents."""
+    async def get_recent(self, limit: int = 20) -> list[dict]:
+        """Get recent delegation metrics for monitoring dashboard."""
         try:
-            pipeline = [
-                {"$match": {"end_time": {"$exists": True}}},
-                {"$group": {
-                    "_id": "$agent_name",
-                    "total": {"$sum": 1},
-                    "successful": {"$sum": {"$cond": ["$success", 1, 0]}},
-                    "total_tokens": {"$sum": "$token_count"},
-                }},
-                {"$sort": {"total": -1}},
-            ]
-            cursor = self.collection.aggregate(pipeline)
-            results = await cursor.to_list(length=50)
-
-            return [
-                {
-                    "agent_name": r["_id"],
-                    "total_executions": r["total"],
-                    "success_rate": r["successful"] / r["total"] if r["total"] > 0 else 0.0,
-                    "total_tokens": r.get("total_tokens", 0),
-                }
-                for r in results
-            ]
-        except Exception as e:
-            logger.debug("Failed to get all stats: %s", e)
+            cursor = self.collection.find(
+                {}, {"_id": 0},
+            ).sort("recorded_at", -1).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as exc:
+            logger.debug("Failed to get recent metrics: %s", exc)
             return []
 
 

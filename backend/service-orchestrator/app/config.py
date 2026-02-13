@@ -77,9 +77,9 @@ class Settings(BaseSettings):
     # Job cleanup
     job_ttl_seconds: int = 300
 
-    # --- Multi-Agent Delegation System ---
+    # --- Multi-agent delegation system (feature-flagged, all default OFF) ---
 
-    # Feature flags (all default False — opt-in, legacy graph is default)
+    # Feature flags
     use_delegation_graph: bool = False
     use_specialist_agents: bool = False
     use_dag_execution: bool = False
@@ -87,22 +87,17 @@ class Settings(BaseSettings):
 
     # Delegation settings
     max_delegation_depth: int = 4
-    delegation_timeout: int = 300           # Per-delegation timeout (seconds)
+    delegation_timeout: int = 300
 
-    # Token budgets per delegation depth (GPU sweet spot ~48k)
+    # Token budgets per delegation depth
     token_budget_depth_0: int = 48000
     token_budget_depth_1: int = 16000
     token_budget_depth_2: int = 8000
-    token_budget_depth_3: int = 4000        # Depth 3-4
+    token_budget_depth_3: int = 4000
 
     # Session memory
     session_memory_ttl_days: int = 7
     session_memory_max_entries: int = 50
-
-    # Local reasoning model (for complex reasoning, 250k context)
-    default_reasoning_model: str = os.getenv(
-        "DEFAULT_REASONING_MODEL", "qwen3-tool:30b"
-    )
 
     class Config:
         env_prefix = "ORCHESTRATOR_"

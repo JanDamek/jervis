@@ -1,8 +1,8 @@
-"""ResearchAgent -- knowledge and information gathering specialist.
+"""Research Agent -- KB, code, web, and filesystem search.
 
-Searches the Knowledge Base, web, codebase, and file system to
-gather context and evidence for other agents and the orchestrator.
-Has access to all search and browse tools across all domains.
+Leaf agent that gathers information from all available sources: Knowledge
+Base, codebase, filesystem, and web. Never sub-delegates to other agents.
+Used by other agents to enrich their context before acting.
 """
 
 from __future__ import annotations
@@ -10,97 +10,128 @@ from __future__ import annotations
 import logging
 
 from app.agents.base import BaseAgent
-from app.models import AgentOutput, DelegationMessage, DomainType, ModelTier
-from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
+from app.models import AgentOutput, DelegationMessage, DomainType
+from app.tools.definitions import (
+    TOOL_WEB_SEARCH,
+    TOOL_KB_SEARCH,
+    TOOL_CODE_SEARCH,
+    TOOL_GET_INDEXED_ITEMS,
+    TOOL_GET_KB_STATS,
+    TOOL_LIST_PROJECT_FILES,
+    TOOL_GET_REPOSITORY_INFO,
+    TOOL_GET_REPOSITORY_STRUCTURE,
+    TOOL_GET_TECHNOLOGY_STACK,
+    TOOL_JOERN_QUICK_SCAN,
+    TOOL_GIT_BRANCH_LIST,
+    TOOL_GET_RECENT_COMMITS,
+    TOOL_LIST_FILES,
+    TOOL_READ_FILE,
+    TOOL_FIND_FILES,
+    TOOL_GREP_FILES,
+    TOOL_FILE_INFO,
+    TOOL_EXECUTE_COMMAND,
+)
 
 logger = logging.getLogger(__name__)
 
-RESEARCH_SYSTEM_PROMPT = """\
-You are the ResearchAgent in the Jervis multi-agent orchestrator.
 
-Your role is to gather comprehensive information and context for tasks. You have
-full access to all search and browsing tools:
-
-- KB search: Internal Knowledge Base (project docs, architecture, conventions)
-- Web search: Internet search via SearXNG for external information
-- Code search: Semantic code search across the codebase
-- File browsing: Read files, list directories, find files by pattern
-- Git tools: Repository history, diffs, blame information
-- Repository info: Structure, tech stack, branches, recent commits
-- Joern analysis: Security scans, complexity analysis, call graphs
-
-Research workflow:
-1. Understand what information is needed and why.
-2. Start with KB search for internal context (always check internal docs first).
-3. Use code search and file browsing for codebase-specific questions.
-4. Use repository info tools to understand project structure.
-5. Fall back to web search for external information (APIs, libraries, best practices).
-6. Cross-reference findings from multiple sources.
-7. Synthesize findings into a clear, structured report.
-
-Output guidelines:
-- Structure findings with clear sections and sources.
-- Distinguish between facts (from KB/code) and inferences.
-- Include relevant code snippets with file paths.
-- Note confidence level for each finding.
-- Flag any contradictions between sources.
-- Keep output concise -- include only information relevant to the task.
-
-You do NOT make code changes or execute commands. You only gather and report information.
-"""
+_RESEARCH_TOOLS: list[dict] = [
+    TOOL_WEB_SEARCH,
+    TOOL_KB_SEARCH,
+    TOOL_CODE_SEARCH,
+    TOOL_GET_INDEXED_ITEMS,
+    TOOL_GET_KB_STATS,
+    TOOL_LIST_PROJECT_FILES,
+    TOOL_GET_REPOSITORY_INFO,
+    TOOL_GET_REPOSITORY_STRUCTURE,
+    TOOL_GET_TECHNOLOGY_STACK,
+    TOOL_JOERN_QUICK_SCAN,
+    TOOL_GIT_BRANCH_LIST,
+    TOOL_GET_RECENT_COMMITS,
+    TOOL_LIST_FILES,
+    TOOL_READ_FILE,
+    TOOL_FIND_FILES,
+    TOOL_GREP_FILES,
+    TOOL_FILE_INFO,
+    TOOL_EXECUTE_COMMAND,
+]
 
 
 class ResearchAgent(BaseAgent):
-    """Knowledge and information gathering specialist.
+    """Leaf agent for comprehensive information gathering.
 
-    Searches KB, web, codebase, and file system across all domains.
-    Has the broadest tool access of any agent but does not make
-    changes -- only gathers and synthesizes information.
+    Searches the Knowledge Base, codebase, filesystem, and web to gather
+    context for other agents. Never sub-delegates -- this is a terminal
+    agent in the delegation graph.
     """
 
     name = "research"
     description = (
-        "Research specialist -- searches KB, web, codebase, and file system "
-        "to gather comprehensive context and evidence. Has full read-only "
-        "access across all domains."
+        "Gathers information from all available sources: Knowledge Base "
+        "(semantic search, indexed items, stats), codebase (code search, "
+        "grep, file reading), filesystem (listing, file info), repository "
+        "(structure, branches, commits, tech stack), static analysis "
+        "(Joern CPG), and web search. Leaf agent -- never sub-delegates."
     )
-    domains = list(DomainType)
-    tools = ALL_RESPOND_TOOLS_FULL
+    domains = [DomainType.RESEARCH, DomainType.CODE]
+    tools = _RESEARCH_TOOLS
     can_sub_delegate = False
-    max_depth = 4
 
     async def execute(
         self, msg: DelegationMessage, state: dict,
     ) -> AgentOutput:
-        """Execute research task.
+        """Execute research task across all available sources.
 
-        Runs the agentic loop with full tool access to gather information.
-        Uses a model tier appropriate for the context size -- larger context
-        windows for comprehensive research tasks.
+        Uses a multi-source research strategy:
+        1. Check KB stats to understand available data.
+        2. Search KB and codebase for relevant information.
+        3. Read files and explore filesystem as needed.
+        4. Search the web for external information if needed.
+        5. Synthesize findings into a clear research report.
         """
         logger.info(
-            "ResearchAgent executing task: %s (delegation=%s)",
-            msg.task_summary[:80],
+            "ResearchAgent executing: delegation=%s, task=%s",
             msg.delegation_id,
+            msg.task_summary[:80],
         )
 
-        # Broad research tasks benefit from larger context
-        task_length = len(msg.task_summary) + len(msg.context)
-        if task_length > 4000:
-            model_tier = ModelTier.LOCAL_XLARGE
-        else:
-            model_tier = ModelTier.LOCAL_LARGE
+        system_prompt = (
+            "You are the ResearchAgent, a specialist in gathering and "
+            "synthesizing information from multiple sources.\n\n"
+            "Your capabilities:\n"
+            "- Search the Knowledge Base for project documentation, decisions, "
+            "and indexed content (kb_search, get_indexed_items, get_kb_stats)\n"
+            "- Search code semantically for patterns and implementations (code_search)\n"
+            "- Search files by text pattern (grep_files) and name pattern (find_files)\n"
+            "- Read source files for detailed content (read_file)\n"
+            "- Explore project structure (list_project_files, list_files, file_info)\n"
+            "- Understand repository layout (get_repository_structure, get_repository_info)\n"
+            "- Check technology stack and branches (get_technology_stack, git_branch_list)\n"
+            "- View recent commits (get_recent_commits)\n"
+            "- Run static analysis scans (joern_quick_scan)\n"
+            "- Search the web for external information (web_search)\n"
+            "- Execute read-only commands for investigation (execute_command)\n\n"
+            "Research strategy:\n"
+            "1. Start with get_kb_stats to understand what data is available\n"
+            "2. Use kb_search for high-level project context and documentation\n"
+            "3. Use code_search for implementation patterns and examples\n"
+            "4. Use grep_files for specific text patterns and references\n"
+            "5. Use read_file to examine specific files in detail\n"
+            "6. Use web_search only when internal sources lack the needed info\n"
+            "7. Synthesize all findings into a clear, actionable report\n\n"
+            "Guidelines:\n"
+            "- Be thorough -- search multiple sources before concluding\n"
+            "- Prioritize internal sources (KB, code) over web search\n"
+            "- Include specific file paths and code references in findings\n"
+            "- Distinguish facts from inferences in your report\n"
+            "- Structure output with clear sections and key findings\n"
+            "- Keep output concise -- focus on what's relevant to the task\n"
+            "- Respond in English (internal chain language)"
+        )
 
-        output = await self._agentic_loop(
+        return await self._agentic_loop(
             msg=msg,
             state=state,
-            system_prompt=RESEARCH_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             max_iterations=15,
-            model_tier=model_tier,
         )
-
-        output.structured_data["agent_type"] = "research"
-        if output.confidence < 0.7:
-            output.needs_verification = True
-
-        return output

@@ -1,8 +1,8 @@
-"""GitAgent -- git operations specialist.
+"""Git Agent -- git operations (commit, push, branch, PR).
 
-Handles all git operations: status inspection, branching, committing,
-pushing, PR creation, and conflict resolution. For complex merge
-conflicts, sub-delegates to CodingAgent.
+Manages all git workflow operations including committing changes,
+pushing branches, creating branches, and checkout. Can sub-delegate
+to CodingAgent for resolving merge conflicts.
 """
 
 from __future__ import annotations
@@ -10,140 +10,247 @@ from __future__ import annotations
 import logging
 
 from app.agents.base import BaseAgent
-from app.models import AgentOutput, DelegationMessage, DomainType, ModelTier
-from app.tools.definitions import GIT_WORKSPACE_TOOLS, TOOL_READ_FILE, TOOL_KB_SEARCH
+from app.models import AgentOutput, DelegationMessage, DomainType
+from app.tools.definitions import (
+    TOOL_GIT_STATUS,
+    TOOL_GIT_LOG,
+    TOOL_GIT_DIFF,
+    TOOL_GIT_SHOW,
+    TOOL_GIT_BLAME,
+)
 
 logger = logging.getLogger(__name__)
 
-GIT_SYSTEM_PROMPT = """\
-You are the GitAgent in the Jervis multi-agent orchestrator.
 
-Your role is to perform git operations safely and correctly. You handle:
-- Repository status inspection (status, log, diff, blame)
-- Branch creation and management
-- Commit preparation and execution
-- Push operations (with approval flow awareness)
-- Pull request creation and description generation
-- Merge conflict analysis
+TOOL_GIT_COMMIT: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_commit",
+        "description": (
+            "Stage and commit changes in the workspace. Can stage specific files "
+            "or all modified files. Uses the project's commit message conventions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Commit message following project conventions.",
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Specific files to stage and commit. "
+                        "If empty, stages all modified files."
+                    ),
+                },
+                "amend": {
+                    "type": "boolean",
+                    "description": "Amend the previous commit instead of creating new one (default false).",
+                    "default": False,
+                },
+            },
+            "required": ["message"],
+        },
+    },
+}
 
-Safety rules:
-1. NEVER force-push to protected branches (main, master, develop).
-2. ALWAYS check git status before committing to avoid accidental inclusions.
-3. ALWAYS use the project branch naming convention from constraints.
-4. ALWAYS use the project commit prefix convention from constraints.
-5. NEVER commit files matching forbidden file patterns.
-6. For merge conflicts you cannot resolve with simple edits, report them for sub-delegation.
 
-Workflow for commits:
-1. Run git_status to see current state.
-2. Run git_diff to review changes.
-3. Verify no forbidden files are staged.
-4. Prepare a meaningful commit message following the project commit prefix.
-5. Report the result with changed files list.
+TOOL_GIT_PUSH: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_push",
+        "description": (
+            "Push committed changes to the remote repository. "
+            "Can push to a specific remote and branch. Supports force-push "
+            "for amended commits (use with caution)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "remote": {
+                    "type": "string",
+                    "description": "Remote name (default 'origin').",
+                    "default": "origin",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Branch to push (default: current branch).",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Force push (default false, use only after amend).",
+                    "default": False,
+                },
+                "set_upstream": {
+                    "type": "boolean",
+                    "description": "Set upstream tracking (default true for new branches).",
+                    "default": True,
+                },
+            },
+            "required": [],
+        },
+    },
+}
 
-Workflow for PR creation:
-1. Review recent commits on the branch (git_log).
-2. Generate a clear PR title and description.
-3. Include summary of changes, files modified, and testing notes.
 
-Output should include:
-- Commands executed and their results
-- Summary of git state changes
-- Any warnings about risky operations
-- List of changed files
-"""
+TOOL_GIT_BRANCH_CREATE: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_branch_create",
+        "description": (
+            "Create a new git branch. Can branch from current HEAD or a "
+            "specified base branch/commit."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "branch_name": {
+                    "type": "string",
+                    "description": "Name for the new branch (e.g. task/PROJ-123).",
+                },
+                "base": {
+                    "type": "string",
+                    "description": "Base branch or commit to branch from (default: current HEAD).",
+                },
+                "checkout": {
+                    "type": "boolean",
+                    "description": "Checkout the new branch after creation (default true).",
+                    "default": True,
+                },
+            },
+            "required": ["branch_name"],
+        },
+    },
+}
+
+
+TOOL_GIT_CHECKOUT: dict = {
+    "type": "function",
+    "function": {
+        "name": "git_checkout",
+        "description": (
+            "Checkout an existing branch or commit. Use this to switch "
+            "between branches or restore files from specific commits."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Branch name, tag, or commit hash to checkout.",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Specific file to checkout from target (optional).",
+                },
+            },
+            "required": ["target"],
+        },
+    },
+}
+
+
+_GIT_TOOLS: list[dict] = [
+    TOOL_GIT_STATUS,
+    TOOL_GIT_LOG,
+    TOOL_GIT_DIFF,
+    TOOL_GIT_SHOW,
+    TOOL_GIT_BLAME,
+    TOOL_GIT_COMMIT,
+    TOOL_GIT_PUSH,
+    TOOL_GIT_BRANCH_CREATE,
+    TOOL_GIT_CHECKOUT,
+]
 
 
 class GitAgent(BaseAgent):
-    """Git operations specialist.
+    """Specialist agent for git operations.
 
-    Performs repository operations with safety guardrails and project
-    convention enforcement. Sub-delegates complex conflict resolution
-    to CodingAgent.
+    Manages git workflow: branching, committing, pushing, and inspecting
+    history. Can sub-delegate to CodingAgent for resolving merge conflicts
+    that require code changes.
     """
 
     name = "git"
     description = (
-        "Git operations specialist -- handles branching, commits, pushes, "
-        "PR creation, and conflict resolution with safety guardrails."
+        "Manages all git operations: commit, push, branch, checkout, diff, "
+        "log, blame. Can sub-delegate to CodingAgent for merge conflict "
+        "resolution requiring code changes."
     )
-    domains = [DomainType.CODE, DomainType.DEVOPS]
-    tools = GIT_WORKSPACE_TOOLS + [TOOL_READ_FILE, TOOL_KB_SEARCH]
+    domains = [DomainType.CODE]
+    tools = _GIT_TOOLS
     can_sub_delegate = True
-    max_depth = 4
 
     async def execute(
         self, msg: DelegationMessage, state: dict,
     ) -> AgentOutput:
-        """Execute git operations."""
+        """Execute git operations.
+
+        If merge conflicts are detected, sub-delegates to CodingAgent
+        for conflict resolution. Otherwise handles git operations directly.
+        """
         logger.info(
-            "GitAgent executing task: %s (delegation=%s)",
-            msg.task_summary[:80],
+            "GitAgent executing: delegation=%s, task=%s",
             msg.delegation_id,
+            msg.task_summary[:80],
         )
 
-        system_prompt = GIT_SYSTEM_PROMPT
-        rules = state.get("rules")
-        if rules:
-            system_prompt += self._format_rules(rules)
-
-        output = await self._agentic_loop(
-            msg=msg,
-            state=state,
-            system_prompt=system_prompt,
-            max_iterations=10,
-            model_tier=ModelTier.LOCAL_STANDARD,
-        )
-
-        # Check if the result mentions unresolved conflicts
-        if output.success and self._needs_conflict_resolution(output.result):
-            logger.info(
-                "GitAgent detected merge conflict, sub-delegating to "
-                "CodingAgent (delegation=%s)",
-                msg.delegation_id,
-            )
-            conflict_output = await self._sub_delegate(
+        enriched_context = msg.context
+        if self._needs_coding_help(msg):
+            coding_output = await self._sub_delegate(
                 target_agent_name="coding",
                 task_summary=(
-                    "Resolve merge conflicts in the following files. "
-                    "Analyze both sides and produce the correct merged result."
+                    "Resolve merge conflicts in the workspace: "
+                    f"{msg.task_summary}"
                 ),
-                context=output.result,
+                context=msg.context,
                 parent_msg=msg,
                 state=state,
             )
-            output.sub_delegations.append(conflict_output.delegation_id)
-            if conflict_output.success:
-                output.result += (
-                    "\n\n--- Conflict Resolution (via CodingAgent) ---\n"
-                    + conflict_output.result
+            if coding_output.success and coding_output.result:
+                enriched_context = (
+                    f"{msg.context}\n\n"
+                    f"--- Conflict Resolution Result ---\n{coding_output.result}"
                 )
-                output.changed_files.extend(conflict_output.changed_files)
-            else:
-                output.result += (
-                    "\n\nWARNING: Conflict resolution failed: "
-                    + conflict_output.result
-                )
-                output.confidence = min(output.confidence, 0.4)
 
-        output.structured_data["agent_type"] = "git"
-        return output
+        enriched_msg = msg.model_copy(update={"context": enriched_context})
+
+        system_prompt = (
+            "You are the GitAgent, managing all git operations for the "
+            "project workspace.\n\n"
+            "Your capabilities:\n"
+            "- Check repository status (modified files, staged changes, current branch)\n"
+            "- View commit history and diffs\n"
+            "- Show commit details and file blame information\n"
+            "- Create and checkout branches\n"
+            "- Stage and commit changes with proper messages\n"
+            "- Push changes to remote repositories\n\n"
+            "Guidelines:\n"
+            "- Always check git_status before committing to understand what changed\n"
+            "- Use git_diff to review changes before committing\n"
+            "- Follow project commit message conventions (check context for rules)\n"
+            "- Create branches following the project naming convention\n"
+            "- Never force-push to main/master or shared branches\n"
+            "- Set upstream tracking when pushing new branches\n"
+            "- If merge conflicts are detected, they will be resolved via CodingAgent\n"
+            "- Respond in English (internal chain language)"
+        )
+
+        return await self._agentic_loop(
+            msg=enriched_msg,
+            state=state,
+            system_prompt=system_prompt,
+            max_iterations=10,
+        )
 
     @staticmethod
-    def _format_rules(rules: dict) -> str:
-        """Format project rules for the system prompt."""
-        keys = ["branch_naming", "commit_prefix", "forbidden_files"]
-        lines = [f"- {k}: {rules.get(k)}" for k in keys if rules.get(k)]
-        return "\n\nProject conventions:\n" + "\n".join(lines)
-
-    @staticmethod
-    def _needs_conflict_resolution(result: str) -> bool:
-        """Detect if the agent result mentions unresolved merge conflicts."""
-        markers = [
-            "CONFLICT (content)",
-            "merge conflict",
-            "<<<<<<< HEAD",
-            "unresolved conflict",
+    def _needs_coding_help(msg: DelegationMessage) -> bool:
+        """Heuristic: does this task involve merge conflicts needing code changes?"""
+        conflict_keywords = [
+            "merge conflict", "conflict resolution", "resolve conflict",
+            "conflicting changes", "merge failed",
         ]
-        result_lower = result.lower()
-        return any(m.lower() in result_lower for m in markers)
+        task_lower = msg.task_summary.lower()
+        return any(kw in task_lower for kw in conflict_keywords)

@@ -1,6 +1,8 @@
-"""CodingAgent -- central gateway to K8s coding agents.
+"""Coding Agent -- central gateway to coding agents via K8s Jobs.
 
-Routes coding tasks to the appropriate K8s-based coding agent.
+Dispatches coding work to external agents (Aider, OpenHands, Claude, Junie)
+running as Kubernetes Jobs. Prepares workspaces, creates jobs, and reads
+results. Does not sub-delegate to other agents.
 """
 
 from __future__ import annotations
@@ -8,110 +10,186 @@ from __future__ import annotations
 import logging
 
 from app.agents.base import BaseAgent
-from app.models import AgentOutput, DelegationMessage, DomainType, ModelTier
-from app.tools.definitions import (
-    TOOL_READ_FILE,
-    TOOL_FIND_FILES,
-    TOOL_LIST_FILES,
-    TOOL_GREP_FILES,
-    TOOL_CODE_SEARCH,
-    TOOL_GET_REPOSITORY_STRUCTURE,
-    TOOL_GET_TECHNOLOGY_STACK,
-    TOOL_KB_SEARCH,
-)
+from app.models import AgentOutput, DelegationMessage, DomainType
 
 logger = logging.getLogger(__name__)
 
-CODING_SYSTEM_PROMPT = """\
-You are the CodingAgent in the Jervis multi-agent orchestrator.
 
-Your role is to analyze coding tasks, understand the codebase context, and produce
-detailed, actionable coding instructions that a K8s coding agent (Aider, OpenHands,
-Claude Code, or Junie) will execute.
+TOOL_K8S_JOB_CREATE: dict = {
+    "type": "function",
+    "function": {
+        "name": "k8s_job_create",
+        "description": (
+            "Create and dispatch a Kubernetes Job for a coding agent. "
+            "The job runs the specified agent type (aider, openhands, claude, junie) "
+            "with the given instructions in the prepared workspace. "
+            "Returns the job name and status."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string",
+                    "enum": ["aider", "openhands", "claude", "junie"],
+                    "description": "Coding agent to use for the job.",
+                },
+                "instructions": {
+                    "type": "string",
+                    "description": (
+                        "Detailed coding instructions for the agent. Include what files "
+                        "to modify, what changes to make, and acceptance criteria."
+                    ),
+                },
+                "workspace_path": {
+                    "type": "string",
+                    "description": "Absolute path to the prepared workspace directory.",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Git branch to work on (agent will checkout this branch).",
+                },
+                "timeout_minutes": {
+                    "type": "integer",
+                    "description": "Job timeout in minutes (default 30, max 120).",
+                    "default": 30,
+                },
+            },
+            "required": ["agent_type", "instructions", "workspace_path", "branch"],
+        },
+    },
+}
 
-Workflow:
-1. Analyze the task requirements and constraints.
-2. Search the codebase to understand existing patterns, conventions, and relevant files.
-3. Identify which files need to be created or modified.
-4. Produce precise coding instructions including:
-   - Exact file paths to create/modify
-   - Code changes with full context (not just snippets)
-   - Test expectations if applicable
-   - Any dependencies or imports needed
 
-Guidelines:
-- Follow existing code conventions discovered via search tools.
-- Respect forbidden files and branch naming constraints.
-- Prefer small, focused changes over sweeping refactors.
-- Include error handling and edge cases.
-- If the task is ambiguous, state assumptions clearly.
+TOOL_WORKSPACE_PREPARE: dict = {
+    "type": "function",
+    "function": {
+        "name": "workspace_prepare",
+        "description": (
+            "Prepare a workspace directory for a coding job. Clones the "
+            "repository, checks out the correct branch, and ensures the "
+            "workspace is clean and ready for agent modifications. "
+            "Returns the workspace path and current branch."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repository_url": {
+                    "type": "string",
+                    "description": "Git repository URL to clone (if workspace doesn't exist).",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Branch to checkout (will create if it doesn't exist).",
+                },
+                "base_branch": {
+                    "type": "string",
+                    "description": "Base branch to create new branch from (default: main/master).",
+                },
+            },
+            "required": ["branch"],
+        },
+    },
+}
 
-Output a structured coding plan with all changes needed to complete the task.
-"""
+
+TOOL_RESULT_READ: dict = {
+    "type": "function",
+    "function": {
+        "name": "result_read",
+        "description": (
+            "Read the result of a completed K8s coding job. Returns the "
+            "agent's output including summary, changed files, success status, "
+            "and any error messages. Polls until job completes or times out."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "job_name": {
+                    "type": "string",
+                    "description": "Name of the K8s job to read results from.",
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Maximum seconds to wait for job completion (default 600).",
+                    "default": 600,
+                },
+            },
+            "required": ["job_name"],
+        },
+    },
+}
+
+
+_CODING_TOOLS: list[dict] = [
+    TOOL_K8S_JOB_CREATE,
+    TOOL_WORKSPACE_PREPARE,
+    TOOL_RESULT_READ,
+]
 
 
 class CodingAgent(BaseAgent):
-    """Central gateway to K8s coding agents.
+    """Central gateway to coding agents (Aider/OpenHands/Claude/Junie).
 
-    Currently runs an agentic loop to produce coding instructions.
-    Future: will prepare workspace, dispatch K8s Job to the selected
-    coding agent, monitor completion, and return the result.
+    Prepares workspaces, dispatches K8s Jobs for coding work, and reads
+    results. Does not sub-delegate -- all coordination happens through
+    K8s Job lifecycle management.
     """
 
     name = "coding"
     description = (
-        "Central coding gateway -- analyzes tasks, searches codebase, and produces "
-        "detailed coding instructions for K8s-based coding agents (Aider/OpenHands/"
-        "Claude Code/Junie)."
+        "Central gateway to coding agents (Aider, OpenHands, Claude, Junie). "
+        "Prepares workspaces, dispatches K8s Jobs for coding work, and "
+        "reads results. Handles agent selection and workspace lifecycle."
     )
     domains = [DomainType.CODE]
-    tools = [
-        TOOL_READ_FILE,
-        TOOL_FIND_FILES,
-        TOOL_LIST_FILES,
-        TOOL_GREP_FILES,
-        TOOL_CODE_SEARCH,
-        TOOL_GET_REPOSITORY_STRUCTURE,
-        TOOL_GET_TECHNOLOGY_STACK,
-        TOOL_KB_SEARCH,
-    ]
+    tools = _CODING_TOOLS
     can_sub_delegate = False
-    max_depth = 4
 
     async def execute(
         self, msg: DelegationMessage, state: dict,
     ) -> AgentOutput:
-        """Execute the coding task.
+        """Execute coding task via K8s Job dispatch.
 
-        Currently uses the agentic loop to produce coding instructions.
-        Once K8s integration is wired, this will:
-        1. Prepare workspace via workspace_manager
-        2. Select the best coding agent based on task + project rules
-        3. Dispatch a K8s Job via job_runner
-        4. Monitor job completion
-        5. Read and validate the result
+        Flow:
+        1. Prepare workspace (clone/checkout branch).
+        2. Create K8s Job with coding agent and instructions.
+        3. Read job result when complete.
         """
         logger.info(
-            "CodingAgent executing task: %s (delegation=%s)",
-            msg.task_summary[:80],
+            "CodingAgent executing: delegation=%s, task=%s",
             msg.delegation_id,
+            msg.task_summary[:80],
         )
 
-        system_prompt = CODING_SYSTEM_PROMPT
-        if msg.constraints:
-            constraints_block = "\n".join(f"- {c}" for c in msg.constraints)
-            system_prompt += f"\n\nProject constraints:\n{constraints_block}"
+        system_prompt = (
+            "You are the CodingAgent, the central gateway to coding agents. "
+            "You coordinate coding work by preparing workspaces, dispatching "
+            "K8s Jobs to external coding agents, and reading their results.\n\n"
+            "Your capabilities:\n"
+            "- Prepare workspace (clone repo, checkout branch)\n"
+            "- Create K8s coding jobs with agent selection (aider, openhands, claude, junie)\n"
+            "- Read results from completed coding jobs\n\n"
+            "Agent selection guidelines:\n"
+            "- aider: Best for focused, single-file or small-scope edits\n"
+            "- openhands: Good for multi-file refactoring and complex changes\n"
+            "- claude: Best for nuanced reasoning, architecture changes, documentation\n"
+            "- junie: Best for JetBrains-integrated projects (Kotlin, Java)\n\n"
+            "Workflow:\n"
+            "1. First prepare the workspace with workspace_prepare\n"
+            "2. Create a K8s job with k8s_job_create, providing clear instructions\n"
+            "3. Read the result with result_read\n"
+            "4. Report the outcome (success/failure, changed files, summary)\n\n"
+            "Guidelines:\n"
+            "- Write detailed, unambiguous instructions for the coding agent\n"
+            "- Include specific file paths and acceptance criteria in instructions\n"
+            "- Choose the right agent type based on the task complexity\n"
+            "- Always read and report the job result\n"
+            "- Respond in English (internal chain language)"
+        )
 
-        output = await self._agentic_loop(
+        return await self._agentic_loop(
             msg=msg,
             state=state,
             system_prompt=system_prompt,
-            max_iterations=15,
-            model_tier=ModelTier.LOCAL_LARGE,
+            max_iterations=5,
         )
-
-        output.structured_data["agent_type"] = "coding"
-        output.structured_data["k8s_dispatch"] = False
-        output.needs_verification = True
-
-        return output

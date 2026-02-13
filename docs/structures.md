@@ -16,6 +16,7 @@
 1. [Ollama Router – Priority-Based GPU/CPU Routing](#ollama-router--priority-based-gpucpu-routing)
 2. [Graph-Based Routing Architecture](#graph-based-routing-architecture)
 3. [Background Engine & Task Processing](#background-engine--task-processing)
+4. [Multi-Agent Delegation System Data Models](#multi-agent-delegation-system-data-models)
 
 ---
 
@@ -166,10 +167,13 @@ embedding = await ollama.embed(
                     ↓
         ┌──────────────────────────────────────────────────┐
         │ Python Orchestrator (LangGraph, KB-First)        │
-        │ • 4 task categories: ADVICE, SINGLE_TASK,        │
-        │   EPIC, GENERATIVE                               │
+        │ • Legacy graph: 4 task categories (ADVICE,       │
+        │   SINGLE_TASK, EPIC, GENERATIVE)                 │
+        │ • Delegation graph: 7-node multi-agent system    │
+        │   (19 specialist agents, feature-flagged)        │
         │ • Hierarchical context: step→goal→epic           │
         │ • MongoDB context store (orchestrator_context)   │
+        │ • Session Memory + Procedural Memory             │
         │ • Distributed lock for multi-pod                 │
         │ • KB-only communication (no direct PVC access)   │
         └──────────────────────────────────────────────────┘
@@ -630,5 +634,236 @@ OLLAMA_KEEP_ALIVE=1h
 
 ---
 
-**Document Version:** 5.0
+## Multi-Agent Delegation System Data Models
+
+The Python Orchestrator uses a multi-agent delegation architecture where a top-level orchestrator decomposes tasks and delegates them to specialist agents. This section documents the data structures that power the delegation graph, agent communication, and execution tracking.
+
+> **Related docs:**
+> - [orchestrator-detailed.md](orchestrator-detailed.md) – Full technical description of all nodes, LLM, K8s Jobs, communication, state, approval flow
+> - [orchestrator-final-spec.md](orchestrator-final-spec.md) – Async dispatch, approval flow, concurrency
+
+### Domain & Status Enums
+
+```python
+class DomainType(str, Enum):
+    CODE, DEVOPS, PROJECT_MANAGEMENT, COMMUNICATION, LEGAL,
+    FINANCIAL, ADMINISTRATIVE, PERSONAL, SECURITY, RESEARCH, LEARNING
+
+class DelegationStatus(str, Enum):
+    PENDING, RUNNING, COMPLETED, FAILED, INTERRUPTED
+```
+
+`DomainType` classifies the problem domain so the orchestrator can select the correct specialist agent tree. `DelegationStatus` tracks each delegation through its lifecycle.
+
+### DelegationMessage
+
+The core unit of work passed from a parent agent to a child agent:
+
+```python
+class DelegationMessage(BaseModel):
+    delegation_id: str
+    parent_delegation_id: str | None
+    depth: int  # 0=orchestrator, 1-4=sub-agents
+    agent_name: str
+    task_summary: str
+    context: str  # token-budgeted
+    constraints: list[str]
+    expected_output: str
+    response_language: str  # ISO 639-1
+    client_id: str
+    project_id: str | None
+    group_id: str | None
+```
+
+- `depth` limits recursion (max 4 levels of sub-delegation).
+- `context` is trimmed to fit the target agent's token budget.
+- `response_language` ensures the final user-facing output matches the detected input language.
+
+### AgentOutput
+
+Structured response returned by every agent upon completion:
+
+```python
+class AgentOutput(BaseModel):
+    delegation_id: str
+    agent_name: str
+    success: bool
+    result: str  # Full compact response (not truncated)
+    structured_data: dict
+    artifacts: list[str]
+    changed_files: list[str]
+    sub_delegations: list[str]
+    confidence: float  # 0.0-1.0
+    needs_verification: bool
+```
+
+- `result` contains the complete compact answer (never truncated).
+- `confidence` and `needs_verification` enable the parent agent to decide whether to accept, retry, or escalate.
+
+### ExecutionPlan
+
+Produced by the orchestrator to describe how delegations should be scheduled:
+
+```python
+class ExecutionPlan(BaseModel):
+    delegations: list[DelegationMessage]
+    parallel_groups: list[list[str]]  # Groups of delegation_ids for parallel execution
+    domain: DomainType
+```
+
+`parallel_groups` defines which delegations can run concurrently vs. sequentially.
+
+### SessionEntry (Session Memory)
+
+Per-client/project memory entries stored in MongoDB:
+
+```python
+class SessionEntry(BaseModel):
+    timestamp: str
+    source: str  # "chat" | "background" | "orchestrator_decision"
+    summary: str  # max 200 chars
+    details: dict | None
+    task_id: str | None
+```
+
+### Procedure Models (Learned Workflows)
+
+```python
+class ProcedureStep(BaseModel):
+    agent: str
+    action: str
+    parameters: dict
+
+class ProcedureNode(BaseModel):
+    trigger_pattern: str
+    procedure_steps: list[ProcedureStep]
+    success_rate: float
+    last_used: str | None
+    usage_count: int
+    source: str  # "learned" | "user_defined"
+    client_id: str
+```
+
+Procedures are repeatable multi-step workflows that the system learns from successful delegation sequences or that users define explicitly.
+
+### AgentCapability
+
+Describes what each specialist agent can do:
+
+```python
+class AgentCapability(BaseModel):
+    name: str
+    description: str
+    domains: list[DomainType]
+    can_sub_delegate: bool
+    max_depth: int
+    tool_names: list[str]
+```
+
+### DelegationMetrics
+
+Per-delegation performance tracking:
+
+```python
+class DelegationMetrics(BaseModel):
+    delegation_id: str
+    agent_name: str
+    start_time: str | None
+    end_time: str | None
+    token_count: int
+    llm_calls: int
+    sub_delegation_count: int
+    success: bool
+```
+
+### OrchestratorState Fields (Delegation-Related)
+
+The LangGraph `OrchestratorState` includes these delegation-specific fields:
+
+```python
+execution_plan: dict | None
+delegation_states: dict
+active_delegation_id: str | None
+completed_delegations: list
+delegation_results: dict
+response_language: str
+domain: str | None
+session_memory: list
+_delegation_outputs: list
+```
+
+These fields are managed by the orchestrator graph nodes (planner, delegator, aggregator) throughout the execution lifecycle.
+
+### MongoDB Collections (Delegation System)
+
+| Collection | Purpose | TTL | Limit |
+|------------|---------|-----|-------|
+| `session_memory` | Per-client/project memory (SessionEntry docs) | 7 days | max 50 entries per client/project |
+| `delegation_metrics` | Per-agent delegation metrics (DelegationMetrics docs) | 90 days | — |
+
+### Agent Communication Protocol
+
+All agents respond with a structured text format that is parsed into `AgentOutput`:
+
+```
+STATUS: 1 (success) | 0 (failure) | P (partial)
+RESULT: <complete compact answer>
+ARTIFACTS: <files, commits>
+ISSUES: <problems, blockers>
+CONFIDENCE: 0.0-1.0
+NEEDS_VERIFICATION: true/false
+```
+
+The parent agent (or orchestrator aggregator node) parses this format and uses the `CONFIDENCE` and `NEEDS_VERIFICATION` fields to decide whether to accept the result, request a retry, or escalate to a different agent.
+
+---
+
+## Multi-Agent Delegation System
+
+### Overview
+
+The Python Orchestrator supports two execution paths controlled by feature flags:
+
+1. **Legacy graph (default):** 14-node graph for 4 task categories (ADVICE, SINGLE_TASK, EPIC, GENERATIVE)
+2. **Delegation graph (opt-in):** 7-node graph for multi-agent orchestration with 19 specialist agents
+
+### Delegation Graph Flow
+
+```
+intake → evidence_pack → plan_delegations → execute_delegation(s) → synthesize → finalize → END
+```
+
+**plan_delegations:** LLM selects agents from AgentRegistry and builds ExecutionPlan (DAG)
+**execute_delegation:** Dispatches to agents, supports parallel groups via DAGExecutor
+**synthesize:** Merges results, RAG cross-check, translates to response language
+
+### Agent Tiers
+
+| Tier | Agents | Domains |
+|------|--------|---------|
+| 1 — Core | Coding, Git, CodeReview, Test, Research | Code, testing, KB/web search |
+| 2 — DevOps & PM | IssueTracker, Wiki, Documentation, DevOps, ProjectManagement, Security | Tracking, docs, CI/CD, security |
+| 3 — Communication | Communication, Email, Calendar, Administrative | Messaging, scheduling, admin |
+| 4 — Business | Legal, Financial, Personal, Learning | Legal, financial, personal |
+
+### Memory Architecture
+
+| Layer | Storage | TTL |
+|-------|---------|-----|
+| Working Memory | LangGraph state | Per-orchestration |
+| Session Memory | MongoDB `session_memory` | 7 days |
+| Semantic Memory | KB (Weaviate + ArangoDB) | Permanent |
+| Procedural Memory | ArangoDB `ProcedureNode` | Permanent (usage-decay) |
+
+### Feature Flags
+
+All default to `False` (opt-in):
+- `use_delegation_graph` — Switch to 7-node delegation graph
+- `use_specialist_agents` — Use specialist agents instead of LegacyAgent
+- `use_dag_execution` — Enable parallel delegation execution
+- `use_procedural_memory` — Enable learning from successful orchestrations
+
+---
+
+**Document Version:** 6.0
 **Last Updated:** 2026-02-13

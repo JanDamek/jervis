@@ -1,20 +1,18 @@
-"""Session Memory — per-client/project short-term memory bridge.
+"""Session Memory — short-lived per-client/project memory between orchestrations.
 
-Fast key-value lookup for recent decisions and context across orchestrations.
-Unlike KB (semantic search, permanent), Session Memory is:
-- Per client_id + project_id scope
-- TTL 7 days
-- Max 50 entries per scope
-- Key-value lookup (not semantic search)
+Bridges the gap between Working Memory (LangGraph state, per-task) and
+Semantic Memory (KB, permanent). Stores recent decisions, preferences,
+and context that the orchestrator needs across consecutive tasks.
 
-MongoDB collection: session_memory
+Collection: session_memory
+TTL: 7 days (configurable)
+Max entries: 50 per client/project pair
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
@@ -27,29 +25,29 @@ _COLLECTION_NAME = "session_memory"
 
 
 class SessionMemoryStore:
-    """MongoDB-based session memory for cross-orchestration context."""
+    """MongoDB-backed session memory with TTL and entry limits."""
 
     def __init__(self) -> None:
         self._client: AsyncIOMotorClient | None = None
         self._collection: AsyncIOMotorCollection | None = None
 
     async def init(self) -> None:
-        """Initialize MongoDB connection and create indexes."""
+        """Initialise MongoDB connection and create indexes."""
         self._client = AsyncIOMotorClient(settings.mongodb_url)
         db = self._client.get_database("jervis")
         self._collection = db[_COLLECTION_NAME]
 
-        # Create indexes
+        # Compound index for fast lookup
         await self._collection.create_index(
             [("client_id", 1), ("project_id", 1)],
-            unique=True,
         )
+        # TTL index for auto-expiry
         await self._collection.create_index(
             [("updated_at", 1)],
             expireAfterSeconds=settings.session_memory_ttl_days * 86400,
         )
         logger.info(
-            "Session memory initialized (collection=%s, ttl=%dd, max=%d entries)",
+            "Session memory initialised (collection=%s, ttl=%dd, max_entries=%d)",
             _COLLECTION_NAME,
             settings.session_memory_ttl_days,
             settings.session_memory_max_entries,
@@ -66,120 +64,93 @@ class SessionMemoryStore:
     @property
     def collection(self) -> AsyncIOMotorCollection:
         if self._collection is None:
-            raise RuntimeError("Session memory not initialized. Call init() first.")
+            raise RuntimeError("Session memory not initialised. Call init() first.")
         return self._collection
 
-    async def load(
-        self,
-        client_id: str,
-        project_id: str | None = None,
-    ) -> list[SessionEntry]:
-        """Load session memory entries for a client/project pair.
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
 
-        Returns list of SessionEntry objects, ordered by timestamp (newest first).
+    async def load(
+        self, client_id: str, project_id: str | None = None,
+    ) -> SessionMemoryPayload:
+        """Load session memory for a client/project pair.
+
+        Returns an empty payload if no entries exist.
         """
         doc = await self.collection.find_one(
             {"client_id": client_id, "project_id": project_id or ""},
         )
         if not doc:
-            return []
+            return SessionMemoryPayload(
+                client_id=client_id, project_id=project_id,
+            )
 
-        entries: list[SessionEntry] = []
-        for e in doc.get("entries", []):
-            try:
-                entries.append(SessionEntry(**e))
-            except Exception:
-                continue
+        entries = [
+            SessionEntry(**e) for e in doc.get("entries", [])
+        ]
+        return SessionMemoryPayload(
+            client_id=client_id,
+            project_id=project_id,
+            entries=entries,
+        )
 
-        return entries
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
 
     async def append(
         self,
         client_id: str,
-        project_id: str | None = None,
-        entry: SessionEntry | None = None,
-        *,
-        source: str = "orchestrator_decision",
-        summary: str = "",
-        details: dict | None = None,
-        task_id: str | None = None,
+        project_id: str | None,
+        entry: SessionEntry,
     ) -> None:
-        """Append a new entry to session memory.
+        """Append a session entry, enforcing the max-entries limit.
 
-        If entry is None, builds one from keyword arguments.
-        Enforces max_entries limit by trimming oldest entries.
+        Oldest entries are evicted when the limit is reached.
         """
-        if entry is None:
-            entry = SessionEntry(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                source=source,
-                summary=summary[:200],  # Enforce max 200 chars
-                details=details,
-                task_id=task_id,
-            )
+        key = {"client_id": client_id, "project_id": project_id or ""}
+        now = datetime.now(timezone.utc)
 
-        entry_dict = entry.model_dump()
-        project_key = project_id or ""
-
-        # Upsert: push entry and trim to max
+        # Push entry and trim to max size in one atomic operation
         await self.collection.update_one(
-            {"client_id": client_id, "project_id": project_key},
+            key,
             {
                 "$push": {
                     "entries": {
-                        "$each": [entry_dict],
+                        "$each": [entry.model_dump()],
                         "$slice": -settings.session_memory_max_entries,
                     },
                 },
-                "$set": {
-                    "updated_at": datetime.now(timezone.utc),
-                },
-                "$setOnInsert": {
-                    "client_id": client_id,
-                    "project_id": project_key,
-                },
+                "$set": {"updated_at": now},
+                "$setOnInsert": {"created_at": now},
             },
             upsert=True,
         )
-
         logger.debug(
-            "Session memory append: client=%s project=%s summary=%s",
-            client_id, project_key, entry.summary[:50],
+            "Session entry appended: client=%s project=%s source=%s",
+            client_id, project_id, entry.source,
         )
 
-    async def clear(
-        self,
-        client_id: str,
-        project_id: str | None = None,
-    ) -> None:
-        """Clear all session memory for a client/project pair."""
-        await self.collection.delete_one(
-            {"client_id": client_id, "project_id": project_id or ""},
-        )
+    # ------------------------------------------------------------------
+    # Maintenance
+    # ------------------------------------------------------------------
 
-    async def get_context_text(
-        self,
-        client_id: str,
-        project_id: str | None = None,
-        max_entries: int = 20,
-    ) -> str:
-        """Get session memory as formatted text for LLM context.
+    async def cleanup_expired(self) -> int:
+        """Manually remove entries older than TTL (TTL index handles this,
+        but this can be called for immediate cleanup).
 
-        Returns a compact text block summarizing recent decisions.
+        Returns the number of documents deleted.
         """
-        entries = await self.load(client_id, project_id)
-        if not entries:
-            return ""
-
-        # Take most recent entries
-        recent = entries[-max_entries:]
-
-        lines: list[str] = []
-        for e in recent:
-            source_tag = f"[{e.source}]" if e.source else ""
-            lines.append(f"- {source_tag} {e.summary}")
-
-        return "Recent decisions and context:\n" + "\n".join(lines)
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            days=settings.session_memory_ttl_days,
+        )
+        result = await self.collection.delete_many(
+            {"updated_at": {"$lt": cutoff}},
+        )
+        if result.deleted_count:
+            logger.info("Session memory cleanup: removed %d expired documents", result.deleted_count)
+        return result.deleted_count
 
 
 # Singleton

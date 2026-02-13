@@ -1,104 +1,159 @@
-"""LegalAgent -- Contract analysis, NDA review, and compliance checking.
+"""Legal Agent -- contract analysis, compliance, NDA, and T&C review.
 
-Provides legal document analysis, clause extraction, risk assessment,
-and compliance verification. Sub-delegates to ResearchAgent for legal
-precedent and regulatory research.
+Analyzes legal documents including contracts, NDAs, terms and conditions,
+and compliance requirements. Sub-delegates to ResearchAgent for gathering
+regulatory context and precedent information.
 """
+
+from __future__ import annotations
+
+import logging
 
 from app.agents.base import BaseAgent
 from app.models import AgentOutput, DelegationMessage, DomainType
 from app.tools.definitions import TOOL_KB_SEARCH
 
-# ---------------------------------------------------------------------------
-# Inline tool definitions
-# ---------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
 
 TOOL_DOCUMENT_ANALYZE: dict = {
     "type": "function",
     "function": {
         "name": "document_analyze",
         "description": (
-            "Analyse a legal document (contract, NDA, agreement, policy). "
-            "Extracts key clauses, identifies risks, and provides a structured summary."
+            "Analyze a document for legal aspects, risks, and obligations. "
+            "Extracts key clauses, identifies potential risks, highlights "
+            "obligations and deadlines, and flags unusual or concerning terms."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "document_id": {"type": "string", "description": "ID of the document in the knowledge base."},
-                "document_text": {"type": "string", "description": "Raw text of the document (when document_id is not available)."},
-                "analysis_type": {
+                "content": {
                     "type": "string",
-                    "enum": ["full_review", "risk_assessment", "clause_extraction", "compliance_check", "comparison"],
-                    "description": "Type of analysis to perform.",
+                    "description": "Document content to analyze (plain text or Markdown).",
                 },
-                "focus_areas": {"type": "array", "items": {"type": "string"}, "description": "Specific areas to focus on."},
-                "compare_with_document_id": {"type": "string", "description": "ID of a second document for comparison."},
-                "jurisdiction": {"type": "string", "description": "Legal jurisdiction for compliance context."},
+                "document_type": {
+                    "type": "string",
+                    "enum": [
+                        "contract", "nda", "terms_and_conditions",
+                        "privacy_policy", "sla", "license", "other",
+                    ],
+                    "description": "Type of legal document for context-aware analysis.",
+                },
+                "focus_areas": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Specific areas to focus on (e.g. liability, "
+                        "termination, confidentiality, intellectual property)."
+                    ),
+                },
+                "jurisdiction": {
+                    "type": "string",
+                    "description": "Applicable jurisdiction (e.g. EU, US, CZ) for compliance context.",
+                },
             },
-            "required": ["analysis_type"],
+            "required": ["content", "document_type"],
         },
     },
 }
 
-SYSTEM_PROMPT = """\
-You are the LegalAgent -- a specialist for legal document analysis and
-compliance within the Jervis assistant.
 
-Your capabilities:
-1. Analyse contracts, NDAs, agreements, and legal documents.
-2. Extract and summarise key clauses (liability, termination, IP, etc.).
-3. Perform risk assessments highlighting potential issues.
-4. Check compliance against known regulations and policies.
-5. Compare documents to identify differences and deviations.
-6. Look up internal knowledge base for company policies and templates.
-
-Guidelines:
-- Always include a clear DISCLAIMER that your output is not legal advice
-  and should be reviewed by a qualified legal professional.
-- Highlight high-risk clauses prominently.
-- Structure analysis with clear sections: Summary, Key Terms, Risks, Recommendations.
-- For precedent research, sub-delegate to ResearchAgent.
-- When comparing documents, present differences in a tabular format.
-- Flag any missing standard clauses that should typically be present.
-
-Always respond in the language detected from the user input.
-Internal reasoning must be in English.
-"""
+_LEGAL_TOOLS: list[dict] = [
+    TOOL_DOCUMENT_ANALYZE,
+    TOOL_KB_SEARCH,
+]
 
 
 class LegalAgent(BaseAgent):
-    """Legal specialist for contract analysis, NDA review, and compliance."""
+    """Specialist agent for legal document analysis and compliance.
 
-    name: str = "legal"
-    domains: list[DomainType] = [DomainType.LEGAL]
-    can_sub_delegate: bool = True
+    Analyzes contracts, NDAs, terms and conditions, and compliance
+    requirements. Identifies risks, obligations, and concerning
+    clauses. Sub-delegates to ResearchAgent for gathering regulatory
+    context and precedent information.
+    """
 
-    async def execute(self, msg: DelegationMessage, state: dict) -> AgentOutput:
-        """Analyse legal tasks, performing document review or sub-delegating research."""
-        task_lower = msg.task_summary.lower()
+    name = "legal"
+    description = (
+        "Analyzes contracts, NDAs, terms & conditions, and compliance "
+        "requirements. Identifies risks, obligations, and key clauses. "
+        "Sub-delegates to ResearchAgent for regulatory context."
+    )
+    domains = [DomainType.LEGAL]
+    tools = _LEGAL_TOOLS
+    can_sub_delegate = True
 
-        # Sub-delegate pure research tasks to ResearchAgent
-        research_keywords = (
-            "precedent", "case law", "regulation", "legislative",
-            "regulatory research",
+    async def execute(
+        self, msg: DelegationMessage, state: dict,
+    ) -> AgentOutput:
+        """Execute legal analysis operations.
+
+        Strategy:
+        1. Sub-delegate to ResearchAgent for regulatory context.
+        2. Run agentic loop with document analysis and KB tools.
+        """
+        logger.info(
+            "LegalAgent executing: delegation=%s, task=%s",
+            msg.delegation_id,
+            msg.task_summary[:80],
         )
-        if any(kw in task_lower for kw in research_keywords):
-            return await self._sub_delegate(
+
+        enriched_context = msg.context
+        if self._needs_research(msg):
+            research_output = await self._sub_delegate(
                 target_agent_name="research",
-                task_summary=f"Legal research: {msg.task_summary}",
+                task_summary=(
+                    "Gather legal and regulatory context for: "
+                    f"{msg.task_summary}"
+                ),
                 context=msg.context,
                 parent_msg=msg,
                 state=state,
             )
+            if research_output.success and research_output.result:
+                enriched_context = (
+                    f"{msg.context}\n\n"
+                    f"--- Research Context ---\n{research_output.result}"
+                )
 
-        # Direct legal analysis via agentic loop
-        tools = [TOOL_KB_SEARCH, TOOL_DOCUMENT_ANALYZE]
+        enriched_msg = msg.model_copy(update={"context": enriched_context})
+
+        system_prompt = (
+            "You are the LegalAgent, a specialist in legal document analysis "
+            "and compliance review.\n\n"
+            "Your capabilities:\n"
+            "- Analyze contracts, NDAs, T&Cs, SLAs, and licenses\n"
+            "- Identify risks, obligations, and deadlines\n"
+            "- Flag unusual, concerning, or one-sided clauses\n"
+            "- Check compliance with relevant regulations\n"
+            "- Search the knowledge base for internal policies and precedents\n\n"
+            "Guidelines:\n"
+            "- Always identify the document type and applicable jurisdiction\n"
+            "- Highlight critical clauses (termination, liability, IP, confidentiality)\n"
+            "- Rate risks as LOW, MEDIUM, HIGH, or CRITICAL\n"
+            "- Provide specific recommendations for each finding\n"
+            "- Note missing standard clauses that should be present\n"
+            "- Flag any ambiguous or undefined terms\n"
+            "- DISCLAIMER: This is AI analysis, not legal advice. "
+            "Recommend professional legal review for significant decisions.\n"
+            "- Respond in English (internal chain language)"
+        )
 
         return await self._agentic_loop(
-            msg=msg,
+            msg=enriched_msg,
             state=state,
-            system_prompt=SYSTEM_PROMPT,
-            tools=tools,
-            max_iterations=8,
-            model_tier="standard",
+            system_prompt=system_prompt,
+            max_iterations=12,
         )
+
+    @staticmethod
+    def _needs_research(msg: DelegationMessage) -> bool:
+        """Heuristic: does this task need regulatory/legal research?"""
+        research_keywords = [
+            "compliance", "regulation", "gdpr", "ccpa", "hipaa",
+            "precedent", "case law", "standard", "framework",
+            "compare", "benchmark", "industry practice",
+        ]
+        task_lower = msg.task_summary.lower()
+        return any(kw in task_lower for kw in research_keywords)

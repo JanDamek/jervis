@@ -1,16 +1,29 @@
-"""execute_delegation node — dispatches delegations to agents via DAG executor.
+"""Execute Delegation node — dispatches DelegationMessages to agents.
 
-Takes the ExecutionPlan from plan_delegations and executes all delegations
-using the DAGExecutor. Reports progress to Kotlin server.
+Iterates through the ExecutionPlan's parallel groups, dispatching
+delegations to agents via the AgentRegistry. Reports progress to
+the Kotlin server after each delegation completes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 
+from app.agents.registry import AgentRegistry
 from app.config import settings
-from app.graph.dag_executor import DAGExecutor
-from app.models import CodingTask, ExecutionPlan
+from app.context.summarizer import summarize_agent_output, summarize_for_session
+from app.context.session_memory import session_memory_store
+from app.models import (
+    AgentOutput,
+    CodingTask,
+    DelegationMessage,
+    DelegationState,
+    DelegationStatus,
+    ExecutionPlan,
+    SessionEntry,
+)
 from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
@@ -19,127 +32,230 @@ logger = logging.getLogger(__name__)
 async def execute_delegation(state: dict) -> dict:
     """Execute all delegations in the execution plan.
 
-    Input state:
-        execution_plan, task, delegation_states
-
-    Output state:
-        delegation_states (updated), delegation_results, completed_delegations,
-        active_delegation_id, step_results (for backward compat)
+    State reads:
+        task, execution_plan, delegation_states
+    State writes:
+        delegation_states, delegation_results, completed_delegations,
+        active_delegation_id, artifacts, final_result (for single-agent plans)
     """
     task = CodingTask(**state["task"])
     plan_data = state.get("execution_plan")
-
     if not plan_data:
-        logger.warning("No execution plan found, skipping delegation")
-        return {
-            "error": "No execution plan to execute",
-            "delegation_results": {},
-        }
+        return {"error": "No execution plan found."}
 
     plan = ExecutionPlan(**plan_data)
-
     if not plan.delegations:
-        logger.warning("Empty execution plan, skipping delegation")
-        return {
-            "delegation_results": {},
-        }
+        return {"error": "Execution plan has no delegations."}
 
-    logger.info(
-        "Executing delegation plan: %d delegations, %d parallel groups",
-        len(plan.delegations),
-        len(plan.parallel_groups),
-    )
-
-    # Progress callback — reports to Kotlin server
-    async def _progress_callback(
-        delegation_id: str,
-        agent_name: str,
-        status: str,
-        message: str,
-    ):
-        try:
-            await kotlin_client.report_progress(
-                task_id=task.id,
-                client_id=task.client_id,
-                node="execute_delegation",
-                message=f"[{agent_name}] {message[:200]}",
-                delegation_id=delegation_id,
-                delegation_agent=agent_name,
-                delegation_depth=1,
-                thinking_about=f"Running {agent_name}",
-            )
-        except Exception as e:
-            logger.debug("Progress callback failed: %s", e)
-
-    # Execute via DAG executor
-    executor = DAGExecutor()
-    outputs, delegation_states = await executor.execute_plan(
-        plan=plan,
-        state=state,
-        progress_callback=_progress_callback,
-    )
-
-    # Build results dict
-    delegation_results: dict[str, str] = {}
-    completed: list[str] = []
+    delegation_states = {
+        k: DelegationState(**v) if isinstance(v, dict) else v
+        for k, v in state.get("delegation_states", {}).items()
+    }
+    delegation_results: dict[str, str] = dict(state.get("delegation_results", {}))
+    completed: list[str] = list(state.get("completed_delegations", []))
+    all_artifacts: list[str] = list(state.get("artifacts", []))
     all_changed_files: list[str] = []
-    all_artifacts: list[str] = []
-    any_success = False
 
-    for output in outputs:
-        # Full result — agents follow communication protocol for compact responses
-        delegation_results[output.delegation_id] = output.result
-        completed.append(output.delegation_id)
-        all_changed_files.extend(output.changed_files)
-        all_artifacts.extend(output.artifacts)
-        if output.success:
-            any_success = True
+    registry = AgentRegistry.instance()
 
-    # Convert delegation_states to serializable dict
-    states_dict = {}
-    for did, ds in delegation_states.items():
-        states_dict[did] = {
-            "delegation_id": ds.delegation_id,
-            "agent_name": ds.agent_name,
-            "status": ds.status.value if hasattr(ds.status, "value") else str(ds.status),
-            "result_summary": ds.result_summary,
-            "sub_delegation_ids": ds.sub_delegation_ids,
-        }
+    # Build delegation lookup
+    delegation_map: dict[str, DelegationMessage] = {
+        d.delegation_id: d for d in plan.delegations
+    }
 
-    # Store full outputs in context_store for on-demand retrieval
-    try:
-        from app.context.context_store import context_store
-        for output in outputs:
-            await context_store.store(
-                task_id=task.id,
-                scope="delegation",
-                scope_key=output.delegation_id,
-                data={
-                    "agent_name": output.agent_name,
-                    "success": output.success,
-                    "result": output.result,
-                    "structured_data": output.structured_data,
-                    "changed_files": output.changed_files,
-                    "artifacts": output.artifacts,
-                    "confidence": output.confidence,
-                },
+    total_delegations = len(plan.delegations)
+    completed_count = len(completed)
+
+    # --- Execute parallel groups sequentially ---
+    for group_idx, group_ids in enumerate(plan.parallel_groups):
+        # Filter out already-completed delegations (for resume support)
+        pending_ids = [did for did in group_ids if did not in completed]
+        if not pending_ids:
+            continue
+
+        await _report(
+            task,
+            f"Executing group {group_idx + 1}/{len(plan.parallel_groups)} "
+            f"({len(pending_ids)} delegation(s))",
+            _calc_percent(completed_count, total_delegations),
+        )
+
+        if settings.use_dag_execution and len(pending_ids) > 1:
+            # Parallel execution within group
+            results = await _execute_parallel(
+                pending_ids, delegation_map, delegation_states,
+                registry, state, task,
             )
-    except Exception as e:
-        logger.debug("Failed to store delegation results in context_store: %s", e)
+        else:
+            # Sequential execution
+            results = []
+            for did in pending_ids:
+                result = await _execute_single(
+                    did, delegation_map, delegation_states,
+                    registry, state, task,
+                )
+                results.append(result)
 
-    logger.info(
-        "Delegation execution complete: %d/%d successful, %d changed files",
-        sum(1 for o in outputs if o.success),
-        len(outputs),
-        len(all_changed_files),
-    )
+        # Process results
+        for did, output in results:
+            ds = delegation_states.get(did)
+            if ds:
+                ds.status = (
+                    DelegationStatus.COMPLETED if output.success
+                    else DelegationStatus.FAILED
+                )
+                ds.result_summary = output.result[:500] if output.result else ""
+                delegation_states[did] = ds
+
+            delegation_results[did] = summarize_agent_output(output)
+            completed.append(did)
+            completed_count += 1
+            all_artifacts.extend(output.artifacts)
+            all_changed_files.extend(output.changed_files)
+
+            # Save to session memory
+            try:
+                await session_memory_store.append(
+                    client_id=task.client_id,
+                    project_id=task.project_id,
+                    entry=SessionEntry(
+                        timestamp=str(int(time.time())),
+                        source="orchestrator_decision",
+                        summary=summarize_for_session(output),
+                        task_id=task.id,
+                    ),
+                )
+            except Exception:
+                pass  # Non-critical
+
+            await _report(
+                task,
+                f"✓ {output.agent_name}: {'success' if output.success else 'failed'} "
+                f"({completed_count}/{total_delegations})",
+                _calc_percent(completed_count, total_delegations),
+            )
 
     return {
-        "delegation_states": states_dict,
+        "delegation_states": {
+            k: v.model_dump() if hasattr(v, "model_dump") else v
+            for k, v in delegation_states.items()
+        },
         "delegation_results": delegation_results,
         "completed_delegations": completed,
         "active_delegation_id": None,
         "artifacts": all_artifacts,
-        # Store outputs for synthesize node (as list of dicts)
-        "_delegation_outputs": [o.model_dump() for o in outputs],
     }
+
+
+# ---------------------------------------------------------------------------
+# Execution helpers
+# ---------------------------------------------------------------------------
+
+
+async def _execute_single(
+    delegation_id: str,
+    delegation_map: dict[str, DelegationMessage],
+    delegation_states: dict[str, DelegationState],
+    registry: AgentRegistry,
+    state: dict,
+    task: CodingTask,
+) -> tuple[str, AgentOutput]:
+    """Execute a single delegation and return (id, output)."""
+    msg = delegation_map.get(delegation_id)
+    if not msg:
+        return delegation_id, AgentOutput(
+            delegation_id=delegation_id,
+            agent_name="unknown",
+            success=False,
+            result=f"Delegation {delegation_id} not found in plan.",
+        )
+
+    agent = registry.get(msg.agent_name)
+    if not agent:
+        logger.warning("Agent '%s' not in registry, falling back to legacy", msg.agent_name)
+        agent = registry.get("legacy")
+        if not agent:
+            return delegation_id, AgentOutput(
+                delegation_id=delegation_id,
+                agent_name=msg.agent_name,
+                success=False,
+                result=f"Agent '{msg.agent_name}' not found and no legacy fallback.",
+            )
+
+    # Update state
+    ds = delegation_states.get(delegation_id)
+    if ds:
+        ds.status = DelegationStatus.RUNNING
+        delegation_states[delegation_id] = ds
+
+    logger.info(
+        "Executing delegation: id=%s agent=%s task=%s",
+        delegation_id, msg.agent_name, msg.task_summary[:60],
+    )
+
+    try:
+        output = await asyncio.wait_for(
+            agent.execute(msg, state),
+            timeout=settings.delegation_timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.error(
+            "Delegation %s timed out after %ds", delegation_id, settings.delegation_timeout,
+        )
+        output = AgentOutput(
+            delegation_id=delegation_id,
+            agent_name=msg.agent_name,
+            success=False,
+            result=f"Delegation timed out after {settings.delegation_timeout}s.",
+            confidence=0.0,
+        )
+    except Exception as exc:
+        logger.error(
+            "Delegation %s failed with exception: %s", delegation_id, exc,
+        )
+        output = AgentOutput(
+            delegation_id=delegation_id,
+            agent_name=msg.agent_name,
+            success=False,
+            result=f"Delegation failed: {exc}",
+            confidence=0.0,
+        )
+
+    return delegation_id, output
+
+
+async def _execute_parallel(
+    delegation_ids: list[str],
+    delegation_map: dict[str, DelegationMessage],
+    delegation_states: dict[str, DelegationState],
+    registry: AgentRegistry,
+    state: dict,
+    task: CodingTask,
+) -> list[tuple[str, AgentOutput]]:
+    """Execute multiple delegations concurrently."""
+    coros = [
+        _execute_single(did, delegation_map, delegation_states, registry, state, task)
+        for did in delegation_ids
+    ]
+    return await asyncio.gather(*coros, return_exceptions=False)
+
+
+def _calc_percent(completed: int, total: int) -> int:
+    """Calculate progress percentage (40-90 range for execution phase)."""
+    if total == 0:
+        return 40
+    return 40 + int(50 * completed / total)
+
+
+async def _report(task: CodingTask, message: str, percent: int) -> None:
+    """Send progress report to Kotlin server."""
+    try:
+        await kotlin_client.report_progress(
+            task_id=task.id,
+            client_id=task.client_id,
+            node="execute_delegation",
+            message=message,
+            percent=percent,
+        )
+    except Exception:
+        pass
