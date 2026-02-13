@@ -61,6 +61,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress MongoDB heartbeat spam — pymongo DEBUG logs are noise
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("pymongo.topology").setLevel(logging.WARNING)
+logging.getLogger("pymongo.connection").setLevel(logging.WARNING)
+logging.getLogger("pymongo.command").setLevel(logging.WARNING)
+logging.getLogger("pymongo.serverSelection").setLevel(logging.WARNING)
+
 
 class _HealthCheckAccessFilter(logging.Filter):
     """Drop GET /health from uvicorn access log."""
@@ -315,6 +322,7 @@ async def _run_and_stream(
     - Completion/error/interrupt is pushed via report_status_change()
     - SSE queue is still maintained for direct stream subscribers
     """
+    logger.info("ORCHESTRATION_START | thread_id=%s | task_id=%s | query=%s", thread_id, request.task_id, request.task.query[:100])
     try:
         async with _orchestration_semaphore:
             async for event in run_orchestration_streaming(request, thread_id):
@@ -323,6 +331,7 @@ async def _run_and_stream(
                 # Push progress to Kotlin server on each node transition
                 if event.get("type") == "node_start":
                     node = event.get("node", "")
+                    logger.info("ORCHESTRATION_NODE_START | thread_id=%s | node=%s | message=%s", thread_id, node, _NODE_MESSAGES.get(node, f"Running {node}..."))
                     await kotlin_client.report_progress(
                         task_id=request.task_id,
                         client_id=request.client_id,
@@ -333,6 +342,9 @@ async def _run_and_stream(
                         step_index=event.get("current_step_index", 0),
                         total_steps=event.get("total_steps", 0),
                     )
+                elif event.get("type") == "node_end":
+                    node = event.get("node", "")
+                    logger.info("ORCHESTRATION_NODE_END | thread_id=%s | node=%s", thread_id, node)
 
             # Check if graph was interrupted
             graph_state = await get_graph_state(thread_id)
@@ -343,6 +355,7 @@ async def _run_and_stream(
                         if hasattr(task, "interrupts") and task.interrupts:
                             interrupt_data = task.interrupts[0].value
                             break
+                logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
                 await queue.put({
                     "type": "approval_required",
                     "thread_id": thread_id,
@@ -358,20 +371,24 @@ async def _run_and_stream(
                     interrupt_description=interrupt_data.get("description") if interrupt_data else None,
                 )
             else:
+                values = graph_state.values if graph_state else {}
+                final_result = values.get("final_result", "")
+                logger.info("ORCHESTRATION_DONE | thread_id=%s | result_len=%d | branch=%s | artifacts=%d",
+                           thread_id, len(final_result), values.get("branch", "none"), len(values.get("artifacts", [])))
                 await queue.put({"type": "done", "thread_id": thread_id})
 
                 # Push done status to Kotlin with final state
-                values = graph_state.values if graph_state else {}
                 await kotlin_client.report_status_change(
                     task_id=request.task_id,
                     thread_id=thread_id,
                     status="done",
-                    summary=values.get("final_result"),
+                    summary=final_result,
                     branch=values.get("branch"),
                     artifacts=values.get("artifacts", []),
                 )
     except Exception as e:
-        logger.exception("Streaming orchestration failed: %s", e)
+        logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
+        logger.exception("Full exception traceback:")
         await queue.put({"type": "error", "error": str(e)})
 
         # Push error status to Kotlin
