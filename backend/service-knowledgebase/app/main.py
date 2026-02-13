@@ -52,11 +52,11 @@ async def lifespan(app: FastAPI):
         from app.services.llm_extraction_queue import LLMExtractionQueue
         from app.services.llm_extraction_worker import LLMExtractionWorker
 
-        queue_file = Path("/opt/jervis/data/extraction-queue.json")
-        extraction_queue = LLMExtractionQueue(queue_file)
+        queue_dir = Path("/opt/jervis/data")
+        extraction_queue = LLMExtractionQueue(queue_dir)
         worker = LLMExtractionWorker(extraction_queue, graph_service, rag_service)
         await worker.start()
-        logger.info("LLM extraction worker started with queue at %s", queue_file)
+        logger.info("LLM extraction worker started with SQLite queue at %s/extraction_queue.db", queue_dir)
 
     knowledge_service = KnowledgeService(extraction_queue=extraction_queue)
 

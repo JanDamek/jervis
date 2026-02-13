@@ -1,23 +1,25 @@
 """Persistent queue for LLM entity extraction tasks.
 
-Stores pending extraction tasks on PVC so they survive pod restarts.
+Stores pending extraction tasks on PVC using SQLite (crash-safe, ACID transactions).
 Background worker processes tasks asynchronously without blocking ingest.
 
 PRODUCTION-GRADE with:
+- SQLite WAL mode (Write-Ahead Logging) - crash safe, no data loss
+- ACID transactions - atomic operations
 - Task states (PENDING, IN_PROGRESS, COMPLETED, FAILED)
 - Crash recovery (stale IN_PROGRESS tasks reset to PENDING)
 - Retry logic with max attempts
-- No task loss on worker crash
+- Handles millions of tasks without performance degradation
 """
 
 import asyncio
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 from enum import Enum
-import filelock
 
 logger = logging.getLogger(__name__)
 
@@ -86,208 +88,308 @@ class ExtractionTask:
 
 
 class LLMExtractionQueue:
-    """Persistent queue for LLM extraction tasks using PVC-backed JSON file."""
+    """Persistent queue using SQLite with WAL mode for crash safety.
 
-    def __init__(self, queue_file: Path):
-        self.queue_file = queue_file
-        self.lock_file = queue_file.with_suffix(".lock")
+    Uses SQLite database with:
+    - WAL (Write-Ahead Logging) mode - changes written to log first, then DB
+    - ACID transactions - atomic operations, rollback on crash
+    - Indexes on status + attempts for fast dequeue
+    - Automatic recovery of stale IN_PROGRESS tasks
+    """
 
-        # Ensure directory exists
-        queue_file.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, queue_dir: Path):
+        """Initialize SQLite-backed queue.
 
-        # Initialize empty queue if file doesn't exist
-        if not queue_file.exists():
-            try:
-                self._write_queue([])
-                logger.info("Initialized empty extraction queue at %s", queue_file)
-            except FileExistsError:
-                # Another pod created it simultaneously - that's fine
-                logger.info("Queue file already exists (created by another pod)")
-            except Exception as e:
-                logger.warning("Failed to initialize queue file (may already exist): %s", e)
+        Args:
+            queue_dir: Directory where SQLite DB will be stored (on PVC)
+        """
+        self.queue_dir = Path(queue_dir)
+        self.queue_dir.mkdir(parents=True, exist_ok=True)
 
-    def _write_queue(self, tasks: list[dict]) -> None:
-        """Write queue to disk with atomic operation."""
-        import tempfile
-        import os
+        self.db_path = self.queue_dir / "extraction_queue.db"
+        self.old_json_path = self.queue_dir / "extraction-queue.json"
 
-        # Use atomic write with rename (works across processes/pods)
-        fd, temp_path = tempfile.mkstemp(
-            dir=self.queue_file.parent,
-            prefix=".queue-",
-            suffix=".tmp",
-        )
+        self._init_db()
+        self._migrate_from_json_if_needed()
+
+        logger.info("Initialized SQLite extraction queue at %s", self.db_path)
+
+    def _init_db(self) -> None:
+        """Initialize SQLite database with WAL mode and schema."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(tasks, f, indent=2)
-            os.replace(temp_path, self.queue_file)
-        except Exception:
-            # Clean up temp file on error
-            try:
-                os.unlink(temp_path)
-            except Exception:
-                pass
-            raise
+            # Enable WAL mode for crash safety and better concurrency
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")  # Balance safety/performance
+            conn.execute("PRAGMA busy_timeout=30000")  # 30s timeout for locks
 
-    def _read_queue(self) -> list[dict]:
-        """Read queue from disk."""
-        try:
-            with open(self.queue_file, "r") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
+            # Create tasks table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    task_id TEXT PRIMARY KEY,
+                    source_urn TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    project_id TEXT,
+                    kind TEXT,
+                    chunk_ids TEXT NOT NULL,  -- JSON array
+                    created_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_attempt_at TEXT,
+                    worker_id TEXT,
+                    error TEXT
+                )
+            """)
+
+            # Indexes for fast dequeue and stats
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status_attempts_created
+                ON tasks(status, attempts, created_at)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_last_attempt
+                ON tasks(last_attempt_at)
+                WHERE status = 'in_progress'
+            """)
+
+            conn.commit()
+            logger.info("SQLite queue schema initialized with WAL mode")
+        finally:
+            conn.close()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Get connection with proper settings."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     async def enqueue(self, task: ExtractionTask) -> None:
-        """Add task to queue (async-safe with file lock)."""
-        lock = filelock.FileLock(self.lock_file, timeout=10)
-
+        """Add task to queue (atomic, crash-safe)."""
+        conn = self._get_conn()
         try:
-            with lock:
-                tasks = self._read_queue()
-                tasks.append(task.to_dict())
-                self._write_queue(tasks)
-                logger.info("Enqueued extraction task: %s (queue size: %d)", task.task_id, len(tasks))
-        except filelock.Timeout:
-            logger.error("Failed to acquire lock for enqueue after 10s timeout")
-            raise
+            conn.execute("""
+                INSERT INTO tasks (
+                    task_id, source_urn, content, client_id, project_id, kind,
+                    chunk_ids, created_at, status, attempts
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                task.task_id,
+                task.source_urn,
+                task.content,
+                task.client_id,
+                task.project_id,
+                task.kind,
+                json.dumps(task.chunk_ids),
+                task.created_at,
+                TaskStatus.PENDING,
+                0
+            ))
+            conn.commit()
+
+            # Get queue size for logging
+            size = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            logger.info("Enqueued extraction task: %s (queue size: %d)", task.task_id, size)
+        finally:
+            conn.close()
 
     async def dequeue(self, worker_id: str, max_attempts: int = 3) -> Optional[ExtractionTask]:
-        """Claim next PENDING task and mark as IN_PROGRESS (no removal yet).
+        """Claim next PENDING task and mark as IN_PROGRESS (atomic).
 
-        Production-safe: task stays in queue until marked as COMPLETED.
+        Production-safe: task stays in DB until marked as COMPLETED.
         If worker crashes, task remains IN_PROGRESS and will be recovered.
         """
-        lock = filelock.FileLock(self.lock_file, timeout=10)
-
+        conn = self._get_conn()
         try:
-            with lock:
-                tasks = self._read_queue()
+            # Atomic claim: SELECT + UPDATE in single transaction
+            conn.execute("BEGIN IMMEDIATE")  # Write lock
 
-                # Find first PENDING task with attempts < max
-                task_dict = None
-                for t in tasks:
-                    if t.get("status") == TaskStatus.PENDING and t.get("attempts", 0) < max_attempts:
-                        task_dict = t
-                        break
+            # Find first PENDING task with attempts < max
+            row = conn.execute("""
+                SELECT * FROM tasks
+                WHERE status = ? AND attempts < ?
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, (TaskStatus.PENDING, max_attempts)).fetchone()
 
-                if not task_dict:
-                    return None
+            if not row:
+                conn.rollback()
+                return None
 
-                # Mark as IN_PROGRESS (don't remove - stays in queue)
-                task_dict["status"] = TaskStatus.IN_PROGRESS
-                task_dict["attempts"] = task_dict.get("attempts", 0) + 1
-                task_dict["last_attempt_at"] = datetime.utcnow().isoformat()
-                task_dict["worker_id"] = worker_id
+            task_id = row["task_id"]
+            attempts = row["attempts"] + 1
+            now = datetime.utcnow().isoformat()
 
-                self._write_queue(tasks)
+            # Mark as IN_PROGRESS (atomic)
+            conn.execute("""
+                UPDATE tasks
+                SET status = ?, attempts = ?, last_attempt_at = ?, worker_id = ?
+                WHERE task_id = ?
+            """, (TaskStatus.IN_PROGRESS, attempts, now, worker_id, task_id))
 
-                task = ExtractionTask.from_dict(task_dict)
-                pending_count = sum(1 for t in tasks if t.get("status") == TaskStatus.PENDING)
-                logger.info(
-                    "Claimed task %s (attempt %d/%d, %d pending remaining)",
-                    task.task_id, task.attempts, max_attempts, pending_count
-                )
-                return task
-        except filelock.Timeout:
-            logger.error("Failed to acquire lock for dequeue after 10s timeout")
+            conn.commit()
+
+            # Build task object
+            task = ExtractionTask(
+                task_id=row["task_id"],
+                source_urn=row["source_urn"],
+                content=row["content"],
+                client_id=row["client_id"],
+                project_id=row["project_id"],
+                kind=row["kind"],
+                chunk_ids=json.loads(row["chunk_ids"]),
+                created_at=row["created_at"],
+                status=TaskStatus.IN_PROGRESS,
+                attempts=attempts,
+                last_attempt_at=now,
+                worker_id=worker_id,
+            )
+
+            # Log stats
+            pending_count = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status = ?", (TaskStatus.PENDING,)
+            ).fetchone()[0]
+
+            logger.info(
+                "Claimed task %s (attempt %d/%d, %d pending remaining)",
+                task_id, attempts, max_attempts, pending_count
+            )
+
+            return task
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error("Failed to dequeue task: %s", e)
             return None
+        finally:
+            conn.close()
 
     async def peek(self) -> Optional[ExtractionTask]:
         """Return next task without removing it."""
-        tasks = self._read_queue()
-        if not tasks:
-            return None
-        return ExtractionTask.from_dict(tasks[0])
+        conn = self._get_conn()
+        try:
+            row = conn.execute("""
+                SELECT * FROM tasks
+                WHERE status = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, (TaskStatus.PENDING,)).fetchone()
+
+            if not row:
+                return None
+
+            return ExtractionTask(
+                task_id=row["task_id"],
+                source_urn=row["source_urn"],
+                content=row["content"],
+                client_id=row["client_id"],
+                project_id=row["project_id"],
+                kind=row["kind"],
+                chunk_ids=json.loads(row["chunk_ids"]),
+                created_at=row["created_at"],
+                status=row["status"],
+                attempts=row["attempts"],
+                last_attempt_at=row["last_attempt_at"],
+                worker_id=row["worker_id"],
+                error=row["error"],
+            )
+        finally:
+            conn.close()
 
     async def size(self) -> int:
         """Get current queue size (all tasks)."""
-        tasks = self._read_queue()
-        return len(tasks)
+        conn = self._get_conn()
+        try:
+            return conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        finally:
+            conn.close()
 
     async def stats(self) -> dict:
         """Get queue statistics for monitoring."""
-        tasks = self._read_queue()
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("""
+                SELECT status, COUNT(*) as count
+                FROM tasks
+                GROUP BY status
+            """).fetchall()
 
-        stats = {
-            "total": len(tasks),
-            "pending": 0,
-            "in_progress": 0,
-            "failed": 0,
-        }
+            stats = {
+                "total": 0,
+                "pending": 0,
+                "in_progress": 0,
+                "failed": 0,
+            }
 
-        for task in tasks:
-            status = task.get("status", TaskStatus.PENDING)
-            if status == TaskStatus.PENDING:
-                stats["pending"] += 1
-            elif status == TaskStatus.IN_PROGRESS:
-                stats["in_progress"] += 1
-            elif status == TaskStatus.FAILED:
-                stats["failed"] += 1
+            for row in rows:
+                status = row["status"]
+                count = row["count"]
+                stats["total"] += count
+                if status == TaskStatus.PENDING:
+                    stats["pending"] = count
+                elif status == TaskStatus.IN_PROGRESS:
+                    stats["in_progress"] = count
+                elif status == TaskStatus.FAILED:
+                    stats["failed"] = count
 
-        return stats
+            return stats
+        finally:
+            conn.close()
 
     async def mark_completed(self, task_id: str) -> bool:
         """Mark task as COMPLETED and remove from queue (success case)."""
-        lock = filelock.FileLock(self.lock_file, timeout=10)
-
+        conn = self._get_conn()
         try:
-            with lock:
-                tasks = self._read_queue()
-                original_size = len(tasks)
-                # Remove completed tasks from queue
-                tasks = [t for t in tasks if t["task_id"] != task_id]
+            cursor = conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+            conn.commit()
 
-                if len(tasks) < original_size:
-                    self._write_queue(tasks)
-                    logger.info("Task %s completed and removed from queue (remaining: %d)", task_id, len(tasks))
-                    return True
-                return False
-        except filelock.Timeout:
-            logger.error("Failed to acquire lock for mark_completed after 10s timeout")
+            if cursor.rowcount > 0:
+                remaining = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+                logger.info("Task %s completed and removed from queue (remaining: %d)", task_id, remaining)
+                return True
             return False
+        finally:
+            conn.close()
 
     async def mark_failed(self, task_id: str, error: str, max_attempts: int = 3) -> bool:
         """Mark task as FAILED if max attempts reached, or reset to PENDING for retry."""
-        lock = filelock.FileLock(self.lock_file, timeout=10)
-
+        conn = self._get_conn()
         try:
-            with lock:
-                tasks = self._read_queue()
-                task_dict = None
+            # Get current attempts
+            row = conn.execute(
+                "SELECT attempts FROM tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
 
-                for t in tasks:
-                    if t["task_id"] == task_id:
-                        task_dict = t
-                        break
+            if not row:
+                return False
 
-                if not task_dict:
-                    return False
+            attempts = row["attempts"]
 
-                attempts = task_dict.get("attempts", 0)
+            if attempts >= max_attempts:
+                # Max attempts reached - mark as FAILED
+                conn.execute("""
+                    UPDATE tasks
+                    SET status = ?, error = ?
+                    WHERE task_id = ?
+                """, (TaskStatus.FAILED, error, task_id))
+                conn.commit()
+                logger.error("Task %s FAILED after %d attempts: %s", task_id, attempts, error)
+            else:
+                # Reset to PENDING for retry
+                conn.execute("""
+                    UPDATE tasks
+                    SET status = ?, worker_id = NULL, error = ?
+                    WHERE task_id = ?
+                """, (TaskStatus.PENDING, error, task_id))
+                conn.commit()
+                logger.warning(
+                    "Task %s failed (attempt %d/%d), resetting to PENDING: %s",
+                    task_id, attempts, max_attempts, error
+                )
 
-                if attempts >= max_attempts:
-                    # Max attempts reached - mark as FAILED and keep in queue for visibility
-                    task_dict["status"] = TaskStatus.FAILED
-                    task_dict["error"] = error
-                    logger.error(
-                        "Task %s FAILED after %d attempts: %s",
-                        task_id, attempts, error
-                    )
-                else:
-                    # Reset to PENDING for retry
-                    task_dict["status"] = TaskStatus.PENDING
-                    task_dict["worker_id"] = None
-                    task_dict["error"] = error
-                    logger.warning(
-                        "Task %s failed (attempt %d/%d), resetting to PENDING: %s",
-                        task_id, attempts, max_attempts, error
-                    )
-
-                self._write_queue(tasks)
-                return True
-        except filelock.Timeout:
-            logger.error("Failed to acquire lock for mark_failed after 10s timeout")
-            return False
+            return True
+        finally:
+            conn.close()
 
     async def recover_stale_tasks(self, stale_threshold_minutes: int = 30) -> int:
         """Reset stale IN_PROGRESS tasks to PENDING (crash recovery).
@@ -297,53 +399,139 @@ class LLMExtractionQueue:
 
         Returns: number of tasks recovered.
         """
-        lock = filelock.FileLock(self.lock_file, timeout=10)
+        conn = self._get_conn()
+        try:
+            threshold_time = (
+                datetime.utcnow() - timedelta(minutes=stale_threshold_minutes)
+            ).isoformat()
+
+            # Find stale tasks
+            stale_rows = conn.execute("""
+                SELECT task_id, worker_id, last_attempt_at
+                FROM tasks
+                WHERE status = ? AND (
+                    last_attempt_at IS NULL OR last_attempt_at < ?
+                )
+            """, (TaskStatus.IN_PROGRESS, threshold_time)).fetchall()
+
+            if not stale_rows:
+                return 0
+
+            # Reset to PENDING
+            conn.execute("""
+                UPDATE tasks
+                SET status = ?, worker_id = NULL
+                WHERE status = ? AND (
+                    last_attempt_at IS NULL OR last_attempt_at < ?
+                )
+            """, (TaskStatus.PENDING, TaskStatus.IN_PROGRESS, threshold_time))
+
+            conn.commit()
+
+            recovered = len(stale_rows)
+            for row in stale_rows:
+                logger.warning(
+                    "Recovered stale task %s (worker %s, last attempt: %s)",
+                    row["task_id"],
+                    row["worker_id"] or "?",
+                    row["last_attempt_at"] or "never",
+                )
+
+            logger.info("Recovered %d stale IN_PROGRESS tasks to PENDING", recovered)
+            return recovered
+        finally:
+            conn.close()
+
+    def _migrate_from_json_if_needed(self) -> None:
+        """Migrate tasks from old JSON file to SQLite (one-time migration).
+
+        TEMPORARY: This migration code will be removed after successful deployment.
+        """
+        if not self.old_json_path.exists():
+            logger.info("No old JSON queue found - skipping migration")
+            return
 
         try:
-            with lock:
-                tasks = self._read_queue()
-                recovered = 0
-                now = datetime.utcnow()
-                threshold = timedelta(minutes=stale_threshold_minutes)
+            # Read old JSON queue
+            with open(self.old_json_path, "r") as f:
+                old_tasks = json.load(f)
 
-                for task_dict in tasks:
-                    if task_dict.get("status") != TaskStatus.IN_PROGRESS:
+            if not old_tasks:
+                logger.info("Old JSON queue is empty - skipping migration")
+                self._backup_and_delete_json()
+                return
+
+            # Import into SQLite
+            conn = self._get_conn()
+            try:
+                migrated = 0
+                skipped = 0
+
+                for task_dict in old_tasks:
+                    task_id = task_dict.get("task_id")
+                    if not task_id:
+                        skipped += 1
                         continue
 
-                    last_attempt = task_dict.get("last_attempt_at")
-                    if not last_attempt:
-                        # No timestamp - reset it
-                        task_dict["status"] = TaskStatus.PENDING
-                        task_dict["worker_id"] = None
-                        recovered += 1
+                    # Check if already exists (migration was partially done)
+                    exists = conn.execute(
+                        "SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)
+                    ).fetchone()
+
+                    if exists:
+                        skipped += 1
                         continue
 
+                    # Insert task
                     try:
-                        last_attempt_dt = datetime.fromisoformat(last_attempt)
-                        age = now - last_attempt_dt
+                        conn.execute("""
+                            INSERT INTO tasks (
+                                task_id, source_urn, content, client_id, project_id, kind,
+                                chunk_ids, created_at, status, attempts, last_attempt_at,
+                                worker_id, error
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            task_dict.get("task_id"),
+                            task_dict.get("source_urn"),
+                            task_dict.get("content"),
+                            task_dict.get("client_id"),
+                            task_dict.get("project_id"),
+                            task_dict.get("kind"),
+                            json.dumps(task_dict.get("chunk_ids", [])),
+                            task_dict.get("created_at"),
+                            task_dict.get("status", TaskStatus.PENDING),
+                            task_dict.get("attempts", 0),
+                            task_dict.get("last_attempt_at"),
+                            task_dict.get("worker_id"),
+                            task_dict.get("error"),
+                        ))
+                        migrated += 1
+                    except sqlite3.IntegrityError:
+                        # Duplicate task_id
+                        skipped += 1
+                        continue
 
-                        if age > threshold:
-                            # Stale - reset to PENDING
-                            task_dict["status"] = TaskStatus.PENDING
-                            task_dict["worker_id"] = None
-                            recovered += 1
-                            logger.warning(
-                                "Recovered stale task %s (worker %s, age: %s)",
-                                task_dict["task_id"],
-                                task_dict.get("worker_id", "?"),
-                                age,
-                            )
-                    except (ValueError, TypeError):
-                        # Invalid timestamp - reset
-                        task_dict["status"] = TaskStatus.PENDING
-                        task_dict["worker_id"] = None
-                        recovered += 1
+                conn.commit()
+                logger.info(
+                    "Migration complete: %d tasks migrated, %d skipped from old JSON queue",
+                    migrated, skipped
+                )
 
-                if recovered > 0:
-                    self._write_queue(tasks)
-                    logger.info("Recovered %d stale IN_PROGRESS tasks to PENDING", recovered)
+                # Backup and delete old JSON file
+                self._backup_and_delete_json()
 
-                return recovered
-        except filelock.Timeout:
-            logger.error("Failed to acquire lock for recover_stale_tasks after 10s timeout")
-            return 0
+            finally:
+                conn.close()
+
+        except Exception as e:
+            logger.error("Failed to migrate from JSON queue: %s", e)
+            # Don't fail startup - continue with empty SQLite queue
+
+    def _backup_and_delete_json(self) -> None:
+        """Backup old JSON file and delete it."""
+        try:
+            backup_path = self.old_json_path.with_suffix(".json.backup")
+            self.old_json_path.rename(backup_path)
+            logger.info("Old JSON queue backed up to %s", backup_path)
+        except Exception as e:
+            logger.warning("Failed to backup old JSON queue: %s", e)

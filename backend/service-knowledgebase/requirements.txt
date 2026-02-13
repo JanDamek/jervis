@@ -13,3 +13,4 @@ beautifulsoup4>=4.12.0
 tree-sitter>=0.21.0
 tree-sitter-languages>=1.10.0
 filelock>=3.13.0
+persist-queue>=1.0.0
