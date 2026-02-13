@@ -21,6 +21,12 @@ import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
 import com.jervis.ui.storage.PendingMessageStorage
+import com.jervis.ui.util.PickedFile
+import com.jervis.ui.util.pickFile
+import com.jervis.dto.AttachmentDto
+import com.jervis.dto.CompressionBoundaryDto
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -141,6 +147,22 @@ class MainViewModel(
 
     private val _runningTaskType = MutableStateFlow<String?>(null)
     val runningTaskType: StateFlow<String?> = _runningTaskType.asStateFlow()
+
+    // History pagination state
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
+    private val _compressionBoundaries = MutableStateFlow<List<CompressionBoundaryDto>>(emptyList())
+    val compressionBoundaries: StateFlow<List<CompressionBoundaryDto>> = _compressionBoundaries.asStateFlow()
+
+    private var oldestSequence: Long? = null
+
+    // File attachments pending send
+    private val _attachments = MutableStateFlow<List<PickedFile>>(emptyList())
+    val attachments: StateFlow<List<PickedFile>> = _attachments.asStateFlow()
 
     // Pending queue items (tasks waiting to be processed) - split by queue type
     private val _pendingQueueItems = MutableStateFlow<List<PendingQueueItem>>(emptyList())
@@ -852,9 +874,13 @@ class MainViewModel(
                         metadata = msg.metadata,
                         timestamp = msg.timestamp,
                         workflowSteps = parseWorkflowSteps(msg.metadata),
+                        sequence = msg.sequence,
                     )
                 }
             _chatMessages.value = newMessages
+            _hasMore.value = history.hasMore
+            oldestSequence = history.oldestSequence
+            _compressionBoundaries.value = history.compressionBoundaries
 
             // After successful reconnect, retry pending message
             pendingMessage?.let { msg ->
@@ -867,6 +893,79 @@ class MainViewModel(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             println("Failed to reload history: ${e.message}")
+        }
+    }
+
+    /**
+     * Load older history messages (pagination).
+     * Prepends to existing messages.
+     */
+    fun loadMoreHistory() {
+        val clientId = _selectedClientId.value ?: return
+        val projectId = _selectedProjectId.value ?: return
+        val beforeSeq = oldestSequence ?: return
+        if (_isLoadingMore.value) return
+
+        scope.launch {
+            _isLoadingMore.value = true
+            try {
+                val history = repository.agentOrchestrator.getChatHistory(
+                    clientId, projectId, limit = 10, beforeSequence = beforeSeq
+                )
+                val olderMessages = history.messages.map { msg ->
+                    ChatMessage(
+                        from = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.Sender.Me else ChatMessage.Sender.Assistant,
+                        text = msg.content,
+                        contextId = projectId,
+                        messageType = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
+                        metadata = msg.metadata,
+                        timestamp = msg.timestamp,
+                        workflowSteps = parseWorkflowSteps(msg.metadata),
+                        sequence = msg.sequence,
+                    )
+                }
+                _chatMessages.value = olderMessages + _chatMessages.value
+                _hasMore.value = history.hasMore
+                oldestSequence = history.oldestSequence
+                // Merge compression boundaries
+                _compressionBoundaries.value = (history.compressionBoundaries + _compressionBoundaries.value).distinctBy { it.afterSequence }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Failed to load more history: ${e.message}")
+            } finally {
+                _isLoadingMore.value = false
+            }
+        }
+    }
+
+    /**
+     * Set input text to the given message text for re-editing.
+     */
+    fun editMessage(text: String) {
+        _inputText.value = text
+    }
+
+    /**
+     * Open file picker and add selected file to attachments.
+     */
+    fun attachFile() {
+        val file = pickFile() ?: return
+        // Size limit: reject >10MB
+        if (file.sizeBytes > 10 * 1024 * 1024) {
+            _errorMessage.value = "Soubor je příliš velký (max 10 MB)"
+            return
+        }
+        _attachments.value = _attachments.value + file
+    }
+
+    /**
+     * Remove an attachment by index.
+     */
+    fun removeAttachment(index: Int) {
+        val current = _attachments.value.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            _attachments.value = current
         }
     }
 
@@ -982,9 +1081,11 @@ class MainViewModel(
         connectionManager.requestReconnect()
     }
 
+    @OptIn(ExperimentalEncodingApi::class)
     fun sendMessage() {
         val text = _inputText.value.trim()
-        if (text.isEmpty()) return
+        val currentAttachments = _attachments.value
+        if (text.isEmpty() && currentAttachments.isEmpty()) return
 
         val clientId = _selectedClientId.value
         val projectId = _selectedProjectId.value
@@ -1003,11 +1104,23 @@ class MainViewModel(
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
+        // Encode attachments to base64 for RPC transport
+        val attachmentDtos = currentAttachments.map { file ->
+            AttachmentDto(
+                id = "",
+                filename = file.filename,
+                mimeType = file.mimeType,
+                sizeBytes = file.sizeBytes,
+                contentBase64 = Base64.encode(file.contentBytes),
+            )
+        }
+
         // Send message - server echo will be deduplicated in handleChatResponse
         scope.launch {
             _isLoading.value = true
             val originalText = text
             _inputText.value = "" // Clear input immediately
+            _attachments.value = emptyList() // Clear attachments
 
             try {
                 repository.agentOrchestrator.sendMessage(
@@ -1018,6 +1131,7 @@ class MainViewModel(
                                 clientId = clientId,
                                 projectId = projectId,
                             ),
+                        attachments = attachmentDtos,
                     ),
                 )
                 println("=== Message sent successfully (RPC) ===")
@@ -1042,6 +1156,7 @@ class MainViewModel(
                 PendingMessageStorage.save(originalText)
                 // Remove optimistic message on failure
                 _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
+                _attachments.value = currentAttachments // Restore attachments on failure
                 _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
             } finally {
                 _isLoading.value = false

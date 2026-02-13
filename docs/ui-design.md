@@ -482,12 +482,40 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
 **Chat bubble layout** (`ChatMessageDisplay.kt`):
 
 iMessage/WhatsApp-style chat with content-based width:
-- **Responsive max width**: Uses `BoxWithConstraints` to calculate max width as `maxWidth - 32.dp` (accounting for LazyColumn's 16dp padding on each side)
+- **Spacing**: LazyColumn `contentPadding = PaddingValues(24.dp)`, `verticalArrangement = Arrangement.spacedBy(20.dp)`, bubble internal padding `16.dp`
+- **Responsive max width**: Uses `BoxWithConstraints` to calculate max width as `maxWidth - 32.dp`
 - **Content-based width**: `Card` with `Modifier.widthIn(min = 48.dp, max = maxBubbleWidth)` adapts to content length
-- **User messages**: Plain text, `primaryContainer` background, right-aligned
-- **Assistant messages**: Markdown rendering, `secondaryContainer` background, left-aligned
+- **User messages**: Plain text, `primaryContainer` background, right-aligned, with Edit + Copy icons
+- **Assistant messages**: Markdown rendering, `secondaryContainer` background, left-aligned, with Copy icon
 - **Markdown support**: Uses `multiplatform-markdown-renderer:0.29.0` with Material 3 theme colors
 - **Workflow steps**: Collapsible step list with status icons (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending) and tool usage
+- **Timestamps**: Human-readable formatting via `formatMessageTime()` — today: "HH:mm", yesterday: "Včera HH:mm", this year: "d. M. HH:mm", older: "d. M. yyyy HH:mm"
+
+**Edit & Copy actions** (header row of each bubble):
+- User messages: `Icons.Default.Edit` (pencil, 18dp icon in 32dp touch target) → sets input text for re-editing + `Icons.Default.ContentCopy` → copies to clipboard
+- Assistant messages: `Icons.Default.ContentCopy` only
+- Cross-platform clipboard via `ClipboardUtil` (expect/actual: JVM uses `java.awt.Toolkit`, iOS uses `UIPasteboard`, Android stub)
+
+**History pagination** (`ChatArea` component):
+- Initial load: 10 messages via `getChatHistory(limit=10)`
+- "Načíst starší zprávy" `TextButton` at top of LazyColumn when `hasMore == true`
+- Clicking loads next 10 messages using `beforeSequence` cursor, prepends to existing
+- Shows `CircularProgressIndicator` while loading
+
+**Context compression markers** (`CompressionBoundaryIndicator`):
+- Displayed between messages where compression occurred
+- `HorizontalDivider` + `Icons.Default.Summarize` icon + "Komprese kontextu (N zpráv shrnuto)" label
+- Expandable summary text with `AnimatedVisibility`
+- Data from `CompressionBoundaryDto` (afterSequence, summary, compressedMessageCount, topics)
+
+**File attachment support** (`InputArea` component):
+- `Icons.Default.AttachFile` button (44dp, left of text field) opens platform file picker
+- Selected files shown as `AssistChip` with file type icon + filename + close button
+- File type icons: Image, PDF, Description (text), FolderZip (archives), InsertDriveFile (other)
+- Size limit: reject >10MB with error message
+- Files encoded to base64 via `AttachmentDto.contentBase64` for RPC transport
+- Backend decodes and saves to storage directory
+- Platform file pickers: JVM full implementation (`JFileChooser`), Android/iOS stubs returning null
 
 ```kotlin
 // Responsive max width calculation

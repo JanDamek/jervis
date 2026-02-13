@@ -31,6 +31,10 @@ fun MainScreen(
     val runningProjectName by viewModel.runningProjectName.collectAsState()
     val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
     val runningTaskType by viewModel.runningTaskType.collectAsState()
+    val hasMore by viewModel.hasMore.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val compressionBoundaries by viewModel.compressionBoundaries.collectAsState()
+    val attachments by viewModel.attachments.collectAsState()
 
     MainScreenViewInternal(
         clients = clients,
@@ -47,6 +51,10 @@ fun MainScreen(
         runningProjectName = runningProjectName,
         runningTaskPreview = runningTaskPreview,
         runningTaskType = runningTaskType,
+        hasMore = hasMore,
+        isLoadingMore = isLoadingMore,
+        compressionBoundaries = compressionBoundaries,
+        attachments = attachments,
         onClientSelected = viewModel::selectClient,
         onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
         onGroupSelected = viewModel::selectGroup,
@@ -56,5 +64,9 @@ fun MainScreen(
         onAgentStatusClick = { onNavigate(com.jervis.ui.navigation.Screen.AgentWorkload) },
         connectionState = connectionState,
         onReconnect = viewModel::manualReconnect,
+        onEditMessage = viewModel::editMessage,
+        onLoadMore = viewModel::loadMoreHistory,
+        onAttachFile = viewModel::attachFile,
+        onRemoveAttachment = viewModel::removeAttachment,
     )
 }

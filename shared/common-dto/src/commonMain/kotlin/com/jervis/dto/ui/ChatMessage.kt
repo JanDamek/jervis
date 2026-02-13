@@ -12,6 +12,7 @@ data class ChatMessage(
     val messageType: MessageType = MessageType.FINAL,
     val metadata: Map<String, String> = emptyMap(),
     val workflowSteps: List<WorkflowStep> = emptyList(),
+    val sequence: Long? = null,
 ) {
     @Serializable
     enum class Sender { Me, Assistant }

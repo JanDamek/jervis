@@ -39,10 +39,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.JIconButton
 import com.jervis.ui.navigation.Screen
+import com.jervis.ui.util.PickedFile
 
 /**
  * Main menu items for the dropdown menu.
@@ -91,6 +93,10 @@ fun MainScreenView(
     runningProjectName: String? = null,
     runningTaskPreview: String? = null,
     runningTaskType: String? = null,
+    hasMore: Boolean = false,
+    isLoadingMore: Boolean = false,
+    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
+    attachments: List<PickedFile> = emptyList(),
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
     onGroupSelected: (String) -> Unit = {},
@@ -100,6 +106,10 @@ fun MainScreenView(
     onAgentStatusClick: () -> Unit = {},
     connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
     onReconnect: () -> Unit = {},
+    onEditMessage: (String) -> Unit = {},
+    onLoadMore: () -> Unit = {},
+    onAttachFile: () -> Unit = {},
+    onRemoveAttachment: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -118,6 +128,10 @@ fun MainScreenView(
             runningProjectName = runningProjectName,
             runningTaskPreview = runningTaskPreview,
             runningTaskType = runningTaskType,
+            hasMore = hasMore,
+            isLoadingMore = isLoadingMore,
+            compressionBoundaries = compressionBoundaries,
+            attachments = attachments,
             onClientSelected = onClientSelected,
             onProjectSelected = onProjectSelected,
             onGroupSelected = onGroupSelected,
@@ -127,6 +141,10 @@ fun MainScreenView(
             onNavigate = onNavigate,
             connectionState = connectionState,
             onReconnect = onReconnect,
+            onEditMessage = onEditMessage,
+            onLoadMore = onLoadMore,
+            onAttachFile = onAttachFile,
+            onRemoveAttachment = onRemoveAttachment,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -152,6 +170,10 @@ private fun ChatContent(
     runningProjectName: String?,
     runningTaskPreview: String?,
     runningTaskType: String?,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    compressionBoundaries: List<CompressionBoundaryDto>,
+    attachments: List<PickedFile>,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
     onGroupSelected: (String) -> Unit,
@@ -161,6 +183,10 @@ private fun ChatContent(
     onNavigate: (Screen) -> Unit,
     connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
     onReconnect: () -> Unit = {},
+    onEditMessage: (String) -> Unit,
+    onLoadMore: () -> Unit,
+    onAttachFile: () -> Unit,
+    onRemoveAttachment: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -188,6 +214,11 @@ private fun ChatContent(
         // Chat area
         ChatArea(
             messages = chatMessages,
+            hasMore = hasMore,
+            isLoadingMore = isLoadingMore,
+            compressionBoundaries = compressionBoundaries,
+            onLoadMore = onLoadMore,
+            onEditMessage = onEditMessage,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -214,9 +245,12 @@ private fun ChatContent(
             queueSize = queueSize,
             runningProjectId = runningProjectId,
             currentProjectId = selectedProjectId,
+            attachments = attachments,
+            onAttachFile = onAttachFile,
+            onRemoveAttachment = onRemoveAttachment,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
         )
     }
 }
