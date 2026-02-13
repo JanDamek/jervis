@@ -150,11 +150,23 @@ class RpcConnectionManager(private val baseUrl: String) {
     /**
      * Monitor rpcClient lifecycle. When its job completes (connection died),
      * trigger automatic reconnection.
+     *
+     * Uses KrpcClient.awaitCompletion() which suspends until the client's
+     * internal scope Job completes — this happens when the WebSocket closes.
      */
     private fun monitorConnection(client: KtorRpcClient) {
-        // Connection monitoring via periodic health checks or error callbacks
-        // For now, rely on resilientFlow error handling to trigger reconnects
-        // Future: implement periodic ping or use WebSocket close callback
+        scope.launch {
+            try {
+                client.awaitCompletion()
+            } catch (_: Exception) {}
+
+            // Only trigger reconnect if this is still the active client
+            if (rpcClient === client) {
+                println("RpcConnectionManager: Connection lost, triggering reconnect...")
+                _state.value = RpcConnectionState.Disconnected
+                reconnect()
+            }
+        }
     }
 
     private fun closeCurrentConnection() {
@@ -193,9 +205,10 @@ class RpcConnectionManager(private val baseUrl: String) {
                     subscribe(services).catch { e ->
                         if (e is CancellationException) throw e
                         println("RpcConnectionManager: Stream error: ${e.message}")
-                        // Don't retry here — the monitorConnection will detect the dead
-                        // connection, trigger reconnect, bump generation, and flatMapLatest
-                        // will restart this stream automatically.
+                        // monitorConnection will detect the dead connection and trigger
+                        // reconnect. As defense-in-depth, also mark disconnected here
+                        // so reconnect() won't skip due to Connected state guard.
+                        _state.value = RpcConnectionState.Disconnected
                     },
                 )
             }
