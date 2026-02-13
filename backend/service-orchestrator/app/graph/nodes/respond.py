@@ -207,8 +207,34 @@ async def respond(state: dict) -> dict:
         if message.content:
             logger.info("Respond: message.content = %s", message.content[:500])
 
-        # Check for tool calls
+        # Check for tool calls (OpenAI format)
         tool_calls = getattr(message, "tool_calls", None)
+
+        # WORKAROUND: Ollama qwen3-coder-tool:30b doesn't support native tool_calls
+        # It outputs JSON in content instead: {"tool_calls": [...]}
+        # Parse and convert to proper format
+        if not tool_calls and message.content:
+            try:
+                content_json = json.loads(message.content.strip())
+                if isinstance(content_json, dict) and "tool_calls" in content_json:
+                    logger.info("Respond: parsing tool_calls from JSON content (Ollama workaround)")
+                    # Convert JSON tool calls to OpenAI-style objects
+                    class ToolCall:
+                        def __init__(self, tc_dict):
+                            self.id = tc_dict.get("id", "")
+                            self.type = tc_dict.get("type", "function")
+                            class Function:
+                                def __init__(self, f_dict):
+                                    self.name = f_dict.get("name", "")
+                                    self.arguments = json.dumps(f_dict.get("arguments", {}))
+                            self.function = Function(tc_dict.get("function", {}))
+
+                    tool_calls = [ToolCall(tc) for tc in content_json["tool_calls"]]
+                    message.content = None  # Clear content since we extracted tool calls
+                    logger.info("Respond: extracted %d tool calls from JSON", len(tool_calls))
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.debug("Respond: content is not JSON tool_calls format: %s", e)
+
         if not tool_calls or choice.finish_reason == "stop":
             # No more tool calls → final answer
             answer = message.content or ""
