@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     )
 
     # LLM providers
-    ollama_url: str = os.getenv("OLLAMA_API_BASE", "http://192.168.100.117:11434")
+    # Ollama Router endpoint - MUST be set via ConfigMap (k8s/configmap.yaml)
+    ollama_url: str = os.getenv("OLLAMA_API_BASE")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")

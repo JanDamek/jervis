@@ -29,7 +29,8 @@ fun main() {
             sandboxImage = System.getenv("OPENHANDS_SANDBOX_IMAGE") ?: "python:3.12-slim",
             maxIterations = System.getenv("OPENHANDS_MAX_ITERATIONS")?.toIntOrNull() ?: 10,
             dockerHost = System.getenv("DOCKER_HOST") ?: "tcp://localhost:2375",
-            ollamaBaseUrl = System.getenv("OLLAMA_BASE_URL") ?: "http://192.168.100.117:11434",
+            ollamaBaseUrl = System.getenv("OLLAMA_BASE_URL")
+                ?: throw IllegalStateException("OLLAMA_BASE_URL must be set via ConfigMap"),
         )
 
     val codingService: ICodingClient = CodingEngineServiceImpl(properties)

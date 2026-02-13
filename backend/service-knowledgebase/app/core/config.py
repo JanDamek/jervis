@@ -12,15 +12,12 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
 
     # -- Ollama endpoints -------------------------------------------------------
-    # GPU instance – reserved for orchestrator (30B coding model).
-    # KB uses this ONLY for VLM (image_service.py) – all other KB tasks use CPU URLs below.
-    OLLAMA_BASE_URL: str = "http://192.168.100.117:11434"
-    # CPU instance – embedding + ingest LLM merged on single port.
-    # Runs OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3.
-    OLLAMA_EMBEDDING_BASE_URL: str = "http://192.168.100.117:11435"
-    # CPU instance for ingest LLM calls (summary generation, link relevance check).
-    # Same physical Ollama instance as embedding.
-    OLLAMA_INGEST_BASE_URL: str = "http://192.168.100.117:11435"
+    # All KB requests go through Ollama Router (port 11430) which routes to GPU/CPU based on load.
+    # Router automatically assigns: VLM → GPU, embeddings/ingest → CPU.
+    # MUST be set via ConfigMap (k8s/configmap.yaml → jervis-knowledgebase-config).
+    OLLAMA_BASE_URL: str
+    OLLAMA_EMBEDDING_BASE_URL: str
+    OLLAMA_INGEST_BASE_URL: str
 
     # -- Storage backends -------------------------------------------------------
     WEAVIATE_URL: str = "http://192.168.100.117:8080"       # Vector store (RAG)
