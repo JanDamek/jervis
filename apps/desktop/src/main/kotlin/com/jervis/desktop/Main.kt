@@ -27,9 +27,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.jervis.desktop.ui.MainContent
-import kotlinx.coroutines.time.delay
 import java.awt.Dimension
-import java.time.Duration
 
 /**
  * Desktop Application Entry Point
@@ -58,16 +56,6 @@ fun main() =
         // Connection manager with automatic retry
         val connectionManager = rememberConnectionManager(serverBaseUrl)
         val repository = connectionManager.repository
-
-        // Background connectivity check
-        LaunchedEffect(connectionManager.status) {
-            if (connectionManager.status is ConnectionStatus.Connected) {
-                while (true) {
-                    delay(Duration.ofSeconds(30)) // Check every 30 seconds
-                    connectionManager.checkConnectivity()
-                }
-            }
-        }
 
         // Shared navigator for main window navigation
         val navigator =
@@ -167,9 +155,9 @@ fun main() =
                 if (repository != null) {
                     MainContent(
                         repository = repository,
+                        connectionManager = connectionManager.rpcConnectionManager,
                         navigator = navigator,
                         onOpenDebugWindow = { showDebug = true },
-                        onRefreshConnection = { connectionManager.forceReconnect() },
                     )
                 } else {
                     ConnectionStatusScreen(connectionManager.status, serverBaseUrl)

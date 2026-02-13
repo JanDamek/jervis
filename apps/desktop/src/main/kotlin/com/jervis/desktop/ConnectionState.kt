@@ -6,12 +6,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.jervis.di.NetworkModule
+import com.jervis.di.RpcConnectionManager
+import com.jervis.di.RpcConnectionState
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -31,7 +31,8 @@ sealed class ConnectionStatus {
 }
 
 /**
- * Manages connection to Jervis server with automatic retry
+ * Manages connection to Jervis server.
+ * Delegates to [RpcConnectionManager] for actual connection lifecycle.
  */
 class ConnectionManager(
     private val serverBaseUrl: String,
@@ -48,123 +49,60 @@ class ConnectionManager(
     var errorNotifications by mutableStateOf<List<com.jervis.dto.events.JervisEvent.ErrorNotification>>(emptyList())
         private set
 
-    private var services: NetworkModule.Services? = null
+    val rpcConnectionManager = RpcConnectionManager(serverBaseUrl)
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var eventJob: kotlinx.coroutines.Job? = null
 
     /**
-     * Check if the server is still reachable.
-     * If not, it triggers reconnection logic.
-     */
-    fun checkConnectivity() {
-        if (status is ConnectionStatus.Connected) {
-            scope.launch {
-                try {
-                    repository?.clients?.getAllClients()
-                } catch (e: Exception) {
-                    println("Connectivity check failed: ${e.message}")
-                    // Use NetworkModule reconnect instead of full re-initialization
-                    tryReconnect()
-                }
-            }
-        }
-    }
-
-    /**
-     * Reconnect using NetworkModule's reconnection logic.
-     * Falls back to full connect() if NetworkModule reconnect fails.
-     */
-    private fun tryReconnect() {
-        scope.launch {
-            try {
-                status = ConnectionStatus.Connecting
-                println("Attempting NetworkModule reconnect...")
-                NetworkModule.reconnect()
-                status = ConnectionStatus.Connected
-                println("Reconnection successful via NetworkModule")
-            } catch (e: Exception) {
-                println("NetworkModule reconnect failed: ${e.message}, falling back to full connect()")
-                connect() // Full re-initialization as fallback
-            }
-        }
-    }
-
-    /**
-     * Initialize connection and start retry loop
+     * Initialize connection via RpcConnectionManager and observe its state.
      */
     suspend fun connect() {
-        while (true) {
-            try {
-                status = ConnectionStatus.Connecting
+        // Create repository with delegated getters — always fresh services
+        repository = JervisRepository { rpcConnectionManager.getServices()!! }
 
-                // Use NetworkModule.createServicesFromUrl() to ensure centralized RPC client management
-                val httpClient = NetworkModule.createHttpClient()
-                services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
+        // Observe RpcConnectionManager state
+        scope.launch {
+            rpcConnectionManager.state.collect { rpcState ->
+                when (rpcState) {
+                    is RpcConnectionState.Connected -> {
+                        status = ConnectionStatus.Connected
 
-                // Create repository
-                repository =
-                    JervisRepository(
-                        clients = services!!.clientService,
-                        projects = services!!.projectService,
-                        projectGroups = services!!.projectGroupService,
-                        environments = services!!.environmentService,
-                        userTasks = services!!.userTaskService,
-                        ragSearch = services!!.ragSearchService,
-                        scheduledTasks = services!!.taskSchedulingService,
-                        agentOrchestrator = services!!.agentOrchestratorService,
-                        errorLogs = services!!.errorLogService,
-                        pendingTasks = services!!.pendingTaskService,
-                        connections = services!!.connectionService,
-                        notifications = services!!.notificationService,
-                        bugTrackerSetup = services!!.bugTrackerSetupService,
-                        codingAgents = services!!.codingAgentSettingsService,
-                        whisperSettings = services!!.whisperSettingsService,
-                        pollingIntervals = services!!.pollingIntervalService,
-                        meetings = services!!.meetingService,
-                        transcriptCorrections = services!!.transcriptCorrectionService,
-                        deviceTokens = services!!.deviceTokenService,
-                        indexingQueue = services!!.indexingQueueService,
-                    )
-
-                // Try a simple test call to verify connectivity
-                try {
-                    val clients = repository!!.clients.getAllClients()
-                    status = ConnectionStatus.Connected
-
-                    // Start event stream for the first client (Desktop usually manages one or all)
-                    clients.firstOrNull()?.let { client ->
-                        startEventStream(client.id)
+                        // Start event stream for tray badge + notifications
+                        val repo = repository ?: return@collect
+                        try {
+                            val clients = repo.clients.getAllClients()
+                            clients.firstOrNull()?.let { client ->
+                                startEventStream(client.id)
+                            }
+                            updateTaskBadge()
+                        } catch (e: Exception) {
+                            println("Desktop: Failed to start event stream after connect: ${e.message}")
+                        }
                     }
-
-                    // Update badge with initial task count
-                    updateTaskBadge()
-
-                    // Stay connected - don't retry
-                    return
-                } catch (e: Exception) {
-                    status = ConnectionStatus.Disconnected("Server not responding: ${e.message}")
+                    is RpcConnectionState.Connecting -> {
+                        status = ConnectionStatus.Connecting
+                    }
+                    is RpcConnectionState.Disconnected -> {
+                        status = ConnectionStatus.Disconnected("Connection lost")
+                    }
                 }
-            } catch (e: Exception) {
-                status = ConnectionStatus.Disconnected("Failed to initialize: ${e.message}")
             }
-
-            // Wait before retry
-            delay(5000)
         }
+
+        // Start connection (blocks until first successful connect, then monitors)
+        rpcConnectionManager.connect()
     }
 
-    private suspend fun startEventStream(clientId: String) {
+    private fun startEventStream(clientId: String) {
         eventJob?.cancel()
-        val repo = repository ?: return
-
-        eventJob =
-            scope.launch {
-                repo.notifications
-                    .subscribeToEvents(clientId)
-                    .collect { event ->
-                        handleEvent(event)
-                    }
+        eventJob = scope.launch {
+            rpcConnectionManager.resilientFlow { services ->
+                services.notificationService.subscribeToEvents(clientId)
+            }.collect { event ->
+                handleEvent(event)
             }
+        }
     }
 
     private suspend fun handleEvent(event: com.jervis.dto.events.JervisEvent) {
@@ -180,7 +118,7 @@ class ConnectionManager(
                 println("User task cancelled: ${event.title}")
                 updateTaskBadge()
             }
-            
+
             is com.jervis.dto.events.JervisEvent.PendingTaskCreated -> {
                 // Ignore for badge
             }
@@ -221,23 +159,11 @@ class ConnectionManager(
     }
 
     /**
-     * Force a full reconnect (new HttpClient + RPC services).
-     * Called by MainViewModel when it detects a dead RPC connection.
-     */
-    fun forceReconnect() {
-        scope.launch {
-            println("=== ConnectionManager: Full reconnect triggered ===")
-            connect()
-        }
-    }
-
-    /**
      * Manually disconnect
      */
     fun disconnect() {
         status = ConnectionStatus.Offline
         repository = null
-        services = null
     }
 }
 

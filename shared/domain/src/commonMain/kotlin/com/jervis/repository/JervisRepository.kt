@@ -1,5 +1,6 @@
 package com.jervis.repository
 
+import com.jervis.di.NetworkModule
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientService
@@ -22,29 +23,33 @@ import com.jervis.service.IUserTaskService
 import com.jervis.service.IWhisperSettingsService
 
 /**
- * Main repository facade for Jervis application
- * Provides unified access to all domain services directly.
- * Formerly wrapped services in Repositories, now exposes services directly.
+ * Main repository facade for Jervis application.
+ * Provides unified access to all domain services via delegated getters.
+ *
+ * After RPC reconnection, [servicesProvider] returns the fresh Services instance,
+ * so all service references are always current — no stale references.
  */
 class JervisRepository(
-    val clients: IClientService,
-    val projects: IProjectService,
-    val projectGroups: IProjectGroupService,
-    val environments: IEnvironmentService,
-    val userTasks: IUserTaskService,
-    val ragSearch: IRagSearchService,
-    val scheduledTasks: ITaskSchedulingService,
-    val agentOrchestrator: IAgentOrchestratorService,
-    val errorLogs: IErrorLogService,
-    val pendingTasks: IPendingTaskService,
-    val connections: IConnectionService,
-    val notifications: INotificationService,
-    val bugTrackerSetup: IBugTrackerSetupService,
-    val codingAgents: ICodingAgentSettingsService,
-    val whisperSettings: IWhisperSettingsService,
-    val pollingIntervals: IPollingIntervalService,
-    val meetings: IMeetingService,
-    val transcriptCorrections: ITranscriptCorrectionService,
-    val deviceTokens: IDeviceTokenService,
-    val indexingQueue: IIndexingQueueService,
-)
+    private val servicesProvider: () -> NetworkModule.Services,
+) {
+    val clients: IClientService get() = servicesProvider().clientService
+    val projects: IProjectService get() = servicesProvider().projectService
+    val projectGroups: IProjectGroupService get() = servicesProvider().projectGroupService
+    val environments: IEnvironmentService get() = servicesProvider().environmentService
+    val userTasks: IUserTaskService get() = servicesProvider().userTaskService
+    val ragSearch: IRagSearchService get() = servicesProvider().ragSearchService
+    val scheduledTasks: ITaskSchedulingService get() = servicesProvider().taskSchedulingService
+    val agentOrchestrator: IAgentOrchestratorService get() = servicesProvider().agentOrchestratorService
+    val errorLogs: IErrorLogService get() = servicesProvider().errorLogService
+    val pendingTasks: IPendingTaskService get() = servicesProvider().pendingTaskService
+    val connections: IConnectionService get() = servicesProvider().connectionService
+    val notifications: INotificationService get() = servicesProvider().notificationService
+    val bugTrackerSetup: IBugTrackerSetupService get() = servicesProvider().bugTrackerSetupService
+    val codingAgents: ICodingAgentSettingsService get() = servicesProvider().codingAgentSettingsService
+    val whisperSettings: IWhisperSettingsService get() = servicesProvider().whisperSettingsService
+    val pollingIntervals: IPollingIntervalService get() = servicesProvider().pollingIntervalService
+    val meetings: IMeetingService get() = servicesProvider().meetingService
+    val transcriptCorrections: ITranscriptCorrectionService get() = servicesProvider().transcriptCorrectionService
+    val deviceTokens: IDeviceTokenService get() = servicesProvider().deviceTokenService
+    val indexingQueue: IIndexingQueueService get() = servicesProvider().indexingQueueService
+}

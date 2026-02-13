@@ -10,23 +10,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.ui.design.JervisTheme
-import com.jervis.di.NetworkModule
+import com.jervis.di.RpcConnectionManager
+import com.jervis.di.RpcConnectionState
 import com.jervis.repository.JervisRepository
-import io.ktor.client.request.get
-import kotlinx.coroutines.launch
 
 /**
  * Main Jervis Application Composable
  * Shared across Desktop, Android, iOS
+ *
+ * Uses [RpcConnectionManager] for non-destructive reconnection —
+ * the Compose tree is preserved across reconnects, only the RPC
+ * streams are re-subscribed via resilientFlow.
  *
  * @param serverBaseUrl Base URL of the Jervis server (e.g., "https://jervis.damek-soft.eu")
  * @param defaultClientId Optional default client ID
@@ -38,108 +39,68 @@ fun JervisApp(
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
 ) {
-    // Initialize services with refresh counter to force recreation
-    var servicesState by remember { mutableStateOf<Pair<String, NetworkModule.Services>?>(null) }
-    var refreshTrigger by remember { mutableStateOf(0) }
+    val connectionManager = remember(serverBaseUrl) { RpcConnectionManager(serverBaseUrl) }
 
-    LaunchedEffect(serverBaseUrl, refreshTrigger) {
-        try {
-            println("=== Jervis App: Initializing connection to $serverBaseUrl ===")
-            val httpClient = NetworkModule.createHttpClient()
-            println("=== Jervis App: HTTP client created ===")
-
-            // Test basic HTTPS connection first
-            try {
-                println("=== Jervis App: Testing HTTPS connection to $serverBaseUrl ===")
-                val testResponse = httpClient.get("$serverBaseUrl/")
-                println("=== Jervis App: HTTPS test successful, status: ${testResponse.status} ===")
-            } catch (e: Exception) {
-                println("=== Jervis App: HTTPS test FAILED: ${e::class.simpleName}: ${e.message} ===")
-                e.printStackTrace()
-                throw e
-            }
-
-            val services = NetworkModule.createServicesFromUrl(serverBaseUrl, httpClient)
-            servicesState = serverBaseUrl to services
-            println("=== Jervis App: Services initialized successfully ===")
-        } catch (e: Exception) {
-            println("=== Jervis App ERROR: ${e::class.simpleName}: ${e.message} ===")
-            e.printStackTrace()
-            // Fallback or show error
-        }
+    LaunchedEffect(connectionManager) {
+        connectionManager.connect()
     }
 
-    // Create repository only when services are ready
-    val currentServices = servicesState?.second
-    if (currentServices == null) {
-        // Show loading screen while connecting
-        JervisTheme {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+    val connState by connectionManager.state.collectAsState()
+
+    when (connState) {
+        is RpcConnectionState.Disconnected,
+        is RpcConnectionState.Connecting,
+        -> {
+            // Show loading screen only during initial connection.
+            // After first connect, reconnections are handled transparently by resilientFlow.
+            if (connectionManager.generation.value == 0L) {
+                JervisTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
                     ) {
-                        CircularProgressIndicator()
-                        Text("Connecting to server...")
-                        Text(
-                            text = serverBaseUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                            ) {
+                                CircularProgressIndicator()
+                                Text("Connecting to server...")
+                                Text(
+                                    text = serverBaseUrl,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
+                return
             }
+            // After initial connect, don't destroy the Compose tree during reconnection.
+            // The overlay inside MainViewModel handles showing reconnection UI.
         }
-        return
+        is RpcConnectionState.Connected -> {
+            // Connection established — first time or after reconnect
+        }
     }
 
-    val repository =
-        remember(currentServices) {
-            JervisRepository(
-                clients = currentServices.clientService,
-                projects = currentServices.projectService,
-                projectGroups = currentServices.projectGroupService,
-                environments = currentServices.environmentService,
-                userTasks = currentServices.userTaskService,
-                ragSearch = currentServices.ragSearchService,
-                scheduledTasks = currentServices.taskSchedulingService,
-                agentOrchestrator = currentServices.agentOrchestratorService,
-                errorLogs = currentServices.errorLogService,
-                pendingTasks = currentServices.pendingTaskService,
-                connections = currentServices.connectionService,
-                notifications = currentServices.notificationService,
-                bugTrackerSetup = currentServices.bugTrackerSetupService,
-                codingAgents = currentServices.codingAgentSettingsService,
-                whisperSettings = currentServices.whisperSettingsService,
-                pollingIntervals = currentServices.pollingIntervalService,
-                meetings = currentServices.meetingService,
-                transcriptCorrections = currentServices.transcriptCorrectionService,
-                deviceTokens = currentServices.deviceTokenService,
-                indexingQueue = currentServices.indexingQueueService,
-            )
+    // Repository uses delegated getters — always returns fresh service instances
+    val repository = remember(connectionManager) {
+        JervisRepository {
+            connectionManager.getServices()
+                ?: error("Services accessed before connection established")
         }
+    }
 
-    val reconnectScope = rememberCoroutineScope()
-
-    // Launch main app
+    // Launch main app — connectionManager handles reconnection, no onRefreshConnection needed
     App(
         repository = repository,
+        connectionManager = connectionManager,
         defaultClientId = defaultClientId,
         defaultProjectId = defaultProjectId,
-        onRefreshConnection = {
-            // Force complete recreation of RPC client and repository
-            reconnectScope.launch {
-                println("=== JervisApp: Full reconnect triggered, clearing services ===")
-                servicesState = null
-                refreshTrigger++
-            }
-        },
     )
 }

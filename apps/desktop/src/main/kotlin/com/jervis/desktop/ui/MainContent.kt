@@ -2,6 +2,7 @@ package com.jervis.desktop.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.jervis.di.RpcConnectionManager
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.App
 import com.jervis.ui.navigation.AppNavigator
@@ -14,10 +15,10 @@ import com.jervis.ui.navigation.Screen
 @Composable
 fun MainContent(
     repository: JervisRepository,
+    connectionManager: RpcConnectionManager,
     navigator: AppNavigator,
     requestedScreen: Screen? = null,
     onOpenDebugWindow: () -> Unit = {},
-    onRefreshConnection: (() -> Unit)? = null,
 ) {
     // Navigate to requested screen when it changes
     LaunchedEffect(requestedScreen) {
@@ -29,10 +30,10 @@ fun MainContent(
     // Use shared UI from ui-common with provided navigator
     App(
         repository = repository,
+        connectionManager = connectionManager,
         defaultClientId = null,
         defaultProjectId = null,
         navigator = navigator,
         onOpenDebugWindow = onOpenDebugWindow,
-        onRefreshConnection = onRefreshConnection,
     )
 }
