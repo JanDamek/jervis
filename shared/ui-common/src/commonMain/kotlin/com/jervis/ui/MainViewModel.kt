@@ -193,6 +193,11 @@ class MainViewModel(
                         _connectionState.value = ConnectionState.CONNECTED
                         _isOverlayVisible.value = false
                         _reconnectAttemptDisplay.value = 0
+
+                        // Load clients when connected (fixes initial load before connection ready)
+                        if (_clients.value.isEmpty()) {
+                            loadClients()
+                        }
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
@@ -210,9 +215,6 @@ class MainViewModel(
                 }
             }
         }
-
-        // Load initial data
-        loadClients()
 
         // Auto-load projects if client is pre-selected
         _selectedClientId.value?.let { clientId ->
