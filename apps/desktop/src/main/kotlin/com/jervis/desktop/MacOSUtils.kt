@@ -83,18 +83,13 @@ object MacOSUtils {
 
     /**
      * Show macOS system notification
+     *
+     * DISABLED: osascript notifications are associated with Script Editor, not Jervis.
+     * Clicking them opens Script Editor instead of bringing Jervis to front.
+     * TODO: Implement using terminal-notifier or native NSUserNotificationCenter for proper app association.
      */
     fun showNotification(title: String, message: String) {
-        if (!isMacOS) return
-
-        try {
-            val cmd = arrayOf(
-                "osascript", "-e",
-                "display notification \"$message\" with title \"$title\""
-            )
-            Runtime.getRuntime().exec(cmd)
-        } catch (e: Exception) {
-            println("Failed to show notification: ${e.message}")
-        }
+        // Disabled - see comment above
+        return
     }
 }

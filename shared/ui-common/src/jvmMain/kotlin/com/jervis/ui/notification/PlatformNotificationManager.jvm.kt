@@ -55,10 +55,10 @@ actual class PlatformNotificationManager actual constructor() {
     }
 
     private fun showMacOSNotification(title: String, body: String) {
-        val escapedTitle = title.replace("\"", "\\\"")
-        val escapedBody = body.replace("\"", "\\\"")
-        val script = "display notification \"$escapedBody\" with title \"$escapedTitle\""
-        Runtime.getRuntime().exec(arrayOf("osascript", "-e", script))
+        // DISABLED: osascript notifications are associated with Script Editor, not Jervis.
+        // Clicking them opens Script Editor instead of bringing Jervis to front.
+        // TODO: Implement using terminal-notifier or native NSUserNotificationCenter for proper app association.
+        return
     }
 
     private fun showWindowsNotification(title: String, body: String) {
