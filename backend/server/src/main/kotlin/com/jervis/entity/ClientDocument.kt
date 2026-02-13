@@ -30,6 +30,8 @@ data class ClientDocument(
     val lastSelectedProjectId: ProjectId? = null,
     val connectionIds: List<ObjectId> = emptyList(),
     val gitCommitConfig: GitCommitConfig? = null,
+    /** Top committers from git history analysis (name <email>) */
+    val gitTopCommitters: List<String> = emptyList(),
     /**
      * Connection capabilities assigned at client level (defaults for all projects).
      * Projects can override these with their own capability assignments.

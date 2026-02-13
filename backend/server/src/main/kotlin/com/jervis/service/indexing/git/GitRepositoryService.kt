@@ -870,7 +870,7 @@ echo "password=${connection.password}"
 
     data class GitCommandResult(val success: Boolean, val output: String)
 
-    private fun executeGitCommand(command: List<String>, workingDir: Path?): GitCommandResult {
+    internal fun executeGitCommand(command: List<String>, workingDir: Path?): GitCommandResult {
         return try {
             val pb = ProcessBuilder(command)
             workingDir?.let { pb.directory(it.toFile()) }

@@ -24,6 +24,7 @@ fun ProjectDocument.toDto(): ProjectDto =
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
         gitCommitMessageFormat = this.gitCommitConfig?.messageFormat,
+        gitCommitMessagePattern = this.gitCommitConfig?.messagePattern,
         gitCommitAuthorName = this.gitCommitConfig?.authorName,
         gitCommitAuthorEmail = this.gitCommitConfig?.authorEmail,
         gitCommitCommitterName = this.gitCommitConfig?.committerName,
@@ -43,11 +44,12 @@ fun ProjectDto.toDocument(): ProjectDocument {
     val resolvedClientId = requireNotNull(this.clientId) { "clientId is required" }
 
     val gitCommitConfig =
-        if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
-            gitCommitAuthorEmail != null || gitCommitGpgSign != null
+        if (gitCommitMessageFormat != null || gitCommitMessagePattern != null ||
+            gitCommitAuthorName != null || gitCommitAuthorEmail != null || gitCommitGpgSign != null
         ) {
             GitCommitConfig(
                 messageFormat = gitCommitMessageFormat,
+                messagePattern = gitCommitMessagePattern,
                 authorName = gitCommitAuthorName,
                 authorEmail = gitCommitAuthorEmail,
                 committerName = gitCommitCommitterName,

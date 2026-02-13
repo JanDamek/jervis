@@ -75,6 +75,8 @@ data class ProjectBuildConfig(
 data class GitCommitConfig(
     /** Template for commit messages, e.g., "[{project}] {message}" */
     val messageFormat: String? = null,
+    /** Pattern with placeholders, e.g., "[$project] $message" */
+    val messagePattern: String? = null,
     /** Git author name for commits */
     val authorName: String? = null,
     /** Git author email for commits */

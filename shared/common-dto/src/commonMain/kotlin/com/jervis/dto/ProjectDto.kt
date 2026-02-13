@@ -16,6 +16,7 @@ data class ProjectDto(
     val communicationLanguageEnum: LanguageEnum = LanguageEnum.getDefault(),
     // Git commit configuration override (inherits from client if null)
     val gitCommitMessageFormat: String? = null,
+    val gitCommitMessagePattern: String? = null, // null = inherit from client
     val gitCommitAuthorName: String? = null,
     val gitCommitAuthorEmail: String? = null,
     val gitCommitCommitterName: String? = null,

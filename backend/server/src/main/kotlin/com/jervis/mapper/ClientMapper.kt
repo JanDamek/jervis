@@ -20,12 +20,14 @@ fun ClientDocument.toDto(): ClientDto =
         lastSelectedProjectId = this.lastSelectedProjectId?.toString(),
         connectionIds = this.connectionIds.map { it.toString() },
         gitCommitMessageFormat = this.gitCommitConfig?.messageFormat,
+        gitCommitMessagePattern = this.gitCommitConfig?.messagePattern,
         gitCommitAuthorName = this.gitCommitConfig?.authorName,
         gitCommitAuthorEmail = this.gitCommitConfig?.authorEmail,
         gitCommitCommitterName = this.gitCommitConfig?.committerName,
         gitCommitCommitterEmail = this.gitCommitConfig?.committerEmail,
         gitCommitGpgSign = this.gitCommitConfig?.gpgSign ?: false,
         gitCommitGpgKeyId = this.gitCommitConfig?.gpgKeyId,
+        gitTopCommitters = this.gitTopCommitters,
         connectionCapabilities = this.connectionCapabilities.map { it.toDto() },
         autoUseAnthropic = this.cloudModelPolicy.autoUseAnthropic,
         autoUseOpenai = this.cloudModelPolicy.autoUseOpenai,
@@ -34,11 +36,12 @@ fun ClientDocument.toDto(): ClientDto =
 
 fun ClientDto.toDocument(): ClientDocument {
     val gitCommitConfig =
-        if (gitCommitMessageFormat != null || gitCommitAuthorName != null ||
-            gitCommitAuthorEmail != null || gitCommitGpgSign
+        if (gitCommitMessageFormat != null || gitCommitMessagePattern != null ||
+            gitCommitAuthorName != null || gitCommitAuthorEmail != null || gitCommitGpgSign
         ) {
             GitCommitConfig(
                 messageFormat = gitCommitMessageFormat,
+                messagePattern = gitCommitMessagePattern,
                 authorName = gitCommitAuthorName,
                 authorEmail = gitCommitAuthorEmail,
                 committerName = gitCommitCommitterName,
@@ -59,6 +62,7 @@ fun ClientDto.toDocument(): ClientDocument {
         lastSelectedProjectId = this.lastSelectedProjectId?.let { ProjectId(ObjectId(it)) },
         connectionIds = this.connectionIds.map { ObjectId(it) },
         gitCommitConfig = gitCommitConfig,
+        gitTopCommitters = this.gitTopCommitters,
         connectionCapabilities = this.connectionCapabilities.map { it.toEntity() },
         cloudModelPolicy = CloudModelPolicy(
             autoUseAnthropic = this.autoUseAnthropic,

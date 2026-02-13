@@ -3,16 +3,19 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.ClientDto
+import com.jervis.dto.git.GitAnalysisResultDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.service.IClientService
 import com.jervis.service.client.ClientService
+import com.jervis.service.git.GitAnalysisService
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
 @Component
 class ClientRpcImpl(
     private val clientService: ClientService,
+    private val gitAnalysisService: GitAnalysisService,
 ) : IClientService {
     override suspend fun getAllClients(): List<ClientDto> = clientService.list().map { it.toDto() }
 
@@ -49,4 +52,7 @@ class ClientRpcImpl(
             )
         return clientService.update(updatedClient).toDto()
     }
+
+    override suspend fun analyzeGitRepositories(clientId: String): GitAnalysisResultDto =
+        gitAnalysisService.analyzeClientGitRepositories(ClientId(ObjectId(clientId)))
 }

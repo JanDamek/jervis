@@ -19,12 +19,14 @@ data class ClientDto(
     val connectionIds: List<String> = emptyList(),
     // Default Git commit configuration for all projects under this client
     val gitCommitMessageFormat: String? = null,
+    val gitCommitMessagePattern: String? = null, // Pattern with placeholders (e.g., "[$project] $message")
     val gitCommitAuthorName: String? = null,
     val gitCommitAuthorEmail: String? = null,
     val gitCommitCommitterName: String? = null,
     val gitCommitCommitterEmail: String? = null,
     val gitCommitGpgSign: Boolean = false,
     val gitCommitGpgKeyId: String? = null,
+    val gitTopCommitters: List<String> = emptyList(), // Top committers from git history (name <email>)
     // Connection capabilities (defaults for all projects)
     val connectionCapabilities: List<ClientConnectionCapabilityDto> = emptyList(),
     // Cloud model policy (defaults for all projects)
