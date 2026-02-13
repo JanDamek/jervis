@@ -109,7 +109,7 @@ class RpcConnectionManager(private val baseUrl: String) {
 
                 // Test basic HTTPS connectivity first
                 try {
-                    newHttpClient.get("$baseUrl/")
+                    newHttpClient.get("${baseUrl.trimEnd('/')}/")
                 } catch (e: Exception) {
                     println("RpcConnectionManager: HTTP test failed: ${e.message}")
                     try { newHttpClient.close() } catch (_: Exception) {}
