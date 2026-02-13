@@ -15,8 +15,6 @@ spec:
         app: jervis-ollama-router
     spec:
       hostNetwork: true
-      nodeSelector:
-        kubernetes.io/hostname: nas
       containers:
         - name: router
           image: registry.damek-soft.eu/jandamek/jervis-ollama-router:latest
