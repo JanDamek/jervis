@@ -442,17 +442,22 @@ class TaskService(
 
     /**
      * Reset stale tasks stuck in transient states after pod crash/restart.
-     * DISPATCHED_GPU older than threshold → READY_FOR_GPU
+     * DISPATCHED_GPU older than threshold → READY_FOR_GPU (BACKGROUND tasks only)
      * QUALIFYING older than threshold → READY_FOR_QUALIFICATION
      * Returns the number of tasks reset.
+     *
+     * NOTE: FOREGROUND tasks in DISPATCHED_GPU are completed chat tasks, NOT stuck tasks.
+     * They must remain in DISPATCHED_GPU to prevent re-execution after restart.
      */
     suspend fun resetStaleTasks(staleThreshold: Instant): Int {
         var resetCount = 0
 
-        // Reset DISPATCHED_GPU → READY_FOR_GPU
+        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND tasks only)
+        // FOREGROUND tasks stay DISPATCHED_GPU - they're completed, not stuck
         val dispatchedQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
-                .and("createdAt").lt(staleThreshold),
+                .and("createdAt").lt(staleThreshold)
+                .and("processingMode").`is`(ProcessingMode.BACKGROUND.name),
         )
         val dispatchedUpdate = Update().set("state", TaskStateEnum.READY_FOR_GPU.name)
         val dispatchedResult = mongoTemplate.updateMulti(dispatchedQuery, dispatchedUpdate, TaskDocument::class.java)
@@ -461,7 +466,7 @@ class TaskService(
         resetCount += dispatchedCount
 
         if (dispatchedCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $dispatchedCount DISPATCHED_GPU tasks → READY_FOR_GPU" }
+            logger.warn { "STALE_RECOVERY: Reset $dispatchedCount BACKGROUND DISPATCHED_GPU tasks → READY_FOR_GPU (FOREGROUND tasks excluded)" }
         }
 
         // Reset QUALIFYING → READY_FOR_QUALIFICATION

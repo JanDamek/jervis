@@ -225,10 +225,39 @@ class AgentOrchestratorRpcImpl(
         val clientId = request.context.clientId
         val projectId = request.context.projectId
         val sessionKey = if (projectId.isNullOrBlank()) clientId else "$clientId:$projectId"
-        logger.info { "RPC_MESSAGE_RECEIVED | session=$sessionKey | text='${request.text.take(100)}'" }
+        logger.info { "RPC_MESSAGE_RECEIVED | session=$sessionKey | isHistoryReplay=${request.isHistoryReplay} | text='${request.text.take(100)}'" }
 
         val clientIdTyped = ClientId.fromString(clientId)
         val projectIdTyped = if (projectId.isNullOrBlank()) null else ProjectId.fromString(projectId)
+
+        // History replay: save message to DB for display, but do NOT trigger task processing
+        if (request.isHistoryReplay) {
+            logger.info { "HISTORY_REPLAY_MESSAGE | session=$sessionKey | skipping task processing" }
+            // Just save to chat history and return - no task state changes
+            val taskDoc = taskRepository
+                .findByProcessingModeAndClientIdAndProjectIdAndType(
+                    com.jervis.entity.ProcessingMode.FOREGROUND,
+                    clientIdTyped,
+                    projectIdTyped,
+                    com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+                ).toList()
+                .firstOrNull()
+
+            if (taskDoc != null) {
+                val sequence = chatMessageRepository.countByTaskId(taskDoc.id) + 1
+                chatMessageRepository.save(
+                    com.jervis.entity.ChatMessageDocument(
+                        taskId = taskDoc.id,
+                        correlationId = taskDoc.correlationId,
+                        role = com.jervis.entity.MessageRole.USER,
+                        content = request.text,
+                        sequence = sequence,
+                    ),
+                )
+                logger.info { "HISTORY_REPLAY_SAVED | taskId=${taskDoc.id} | sequence=$sequence" }
+            }
+            return
+        }
 
         val stream =
             chatStreams.getOrPut(sessionKey) {
