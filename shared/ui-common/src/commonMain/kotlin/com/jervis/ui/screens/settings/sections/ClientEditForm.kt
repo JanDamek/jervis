@@ -43,12 +43,19 @@ internal fun ClientEditForm(
 
     // Git commit configuration
     var gitCommitMessageFormat by remember { mutableStateOf(client.gitCommitMessageFormat ?: "") }
+    var gitCommitMessagePattern by remember { mutableStateOf(client.gitCommitMessagePattern ?: "") }
     var gitCommitAuthorName by remember { mutableStateOf(client.gitCommitAuthorName ?: "") }
     var gitCommitAuthorEmail by remember { mutableStateOf(client.gitCommitAuthorEmail ?: "") }
     var gitCommitCommitterName by remember { mutableStateOf(client.gitCommitCommitterName ?: "") }
     var gitCommitCommitterEmail by remember { mutableStateOf(client.gitCommitCommitterEmail ?: "") }
     var gitCommitGpgSign by remember { mutableStateOf(client.gitCommitGpgSign) }
     var gitCommitGpgKeyId by remember { mutableStateOf(client.gitCommitGpgKeyId ?: "") }
+    var gitTopCommitters by remember { mutableStateOf(client.gitTopCommitters) }
+
+    // Git analysis state
+    var analyzingGit by remember { mutableStateOf(false) }
+    var gitAnalysisResult by remember { mutableStateOf<com.jervis.dto.git.GitAnalysisResultDto?>(null) }
+    var showGitAnalysisDialog by remember { mutableStateOf(false) }
 
     // Cloud model policy
     var autoUseAnthropic by remember { mutableStateOf(client.autoUseAnthropic) }
