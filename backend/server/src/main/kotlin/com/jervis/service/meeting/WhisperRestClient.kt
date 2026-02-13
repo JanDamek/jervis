@@ -12,6 +12,8 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
@@ -72,7 +74,7 @@ class WhisperRestClient {
         baseUrl: String,
         audioFilePath: String,
         optionsJson: String,
-        onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double) -> Unit)? = null,
+        onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double, lastSegmentText: String?) -> Unit)? = null,
     ): WhisperResult {
         val audioPath = Path.of(audioFilePath)
         val audioBytes = Files.readAllBytes(audioPath)
@@ -128,7 +130,7 @@ class WhisperRestClient {
      */
     private suspend fun readSseStream(
         response: HttpResponse,
-        onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double) -> Unit)?,
+        onProgress: (suspend (percent: Double, segmentsDone: Int, elapsedSeconds: Double, lastSegmentText: String?) -> Unit)?,
     ): WhisperResult {
         val channel = response.bodyAsChannel()
         var currentEvent = ""
@@ -152,9 +154,9 @@ class WhisperRestClient {
                         when (currentEvent) {
                             "progress" -> {
                                 try {
-                                    val progress = json.decodeFromString<WhisperProgress>(data)
+                                    val progress = json.decodeFromString<WhisperSseProgress>(data)
                                     logger.debug { "Whisper REST progress: ${progress.percent}% (${progress.segmentsDone} segments)" }
-                                    onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds)
+                                    onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds, progress.lastSegmentText)
                                 } catch (e: Exception) {
                                     logger.warn { "Failed to parse progress SSE event: ${data.take(200)}" }
                                 }
@@ -200,3 +202,15 @@ class WhisperRestClient {
         )
     }
 }
+
+/** SSE progress event from the Whisper REST server (includes last_segment_text). */
+@Serializable
+private data class WhisperSseProgress(
+    val percent: Double = 0.0,
+    @SerialName("segments_done")
+    val segmentsDone: Int = 0,
+    @SerialName("elapsed_seconds")
+    val elapsedSeconds: Double = 0.0,
+    @SerialName("last_segment_text")
+    val lastSegmentText: String? = null,
+)

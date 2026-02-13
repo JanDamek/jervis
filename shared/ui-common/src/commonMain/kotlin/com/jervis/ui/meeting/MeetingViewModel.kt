@@ -98,6 +98,9 @@ class MeetingViewModel(
     private val _transcriptionProgress = MutableStateFlow<Map<String, Double>>(emptyMap())
     val transcriptionProgress: StateFlow<Map<String, Double>> = _transcriptionProgress.asStateFlow()
 
+    private val _transcriptionLastSegment = MutableStateFlow<Map<String, String>>(emptyMap())
+    val transcriptionLastSegment: StateFlow<Map<String, String>> = _transcriptionLastSegment.asStateFlow()
+
     // Correction progress: meetingId -> CorrectionProgressInfo
     data class CorrectionProgressInfo(val percent: Double, val chunksDone: Int, val totalChunks: Int, val message: String?, val tokensGenerated: Int = 0)
     private val _correctionProgress = MutableStateFlow<Map<String, CorrectionProgressInfo>>(emptyMap())
@@ -202,6 +205,7 @@ class MeetingViewModel(
         // Clear progress when leaving active processing states
         if (newState != MeetingStateEnum.TRANSCRIBING) {
             _transcriptionProgress.value = _transcriptionProgress.value - event.meetingId
+            _transcriptionLastSegment.value = _transcriptionLastSegment.value - event.meetingId
         }
         if (newState != MeetingStateEnum.CORRECTING) {
             _correctionProgress.value = _correctionProgress.value - event.meetingId
@@ -213,6 +217,9 @@ class MeetingViewModel(
 
     private fun handleTranscriptionProgress(event: JervisEvent.MeetingTranscriptionProgress) {
         _transcriptionProgress.value = _transcriptionProgress.value + (event.meetingId to event.percent)
+        if (!event.lastSegmentText.isNullOrBlank()) {
+            _transcriptionLastSegment.value = _transcriptionLastSegment.value + (event.meetingId to event.lastSegmentText)
+        }
     }
 
     private fun handleCorrectionProgress(event: JervisEvent.MeetingCorrectionProgress) {

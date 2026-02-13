@@ -118,6 +118,7 @@ class NotificationRpcImpl : INotificationService {
         percent: Double,
         segmentsDone: Int,
         elapsedSeconds: Double,
+        lastSegmentText: String? = null,
     ) {
         val event = JervisEvent.MeetingTranscriptionProgress(
             meetingId = meetingId,
@@ -125,6 +126,7 @@ class NotificationRpcImpl : INotificationService {
             percent = percent,
             segmentsDone = segmentsDone,
             elapsedSeconds = elapsedSeconds,
+            lastSegmentText = lastSegmentText,
             timestamp = Instant.now().toString(),
         )
         eventStreams.keys().asSequence().forEach { id ->
