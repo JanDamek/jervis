@@ -148,7 +148,7 @@ data:
         default-model: "qwen3-coder-tool:30b"
         paid-provider: anthropic
         paid-model: "claude-3-5-sonnet-20241022"
-        ollama-base-url: http://192.168.100.117:11434  # Direct Ollama URL for OpenHands
+        ollama-base-url: http://192.168.100.117:11430  # Via Ollama Router
       claude:
         default-provider: anthropic  # Claude Code always uses cloud
         default-model: "claude-sonnet-4-20250514"
@@ -192,12 +192,10 @@ metadata:
   name: jervis-knowledgebase-config
   namespace: jervis
 data:
-  # -- Ollama endpoints -------------------------------------------------------
-  OLLAMA_BASE_URL: "http://192.168.100.117:11434"            # GPU instance (not used by KB directly)
-  # CPU instance – embedding + ingest LLM merged on single port.
-  # Runs with OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3.
-  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11435"   # CPU – qwen3-embedding:8b
-  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11435"      # CPU – qwen2.5 7B/14B
+  # -- Ollama endpoints (all via Ollama Router on :11430) ---------------------
+  OLLAMA_BASE_URL: "http://192.168.100.117:11430"             # Via router → GPU/CPU
+  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11430"   # Via router → GPU/CPU
+  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11430"      # Via router → GPU/CPU
   # -- Ingest model routing (see docs/structures.md § "Model Routing") --------
   INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check
   INGEST_MODEL_COMPLEX: "qwen2.5:14b"                         # Accurate: summary + entity extraction
@@ -231,5 +229,25 @@ data:
   KOTLIN_SERVER_URL: "http://jervis-server:5500"
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
   SEARXNG_URL: "http://192.168.100.117:30053"
-  # -- Ollama endpoints -------------------------------------------------------
-  OLLAMA_API_BASE: "http://192.168.100.117:11434"
+  # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
+  OLLAMA_API_BASE: "http://192.168.100.117:11430"
+
+---
+# =============================================================================
+# Ollama Router – GPU/CPU routing proxy (K8s ConfigMap)
+# Injected as env vars via envFrom in k8s/app_ollama_router.yaml.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-ollama-router-config
+  namespace: jervis
+data:
+  ROUTER_PORT: "11430"
+  GPU_BACKENDS: '[{"url":"http://127.0.0.1:11434","vram_gb":24,"name":"p40"}]'
+  CPU_BACKEND_URL: "http://127.0.0.1:11435"
+  ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
+  ORCHESTRATOR_RESERVATION_TIMEOUT_S: "1800"
+  ORCHESTRATOR_IDLE_TIMEOUT_S: "300"
+  MODEL_LOAD_TIMEOUT_S: "120"
+  BACKGROUND_LOAD_DELAY_S: "5"

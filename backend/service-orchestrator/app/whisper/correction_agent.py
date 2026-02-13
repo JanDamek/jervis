@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.llm.gpu_router import announce_gpu, release_gpu
 
 logger = logging.getLogger(__name__)
 
@@ -560,48 +561,53 @@ class CorrectionAgent:
         eval_count = "?"
         last_progress_emit = time.monotonic()
 
-        async with httpx.AsyncClient(timeout=None) as http_client:
-            async with http_client.stream(
-                "POST",
-                f"{self.ollama_url}/api/chat",
-                json=payload,
-            ) as response:
-                response.raise_for_status()
+        session_id = f"whisper-{meeting_id or uuid.uuid4().hex[:8]}-{chunk_idx}"
+        await announce_gpu(session_id, model=self.model)
+        try:
+            async with httpx.AsyncClient(timeout=None) as http_client:
+                async with http_client.stream(
+                    "POST",
+                    f"{self.ollama_url}/api/chat",
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
 
-                async for raw_line in self._iter_lines_with_heartbeat(response):
-                    if not raw_line.strip():
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        logger.debug("Non-JSON streaming line: %s", raw_line[:200])
-                        continue
+                    async for raw_line in self._iter_lines_with_heartbeat(response):
+                        if not raw_line.strip():
+                            continue
+                        try:
+                            data = json.loads(raw_line)
+                        except json.JSONDecodeError:
+                            logger.debug("Non-JSON streaming line: %s", raw_line[:200])
+                            continue
 
-                    # Accumulate content tokens
-                    chunk_content = data.get("message", {}).get("content", "")
-                    if chunk_content:
-                        content_parts.append(chunk_content)
-                        token_count += 1
+                        # Accumulate content tokens
+                        chunk_content = data.get("message", {}).get("content", "")
+                        if chunk_content:
+                            content_parts.append(chunk_content)
+                            token_count += 1
 
-                    # Final message with metadata
-                    if data.get("done"):
-                        done_reason = data.get("done_reason", "?")
-                        eval_count = data.get("eval_count", "?")
+                        # Final message with metadata
+                        if data.get("done"):
+                            done_reason = data.get("done_reason", "?")
+                            eval_count = data.get("eval_count", "?")
 
-                    # Emit intra-chunk progress periodically
-                    now = time.monotonic()
-                    if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
-                        last_progress_emit = now
-                        chunk_base = (chunk_idx / total_chunks) * 100
-                        intra = min(token_count / OUTPUT_BUDGET, 1.0)
-                        percent = chunk_base + (1.0 / total_chunks) * 100 * intra * 0.9
-                        await self._emit_correction_progress(
-                            meeting_id, client_id,
-                            chunk_idx, total_chunks,
-                            f"Chunk {chunk_idx + 1}/{total_chunks}: generuji... {token_count} tokenů",
-                            percent_override=percent,
-                            tokens_generated=token_count,
-                        )
+                        # Emit intra-chunk progress periodically
+                        now = time.monotonic()
+                        if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
+                            last_progress_emit = now
+                            chunk_base = (chunk_idx / total_chunks) * 100
+                            intra = min(token_count / OUTPUT_BUDGET, 1.0)
+                            percent = chunk_base + (1.0 / total_chunks) * 100 * intra * 0.9
+                            await self._emit_correction_progress(
+                                meeting_id, client_id,
+                                chunk_idx, total_chunks,
+                                f"Chunk {chunk_idx + 1}/{total_chunks}: generuji... {token_count} tokenů",
+                                percent_override=percent,
+                                tokens_generated=token_count,
+                            )
+        finally:
+            await release_gpu(session_id)
 
         content = "".join(content_parts)
 

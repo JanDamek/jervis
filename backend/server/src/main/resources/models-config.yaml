@@ -71,11 +71,10 @@ endpoints:
     baseUrl: https://generativelanguage.googleapis.com/v1beta/
   ollama:
     primary:
-      baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11434/}            # GPU – Qwen 30B (P40)
+      baseUrl: ${OLLAMA_BASE_URL:http://192.168.100.117:11430/}            # Via Ollama Router
     qualifier:
-      baseUrl: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11435/}  # CPU – ingest LLM
+      baseUrl: ${OLLAMA_QUALIFIER_BASE_URL:http://192.168.100.117:11430/}  # Via Ollama Router
     embedding:
-      # Shares CPU instance with qualifier (merged from former port 11436)
-      baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11435/}  # CPU – embedding
+      baseUrl: ${OLLAMA_EMBEDDING_BASE_URL:http://192.168.100.117:11430/}  # Via Ollama Router
   lmStudio:
     baseUrl: ${LMSTUDIO_BASE_URL:http://192.168.101.249:1234/}

@@ -415,86 +415,118 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ---
 
-## Ollama Instance Architecture (GPU / CPU Separation)
+## Ollama Router Architecture (Priority-Based GPU/CPU Routing)
 
-Two Ollama instances – GPU for interactive queries, CPU for all background work (ingest + embedding):
+All services call a single endpoint – the **Ollama Router** (:11430) – which transparently proxies to GPU or CPU Ollama based on priority and model availability.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │               NAS Server (2×24 cores, 200GB RAM, P40 GPU)              │
-│               Ollama sees max 24 cores (single NUMA node)              │
 │                                                                         │
-│  ┌──────────────────────────┐  ┌──────────────────────────────────────┐ │
-│  │  GPU Instance (:11434)   │  │  CPU Instance (:11435)              │ │
-│  │  Qwen 30B on P40         │  │  Qwen2.5 7B + 14B + Embedding 8B   │ │
-│  │  OLLAMA_NUM_PARALLEL=2   │  │  OLLAMA_NUM_PARALLEL=10            │ │
-│  │  Interactive queries     │  │  OLLAMA_NUM_THREADS=18             │ │
-│  │  Python orchestrator     │  │  OLLAMA_MAX_LOADED_MODELS=3        │ │
-│  │  Coding tools            │  │  OLLAMA_FLASH_ATTENTION=1          │ │
-│  │                          │  │  OLLAMA_KV_CACHE_TYPE=q8_0         │ │
-│  │  6 cores reserved        │  │  18 cores for inference            │ │
-│  └──────────────────────────┘  └──────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  Ollama Router (:11430)   Python FastAPI                        │   │
+│  │  • Priority routing (P0 critical → P3 background)               │   │
+│  │  • Model set swapping (orchestrator ↔ background)               │   │
+│  │  • Preemption (background → CPU on orchestrator request)        │   │
+│  │  • Multi-GPU pool (scalable to N GPU backends)                  │   │
+│  │  • Announce/release protocol for orchestrator                   │   │
+│  └──────┬───────────────────────────────────┬──────────────────────┘   │
+│         │                                   │                          │
+│  ┌──────▼──────────────────────┐  ┌────────▼─────────────────────────┐ │
+│  │  GPU Instance (:11434)      │  │  CPU Instance (:11435)           │ │
+│  │  P40 24GB VRAM              │  │  Fallback for preempted work     │ │
+│  │                             │  │                                   │ │
+│  │  Set A (orchestrator):      │  │  OLLAMA_NUM_PARALLEL=10          │ │
+│  │    qwen3-coder-tool:30b     │  │  OLLAMA_NUM_THREADS=18           │ │
+│  │    (~20GB, NUM_PARALLEL=2)  │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
+│  │                             │  │  qwen2.5:7b + 14b + embed:8b     │ │
+│  │  Set B (background):       │  │                                   │ │
+│  │    qwen2.5:7b + 14b +      │  │  Always loaded, always available  │ │
+│  │    qwen3-embedding:8b       │  │  as fallback when GPU busy        │ │
+│  │    (~20GB, coexists)        │  │                                   │ │
+│  └──────────────────────────────┘  └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Instance Details
+### Priority Levels
 
-| Instance | Port | Models | Purpose | Concurrency |
-|----------|------|--------|---------|-------------|
-| GPU Primary | 11434 | Qwen3-coder-tool:30b | Interactive chat, orchestrator, coding tools | `NUM_PARALLEL=2` |
-| CPU Ingest + Embed | 11435 | Qwen2.5:7b, Qwen2.5:14b, qwen3-embedding:8b | Qualification, summary, relevance, embedding | `NUM_PARALLEL=10`, `NUM_THREADS=18` |
+| Priority | Source | Behavior |
+|----------|--------|----------|
+| P0 CRITICAL | Orchestrator + user chat | Preempts background, always GPU, model swap immediate |
+| P1 CODING | OpenHands/Aider | GPU preferred, waits for current request |
+| P2 VLM | Image description (KB) | GPU-only capability, queued |
+| P3 BACKGROUND | KB ingest, qualifier, embedding | GPU when free, CPU fallback |
 
-> **Note:** `OLLAMA_NUM_PARALLEL` is per-model. Each of the 3 loaded models gets 10 parallel slots independently.
-> Ollama can only use cores from one NUMA node (max 24 on this server), so `NUM_THREADS=18` leaves 6 for GPU instance + OS.
+> Priority is detected from the model name in the request: `qwen3-coder-tool:30b` → P0, `qwen2.5:*` / `qwen3-embedding:*` → P3.
 
-### Model Routing (CPU Instance)
+### Model Sets (alternating on GPU)
 
-The CPU instance runs three models simultaneously (`OLLAMA_MAX_LOADED_MODELS=3`, 200GB RAM):
+| Set | Models | VRAM | Active when |
+|-----|--------|------|-------------|
+| A – Orchestrator | qwen3-coder-tool:30b | ~20GB | Orchestrator/chat active |
+| B – Background | qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b | ~20GB | Orchestrator idle |
 
-| Task | Model | Rationale |
-|------|-------|-----------|
-| Link relevance check | `qwen2.5:7b` (simple) | Binary classification, small context (~3k chars), speed priority |
-| Summary generation + entity extraction | `qwen2.5:14b` (complex) | Structured JSON output, entity detection, actionability routing |
-| Vector embeddings (RAG) | `qwen3-embedding:8b` | Single forward pass, no generation, very fast on CPU |
-| Koog qualifier agent | Configured in Modelfile | Structuring, chunking, graph/RAG linking |
+### Orchestrator Pre-announcement Protocol
 
-### Key Configuration Values
+```
+Orchestrator ──POST /router/announce──► Router: preempt bg → unload → load orch model
+                                        ◄── {status: "ready"}
+Orchestrator ──POST /api/chat──────────► Router: proxy to GPU (model ready)
+Orchestrator ──POST /router/release───► Router: load background models on GPU
+```
 
-**Kotlin side** (`models-config.yaml`, `application.yml`):
-- `OLLAMA_QUALIFIER.maxConcurrentRequests: 10`
-- `OLLAMA_EMBEDDING.maxConcurrentRequests: 50` (embedding is fast, Ollama queues excess)
-- `preload.ollama.cpu.concurrency: 10`
-- `TaskQualificationService.effectiveConcurrency: 10`
-- `ollama.embedding.baseUrl` → port 11435 (same as qualifier)
+Auto-release: if orchestrator is idle for 5 min → router auto-releases GPU and loads background set.
 
-**Python KB side** (`config.py`, K8s ConfigMap):
-- `OLLAMA_INGEST_BASE_URL: http://192.168.100.117:11435`
-- `OLLAMA_EMBEDDING_BASE_URL: http://192.168.100.117:11435`
-- `INGEST_MODEL_SIMPLE: qwen2.5:7b`
-- `INGEST_MODEL_COMPLEX: qwen2.5:14b`
+### Multi-GPU Support
 
-### Why CPU for Ingest + Embedding
+Router manages a pool of GPU backends (`GPU_BACKENDS` JSON env var). With 2+ GPUs:
+- Orchestrator gets dedicated GPU#0, background runs on GPU#1 simultaneously
+- No preemption or model swapping needed
+- Adding a GPU = config change only, no code change
 
-1. **GPU stays free** for 30B interactive model (P40 VRAM nearly full)
-2. **Batch parallelism** – 10 concurrent slots per model, process ingest queue faster than sequential GPU
-3. **No latency competition** – user queries never compete with background ingest or embedding
-4. **CPU penalty is small** for 7B/14B/8B models – memory bandwidth bound, not compute bound
-5. **200GB RAM** holds all 3 models with room for KV cache across parallel slots
-6. **Simpler ops** – one CPU Ollama process instead of two, one port to monitor
+### Key Configuration
 
-### Ollama ENV Setup (CPU Instance)
-
+**GPU Instance (:11434):**
 ```bash
-# /etc/systemd/system/ollama-cpu.service or docker run env:
-OLLAMA_HOST=0.0.0.0:11435
-OLLAMA_NUM_PARALLEL=10       # 10 parallel slots per loaded model
-OLLAMA_NUM_THREADS=18        # 18 of 24 cores (NUMA node limit)
-OLLAMA_MAX_LOADED_MODELS=3   # qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b
+OLLAMA_HOST=0.0.0.0:11434
 OLLAMA_FLASH_ATTENTION=1
 OLLAMA_KV_CACHE_TYPE=q8_0
+OLLAMA_MAX_LOADED_MODELS=4      # Allow bg set (3 models) coexistence
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_KEEP_ALIVE=5m
+CUDA_VISIBLE_DEVICES=0
+OLLAMA_NUM_GPU=999
 ```
+
+**CPU Instance (:11435) – fallback:**
+```bash
+OLLAMA_HOST=0.0.0.0:11435
+OLLAMA_NUM_PARALLEL=10
+OLLAMA_NUM_THREADS=18
+OLLAMA_MAX_LOADED_MODELS=3
+OLLAMA_NUM_GPU=0
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KV_CACHE_TYPE=q8_0
+OLLAMA_KEEP_ALIVE=1h
+```
+
+### Endpoint Mapping (all services → router :11430)
+
+| Service | Env Var | Value |
+|---------|---------|-------|
+| Kotlin server | `OLLAMA_BASE_URL` | `http://192.168.100.117:11430` |
+| KB service | `OLLAMA_*_BASE_URL` | `http://192.168.100.117:11430` |
+| Orchestrator | `OLLAMA_API_BASE` | `http://192.168.100.117:11430` |
+| Coding engine | `ollama-base-url` | `http://192.168.100.117:11430` |
+
+### Source Code
+
+- Router service: `backend/service-ollama-router/`
+- GPU announce/release: `backend/service-orchestrator/app/llm/gpu_router.py`
+- K8s deployment: `k8s/app_ollama_router.yaml`
+- ConfigMap: `k8s/configmap.yaml` → `jervis-ollama-router-config`
 
 ---
 
-**Document Version:** 4.2
-**Last Updated:** 2026-02-11
+**Document Version:** 5.0
+**Last Updated:** 2026-02-13
