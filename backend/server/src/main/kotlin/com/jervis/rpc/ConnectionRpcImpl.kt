@@ -173,15 +173,18 @@ class ConnectionRpcImpl(
             connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("Connection not found: $id")
 
+        // Attempt token refresh for OAuth2 connections before making API call
+        val refreshedConnection = refreshTokenIfNeeded(connection)
+
         return try {
-            val result = providerRegistry.withClient(connection.provider) { it.testConnection(connection.toTestRequest()) }
-            connection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
-            connectionService.save(connection)
+            val result = providerRegistry.withClient(refreshedConnection.provider) { it.testConnection(refreshedConnection.toTestRequest()) }
+            refreshedConnection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
+            connectionService.save(refreshedConnection)
             result
         } catch (e: Exception) {
-            logger.error(e) { "Connection test failed for ${connection.name}" }
-            connection.state = ConnectionStateEnum.INVALID
-            connectionService.save(connection)
+            logger.error(e) { "Connection test failed for ${refreshedConnection.name}" }
+            refreshedConnection.state = ConnectionStateEnum.INVALID
+            connectionService.save(refreshedConnection)
             ConnectionTestResultDto(
                 success = false,
                 message = "Connection test failed: ${e.message}",
@@ -203,12 +206,36 @@ class ConnectionRpcImpl(
             connectionService.findById(ConnectionId.fromString(connectionId))
                 ?: throw IllegalArgumentException("Connection not found: $connectionId")
 
+        // Attempt token refresh for OAuth2 connections before making API call
+        val refreshedConnection = refreshTokenIfNeeded(connection)
+
         return try {
-            providerRegistry.withClient(connection.provider) { it.listResources(connection.toListResourcesRequest(capability)) }
+            providerRegistry.withClient(refreshedConnection.provider) { it.listResources(refreshedConnection.toListResourcesRequest(capability)) }
         } catch (e: Exception) {
-            logger.error(e) { "Failed to list resources for connection ${connection.id}" }
+            logger.error(e) { "Failed to list resources for connection ${refreshedConnection.id}" }
             emptyList()
         }
+    }
+
+    /**
+     * Refresh OAuth2 access token if needed and return the updated connection.
+     * Returns the same connection if no refresh is needed or refresh fails.
+     */
+    private suspend fun refreshTokenIfNeeded(connection: ConnectionDocument): ConnectionDocument {
+        // Only refresh for OAuth2 connections
+        if (connection.authType != com.jervis.dto.connection.AuthTypeEnum.OAUTH2) {
+            return connection
+        }
+
+        // Attempt token refresh
+        val refreshed = oauth2Service.refreshAccessToken(connection)
+        if (!refreshed) {
+            // Token refresh not needed or failed, return original connection
+            return connection
+        }
+
+        // Reload connection to get the updated token
+        return connectionService.findById(connection.id) ?: connection
     }
 
     override suspend fun listImportableProjects(connectionId: String): List<com.jervis.dto.connection.ConnectionImportProjectDto> {

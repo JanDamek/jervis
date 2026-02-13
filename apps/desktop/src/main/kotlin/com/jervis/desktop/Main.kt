@@ -35,7 +35,14 @@ import java.awt.Dimension
  *
  * All configuration happens in the desktop app - no web admin.
  */
-fun main() =
+fun main() {
+    // Set global exception handler to prevent UI crashes
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        System.err.println("Uncaught exception in thread ${thread.name}: ${throwable.message}")
+        throwable.printStackTrace()
+        // Don't crash the app - just log the error
+    }
+
     application {
         val serverBaseUrl =
             System.getProperty("jervis.server.url")
@@ -165,6 +172,7 @@ fun main() =
             }
         }
     }
+}
 
 /**
  * Connection status screen shown when not connected
