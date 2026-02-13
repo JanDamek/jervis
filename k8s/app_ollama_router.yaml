@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-ollama-router
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-ollama-router
+  template:
+    metadata:
+      labels:
+        app: jervis-ollama-router
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: nas
+      containers:
+        - name: router
+          image: registry.damek-soft.eu/jandamek/jervis-ollama-router:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 11430
+          envFrom:
+            - configMapRef:
+                name: jervis-ollama-router-config
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /router/health
+              port: 11430
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /router/health
+              port: 11430
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      imagePullSecrets:
+        - name: regcred
