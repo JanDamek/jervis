@@ -961,15 +961,16 @@ class BackgroundEngine(
         var allSuccess = true
         for (resource in gitResources) {
             try {
+                logger.info { "WORKSPACE_INIT_START: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
                 val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
                 if (workspacePath == null) {
-                    logger.error { "Failed to initialize workspace for resource ${resource.resourceIdentifier}" }
+                    logger.error { "WORKSPACE_INIT_FAILED (null path): project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
                     allSuccess = false
                     break
                 }
-                logger.info { "Workspace ready for ${resource.resourceIdentifier}: $workspacePath" }
+                logger.info { "WORKSPACE_INIT_SUCCESS: project=${project.name} resource=${resource.resourceIdentifier} path=$workspacePath" }
             } catch (e: Exception) {
-                logger.error(e) { "Error initializing workspace for resource ${resource.resourceIdentifier}" }
+                logger.error(e) { "WORKSPACE_INIT_ERROR: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.javaClass.simpleName}: ${e.message}" }
                 allSuccess = false
                 break
             }

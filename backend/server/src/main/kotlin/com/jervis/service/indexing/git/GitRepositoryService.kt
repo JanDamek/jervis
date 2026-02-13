@@ -245,15 +245,17 @@ class GitRepositoryService(
         project: ProjectDocument,
         resource: ProjectResource,
     ): Path? {
+        logger.debug { "ensureAgentWorkspaceReady: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
+
         val initialConnection = connectionService.findById(ConnectionId(resource.connectionId))
         if (initialConnection == null) {
-            logger.warn { "Connection ${resource.connectionId} not found for resource ${resource.resourceIdentifier}" }
+            logger.warn { "WORKSPACE_CONNECTION_NOT_FOUND: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
             return null
         }
 
         // Skip INVALID connections
         if (initialConnection.state == ConnectionStateEnum.INVALID) {
-            logger.info { "Skipping agent workspace setup for INVALID connection ${initialConnection.id}" }
+            logger.warn { "WORKSPACE_CONNECTION_INVALID: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} connectionName=${initialConnection.name}" }
             return null
         }
 
@@ -266,7 +268,7 @@ class GitRepositoryService(
 
         val repoUrl = buildRepoUrl(connection, resource)
         if (repoUrl.isNullOrBlank()) {
-            logger.warn { "Cannot determine repo URL for ${resource.resourceIdentifier}" }
+            logger.warn { "WORKSPACE_NO_REPO_URL: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} provider=${connection.provider}" }
             return null
         }
 
@@ -290,12 +292,12 @@ class GitRepositoryService(
             logger.info { "Agent workspace ready: $agentRepoDir (branch: $defaultBranch)" }
             return agentRepoDir
         } catch (e: GitAuthenticationException) {
-            logger.error { "Auth failed for agent workspace ${resource.resourceIdentifier}: ${e.message}" }
+            logger.error { "WORKSPACE_AUTH_FAILED: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.message}" }
             invalidateConnection(resource.connectionId)
             errorLogService.recordError(e, project.clientId.value, project.id.value)
             return null
         } catch (e: Exception) {
-            logger.error(e) { "Failed to ensure agent workspace for ${resource.resourceIdentifier}" }
+            logger.error(e) { "WORKSPACE_CLONE_EXCEPTION: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} errorType=${e.javaClass.simpleName} error=${e.message}" }
             return null
         }
     }

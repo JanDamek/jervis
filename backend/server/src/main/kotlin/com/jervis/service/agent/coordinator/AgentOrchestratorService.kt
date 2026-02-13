@@ -202,9 +202,12 @@ class AgentOrchestratorService(
                 }
 
                 if (hasGitResources) {
+                    val gitResources = project.resources.filter {
+                        it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+                    }
                     when (project.workspaceStatus) {
                         com.jervis.entity.WorkspaceStatus.CLONING, null -> {
-                            logger.info { "Workspace for project ${project.name} is being prepared (status=${project.workspaceStatus})" }
+                            logger.info { "WORKSPACE_CLONING: project=${project.name} projectId=${project.id} status=${project.workspaceStatus} resources=${gitResources.size}" }
                             onProgress(
                                 "Prostředí se připravuje, počkejte prosím...",
                                 mapOf("phase" to "workspace_preparing", "status" to (project.workspaceStatus?.name ?: "null"))
@@ -212,7 +215,7 @@ class AgentOrchestratorService(
                             return false
                         }
                         com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
-                            logger.warn { "Workspace preparation failed for project ${project.name}" }
+                            logger.warn { "WORKSPACE_CLONE_FAILED: project=${project.name} projectId=${project.id} resources=[${gitResources.joinToString { "${it.resourceIdentifier}(conn=${it.connectionId})" }}] lastCheck=${project.lastWorkspaceCheck}" }
                             onProgress(
                                 "Příprava prostředí selhala. Zkontrolujte připojení k repozitáři a zkuste to znovu.",
                                 mapOf("phase" to "workspace_failed")
@@ -220,11 +223,11 @@ class AgentOrchestratorService(
                             return false
                         }
                         com.jervis.entity.WorkspaceStatus.READY -> {
-                            logger.debug { "Workspace for project ${project.name} is READY" }
+                            logger.debug { "WORKSPACE_READY: project=${project.name} resources=${gitResources.size}" }
                             // Continue - workspace is ready
                         }
                         com.jervis.entity.WorkspaceStatus.NOT_NEEDED -> {
-                            logger.debug { "Workspace not needed for project ${project.name}" }
+                            logger.debug { "WORKSPACE_NOT_NEEDED: project=${project.name}" }
                             // Continue
                         }
                     }
