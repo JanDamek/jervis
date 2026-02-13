@@ -19,6 +19,11 @@ from app.graph.nodes.coding import (
 from app.graph.nodes.epic import plan_epic, execute_wave, verify_wave
 from app.graph.nodes.design import design
 
+# Delegation graph nodes (multi-agent system)
+from app.graph.nodes.plan_delegations import plan_delegations
+from app.graph.nodes.execute_delegation import execute_delegation
+from app.graph.nodes.synthesize import synthesize
+
 __all__ = [
     "intake",
     "evidence_pack",
@@ -39,4 +44,8 @@ __all__ = [
     "execute_wave",
     "verify_wave",
     "design",
+    # Delegation graph nodes
+    "plan_delegations",
+    "execute_delegation",
+    "synthesize",
 ]

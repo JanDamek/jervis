@@ -128,35 +128,6 @@ GET  /health                 # Health check
 - Safety-net: Kotlin polls `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()` každých 60s
 - Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
 
-<<<<<<< Updated upstream
-**LangGraph StateGraph (12 nodes):**
-```
-                    ┌── question? ──► [respond] ──► END
-                    │                  (web_search, kb_search tools)
-[router] ──────────┤
-                    │                  ┌── coding task
-                    └── coding? ──────►[clarify] → [decompose] → [select_goal] → [plan_steps] → [execute_step] → [evaluate]
-                                            ↑                               ↑                             │
-                                            │                               │                        [next_step]
-                                            │                               │                             │
-                                            └── [advance_goal] ←── more goals ────────────────────────────┤
-                                                                            │                             │
-                                                                   [advance_step] ← more steps ──────────┘
-                                                                                                          │
-                                                                                                          ↓ (all done)
-                                                                                               [git_operations] → [report]
-```
-
-**Routing**: `router` node uses `route_entry()` heuristic to decide:
-- **Question** (starts with question words, ends with `?`, no coding verbs) → `respond` node
-- **Coding task** → `clarify` node (full pipeline)
-
-**Respond node**: Agentic tool-use loop (max 5 iterations). LLM has `web_search` (SearXNG) and
-`kb_search` (Knowledge Base) tools. After tool results are gathered, LLM formulates a final
-answer. Returns `{"final_result": content, "artifacts": []}` directly to END.
-
-`clarify` may `interrupt()` for user questions (resumes after answers), or pass through for simple tasks.
-=======
 **LangGraph StateGraph (KB-First Architecture, 14 nodes):**
 
 4 task categories with intelligent routing:
@@ -221,7 +192,6 @@ app/context/
   context_assembler.py      # Build per-node LLM context (step/goal/epic levels)
   distributed_lock.py       # MongoDB distributed lock for multi-pod concurrency
 ```
->>>>>>> Stashed changes
 
 **State model:**
 ```python
@@ -260,6 +230,18 @@ class OrchestratorState(TypedDict, total=False):
     artifacts: list
     error: str | None
     evaluation: dict | None
+
+    # --- Delegation system (multi-agent, opt-in via feature flag) ---
+    # See section 13 for details
+    execution_plan: dict | None
+    delegation_states: dict
+    active_delegation_id: str | None
+    completed_delegations: list
+    delegation_results: dict
+    response_language: str
+    domain: str | None
+    session_memory: list
+    _delegation_outputs: list
 ```
 
 **JERVIS Internal Project:**
@@ -857,3 +839,264 @@ default_openai_model: str = os.getenv("DEFAULT_OPENAI_MODEL", "gpt-4o")
 Existující `ApprovalNotificationDialog` zvládne `action: "cloud_model"` automaticky:
 - Popis: "Lokální model selhal: ...\nPovolit použití cloud modelu Anthropic Claude (reasoning)?"
 - Uživatel schválí/zamítne → resume flow pokračuje
+
+---
+
+## 13. Multi-Agent Delegation System (Feature-Flagged)
+
+> **Stav:** Rozšíření orchestrátoru z monolitického 14-nodového grafu na univerzální multi-agent systém.
+> Cíl: orchestrátor řídí 19+ specialist agentů pro všechny domény (kód, HR, právo, komunikace, finance, ...).
+> Podrobný plán viz `~/.claude/plans/mutable-wandering-cook.md`.
+
+Orchestrátor může operovat ve dvou režimech:
+
+1. **Legacy mode** (default) — stávající 14-nodový graf, 4 task kategorie (ADVICE, SINGLE_TASK, EPIC, GENERATIVE)
+2. **Delegation mode** — nový 7-nodový graf s 19 specialist agenty a DAG execution
+
+### 13.1 Delegation Graph (7 nodes)
+
+```
+intake → evidence_pack → plan_delegations → execute_delegation(s) → synthesize → finalize → END
+```
+
+| Node | Odpovědnost |
+|------|-------------|
+| `intake` | Klasifikace domény, urgence, jazyk detekce, Session Memory + Procedural Memory lookup (reuse stávajícího, rozšířen) |
+| `evidence_pack` | KB kontext + tracker artifacts fetch (reuse stávajícího) |
+| `plan_delegations` | **NOVÝ** — LLM vybírá z AgentRegistry, sestavuje ExecutionPlan (DAG delegací) |
+| `execute_delegation` | **NOVÝ** — Dispatch DelegationMessage na agenty, DAG executor pro paralelní skupiny |
+| `synthesize` | **NOVÝ** — Sloučení AgentOutput výsledků, RAG cross-check, překlad do `response_language` |
+| `finalize` | Finální report generace (reuse stávajícího, rozšířen o delegation metadata) |
+
+**Klíčová změna:** Místo hardcoded cest pro 4 kategorie máme univerzální delegační engine. `plan_delegations` node vybírá z registru agentů a sestavuje DAG (directed acyclic graph) delegací. Agenti mohou volat sub-agenty rekurzivně (max depth 4).
+
+### 13.2 Feature Flags
+
+```python
+# config.py — Settings třída
+use_delegation_graph: bool = False      # Nový 7-nodový graf (False = legacy 14-nodový)
+use_specialist_agents: bool = False     # Specialist agenti místo LegacyAgent
+use_dag_execution: bool = False         # Paralelní DAG delegace
+use_procedural_memory: bool = False     # Učení z úspěchů (ArangoDB ProcedureNode)
+```
+
+Všechny flagy defaultují na `False` — nový systém je opt-in. Přepnutí na legacy je okamžité bez restartu.
+
+### 13.3 Agent Registry
+
+19 specialist agentů + LegacyAgent fallback, registrovaných při startup v `main.py` lifespan.
+
+**Singleton:** `AgentRegistry.instance()` (`app/agents/registry.py`)
+
+**Metody:**
+- `register(agent)` — registrace agenta
+- `get(name)` — lookup by name
+- `list_agents()` → `list[AgentCapability]`
+- `find_for_domain(domain)` → agenti pro danou doménu
+- `get_capability_summary()` → text summary pro LLM prompt v `plan_delegations`
+
+**Agenti (19 + fallback):**
+
+| # | Agent | Domény | Sub-delegace |
+|---|-------|--------|-------------|
+| 1 | CodingAgent | code | - |
+| 2 | GitAgent | code | CodingAgent |
+| 3 | CodeReviewAgent | code | CodingAgent, TestAgent, ResearchAgent |
+| 4 | TestAgent | code | CodingAgent |
+| 5 | ResearchAgent | research | - |
+| 6 | IssueTrackerAgent | project_management | ResearchAgent |
+| 7 | WikiAgent | project_management | ResearchAgent |
+| 8 | DocumentationAgent | code | ResearchAgent |
+| 9 | DevOpsAgent | devops | - |
+| 10 | ProjectManagementAgent | project_management | IssueTrackerAgent |
+| 11 | SecurityAgent | security | ResearchAgent |
+| 12 | CommunicationAgent | communication | EmailAgent |
+| 13 | EmailAgent | communication | - |
+| 14 | CalendarAgent | administrative | - |
+| 15 | AdministrativeAgent | administrative | CalendarAgent |
+| 16 | LegalAgent | legal | ResearchAgent |
+| 17 | FinancialAgent | financial | - |
+| 18 | PersonalAgent | personal | CalendarAgent |
+| 19 | LearningAgent | learning | ResearchAgent |
+| F | LegacyAgent | *all* | - (wraps existing 14-node logic) |
+
+**BaseAgent** (`app/agents/base.py`):
+```python
+class BaseAgent(ABC):
+    name: str
+    description: str
+    domains: list[DomainType]
+    tools: list[dict]           # OpenAI function-calling schemas
+    can_sub_delegate: bool
+
+    @abstractmethod
+    async def execute(self, msg: DelegationMessage, state: dict) -> AgentOutput
+
+    async def _call_llm(self, messages, tools=None, model_tier=None) -> str
+    async def _execute_tool(self, tool_name, arguments, state) -> str
+    async def _sub_delegate(self, target_agent, task_summary, context, state) -> AgentOutput
+```
+
+### 13.4 Communication Protocol
+
+**DelegationMessage** (vstup pro agenta):
+```python
+class DelegationMessage(BaseModel):
+    delegation_id: str
+    parent_delegation_id: str | None = None
+    depth: int = 0                    # 0=orchestrátor, 1-4=sub-agenti
+    agent_name: str
+    task_summary: str                 # Co má agent udělat (ANGLICKY)
+    context: str = ""                 # Token-budgeted kontext
+    constraints: list[str] = []       # Forbidden files, max changes, etc.
+    expected_output: str = ""
+    response_language: str = "en"     # ISO 639-1 pro finální odpověď
+    client_id: str
+    project_id: str | None = None
+    group_id: str | None = None       # Agent vidí KB celé skupiny
+```
+
+**AgentOutput** (výstup agenta):
+```python
+class AgentOutput(BaseModel):
+    delegation_id: str
+    agent_name: str
+    success: bool
+    result: str = ""                  # Hlavní výstup
+    structured_data: dict = {}        # diff, issues, etc.
+    artifacts: list[str] = []         # Vytvořené soubory, commity
+    changed_files: list[str] = []
+    sub_delegations: list[str] = []   # ID sub-delegací (tracing)
+    confidence: float = 1.0           # 0.0-1.0
+    needs_verification: bool = False  # Cross-check přes KB
+```
+
+**Structured response format:** Agenti odpovídají kompaktně ale kompletně — STATUS/RESULT/ARTIFACTS/ISSUES/CONFIDENCE. Žádná trunkace.
+
+**Pravidla delegací:**
+1. **Max depth 4** — agent na depth 3 nemůže volat sub-agenta na depth 5
+2. **Cycle detection** — stack delegací se trackuje, nelze volat agenta co už je ve stacku
+3. **Token budget per depth** — Depth 0: 48k (GPU sweet spot), Depth 1: 16k, Depth 2: 8k, Depth 3-4: 4k
+4. **Summarizace nahoru** — rodič NIKDY nevidí plný output sub-agenta, jen summary (max 500 znaků)
+5. **Plný výsledek** se ukládá do `context_store` (MongoDB) pro on-demand retrieval
+
+**Jazyková pravidla:**
+- `intake` detekuje jazyk vstupu → `response_language` ve stavu
+- Celý interní chain běží ANGLICKY (menší chybovost, menší token count)
+- `finalize` přeloží výsledek do `response_language`
+
+### 13.5 Memory Layers (4 vrstvy)
+
+| Vrstva | Kde | TTL | Účel |
+|--------|-----|-----|------|
+| **Working Memory** | OrchestratorState (LangGraph checkpoint) | Během orchestrace | Aktuální delegation stack, mezivýsledky |
+| **Session Memory** | MongoDB `session_memory` | 7 dní | Per-client/project krátkodobá paměť mezi orchestracemi |
+| **Semantic Memory** | KB (Weaviate RAG + ArangoDB Graph) | Permanentní | Fakta, pravidla, konvence, decisions |
+| **Procedural Memory** | ArangoDB `ProcedureNode` | Permanentní (usage-decay) | Naučené workflow postupy |
+
+**Session Memory** (`app/context/session_memory.py`):
+- Collection `session_memory`, klíč: `clientId + projectId`
+- Max 50 entries per client/project, TTL 7 dní
+- Plněna po každé orchestraci (klíčová rozhodnutí)
+- Čtena na začátku orchestrace v `intake` node
+- Řeší problém: "uživatel řekl v chatu před hodinou, background task to potřebuje vědět"
+
+**Procedural Memory** (`app/context/procedural_memory.py`):
+- ArangoDB `ProcedureNode` collection
+- `trigger_pattern` → `procedure_steps` (agenti + akce)
+- `success_rate`, `usage_count` — automatický usage-decay
+- `source`: `"learned"` (automatické) vs `"user_defined"` (manuální, vyšší priorita)
+- Pokud procedura pro daný typ úkolu neexistuje → orchestrátor se ZEPTÁ uživatele → uloží odpověď
+
+**Progressive context assembly:**
+- `context_assembler.py` rozšířen o `assemble_delegation_context()`
+- Token budgets per depth level (48k → 16k → 8k → 4k)
+- Evidence pack, session memory, delegation context oříznuty na budget
+
+### 13.6 DAG Execution
+
+`DAGExecutor` (`app/graph/dag_executor.py`):
+- `plan_delegations` sestaví `ExecutionPlan` s `parallel_groups`
+- Delegace ve stejné skupině běží přes `asyncio.gather` (paralelně)
+- Skupiny mezi sebou sekvenčně (závislosti respektovány)
+- Progress reporting per delegace přes `kotlin_client`
+
+### 13.7 Backward Compatibility
+
+**Zachováno BEZ ZMĚN:**
+- Všechny API endpointy (`/orchestrate/stream`, `/approve/{thread_id}`, `/status/{thread_id}`, `/cancel/{thread_id}`)
+- TaskDocument lifecycle a state transitions v Kotlin serveru
+- K8s Job runner (`agents/job_runner.py`)
+- Workspace manager (`agents/workspace_manager.py`)
+- LLM provider (`llm/provider.py`)
+- KB prefetch (`kb/prefetch.py`)
+- MongoDB checkpointer (sdílený oběma grafy)
+
+**Nové progress fieldy (backward compatible, Kotlin může ignorovat):**
+```python
+delegation_id: str | None          # ID aktuální delegace
+delegation_agent: str | None       # Název agenta
+delegation_depth: int | None       # Hloubka rekurze (0-4)
+delegation_tree: list[dict] | None # Celý strom pro UI vizualizaci
+thinking_about: str | None         # Co orchestrátor zvažuje
+```
+
+**Přepínání grafů:**
+```python
+def get_orchestrator_graph():
+    if settings.use_delegation_graph:
+        return build_delegation_graph().compile(checkpointer=_checkpointer)
+    return build_orchestrator_graph().compile(checkpointer=_checkpointer)
+```
+
+Stávající `build_orchestrator_graph()` (14 nodes) se NEMAŽE — zůstává jako legacy fallback.
+
+### 13.8 Nové soubory (delegation system)
+
+```
+backend/service-orchestrator/app/
+  agents/
+    base.py                          # BaseAgent, abstraktní třída
+    registry.py                      # AgentRegistry singleton
+    legacy_agent.py                  # Wrapper stávající 14-node logiky
+    specialists/
+      code_agent.py                  # CodingAgent (K8s Job delegace)
+      git_agent.py                   # GitAgent (git operace)
+      review_agent.py                # CodeReviewAgent (code review orchestrace)
+      test_agent.py                  # TestAgent (testy, coverage)
+      research_agent.py              # ResearchAgent (KB + web search)
+      tracker_agent.py               # IssueTrackerAgent (issue CRUD)
+      wiki_agent.py                  # WikiAgent (wiki CRUD)
+      documentation_agent.py         # DocumentationAgent (docs generování)
+      devops_agent.py                # DevOpsAgent (CI/CD, K8s)
+      project_management_agent.py    # ProjectManagementAgent (sprint planning)
+      security_agent.py              # SecurityAgent (security analýza)
+      communication_agent.py         # CommunicationAgent (hub pro komunikaci)
+      email_agent.py                 # EmailAgent (email operace)
+      calendar_agent.py              # CalendarAgent (termíny, scheduling)
+      administrative_agent.py        # AdministrativeAgent (logistika)
+      legal_agent.py                 # LegalAgent (smlouvy, compliance)
+      financial_agent.py             # FinancialAgent (rozpočet, faktury)
+      personal_agent.py              # PersonalAgent (osobní asistence)
+      learning_agent.py              # LearningAgent (tutoriály, evaluace)
+  context/
+    session_memory.py                # MongoDB session_memory collection
+    procedural_memory.py             # ArangoDB ProcedureNode CRUD
+    summarizer.py                    # Summarizace AgentOutput (max 500 znaků)
+    retention_policy.py              # Co uložit do KB vs zahodit
+  graph/
+    dag_executor.py                  # DAG paralelní execution
+    nodes/
+      plan_delegations.py            # LLM-driven výběr agentů
+      execute_delegation.py          # Dispatch + monitoring
+      synthesize.py                  # Sloučení výsledků + RAG cross-check
+  monitoring/
+    delegation_metrics.py            # Per-agent metriky (start, end, tokens, llm_calls)
+```
+
+### 13.9 Failure Handling
+
+- **Soft failure** (confidence < 0.5) → orchestrátor zkusí jiného agenta nebo eskaluje na uživatele
+- **Hard failure** (exception) → retry 1x, pak eskalace
+- **Quality failure** (RAG cross-check neprošel) → orchestrátor vrátí agentovi s vysvětlením
+- **LegacyAgent fallback** → pokud specialist agent selže, orchestrátor může fallbacknout na stávající logiku

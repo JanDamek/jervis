@@ -65,6 +65,10 @@ from app.graph.nodes import (
     execute_wave,
     verify_wave,
     design,
+    # Delegation graph nodes (multi-agent system)
+    plan_delegations,
+    execute_delegation,
+    synthesize,
 )
 from app.models import ChatHistoryPayload, CodingTask, OrchestrateRequest, ProjectRules
 
@@ -118,6 +122,16 @@ class OrchestratorState(TypedDict, total=False):
     artifacts: list
     error: str | None
     evaluation: dict | None
+
+    # --- Delegation system (multi-agent, opt-in via use_delegation_graph) ---
+    execution_plan: dict | None
+    delegation_states: dict
+    active_delegation_id: str | None
+    completed_delegations: list
+    delegation_results: dict
+    response_language: str
+    domain: str | None
+    session_memory: list
 
 
 # MongoDB checkpointer – initialized in main.py lifespan
@@ -302,15 +316,60 @@ def _route_after_epic_or_design(state: dict) -> str:
     return "select_goal"
 
 
+def build_delegation_graph() -> StateGraph:
+    """Build the multi-agent delegation graph (opt-in via use_delegation_graph).
+
+    Graph structure:
+        intake → evidence_pack → plan_delegations → execute_delegation → synthesize → finalize → END
+
+    The delegation graph replaces the legacy orchestrator graph when
+    settings.use_delegation_graph is True. All specialist agents are
+    dispatched via the AgentRegistry.
+    """
+    graph = StateGraph(OrchestratorState)
+
+    # --- Reuse existing nodes ---
+    graph.add_node("intake", intake)
+    graph.add_node("evidence_pack", evidence_pack)
+    graph.add_node("finalize", finalize)
+
+    # --- New delegation nodes ---
+    graph.add_node("plan_delegations", plan_delegations)
+    graph.add_node("execute_delegation", execute_delegation)
+    graph.add_node("synthesize", synthesize)
+
+    # --- Entry point ---
+    graph.set_entry_point("intake")
+
+    # intake → evidence_pack → plan_delegations → execute_delegation → synthesize → finalize → END
+    graph.add_edge("intake", "evidence_pack")
+    graph.add_edge("evidence_pack", "plan_delegations")
+    graph.add_edge("plan_delegations", "execute_delegation")
+    graph.add_edge("execute_delegation", "synthesize")
+    graph.add_edge("synthesize", "finalize")
+    graph.add_edge("finalize", END)
+
+    return graph
+
+
 def get_orchestrator_graph():
-    """Get compiled orchestrator graph with checkpointing (lazy singleton)."""
+    """Get compiled orchestrator graph with checkpointing (lazy singleton).
+
+    Uses delegation graph when settings.use_delegation_graph is True,
+    otherwise uses the legacy 14-node orchestrator graph.
+    """
     global _compiled_graph
     if _compiled_graph is None:
         if _checkpointer is None:
             raise RuntimeError(
                 "Checkpointer not initialized. Call init_checkpointer() first."
             )
-        graph = build_orchestrator_graph()
+        if settings.use_delegation_graph:
+            logger.info("Building DELEGATION graph (multi-agent system)")
+            graph = build_delegation_graph()
+        else:
+            logger.info("Building LEGACY orchestrator graph (14-node)")
+            graph = build_orchestrator_graph()
         _compiled_graph = graph.compile(checkpointer=_checkpointer)
     return _compiled_graph
 
@@ -364,6 +423,15 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "artifacts": [],
         "error": None,
         "evaluation": None,
+        # Delegation system (populated when use_delegation_graph is True)
+        "execution_plan": None,
+        "delegation_states": {},
+        "active_delegation_id": None,
+        "completed_delegations": [],
+        "delegation_results": {},
+        "response_language": "en",
+        "domain": None,
+        "session_memory": [],
     }
 
 
@@ -477,6 +545,7 @@ async def run_orchestration_streaming(
             "select_goal", "plan_steps", "execute_step", "evaluate",
             "advance_step", "advance_goal", "git_operations", "finalize",
             "plan_epic", "design",
+            "plan_delegations", "execute_delegation", "synthesize",
         }
 
         async for event in graph.astream_events(state_to_use, config=config, version="v2"):
@@ -564,6 +633,7 @@ async def resume_orchestration_streaming(
             "select_goal", "plan_steps", "execute_step", "evaluate",
             "advance_step", "advance_goal", "git_operations", "finalize",
             "plan_epic", "design",
+            "plan_delegations", "execute_delegation", "synthesize",
         }
 
         tracked = {

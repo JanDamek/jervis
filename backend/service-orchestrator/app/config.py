@@ -77,6 +77,28 @@ class Settings(BaseSettings):
     # Job cleanup
     job_ttl_seconds: int = 300
 
+    # --- Multi-agent delegation system (feature-flagged, all default OFF) ---
+
+    # Feature flags
+    use_delegation_graph: bool = False
+    use_specialist_agents: bool = False
+    use_dag_execution: bool = False
+    use_procedural_memory: bool = False
+
+    # Delegation settings
+    max_delegation_depth: int = 4
+    delegation_timeout: int = 300
+
+    # Token budgets per delegation depth
+    token_budget_depth_0: int = 48000
+    token_budget_depth_1: int = 16000
+    token_budget_depth_2: int = 8000
+    token_budget_depth_3: int = 4000
+
+    # Session memory
+    session_memory_ttl_days: int = 7
+    session_memory_max_entries: int = 50
+
     class Config:
         env_prefix = "ORCHESTRATOR_"
 

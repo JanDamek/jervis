@@ -12,7 +12,9 @@
 3. [Knowledge Base Implementation](#knowledge-base-implementation)
 4. [Continuous Indexers](#continuous-indexers)
 5. [RAG Integration](#rag-integration)
-6. [Knowledge Base Best Practices](#knowledge-base-best-practices)
+6. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
+7. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
+8. [Knowledge Base Best Practices](#knowledge-base-best-practices)
 
 ---
 
@@ -617,6 +619,8 @@ This ensures correct source type display in the indexing queue UI (e.g., GitHub 
 7. **Type safety:** Explicit input/output types throughout
 8. **Infinite retry for operational errors:** Ollama busy/timeout → exponential backoff, never marks ERROR
 9. **Queue priority:** Manual reordering of qualification queue items via `queuePosition`
+10. **Procedural Memory:** Learned workflows stored per-client for automatic procedure reuse
+11. **Session Memory:** 7-day short-term memory bridging orchestrations for recent context
 
 ### Benefits
 
@@ -627,3 +631,93 @@ This ensures correct source type display in the indexing queue UI (e.g., GitHub 
 5. **Performance:** Hybrid search combining semantic + structured
 6. **User priority:** Preemption ensures immediate response
 7. **Resilience:** Infinite retry with backoff ensures no items lost during Ollama overload
+
+---
+
+## Procedural Memory (Multi-Agent System)
+
+### Overview
+
+Procedural Memory stores learned workflow procedures for the multi-agent orchestrator. When the orchestrator receives a task, it searches Procedural Memory for known workflows matching the task pattern.
+
+### Storage
+
+- **Collection:** ArangoDB `ProcedureNode` (per-client)
+- **TTL:** Permanent with usage-decay (unused procedures gradually lose priority)
+- **Access:** Via `procedural_memory.py` in the orchestrator
+
+### ProcedureNode Structure
+
+```python
+class ProcedureNode(BaseModel):
+    trigger_pattern: str        # "email_with_question", "task_completion", "bug_report"
+    procedure_steps: list[dict] # [{agent: "CodeReviewAgent", action: "review"}, ...]
+    success_rate: float         # 0.0-1.0 (how often the procedure succeeded)
+    last_used: str | None
+    usage_count: int
+    source: str                 # "learned" | "user_defined"
+    client_id: str              # Procedures are per-client
+```
+
+### How It Works
+
+1. **Lookup:** Orchestrator's `plan_delegations` node searches for procedures matching the task pattern
+2. **User-defined priority:** Procedures with `source="user_defined"` always take precedence over learned ones
+3. **Learning:** After successful orchestration, the workflow pattern is saved as a new procedure
+4. **Missing procedure:** If no procedure exists, orchestrator asks the user and saves the answer
+
+### Example Procedures
+
+| Trigger | Steps | Agents |
+|---------|-------|--------|
+| `task_completion` | Review → Deploy → Test → Close | CodeReview → DevOps → Test → IssueTracker |
+| `email_deadline_question` | Find issue → Check status → Estimate → Reply | IssueTracker → Research → Communication |
+| `bug_report` | Search KB → Analyze → Fix → Test → PR | Research → Coding → Test → Git |
+
+---
+
+## Session Memory (Multi-Agent System)
+
+### Overview
+
+Session Memory provides per-client/project short-term memory across orchestrations. It captures key decisions from recent interactions (chat + background) for use in subsequent orchestration runs.
+
+### Why Not Just KB?
+
+- KB is optimized for semantic search ("find everything about technology X")
+- Session Memory is a fast key-value lookup ("what happened an hour ago?")
+- KB indexing has latency; Session Memory is immediately available
+- Session Memory is a cache; KB is permanent storage
+
+### Storage
+
+- **Collection:** MongoDB `session_memory`
+- **Key:** `client_id + project_id`
+- **TTL:** 7 days (configurable via `session_memory_ttl_days`)
+- **Max entries:** 50 per client/project
+
+### SessionEntry Structure
+
+```python
+class SessionEntry(BaseModel):
+    timestamp: str
+    source: str               # "chat" | "background" | "orchestrator_decision"
+    summary: str              # Brief summary (max 200 chars)
+    details: dict | None      # Optional details
+    task_id: str | None       # Reference to task
+```
+
+### How It Works
+
+1. **Read:** At orchestration start (intake node), Session Memory is loaded for the client/project
+2. **Write:** After each orchestration, key decisions are saved to Session Memory
+3. **Expiry:** Entries older than 7 days are pruned; important items are already in KB by then
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/context/session_memory.py` | MongoDB CRUD for session memory |
+| `app/context/procedural_memory.py` | ArangoDB CRUD for procedural memory |
+| `app/context/retention_policy.py` | Decides what to save to KB vs context_store |
+| `app/context/summarizer.py` | Summarization utilities (no truncation of agent outputs) |

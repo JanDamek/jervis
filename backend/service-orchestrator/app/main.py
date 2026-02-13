@@ -105,8 +105,65 @@ async def lifespan(app: FastAPI):
     # Initialize distributed lock (multi-pod concurrency)
     await distributed_lock.init()
     logger.info("Distributed lock ready (multi-pod orchestration)")
+    # Initialize multi-agent delegation system (opt-in)
+    if settings.use_delegation_graph:
+        logger.info("Initializing multi-agent delegation system...")
+        from app.agents.registry import AgentRegistry
+        from app.agents.legacy_agent import LegacyAgent
+        from app.agents.specialists import (
+            CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent,
+            IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent,
+            ProjectManagementAgent, SecurityAgent,
+            EmailAgent, CommunicationAgent, CalendarAgent,
+            AdministrativeAgent, LegalAgent, FinancialAgent,
+            PersonalAgent, LearningAgent,
+        )
+
+        registry = AgentRegistry.instance()
+        # Register all 19 specialist agents + legacy fallback
+        for agent_cls in [
+            CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent,
+            IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent,
+            ProjectManagementAgent, SecurityAgent,
+            EmailAgent, CommunicationAgent, CalendarAgent,
+            AdministrativeAgent, LegalAgent, FinancialAgent,
+            PersonalAgent, LearningAgent,
+            LegacyAgent,
+        ]:
+            registry.register(agent_cls())
+        logger.info(
+            "AgentRegistry ready: %d agents registered (%s)",
+            len(registry.all_names()),
+            ", ".join(registry.all_names()),
+        )
+
+        # Initialize session memory store
+        from app.context.session_memory import session_memory_store
+        await session_memory_store.init()
+        logger.info("Session memory store ready")
+
+        # Initialize delegation metrics collector
+        from app.monitoring.delegation_metrics import metrics_collector
+        await metrics_collector.init()
+        logger.info("Delegation metrics collector ready")
+
+        # Initialize procedural memory
+        if settings.use_procedural_memory:
+            from app.context.procedural_memory import procedural_memory
+            await procedural_memory.init()
+            logger.info("Procedural memory ready")
+
     yield
     # Cleanup
+    if settings.use_delegation_graph:
+        from app.context.session_memory import session_memory_store
+        from app.monitoring.delegation_metrics import metrics_collector
+        await session_memory_store.close()
+        await metrics_collector.close()
+        if settings.use_procedural_memory:
+            from app.context.procedural_memory import procedural_memory
+            await procedural_memory.close()
+        logger.info("Multi-agent delegation system stopped")
     await distributed_lock.close()
     await context_store.close()
     await close_checkpointer()
@@ -312,6 +369,10 @@ _NODE_MESSAGES = {
     "finalize": "Generating final report...",
     "plan_epic": "Planning epic execution waves...",
     "design": "Designing implementation structure...",
+    # Delegation graph nodes (multi-agent system)
+    "plan_delegations": "Planning agent delegations...",
+    "execute_delegation": "Executing agent delegations...",
+    "synthesize": "Synthesizing agent results...",
 }
 
 

@@ -267,3 +267,156 @@ class OrchestrateResponse(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     step_results: list[StepResult] = Field(default_factory=list)
     thread_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Domain & Delegation (Multi-Agent System)
+# ---------------------------------------------------------------------------
+
+
+class DomainType(str, Enum):
+    """Domain classification for delegation routing."""
+
+    CODE = "code"
+    DEVOPS = "devops"
+    PROJECT_MANAGEMENT = "project_management"
+    COMMUNICATION = "communication"
+    LEGAL = "legal"
+    FINANCIAL = "financial"
+    ADMINISTRATIVE = "administrative"
+    PERSONAL = "personal"
+    SECURITY = "security"
+    RESEARCH = "research"
+    LEARNING = "learning"
+
+
+class DelegationStatus(str, Enum):
+    """Lifecycle status of a single delegation."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class DelegationMessage(BaseModel):
+    """Input payload sent to a specialist agent."""
+
+    delegation_id: str
+    parent_delegation_id: str | None = None
+    depth: int = 0
+    agent_name: str
+    task_summary: str
+    context: str = ""
+    constraints: list[str] = Field(default_factory=list)
+    expected_output: str = ""
+    response_language: str = "en"
+    client_id: str = ""
+    project_id: str | None = None
+    group_id: str | None = None
+
+
+class AgentOutput(BaseModel):
+    """Structured result returned by a specialist agent."""
+
+    delegation_id: str
+    agent_name: str
+    success: bool
+    result: str = ""
+    structured_data: dict = Field(default_factory=dict)
+    artifacts: list[str] = Field(default_factory=list)
+    changed_files: list[str] = Field(default_factory=list)
+    sub_delegations: list[str] = Field(default_factory=list)
+    confidence: float = 1.0
+    needs_verification: bool = False
+
+
+class DelegationState(BaseModel):
+    """Tracked state of one delegation inside the orchestrator."""
+
+    delegation_id: str
+    agent_name: str
+    status: DelegationStatus = DelegationStatus.PENDING
+    result_summary: str | None = None
+    sub_delegation_ids: list[str] = Field(default_factory=list)
+    checkpoint_data: dict | None = None
+
+
+class ExecutionPlan(BaseModel):
+    """DAG of delegations produced by plan_delegations node."""
+
+    delegations: list[DelegationMessage] = Field(default_factory=list)
+    parallel_groups: list[list[str]] = Field(default_factory=list)
+    domain: DomainType = DomainType.CODE
+
+
+class AgentCapability(BaseModel):
+    """Describes what one registered agent can do (for LLM routing)."""
+
+    name: str
+    description: str
+    domains: list[DomainType] = Field(default_factory=list)
+    can_sub_delegate: bool = True
+    max_depth: int = 4
+    tool_names: list[str] = Field(default_factory=list)
+
+
+# --- Session Memory ---
+
+
+class SessionEntry(BaseModel):
+    """One entry in the short-lived per-client session memory."""
+
+    timestamp: str
+    source: str  # "chat" | "background" | "orchestrator_decision"
+    summary: str
+    details: dict | None = None
+    task_id: str | None = None
+
+
+class SessionMemoryPayload(BaseModel):
+    """Loaded session memory for a client/project pair."""
+
+    client_id: str
+    project_id: str | None = None
+    entries: list[SessionEntry] = Field(default_factory=list)
+
+
+# --- Procedural Memory ---
+
+
+class ProcedureStep(BaseModel):
+    """Single step in a learned procedure."""
+
+    agent: str
+    action: str
+    parameters: dict = Field(default_factory=dict)
+
+
+class ProcedureNode(BaseModel):
+    """A stored workflow procedure (KB Procedural Memory)."""
+
+    trigger_pattern: str
+    procedure_steps: list[ProcedureStep] = Field(default_factory=list)
+    success_rate: float = 0.0
+    last_used: str | None = None
+    usage_count: int = 0
+    source: str = "learned"  # "learned" | "user_defined"
+    client_id: str = ""
+
+
+# --- Delegation Metrics ---
+
+
+class DelegationMetrics(BaseModel):
+    """Recorded metrics for one delegation execution."""
+
+    delegation_id: str
+    agent_name: str
+    start_time: str | None = None
+    end_time: str | None = None
+    token_count: int = 0
+    llm_calls: int = 0
+    sub_delegation_count: int = 0
+    success: bool = False
