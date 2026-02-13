@@ -79,6 +79,7 @@ internal fun ProjectEditForm(
         )
     }
     var gitCommitMessageFormat by remember { mutableStateOf(project.gitCommitMessageFormat ?: "") }
+    var gitCommitMessagePattern by remember { mutableStateOf(project.gitCommitMessagePattern ?: "") }
     var gitCommitAuthorName by remember { mutableStateOf(project.gitCommitAuthorName ?: "") }
     var gitCommitAuthorEmail by remember { mutableStateOf(project.gitCommitAuthorEmail ?: "") }
     var gitCommitCommitterName by remember { mutableStateOf(project.gitCommitCommitterName ?: "") }
@@ -182,6 +183,7 @@ internal fun ProjectEditForm(
                     resources = resources,
                     resourceLinks = resourceLinks,
                     gitCommitMessageFormat = if (useCustomGitConfig) gitCommitMessageFormat.ifBlank { null } else null,
+                    gitCommitMessagePattern = if (useCustomGitConfig) gitCommitMessagePattern.ifBlank { null } else null,
                     gitCommitAuthorName = if (useCustomGitConfig) gitCommitAuthorName.ifBlank { null } else null,
                     gitCommitAuthorEmail = if (useCustomGitConfig) gitCommitAuthorEmail.ifBlank { null } else null,
                     gitCommitCommitterName = if (useCustomGitConfig) gitCommitCommitterName.ifBlank { null } else null,
@@ -361,6 +363,8 @@ internal fun ProjectEditForm(
                         GitCommitConfigFields(
                             messageFormat = gitCommitMessageFormat,
                             onMessageFormatChange = { gitCommitMessageFormat = it },
+                            messagePattern = gitCommitMessagePattern,
+                            onMessagePatternChange = { gitCommitMessagePattern = it },
                             authorName = gitCommitAuthorName,
                             onAuthorNameChange = { gitCommitAuthorName = it },
                             authorEmail = gitCommitAuthorEmail,

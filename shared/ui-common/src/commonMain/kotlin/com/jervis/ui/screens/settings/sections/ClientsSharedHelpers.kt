@@ -69,12 +69,12 @@ internal fun GitCommitConfigFields(
         onValueChange = onMessagePatternChange,
         label = "Pattern s placeholdery (volitelné)",
         placeholder = "[\$project] \$message",
-        supportingText = {
-            Text(
-                "Dostupné: \$task_number, \$project, \$message, \$detail, \$author, \$date",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        },
+    )
+
+    Text(
+        "Dostupné: \$task_number, \$project, \$message, \$detail, \$author, \$date",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))
