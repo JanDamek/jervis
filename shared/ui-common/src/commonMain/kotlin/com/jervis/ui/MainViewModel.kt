@@ -80,11 +80,17 @@ class MainViewModel(
     private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
     val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
 
+    private val _projectGroups = MutableStateFlow<List<com.jervis.dto.ProjectGroupDto>>(emptyList())
+    val projectGroups: StateFlow<List<com.jervis.dto.ProjectGroupDto>> = _projectGroups.asStateFlow()
+
     private val _selectedClientId = MutableStateFlow<String?>(defaultClientId)
     val selectedClientId: StateFlow<String?> = _selectedClientId.asStateFlow()
 
     private val _selectedProjectId = MutableStateFlow<String?>(defaultProjectId)
     val selectedProjectId: StateFlow<String?> = _selectedProjectId.asStateFlow()
+
+    private val _selectedGroupId = MutableStateFlow<String?>(null)
+    val selectedGroupId: StateFlow<String?> = _selectedGroupId.asStateFlow()
 
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
@@ -885,7 +891,9 @@ class MainViewModel(
 
         _selectedClientId.value = clientId
         _selectedProjectId.value = null // Reset project selection temporarily
+        _selectedGroupId.value = null // Reset group selection
         _projects.value = emptyList()
+        _projectGroups.value = emptyList()
         _chatMessages.value = emptyList() // Clear messages for the new client
 
         chatJob?.cancel() // Cancel stream for previous client
@@ -895,8 +903,13 @@ class MainViewModel(
         scope.launch {
             _isLoading.value = true
             try {
+                // Load projects and groups for this client
                 val projectList = repository.projects.listProjectsForClient(clientId)
                 _projects.value = projectList
+
+                val allGroups = repository.projectGroups.getAllGroups()
+                val clientGroups = allGroups.filter { it.clientId == clientId }
+                _projectGroups.value = clientGroups
 
                 // Restore last selected project if available
                 val client = _clients.value.find { it.id == clientId }
@@ -914,6 +927,15 @@ class MainViewModel(
         }
     }
 
+    fun selectGroup(groupId: String) {
+        if (_selectedGroupId.value == groupId) return
+
+        _selectedGroupId.value = groupId
+        _selectedProjectId.value = null // Clear project selection when group is selected
+        _chatMessages.value = emptyList() // Clear messages
+        chatJob?.cancel()
+    }
+
     fun selectProject(projectId: String) {
         if (projectId.isBlank()) {
             _selectedProjectId.value = null
@@ -922,6 +944,7 @@ class MainViewModel(
         if (_selectedProjectId.value == projectId) return
 
         _selectedProjectId.value = projectId
+        _selectedGroupId.value = null // Clear group selection when project is selected
         _chatMessages.value = emptyList() // Clear messages for the new project
 
         chatJob?.cancel()

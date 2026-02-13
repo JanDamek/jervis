@@ -79,8 +79,10 @@ private fun MainMenuItem.toScreen(): Screen = when (this) {
 fun MainScreenView(
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
+    projectGroups: List<com.jervis.dto.ProjectGroupDto> = emptyList(),
     selectedClientId: String?,
     selectedProjectId: String?,
+    selectedGroupId: String? = null,
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
@@ -91,6 +93,7 @@ fun MainScreenView(
     runningTaskType: String? = null,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
+    onGroupSelected: (String) -> Unit = {},
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onNavigate: (Screen) -> Unit = {},
@@ -103,8 +106,10 @@ fun MainScreenView(
         ChatContent(
             clients = clients,
             projects = projects,
+            projectGroups = projectGroups,
             selectedClientId = selectedClientId,
             selectedProjectId = selectedProjectId,
+            selectedGroupId = selectedGroupId,
             chatMessages = chatMessages,
             inputText = inputText,
             isLoading = isLoading,
@@ -115,6 +120,7 @@ fun MainScreenView(
             runningTaskType = runningTaskType,
             onClientSelected = onClientSelected,
             onProjectSelected = onProjectSelected,
+            onGroupSelected = onGroupSelected,
             onInputChanged = onInputChanged,
             onSendClick = onSendClick,
             onAgentStatusClick = onAgentStatusClick,
@@ -134,8 +140,10 @@ fun MainScreenView(
 private fun ChatContent(
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
+    projectGroups: List<com.jervis.dto.ProjectGroupDto>,
     selectedClientId: String?,
     selectedProjectId: String?,
+    selectedGroupId: String?,
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
@@ -146,6 +154,7 @@ private fun ChatContent(
     runningTaskType: String?,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
+    onGroupSelected: (String) -> Unit,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onAgentStatusClick: () -> Unit,
@@ -159,10 +168,13 @@ private fun ChatContent(
         SelectorsRow(
             clients = clients,
             projects = projects,
+            projectGroups = projectGroups,
             selectedClientId = selectedClientId,
             selectedProjectId = selectedProjectId,
+            selectedGroupId = selectedGroupId,
             onClientSelected = onClientSelected,
             onProjectSelected = onProjectSelected,
+            onGroupSelected = onGroupSelected,
             onNavigate = onNavigate,
             connectionState = connectionState,
             onReconnect = onReconnect,
@@ -214,10 +226,13 @@ private fun ChatContent(
 private fun SelectorsRow(
     clients: List<ClientDto>,
     projects: List<ProjectDto>,
+    projectGroups: List<com.jervis.dto.ProjectGroupDto>,
     selectedClientId: String?,
     selectedProjectId: String?,
+    selectedGroupId: String?,
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
+    onGroupSelected: (String) -> Unit,
     onNavigate: (Screen) -> Unit,
     connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
     onReconnect: () -> Unit = {},
@@ -265,7 +280,7 @@ private fun SelectorsRow(
             }
         }
 
-        // Project selector
+        // Project / Group selector
         var projectExpanded by remember { mutableStateOf(false) }
 
         ExposedDropdownMenuBox(
@@ -273,11 +288,21 @@ private fun SelectorsRow(
             onExpandedChange = { projectExpanded = it },
             modifier = Modifier.weight(1f),
         ) {
+            // Display selected project or group name
+            val displayText = when {
+                selectedProjectId != null -> projects.find { it.id == selectedProjectId }?.name ?: "Vyberte projekt..."
+                selectedGroupId != null -> {
+                    val group = projectGroups.find { it.id == selectedGroupId }
+                    if (group != null) "📁 ${group.name}" else "Vyberte projekt..."
+                }
+                else -> "Vyberte projekt..."
+            }
+
             OutlinedTextField(
-                value = projects.find { it.id == selectedProjectId }?.name ?: "Vyberte projekt...",
+                value = displayText,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Projekt") },
+                label = { Text("Projekt / Skupina") },
                 enabled = selectedClientId != null,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
                 modifier =
@@ -291,14 +316,36 @@ private fun SelectorsRow(
                 expanded = projectExpanded,
                 onDismissRequest = { projectExpanded = false },
             ) {
-                projects.forEach { project ->
-                    DropdownMenuItem(
-                        text = { Text(project.name) },
-                        onClick = {
-                            onProjectSelected(project.id)
-                            projectExpanded = false
-                        },
-                    )
+                // Show projects first (only ungrouped projects or all projects)
+                val ungroupedProjects = projects.filter { it.groupId == null }
+                if (ungroupedProjects.isNotEmpty()) {
+                    ungroupedProjects.forEach { project ->
+                        DropdownMenuItem(
+                            text = { Text(project.name) },
+                            onClick = {
+                                onProjectSelected(project.id)
+                                projectExpanded = false
+                            },
+                        )
+                    }
+                }
+
+                // Show separator if we have both projects and groups
+                if (ungroupedProjects.isNotEmpty() && projectGroups.isNotEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+
+                // Show project groups
+                if (projectGroups.isNotEmpty()) {
+                    projectGroups.forEach { group ->
+                        DropdownMenuItem(
+                            text = { Text("📁 ${group.name}") },
+                            onClick = {
+                                onGroupSelected(group.id)
+                                projectExpanded = false
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -17,8 +17,10 @@ fun MainScreen(
 ) {
     val clients by viewModel.clients.collectAsState()
     val projects by viewModel.projects.collectAsState()
+    val projectGroups by viewModel.projectGroups.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
+    val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -33,8 +35,10 @@ fun MainScreen(
     MainScreenViewInternal(
         clients = clients,
         projects = projects,
+        projectGroups = projectGroups,
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
+        selectedGroupId = selectedGroupId,
         chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isLoading || isInitialLoading,
@@ -45,6 +49,7 @@ fun MainScreen(
         runningTaskType = runningTaskType,
         onClientSelected = viewModel::selectClient,
         onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
+        onGroupSelected = viewModel::selectGroup,
         onInputChanged = viewModel::updateInputText,
         onSendClick = viewModel::sendMessage,
         onNavigate = onNavigate,
