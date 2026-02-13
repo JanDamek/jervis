@@ -3,11 +3,11 @@
 from app.context.context_store import ContextStore, context_store
 from app.context.distributed_lock import DistributedLock, distributed_lock
 from app.context.session_memory import SessionMemoryStore, session_memory_store
-from app.context.procedural_memory import ProceduralMemoryStore, procedural_memory
+from app.context.procedural_memory import ProceduralMemory, procedural_memory
 
 __all__ = [
     "ContextStore", "context_store",
     "DistributedLock", "distributed_lock",
     "SessionMemoryStore", "session_memory_store",
-    "ProceduralMemoryStore", "procedural_memory",
+    "ProceduralMemory", "procedural_memory",
 ]
