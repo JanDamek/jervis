@@ -762,6 +762,13 @@ class MainViewModel(
                         ),
                     )
                 }
+
+                // Clear pending message - server confirmed delivery
+                if (pendingMessage == response.message) {
+                    pendingMessage = null
+                    PendingMessageStorage.save(null)
+                    println("=== Pending message cleared (confirmed by server) ===")
+                }
             }
 
             ChatMessage.MessageType.PROGRESS -> {
@@ -979,9 +986,8 @@ class MainViewModel(
                             ),
                     ),
                 )
-                println("=== Message sent successfully ===")
-                pendingMessage = null
-                PendingMessageStorage.save(null)
+                println("=== Message sent successfully (RPC) ===")
+                // NOTE: pendingMessage cleared only when server confirms via stream (handleChatResponse)
 
                 // Show progress message — agent is now processing
                 val isQueued = _runningProjectId.value != null &&

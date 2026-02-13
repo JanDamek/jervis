@@ -328,6 +328,75 @@ které budou implementovány jako separate tickety.
 
 ---
 
+### Refactoring Pending Message System
+
+**Problém:**
+- **Pending message retry logika je křehká** a způsobuje nežádoucí re-execution tasků
+- PendingMessageStorage ukládá zprávy do persistent storage (survives app restart)
+- Při reconnectu se pending message automaticky retry → resetuje DISPATCHED_GPU task → agent znovu zpracovává staré zprávy
+- **Časování je problematické**: message cleared po RPC success, ne po server confirmation
+- Není žádný timeout - staré pending messages (dny/týdny) se retry i když už nejsou relevantní
+- Chybí viditelnost pro uživatele - není jasné, že message je pending a bude retry
+
+**Současné chování:**
+1. User pošle zprávu → `sendMessage()` volá RPC
+2. Při chybě → `pendingMessage = text`, `PendingMessageStorage.save(text)`
+3. App restart → `init` načte pending message z persistent storage
+4. `reloadHistory()` → `pendingMessage?.let { sendMessage() }` → automatický retry
+5. ❌ **Problém**: Pokud RPC uspěl ale nepřišlo potvrzení ze streamu, zpráva zůstane pending
+6. ❌ **Problém**: Staré zprávy (hodiny/dny staré) se retry i když už nejsou relevantní
+7. ❌ **Problém**: Retry při reconnectu může resetovat DISPATCHED_GPU task → re-execution
+
+**Quick fix (implementováno 2026-02-13):**
+- ✅ Pending message se maže až po **server confirmation** (USER_MESSAGE echo ze streamu), ne po RPC success
+- ✅ Zkontroluje se `pendingMessage == response.message` před vymazáním
+- Stále zbývá refactoring celého systému
+
+**Požadovaný refactoring:**
+1. **Timeout pro pending messages** - zprávy starší než X hodin automaticky zahodit
+   - Config: `PENDING_MESSAGE_TIMEOUT_HOURS = 24` (default)
+   - Při načtení z storage: zkontrolovat timestamp, zahodit staré
+   - Metadata: `{text: string, timestamp: ISO8601, attemptCount: number}`
+
+2. **Viditelnost pro uživatele** - jasně ukázat pending message v UI
+   - Banner/alert: "Máte neodeslané zprávy: [text] (před X hodinami)"
+   - Tlačítka: "Odeslat znovu" | "Zahodit"
+   - Ne automatický retry bez user confirmation pro staré zprávy (>1h)
+
+3. **Exponential backoff pro retry** - ne okamžitý retry při každém reconnectu
+   - První retry: okamžitě
+   - Druhý retry: po 5s
+   - Třetí retry: po 30s
+   - Čtvrtý retry: po 5min
+   - Pak už jen manuální retry z UI
+
+4. **Server-side deduplication** - prevent duplicate processing
+   - Client-side message ID: `UUID.randomUUID()` při vytváření zprávy
+   - RPC: `ChatRequestDto(text, context, messageId)`
+   - Server: zkontrolovat `ChatMessageDocument.clientMessageId` - skip duplicates
+   - Idempotence: stejný messageId = skip, vrátit success
+
+5. **Robustnější error handling** - rozlišit typy errorů
+   - Network error (timeout, connection refused) → retry má smysl
+   - Server error (400, 500) → retry nemá smysl, user musí opravit
+   - UI: zobrazit konkrétní error, ne generický "Nepodařilo se odeslat"
+
+**Implementace:**
+- `shared/ui-common/.../MainViewModel.kt` - timeout check, exponential backoff
+- `shared/ui-common/.../storage/PendingMessageStorage.kt` - metadata support (timestamp, attemptCount)
+- `shared/ui-common/.../screens/MainScreen.kt` - pending message banner UI
+- `shared/common-dto/.../ChatRequestDto.kt` - add `messageId: String?` field
+- `backend/server/.../rpc/AgentOrchestratorRpcImpl.kt` - deduplication check
+- `backend/server/.../entity/ChatMessageDocument.kt` - add `clientMessageId: String?` field
+
+**Priorita:** High (aktuálně způsobuje nežádoucí re-execution tasků)
+**Complexity:** Medium
+**Status:** Planned (quick fix implementován, full refactoring pending)
+
+**Poznámka:** Pending message systém je kritický pro UX, ale současná implementace je křehká. Full refactoring vyžaduje změny v DTO, server logice a UI.
+
+---
+
 ## Další TODOs
 
 _(Další features se budou přidávat sem podle potřeby)_
