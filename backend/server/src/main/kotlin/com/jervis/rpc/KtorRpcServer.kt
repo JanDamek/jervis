@@ -71,8 +71,8 @@ class KtorRpcServer(
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
                         install(WebSockets) {
                             maxFrameSize = Long.MAX_VALUE
-                            pingPeriod = java.time.Duration.ofSeconds(30)
-                            timeout = java.time.Duration.ofSeconds(15)
+                            pingPeriodMillis = 30000  // 30 seconds
+                            timeoutMillis = 15000     // 15 seconds
                         }
                         install(ContentNegotiation) {
                             json(Json { ignoreUnknownKeys = true })
