@@ -153,17 +153,20 @@ class OllamaRouter:
             if loaded:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 5. No GPU available – CPU fallback for background ───────────
+        # ── 5. Try to make space on GPU if idle (unload IDLE models) ───
         if priority >= Priority.BACKGROUND:
+            gpu = self.gpu_pool.find_least_busy()
+            if gpu and gpu.active_request_count() == 0:
+                # GPU is IDLE - unload old models and load requested model
+                await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                if loaded:
+                    return await self._send_to_gpu(gpu, request)
+            # No idle GPU - fallback to CPU
             return await self._send_to_cpu(request)
 
-        # ── 6. Mid-priority (CODING, VLM) – try to swap models on GPU ──
-        gpu = self.gpu_pool.find_least_busy()
-        if gpu and gpu.active_request_count() == 0:
-            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-            loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-            if loaded:
-                return await self._send_to_gpu(gpu, request)
+        # ── 6. Mid-priority (CODING, VLM) – already handled above ──────
+        # (CODING/VLM would have been routed in step 5 if GPU was idle)
 
         # Last resort – CPU
         return await self._send_to_cpu(request)
@@ -266,7 +269,7 @@ class OllamaRouter:
                 await self.gpu_pool.unload_all(gpu, self._mgmt_client, except_models={req.model})
                 model_loaded = await self.gpu_pool.load_model(
                     gpu, req.model, self._mgmt_client,
-                    keep_alive="30m",
+                    keep_alive=settings.default_keep_alive,
                 )
 
             return AnnounceResponse(

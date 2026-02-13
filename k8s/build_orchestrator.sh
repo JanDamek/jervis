@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
+
 SERVICE_NAME="jervis-orchestrator"
 DOCKERFILE="backend/service-orchestrator/Dockerfile"
 DEPLOY_NAME="orchestrator"
@@ -38,9 +43,13 @@ echo "✓ Docker images pushed"
 # Deploy
 echo "Step 3/3: Deploying to Kubernetes..."
 # Apply RBAC (ServiceAccount, Role, RoleBinding for K8s Job management)
-kubectl apply -f "${PROJECT_ROOT}/k8s/orchestrator-rbac.yaml" -n "${NAMESPACE}"
+kubectl apply -f "$SCRIPT_DIR/orchestrator-rbac.yaml" -n "${NAMESPACE}"
 # Apply deployment + service
-kubectl apply -f "${PROJECT_ROOT}/k8s/app_orchestrator.yaml" -n "${NAMESPACE}"
+kubectl apply -f "$SCRIPT_DIR/app_orchestrator.yaml" -n "${NAMESPACE}"
+
+# Validate YAML changes propagated to K8s
+validate_deployment_spec "jervis-orchestrator" "$NAMESPACE"
+
 # Update image to force restart
 kubectl set image deployment/jervis-orchestrator orchestrator=${IMAGE_VERSIONED} -n ${NAMESPACE}
 kubectl rollout status deployment/jervis-orchestrator -n ${NAMESPACE}

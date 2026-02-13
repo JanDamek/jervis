@@ -54,11 +54,13 @@ from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.kotlin_client import kotlin_client
 from app.whisper.correction_agent import correction_agent
+from app.logging_utils import LocalTimeFormatter
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
+# Configure logging with local timezone
+handler = logging.StreamHandler()
+handler.setFormatter(LocalTimeFormatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+logging.root.addHandler(handler)
+logging.root.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Suppress MongoDB heartbeat spam — pymongo DEBUG logs are noise
@@ -84,9 +86,9 @@ _active_streams: dict[str, asyncio.Queue] = {}
 # In-memory store for active orchestration asyncio tasks (for cancellation)
 _active_tasks: dict[str, asyncio.Task] = {}
 
-# Concurrency control: only one orchestration at a time
-# LLM (Ollama/Anthropic) can't handle multiple concurrent requests efficiently
-_orchestration_semaphore = asyncio.Semaphore(1)
+# Concurrency: Router handles GPU/CPU routing, no artificial limit needed
+# Multiple orchestrations can run concurrently - router will manage resources
+_orchestration_semaphore = asyncio.Semaphore(10)  # Allow up to 10 concurrent orchestrations
 
 
 @asynccontextmanager
@@ -281,12 +283,15 @@ async def orchestrate_stream(request: OrchestrateRequest):
         )
 
     thread_id = f"thread-{request.task_id}-{uuid.uuid4().hex[:8]}"
+    logger.info("ORCHESTRATE_STREAM_RECEIVED | task_id=%s | thread_id=%s", request.task_id, thread_id)
     queue: asyncio.Queue = asyncio.Queue()
     _active_streams[thread_id] = queue
 
     # Run orchestration in background with semaphore, pushing events to queue
+    logger.info("CREATING_BACKGROUND_TASK | thread_id=%s", thread_id)
     task = asyncio.create_task(_run_and_stream(request, thread_id, queue))
     _active_tasks[thread_id] = task
+    logger.info("BACKGROUND_TASK_CREATED | thread_id=%s | task_done=%s", thread_id, task.done())
 
     return {"thread_id": thread_id, "stream_url": f"/stream/{thread_id}"}
 
@@ -322,7 +327,8 @@ async def _run_and_stream(
     - Completion/error/interrupt is pushed via report_status_change()
     - SSE queue is still maintained for direct stream subscribers
     """
-    logger.info("ORCHESTRATION_START | thread_id=%s | task_id=%s | query=%s", thread_id, request.task_id, request.task.query[:100])
+    query_preview = str(request.query)[:100] if request.query else "NO_QUERY"
+    logger.info("ORCHESTRATION_START | thread_id=%s | task_id=%s | query=%s", thread_id, request.task_id, query_preview)
     try:
         async with _orchestration_semaphore:
             async for event in run_orchestration_streaming(request, thread_id):

@@ -27,11 +27,14 @@ from .models import (
 from .proxy import proxy_passthrough_get, proxy_passthrough_head
 from .router_core import OllamaRouter
 from . import metrics as m
+from .logging_utils import LocalTimeFormatter
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
+# Configure logging with local timezone
+handler = logging.StreamHandler()
+handler.setFormatter(LocalTimeFormatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+logging.root.addHandler(handler)
+logging.root.setLevel(logging.INFO)
+
 logger = logging.getLogger("ollama-router")
 
 

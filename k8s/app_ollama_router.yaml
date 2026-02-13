@@ -14,7 +14,6 @@ spec:
       labels:
         app: jervis-ollama-router
     spec:
-      hostNetwork: true
       containers:
         - name: router
           image: registry.damek-soft.eu/jandamek/jervis-ollama-router:latest
@@ -46,3 +45,17 @@ spec:
             periodSeconds: 10
       imagePullSecrets:
         - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-ollama-router
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-ollama-router
+  ports:
+    - protocol: TCP
+      port: 11430
+      targetPort: 11430
+  type: ClusterIP

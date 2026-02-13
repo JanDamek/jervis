@@ -6,12 +6,13 @@ from typing import AsyncGenerator
 from fastapi import Depends, FastAPI
 
 from app.core.config import settings
+from app.logging_utils import LocalTimeFormatter
 
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# Configure root logger with local timezone
+handler = logging.StreamHandler()
+handler.setFormatter(LocalTimeFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.root.addHandler(handler)
+logging.root.setLevel(logging.INFO)
 
 # Suppress noisy httpx INFO logs (every HTTP request to Weaviate/Ollama/etc.)
 logging.getLogger("httpx").setLevel(logging.WARNING)

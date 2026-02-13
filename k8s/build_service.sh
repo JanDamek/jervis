@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
+
 # Config
 SERVICE_NAME=$1
 MODULE=$2
@@ -78,10 +83,14 @@ echo "Step 4/4: Deploying to Kubernetes..."
 # Fix for service names like jervis-coding-engine -> app_coding_engine.yaml
 CLEAN_NAME=${DEPLOY_NAME#jervis-}
 CLEAN_NAME=${CLEAN_NAME//-/_}
-YAML_FILE="/Users/damekjan/git/jervis/k8s/app_${CLEAN_NAME}.yaml"
+YAML_FILE="$SCRIPT_DIR/app_${CLEAN_NAME}.yaml"
 
 # Apply deployment - kubectl will decide if update is needed
 kubectl apply -f "$YAML_FILE" -n "${NAMESPACE}"
+
+# Validate YAML changes propagated to K8s
+validate_deployment_spec "$DEPLOY_NAME" "$NAMESPACE"
+
 kubectl rollout restart deployment/${DEPLOY_NAME} -n "${NAMESPACE}"
 kubectl get pods -n "${NAMESPACE}" -l "app=${DEPLOY_NAME}"
 echo "✓ ${DEPLOY_NAME} deployment applied"

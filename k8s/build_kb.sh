@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
+
 SERVICE_NAME="jervis-knowledgebase"
 DOCKERFILE="backend/service-knowledgebase/Dockerfile"
 DEPLOY_NAME="knowledgebase"
@@ -37,7 +42,12 @@ echo "✓ Docker images pushed"
 
 # Deploy to Kubernetes
 echo "Step 3/3: Deploying to Kubernetes..."
-kubectl apply -f "${PROJECT_ROOT}/k8s/app_knowledgebase.yaml" -n "${NAMESPACE}"
+kubectl apply -f "$SCRIPT_DIR/app_knowledgebase.yaml" -n "${NAMESPACE}"
+
+# Validate YAML changes propagated to K8s (both read and write deployments)
+validate_deployment_spec "jervis-knowledgebase-read" "$NAMESPACE"
+validate_deployment_spec "jervis-knowledgebase-write" "$NAMESPACE"
+
 # Update both read and write deployments
 kubectl set image deployment/jervis-knowledgebase-read knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}
 kubectl set image deployment/jervis-knowledgebase-write knowledgebase=${IMAGE_VERSIONED} -n ${NAMESPACE}

@@ -4,6 +4,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
+
 REGISTRY="registry.damek-soft.eu/jandamek"
 SERVICE_NAME="jervis-ollama-router"
 VERSION=$(git rev-parse --short HEAD)-$(date +%Y%m%d-%H%M%S)
@@ -32,6 +35,10 @@ echo "✓ Docker images pushed"
 echo "Step 3/3: Deploying to Kubernetes..."
 cd "$PROJECT_ROOT/k8s"
 kubectl apply -f app_ollama_router.yaml
+
+# Validate YAML changes propagated to K8s
+validate_deployment_spec "$SERVICE_NAME" "jervis"
+
 kubectl set image deployment/$SERVICE_NAME router="$REGISTRY/$SERVICE_NAME:$VERSION" -n jervis
 kubectl rollout status deployment/$SERVICE_NAME -n jervis --timeout=300s
 

@@ -181,19 +181,36 @@ class GpuPool:
         backend: GpuBackend,
         model: str,
         http_client: httpx.AsyncClient,
-        keep_alive: str = "30m",
+        keep_alive: str | None = None,
     ) -> bool:
-        """Load a model into GPU VRAM via empty-prompt generate call."""
+        """Load a model into GPU VRAM via empty-prompt generate/embeddings call."""
+        from .config import settings
+        from .models import EMBEDDING_MODELS
+
+        if keep_alive is None:
+            keep_alive = settings.default_keep_alive
+
+        # Use correct endpoint based on model type
+        is_embedding = model in EMBEDDING_MODELS
+        endpoint = "/api/embeddings" if is_embedding else "/api/generate"
+        payload = {
+            "model": model,
+            "keep_alive": keep_alive,
+        }
+
+        if is_embedding:
+            # Embeddings endpoint requires input, not prompt
+            payload["input"] = ""
+        else:
+            # Generate endpoint uses prompt
+            payload["prompt"] = ""
+            payload["stream"] = False
+
         try:
             logger.info("Loading model %s on GPU %s (keep_alive=%s)", model, backend.name, keep_alive)
             resp = await http_client.post(
-                f"{backend.url}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": "",
-                    "keep_alive": keep_alive,
-                    "stream": False,
-                },
+                f"{backend.url}{endpoint}",
+                json=payload,
                 timeout=settings.model_load_timeout_s,
             )
             resp.raise_for_status()
@@ -212,16 +229,29 @@ class GpuPool:
         http_client: httpx.AsyncClient,
     ) -> bool:
         """Unload a model from GPU VRAM via keep_alive=0."""
+        from .models import EMBEDDING_MODELS
+
+        # Use correct endpoint based on model type
+        is_embedding = model in EMBEDDING_MODELS
+        endpoint = "/api/embeddings" if is_embedding else "/api/generate"
+        payload = {
+            "model": model,
+            "keep_alive": "0",
+        }
+
+        if is_embedding:
+            # Embeddings endpoint requires input, not prompt
+            payload["input"] = ""
+        else:
+            # Generate endpoint uses prompt
+            payload["prompt"] = ""
+            payload["stream"] = False
+
         try:
             logger.info("Unloading model %s from GPU %s", model, backend.name)
             resp = await http_client.post(
-                f"{backend.url}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": "",
-                    "keep_alive": "0",
-                    "stream": False,
-                },
+                f"{backend.url}{endpoint}",
+                json=payload,
                 timeout=30.0,
             )
             resp.raise_for_status()

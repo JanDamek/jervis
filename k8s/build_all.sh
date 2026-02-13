@@ -1,9 +1,17 @@
 #!/bin/bash
 set -e
 
-K8S_DIR="/Users/damekjan/git/jervis/k8s"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+K8S_DIR="$SCRIPT_DIR"
+
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
 
 echo "=== Building and deploying all Jervis services ==="
+echo ""
+
+# Validate common resources before deploying services
+validate_common_resources "jervis"
 echo ""
 
 # Build persistent services (Deployments)

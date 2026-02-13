@@ -259,7 +259,11 @@ class LLMExtractionQueue:
             return task
         except sqlite3.Error as e:
             conn.rollback()
-            logger.error("Failed to dequeue task: %s", e)
+            logger.error("Failed to dequeue task: %s", e, exc_info=True)
+            return None
+        except Exception as e:
+            conn.rollback()
+            logger.error("Unexpected error in dequeue: %s", e, exc_info=True)
             return None
         finally:
             conn.close()

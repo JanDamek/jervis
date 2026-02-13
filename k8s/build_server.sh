@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared validation functions
+source "$SCRIPT_DIR/validate_deployment.sh"
+
 # Config
 SERVICE_NAME="jervis-server"
 MODULE=":backend:server"
@@ -31,7 +36,11 @@ echo "✓ Docker image pushed"
 
 # 4. Deploy
 echo "Step 4/4: Deploying to Kubernetes..."
-kubectl apply -f "/Users/damekjan/git/jervis/k8s/app_server.yaml" -n "${NAMESPACE}"
+kubectl apply -f "$SCRIPT_DIR/app_server.yaml" -n "${NAMESPACE}"
+
+# Validate YAML changes propagated to K8s
+validate_deployment_spec "$SERVICE_NAME" "$NAMESPACE"
+
 kubectl rollout restart deployment/${SERVICE_NAME} -n "${NAMESPACE}"
 kubectl get pods -n "${NAMESPACE}" -l "app=${SERVICE_NAME}"
 echo "✓ ${SERVICE_NAME} deployment triggered"

@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     proxy_connect_timeout_s: float = 10.0
     proxy_write_timeout_s: float = 30.0
 
+    # ── Model keep_alive ────────────────────────────────────────────────
+    default_keep_alive: str = "10m"  # Must match Ollama server's OLLAMA_KEEP_ALIVE
+
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish
     preempt_grace_s: float = 2.0        # grace before killing streaming

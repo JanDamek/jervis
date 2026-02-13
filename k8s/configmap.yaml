@@ -148,7 +148,7 @@ data:
         default-model: "qwen3-coder-tool:30b"
         paid-provider: anthropic
         paid-model: "claude-3-5-sonnet-20241022"
-        ollama-base-url: http://192.168.100.117:11430  # Via Ollama Router
+        ollama-base-url: http://jervis-ollama-router:11430  # Via Ollama Router
       claude:
         default-provider: anthropic  # Claude Code always uses cloud
         default-model: "claude-sonnet-4-20250514"
@@ -193,9 +193,9 @@ metadata:
   namespace: jervis
 data:
   # -- Ollama endpoints (all via Ollama Router on :11430) ---------------------
-  OLLAMA_BASE_URL: "http://192.168.100.117:11430"             # Via router → GPU/CPU
-  OLLAMA_EMBEDDING_BASE_URL: "http://192.168.100.117:11430"   # Via router → GPU/CPU
-  OLLAMA_INGEST_BASE_URL: "http://192.168.100.117:11430"      # Via router → GPU/CPU
+  OLLAMA_BASE_URL: "http://jervis-ollama-router:11430"             # Via router → GPU/CPU
+  OLLAMA_EMBEDDING_BASE_URL: "http://jervis-ollama-router:11430"   # Via router → GPU/CPU
+  OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"      # Via router → GPU/CPU
   # -- Ingest model routing (see docs/structures.md § "Model Routing") --------
   INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check
   INGEST_MODEL_COMPLEX: "qwen2.5:14b"                         # Accurate: summary + entity extraction
@@ -230,7 +230,7 @@ data:
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
   SEARXNG_URL: "http://192.168.100.117:30053"
   # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
-  OLLAMA_API_BASE: "http://192.168.100.117:11430"
+  OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
 
 ---
 # =============================================================================
@@ -251,3 +251,4 @@ data:
   ORCHESTRATOR_IDLE_TIMEOUT_S: "300"
   MODEL_LOAD_TIMEOUT_S: "120"
   BACKGROUND_LOAD_DELAY_S: "5"
+  DEFAULT_KEEP_ALIVE: "10m"
