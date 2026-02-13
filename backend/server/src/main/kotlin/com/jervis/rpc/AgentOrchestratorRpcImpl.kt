@@ -10,7 +10,9 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.mapper.toDomain
 import com.jervis.mapper.toDto
+import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.repository.ChatMessageRepository
+import com.jervis.repository.ChatSummaryRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.service.IAgentOrchestratorService
 import kotlinx.coroutines.CoroutineScope
@@ -22,13 +24,18 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 @Component
 class AgentOrchestratorRpcImpl(
     private val chatMessageRepository: ChatMessageRepository,
+    private val chatSummaryRepository: ChatSummaryRepository,
     private val taskRepository: TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
     private val projectService: com.jervis.service.project.ProjectService,
@@ -37,6 +44,9 @@ class AgentOrchestratorRpcImpl(
 ) : IAgentOrchestratorService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    @Value("\${jervis.attachments.storage-dir:#{systemProperties['java.io.tmpdir']}/jervis-attachments}")
+    private lateinit var attachmentStorageDir: String
 
     private val chatStreams = ConcurrentHashMap<String, MutableSharedFlow<ChatResponseDto>>()
 
@@ -325,7 +335,7 @@ class AgentOrchestratorRpcImpl(
                         state = com.jervis.dto.TaskStateEnum.READY_FOR_GPU,
                         processingMode = com.jervis.entity.ProcessingMode.FOREGROUND,
                         queuePosition = maxPosition + 1,
-                        attachments = request.attachments.map { it.toDomain() },
+                        attachments = request.attachments.map { saveAndMapAttachment(it) },
                     )
                 taskDocument = taskRepository.save(taskDocument)
                 logger.info {
@@ -409,11 +419,12 @@ class AgentOrchestratorRpcImpl(
         clientId: String,
         projectId: String?,
         limit: Int,
+        beforeSequence: Long?,
     ): ChatHistoryDto {
         val clientIdTyped = ClientId.fromString(clientId)
         val projectIdTyped = if (projectId.isNullOrBlank()) null else ProjectId.fromString(projectId)
 
-        logger.info { "CHAT_HISTORY_REQUEST | clientId=$clientId | projectId=$projectId | limit=$limit" }
+        logger.info { "CHAT_HISTORY_REQUEST | clientId=$clientId | projectId=$projectId | limit=$limit | beforeSequence=$beforeSequence" }
 
         val activeTask =
             taskRepository
@@ -430,18 +441,75 @@ class AgentOrchestratorRpcImpl(
             return ChatHistoryDto(messages = emptyList())
         }
 
-        // Get last N messages from ChatMessageDocument collection
-        val messages =
+        // Fetch limit+1 to determine if there are more messages
+        val fetchLimit = limit + 1
+        val rawMessages = if (beforeSequence != null) {
+            chatMessageRepository
+                .findByTaskIdAndSequenceLessThanOrderBySequenceDesc(activeTask.id, beforeSequence)
+                .toList()
+                .take(fetchLimit)
+        } else {
             chatMessageRepository
                 .findByTaskIdOrderBySequenceAsc(activeTask.id)
                 .toList()
-                .takeLast(limit)
-                .map { it.toDto() }
+                .takeLast(fetchLimit)
+        }
+
+        val hasMore = rawMessages.size > limit
+        val trimmedMessages = if (hasMore) {
+            if (beforeSequence != null) {
+                // Desc order from repo, trim oldest (last in list), then reverse
+                rawMessages.dropLast(1)
+            } else {
+                // Asc order, trim oldest (first in list)
+                rawMessages.drop(1)
+            }
+        } else {
+            rawMessages
+        }
+
+        // Ensure ascending order for UI display
+        val messages = if (beforeSequence != null) {
+            trimmedMessages.sortedBy { it.sequence }.map { it.toDto() }
+        } else {
+            trimmedMessages.map { it.toDto() }
+        }
+
+        val oldestSequence = messages.firstOrNull()?.sequence
+
+        // Load compression boundaries that overlap with visible message range
+        val compressionBoundaries = try {
+            val summaries = chatSummaryRepository
+                .findByTaskIdOrderBySequenceEndAsc(activeTask.id)
+                .toList()
+
+            val minSeq = messages.firstOrNull()?.sequence ?: 0L
+            val maxSeq = messages.lastOrNull()?.sequence ?: Long.MAX_VALUE
+
+            summaries
+                .filter { it.sequenceEnd >= minSeq && it.sequenceEnd <= maxSeq }
+                .map { summary ->
+                    CompressionBoundaryDto(
+                        afterSequence = summary.sequenceEnd,
+                        summary = summary.summary,
+                        compressedMessageCount = summary.messageCount,
+                        topics = summary.topics,
+                    )
+                }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to load compression boundaries for taskId=${activeTask.id}" }
+            emptyList()
+        }
 
         logger.info {
-            "CHAT_HISTORY_FOUND | clientId=$clientId | projectId=$projectId | taskId=${activeTask.id} | messageCount=${messages.size}"
+            "CHAT_HISTORY_FOUND | clientId=$clientId | projectId=$projectId | taskId=${activeTask.id} | messageCount=${messages.size} | hasMore=$hasMore | compressionBoundaries=${compressionBoundaries.size}"
         }
-        return ChatHistoryDto(messages = messages)
+        return ChatHistoryDto(
+            messages = messages,
+            hasMore = hasMore,
+            oldestSequence = oldestSequence,
+            compressionBoundaries = compressionBoundaries,
+        )
     }
 
     override fun subscribeToQueueStatus(clientId: String): Flow<ChatResponseDto> {
@@ -660,6 +728,33 @@ class AgentOrchestratorRpcImpl(
             taskType = taskTypeLabel,
             processingMode = this.processingMode.name,
             queuePosition = this.queuePosition,
+        )
+    }
+
+    /**
+     * Save base64-encoded attachment to disk and map to domain object.
+     * If contentBase64 is present, decode and save; otherwise use existing storagePath.
+     */
+    private fun saveAndMapAttachment(dto: com.jervis.dto.AttachmentDto): com.jervis.domain.atlassian.AttachmentMetadata {
+        val storagePath = if (!dto.contentBase64.isNullOrBlank()) {
+            val storageDir = Path.of(attachmentStorageDir)
+            Files.createDirectories(storageDir)
+            val targetFile = storageDir.resolve("${dto.id}_${dto.filename}")
+            val bytes = Base64.getDecoder().decode(dto.contentBase64)
+            Files.write(targetFile, bytes)
+            logger.info { "ATTACHMENT_SAVED | id=${dto.id} | filename=${dto.filename} | size=${bytes.size} | path=$targetFile" }
+            targetFile.toString()
+        } else {
+            dto.storagePath
+        }
+
+        return com.jervis.domain.atlassian.AttachmentMetadata(
+            id = dto.id,
+            filename = dto.filename,
+            mimeType = dto.mimeType,
+            sizeBytes = dto.sizeBytes,
+            storagePath = storagePath,
+            type = com.jervis.domain.atlassian.classifyAttachmentType(dto.mimeType),
         )
     }
 

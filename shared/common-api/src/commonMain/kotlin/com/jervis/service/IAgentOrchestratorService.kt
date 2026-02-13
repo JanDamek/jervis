@@ -30,8 +30,9 @@ interface IAgentOrchestratorService {
     /**
      * Retrieve last N messages from chat history for display.
      * Used when loading chat to show previous conversation.
+     * @param beforeSequence If provided, load messages before this sequence (pagination cursor).
      */
-    suspend fun getChatHistory(clientId: String, projectId: String?, limit: Int = 10): ChatHistoryDto
+    suspend fun getChatHistory(clientId: String, projectId: String?, limit: Int = 10, beforeSequence: Long? = null): ChatHistoryDto
 
     // --- Queue Management ---
 

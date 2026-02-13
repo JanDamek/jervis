@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,18 +21,23 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,7 +47,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.util.copyToClipboard
+import com.jervis.ui.util.formatMessageTime
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
@@ -49,6 +58,11 @@ import com.mikepenz.markdown.m3.markdownTypography
 @Composable
 internal fun ChatArea(
     messages: List<ChatMessage>,
+    hasMore: Boolean = false,
+    isLoadingMore: Boolean = false,
+    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
+    onLoadMore: () -> Unit = {},
+    onEditMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -77,11 +91,121 @@ internal fun ChatArea(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
+                // "Load more" button at top
+                if (hasMore) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isLoadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                TextButton(onClick = onLoadMore) {
+                                    Text("Načíst starší zprávy")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 items(messages.size) { index ->
-                    ChatMessageItem(messages[index])
+                    val message = messages[index]
+
+                    // Check for compression boundary before this message
+                    if (index > 0) {
+                        val prevSequence = messages[index - 1].sequence
+                        val currSequence = message.sequence
+                        if (prevSequence != null && currSequence != null) {
+                            val boundary = compressionBoundaries.find { b ->
+                                b.afterSequence in prevSequence until currSequence
+                            }
+                            if (boundary != null) {
+                                CompressionBoundaryIndicator(boundary)
+                            }
+                        }
+                    }
+
+                    ChatMessageItem(
+                        message = message,
+                        onEditMessage = onEditMessage,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Visual indicator for context compression boundaries.
+ * Shows a divider with summary of compressed messages.
+ */
+@Composable
+private fun CompressionBoundaryIndicator(
+    boundary: CompressionBoundaryDto,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+    ) {
+        // Divider with icon and label
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            HorizontalDivider(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    Icons.Default.Summarize,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                )
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(
+                        text = "Komprese kontextu (${boundary.compressedMessageCount} zpráv shrnuto)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+            }
+            HorizontalDivider(modifier = Modifier.weight(1f))
+        }
+
+        // Expandable summary
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = boundary.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+                if (boundary.topics.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Témata: ${boundary.topics.joinToString(", ")}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    )
                 }
             }
         }
@@ -91,6 +215,7 @@ internal fun ChatArea(
 @Composable
 private fun ChatMessageItem(
     message: ChatMessage,
+    onEditMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -135,7 +260,7 @@ private fun ChatMessageItem(
     } else {
         // standard chat bubble - iMessage/WhatsApp style (width based on content)
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-            val maxBubbleWidth = maxWidth - 32.dp  // Account for LazyColumn's 16.dp padding on each side
+            val maxBubbleWidth = maxWidth - 32.dp  // Account for LazyColumn's padding
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -157,23 +282,63 @@ private fun ChatMessageItem(
                                 },
                         ),
                     modifier = Modifier
-                        .widthIn(min = 48.dp, max = maxBubbleWidth),  // Responsive max width
+                        .widthIn(min = 48.dp, max = maxBubbleWidth),
                 ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(16.dp),
                 ) {
-                    Text(
-                        text =
-                            if (isMe) {
-                                "Já"
-                            } else {
-                                "Asistent"
-                            },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // Header row: sender label + action icons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text =
+                                if (isMe) {
+                                    "Já"
+                                } else {
+                                    "Asistent"
+                                },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                        // Action icons
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(0.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Edit button — only for user messages
+                            if (isMe) {
+                                IconButton(
+                                    onClick = { onEditMessage(message.text) },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Upravit",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    )
+                                }
+                            }
+                            // Copy button — for both user and assistant
+                            IconButton(
+                                onClick = { copyToClipboard(message.text) },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Kopírovat",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     // Message content - Markdown for Assistant, plain text for User
                     SelectionContainer {
@@ -203,12 +368,12 @@ private fun ChatMessageItem(
                         }
                     }
 
-                    // Show timestamp if available
+                    // Show timestamp if available — formatted for humans
                     message.timestamp?.let { ts ->
                         if (ts.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = ts,
+                                text = formatMessageTime(ts),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             )
