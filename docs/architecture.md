@@ -9,17 +9,18 @@
 
 1. [Framework Overview](#framework-overview)
 2. [Workspace & Directory Architecture](#workspace--directory-architecture)
-3. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
-4. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
-5. [Knowledge Graph Design](#knowledge-graph-design)
-6. [Vision Processing Pipeline](#vision-processing-pipeline)
-7. [Transcript Correction Pipeline](#transcript-correction-pipeline)
-8. [Smart Model Selector](#smart-model-selector)
-9. [Security Architecture](#security-architecture)
-10. [Coding Agents](#coding-agents)
-11. [Python Orchestrator](#python-orchestrator)
-12. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
-13. [Notification System](#notification-system)
+3. [GPU/CPU Routing & Ollama Router](#gpucpu-routing--ollama-router)
+4. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
+5. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
+6. [Knowledge Graph Design](#knowledge-graph-design)
+7. [Vision Processing Pipeline](#vision-processing-pipeline)
+8. [Transcript Correction Pipeline](#transcript-correction-pipeline)
+9. [Smart Model Selector](#smart-model-selector)
+10. [Security Architecture](#security-architecture)
+11. [Coding Agents](#coding-agents)
+12. [Python Orchestrator](#python-orchestrator)
+13. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
+14. [Notification System](#notification-system)
 
 ---
 
@@ -131,6 +132,105 @@ if (status != WorkspaceStatus.READY) {
     return "Workspace se připravuje, zkus to za chvíli..."
 }
 ```
+
+---
+
+## GPU/CPU Routing & Ollama Router
+
+### Overview
+
+**Ollama Router** is a transparent proxy service that intelligently routes LLM requests between GPU and CPU backends based on priority, resource availability, and model requirements.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     All LLM Requests                             │
+│  (Orchestrator, KB, Correction Agent)                           │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+                ┌───────────────────────┐
+                │   Ollama Router       │
+                │   (port 11430)        │
+                │                       │
+                │ • Priority routing    │
+                │ • GPU/CPU selection   │
+                │ • Model loading       │
+                │ • Request queuing     │
+                └───────────┬───────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+    ┌─────────────────┐         ┌─────────────────┐
+    │  GPU Backend    │         │  CPU Backend    │
+    │  (port 11434)   │         │  (port 11435)   │
+    │                 │         │                 │
+    │  • P40 24GB     │         │  • 200GB RAM    │
+    │  • Fast         │         │  • Unlimited    │
+    │  • Limited VRAM │         │  • Slow         │
+    └─────────────────┘         └─────────────────┘
+```
+
+### Priority Levels
+
+1. **ORCHESTRATOR (priority=100)** - Reserved GPU slot for orchestrator LLM calls
+   - Automatically reserves GPU on first request
+   - Holds reservation for 30min or until 5min idle
+   - Cannot be preempted
+
+2. **BACKGROUND (priority=50)** - Background model set (embeddings, small models)
+   - Loaded when GPU is idle
+   - Can be preempted by orchestrator
+
+3. **AUTO (no priority header)** - Standard routing
+   - Routes to GPU if available
+   - Falls back to CPU if GPU busy
+
+### Request Flow
+
+```python
+# 1. Orchestrator calls Ollama Router
+OLLAMA_API_BASE = "http://192.168.100.117:11430"
+
+# 2. Router checks priority header
+X-Ollama-Priority: 100  # Orchestrator requests
+
+# 3. Router selects backend:
+if priority == 100 and gpu_available:
+    route_to_gpu()  # Reserve GPU
+elif gpu_idle:
+    route_to_gpu()  # Use if available
+else:
+    route_to_cpu()  # Fallback
+```
+
+### Configuration
+
+All services configured to use Ollama Router (port 11430):
+
+- **Orchestrator**: `OLLAMA_API_BASE=http://192.168.100.117:11430`
+- **KB (read)**:
+  - `OLLAMA_BASE_URL=http://192.168.100.117:11430` (RAG, chat)
+  - `OLLAMA_EMBEDDING_BASE_URL=http://192.168.100.117:11430` (embeddings)
+  - `OLLAMA_INGEST_BASE_URL=http://192.168.100.117:11430` (graph preparation)
+- **KB (write)**: Same as KB read
+
+### Key Features
+
+- **Transparent proxy** - No code changes needed in services
+- **Priority-based** - Orchestrator gets guaranteed GPU access
+- **Automatic fallback** - CPU backend for overflow
+- **Model management** - Auto-loads/unloads models based on priority
+- **Metrics** - Prometheus metrics for GPU utilization
+
+### Deployment
+
+- K8s deployment: `k8s/app_ollama_router.yaml`
+- ConfigMap: `k8s/configmap.yaml` (jervis-ollama-router-config)
+- Build script: `k8s/build_ollama_router.sh`
+- Service runs with `hostNetwork: true` to access GPU Ollama on localhost
 
 ---
 

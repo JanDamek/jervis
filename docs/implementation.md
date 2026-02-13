@@ -635,6 +635,149 @@ When a Whisper job completes or fails, the result handler in `MeetingTranscripti
 
 ---
 
+## Recent Changes & Deployments (2026-02)
+
+### Ollama Router – Priority-Based GPU/CPU Routing
+
+**Deployed:** 2026-02-13
+
+**What changed:**
+- Added new service `jervis-ollama-router` (port 11430) as transparent LLM proxy
+- All Ollama requests now route through Ollama Router instead of direct Ollama
+- Priority-based routing: Orchestrator gets reserved GPU, background tasks use CPU fallback
+
+**Services updated:**
+- Orchestrator: `OLLAMA_API_BASE=http://192.168.100.117:11430`
+- KB (read/write): All 3 URLs point to router (BASE_URL, EMBEDDING_BASE_URL, INGEST_BASE_URL)
+
+**Benefits:**
+- Guaranteed GPU for user-facing requests (orchestrator)
+- Automatic CPU fallback for background tasks
+- Better resource utilization (no GPU blocking on embeddings during orchestration)
+
+**Files:**
+- Service: `backend/service-ollama-router/`
+- K8s deployment: `k8s/app_ollama_router.yaml`
+- Build script: `k8s/build_ollama_router.sh`
+- ConfigMap: `k8s/configmap.yaml` (jervis-ollama-router-config)
+
+---
+
+### kRPC Resilient WebSocket Connection
+
+**Deployed:** 2026-02-13
+
+**What changed:**
+- Added automatic WebSocket reconnection logic in `RpcConnectionManager.kt`
+- Connection state management with exponential backoff retry
+- Graceful handling of connection drops and server restarts
+
+**Files:**
+- `shared/domain/.../di/RpcConnectionManager.kt` - New connection manager
+- `apps/desktop/.../ConnectionState.kt` - Simplified state tracking
+- `backend/server/.../rpc/KtorRpcServer.kt` - WebSocket config (pingPeriodMillis, timeoutMillis)
+
+**Benefits:**
+- UI no longer loses connection on server restart
+- Automatic reconnection without user intervention
+- Cleaner connection state management
+
+---
+
+### Whisper REST In-Memory Queue
+
+**Deployed:** 2026-02-13
+
+**What changed:**
+- Replaced file-based progress tracking with in-memory queue
+- Real-time progress updates via SSE streaming
+- Reduced I/O overhead in Whisper REST mode
+
+**Files:**
+- `backend/service-whisper/whisper_rest_server.py` - In-memory progress queue
+- `backend/server/.../service/meeting/WhisperRestClient.kt` - SSE client updates
+
+**Benefits:**
+- Lower latency for progress updates
+- No file system cleanup needed
+- Better suited for containerized environment
+
+---
+
+### Chat History Error Filtering
+
+**Deployed:** 2026-02-13
+
+**What changed:**
+- Added error message filtering in chat history preparation
+- Prevents error messages from being sent to LLM as context
+- Breaks feedback loop where errors generate more errors
+
+**Implementation:**
+- Kotlin: `ChatHistoryService.isErrorMessage()` - filters at DB read level (PRIMARY)
+- Python intake: `is_error_message()` in `_helpers.py` - filters in intent classification (SECONDARY)
+- Python respond: Same filter in response generation (TERTIARY)
+
+**Filters:**
+- JSON error objects: `{"error": {"type": "...", "message": "..."}}`
+- Plain text: "Error:", "Chyba:", "llm_call_failed", "Operation not allowed"
+
+**Files:**
+- `backend/server/.../service/chat/ChatHistoryService.kt`
+- `backend/service-orchestrator/app/graph/nodes/_helpers.py`
+- `backend/service-orchestrator/app/graph/nodes/intake.py`
+- `backend/service-orchestrator/app/graph/nodes/respond.py`
+
+---
+
+### Enhanced Logging & Health Check Suppression
+
+**Deployed:** 2026-02-13
+
+**What changed:**
+- Suppressed MongoDB DEBUG logs (pymongo heartbeat spam) in Orchestrator
+- Suppressed health check logs in Orchestrator and Ollama Router
+- Added detailed orchestration progress logging (NODE_START, NODE_END, DONE, ERROR)
+
+**Logging added:**
+- `ORCHESTRATION_START` - task begins (with query preview)
+- `ORCHESTRATION_NODE_START` - each node execution (with human-readable message)
+- `ORCHESTRATION_NODE_END` - node completion
+- `ORCHESTRATION_DONE` - final result (with metrics)
+- `ORCHESTRATION_INTERRUPTED` - approval requests
+- `ORCHESTRATION_ERROR` - full exception details with type
+
+**Files:**
+- `backend/service-orchestrator/app/main.py` - Logging filters + progress events
+- `backend/service-ollama-router/app/main.py` - Health check filter
+
+**Benefits:**
+- Clean logs without noise (no MongoDB/health spam)
+- Detailed orchestration flow visibility for debugging
+- Easier to trace errors to specific nodes
+
+---
+
+### Deployment Scripts
+
+All services have dedicated build scripts in `k8s/`:
+
+| Script | Service | Type |
+|--------|---------|------|
+| `build_server.sh` | Kotlin server | Gradle + Docker + K8s deploy |
+| `build_orchestrator.sh` | Orchestrator (Python) | Docker + K8s deploy |
+| `build_kb.sh` | Knowledge Base (Python) | Docker + K8s deploy |
+| `build_whisper.sh` | Whisper (Python) | Docker push only (Job-only) |
+| `build_ollama_router.sh` | Ollama Router (Python) | Docker + K8s deploy (NEW) |
+
+**Helper scripts:**
+- `build_image.sh` - Generic image builder for Job-only services
+- `build_service.sh` - Generic builder for persistent deployments
+- `redeploy_all.sh` - Restart all without rebuild
+- `redeploy_service.sh` - Restart single service
+
+---
+
 ## Summary
 
 ### Key Implementation Principles

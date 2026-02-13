@@ -13,8 +13,110 @@
 
 ## Table of Contents
 
-1. [Graph-Based Routing Architecture](#graph-based-routing-architecture)
-2. [Background Engine & Task Processing](#background-engine--task-processing)
+1. [Ollama Router – Priority-Based GPU/CPU Routing](#ollama-router--priority-based-gpucpu-routing)
+2. [Graph-Based Routing Architecture](#graph-based-routing-architecture)
+3. [Background Engine & Task Processing](#background-engine--task-processing)
+
+---
+
+## Ollama Router – Priority-Based GPU/CPU Routing
+
+### Overview
+
+**All LLM requests** in the system (Orchestrator, KB, Correction Agent) now route through **Ollama Router** (port 11430), which intelligently distributes requests between GPU and CPU backends based on priority and availability.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                 LLM Request Sources                      │
+│                                                          │
+│  • Python Orchestrator (reasoning, planning, response)  │
+│  • Knowledge Base (RAG, embeddings, graph prep)         │
+│  • Correction Agent (transcript corrections)            │
+└────────────────────────┬─────────────────────────────────┘
+                         │
+                         ▼
+              ┌──────────────────────┐
+              │   Ollama Router      │  Port: 11430
+              │   (Priority Proxy)   │  Host: 192.168.100.117
+              │                      │
+              │  Request Analysis:   │
+              │  • Check priority    │
+              │  • Check GPU state   │
+              │  • Route to backend  │
+              └──────┬───────────────┘
+                     │
+       ┌─────────────┴────────────────┐
+       │                              │
+       ▼                              ▼
+┌──────────────┐            ┌──────────────────┐
+│ GPU Backend  │            │  CPU Backend     │
+│ (port 11434) │            │  (port 11435)    │
+│              │            │                  │
+│ • P40 24GB   │            │ • 200GB RAM      │
+│ • Fast       │            │ • Slow           │
+│ • Limited    │            │ • Unlimited cap. │
+└──────────────┘            └──────────────────┘
+```
+
+### Priority Levels
+
+| Priority | Source | GPU Behavior | Preemption |
+|----------|--------|--------------|------------|
+| **100** | Orchestrator (via `X-Ollama-Priority: 100`) | Reserved slot for 30min | Cannot be preempted |
+| **50** | Background tasks | Uses GPU when idle | Preempted by priority 100 |
+| **Auto** | Standard requests (no header) | Routes to GPU if free | Fallback to CPU |
+
+### Request Flow Example
+
+```python
+# 1. Orchestrator makes LLM request
+response = await llm_provider.completion(
+    messages=[...],
+    tier=ModelTier.LOCAL_STANDARD,
+)
+# Internally calls: http://192.168.100.117:11430/api/generate
+# With header: X-Ollama-Priority: 100
+
+# 2. Ollama Router receives request
+#    → Checks priority header (100 = Orchestrator)
+#    → Reserves GPU slot (30min reservation)
+#    → Routes to GPU backend (http://127.0.0.1:11434)
+
+# 3. KB makes embedding request
+embedding = await ollama.embed(
+    model="nomic-embed-text",
+    input="Sample text",
+)
+# Calls: http://192.168.100.117:11430/api/embed
+# No priority header → Auto routing
+
+# 4. Ollama Router receives embedding request
+#    → No priority header → Auto mode
+#    → If GPU idle → route to GPU (fast)
+#    → If GPU busy with orchestrator → route to CPU (slower but works)
+```
+
+### Configuration (All Services)
+
+| Service | Environment Variable | Value |
+|---------|---------------------|-------|
+| **Orchestrator** | `OLLAMA_API_BASE` | `http://192.168.100.117:11430` |
+| **KB (read)** | `OLLAMA_BASE_URL` | `http://192.168.100.117:11430` |
+| | `OLLAMA_EMBEDDING_BASE_URL` | `http://192.168.100.117:11430` |
+| | `OLLAMA_INGEST_BASE_URL` | `http://192.168.100.117:11430` |
+| **KB (write)** | Same as KB read | |
+
+**Key point:** All services transparently use Ollama Router. No code changes needed – just updated environment variables.
+
+### Benefits
+
+1. **Guaranteed GPU for Orchestrator** - User-facing requests never wait
+2. **Automatic fallback** - Background tasks use CPU when GPU busy
+3. **Model management** - Router auto-loads/unloads models by priority
+4. **Transparent** - Services don't know about routing logic
+5. **Metrics** - Prometheus metrics for monitoring GPU utilization
 
 ---
 
