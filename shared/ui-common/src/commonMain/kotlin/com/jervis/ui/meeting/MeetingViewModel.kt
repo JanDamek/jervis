@@ -11,9 +11,9 @@ import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
+import com.jervis.di.RpcConnectionManager
 import com.jervis.dto.events.JervisEvent
 import com.jervis.service.IMeetingService
-import com.jervis.service.INotificationService
 import com.jervis.service.IProjectService
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
@@ -31,8 +31,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.retryWhen
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -46,10 +44,10 @@ sealed class UploadState {
 }
 
 class MeetingViewModel(
+    private val connectionManager: RpcConnectionManager,
     private val meetingService: IMeetingService,
     private val projectService: IProjectService,
     internal val correctionService: com.jervis.service.ITranscriptCorrectionService? = null,
-    private val notificationService: INotificationService? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -168,19 +166,16 @@ class MeetingViewModel(
     fun subscribeToEvents(clientId: String) {
         eventSubscriptionJob?.cancel()
         eventSubscriptionJob = scope.launch {
-            notificationService?.subscribeToEvents(clientId)
-                ?.retryWhen { _, attempt ->
-                    delay(if (attempt < 3) (attempt + 1).seconds else 3.seconds)
-                    true
+            connectionManager.resilientFlow { services ->
+                services.notificationService.subscribeToEvents(clientId)
+            }.collect { event ->
+                when (event) {
+                    is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
+                    is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
+                    is JervisEvent.MeetingCorrectionProgress -> handleCorrectionProgress(event)
+                    else -> {}
                 }
-                ?.collect { event ->
-                    when (event) {
-                        is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
-                        is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
-                        is JervisEvent.MeetingCorrectionProgress -> handleCorrectionProgress(event)
-                        else -> {}
-                    }
-                }
+            }
         }
     }
 

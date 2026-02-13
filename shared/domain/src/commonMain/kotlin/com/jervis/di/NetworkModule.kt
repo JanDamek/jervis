@@ -44,30 +44,21 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Interface for UI applications to handle RPC reconnection.
- */
-interface UiRpcReconnectHandler {
-    suspend fun reconnect()
-}
-
-/**
  * Platform-specific HTTP client creation with SSL configuration
  */
 expect fun createPlatformHttpClient(block: HttpClientConfig<*>.() -> Unit): HttpClient
 
 /**
- * Network module for dependency injection
- * Creates all service instances via RPC or A2A
+ * Stateless factory for HTTP clients, RPC clients, and service stubs.
+ *
+ * Connection lifecycle is managed by [RpcConnectionManager] — this object
+ * only creates instances without storing mutable state.
  */
 object NetworkModule {
-    private var _services: Services? = null
-    private var _rpcClient: KtorRpcClient? = null
-    private var _baseUrl: String? = null
-    private var _httpClient: HttpClient? = null
 
     /**
-     * Create HTTP client with common configuration
-     * Supports self-signed certificates for all platforms
+     * Create HTTP client with common configuration.
+     * Supports self-signed certificates for all platforms.
      */
     @OptIn(ExperimentalSerializationApi::class)
     fun createHttpClient(): HttpClient =
@@ -100,6 +91,9 @@ object NetworkModule {
             }
         }
 
+    /**
+     * Create a KtorRpcClient that opens a WebSocket connection to the server's /rpc endpoint.
+     */
     fun createRpcClient(
         baseUrl: String,
         httpClient: HttpClient,
@@ -125,158 +119,62 @@ object NetworkModule {
     }
 
     /**
-     * Create services directly from base URL.
-     * Preferred method for UI applications - hides RPC client implementation.
+     * Create all service stubs from an RPC client.
      */
-    fun createServicesFromUrl(
-        baseUrl: String,
-        httpClient: HttpClient = createHttpClient(),
-    ): Services {
-        _baseUrl = baseUrl
-        _httpClient = httpClient
-
-        val rpcClient = createRpcClient(baseUrl, httpClient)
-        _rpcClient = rpcClient
-
-        val services = createServices(rpcClient)
-        _services = services
-        return services
-    }
+    fun createServices(rpcClient: KtorRpcClient): Services =
+        Services(
+            projectService = rpcClient.withService<IProjectService>(),
+            clientService = rpcClient.withService<IClientService>(),
+            clientProjectLinkService = rpcClient.withService<IClientProjectLinkService>(),
+            userTaskService = rpcClient.withService<IUserTaskService>(),
+            ragSearchService = rpcClient.withService<IRagSearchService>(),
+            taskSchedulingService = rpcClient.withService<ITaskSchedulingService>(),
+            agentOrchestratorService = rpcClient.withService<IAgentOrchestratorService>(),
+            errorLogService = rpcClient.withService<IErrorLogService>(),
+            gitConfigurationService = rpcClient.withService<IGitConfigurationService>(),
+            pendingTaskService = rpcClient.withService<IPendingTaskService>(),
+            connectionService = rpcClient.withService<IConnectionService>(),
+            notificationService = rpcClient.withService<INotificationService>(),
+            bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>(),
+            integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>(),
+            codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>(),
+            whisperSettingsService = rpcClient.withService<IWhisperSettingsService>(),
+            pollingIntervalService = rpcClient.withService<IPollingIntervalService>(),
+            projectGroupService = rpcClient.withService<IProjectGroupService>(),
+            environmentService = rpcClient.withService<IEnvironmentService>(),
+            meetingService = rpcClient.withService<IMeetingService>(),
+            transcriptCorrectionService = rpcClient.withService<ITranscriptCorrectionService>(),
+            deviceTokenService = rpcClient.withService<IDeviceTokenService>(),
+            indexingQueueService = rpcClient.withService<IIndexingQueueService>(),
+        )
 
     /**
-     * Reconnect RPC client and refresh all service stubs.
-     * Recreates the HttpClient to handle cases where the underlying engine
-     * is in a broken state (common on iOS after background/foreground transitions).
+     * Immutable container for all service stubs.
+     * A new instance is created on each reconnect by [RpcConnectionManager].
      */
-    suspend fun reconnect() {
-        val baseUrl = _baseUrl ?: return
-
-        println("NetworkModule: Reconnecting to $baseUrl (recreating HttpClient)...")
-        try {
-            // Close old RPC client to release WebSocket resources
-            try { _rpcClient?.close() } catch (_: Exception) {}
-
-            // Close old HttpClient — on iOS the Darwin engine can get stuck
-            try { _httpClient?.close() } catch (_: Exception) {}
-
-            // Create fresh HttpClient and RPC client
-            val newHttpClient = createHttpClient()
-            _httpClient = newHttpClient
-
-            val newRpcClient = createRpcClient(baseUrl, newHttpClient)
-            _rpcClient = newRpcClient
-
-            // Refresh service stubs in the container
-            _services?.let { current ->
-                current.updateFrom(newRpcClient)
-            }
-            println("NetworkModule: Reconnection successful")
-        } catch (e: Exception) {
-            println("NetworkModule: Reconnection failed: ${e.message}")
-            throw e
-        }
-    }
-
-    /**
-     * Create all service instances from RPC client
-     * UI applications (Desktop/iOS/Android) MUST use RPC only
-     */
-    fun createServices(rpcClient: KtorRpcClient): Services = Services(rpcClient).apply { updateFrom(rpcClient) }
-
-    /**
-     * Container for all services
-     */
-    class Services(
-        initialRpcClient: KtorRpcClient,
-    ) {
-        var projectService: IProjectService = initialRpcClient.withService<IProjectService>()
-            private set
-        var clientService: IClientService = initialRpcClient.withService<IClientService>()
-            private set
-        var clientProjectLinkService: IClientProjectLinkService =
-            initialRpcClient.withService<IClientProjectLinkService>()
-            private set
-        var userTaskService: IUserTaskService = initialRpcClient.withService<IUserTaskService>()
-            private set
-        var ragSearchService: IRagSearchService = initialRpcClient.withService<IRagSearchService>()
-            private set
-        var taskSchedulingService: ITaskSchedulingService = initialRpcClient.withService<ITaskSchedulingService>()
-            private set
-        var agentOrchestratorService: IAgentOrchestratorService =
-            initialRpcClient.withService<IAgentOrchestratorService>()
-            private set
-        var errorLogService: IErrorLogService = initialRpcClient.withService<IErrorLogService>()
-            private set
-        var gitConfigurationService: IGitConfigurationService = initialRpcClient.withService<IGitConfigurationService>()
-            private set
-        var pendingTaskService: IPendingTaskService = initialRpcClient.withService<IPendingTaskService>()
-            private set
-        var connectionService: IConnectionService = initialRpcClient.withService<IConnectionService>()
-            private set
-        var notificationService: INotificationService = initialRpcClient.withService<INotificationService>()
-            private set
-        var bugTrackerSetupService: IBugTrackerSetupService = initialRpcClient.withService<IBugTrackerSetupService>()
-            private set
-        var integrationSettingsService: IIntegrationSettingsService =
-            initialRpcClient.withService<IIntegrationSettingsService>()
-            private set
-        var codingAgentSettingsService: ICodingAgentSettingsService =
-            initialRpcClient.withService<ICodingAgentSettingsService>()
-            private set
-        var whisperSettingsService: IWhisperSettingsService =
-            initialRpcClient.withService<IWhisperSettingsService>()
-            private set
-        var pollingIntervalService: IPollingIntervalService =
-            initialRpcClient.withService<IPollingIntervalService>()
-            private set
-        var projectGroupService: IProjectGroupService = initialRpcClient.withService<IProjectGroupService>()
-            private set
-        var environmentService: IEnvironmentService = initialRpcClient.withService<IEnvironmentService>()
-            private set
-        var meetingService: IMeetingService = initialRpcClient.withService<IMeetingService>()
-            private set
-        var transcriptCorrectionService: ITranscriptCorrectionService =
-            initialRpcClient.withService<ITranscriptCorrectionService>()
-            private set
-        var deviceTokenService: IDeviceTokenService = initialRpcClient.withService<IDeviceTokenService>()
-            private set
-        var indexingQueueService: IIndexingQueueService = initialRpcClient.withService<IIndexingQueueService>()
-            private set
-
-        fun updateFrom(rpcClient: KtorRpcClient) {
-            projectService = rpcClient.withService<IProjectService>()
-            clientService = rpcClient.withService<IClientService>()
-            clientProjectLinkService = rpcClient.withService<IClientProjectLinkService>()
-            userTaskService = rpcClient.withService<IUserTaskService>()
-            ragSearchService = rpcClient.withService<IRagSearchService>()
-            taskSchedulingService = rpcClient.withService<ITaskSchedulingService>()
-            agentOrchestratorService = rpcClient.withService<IAgentOrchestratorService>()
-            errorLogService = rpcClient.withService<IErrorLogService>()
-            gitConfigurationService = rpcClient.withService<IGitConfigurationService>()
-            pendingTaskService = rpcClient.withService<IPendingTaskService>()
-            connectionService = rpcClient.withService<IConnectionService>()
-            notificationService = rpcClient.withService<INotificationService>()
-            bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>()
-            integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>()
-            codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>()
-            whisperSettingsService = rpcClient.withService<IWhisperSettingsService>()
-            pollingIntervalService = rpcClient.withService<IPollingIntervalService>()
-            projectGroupService = rpcClient.withService<IProjectGroupService>()
-            environmentService = rpcClient.withService<IEnvironmentService>()
-            meetingService = rpcClient.withService<IMeetingService>()
-            transcriptCorrectionService = rpcClient.withService<ITranscriptCorrectionService>()
-            deviceTokenService = rpcClient.withService<IDeviceTokenService>()
-            indexingQueueService = rpcClient.withService<IIndexingQueueService>()
-        }
-    }
-
-    /**
-     * Access to reconnection handler for repositories.
-     */
-    val reconnectHandler =
-        object : UiRpcReconnectHandler {
-            override suspend fun reconnect() {
-                this@NetworkModule.reconnect()
-            }
-        }
+    data class Services(
+        val projectService: IProjectService,
+        val clientService: IClientService,
+        val clientProjectLinkService: IClientProjectLinkService,
+        val userTaskService: IUserTaskService,
+        val ragSearchService: IRagSearchService,
+        val taskSchedulingService: ITaskSchedulingService,
+        val agentOrchestratorService: IAgentOrchestratorService,
+        val errorLogService: IErrorLogService,
+        val gitConfigurationService: IGitConfigurationService,
+        val pendingTaskService: IPendingTaskService,
+        val connectionService: IConnectionService,
+        val notificationService: INotificationService,
+        val bugTrackerSetupService: IBugTrackerSetupService,
+        val integrationSettingsService: IIntegrationSettingsService,
+        val codingAgentSettingsService: ICodingAgentSettingsService,
+        val whisperSettingsService: IWhisperSettingsService,
+        val pollingIntervalService: IPollingIntervalService,
+        val projectGroupService: IProjectGroupService,
+        val environmentService: IEnvironmentService,
+        val meetingService: IMeetingService,
+        val transcriptCorrectionService: ITranscriptCorrectionService,
+        val deviceTokenService: IDeviceTokenService,
+        val indexingQueueService: IIndexingQueueService,
+    )
 }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.di.RpcConnectionManager
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JervisTheme
 import com.jervis.ui.navigation.AppNavigator
@@ -38,14 +39,14 @@ import com.jervis.ui.screens.*
 @Composable
 fun App(
     repository: JervisRepository,
+    connectionManager: RpcConnectionManager,
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
     modifier: Modifier = Modifier,
     navigator: AppNavigator? = null,
     onOpenDebugWindow: (() -> Unit)? = null,
-    onRefreshConnection: (() -> Unit)? = null,
 ) {
-    val viewModel = remember(repository) { MainViewModel(repository, defaultClientId, defaultProjectId, onRefreshConnection) }
+    val viewModel = remember(repository) { MainViewModel(repository, connectionManager, defaultClientId, defaultProjectId) }
     val snackbarHostState = remember { SnackbarHostState() }
     val appNavigator = navigator ?: remember { AppNavigator() }
 
@@ -151,10 +152,10 @@ fun App(
             Screen.Meetings -> {
                 val meetingViewModel = remember {
                     com.jervis.ui.meeting.MeetingViewModel(
-                        repository.meetings,
-                        repository.projects,
-                        repository.transcriptCorrections,
-                        repository.notifications,
+                        connectionManager = connectionManager,
+                        meetingService = repository.meetings,
+                        projectService = repository.projects,
+                        correctionService = repository.transcriptCorrections,
                     )
                 }
 

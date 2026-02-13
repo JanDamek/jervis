@@ -1,5 +1,7 @@
 package com.jervis.ui
 
+import com.jervis.di.RpcConnectionManager
+import com.jervis.di.RpcConnectionState
 import com.jervis.dto.ChatRequestContextDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseType
@@ -25,16 +27,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * ViewModel for MainScreen
@@ -42,9 +40,9 @@ import kotlin.time.Duration.Companion.seconds
  */
 class MainViewModel(
     private val repository: JervisRepository,
+    private val connectionManager: RpcConnectionManager,
     defaultClientId: String? = null,
     defaultProjectId: String? = null,
-    private val onRefreshConnection: (() -> Unit)? = null,
 ) {
     // Global exception handler to prevent app crashes
     private val exceptionHandler =
@@ -52,16 +50,8 @@ class MainViewModel(
             println("Uncaught exception in MainViewModel: ${exception.message}")
             exception.printStackTrace()
 
-            // Check if it's a cancellation or "Cancelled" error
-            val isCancelled =
-                exception is CancellationException ||
-                    exception.message?.contains("cancelled", ignoreCase = true) == true ||
-                    exception.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                    exception.message?.contains("Client cancelled", ignoreCase = true) == true
-
-            if (isCancelled) {
-                _connectionState.value = ConnectionState.DISCONNECTED
-                // Neukazujeme overlay hned, necháme connectWithRetry, aby ho zobrazil až po selhání pokusu
+            if (exception is CancellationException) {
+                // Ignore cancellations — RpcConnectionManager handles reconnection
             } else {
                 _errorMessage.value = "An unexpected error occurred: ${exception.message}"
             }
@@ -128,8 +118,6 @@ class MainViewModel(
     private val _reconnectAttemptDisplay = MutableStateFlow(0)
     val reconnectAttemptDisplay: StateFlow<Int> = _reconnectAttemptDisplay.asStateFlow()
 
-    private var pingJob: Job? = null
-
     private val _notifications = MutableStateFlow<List<com.jervis.dto.events.JervisEvent>>(emptyList())
     val notifications: StateFlow<List<com.jervis.dto.events.JervisEvent>> = _notifications.asStateFlow()
 
@@ -189,9 +177,6 @@ class MainViewModel(
     private var chatJob: Job? = null
     private var eventJob: Job? = null
     private var queueStatusJob: Job? = null
-    private var reconnectAttempts = 0
-    private val maxReconnectAttempts = 50 // Avoid infinite loop if something is fundamentally wrong
-    private var isReconnecting = false
 
     init {
         // Initialize notifications
@@ -199,6 +184,32 @@ class MainViewModel(
 
         // Restore pending message from persistent storage (survives app restart)
         pendingMessage = PendingMessageStorage.load()
+
+        // Observe RpcConnectionManager state → drive local connection state + overlay
+        scope.launch {
+            connectionManager.state.collect { rpcState ->
+                when (rpcState) {
+                    is RpcConnectionState.Connected -> {
+                        _connectionState.value = ConnectionState.CONNECTED
+                        _isOverlayVisible.value = false
+                        _reconnectAttemptDisplay.value = 0
+                    }
+                    is RpcConnectionState.Connecting -> {
+                        _connectionState.value = ConnectionState.RECONNECTING
+                        // Show overlay only on reconnect (generation > 1), not initial connect
+                        if (connectionManager.generation.value > 1) {
+                            _isOverlayVisible.value = true
+                        }
+                    }
+                    is RpcConnectionState.Disconnected -> {
+                        _connectionState.value = ConnectionState.DISCONNECTED
+                        if (connectionManager.generation.value > 0) {
+                            _isOverlayVisible.value = true
+                        }
+                    }
+                }
+            }
+        }
 
         // Load initial data
         loadClients()
@@ -266,31 +277,13 @@ class MainViewModel(
 
     private fun subscribeToEventStream(clientId: String) {
         eventJob?.cancel()
-        eventJob =
-            scope.launch {
-                repository.notifications
-                    .subscribeToEvents(clientId)
-                    .retryWhen { cause, attempt ->
-                        val isRpcDead = cause.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                            cause.message?.contains("Client cancelled", ignoreCase = true) == true
-                        if (isRpcDead) {
-                            println("Event stream: RPC client dead, stopping retry")
-                            false // stop — connectWithRetry in chat stream triggers onRefreshConnection
-                        } else {
-                            println("Event stream error: ${cause.message}, retry attempt $attempt")
-                            val delaySeconds =
-                                when (attempt + 1) {
-                                    1L -> 1L
-                                    2L -> 2L
-                                    else -> 3L
-                                }
-                            delay(delaySeconds.seconds)
-                            true
-                        }
-                    }.collect { event ->
-                        handleGlobalEvent(event)
-                    }
+        eventJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.notificationService.subscribeToEvents(clientId)
+            }.collect { event ->
+                handleGlobalEvent(event)
             }
+        }
     }
 
     private fun handleGlobalEvent(event: JervisEvent) {
@@ -555,301 +548,128 @@ class MainViewModel(
 
     private fun subscribeToQueueStatus(clientId: String) {
         queueStatusJob?.cancel()
-        queueStatusJob =
-            scope.launch {
-                repository.agentOrchestrator
-                    .subscribeToQueueStatus(clientId)
-                    .retryWhen { cause, attempt ->
-                        val isRpcDead = cause.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                            cause.message?.contains("Client cancelled", ignoreCase = true) == true
-                        if (isRpcDead) {
-                            println("Queue status stream: RPC client dead, stopping retry")
-                            false // stop — connectWithRetry in chat stream triggers onRefreshConnection
-                        } else {
-                            println("Queue status stream error: ${cause.message}, retry attempt $attempt")
-                            delay(2.seconds)
-                            true
-                        }
-                    }.collect { response ->
-                        if (response.type == ChatResponseType.QUEUE_STATUS) {
-                            val newRunningId = response.metadata["runningProjectId"]
-                            val newProjectName = response.metadata["runningProjectName"]
-                            val newTaskPreview = response.metadata["runningTaskPreview"]
-                            val newTaskType = response.metadata["runningTaskType"]
-                            val newQueueSize = response.metadata["queueSize"]?.toIntOrNull() ?: 0
+        queueStatusJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.agentOrchestratorService.subscribeToQueueStatus(clientId)
+            }.collect { response ->
+                if (response.type == ChatResponseType.QUEUE_STATUS) {
+                    val newRunningId = response.metadata["runningProjectId"]
+                    val newProjectName = response.metadata["runningProjectName"]
+                    val newTaskPreview = response.metadata["runningTaskPreview"]
+                    val newTaskType = response.metadata["runningTaskType"]
+                    val newQueueSize = response.metadata["queueSize"]?.toIntOrNull() ?: 0
 
-                            // Detect state transitions and log activity
-                            val wasRunning = previousRunningProjectId != null && previousRunningProjectId != "none"
-                            val isRunning = newRunningId != null && newRunningId != "none"
+                    // Detect state transitions and log activity
+                    val wasRunning = previousRunningProjectId != null && previousRunningProjectId != "none"
+                    val isRunning = newRunningId != null && newRunningId != "none"
 
-                            // Use meaningful task type label for activity log
-                            // "Asistent" is not useful as a type label for chat tasks
-                            val displayTaskType = newTaskType?.takeIf { it != "Asistent" }
-                            val prevDisplayTaskType = _runningTaskType.value?.takeIf { it != "Asistent" }
+                    // Use meaningful task type label for activity log
+                    // "Asistent" is not useful as a type label for chat tasks
+                    val displayTaskType = newTaskType?.takeIf { it != "Asistent" }
+                    val prevDisplayTaskType = _runningTaskType.value?.takeIf { it != "Asistent" }
 
-                            if (!wasRunning && isRunning) {
-                                // Task started
-                                activityLog.add(
-                                    type = AgentActivityEntry.Type.TASK_STARTED,
-                                    description = newTaskPreview ?: "Zpracování úlohy",
-                                    projectName = newProjectName,
-                                    taskType = displayTaskType,
-                                    clientId = clientId,
-                                )
-                                _activityEntries.value = activityLog.entries
-                            } else if (wasRunning && !isRunning) {
-                                // Task completed, agent idle
-                                activityLog.add(
-                                    type = AgentActivityEntry.Type.TASK_COMPLETED,
-                                    description = "Úloha dokončena" +
-                                        (_runningProjectName.value?.let { " ($it)" } ?: ""),
-                                    projectName = _runningProjectName.value,
-                                    taskType = prevDisplayTaskType,
-                                    clientId = clientId,
-                                )
-                                _activityEntries.value = activityLog.entries
-                            } else if (wasRunning && isRunning && previousRunningProjectId != newRunningId) {
-                                // Different task started (previous completed)
-                                activityLog.add(
-                                    type = AgentActivityEntry.Type.TASK_COMPLETED,
-                                    description = "Úloha dokončena" +
-                                        (_runningProjectName.value?.let { " ($it)" } ?: ""),
-                                    projectName = _runningProjectName.value,
-                                    taskType = prevDisplayTaskType,
-                                    clientId = clientId,
-                                )
-                                activityLog.add(
-                                    type = AgentActivityEntry.Type.TASK_STARTED,
-                                    description = newTaskPreview ?: "Zpracování úlohy",
-                                    projectName = newProjectName,
-                                    taskType = displayTaskType,
-                                    clientId = clientId,
-                                )
-                                _activityEntries.value = activityLog.entries
-                            }
-
-                            previousRunningProjectId = newRunningId
-                            _queueSize.value = newQueueSize
-                            _runningProjectId.value = newRunningId
-                            _runningProjectName.value = newProjectName
-                            _runningTaskPreview.value = newTaskPreview
-                            _runningTaskType.value = newTaskType
-
-                            // No backfill needed — history entries are created only on finalize,
-                            // by which time _runningTaskPreview is already set from queue status
-
-                            // Parse FOREGROUND pending queue items from metadata
-                            val pendingCount = response.metadata["pendingItemCount"]?.toIntOrNull() ?: 0
-                            val foregroundItems = (0 until pendingCount).mapNotNull { i ->
-                                val preview = response.metadata["pendingItem_${i}_preview"]
-                                val project = response.metadata["pendingItem_${i}_project"]
-                                val taskId = response.metadata["pendingItem_${i}_taskId"] ?: ""
-                                if (preview != null) {
-                                    PendingQueueItem(
-                                        taskId = taskId,
-                                        preview = preview,
-                                        projectName = project ?: "General",
-                                        processingMode = "FOREGROUND",
-                                    )
-                                } else null
-                            }
-                            _foregroundQueue.value = foregroundItems
-                            _pendingQueueItems.value = foregroundItems // backward compat
-
-                            // Parse BACKGROUND pending queue items from metadata
-                            val backgroundCount = response.metadata["backgroundItemCount"]?.toIntOrNull() ?: 0
-                            val backgroundItems = (0 until backgroundCount).mapNotNull { i ->
-                                val preview = response.metadata["backgroundItem_${i}_preview"]
-                                val project = response.metadata["backgroundItem_${i}_project"]
-                                val taskId = response.metadata["backgroundItem_${i}_taskId"] ?: ""
-                                if (preview != null) {
-                                    PendingQueueItem(
-                                        taskId = taskId,
-                                        preview = preview,
-                                        projectName = project ?: "General",
-                                        processingMode = "BACKGROUND",
-                                    )
-                                } else null
-                            }
-                            _backgroundQueue.value = backgroundItems
-                        }
+                    if (!wasRunning && isRunning) {
+                        // Task started
+                        activityLog.add(
+                            type = AgentActivityEntry.Type.TASK_STARTED,
+                            description = newTaskPreview ?: "Zpracování úlohy",
+                            projectName = newProjectName,
+                            taskType = displayTaskType,
+                            clientId = clientId,
+                        )
+                        _activityEntries.value = activityLog.entries
+                    } else if (wasRunning && !isRunning) {
+                        // Task completed, agent idle
+                        activityLog.add(
+                            type = AgentActivityEntry.Type.TASK_COMPLETED,
+                            description = "Úloha dokončena" +
+                                (_runningProjectName.value?.let { " ($it)" } ?: ""),
+                            projectName = _runningProjectName.value,
+                            taskType = prevDisplayTaskType,
+                            clientId = clientId,
+                        )
+                        _activityEntries.value = activityLog.entries
+                    } else if (wasRunning && isRunning && previousRunningProjectId != newRunningId) {
+                        // Different task started (previous completed)
+                        activityLog.add(
+                            type = AgentActivityEntry.Type.TASK_COMPLETED,
+                            description = "Úloha dokončena" +
+                                (_runningProjectName.value?.let { " ($it)" } ?: ""),
+                            projectName = _runningProjectName.value,
+                            taskType = prevDisplayTaskType,
+                            clientId = clientId,
+                        )
+                        activityLog.add(
+                            type = AgentActivityEntry.Type.TASK_STARTED,
+                            description = newTaskPreview ?: "Zpracování úlohy",
+                            projectName = newProjectName,
+                            taskType = displayTaskType,
+                            clientId = clientId,
+                        )
+                        _activityEntries.value = activityLog.entries
                     }
+
+                    previousRunningProjectId = newRunningId
+                    _queueSize.value = newQueueSize
+                    _runningProjectId.value = newRunningId
+                    _runningProjectName.value = newProjectName
+                    _runningTaskPreview.value = newTaskPreview
+                    _runningTaskType.value = newTaskType
+
+                    // Parse FOREGROUND pending queue items from metadata
+                    val pendingCount = response.metadata["pendingItemCount"]?.toIntOrNull() ?: 0
+                    val foregroundItems = (0 until pendingCount).mapNotNull { i ->
+                        val preview = response.metadata["pendingItem_${i}_preview"]
+                        val project = response.metadata["pendingItem_${i}_project"]
+                        val taskId = response.metadata["pendingItem_${i}_taskId"] ?: ""
+                        if (preview != null) {
+                            PendingQueueItem(
+                                taskId = taskId,
+                                preview = preview,
+                                projectName = project ?: "General",
+                                processingMode = "FOREGROUND",
+                            )
+                        } else null
+                    }
+                    _foregroundQueue.value = foregroundItems
+                    _pendingQueueItems.value = foregroundItems // backward compat
+
+                    // Parse BACKGROUND pending queue items from metadata
+                    val backgroundCount = response.metadata["backgroundItemCount"]?.toIntOrNull() ?: 0
+                    val backgroundItems = (0 until backgroundCount).mapNotNull { i ->
+                        val preview = response.metadata["backgroundItem_${i}_preview"]
+                        val project = response.metadata["backgroundItem_${i}_project"]
+                        val taskId = response.metadata["backgroundItem_${i}_taskId"] ?: ""
+                        if (preview != null) {
+                            PendingQueueItem(
+                                taskId = taskId,
+                                preview = preview,
+                                projectName = project ?: "General",
+                                processingMode = "BACKGROUND",
+                            )
+                        } else null
+                    }
+                    _backgroundQueue.value = backgroundItems
+                }
             }
+        }
     }
 
     private fun subscribeToChatStream(
         clientId: String,
         projectId: String,
     ) {
-        // Cancel previous chat subscription
         chatJob?.cancel()
-        pingJob?.cancel()
-        reconnectAttempts = 0
-        _reconnectAttemptDisplay.value = 0
-        isReconnecting = false
 
-        // Subscribe with auto-reconnect
-        chatJob =
-            scope.launch {
-                // Ensure UI reflects connecting state immediately
-                _connectionState.value = ConnectionState.CONNECTING
-                // Nechceme zobrazit overlay okamžitě při startu, pokud už jsme připojený k něčemu jinému
-                // nebo pokud jde o první načtení. Zobrazíme ho až při skutečném výpadku nebo delším čekání.
-                connectWithRetry(clientId, projectId)
-            }
-
-        // Start ping job
-        startPingJob(clientId)
-    }
-
-    private fun startPingJob(clientId: String) {
-        pingJob?.cancel()
-        pingJob =
-            scope.launch {
-                while (true) {
-                    delay(10000) // Reduced frequency to 10 seconds
-                    if (_connectionState.value == ConnectionState.CONNECTED) {
-                        try {
-                            // Simple RPC call to verify connection
-                            repository.clients.getClientById(clientId)
-                        } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            println("Ping failed: ${e.message}")
-
-                            // If we are DISCONNECTED or it's a "Cancelled" error, trigger reconnect
-                            val isRpcCancelled =
-                                e.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                                    e.message?.contains("Client cancelled", ignoreCase = true) == true ||
-                                    e.message?.contains("connection", ignoreCase = true) == true
-
-                            if (isRpcCancelled) {
-                                println("Triggering reconnect due to ping failure or RPC cancellation")
-                                _connectionState.value = ConnectionState.DISCONNECTED
-
-                                // Explicitly cancel and restart to force fresh RPC client state
-                                chatJob?.cancel()
-                                val projectId = _selectedProjectId.value
-                                if (projectId != null) {
-                                    subscribeToChatStream(clientId, projectId)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-    }
-
-    private suspend fun connectWithRetry(
-        clientId: String,
-        projectId: String,
-    ) {
-        while (reconnectAttempts < maxReconnectAttempts) {
-            try {
-                // If we are already connected and it fails, don't show overlay immediately
-                // but if we are RECONNECTING, we might want to show it.
-                // Logic was: if error occurs in catch, _isOverlayVisible.value = true
-
-                val state = if (reconnectAttempts > 0) ConnectionState.RECONNECTING else ConnectionState.CONNECTING
-                _connectionState.value = state
-                _reconnectAttemptDisplay.value = reconnectAttempts + 1
-
-                // Pokud už je to několikátý pokus nebo trvá připojení dlouho, ukážeme overlay
-                if (reconnectAttempts > 0) {
-                    _isOverlayVisible.value = true
-
-                    // After 3 failed attempts, trigger full refresh (recreates HttpClient + RPC)
-                    if (reconnectAttempts % 3 == 0 && onRefreshConnection != null) {
-                        println("=== Max attempts reached for this RPC client, triggering full refresh ===")
-                        onRefreshConnection.invoke()
-                        return // LaunchedEffect v JervisApp se postará o zbytek
-                    }
-                } else {
-                    // Při prvním pokusu (CONNECTING) overlay skryjeme, pokud by náhodou visel
-                    _isOverlayVisible.value = false
-                }
-
-                println(
-                    "=== ${state.name}: attempt ${reconnectAttempts + 1}/$maxReconnectAttempts for client=$clientId, project=$projectId ===",
-                )
-
-                repository.agentOrchestrator
-                    .subscribeToChat(clientId, projectId)
-                    .onStart {
-                        println("=== Flow started, setting CONNECTED ===")
-                        _connectionState.value = ConnectionState.CONNECTED
-
-                        // Po připojení explicitně vyžádat historii, aby UI bylo synchronizované
-                        // Reload history se postará o skrytí overlaye
-                        scope.launch {
-                            reloadHistory(clientId, projectId)
-                        }
-                    }.catch { e ->
-                        println("Chat stream error: ${e.message}")
-                        e.printStackTrace()
-
-                        // Check if RPC client was cancelled - this needs full reconnect
-                        val isRpcCancelled =
-                            e.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                                e.message?.contains("Client cancelled", ignoreCase = true) == true
-
-                        if (isRpcCancelled && reconnectAttempts >= 1) {
-                            println("=== RPC client cancelled, triggering full reconnect ===")
-                            onRefreshConnection?.invoke()
-                            throw e // Stop retry loop, onRefreshConnection will handle it
-                        }
-
-                        // Treat as disconnected
-                        _connectionState.value = ConnectionState.DISCONNECTED
-                        _isOverlayVisible.value = true
-
-                        // Auto-reconnect with custom backoff: 1s, 2s, then stays at 3s
-                        reconnectAttempts++
-                        _reconnectAttemptDisplay.value = reconnectAttempts
-                        val delaySeconds =
-                            when (reconnectAttempts) {
-                                1 -> 1L
-                                else -> 2L
-                            }
-                        println("=== Reconnecting in ${delaySeconds}s (attempt $reconnectAttempts) ===")
-                        delay(delaySeconds.seconds)
-                    }.collect { response ->
-                        handleChatResponse(response, clientId, projectId)
-                    }
-
-                // If flow completes normally, check if it was truly finished or just closed
-                println("=== Flow completed normally ===")
-                _connectionState.value = ConnectionState.DISCONNECTED
-
-                reconnectAttempts++
-                _reconnectAttemptDisplay.value = reconnectAttempts
-                val delaySeconds =
-                    when (reconnectAttempts) {
-                        1 -> 1L
-                        else -> 2L
-                    }
-                println("=== Reconnecting after flow completion in ${delaySeconds}s (attempt $reconnectAttempts) ===")
-                delay(delaySeconds.seconds)
-            } catch (e: Exception) {
-                if (e is CancellationException) {
-                    println("=== connectWithRetry cancelled ===")
-                    throw e
-                }
-
-                println("=== Unexpected error in connectWithRetry: ${e.message} ===")
-                e.printStackTrace()
-
-                _connectionState.value = ConnectionState.DISCONNECTED
-                _isOverlayVisible.value = true
-
-                reconnectAttempts++
-                _reconnectAttemptDisplay.value = reconnectAttempts
-                val delaySeconds =
-                    when (reconnectAttempts) {
-                        1 -> 1L
-                        else -> 2L
-                    }
-                println("=== Reconnecting after error in ${delaySeconds}s (attempt $reconnectAttempts) ===")
-                delay(delaySeconds.seconds)
+        chatJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.agentOrchestratorService.subscribeToChat(clientId, projectId)
+            }.onStart {
+                println("=== Chat stream started, reloading history ===")
+                _connectionState.value = ConnectionState.CONNECTED
+                reloadHistory(clientId, projectId)
+            }.collect { response ->
+                handleChatResponse(response, clientId, projectId)
             }
         }
     }
@@ -1021,14 +841,6 @@ class MainViewModel(
                 }
             _chatMessages.value = newMessages
 
-            // Re-sync UI state
-            _connectionState.value = ConnectionState.CONNECTED
-
-            // Důležité: Skrýt overlay okamžitě, jakmile máme data
-            _isOverlayVisible.value = false
-            reconnectAttempts = 0
-            _reconnectAttemptDisplay.value = 0
-
             // After successful reconnect, retry pending message
             pendingMessage?.let { msg ->
                 println("=== Retrying pending message after reconnect ===")
@@ -1038,17 +850,8 @@ class MainViewModel(
                 sendMessage()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             println("Failed to reload history: ${e.message}")
-
-            // Check if RPC client was cancelled - trigger full reconnect
-            val isRpcCancelled =
-                e.message?.contains("RpcClient was cancelled", ignoreCase = true) == true ||
-                    e.message?.contains("Client cancelled", ignoreCase = true) == true
-
-            if (isRpcCancelled) {
-                println("=== RPC client cancelled in reloadHistory, triggering full reconnect ===")
-                onRefreshConnection?.invoke()
-            }
         }
     }
 
@@ -1076,10 +879,9 @@ class MainViewModel(
         _projects.value = emptyList()
         _chatMessages.value = emptyList() // Clear messages for the new client
 
-        chatJob?.cancel() // Zrušit stream pro předchozího klienta
-        pingJob?.cancel()
+        chatJob?.cancel() // Cancel stream for previous client
         _connectionState.value = ConnectionState.DISCONNECTED
-        _isOverlayVisible.value = false // Skrýt overlay při změně klienta
+        _isOverlayVisible.value = false // Hide overlay on client change
 
         scope.launch {
             _isLoading.value = true
@@ -1113,11 +915,9 @@ class MainViewModel(
         _selectedProjectId.value = projectId
         _chatMessages.value = emptyList() // Clear messages for the new project
 
-        // Zrušit předchozí stream a nechat init bloku v kombinaci s MutableStateFlows spustit nový
         chatJob?.cancel()
-        pingJob?.cancel()
         _connectionState.value = ConnectionState.DISCONNECTED
-        _isOverlayVisible.value = false // Skrýt overlay při změně projektu
+        _isOverlayVisible.value = false // Hide overlay on project change
 
         // Save selection to server
         val clientId = _selectedClientId.value
