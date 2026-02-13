@@ -197,19 +197,36 @@ class AgentOrchestratorService(
         if (task.projectId != null) {
             val project = projectService.getProjectByIdOrNull(task.projectId)
             if (project != null) {
-                val repoResources = project.resources.filter {
+                val hasGitResources = project.resources.any {
                     it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
                 }
 
-                for (resource in repoResources) {
-                    val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
-                    if (workspacePath == null) {
-                        logger.warn { "Workspace not ready for project ${project.name}, resource ${resource.resourceIdentifier}" }
-                        onProgress(
-                            "Workspace se připravuje, zkuste to prosím za chvíli...",
-                            mapOf("phase" to "workspace_preparing")
-                        )
-                        return false
+                if (hasGitResources) {
+                    when (project.workspaceStatus) {
+                        com.jervis.entity.WorkspaceStatus.CLONING, null -> {
+                            logger.info { "Workspace for project ${project.name} is being prepared (status=${project.workspaceStatus})" }
+                            onProgress(
+                                "Prostředí se připravuje, počkejte prosím...",
+                                mapOf("phase" to "workspace_preparing", "status" to (project.workspaceStatus?.name ?: "null"))
+                            )
+                            return false
+                        }
+                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
+                            logger.warn { "Workspace preparation failed for project ${project.name}" }
+                            onProgress(
+                                "Příprava prostředí selhala. Zkontrolujte připojení k repozitáři a zkuste to znovu.",
+                                mapOf("phase" to "workspace_failed")
+                            )
+                            return false
+                        }
+                        com.jervis.entity.WorkspaceStatus.READY -> {
+                            logger.debug { "Workspace for project ${project.name} is READY" }
+                            // Continue - workspace is ready
+                        }
+                        com.jervis.entity.WorkspaceStatus.NOT_NEEDED -> {
+                            logger.debug { "Workspace not needed for project ${project.name}" }
+                            // Continue
+                        }
                     }
                 }
             }

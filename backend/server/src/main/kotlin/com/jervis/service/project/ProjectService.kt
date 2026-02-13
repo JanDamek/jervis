@@ -23,6 +23,7 @@ class ProjectService(
     private val projectRepository: ProjectRepository,
     private val gitRepositoryService: GitRepositoryService,
     private val directoryStructureService: DirectoryStructureService,
+    private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
 ) {
     private val bgScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     companion object {
@@ -62,7 +63,7 @@ class ProjectService(
             logger.info { "Updated project: ${savedProject.name}" }
         }
 
-        // Trigger async repo sync if project has REPOSITORY resources
+        // Trigger async repo sync if project has REPOSITORY resources (for indexing)
         val hasRepos = savedProject.resources.any { it.capability == ConnectionCapability.REPOSITORY }
         if (hasRepos) {
             bgScope.launch {
@@ -71,6 +72,12 @@ class ProjectService(
                 } catch (e: Exception) {
                     logger.error(e) { "Background repo sync failed for project ${savedProject.name}" }
                 }
+            }
+
+            // Trigger workspace initialization for agent (if not already done)
+            if (savedProject.workspaceStatus == null || savedProject.workspaceStatus == com.jervis.entity.WorkspaceStatus.CLONE_FAILED) {
+                logger.info { "Publishing workspace init event for project ${savedProject.name}" }
+                applicationEventPublisher.publishEvent(ProjectWorkspaceInitEvent(savedProject))
             }
         }
 

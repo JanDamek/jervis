@@ -73,6 +73,8 @@ class BackgroundEngine(
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
     private val taskNotifier: TaskNotifier,
+    private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
+    private val projectRepository: com.jervis.repository.ProjectRepository,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -115,6 +117,16 @@ class BackgroundEngine(
                 }
             } catch (e: Exception) {
                 logger.error(e) { "Failed to recover stale tasks on startup" }
+            }
+        }
+
+        // Initialize workspace for all projects with git resources
+        scope.launch {
+            try {
+                logger.info { "Starting workspace initialization check for all projects..." }
+                initializeAllProjectWorkspaces()
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to initialize project workspaces on startup" }
             }
         }
 
@@ -865,6 +877,133 @@ class BackgroundEngine(
         // Clear heartbeat on terminal states
         if (state in setOf("done", "error", "interrupted")) {
             orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
+        }
+    }
+
+    /**
+     * Initialize workspace for all projects with git resources on startup.
+     * For projects without workspaceStatus, trigger background clone.
+     */
+    private suspend fun initializeAllProjectWorkspaces() {
+        val allProjects = projectService.getAllProjects()
+        val gitProjects = allProjects.filter { project ->
+            project.resources.any { it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY }
+        }
+
+        logger.info { "Found ${gitProjects.size} projects with git resources" }
+
+        for (project in gitProjects) {
+            when (project.workspaceStatus) {
+                null -> {
+                    // Legacy project - trigger initialization
+                    logger.info { "Project ${project.name} has no workspaceStatus - triggering initialization" }
+                    scope.launch {
+                        initializeProjectWorkspace(project)
+                    }
+                }
+                com.jervis.entity.WorkspaceStatus.CLONING -> {
+                    // Already cloning - retry in case previous pod crashed
+                    logger.info { "Project ${project.name} was CLONING - retrying" }
+                    scope.launch {
+                        initializeProjectWorkspace(project)
+                    }
+                }
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
+                    // Failed before - retry
+                    logger.info { "Project ${project.name} was CLONE_FAILED - retrying" }
+                    scope.launch {
+                        initializeProjectWorkspace(project)
+                    }
+                }
+                com.jervis.entity.WorkspaceStatus.READY -> {
+                    logger.debug { "Project ${project.name} workspace already READY" }
+                }
+                com.jervis.entity.WorkspaceStatus.NOT_NEEDED -> {
+                    logger.debug { "Project ${project.name} workspace NOT_NEEDED" }
+                }
+            }
+        }
+    }
+
+    /**
+     * Initialize workspace for a single project - clone all git repositories.
+     * Sets workspaceStatus to CLONING, then READY or CLONE_FAILED.
+     *
+     * Called from:
+     * - Background startup (for existing projects)
+     * - ProjectService (when creating/updating projects with git resources)
+     */
+    suspend fun initializeProjectWorkspace(project: com.jervis.entity.ProjectDocument) {
+        val gitResources = project.resources.filter {
+            it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+        }
+
+        if (gitResources.isEmpty()) {
+            // No git resources - mark as NOT_NEEDED
+            val updated = project.copy(
+                workspaceStatus = com.jervis.entity.WorkspaceStatus.NOT_NEEDED,
+                lastWorkspaceCheck = java.time.Instant.now(),
+            )
+            projectRepository.save(updated)
+            return
+        }
+
+        logger.info { "Initializing workspace for project ${project.name} (${gitResources.size} git resources)" }
+
+        // Mark as CLONING
+        val cloning = project.copy(
+            workspaceStatus = com.jervis.entity.WorkspaceStatus.CLONING,
+            lastWorkspaceCheck = java.time.Instant.now(),
+        )
+        projectRepository.save(cloning)
+
+        // Clone all git resources
+        var allSuccess = true
+        for (resource in gitResources) {
+            try {
+                val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
+                if (workspacePath == null) {
+                    logger.error { "Failed to initialize workspace for resource ${resource.resourceIdentifier}" }
+                    allSuccess = false
+                    break
+                }
+                logger.info { "Workspace ready for ${resource.resourceIdentifier}: $workspacePath" }
+            } catch (e: Exception) {
+                logger.error(e) { "Error initializing workspace for resource ${resource.resourceIdentifier}" }
+                allSuccess = false
+                break
+            }
+        }
+
+        // Update status based on result
+        val finalStatus = if (allSuccess) {
+            com.jervis.entity.WorkspaceStatus.READY
+        } else {
+            com.jervis.entity.WorkspaceStatus.CLONE_FAILED
+        }
+
+        val updated = project.copy(
+            workspaceStatus = finalStatus,
+            lastWorkspaceCheck = java.time.Instant.now(),
+        )
+        projectRepository.save(updated)
+
+        logger.info { "Project ${project.name} workspace initialization complete: $finalStatus" }
+    }
+
+    /**
+     * Handle workspace initialization event from ProjectService.
+     * Triggered when a project is created/updated with git resources.
+     */
+    @org.springframework.context.event.EventListener
+    fun onProjectWorkspaceInitEvent(event: com.jervis.service.project.ProjectWorkspaceInitEvent) {
+        logger.info { "Received workspace init event for project ${event.project.name}" }
+        scope.launch {
+            try {
+                initializeProjectWorkspace(event.project)
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to initialize workspace for project ${event.project.name}" }
+            }
         }
     }
 
