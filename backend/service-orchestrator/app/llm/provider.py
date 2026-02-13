@@ -245,8 +245,16 @@ class LLMProvider:
         if tools:
             kwargs["tools"] = tools
 
-        logger.info("LLM blocking call (tools): model=%s", config["model"])
+        logger.info("LLM blocking call (tools): model=%s api_base=%s", config["model"], config.get("api_base"))
         response = await litellm.acompletion(**kwargs)
+
+        # DEBUG: Log RAW response to debug tool_calls parsing
+        try:
+            import json
+            raw_response = response.model_dump() if hasattr(response, "model_dump") else dict(response)
+            logger.info("LLM RAW response: %s", json.dumps(raw_response, default=str)[:1000])
+        except Exception as e:
+            logger.warning("Failed to log raw response: %s", e)
 
         # DEBUG: Log response details
         try:
@@ -262,6 +270,8 @@ class LLMProvider:
                 )
                 if msg.content:
                     logger.info("LLM blocking content: %s", msg.content[:500])
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    logger.info("LLM tool_calls: %s", msg.tool_calls)
         except Exception as e:
             logger.warning("Failed to log response details: %s", e)
 
