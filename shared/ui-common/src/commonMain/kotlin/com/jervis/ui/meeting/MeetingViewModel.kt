@@ -218,7 +218,7 @@ class MeetingViewModel(
     private fun handleTranscriptionProgress(event: JervisEvent.MeetingTranscriptionProgress) {
         _transcriptionProgress.value = _transcriptionProgress.value + (event.meetingId to event.percent)
         if (!event.lastSegmentText.isNullOrBlank()) {
-            _transcriptionLastSegment.value = _transcriptionLastSegment.value + (event.meetingId to event.lastSegmentText)
+            _transcriptionLastSegment.value = _transcriptionLastSegment.value + (event.meetingId to event.lastSegmentText!!)
         }
     }
 
