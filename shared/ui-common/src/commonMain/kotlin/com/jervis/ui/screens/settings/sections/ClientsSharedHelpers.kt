@@ -40,6 +40,8 @@ internal fun getIndexAllLabel(capability: ConnectionCapability): String {
 internal fun GitCommitConfigFields(
     messageFormat: String,
     onMessageFormatChange: (String) -> Unit,
+    messagePattern: String,
+    onMessagePatternChange: (String) -> Unit,
     authorName: String,
     onAuthorNameChange: (String) -> Unit,
     authorEmail: String,
@@ -58,6 +60,21 @@ internal fun GitCommitConfigFields(
         onValueChange = onMessageFormatChange,
         label = "Formát commit message (volitelné)",
         placeholder = "[{project}] {message}",
+    )
+
+    Spacer(Modifier.height(JervisSpacing.itemGap))
+
+    JTextField(
+        value = messagePattern,
+        onValueChange = onMessagePatternChange,
+        label = "Pattern s placeholdery (volitelné)",
+        placeholder = "[\$project] \$message",
+        supportingText = {
+            Text(
+                "Dostupné: \$task_number, \$project, \$message, \$detail, \$author, \$date",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        },
     )
 
     Spacer(Modifier.height(JervisSpacing.itemGap))

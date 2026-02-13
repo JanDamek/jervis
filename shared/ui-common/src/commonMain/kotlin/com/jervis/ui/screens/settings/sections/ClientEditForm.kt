@@ -168,12 +168,14 @@ internal fun ClientEditForm(
                     connectionIds = selectedConnectionIds.toList(),
                     connectionCapabilities = connectionCapabilities,
                     gitCommitMessageFormat = gitCommitMessageFormat.ifBlank { null },
+                    gitCommitMessagePattern = gitCommitMessagePattern.ifBlank { null },
                     gitCommitAuthorName = gitCommitAuthorName.ifBlank { null },
                     gitCommitAuthorEmail = gitCommitAuthorEmail.ifBlank { null },
                     gitCommitCommitterName = gitCommitCommitterName.ifBlank { null },
                     gitCommitCommitterEmail = gitCommitCommitterEmail.ifBlank { null },
                     gitCommitGpgSign = gitCommitGpgSign,
                     gitCommitGpgKeyId = gitCommitGpgKeyId.ifBlank { null },
+                    gitTopCommitters = gitTopCommitters,
                     autoUseAnthropic = autoUseAnthropic,
                     autoUseOpenai = autoUseOpenai,
                     autoUseGemini = autoUseGemini,
@@ -335,9 +337,40 @@ internal fun ClientEditForm(
 
                     Spacer(Modifier.height(12.dp))
 
+                    // Analyze Git button
+                    JPrimaryButton(
+                        onClick = {
+                            scope.launch {
+                                analyzingGit = true
+                                try {
+                                    gitAnalysisResult = repository.clients.analyzeGitRepositories(client.id)
+                                    showGitAnalysisDialog = true
+                                } catch (e: Exception) {
+                                    // TODO: show error snackbar
+                                } finally {
+                                    analyzingGit = false
+                                }
+                            }
+                        },
+                        enabled = !analyzingGit,
+                    ) {
+                        if (analyzingGit) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = androidx.compose.ui.Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(androidx.compose.ui.Modifier.width(8.dp))
+                        }
+                        Text(if (analyzingGit) "Analyzuji..." else "Analyzovat Git repozitáře")
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
                     GitCommitConfigFields(
                         messageFormat = gitCommitMessageFormat,
                         onMessageFormatChange = { gitCommitMessageFormat = it },
+                        messagePattern = gitCommitMessagePattern,
+                        onMessagePatternChange = { gitCommitMessagePattern = it },
                         authorName = gitCommitAuthorName,
                         onAuthorNameChange = { gitCommitAuthorName = it },
                         authorEmail = gitCommitAuthorEmail,
