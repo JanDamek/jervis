@@ -34,6 +34,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ollama-router")
 
+
+class _HealthCheckAccessFilter(logging.Filter):
+    """Drop GET /router/health from uvicorn access log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "GET /router/health " in msg:
+            return False
+        return True
+
+
 # ── Lifespan ────────────────────────────────────────────────────────────
 
 router: OllamaRouter | None = None
@@ -42,6 +53,7 @@ router: OllamaRouter | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global router
+    logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
     gpu_pool = GpuPool(settings.parsed_gpu_backends())
     router = OllamaRouter(gpu_pool)
     await router.startup()
