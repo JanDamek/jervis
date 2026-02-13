@@ -207,6 +207,27 @@ async def execute_tool(
         return result
 
 
+def _sanitize_text(text: str) -> str:
+    """Sanitize text for LLM consumption.
+
+    Removes control characters, normalizes whitespace, and ensures valid UTF-8.
+    Prevents Ollama "Operation not allowed" errors from malformed web content.
+    """
+    if not text:
+        return ""
+
+    # Remove control characters except newline, tab, and carriage return
+    sanitized = ''.join(
+        ch for ch in text
+        if ch.isprintable() or ch in '\n\t\r'
+    )
+
+    # Normalize excessive whitespace
+    sanitized = ' '.join(sanitized.split())
+
+    return sanitized
+
+
 async def _execute_web_search(query: str, max_results: int = 5) -> str:
     """Search the internet via SearXNG.
 
@@ -241,9 +262,9 @@ async def _execute_web_search(query: str, max_results: int = 5) -> str:
 
     lines = [f"Web search results for: {query}\n"]
     for i, r in enumerate(results[:max_results], 1):
-        title = r.get("title", "Untitled")
+        title = _sanitize_text(r.get("title", "Untitled"))
         url_str = r.get("url", "")
-        content = r.get("content", "")[:400]
+        content = _sanitize_text(r.get("content", ""))[:400]
         lines.append(f"## Result {i}: {title}")
         lines.append(f"URL: {url_str}")
         if content:
