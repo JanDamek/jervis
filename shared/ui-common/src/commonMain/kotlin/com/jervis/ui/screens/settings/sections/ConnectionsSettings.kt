@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.plus
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResponseDto
@@ -56,8 +58,19 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ConnectionsSettings(repository: JervisRepository) {
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Scope with exception handler to prevent window crash on RPC errors
+    val exceptionHandler = remember {
+        CoroutineExceptionHandler { _, throwable ->
+            println("ConnectionsSettings: Uncaught exception: ${throwable.message}")
+            throwable.printStackTrace()
+            kotlinx.coroutines.MainScope().launch {
+                snackbarHostState.showSnackbar("Chyba: ${throwable.message}")
+            }
+        }
+    }
+    val scope = rememberCoroutineScope() + exceptionHandler
 
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
