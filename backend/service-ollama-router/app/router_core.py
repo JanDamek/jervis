@@ -51,25 +51,21 @@ class OllamaRouter:
 
         # Watchdog task
         self._watchdog_task: asyncio.Task | None = None
-        self._health_task: asyncio.Task | None = None
 
     async def startup(self) -> None:
         """Initialize router state on startup."""
         self._mgmt_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
-        # Sync GPU state from all backends
+        # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
         await self._check_cpu_health()
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
-        self._health_task = asyncio.create_task(self._health_check_loop())
         logger.info("Router started with %d GPU backend(s)", len(self.gpu_pool.all_backends))
 
     async def shutdown(self) -> None:
         """Cleanup on shutdown."""
         if self._watchdog_task:
             self._watchdog_task.cancel()
-        if self._health_task:
-            self._health_task.cancel()
         if self._bg_load_task and not self._bg_load_task.done():
             self._bg_load_task.cancel()
         if self._mgmt_client:
@@ -377,18 +373,6 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Watchdog error: %s", e)
-
-    async def _health_check_loop(self) -> None:
-        """Periodically check backend health."""
-        while True:
-            try:
-                await asyncio.sleep(15)
-                await self.gpu_pool.check_health(self._mgmt_client)
-                await self._check_cpu_health()
-            except asyncio.CancelledError:
-                return
-            except Exception as e:
-                logger.error("Health check error: %s", e)
 
     async def _check_cpu_health(self) -> None:
         try:
