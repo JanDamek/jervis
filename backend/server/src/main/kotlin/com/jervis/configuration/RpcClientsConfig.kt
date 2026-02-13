@@ -48,6 +48,7 @@ class RpcClientsConfig(
     private var _tikaClient: ITikaClient? = null
     private var _knowledgeService: KnowledgeService? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
+    private var _correctionClient: CorrectionClient? = null
 
     // Provider-specific fine-grained RPC clients (used by indexers and services for data operations)
     private var _atlassianClient: IAtlassianClient? = null
@@ -60,6 +61,11 @@ class RpcClientsConfig(
     fun pythonOrchestratorClient(): PythonOrchestratorClient =
         _pythonOrchestratorClient
             ?: PythonOrchestratorClient(endpoints.orchestrator.baseUrl).also { _pythonOrchestratorClient = it }
+
+    @Bean
+    fun correctionClient(): CorrectionClient =
+        _correctionClient
+            ?: CorrectionClient(endpoints.correction.baseUrl).also { _correctionClient = it }
 
     @Bean
     fun knowledgeService(): KnowledgeService =

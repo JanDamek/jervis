@@ -185,6 +185,33 @@ internal fun ConnectionEditDialog(
         }
     }
 
+    // Track if this is the initial load to avoid clearing saved values
+    var isInitialLoad by remember { mutableStateOf(true) }
+
+    // Reset field values when auth option changes, but preserve existing values on initial load
+    LaunchedEffect(selectedAuthOption) {
+        if (isInitialLoad) {
+            // On initial load, don't clear - we want to keep connection values
+            isInitialLoad = false
+        } else {
+            // User changed auth option - preserve all existing values that aren't auth-specific
+            val preserved = fieldValues.toMap()
+            fieldValues.clear()
+            // Re-initialize defaults from new auth option
+            selectedAuthOption?.fields?.forEach { field ->
+                if (field.defaultValue.isNotEmpty() && !preserved.containsKey(field.type)) {
+                    fieldValues[field.type] = field.defaultValue
+                }
+            }
+            // Restore preserved values
+            preserved.forEach { (key, value) ->
+                if (key == FormFieldType.CLOUD_TOGGLE || selectedAuthOption?.fields?.any { it.type == key } == true) {
+                    fieldValues[key] = value
+                }
+            }
+        }
+    }
+
     val authType = selectedAuthOption?.authType ?: AuthTypeEnum.NONE
     val fields = selectedAuthOption?.fields ?: emptyList()
     val isCloud = fieldValues[FormFieldType.CLOUD_TOGGLE] == "true"

@@ -173,6 +173,8 @@ data:
         baseUrl: http://jervis-knowledgebase-write:8080/  # Python KB - write operations (ingest)
       orchestrator:
         baseUrl: http://jervis-orchestrator:8090/    # Python orchestrator (LangGraph)
+      correction:
+        baseUrl: http://jervis-correction:8000/      # Python correction service (transcript correction)
       providers:
         github: ws://jervis-github:8085/             # GitHub integration
         gitlab: ws://jervis-gitlab:8086/             # GitLab integration

@@ -256,8 +256,8 @@ class OAuth2Service(
             log.error(e) { "Failed to fetch scopes from $provider service, using fallback" }
             // Fallback scopes
             when (provider) {
-                OAuth2Provider.GITHUB -> "repo user admin:org admin:public_key admin:repo_hook admin:org_hook gist notifications workflow write:discussion write:packages delete:packages admin:gpg_key admin:ssh_signing_key codespace project security_events"
-                OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository read_registry write_registry sudo admin_mode offline_access"
+                OAuth2Provider.GITHUB -> "repo user admin:org admin:public_key admin:repo_hook gist notifications workflow"
+                OAuth2Provider.GITLAB -> "api read_user read_api read_repository write_repository"
                 OAuth2Provider.ATLASSIAN -> "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access"
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
             }

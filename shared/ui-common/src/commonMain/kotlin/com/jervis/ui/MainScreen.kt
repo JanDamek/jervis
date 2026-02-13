@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -94,6 +95,8 @@ fun MainScreenView(
     onSendClick: () -> Unit,
     onNavigate: (Screen) -> Unit = {},
     onAgentStatusClick: () -> Unit = {},
+    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
+    onReconnect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -116,6 +119,8 @@ fun MainScreenView(
             onSendClick = onSendClick,
             onAgentStatusClick = onAgentStatusClick,
             onNavigate = onNavigate,
+            connectionState = connectionState,
+            onReconnect = onReconnect,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -145,6 +150,8 @@ private fun ChatContent(
     onSendClick: () -> Unit,
     onAgentStatusClick: () -> Unit,
     onNavigate: (Screen) -> Unit,
+    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
+    onReconnect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -157,6 +164,8 @@ private fun ChatContent(
             onClientSelected = onClientSelected,
             onProjectSelected = onProjectSelected,
             onNavigate = onNavigate,
+            connectionState = connectionState,
+            onReconnect = onReconnect,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -210,6 +219,8 @@ private fun SelectorsRow(
     onClientSelected: (String) -> Unit,
     onProjectSelected: (String?) -> Unit,
     onNavigate: (Screen) -> Unit,
+    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
+    onReconnect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -292,6 +303,12 @@ private fun SelectorsRow(
             }
         }
 
+        // Connection status indicator
+        ConnectionStatusIndicator(
+            connectionState = connectionState,
+            onReconnect = onReconnect,
+        )
+
         // Menu dropdown
         Box {
             var menuExpanded by remember { mutableStateOf(false) }
@@ -324,6 +341,38 @@ private fun SelectorsRow(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Connection status indicator with manual reconnect button.
+ * Shows green dot for connected, yellow for connecting, red for disconnected.
+ */
+@Composable
+private fun ConnectionStatusIndicator(
+    connectionState: MainViewModel.ConnectionState,
+    onReconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val statusText = when (connectionState) {
+        MainViewModel.ConnectionState.CONNECTED -> "CONNECTED"
+        MainViewModel.ConnectionState.CONNECTING -> "CONNECTING"
+        MainViewModel.ConnectionState.RECONNECTING -> "CONNECTING"
+        MainViewModel.ConnectionState.DISCONNECTED -> "DISCONNECTED"
+    }
+
+    Box(modifier = modifier) {
+        if (connectionState == MainViewModel.ConnectionState.DISCONNECTED) {
+            // Show reconnect button when disconnected
+            JIconButton(
+                onClick = onReconnect,
+                icon = Icons.Default.Refresh,
+                contentDescription = "Reconnect",
+            )
+        } else {
+            // Just show status badge
+            com.jervis.ui.design.JStatusBadge(status = statusText)
         }
     }
 }

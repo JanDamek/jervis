@@ -67,7 +67,12 @@ internal fun ProjectGroupEditForm(
     }
     var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
 
+    // Projects in this group
+    var projectsInGroup by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
+    var allProjects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
+
     var showAddResourceDialog by remember { mutableStateOf(false) }
+    var showAddProjectDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -78,6 +83,9 @@ internal fun ProjectGroupEditForm(
             clientConnections = allConnections.filter { conn ->
                 client.connectionIds.contains(conn.id)
             }
+            // Load projects
+            allProjects = repository.projects.listProjectsForClient(group.clientId)
+            projectsInGroup = allProjects.filter { it.groupId == group.id }
         } catch (_: Exception) {
         }
     }
@@ -158,6 +166,76 @@ internal fun ProjectGroupEditForm(
                         label = "Popis",
                         singleLine = false,
                     )
+                }
+
+                JSection(title = "Projekty ve skupině") {
+                    Text(
+                        "Projekty přiřazené do této skupiny sdílí KB data a group-level zdroje.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (projectsInGroup.isEmpty()) {
+                        Text(
+                            "Žádné projekty ve skupině.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        projectsInGroup.forEach { project ->
+                            JCard {
+                                Row(
+                                    modifier = Modifier
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .heightIn(min = JervisSpacing.touchTarget),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            project.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        project.description?.let { desc ->
+                                            if (desc.isNotBlank()) {
+                                                Text(
+                                                    desc,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    JRemoveIconButton(
+                                        onConfirmed = {
+                                            scope.launch {
+                                                try {
+                                                    repository.projects.updateProject(
+                                                        project.id,
+                                                        project.copy(groupId = null),
+                                                    )
+                                                    projectsInGroup = projectsInGroup.filter { it.id != project.id }
+                                                    allProjects = repository.projects.listProjectsForClient(group.clientId)
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        },
+                                        title = "Odebrat projekt ze skupiny?",
+                                        message = "Projekt \"${project.name}\" bude odebrán ze skupiny (nebude smazán).",
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    JPrimaryButton(onClick = { showAddProjectDialog = true }) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Přidat projekt")
+                    }
                 }
 
                 JSection(title = "Sdílené zdroje skupiny") {
@@ -248,6 +326,25 @@ internal fun ProjectGroupEditForm(
                 addResource(connectionId, capability, resourceId, displayName)
             },
             onDismiss = { showAddResourceDialog = false },
+        )
+    }
+
+    if (showAddProjectDialog) {
+        AddProjectToGroupDialog(
+            allProjects = allProjects,
+            projectsInGroup = projectsInGroup,
+            groupId = group.id,
+            repository = repository,
+            onAdded = { addedProject ->
+                projectsInGroup = (projectsInGroup + addedProject).sortedBy { it.name }
+                scope.launch {
+                    try {
+                        allProjects = repository.projects.listProjectsForClient(group.clientId)
+                    } catch (_: Exception) {
+                    }
+                }
+            },
+            onDismiss = { showAddProjectDialog = false },
         )
     }
 }

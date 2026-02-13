@@ -13,11 +13,11 @@ private val logger = KotlinLogging.logger {}
 
 @Component
 class TranscriptCorrectionRpcImpl(
-    private val orchestratorClient: PythonOrchestratorClient,
+    private val correctionClient: com.jervis.configuration.CorrectionClient,
 ) : ITranscriptCorrectionService {
 
     override suspend fun submitCorrection(request: TranscriptCorrectionSubmitDto): TranscriptCorrectionDto {
-        val result = orchestratorClient.submitCorrection(
+        val result = correctionClient.submitCorrection(
             CorrectionSubmitRequestDto(
                 clientId = request.clientId,
                 projectId = request.projectId,
@@ -41,7 +41,7 @@ class TranscriptCorrectionRpcImpl(
     }
 
     override suspend fun listCorrections(clientId: String, projectId: String?): List<TranscriptCorrectionDto> {
-        val result = orchestratorClient.listCorrections(
+        val result = correctionClient.listCorrections(
             CorrectionListRequestDto(clientId = clientId, projectId = projectId),
         )
 
@@ -58,6 +58,6 @@ class TranscriptCorrectionRpcImpl(
     }
 
     override suspend fun deleteCorrection(sourceUrn: String): Boolean {
-        return orchestratorClient.deleteCorrection(sourceUrn)
+        return correctionClient.deleteCorrection(sourceUrn)
     }
 }

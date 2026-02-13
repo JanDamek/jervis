@@ -27,13 +27,14 @@ class ModelTier(str, Enum):
     """LLM tier hierarchy.
 
     Local tiers (Ollama) — default, free, always used when sufficient.
-    Cloud tiers — only when genuinely needed (large context, critical tasks).
-    Never used as failure fallback for local models.
+    Cloud tiers — only when cloud providers explicitly enabled in project rules.
     """
 
     LOCAL_FAST = "local_fast"           # Ollama, 8k ctx — decompose, simple plan
     LOCAL_STANDARD = "local_standard"   # Ollama, 32k ctx — standard tasks
-    LOCAL_LARGE = "local_large"         # Ollama, 49k ctx — max local context
+    LOCAL_LARGE = "local_large"         # Ollama, 48k ctx — GPU VRAM limit (fast)
+    LOCAL_XLARGE = "local_xlarge"       # Ollama, 128k ctx — CPU RAM (slower but works)
+    LOCAL_XXLARGE = "local_xxlarge"     # Ollama, 256k ctx — qwen3 max context
     CLOUD_REASONING = "cloud_reasoning"     # Anthropic — critical architecture/design
     CLOUD_CODING = "cloud_coding"           # Anthropic — critical code changes
     CLOUD_PREMIUM = "cloud_premium"         # Anthropic Opus — last resort, critical
@@ -267,3 +268,168 @@ class OrchestrateResponse(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     step_results: list[StepResult] = Field(default_factory=list)
     thread_id: str | None = None
+
+
+# --- Multi-Agent Delegation System ---
+
+
+class DomainType(str, Enum):
+    """Domain classification for multi-agent routing."""
+
+    CODE = "code"
+    DEVOPS = "devops"
+    PROJECT_MANAGEMENT = "project_management"
+    COMMUNICATION = "communication"
+    LEGAL = "legal"
+    FINANCIAL = "financial"
+    ADMINISTRATIVE = "administrative"
+    PERSONAL = "personal"
+    SECURITY = "security"
+    RESEARCH = "research"
+    LEARNING = "learning"
+
+
+class DelegationStatus(str, Enum):
+    """Status of a delegation within the execution plan."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+
+
+class DelegationMessage(BaseModel):
+    """Input message for agent delegation.
+
+    Immutable contract between orchestrator and agent.
+    Internal chain runs in English; response_language controls final output.
+    """
+
+    delegation_id: str
+    parent_delegation_id: str | None = None
+    depth: int = 0                          # 0=orchestrator, 1-4=sub-agents
+    agent_name: str
+    task_summary: str                       # What the agent should do (ENGLISH)
+    context: str = ""                       # Token-budgeted context
+    constraints: list[str] = Field(default_factory=list)
+    expected_output: str = ""
+    response_language: str = "en"           # ISO 639-1 for final response
+    # Data isolation
+    client_id: str = ""
+    project_id: str | None = None
+    group_id: str | None = None
+
+
+class AgentOutput(BaseModel):
+    """Output from an agent execution.
+
+    Returned to orchestrator (or parent agent) after delegation.
+    """
+
+    delegation_id: str
+    agent_name: str
+    success: bool
+    result: str = ""                        # Main output (text, summary)
+    structured_data: dict = Field(default_factory=dict)
+    artifacts: list[str] = Field(default_factory=list)
+    changed_files: list[str] = Field(default_factory=list)
+    sub_delegations: list[str] = Field(default_factory=list)
+    confidence: float = 1.0                 # 0.0-1.0
+    needs_verification: bool = False        # Request KB cross-check
+
+
+class DelegationState(BaseModel):
+    """State of a single delegation within the execution plan."""
+
+    delegation_id: str
+    agent_name: str
+    status: DelegationStatus = DelegationStatus.PENDING
+    result_summary: str | None = None
+    sub_delegation_ids: list[str] = Field(default_factory=list)
+    checkpoint_data: dict | None = None
+
+
+class ExecutionPlan(BaseModel):
+    """DAG of delegations produced by plan_delegations node."""
+
+    delegations: list[DelegationMessage] = Field(default_factory=list)
+    parallel_groups: list[list[str]] = Field(default_factory=list)
+    domain: DomainType = DomainType.CODE
+
+
+# --- Session Memory ---
+
+
+class SessionEntry(BaseModel):
+    """One entry in session memory (per-client/project short-term cache)."""
+
+    timestamp: str
+    source: str                             # "chat" | "background" | "orchestrator_decision"
+    summary: str                            # Max 200 chars
+    details: dict | None = None
+    task_id: str | None = None
+
+
+class SessionMemoryPayload(BaseModel):
+    """Session memory for a client/project pair."""
+
+    client_id: str
+    project_id: str | None = None
+    entries: list[SessionEntry] = Field(default_factory=list)
+
+
+# --- Procedural Memory ---
+
+
+class ProcedureStep(BaseModel):
+    """One step in a learned procedure."""
+
+    agent: str
+    action: str
+    parameters: dict = Field(default_factory=dict)
+
+
+class ProcedureNode(BaseModel):
+    """Learned workflow procedure stored in KB (ArangoDB).
+
+    Orchestrator looks up procedures by trigger_pattern before planning.
+    """
+
+    trigger_pattern: str                    # e.g. "email_with_question", "task_completion"
+    procedure_steps: list[ProcedureStep] = Field(default_factory=list)
+    success_rate: float = 0.0
+    last_used: str | None = None
+    usage_count: int = 0
+    source: str = "learned"                 # "learned" | "user_defined"
+    client_id: str = ""
+
+
+# --- Agent Capability ---
+
+
+class AgentCapability(BaseModel):
+    """Describes what an agent can do (for registry and LLM planning)."""
+
+    name: str
+    description: str
+    domains: list[DomainType] = Field(default_factory=list)
+    can_sub_delegate: bool = True
+    max_depth: int = 4
+    tool_names: list[str] = Field(default_factory=list)
+
+
+# --- Delegation Metrics ---
+
+
+class DelegationMetrics(BaseModel):
+    """Metrics collected for a single delegation execution."""
+
+    delegation_id: str
+    agent_name: str
+    start_time: str | None = None
+    end_time: str | None = None
+    token_count: int = 0
+    llm_calls: int = 0
+    sub_delegation_count: int = 0
+    success: bool = False

@@ -74,7 +74,7 @@ fun main() {
 
             get("/oauth2/scopes") {
                 call.respondText(
-                    """{"scopes":"api read_user read_api read_repository write_repository read_registry write_registry sudo admin_mode offline_access"}""",
+                    """{"scopes":"api read_user read_api read_repository write_repository"}""",
                     io.ktor.http.ContentType.Application.Json,
                 )
             }

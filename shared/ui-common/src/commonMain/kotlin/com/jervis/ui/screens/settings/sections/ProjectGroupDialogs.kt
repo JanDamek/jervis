@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -141,6 +144,105 @@ internal fun AddGroupResourceDialog(
                                                 color = MaterialTheme.colorScheme.primary,
                                             )
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            JTextButton(onClick = onDismiss) {
+                Text("Zavřít")
+            }
+        },
+    )
+}
+
+@Composable
+internal fun AddProjectToGroupDialog(
+    allProjects: List<com.jervis.dto.ProjectDto>,
+    projectsInGroup: List<com.jervis.dto.ProjectDto>,
+    groupId: String,
+    repository: JervisRepository,
+    onAdded: (com.jervis.dto.ProjectDto) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val availableProjects = allProjects.filter { project ->
+        // Only show ungrouped projects or projects from other groups
+        project.groupId != groupId && projectsInGroup.none { it.id == project.id }
+    }.sortedBy { it.name }
+
+    var filterText by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Přidat projekt do skupiny") },
+        text = {
+            Column {
+                JTextField(
+                    value = filterText,
+                    onValueChange = { filterText = it },
+                    label = "Filtrovat projekty...",
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (availableProjects.isEmpty()) {
+                    Text(
+                        "Žádné projekty k přidání.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                        val filtered = availableProjects.filter { project ->
+                            filterText.isBlank() ||
+                                project.name.contains(filterText, ignoreCase = true) ||
+                                project.description?.contains(filterText, ignoreCase = true) == true
+                        }
+
+                        items(filtered) { project ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        scope.launch {
+                                            try {
+                                                val updated = repository.projects.updateProject(
+                                                    project.id,
+                                                    project.copy(groupId = groupId),
+                                                )
+                                                onAdded(updated)
+                                                onDismiss()
+                                            } catch (_: Exception) {
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                    .heightIn(min = JervisSpacing.touchTarget),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        project.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    project.description?.let { desc ->
+                                        Text(
+                                            desc,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (project.groupId != null) {
+                                        Text(
+                                            "Aktuálně v jiné skupině",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
                                     }
                                 }
                             }

@@ -50,7 +50,8 @@ class GitLabProviderService(
             AuthOption(
                 AuthTypeEnum.BEARER, "Personal Access Token",
                 fields = listOf(
-                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://gitlab.example.com"),
+                    FormField(FormFieldType.CLOUD_TOGGLE, "Cloud (gitlab.com)", defaultValue = "true"),
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://gitlab.example.com", required = false),
                     FormField(FormFieldType.BEARER_TOKEN, "Personal Access Token", isSecret = true),
                 ),
             ),

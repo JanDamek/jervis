@@ -50,10 +50,11 @@ from app.models import (
 )
 from app.context.context_store import context_store
 from app.context.distributed_lock import distributed_lock
+from app.context.session_memory import session_memory_store
+from app.monitoring.delegation_metrics import metrics_collector
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.kotlin_client import kotlin_client
-from app.whisper.correction_agent import correction_agent
 from app.logging_utils import LocalTimeFormatter
 
 # Configure logging with local timezone
@@ -105,13 +106,79 @@ async def lifespan(app: FastAPI):
     # Initialize distributed lock (multi-pod concurrency)
     await distributed_lock.init()
     logger.info("Distributed lock ready (multi-pod orchestration)")
+
+    # --- Multi-agent system initialization (feature-flagged) ---
+    if settings.use_delegation_graph:
+        # Initialize session memory (per-client/project short-term memory)
+        await session_memory_store.init()
+        logger.info("Session memory ready (TTL=%dd, max=%d entries)",
+                     settings.session_memory_ttl_days, settings.session_memory_max_entries)
+
+        # Initialize delegation metrics collector
+        await metrics_collector.init()
+        logger.info("Delegation metrics collector ready")
+
+        # Register all specialist agents in the AgentRegistry
+        _register_agents()
+        logger.info("Agent registry populated (multi-agent system active)")
+
     yield
+
     # Cleanup
+    if settings.use_delegation_graph:
+        await session_memory_store.close()
+        await metrics_collector.close()
     await distributed_lock.close()
     await context_store.close()
     await close_checkpointer()
     await kotlin_client.close()
     logger.info("Orchestrator stopped")
+
+
+def _register_agents() -> None:
+    """Register all specialist agents in the AgentRegistry.
+
+    Called during lifespan startup when use_delegation_graph is enabled.
+    Each agent is instantiated and registered with the singleton registry.
+    """
+    from app.agents.registry import AgentRegistry
+    from app.agents.legacy_agent import LegacyAgent
+
+    registry = AgentRegistry.instance()
+
+    # Always register LegacyAgent as fallback
+    registry.register(LegacyAgent())
+
+    if settings.use_specialist_agents:
+        from app.agents.specialists import (
+            CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent,
+            IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent,
+            ProjectManagementAgent, SecurityAgent,
+            CommunicationAgent, EmailAgent, CalendarAgent, AdministrativeAgent,
+            LegalAgent, FinancialAgent, PersonalAgent, LearningAgent,
+        )
+
+        agents = [
+            # Tier 1 — Core
+            CodingAgent(), GitAgent(), CodeReviewAgent(), TestAgent(), ResearchAgent(),
+            # Tier 2 — DevOps & Project Management
+            IssueTrackerAgent(), WikiAgent(), DocumentationAgent(), DevOpsAgent(),
+            ProjectManagementAgent(), SecurityAgent(),
+            # Tier 3 — Communication & Administrative
+            CommunicationAgent(), EmailAgent(), CalendarAgent(), AdministrativeAgent(),
+            # Tier 4 — Business Support
+            LegalAgent(), FinancialAgent(), PersonalAgent(), LearningAgent(),
+        ]
+
+        for agent in agents:
+            registry.register(agent)
+
+        logger.info(
+            "Registered %d specialist agents + LegacyAgent (total: %d)",
+            len(agents), len(agents) + 1,
+        )
+    else:
+        logger.info("Specialist agents disabled — using LegacyAgent only")
 
 
 app = FastAPI(
@@ -298,6 +365,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
 
 # Human-readable node messages for progress reporting
 _NODE_MESSAGES = {
+    # Legacy graph nodes
     "intake": "Analyzing task intent...",
     "evidence_pack": "Gathering evidence from KB...",
     "respond": "Generating response...",
@@ -312,6 +380,10 @@ _NODE_MESSAGES = {
     "finalize": "Generating final report...",
     "plan_epic": "Planning epic execution waves...",
     "design": "Designing implementation structure...",
+    # Delegation graph nodes
+    "plan_delegations": "Planning agent delegations...",
+    "execute_delegation": "Executing agent delegation...",
+    "synthesize": "Synthesizing delegation results...",
 }
 
 
@@ -579,140 +651,6 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
         )
     finally:
         _active_tasks.pop(thread_id, None)
-
-
-# --- Whisper Transcript Correction Agent ---
-
-
-@app.post("/correction/submit")
-async def submit_correction(request: dict):
-    """Store a transcript correction rule in KB.
-
-    The correction is stored as a regular KB chunk with kind="transcript_correction",
-    so both the orchestrator and any agent with KB access can retrieve it.
-    """
-    try:
-        result = await correction_agent.submit_correction(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            original=request["original"],
-            corrected=request["corrected"],
-            category=request.get("category", "general"),
-            context=request.get("context"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed to submit correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/correct")
-async def correct_transcript(request: dict):
-    """Correct transcript segments using KB-stored corrections + Ollama GPU.
-
-    Returns best-effort corrections + questions when uncertain.
-    Response: {segments: [...], questions: [...], status: "success"|"needs_input"}
-    """
-    try:
-        segments = request["segments"]
-        result = await correction_agent.correct_transcript(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=segments,
-            chunk_size=request.get("chunkSize", 20),
-            meeting_id=request.get("meetingId"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed to correct transcript")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/list")
-async def list_corrections(request: dict):
-    """List all stored corrections for a client/project."""
-    try:
-        corrections = await correction_agent.list_corrections(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            max_results=request.get("maxResults", 100),
-        )
-        return {"corrections": corrections}
-    except Exception as e:
-        logger.exception("Failed to list corrections")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/delete")
-async def delete_correction(request: dict):
-    """Delete a correction rule from KB."""
-    try:
-        result = await correction_agent.delete_correction(request["sourceUrn"])
-        return result
-    except Exception as e:
-        logger.exception("Failed to delete correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/instruct")
-async def correct_with_instruction(request: dict):
-    """Re-correct transcript based on user's natural language instruction.
-
-    The user describes what needs to be corrected and the agent applies it
-    across the entire transcript, also extracting reusable rules for KB.
-    """
-    try:
-        result = await correction_agent.correct_with_instruction(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=request["segments"],
-            instruction=request["instruction"],
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed instruction-based correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/correct-targeted")
-async def correct_targeted(request: dict):
-    """Targeted correction for retranscribed segments.
-
-    User corrections are applied directly, retranscribed segments go through
-    the correction agent. Untouched segments pass through as-is.
-    """
-    try:
-        result = await correction_agent.correct_targeted(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            segments=request["segments"],
-            retranscribed_indices=request.get("retranscribedIndices", []),
-            user_corrected_indices=request.get("userCorrectedIndices", {}),
-            meeting_id=request.get("meetingId"),
-        )
-        return result
-    except Exception as e:
-        logger.exception("Failed targeted correction")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/correction/answer")
-async def answer_correction_questions(request: dict):
-    """Store user answers as correction rules in KB.
-
-    Called when user answers questions from the correction agent.
-    Each answer is saved as a correction rule for future use.
-    """
-    try:
-        results = await correction_agent.apply_answers_as_corrections(
-            client_id=request["clientId"],
-            project_id=request.get("projectId"),
-            answers=request.get("answers", []),
-        )
-        return {"status": "success", "rulesCreated": len(results)}
-    except Exception as e:
-        logger.exception("Failed to store correction answers")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Chat History Compression ---

@@ -49,28 +49,48 @@ class KotlinServerClient:
         total_goals: int = 0,
         step_index: int = 0,
         total_steps: int = 0,
+        # --- Multi-agent delegation fields (backward compatible) ---
+        delegation_id: str | None = None,
+        delegation_agent: str | None = None,
+        delegation_depth: int | None = None,
+        thinking_about: str | None = None,
     ) -> bool:
         """Push orchestrator progress to Kotlin server.
 
         Called during graph execution on node_start/node_end events.
         Kotlin broadcasts as OrchestratorTaskProgress event to UI.
+
+        New optional fields for delegation system (Kotlin ignores if unsupported):
+        - delegation_id: ID of the active delegation
+        - delegation_agent: Name of the agent being executed
+        - delegation_depth: Recursion depth (0-4)
+        - thinking_about: What the orchestrator is currently reasoning about
         """
         try:
             client = await self._get_client()
-            await client.post(
-                "/internal/orchestrator-progress",
-                json={
-                    "taskId": task_id,
-                    "clientId": client_id,
-                    "node": node,
-                    "message": message,
-                    "percent": percent,
-                    "goalIndex": goal_index,
-                    "totalGoals": total_goals,
-                    "stepIndex": step_index,
-                    "totalSteps": total_steps,
-                },
-            )
+            payload = {
+                "taskId": task_id,
+                "clientId": client_id,
+                "node": node,
+                "message": message,
+                "percent": percent,
+                "goalIndex": goal_index,
+                "totalGoals": total_goals,
+                "stepIndex": step_index,
+                "totalSteps": total_steps,
+            }
+
+            # Add delegation fields only if set (backward compatible)
+            if delegation_id is not None:
+                payload["delegationId"] = delegation_id
+            if delegation_agent is not None:
+                payload["delegationAgent"] = delegation_agent
+            if delegation_depth is not None:
+                payload["delegationDepth"] = delegation_depth
+            if thinking_about is not None:
+                payload["thinkingAbout"] = thinking_about
+
+            await client.post("/internal/orchestrator-progress", json=payload)
             return True
         except Exception as e:
             logger.debug("Failed to report progress to Kotlin: %s", e)

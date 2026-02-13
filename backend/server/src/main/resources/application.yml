@@ -186,6 +186,8 @@ endpoints:
     baseUrl: http://localhost:8080/       # KB write operations (defaults to same as read in local dev)
   orchestrator:
     baseUrl: http://localhost:8090        # Python orchestrator (LangGraph)
+  correction:
+    baseUrl: http://localhost:8000        # Python correction service (transcript correction)
   providers:
     github: ws://localhost:8085/          # GitHub integration
     gitlab: ws://localhost:8086/          # GitLab integration

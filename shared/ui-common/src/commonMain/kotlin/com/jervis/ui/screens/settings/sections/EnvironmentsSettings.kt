@@ -49,7 +49,7 @@ fun EnvironmentsSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                environments = repository.environments.listEnvironments("")
+                environments = repository.environments.getAllEnvironments()
             } catch (_: Exception) {
             } finally {
                 isLoading = false

@@ -5,6 +5,7 @@ Ensures LLM calls receive appropriately scoped context:
 - Goal level: step names + status + 1 sentence per step
 - Epic level: goal names + status only
 - Evidence: RAG hits + tracker artifacts (trimmed)
+- Delegation level: token-budgeted context per agent depth (NEW)
 """
 
 from __future__ import annotations
@@ -111,4 +112,41 @@ async def save_goal_summary(
         scope_key=scope_key,
         summary=summary,
         detail=detail,
+    )
+
+
+# ============================================================
+# Delegation context assembly (multi-agent system)
+# ============================================================
+
+
+async def assemble_delegation_context(
+    delegation_depth: int,
+    evidence_pack: dict | None,
+    session_memory_text: str = "",
+    procedure_text: str = "",
+) -> str:
+    """Build context for an agent delegation within a token budget.
+
+    Uses progressive summarization — deeper delegations get less context.
+    Delegates to summarizer.build_delegation_context() for actual assembly.
+
+    Args:
+        delegation_depth: Delegation depth (0=orchestrator, 1-4=sub-agents)
+        evidence_pack: Evidence gathered by evidence_pack node
+        session_memory_text: Formatted session memory text
+        procedure_text: Formatted procedural memory text
+
+    Returns:
+        Assembled context string within the depth's token budget.
+    """
+    from app.context.summarizer import build_delegation_context, get_token_budget
+
+    budget = get_token_budget(delegation_depth)
+
+    return build_delegation_context(
+        evidence_pack=evidence_pack,
+        session_memory_text=session_memory_text,
+        procedure_text=procedure_text,
+        token_budget=budget,
     )

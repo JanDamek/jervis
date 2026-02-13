@@ -1,6 +1,13 @@
 """Orchestrator graph nodes — modular per-concern.
 
 Re-exports all node functions for use by orchestrator.py graph definition.
+
+Legacy graph nodes (14-node):
+    intake, evidence_pack, respond, plan, execute_step, evaluate, git_ops, finalize,
+    coding (decompose, select_goal, plan_steps), epic, design
+
+Delegation graph nodes (7-node, new multi-agent system):
+    intake, evidence_pack, plan_delegations, execute_delegation, synthesize, finalize
 """
 
 from app.graph.nodes.intake import intake
@@ -19,7 +26,13 @@ from app.graph.nodes.coding import (
 from app.graph.nodes.epic import plan_epic, execute_wave, verify_wave
 from app.graph.nodes.design import design
 
+# --- New delegation graph nodes ---
+from app.graph.nodes.plan_delegations import plan_delegations
+from app.graph.nodes.execute_delegation import execute_delegation
+from app.graph.nodes.synthesize import synthesize
+
 __all__ = [
+    # Legacy graph nodes
     "intake",
     "evidence_pack",
     "respond",
@@ -39,4 +52,8 @@ __all__ = [
     "execute_wave",
     "verify_wave",
     "design",
+    # New delegation graph nodes
+    "plan_delegations",
+    "execute_delegation",
+    "synthesize",
 ]

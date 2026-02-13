@@ -950,6 +950,15 @@ class MainViewModel(
         _inputText.value = text
     }
 
+    /**
+     * Manually trigger reconnection to server.
+     * Called when user clicks reconnect button in UI.
+     */
+    fun manualReconnect() {
+        println("MainViewModel: Manual reconnect requested")
+        connectionManager.requestReconnect()
+    }
+
     fun sendMessage() {
         val text = _inputText.value.trim()
         if (text.isEmpty()) return

@@ -43,6 +43,7 @@ class WhisperJobRunner(
     private val whisperSettingsRpc: WhisperSettingsRpcImpl,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val orchestratorClient: PythonOrchestratorClient,
+    private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val whisperRestClient: WhisperRestClient,
 ) {
 
@@ -451,13 +452,13 @@ class WhisperJobRunner(
         if (clientId == null) return null
         return try {
             // 1. Global client corrections (no project filter)
-            val globalResult = orchestratorClient.listCorrections(
+            val globalResult = correctionClient.listCorrections(
                 CorrectionListRequestDto(clientId = clientId, projectId = null, maxResults = 500),
             )
 
             // 2. Project-specific corrections (if project is set)
             val projectResult = if (!projectId.isNullOrBlank()) {
-                orchestratorClient.listCorrections(
+                correctionClient.listCorrections(
                     CorrectionListRequestDto(clientId = clientId, projectId = projectId, maxResults = 500),
                 )
             } else {

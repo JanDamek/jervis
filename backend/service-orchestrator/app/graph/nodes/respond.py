@@ -101,56 +101,17 @@ async def respond(state: dict) -> dict:
         {
             "role": "system",
             "content": (
-                "You are Jervis, an AI assistant with access to tools. You MUST gather ALL information BEFORE answering.\n\n"
-                "## MANDATORY APPROACH (4-step process):\n\n"
-                "**1. UNDERSTAND**: Read the user's question carefully. Check Conversation History for context.\n\n"
-                "**2. GATHER**: Use tools to collect ALL relevant information:\n"
-                "   **Knowledge Base Tools:**\n"
-                "   - get_kb_stats() — Start HERE to see what data exists\n"
-                "   - get_indexed_items() — What has been indexed (commits, issues, etc.)\n"
-                "   - get_repository_info() — Repository structure, branches, tech stack\n"
-                "   - list_project_files() — What files exist in the project\n"
-                "   - kb_search(query) — Search for specific content\n"
-                "   - web_search(query) — External/current information\n\n"
-                "   **Direct Workspace Tools (use when KB is empty/incomplete):**\n"
-                "   - list_files(path) — List files/directories in workspace\n"
-                "   - read_file(file_path, max_lines) — Read file contents\n"
-                "   - find_files(pattern) — Find files by glob pattern (*.py, **/*.kt)\n"
-                "   - grep_files(pattern, file_pattern) — Search for text in files\n"
-                "   - file_info(path) — Get file metadata (size, modified time)\n\n"
-                "   **Git Workspace Tools:**\n"
-                "   - git_status() — Modified files, staged changes, current branch\n"
-                "   - git_log(limit, branch) — Commit history\n"
-                "   - git_diff(commit1, commit2, file_path) — Show differences\n"
-                "   - git_show(commit) — Commit details\n"
-                "   - git_blame(file_path) — File authorship info\n\n"
-                "   **Command Execution:**\n"
-                "   - execute_command(command, timeout) — Run safe shell commands (ls, grep, make, npm, pytest, etc.)\n\n"
-                "**3. ANALYZE**: Identify gaps:\n"
-                "   - Do you have enough information to answer accurately?\n"
-                "   - Are there contradictions or ambiguities?\n"
-                "   - Is the user's question unclear?\n\n"
-                "**4. RESPOND**:\n"
-                "   - If you have complete info → Answer with facts from tools\n"
-                "   - If there's ambiguity/conflict → Ask user for clarification\n"
-                "   - If info is missing → Say 'I don't have this data in KB' (don't guess)\n\n"
-                "## CRITICAL RULES:\n"
-                "- NEVER answer about code/project from general knowledge\n"
-                "- ALWAYS start with get_kb_stats() for project questions\n"
-                "- If KB is empty → use workspace tools (list_files, read_file, git_status, etc.)\n"
-                "- Use MULTIPLE tools to cross-verify information\n"
-                "- For file contents → try kb_search first, fallback to read_file if not found\n"
-                "- For git history → try get_recent_commits first, fallback to git_log if empty\n"
-                "- Workspace tools work even when KB has no data (during learning phase)\n"
-                "- Only ask user when you have conflicting data or genuine uncertainty\n\n"
-                "## EXAMPLE:\n"
-                "User: 'v čem je aplikace napsaná?'\n"
-                "YOU:\n"
-                "  1. get_repository_info() → see tech stack\n"
-                "  2. list_project_files() → check file extensions\n"
-                "  3. Analyze: Both show Kotlin/Python\n"
-                "  4. Answer: 'Aplikace je napsaná v Kotlinu (backend) a Pythonu (ML služby). Mám seznam všech souborů.'\n\n"
-                "Respond in Czech. Gather EVERYTHING, then answer."
+                "Jsi Jervis, AI asistent s přístupem k databázi znalostí projektu.\n\n"
+                "POSTUP:\n"
+                "1. Použij dostupné nástroje k načtení dat\n"
+                "2. Analyzuj získané informace\n"
+                "3. Odpověz konkrétně s fakty z nástrojů\n\n"
+                "PRAVIDLA:\n"
+                "• Vždy NEJDŘÍV načti data nástroji (get_kb_stats, kb_search, read_file, atd.)\n"
+                "• NIKDY neodpovídej z obecných znalostí — pouze z dat získaných nástroji\n"
+                "• NIKDY neříkej 'potřebuji přístup' — přístup už máš přes dostupné nástroje\n"
+                "• Pokud KB neobsahuje data → použij workspace nástroje (list_files, read_file, grep_files)\n\n"
+                "Odpovídej česky. Buď konkrétní a faktický."
             ),
         },
         {
@@ -172,7 +133,22 @@ async def respond(state: dict) -> dict:
     while iteration < _MAX_TOOL_ITERATIONS:
         iteration += 1
         logger.info("Respond: iteration %d/%d", iteration, _MAX_TOOL_ITERATIONS)
-        logger.debug("Respond: messages count=%d, total_len=%d", len(messages), sum(len(str(m)) for m in messages))
+
+        # Estimate context tokens (rough: 1 token ≈ 4 chars)
+        # Need to account for: messages + tools + output space
+        message_chars = sum(len(str(m)) for m in messages)
+        message_tokens = message_chars // 4
+
+        # Tools add ~2500 tokens (23 tools with descriptions)
+        tools_tokens = 2500  # ALL_RESPOND_TOOLS_FULL is always passed
+
+        # Reserve space for output
+        output_tokens = 4096
+
+        # Total context needed
+        estimated_tokens = message_tokens + tools_tokens + output_tokens
+        logger.debug("Respond: messages=%d tokens, tools=%d tokens, output=%d tokens, total=%d tokens",
+                     message_tokens, tools_tokens, output_tokens, estimated_tokens)
 
         # Log full messages array structure
         for i, msg in enumerate(messages):
@@ -189,6 +165,7 @@ async def respond(state: dict) -> dict:
             state={**state, "allow_cloud_prompt": allow_cloud_prompt},
             messages=messages,
             task_type="conversational",
+            context_tokens=estimated_tokens,  # Dynamic tier selection based on conversation length
             max_tokens=4096,
             tools=ALL_RESPOND_TOOLS_FULL,  # Enable all tools (KB, web, git, filesystem)
         )
@@ -235,7 +212,9 @@ async def respond(state: dict) -> dict:
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.debug("Respond: content is not JSON tool_calls format: %s", e)
 
-        if not tool_calls or choice.finish_reason == "stop":
+        # Check if we have tool calls (including parsed from JSON)
+        # Only stop if there are truly no tool calls (ignore finish_reason when tools were parsed)
+        if not tool_calls:
             # No more tool calls → final answer
             answer = message.content or ""
             logger.info("Respond: final answer after %d iterations (%d chars)", iteration, len(answer))
@@ -278,13 +257,17 @@ async def respond(state: dict) -> dict:
 
     # Max iterations reached → return best effort answer
     logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
+    final_messages = messages + [{
+        "role": "system",
+        "content": "Provide your final answer now based on the information gathered. Do not call more tools."
+    }]
+    # Estimate: messages + no tools + output space
+    final_tokens = (sum(len(str(m)) for m in final_messages) // 4) + 4096
     final_response = await llm_with_cloud_fallback(
         state={**state, "allow_cloud_prompt": allow_cloud_prompt},
-        messages=messages + [{
-            "role": "system",
-            "content": "Provide your final answer now based on the information gathered. Do not call more tools."
-        }],
+        messages=final_messages,
         task_type="conversational",
+        context_tokens=final_tokens,
         max_tokens=4096,
     )
     answer = final_response.choices[0].message.content or ""

@@ -39,6 +39,17 @@ class EmailProviderService(
             protocols = setOf(ProtocolEnum.IMAP),
             authOptions = listOf(
                 AuthOption(AuthTypeEnum.OAUTH2, "OAuth 2.0", fields = emptyList()),
+                AuthOption(
+                    AuthTypeEnum.BASIC, "App Password",
+                    fields = listOf(
+                        FormField(FormFieldType.HOST, "IMAP Host", placeholder = "imap.gmail.com", defaultValue = "imap.gmail.com"),
+                        FormField(FormFieldType.PORT, "Port", defaultValue = "993"),
+                        FormField(FormFieldType.USE_SSL, "SSL", defaultValue = "true"),
+                        FormField(FormFieldType.USERNAME, "Email"),
+                        FormField(FormFieldType.PASSWORD, "App Password", isSecret = true),
+                        FormField(FormFieldType.FOLDER_NAME, "Složka", required = false, defaultValue = "INBOX"),
+                    ),
+                ),
             ),
         ),
         ProviderEnum.MICROSOFT_365 to ProviderDescriptor(

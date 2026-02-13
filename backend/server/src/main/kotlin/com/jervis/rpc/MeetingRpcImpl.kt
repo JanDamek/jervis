@@ -42,6 +42,7 @@ class MeetingRpcImpl(
     private val knowledgeService: com.jervis.knowledgebase.KnowledgeService,
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val orchestratorClient: PythonOrchestratorClient,
+    private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val whisperJobRunner: com.jervis.service.meeting.WhisperJobRunner,
     private val notificationRpc: NotificationRpcImpl,
 ) : IMeetingService {
@@ -466,7 +467,7 @@ class MeetingRpcImpl(
 
         // Save as KB correction rule in background
         try {
-            orchestratorClient.submitCorrection(
+            correctionClient.submitCorrection(
                 CorrectionSubmitRequestDto(
                     clientId = meeting.clientId.toString(),
                     projectId = meeting.projectId?.toString(),
@@ -555,7 +556,7 @@ class MeetingRpcImpl(
         }
 
         val result = try {
-            orchestratorClient.correctWithInstruction(
+            correctionClient.correctWithInstruction(
                 CorrectionInstructRequestDto(
                     clientId = meeting.clientId.toString(),
                     projectId = meeting.projectId?.toString(),

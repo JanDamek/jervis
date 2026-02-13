@@ -49,5 +49,7 @@ fun MainScreen(
         onSendClick = viewModel::sendMessage,
         onNavigate = onNavigate,
         onAgentStatusClick = { onNavigate(com.jervis.ui.navigation.Screen.AgentWorkload) },
+        connectionState = connectionState,
+        onReconnect = viewModel::manualReconnect,
     )
 }

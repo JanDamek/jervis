@@ -51,7 +51,17 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.LOCAL_LARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 49152,
+        "num_ctx": 49152,  # 48k — GPU VRAM limit (fast)
+    },
+    ModelTier.LOCAL_XLARGE: {
+        "model": f"ollama/{settings.default_local_model}",
+        "api_base": settings.ollama_url,
+        "num_ctx": 131072,  # 128k — CPU RAM (slower)
+    },
+    ModelTier.LOCAL_XXLARGE: {
+        "model": f"ollama/{settings.default_local_model}",
+        "api_base": settings.ollama_url,
+        "num_ctx": 262144,  # 256k — qwen3 max
     },
     ModelTier.CLOUD_REASONING: {
         "model": f"anthropic/{settings.default_cloud_model}",
@@ -72,12 +82,20 @@ class EscalationPolicy:
     """Local-first model selection. Cloud only via explicit policy check."""
 
     def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
-        """Always returns a local tier based on context size."""
+        """Always returns a local tier based on context size.
+
+        Qwen3 supports up to 256k context. GPU VRAM limit is ~48k (fast),
+        above that spills to CPU RAM (slower but works).
+        """
+        if context_tokens > 128_000:
+            return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
+        if context_tokens > 48_000:
+            return ModelTier.LOCAL_XLARGE   # 128k — CPU RAM
         if context_tokens > 32_000:
-            return ModelTier.LOCAL_LARGE
+            return ModelTier.LOCAL_LARGE    # 48k — GPU VRAM limit
         if context_tokens > 8_000:
-            return ModelTier.LOCAL_STANDARD
-        return ModelTier.LOCAL_FAST
+            return ModelTier.LOCAL_STANDARD # 32k
+        return ModelTier.LOCAL_FAST         # 8k
 
     def suggest_cloud_tier(
         self,
@@ -246,6 +264,9 @@ class LLMProvider:
             kwargs["tools"] = tools
 
         logger.info("LLM blocking call (tools): model=%s api_base=%s", config["model"], config.get("api_base"))
+        # DEBUG: Log request being sent to Ollama
+        logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
+        logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
         response = await litellm.acompletion(**kwargs)
 
         # DEBUG: Log RAW response to debug tool_calls parsing

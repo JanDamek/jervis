@@ -581,3 +581,80 @@ ALL_RESPOND_TOOLS_WITH_GIT: list[dict] = ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS
 ALL_RESPOND_TOOLS_FULL: list[dict] = (
     ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS + FILESYSTEM_TOOLS + TERMINAL_TOOLS
 )
+
+
+# ============================================================
+# Per-agent tool sets (multi-agent delegation system)
+# Each specialist agent gets ONLY its own tools.
+# ============================================================
+
+# ResearchAgent — full access to KB, web, filesystem, git (read-only)
+RESEARCH_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL
+
+# CodingAgent — workspace + git tools for delegating to coding agents
+CODING_AGENT_TOOLS: list[dict] = GIT_WORKSPACE_TOOLS + FILESYSTEM_TOOLS + TERMINAL_TOOLS
+
+# GitAgent — git workspace operations + approval gate
+GIT_AGENT_TOOLS: list[dict] = GIT_WORKSPACE_TOOLS + FILESYSTEM_TOOLS
+
+# CodeReviewAgent — git diff + KB + filesystem read
+CODE_REVIEW_AGENT_TOOLS: list[dict] = [
+    TOOL_GIT_DIFF, TOOL_GIT_SHOW, TOOL_GIT_LOG, TOOL_GIT_BLAME,
+    TOOL_KB_SEARCH, TOOL_CODE_SEARCH,
+    TOOL_READ_FILE, TOOL_LIST_FILES, TOOL_FIND_FILES, TOOL_GREP_FILES,
+]
+
+# TestAgent — terminal + filesystem (for running tests, reading results)
+TEST_AGENT_TOOLS: list[dict] = TERMINAL_TOOLS + FILESYSTEM_TOOLS
+
+# IssueTrackerAgent — KB search for context
+TRACKER_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+
+# WikiAgent — KB search for context
+WIKI_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+
+# DocumentationAgent — KB + filesystem for doc generation
+DOCUMENTATION_AGENT_TOOLS: list[dict] = [
+    TOOL_KB_SEARCH, TOOL_CODE_SEARCH,
+    TOOL_READ_FILE, TOOL_LIST_FILES, TOOL_FIND_FILES, TOOL_GREP_FILES,
+    TOOL_GET_REPOSITORY_STRUCTURE,
+]
+
+# DevOpsAgent — no tools (uses k8s API via executor)
+DEVOPS_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+
+# ProjectManagementAgent — KB search
+PROJECT_MANAGEMENT_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+
+# SecurityAgent — Joern + KB
+SECURITY_AGENT_TOOLS: list[dict] = [
+    TOOL_JOERN_QUICK_SCAN, TOOL_KB_SEARCH, TOOL_CODE_SEARCH,
+    TOOL_READ_FILE, TOOL_GREP_FILES,
+]
+
+# CommunicationAgent — KB search
+COMMUNICATION_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
+
+# EmailAgent — no tools defined yet (uses Kotlin API via executor)
+EMAIL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+
+# CalendarAgent — no tools defined yet (uses Kotlin API via executor)
+CALENDAR_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+
+# AdministrativeAgent — web search + KB
+ADMINISTRATIVE_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH]
+
+# LegalAgent — KB search + web search
+LEGAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_WEB_SEARCH]
+
+# FinancialAgent — KB search
+FINANCIAL_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH]
+
+# PersonalAgent — web + KB
+PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH]
+
+# LearningAgent — web + KB + code search
+LEARNING_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH, TOOL_CODE_SEARCH]
+
+# LegacyAgent — full tool access (backward compat)
+LEGACY_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL

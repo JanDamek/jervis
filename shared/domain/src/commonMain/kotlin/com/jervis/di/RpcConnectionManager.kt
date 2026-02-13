@@ -132,8 +132,9 @@ class RpcConnectionManager(private val baseUrl: String) {
 
                 println("RpcConnectionManager: Connected (generation=${_generation.value})")
 
-                // Connection monitoring happens via resilientFlow error handling
-                // When streams die, they set state to Disconnected and generation bump triggers reconnect
+                // Start active health monitoring
+                monitorConnection(newServices)
+
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -148,13 +149,33 @@ class RpcConnectionManager(private val baseUrl: String) {
     }
 
     /**
-     * Connection monitoring is handled by resilientFlow error handling.
-     * When a stream dies, it catches the error, sets state to Disconnected,
-     * and the generation bump from reconnect() triggers flatMapLatest to restart streams.
+     * Active connection health monitoring via periodic heartbeat.
+     * Tests connection every 30s to detect silent failures.
      */
-    private fun monitorConnection(client: KtorRpcClient) {
-        // Removed: awaitCompletion() was completing immediately, causing reconnect loop
-        // resilientFlow.catch handles errors and triggers reconnect via state change
+    private fun monitorConnection(services: NetworkModule.Services) {
+        scope.launch {
+            while (true) {
+                delay(30_000) // 30s heartbeat
+
+                // Only check if we think we're connected
+                if (_state.value !is RpcConnectionState.Connected) {
+                    break
+                }
+
+                try {
+                    // Lightweight health check - just fetch clients (small operation)
+                    services.clientService.getAllClients()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    println("RpcConnectionManager: Heartbeat failed: ${e.message}")
+                    _state.value = RpcConnectionState.Disconnected
+                    _generation.value++
+                    reconnect()
+                    break
+                }
+            }
+        }
     }
 
     private fun closeCurrentConnection() {

@@ -71,7 +71,7 @@ fun main() {
 
             get("/oauth2/scopes") {
                 call.respondText(
-                    """{"scopes":"repo user admin:org admin:public_key admin:repo_hook admin:org_hook gist notifications workflow write:discussion write:packages delete:packages admin:gpg_key admin:ssh_signing_key codespace project security_events"}""",
+                    """{"scopes":"repo user admin:org admin:public_key admin:repo_hook gist notifications workflow"}""",
                     io.ktor.http.ContentType.Application.Json,
                 )
             }

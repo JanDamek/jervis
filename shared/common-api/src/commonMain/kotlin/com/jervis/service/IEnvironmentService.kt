@@ -10,6 +10,8 @@ import kotlinx.rpc.annotations.Rpc
  */
 @Rpc
 interface IEnvironmentService {
+    suspend fun getAllEnvironments(): List<EnvironmentDto>
+
     suspend fun listEnvironments(clientId: String): List<EnvironmentDto>
 
     suspend fun getEnvironment(id: String): EnvironmentDto

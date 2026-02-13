@@ -23,6 +23,11 @@ class EnvironmentRpcImpl(
 ) : BaseRpcImpl(errorLogService),
     IEnvironmentService {
 
+    override suspend fun getAllEnvironments(): List<EnvironmentDto> =
+        executeWithErrorHandling("getAllEnvironments") {
+            environmentService.getAllEnvironments().map { it.toDto() }
+        }
+
     override suspend fun listEnvironments(clientId: String): List<EnvironmentDto> =
         executeWithErrorHandling("listEnvironments") {
             environmentService.listEnvironmentsForClient(ClientId(ObjectId(clientId))).map { it.toDto() }

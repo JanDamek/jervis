@@ -90,6 +90,10 @@ internal fun componentTypeLabel(type: ComponentTypeEnum): String = when (type) {
     ComponentTypeEnum.PROJECT -> "Projekt"
 }
 
+enum class EnvironmentScope {
+    CLIENT, GROUP, PROJECT
+}
+
 @Composable
 internal fun NewEnvironmentDialog(
     repository: JervisRepository,
@@ -100,6 +104,11 @@ internal fun NewEnvironmentDialog(
     var namespace by remember { mutableStateOf("") }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
+    var selectedScope by remember { mutableStateOf(EnvironmentScope.CLIENT) }
+    var groups by remember { mutableStateOf<List<com.jervis.dto.ProjectGroupDto>>(emptyList()) }
+    var selectedGroupId by remember { mutableStateOf<String?>(null) }
+    var projects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
+    var selectedProjectId by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -113,6 +122,25 @@ internal fun NewEnvironmentDialog(
         }
     }
 
+    LaunchedEffect(selectedClientId) {
+        selectedClientId?.let { clientId ->
+            try {
+                val allGroups = repository.projectGroups.getAllGroups()
+                groups = allGroups.filter { it.clientId == clientId }
+                val allProjects = repository.projects.listProjectsForClient(clientId)
+                projects = allProjects
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    val isValid = name.isNotBlank() && namespace.isNotBlank() && selectedClientId != null &&
+        when (selectedScope) {
+            EnvironmentScope.CLIENT -> true
+            EnvironmentScope.GROUP -> selectedGroupId != null
+            EnvironmentScope.PROJECT -> selectedProjectId != null
+        }
+
     JFormDialog(
         visible = true,
         title = "Nové prostředí",
@@ -124,6 +152,8 @@ internal fun NewEnvironmentDialog(
                     repository.environments.saveEnvironment(
                         EnvironmentDto(
                             clientId = clientId,
+                            groupId = if (selectedScope == EnvironmentScope.GROUP) selectedGroupId else null,
+                            projectId = if (selectedScope == EnvironmentScope.PROJECT) selectedProjectId else null,
                             name = name,
                             namespace = namespace,
                         ),
@@ -135,7 +165,7 @@ internal fun NewEnvironmentDialog(
             }
         },
         onDismiss = onDismiss,
-        confirmEnabled = name.isNotBlank() && namespace.isNotBlank() && selectedClientId != null && !isSaving,
+        confirmEnabled = isValid && !isSaving,
         confirmText = "Vytvořit",
     ) {
         JTextField(
@@ -164,5 +194,37 @@ internal fun NewEnvironmentDialog(
             label = "Klient",
             itemLabel = { it.name },
         )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = EnvironmentScope.entries.toList(),
+            selectedItem = selectedScope,
+            onItemSelected = { selectedScope = it },
+            label = "Rozsah",
+            itemLabel = { when (it) {
+                EnvironmentScope.CLIENT -> "Klient (všechny projekty)"
+                EnvironmentScope.GROUP -> "Skupina (projekty ve skupině)"
+                EnvironmentScope.PROJECT -> "Projekt (jen jeden projekt)"
+            }},
+        )
+        if (selectedScope == EnvironmentScope.GROUP && groups.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            JDropdown(
+                items = groups,
+                selectedItem = groups.find { it.id == selectedGroupId },
+                onItemSelected = { selectedGroupId = it.id },
+                label = "Skupina",
+                itemLabel = { it.name },
+            )
+        }
+        if (selectedScope == EnvironmentScope.PROJECT && projects.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            JDropdown(
+                items = projects,
+                selectedItem = projects.find { it.id == selectedProjectId },
+                onItemSelected = { selectedProjectId = it.id },
+                label = "Projekt",
+                itemLabel = { it.name },
+            )
+        }
     }
 }

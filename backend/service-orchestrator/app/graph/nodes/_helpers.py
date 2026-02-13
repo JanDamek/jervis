@@ -100,15 +100,21 @@ async def llm_with_cloud_fallback(
     if allow_cloud_prompt:
         auto = auto | escalation.get_available_providers()
 
-    # Pre-flight: context too large for local?
-    if context_tokens > 49_000:
-        return await _escalate_to_cloud(
-            task, auto, escalation, context_tokens, task_type,
-            messages, max_tokens, temperature, tools,
-            reason="Context příliš velký pro lokální model (>49k tokenů)",
+    # Safety: context exceeds qwen3 max (256k)?
+    if context_tokens > 256_000:
+        # Try cloud if enabled, otherwise fail
+        if auto:
+            return await _escalate_to_cloud(
+                task, auto, escalation, context_tokens, task_type,
+                messages, max_tokens, temperature, tools,
+                reason=f"Context příliš velký ({context_tokens//1000}k tokenů, qwen3 max je 256k)",
+            )
+        raise RuntimeError(
+            f"Context příliš velký ({context_tokens//1000}k tokenů, qwen3 max je 256k). "
+            "Cloud modely nejsou povoleny v projektu."
         )
 
-    # Try local
+    # Try local first (qwen3 supports up to 256k context)
     local_tier = escalation.select_local_tier(context_tokens)
     logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s", local_tier.value, bool(tools))
     try:

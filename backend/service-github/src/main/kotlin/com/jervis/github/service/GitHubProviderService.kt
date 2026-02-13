@@ -48,7 +48,8 @@ class GitHubProviderService(
             AuthOption(
                 AuthTypeEnum.BEARER, "Personal Access Token",
                 fields = listOf(
-                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://github.example.com"),
+                    FormField(FormFieldType.CLOUD_TOGGLE, "Cloud (github.com)", defaultValue = "true"),
+                    FormField(FormFieldType.BASE_URL, "Base URL", placeholder = "https://api.github.com", required = false),
                     FormField(FormFieldType.BEARER_TOKEN, "Personal Access Token", isSecret = true),
                 ),
             ),

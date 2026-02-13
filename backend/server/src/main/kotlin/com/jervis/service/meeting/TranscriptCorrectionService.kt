@@ -31,7 +31,7 @@ private val logger = KotlinLogging.logger {}
 @Service
 class TranscriptCorrectionService(
     private val meetingRepository: MeetingRepository,
-    private val orchestratorClient: PythonOrchestratorClient,
+    private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val whisperJobRunner: WhisperJobRunner,
 ) {
@@ -80,7 +80,7 @@ class TranscriptCorrectionService(
                 )
             }
 
-            val result = orchestratorClient.correctTranscript(
+            val result = correctionClient.correctTranscript(
                 CorrectionRequestDto(
                     clientId = meeting.clientId.toString(),
                     projectId = meeting.projectId?.toString(),
@@ -197,7 +197,7 @@ class TranscriptCorrectionService(
                     category = a.category,
                 )
             }
-            orchestratorClient.answerCorrectionQuestions(
+            correctionClient.answerCorrectionQuestions(
                 CorrectionAnswerRequestDto(
                     clientId = meeting.clientId.toString(),
                     projectId = meeting.projectId?.toString(),
@@ -342,7 +342,7 @@ class TranscriptCorrectionService(
             }
 
             // 5. Send to targeted correction endpoint
-            val correctionResult = orchestratorClient.correctTargeted(
+            val correctionResult = correctionClient.correctTargeted(
                 CorrectionTargetedRequestDto(
                     clientId = clientIdStr,
                     projectId = meeting.projectId?.toString(),
@@ -511,7 +511,7 @@ class TranscriptCorrectionService(
             }
 
             // Targeted correction
-            val correctionResult = orchestratorClient.correctTargeted(
+            val correctionResult = correctionClient.correctTargeted(
                 CorrectionTargetedRequestDto(
                     clientId = clientIdStr,
                     projectId = meeting.projectId?.toString(),
