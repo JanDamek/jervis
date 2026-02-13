@@ -100,21 +100,21 @@ object NetworkModule {
     ): KtorRpcClient {
         val cleanBaseUrl = baseUrl.trimEnd('/')
 
-        // Convert HTTP(S) URLs to WebSocket URLs for RPC
-        val wsUrl =
-            cleanBaseUrl
-                .replace("https://", "wss://")
-                .replace("http://", "ws://")
+        // Convert HTTP(S) URLs to WebSocket URLs and append /rpc path
+        val rpcUrl = "${cleanBaseUrl}/rpc"
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
 
-        val url = io.ktor.http.Url(wsUrl)
+        val parsedUrl = io.ktor.http.Url(rpcUrl)
 
         return httpClient.rpc {
             url {
-                protocol = url.protocol
-                host = url.host
-                port = if (url.specifiedPort == 0) url.protocol.defaultPort else url.specifiedPort
-                encodedPath = "rpc"
+                protocol = parsedUrl.protocol
+                host = parsedUrl.host
+                port = if (parsedUrl.specifiedPort == 0) parsedUrl.protocol.defaultPort else parsedUrl.specifiedPort
+                encodedPath = parsedUrl.encodedPath  // Use the /rpc path from parsed URL
             }
+            // Serialization already configured via installKrpc in HttpClient
         }
     }
 

@@ -132,8 +132,8 @@ class RpcConnectionManager(private val baseUrl: String) {
 
                 println("RpcConnectionManager: Connected (generation=${_generation.value})")
 
-                // Monitor connection — when rpcClient job completes, reconnect
-                monitorConnection(newRpcClient)
+                // Connection monitoring happens via resilientFlow error handling
+                // When streams die, they set state to Disconnected and generation bump triggers reconnect
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -148,25 +148,13 @@ class RpcConnectionManager(private val baseUrl: String) {
     }
 
     /**
-     * Monitor rpcClient lifecycle. When its job completes (connection died),
-     * trigger automatic reconnection.
-     *
-     * Uses KrpcClient.awaitCompletion() which suspends until the client's
-     * internal scope Job completes — this happens when the WebSocket closes.
+     * Connection monitoring is handled by resilientFlow error handling.
+     * When a stream dies, it catches the error, sets state to Disconnected,
+     * and the generation bump from reconnect() triggers flatMapLatest to restart streams.
      */
     private fun monitorConnection(client: KtorRpcClient) {
-        scope.launch {
-            try {
-                client.awaitCompletion()
-            } catch (_: Exception) {}
-
-            // Only trigger reconnect if this is still the active client
-            if (rpcClient === client) {
-                println("RpcConnectionManager: Connection lost, triggering reconnect...")
-                _state.value = RpcConnectionState.Disconnected
-                reconnect()
-            }
-        }
+        // Removed: awaitCompletion() was completing immediately, causing reconnect loop
+        // resilientFlow.catch handles errors and triggers reconnect via state change
     }
 
     private fun closeCurrentConnection() {
@@ -205,10 +193,12 @@ class RpcConnectionManager(private val baseUrl: String) {
                     subscribe(services).catch { e ->
                         if (e is CancellationException) throw e
                         println("RpcConnectionManager: Stream error: ${e.message}")
-                        // monitorConnection will detect the dead connection and trigger
-                        // reconnect. As defense-in-depth, also mark disconnected here
-                        // so reconnect() won't skip due to Connected state guard.
+                        // Mark disconnected and trigger reconnect
                         _state.value = RpcConnectionState.Disconnected
+                        scope.launch {
+                            _generation.value++
+                            reconnect()
+                        }
                     },
                 )
             }
