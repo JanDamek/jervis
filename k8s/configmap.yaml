@@ -244,8 +244,8 @@ metadata:
   namespace: jervis
 data:
   ROUTER_PORT: "11430"
-  GPU_BACKENDS: '[{"url":"http://127.0.0.1:11434","vram_gb":24,"name":"p40"}]'
-  CPU_BACKEND_URL: "http://127.0.0.1:11435"
+  GPU_BACKENDS: '[{"url":"http://192.168.100.117:11434","vram_gb":24,"name":"p40"}]'
+  CPU_BACKEND_URL: "http://192.168.100.117:11435"
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "1800"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "300"
