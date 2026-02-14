@@ -260,6 +260,59 @@ NEW → RUNNING (orchestration started)
 
 ---
 
+### Předání příloh TaskDocument do Python orchestratoru s Tika+VLM zpracováním
+
+**Problém:**
+- Orchestrator (Python) nedostává přílohy z TaskDocument při zpracování úkolů
+- V `AgentOrchestratorService.dispatchToPythonOrchestrator()` se nepředávají attachments v `OrchestrateRequestDto`
+- Python orchestrator tedy nemůže přímo pracovat s obrázky, PDFy a dalšími soubory
+- Qualifier agent sice attachments zpracuje a pošle do KB, ale orchestrator (který provádí kodování) je nemá k dispozici
+- Tika microservice už má podporu pro OCR i VLM (qwen3-vl), ale není využívána přímo orchestratorem
+
+**Řešení:**
+1. Rozšířit `OrchestrateRequestDto` o pole `attachments: List<AttachmentDto>`
+2. V `AgentOrchestratorService` načíst attachments z TaskDocument a přidat do requestu
+3. V Python orchestrator (intake node) vytvořit AttachmentProcessingService:
+   - Extrahuje text z pomocí Tika client
+   - Pro obrázky: pokud OCR text je nedostatečný, použije VLM (qwen3-vl) přes ImageService
+   - Vrátí plain text reprezentaci attachmentu
+4. Intake node zpracuje všechny přílohy a přidá jejich text do `task.content` nebo do `state['attachment_contents']`
+5. Ostatní uzly (evidence, execute) budou mít k dispozici text z příloh
+
+**Implementace:**
+1. Kotlin (server):
+   - Vytvořit `AttachmentDto` (id, filename, mimeType, dataBase64) v package `com.jervis.configuration`
+   - Rozšířit `OrchestrateRequestDto` o `attachments: List<AttachmentDto>`
+   - Upravit `AgentOrchestratorService.dispatchToPythonOrchestrator()`: načíst `task.attachments`, převést na AttachmentDto (včetně načtení binary data z disku a base64 kódování), přidat do requestu
+2. Python (orchestrator):
+   - Vytvořit `app.services.attachment_processor.AttachmentProcessingService`:
+     - `__init__(self, tika_client, image_service)`
+     - `async def process_attachment(self, file_bytes: bytes, filename: str) -> str`
+     - Použije stejnou logiku jako `knowledge_service.ingest_file` (Tika OCR + VLM fallback)
+   - Upravit `app/graph/nodes/intake.py`:
+     - Načíst `attachments` z `state['task']` (přidat do CodingTask modelu)
+     - Pro každou přílohu volat `attachment_processor.process_attachment()`
+     - Přidat výsledný text do `state['content']` (připojit k původnímu query)
+   - Upravit `app/models.py`:
+     - Rozšířit `CodingTask` o `attachments: list[dict]` (nebo speciální DTO)
+3. Testing:
+   - Unit testy pro AttachmentProcessingService s různými typy souborů
+   - Integrační test: poslat chat s přílohou, ověřit že orchestrator obdrží a zpracuje text
+   - Ověřit že VLM (qwen3-vl) je voláno pro obrázky s nízkým OCR výstupem
+
+**Soubory:**
+- `backend/server/src/main/kotlin/com/jervis/configuration/PythonOrchestratorClient.kt` (add AttachmentDto, extend OrchestrateRequestDto)
+- `backend/server/src/main/kotlin/com/jervis/service/agent/coordinator/AgentOrchestratorService.kt` (include attachments in request)
+- `backend/service-orchestrator/app/services/attachment_processor.py` (new)
+- `backend/service-orchestrator/app/models.py` (extend CodingTask)
+- `backend/service-orchestrator/app/graph/nodes/intake.py` (process attachments)
+
+**Priorita:** High (orchestrator potřebuje mít přístup k přílohám)
+**Complexity:** Medium
+**Status:** Planned
+
+---
+
 ## UI & Chat Experience
 
 ### Token-by-Token Chat Streaming

@@ -436,10 +436,35 @@ class AgentOrchestratorService(
 
     /**
      * Resolve workspace path for a task based on client/project.
-     * Returns absolute path to the project's git workspace directory.
+     * Returns absolute path to the project's git repository workspace directory.
+     *
+     * For projects with a REPOSITORY resource, returns the full path including
+     * resource subdirectory: `.../git/{resourceId}/`
+     *
+     * For projects without a repository, returns the workspace root.
      */
-    private fun resolveWorkspacePath(task: TaskDocument): String {
+    private suspend fun resolveWorkspacePath(task: TaskDocument): String {
         val projectId = task.projectId ?: return directoryStructureService.workspaceRoot().toString()
+
+        // Get project document to access resources
+        val project = projectService.getProjectByIdOrNull(projectId)
+            ?: return directoryStructureService.workspaceRoot().toString()
+
+        // Find first REPOSITORY resource
+        val repoResource = project.resources.firstOrNull {
+            it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+        }
+
+        if (repoResource != null) {
+            // Return full path including resource subdirectory
+            return gitRepositoryService.getRepoDir(
+                project = project,
+                resource = repoResource,
+                workspaceType = com.jervis.service.indexing.git.WorkspaceType.AGENT,
+            ).toAbsolutePath().toString()
+        }
+
+        // Fallback: project has no repository resource
         return directoryStructureService.projectGitDir(task.clientId, projectId).toString()
     }
 }

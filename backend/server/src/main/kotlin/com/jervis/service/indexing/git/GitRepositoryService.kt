@@ -350,8 +350,8 @@ class GitRepositoryService(
             WorkspaceType.INDEXING -> directoryStructureService.projectGitIndexingDir(project.clientId, project.id)
             WorkspaceType.AGENT -> directoryStructureService.projectGitDir(project.clientId, project.id)
         }
-        val safeId = resource.resourceIdentifier.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        return baseDir.resolve(safeId).also {
+        // Use stable resource ID instead of mutable resourceIdentifier (repo name can change)
+        return baseDir.resolve(resource.id).also {
             if (!it.exists()) Files.createDirectories(it)
         }
     }
