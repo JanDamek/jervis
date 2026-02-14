@@ -203,6 +203,38 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
+     * Interrupt a running orchestration to allow higher-priority task to run.
+     *
+     * Sends interrupt request to Python orchestrator, which saves checkpoint to MongoDB
+     * and gracefully stops execution. The task can be resumed later from the checkpoint.
+     *
+     * @param threadId The LangGraph thread ID to interrupt
+     * @return true if interrupt was successful, false otherwise
+     */
+    suspend fun interrupt(threadId: String): Boolean {
+        return try {
+            logger.info { "PYTHON_ORCHESTRATOR_INTERRUPT: threadId=$threadId" }
+            val response: JsonObject = client.post("$apiBaseUrl/interrupt/$threadId") {
+                contentType(ContentType.Application.Json)
+            }.body()
+
+            val success = response["success"]?.toString()?.trim('"')?.toBoolean() ?: false
+
+            if (success) {
+                logger.info { "PYTHON_ORCHESTRATOR_INTERRUPT_SUCCESS: threadId=$threadId" }
+            } else {
+                val error = response["error"]?.toString()?.trim('"') ?: "unknown"
+                logger.warn { "PYTHON_ORCHESTRATOR_INTERRUPT_FAILED: threadId=$threadId error=$error" }
+            }
+
+            success
+        } catch (e: Exception) {
+            logger.error(e) { "PYTHON_ORCHESTRATOR_INTERRUPT_ERROR: threadId=$threadId ${e.message}" }
+            false
+        }
+    }
+
+    /**
      * Health check.
      */
     suspend fun isHealthy(): Boolean {

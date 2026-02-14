@@ -266,12 +266,44 @@ class BackgroundEngine(
     private suspend fun runExecutionLoop() {
         while (scope.isActive) {
             try {
-                // 0. Skip if Python orchestrator is already processing a task
-                //    Ollama can only handle one LLM call at a time — no point dispatching more
+                // 0. Check if Python orchestrator is already processing a task
                 val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+
                 if (orchestratingCount > 0) {
-                    delay(5_000)
-                    continue
+                    // PREEMPTIVE PRIORITY: If FOREGROUND task exists while BACKGROUND is running → interrupt BACKGROUND
+                    val waitingForegroundTask = taskService.getNextForegroundTask()
+
+                    if (waitingForegroundTask != null) {
+                        // Get currently running task
+                        val runningTask = taskService.getCurrentRunningTask()
+
+                        if (runningTask != null && runningTask.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
+                            logger.warn {
+                                "PREEMPT: FOREGROUND task ${waitingForegroundTask.id} arrived while BACKGROUND task ${runningTask.id} is running → interrupting BACKGROUND"
+                            }
+
+                            // Interrupt the BACKGROUND task - orchestrator will save checkpoint and return
+                            val interrupted = interruptBackgroundTask(runningTask)
+
+                            if (interrupted) {
+                                logger.info { "PREEMPT_SUCCESS: BACKGROUND task ${runningTask.id} interrupted, will resume later" }
+                                // Continue to next iteration - FOREGROUND task will be picked up
+                                continue
+                            } else {
+                                logger.warn { "PREEMPT_FAILED: Could not interrupt BACKGROUND task ${runningTask.id}, will wait" }
+                                delay(1_000)
+                                continue
+                            }
+                        } else {
+                            // FOREGROUND is already running, or no running task found - wait
+                            delay(5_000)
+                            continue
+                        }
+                    } else {
+                        // No FOREGROUND tasks waiting - just wait for current task to finish
+                        delay(5_000)
+                        continue
+                    }
                 }
 
                 // 1. Check for FOREGROUND tasks first (chat messages have priority)
@@ -312,6 +344,52 @@ class BackgroundEngine(
                 logger.error(e) { "Error in execution loop - will retry in ${backgroundProperties.waitOnError} (configured)" }
                 delay(backgroundProperties.waitOnError)
             }
+        }
+    }
+
+    /**
+     * Interrupt a running BACKGROUND task to allow FOREGROUND task to run immediately.
+     *
+     * Sends interrupt request to Python orchestrator, which saves checkpoint to MongoDB
+     * and returns. The BACKGROUND task can be resumed later from the checkpoint.
+     *
+     * @param task The BACKGROUND task currently running
+     * @return true if interrupt was successful, false otherwise
+     */
+    private suspend fun interruptBackgroundTask(task: TaskDocument): Boolean {
+        if (task.orchestratorThreadId == null) {
+            logger.warn { "PREEMPT_SKIP: Task ${task.id} has no orchestratorThreadId, cannot interrupt" }
+            return false
+        }
+
+        try {
+            logger.info { "PREEMPT_INTERRUPT: Sending interrupt to thread ${task.orchestratorThreadId}" }
+
+            // Send interrupt request to Python orchestrator
+            val success = pythonOrchestratorClient.interrupt(task.orchestratorThreadId)
+
+            if (success) {
+                // Reset task state to READY_FOR_GPU so it can be resumed later
+                // The checkpoint is already saved in MongoDB by the orchestrator
+                taskRepository.save(
+                    task.copy(
+                        state = TaskStateEnum.READY_FOR_GPU,
+                        // Keep orchestratorThreadId so it can resume from checkpoint
+                    ),
+                )
+
+                // Clear running task tracking
+                taskService.setRunningTask(null)
+
+                logger.info { "PREEMPT_COMPLETE: Task ${task.id} interrupted and reset to READY_FOR_GPU" }
+                return true
+            } else {
+                logger.warn { "PREEMPT_FAILED: Orchestrator returned false for interrupt" }
+                return false
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "PREEMPT_ERROR: Failed to interrupt task ${task.id}" }
+            return false
         }
     }
 

@@ -590,6 +590,44 @@ async def approve(thread_id: str, response: ApprovalResponse):
     return {"status": "resuming", "thread_id": thread_id}
 
 
+@app.post("/interrupt/{thread_id}")
+async def interrupt(thread_id: str):
+    """Interrupt a running orchestration to allow higher-priority task to run.
+
+    Gracefully cancels the current execution. LangGraph automatically saves
+    the checkpoint to MongoDB, allowing the task to be resumed later from
+    the same point.
+
+    This is different from /cancel which marks the task as errored.
+    Interrupt allows the task to be resumed later when queue space is available.
+    """
+    task = _active_tasks.get(thread_id)
+    if not task:
+        logger.warning("INTERRUPT_NOT_FOUND: No active task for thread_id=%s", thread_id)
+        return {"success": False, "error": "No active task found"}
+
+    try:
+        # Cancel the asyncio task - LangGraph will save checkpoint automatically
+        task.cancel()
+        logger.info("INTERRUPT_SUCCESS: Gracefully interrupted thread_id=%s, checkpoint saved to MongoDB", thread_id)
+
+        # Remove from active tasks
+        _active_tasks.pop(thread_id, None)
+
+        # Clean up SSE stream if exists
+        queue = _active_streams.pop(thread_id, None)
+        if queue:
+            try:
+                await queue.put(None)  # Signal stream end
+            except Exception:
+                pass
+
+        return {"success": True}
+    except Exception as e:
+        logger.error("INTERRUPT_ERROR: Failed to interrupt thread_id=%s: %s", thread_id, e)
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/cancel/{thread_id}")
 async def cancel(thread_id: str):
     """Cancel a running orchestration."""
