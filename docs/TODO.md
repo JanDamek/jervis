@@ -311,33 +311,19 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 
 ### Frontend Queue Display for Inline Messages During Agent Execution
 
-**Problém:**
-- Když uživatel pošle další zprávu do chatu, zatímco agent (Python orchestrator) ještě zpracovává předchozí požadavek (stav tasku = `PYTHON_ORCHESTRATING`), nová zpráva se uloží do stejného FOREGROUND tasku (inline message)
-- Tato nová zpráva se NEzobrazuje v UI frontě (foreground queue), protože `getPendingForegroundTasks()` vrací pouze tasky se stavem `READY_FOR_GPU`
-- UI zobrazuje pouze aktuálně běžící task (runningTask) a samostatnou frontu (foregroundQueue), ale inline messages jsou "neviditelné"
-- Pouze po dokončení předchozího tasku se fronta aktualizuje a nové zprávy se pak zobrazí
+**Status:** ✅ **IMPLEMENTED** (2026-02-14)
 
-**Požadavek:**
-- Inline messages (tasky ve stavu `PYTHON_ORCHESTRATING`) se mají zobrazovat v UI frontě jako součást fronty
-- User by měl vidět, že do fronty bylo přidáno dalších X zpráv, zatímco agent pracuje
-
-**Root Cause:**
-- `TaskService.getPendingForegroundTasks()` filtruje pouze `TaskStateEnum.READY_FOR_GPU`
-- Tasky ve stavu `PYTHON_ORCHESTRATING` jsou vyloučeny, i když mají nově přidané inline messages
-- `getPendingTasks()` vrací runningTask separately, ale UI foregroundQueue zobrazuje pouze z `getPendingForegroundTasks()`
-
-**Řešení:**
-1. Rozšířit `getPendingForegroundTasks()` o vrácení tasků ve stavu `PYTHON_ORCHESTRATING` (kromě `READY_FOR_GPU`)
-2. Povolit vícevrástý `findByProcessingModeAndStateOrderByQueuePositionAsc()` s `Collection<TaskStateEnum>` parametrem
-3. Aktualizovat repository metodu `findByProcessingModeAndStateOrderByQueuePositionAsc()` → `findByProcessingModeAndStateInOrderByQueuePositionAsc()`
+**Implementace:**
+- ✅ `TaskRepository.findByProcessingModeAndStateInOrderByQueuePositionAsc()` — nová multi-state query
+- ✅ `TaskService.getPendingForegroundTasks()` rozšířen o `PYTHON_ORCHESTRATING` (kromě `READY_FOR_GPU`)
+- ✅ Inline messages jsou viditelné ve frontě i během agent zpracování
 
 **Soubory:**
-- `backend/server/src/main/kotlin/com/jervis/service/background/TaskService.kt` – upravit `getPendingForegroundTasks()` pro includes `PYTHON_ORCHESTRATING`
-- `backend/server/src/main/kotlin/com/jervis/repository/TaskRepository.kt` – přidat metodu `findByProcessingModeAndStateInOrderByQueuePositionAsc()`
+- `backend/server/.../repository/TaskRepository.kt` — nová metoda
+- `backend/server/.../service/background/TaskService.kt` — multi-state filter
 
-**Priorita:** High (UI/UX - viditelnost fronty)
+**Priorita:** ~~High~~ **Done**
 **Complexity:** Simple
-**Status:** Planned
 
 ---
 
@@ -581,70 +567,31 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 
 ### Refactoring Pending Message System
 
-**Problém:**
-- **Pending message retry logika je křehká** a způsobuje nežádoucí re-execution tasků
-- PendingMessageStorage ukládá zprávy do persistent storage (survives app restart)
-- Při reconnectu se pending message automaticky retry → resetuje DISPATCHED_GPU task → agent znovu zpracovává staré zprávy
-- **Časování je problematické**: message cleared po RPC success, ne po server confirmation
-- Není žádný timeout - staré pending messages (dny/týdny) se retry i když už nejsou relevantní
-- Chybí viditelnost pro uživatele - není jasné, že message je pending a bude retry
-
-**Současné chování:**
-1. User pošle zprávu → `sendMessage()` volá RPC
-2. Při chybě → `pendingMessage = text`, `PendingMessageStorage.save(text)`
-3. App restart → `init` načte pending message z persistent storage
-4. `reloadHistory()` → `pendingMessage?.let { sendMessage() }` → automatický retry
-5. ❌ **Problém**: Pokud RPC uspěl ale nepřišlo potvrzení ze streamu, zpráva zůstane pending
-6. ❌ **Problém**: Staré zprávy (hodiny/dny staré) se retry i když už nejsou relevantní
-7. ❌ **Problém**: Retry při reconnectu může resetovat DISPATCHED_GPU task → re-execution
-
-**Quick fix (implementováno 2026-02-13):**
-- ✅ Pending message se maže až po **server confirmation** (USER_MESSAGE echo ze streamu), ne po RPC success
-- ✅ Zkontroluje se `pendingMessage == response.message` před vymazáním
-- Stále zbývá refactoring celého systému
-
-**Požadovaný refactoring:**
-1. **Timeout pro pending messages** - zprávy starší než X hodin automaticky zahodit
-   - Config: `PENDING_MESSAGE_TIMEOUT_HOURS = 24` (default)
-   - Při načtení z storage: zkontrolovat timestamp, zahodit staré
-   - Metadata: `{text: string, timestamp: ISO8601, attemptCount: number}`
-
-2. **Viditelnost pro uživatele** - jasně ukázat pending message v UI
-   - Banner/alert: "Máte neodeslané zprávy: [text] (před X hodinami)"
-   - Tlačítka: "Odeslat znovu" | "Zahodit"
-   - Ne automatický retry bez user confirmation pro staré zprávy (>1h)
-
-3. **Exponential backoff pro retry** - ne okamžitý retry při každém reconnectu
-   - První retry: okamžitě
-   - Druhý retry: po 5s
-   - Třetí retry: po 30s
-   - Čtvrtý retry: po 5min
-   - Pak už jen manuální retry z UI
-
-4. **Server-side deduplication** - prevent duplicate processing
-   - Client-side message ID: `UUID.randomUUID()` při vytváření zprávy
-   - RPC: `ChatRequestDto(text, context, messageId)`
-   - Server: zkontrolovat `ChatMessageDocument.clientMessageId` - skip duplicates
-   - Idempotence: stejný messageId = skip, vrátit success
-
-5. **Robustnější error handling** - rozlišit typy errorů
-   - Network error (timeout, connection refused) → retry má smysl
-   - Server error (400, 500) → retry nemá smysl, user musí opravit
-   - UI: zobrazit konkrétní error, ne generický "Nepodařilo se odeslat"
+**Status:** ✅ **IMPLEMENTED** (2026-02-14) – Full refactoring complete
 
 **Implementace:**
-- `shared/ui-common/.../MainViewModel.kt` - timeout check, exponential backoff
-- `shared/ui-common/.../storage/PendingMessageStorage.kt` - metadata support (timestamp, attemptCount)
-- `shared/ui-common/.../screens/MainScreen.kt` - pending message banner UI
-- `shared/common-dto/.../ChatRequestDto.kt` - add `messageId: String?` field
-- `backend/server/.../rpc/AgentOrchestratorRpcImpl.kt` - deduplication check
-- `backend/server/.../entity/ChatMessageDocument.kt` - add `clientMessageId: String?` field
+- ✅ **PendingMessageState** – structured `@Serializable` data class with `clientMessageId`, `timestampMs`, `attemptCount`, error info
+- ✅ **Platform storage** – JSON persistence: JVM (`~/.jervis/pending_message.json`), Android (SharedPreferences), iOS (NSUserDefaults)
+- ✅ **24h expiry** – messages older than 24 hours auto-discarded on load
+- ✅ **Exponential backoff** – [0s, 5s, 30s, 5min], max 4 auto-retries, then manual only
+- ✅ **Error classification** – `SendError.Network` (retryable) vs `SendError.Server` (not retryable)
+- ✅ **Server-side deduplication** – `clientMessageId: UUID` in `ChatRequestDto` + `ChatMessageDocument`, checked in `sendMessage()`
+- ✅ **UI PendingMessageBanner** – Warning icon, truncated text, countdown timer, Retry/Cancel buttons
+- ✅ **Dead code cleanup** – removed `showReconnectDialog` (never set to true), removed dead `ConfirmDialog` from App.kt
 
-**Priorita:** High (aktuálně způsobuje nežádoucí re-execution tasků)
+**Soubory:**
+- `shared/ui-common/.../storage/PendingMessageStorage.kt` — `PendingMessageState` + `isExpired()`
+- `shared/ui-common/.../storage/PendingMessageStorage.{jvm,android,ios}.kt` — platform impls
+- `shared/ui-common/.../model/SendError.kt` — error classification
+- `shared/ui-common/.../MainViewModel.kt` — backoff scheduling, error handling, pending info flow
+- `shared/ui-common/.../MainScreen.kt` — `PendingMessageBanner` composable
+- `shared/common-dto/.../ChatRequestDto.kt` — `clientMessageId` field
+- `backend/server/.../entity/ChatMessageDocument.kt` — `clientMessageId` field
+- `backend/server/.../repository/ChatMessageRepository.kt` — `existsByClientMessageId()`
+- `backend/server/.../rpc/AgentOrchestratorRpcImpl.kt` — dedup check
+
+**Priorita:** ~~High~~ **Done**
 **Complexity:** Medium
-**Status:** Planned (quick fix implementován, full refactoring pending)
-
-**Poznámka:** Pending message systém je kritický pro UX, ale současná implementace je křehká. Full refactoring vyžaduje změny v DTO, server logice a UI.
 
 ---
 
