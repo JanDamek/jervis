@@ -194,34 +194,6 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 
 ## Autoscaling & Performance
 
-### KB Autoscaling při Read Timeout
-
-**Status:** ✅ **IMPLEMENTED** (2026-02-12) – KB split na read/write deployments
-
-**Implementace:**
-- ✅ KB rozděleno na dva samostatné deployments:
-  - `jervis-knowledgebase-read`: 5 replik, `KB_MODE=read`, high priority
-  - `jervis-knowledgebase-write`: 2 repliky, `KB_MODE=write`, normal priority
-- ✅ Dva samostatné Services:
-  - `jervis-knowledgebase` → read deployment (orchestrator, retrieve operace)
-  - `jervis-knowledgebase-write` → write deployment (server indexing, ingest operace)
-- ✅ Orchestrator timeout zvýšen z 10s na 120s (pro případ velkého zatížení)
-- ✅ Server používá write endpoint pro všechny ingest operace
-- ✅ Read operace nejsou blokovány write operacemi (separate Ollama request queues)
-
-**Soubory:**
-- `k8s/app_knowledgebase.yaml` – split deployments + services + PriorityClass
-- `backend/service-orchestrator/app/kb/prefetch.py` – timeout 120s
-- `backend/server/src/main/kotlin/com/jervis/configuration/properties/EndpointProperties.kt` – `knowledgebaseWrite` property
-- `backend/server/src/main/kotlin/com/jervis/configuration/RpcClientsConfig.kt` – write endpoint helper
-- `k8s/configmap.yaml` – separate URLs pro read/write
-- `k8s/build_kb.sh` – deploy both read+write deployments
-
-**Priorita:** ~~Medium~~ **Done**
-**Complexity:** Simple
-
----
-
 ### DB Performance Metrics & Monitoring
 
 **Problém:**
@@ -309,57 +281,6 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 
 ---
 
-### Frontend Queue Display for Inline Messages During Agent Execution
-
-**Status:** ✅ **IMPLEMENTED** (2026-02-14)
-
-**Implementace:**
-- ✅ `TaskRepository.findByProcessingModeAndStateInOrderByQueuePositionAsc()` — nová multi-state query
-- ✅ `TaskService.getPendingForegroundTasks()` rozšířen o `PYTHON_ORCHESTRATING` (kromě `READY_FOR_GPU`)
-- ✅ Inline messages jsou viditelné ve frontě i během agent zpracování
-
-**Soubory:**
-- `backend/server/.../repository/TaskRepository.kt` — nová metoda
-- `backend/server/.../service/background/TaskService.kt` — multi-state filter
-
-**Priorita:** ~~High~~ **Done**
-**Complexity:** Simple
-
----
-
-## UI & UX
-
-### Populate Workflow Steps in Chat Messages
-
-**Status:** ✅ Implemented - workflow steps displayed in chat
-
-**Hotovo:**
-- ✅ ChatMessage DTO extended with `workflowSteps: List<WorkflowStep>`
-- ✅ UI component `WorkflowStepsDisplay` shows steps, tools, status
-- ✅ Icons for step status (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending)
-- ✅ `OrchestratorWorkflowTracker` - backend in-memory tracker for workflow steps
-- ✅ `/internal/orchestrator-progress` endpoint tracks nodes per task
-- ✅ `OrchestratorStatusHandler` attaches workflow steps to final message
-- ✅ `ChatMessageDocument.metadata` stores serialized workflow steps
-- ✅ `ChatMessageDto` extended with metadata field
-- ✅ `MainViewModel` deserializes workflow steps from metadata
-- ✅ Node names mapped to Czech labels (intake → "Analýza úlohy", etc.)
-
-**TODO (enhancement):**
-- Extrahovat použité tools z každého node (např. `github_search`, `read_file`, `web_search`) - requires LangGraph state access
-
-**Soubory:**
-- `backend/server/.../service/agent/coordinator/OrchestratorWorkflowTracker.kt` - NEW tracker
-- `backend/server/.../rpc/KtorRpcServer.kt` - progress endpoint updates tracker
-- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - attaches steps to final message
-- `shared/ui-common/.../MainViewModel.kt` - deserializes workflow steps
-- `shared/common-dto/.../ChatMessageDto.kt` - metadata field added
-
-**Priorita:** ~~Medium~~ **Done**
-**Complexity:** Simple
-
----
-
 ## Agent Memory & Knowledge
 
 ### User Context & Preferences Ingestion
@@ -430,36 +351,6 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 - Agent má jen **chat history** (krátkodobá paměť) - komprese starých zpráv do `ChatSummaryDocument`
 - **Chybí KB ingestion** dokončených tasků - dlouhodobá strukturovaná paměť
 - Když agent dokončí úkol, výsledek se neukládá do KB pro budoucí použití
-
-**Předchozí řešení – KB Query Transformation (2026-02-13):**
-
-**Problém s KB vyhledáváním:**
-- Orchestrator přímo používal uživatelský dotaz (v libovolném jazyce) pro KB vyhledávání
-- Např. dotaz "ukaž mi co najdeš v KB pro email jazyková škola" (čeština) vracel 0 výsledků
-- KB obsahuje anglický technický obsah, takže přímé dotazy v češtině nebo příliš specifické nefungovaly
-
-**Řešení – LLM-based query transformation:**
-1. V `intake` node přidána funkce `transform_user_query_to_kb_queries()` která pomocí LLM převádí uživatelský dotaz na 2-3 obecné anglické technické vyhledávací termíny
-2. Transformované dotazy se ukládají do stavu (`kb_search_queries`) a používají pro všechny KB dotazy v rámci celého orchestration workflow
-3. V `prefetch.py` upraveny funkce `prefetch_kb_context()` a `fetch_project_context()` pro podporu více vyhledávacích dotazů (sequentially, first that returns results)
-4. V `evidence.py` a `intake.py` předány `search_queries` do prefetch funkcí
-
-**Výhody:**
-- KB vyhledávání nyní funguje nezávisle na jazyce uživatele
-- Více šancí na nalezení relevantního obsahu (více variant dotazů)
-- Deduplikace výsledků (uniqueness by sourceUrn)
-- Fallback na původní dotaz, pokud transformace selže
-
-**Soubory:**
-- `backend/service-orchestrator/app/graph/nodes/intake.py` – query transformation + state storage
-- `backend/service-orchestrator/app/kb/prefetch.py` – multi-query support
-- `backend/service-orchestrator/app/graph/nodes/evidence.py` – use transformed queries
-
-**Priorita:** High
-**Complexity:** Medium
-**Status:** ✅ **IMPLEMENTED**
-
----
 
 **Architektura:**
 
@@ -562,36 +453,6 @@ PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR
 **Status:** Planned
 
 **Poznámka:** Infrastructure už existuje, jen potřebuje backend LLM streaming + partial emit logic.
-
----
-
-### Refactoring Pending Message System
-
-**Status:** ✅ **IMPLEMENTED** (2026-02-14) – Full refactoring complete
-
-**Implementace:**
-- ✅ **PendingMessageState** – structured `@Serializable` data class with `clientMessageId`, `timestampMs`, `attemptCount`, error info
-- ✅ **Platform storage** – JSON persistence: JVM (`~/.jervis/pending_message.json`), Android (SharedPreferences), iOS (NSUserDefaults)
-- ✅ **24h expiry** – messages older than 24 hours auto-discarded on load
-- ✅ **Exponential backoff** – [0s, 5s, 30s, 5min], max 4 auto-retries, then manual only
-- ✅ **Error classification** – `SendError.Network` (retryable) vs `SendError.Server` (not retryable)
-- ✅ **Server-side deduplication** – `clientMessageId: UUID` in `ChatRequestDto` + `ChatMessageDocument`, checked in `sendMessage()`
-- ✅ **UI PendingMessageBanner** – Warning icon, truncated text, countdown timer, Retry/Cancel buttons
-- ✅ **Dead code cleanup** – removed `showReconnectDialog` (never set to true), removed dead `ConfirmDialog` from App.kt
-
-**Soubory:**
-- `shared/ui-common/.../storage/PendingMessageStorage.kt` — `PendingMessageState` + `isExpired()`
-- `shared/ui-common/.../storage/PendingMessageStorage.{jvm,android,ios}.kt` — platform impls
-- `shared/ui-common/.../model/SendError.kt` — error classification
-- `shared/ui-common/.../MainViewModel.kt` — backoff scheduling, error handling, pending info flow
-- `shared/ui-common/.../MainScreen.kt` — `PendingMessageBanner` composable
-- `shared/common-dto/.../ChatRequestDto.kt` — `clientMessageId` field
-- `backend/server/.../entity/ChatMessageDocument.kt` — `clientMessageId` field
-- `backend/server/.../repository/ChatMessageRepository.kt` — `existsByClientMessageId()`
-- `backend/server/.../rpc/AgentOrchestratorRpcImpl.kt` — dedup check
-
-**Priorita:** ~~High~~ **Done**
-**Complexity:** Medium
 
 ---
 
