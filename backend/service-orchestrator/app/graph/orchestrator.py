@@ -452,7 +452,7 @@ def get_orchestrator_graph():
             logger.info("Building DELEGATION graph (multi-agent system)")
             graph = build_delegation_graph()
         else:
-            logger.info("Building LEGACY orchestrator graph (14-node)")
+            logger.info("Building orchestrator graph (14-node)")
             graph = build_orchestrator_graph()
         _compiled_graph = graph.compile(checkpointer=_checkpointer)
     return _compiled_graph

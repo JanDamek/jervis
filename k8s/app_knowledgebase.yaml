@@ -1,4 +1,4 @@
-# ===== READ Deployment (5 replicas, high priority) =====
+# ===== READ Deployment (1 replica, high priority) =====
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +6,7 @@ metadata:
   namespace: jervis
 spec:
   revisionHistoryLimit: 2
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: jervis-knowledgebase-read

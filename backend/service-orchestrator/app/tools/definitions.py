@@ -690,5 +690,8 @@ PERSONAL_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH]
 # LearningAgent — web + KB + code search
 LEARNING_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH, TOOL_CODE_SEARCH]
 
-# LegacyAgent — full tool access (backward compat)
-LEGACY_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL
+# All agent tools (full tool access)
+ALL_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL
+
+# Backward compatibility alias
+LEGACY_AGENT_TOOLS: list[dict] = ALL_AGENT_TOOLS
