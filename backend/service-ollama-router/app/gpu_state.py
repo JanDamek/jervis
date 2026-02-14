@@ -64,7 +64,7 @@ class GpuBackend:
 # ── Approximate VRAM sizes for known models ─────────────────────────────
 
 MODEL_VRAM_ESTIMATES: dict[str, float] = {
-    "qwen3-coder-tool:30b": 25.0,  # CRITICAL: fills entire 24GB GPU, nothing else fits!
+    "qwen3-coder-tool:30b": 25.0,  # ~25GB VRAM (exceeds 24GB → uses CPU offload)
     "qwen2.5:7b": 5.0,
     "qwen2.5:14b": 10.0,
     "qwen3-embedding:8b": 5.0,
@@ -185,22 +185,19 @@ class GpuPool:
     ) -> bool:
         """Load a model into GPU VRAM via empty-prompt generate/embeddings call.
 
-        CRITICAL RULE: If :30b model is loaded, NOTHING else can fit (uses all 24GB VRAM).
+        Ollama supports CPU offload - models larger than VRAM will automatically offload
+        layers to CPU RAM (slower but functional). Multiple models can co-locate on GPU.
         """
         from .config import settings
         from .models import EMBEDDING_MODELS
 
-        # CRITICAL: :30b models fill entire GPU - reject other models
+        # When loading :30b - unload other models to maximize VRAM for the large model
         if ":30b" in model:
-            # Loading :30b - unload everything else first
             if backend.loaded_models:
-                logger.warning("Loading :30b model - unloading all other models first")
+                logger.warning("Loading :30b model - unloading all other models to maximize VRAM")
                 await self.unload_all(backend, http_client)
-        else:
-            # Loading non-:30b - check if :30b is already loaded
-            if any(":30b" in m for m in backend.loaded_models):
-                logger.error("Cannot load %s - GPU already has :30b model (fills all VRAM)", model)
-                return False
+        # When loading smaller models alongside :30b - allow co-location
+        # Ollama will use CPU offload if needed (slower but works)
 
         if keep_alive is None:
             keep_alive = settings.default_keep_alive
