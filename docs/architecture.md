@@ -898,6 +898,8 @@ Kotlin Server (BackgroundEngine)
 - **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
 - **task_id convention**: `task_id` sent to Python in `OrchestrateRequestDto` is `task.id.toString()` (MongoDB document `_id`). Python sends this same `task_id` back in all callbacks. `OrchestratorStatusHandler` resolves it via `taskRepository.findById(TaskId(ObjectId(taskId)))`. The `correlationId` field on `TaskDocument` is a separate identifier used for idempotency/deduplication, NOT sent to Python.
 
+**Token-by-token chat streaming**: Final answers from `respond.py` are delivered to the UI progressively (typewriter effect). After the LLM produces the complete answer text, the orchestrator chunks it (~32 chars per chunk, 10ms delay) and emits `STREAMING_TOKEN` messages via `/internal/orchestrator-streaming-token` to Kotlin, which broadcasts them through `MutableSharedFlow<ChatResponseDto>`. `MainViewModel` accumulates tokens into a single `STREAMING` message. When `OrchestratorStatusHandler` emits the authoritative `FINAL` message (with workflow steps), it seamlessly replaces the streaming preview.
+
 **JERVIS Internal Project**: Each client has max 1 `isJervisInternal=true` project. Auto-created on first orchestration for tracker/wiki operations.
 
 ### State Persistence

@@ -1,6 +1,8 @@
 package com.jervis.rpc
 
 import com.jervis.common.types.ConnectionId
+import com.jervis.dto.ChatResponseDto
+import com.jervis.dto.ChatResponseType
 import com.jervis.configuration.properties.KtorClientProperties
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -266,6 +268,32 @@ class KtorRpcServer(
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to process orchestrator status callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator streams answer tokens here (typewriter effect)
+                            post("/internal/orchestrator-streaming-token") {
+                                try {
+                                    val body = call.receive<OrchestratorStreamingTokenCallback>()
+                                    launch {
+                                        agentOrchestratorRpcImpl.emitToChatStream(
+                                            clientId = body.clientId,
+                                            projectId = body.projectId,
+                                            response = ChatResponseDto(
+                                                message = body.token,
+                                                type = ChatResponseType.STREAMING_TOKEN,
+                                                metadata = mapOf("taskId" to body.taskId),
+                                            ),
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process streaming token callback" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -556,6 +584,14 @@ data class OrchestratorStatusCallback(
     val interruptDescription: String? = null,
     val branch: String? = null,
     val artifacts: List<String> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class OrchestratorStreamingTokenCallback(
+    val taskId: String,
+    val clientId: String,
+    val projectId: String,
+    val token: String,
 )
 
 @kotlinx.serialization.Serializable

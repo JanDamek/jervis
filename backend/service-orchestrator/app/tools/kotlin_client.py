@@ -3,6 +3,7 @@
 Push-based communication model:
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress during execution)
 - Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
+- Python → Kotlin: POST /internal/orchestrator-streaming-token (token-by-token chat streaming)
 - Python → Kotlin: POST /internal/correction-progress (correction agent progress)
 - Kotlin → Python: POST /orchestrate/stream (fire-and-forget dispatch)
 - Kotlin → Python: POST /approve/{thread_id} (resume graph)
@@ -134,6 +135,35 @@ class KotlinServerClient:
             return True
         except Exception as e:
             logger.warning("Failed to report status to Kotlin: %s", e)
+            return False
+
+    async def emit_streaming_token(
+        self,
+        task_id: str,
+        client_id: str,
+        project_id: str,
+        token: str,
+    ) -> bool:
+        """Push a streaming token chunk to Kotlin for live chat display.
+
+        Called during final answer generation in respond node.
+        Kotlin emits to chat stream as STREAMING_TOKEN type.
+        UI accumulates tokens into a growing message (typewriter effect).
+        """
+        try:
+            client = await self._get_client()
+            await client.post(
+                "/internal/orchestrator-streaming-token",
+                json={
+                    "taskId": task_id,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "token": token,
+                },
+            )
+            return True
+        except Exception as e:
+            logger.debug("Failed to emit streaming token to Kotlin: %s", e)
             return False
 
     async def report_task_error(self, task_id: str, error: str) -> bool:
