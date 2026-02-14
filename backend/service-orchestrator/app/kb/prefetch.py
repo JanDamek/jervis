@@ -40,8 +40,11 @@ async def prefetch_kb_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
+    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
+    headers = {"X-Ollama-Priority": "1"}
+
     # KB operations can take long due to embeddings and graph traversal
-    async with httpx.AsyncClient(timeout=120.0) as http:
+    async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
         # 1. Relevant knowledge for the task
         # Use search_queries if provided, otherwise fall back to task_description
         task_results: list[dict] = []
@@ -195,8 +198,11 @@ async def fetch_project_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
+    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
+    headers = {"X-Ollama-Priority": "1"}
+
     # KB operations can take long due to embeddings and graph traversal
-    async with httpx.AsyncClient(timeout=120.0) as http:
+    async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
         # 1. Repository & branch structure
         repo_nodes = await _graph_search(
             http, kb_url, query="", node_type="repository",
