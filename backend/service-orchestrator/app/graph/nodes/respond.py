@@ -123,6 +123,12 @@ async def respond(state: dict) -> dict:
                 "• Pokud dotaz obsahuje VÍCE než jednu samostatnou část → řeš každou ZVLÁŠŤ\n"
                 "• Příklad: 'X je Y, když najdeš Z tak...' = 2 úkoly (ulož X, vytvoř task pro Z)\n"
                 "• Na konci SHRŇ všechny provedené akce pro každou část dotazu\n\n"
+                "PRAVIDLA PRO FINÁLNÍ ODPOVĚĎ (CRITICAL!):\n"
+                "• Po dokončení VŠECH požadovaných úkolů → IHNED dej finální odpověď (message.content)\n"
+                "• NIKDY nevolej další nástroje jen pro ověření — výsledky nástrojů VĚŘÍ a jsou finální\n"
+                "• NIKDY neopakuj již provedené akce (např. store_knowledge dvakrát)\n"
+                "• Finální odpověď = shrnutí všech provedených akcí, BEZ dalších tool_calls\n"
+                "• Pokud jsi uložil do KB a vytvořil task → hotovo, odpověz co jsi udělal\n\n"
                 "Odpovídej česky. Buď konkrétní a faktický."
             ),
         },
