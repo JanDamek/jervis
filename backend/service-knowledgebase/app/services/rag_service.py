@@ -49,23 +49,28 @@ class RagService:
                 ]
             )
 
-    async def _embed_with_priority(self, text: str | list[str]) -> list[float] | list[list[float]]:
+    async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
         """Embed text with priority header for router.
 
-        KB_MODE="read" → Priority 1 (ORCHESTRATOR_EMBEDDING, co-located with CRITICAL on GPU)
-        KB_MODE="write" → Priority 4 (BACKGROUND, CPU fallback)
+        Priority can be passed explicitly or falls back to KB_MODE-based default:
+        - KB_MODE="read" → Priority 1 (ORCHESTRATOR_EMBEDDING, co-located with CRITICAL on GPU)
+        - KB_MODE="write" → Priority 4 (BACKGROUND, CPU fallback)
         """
         is_batch = isinstance(text, list)
         prompt = text if is_batch else [text]
+
+        # Use explicit priority if provided, otherwise fall back to KB_MODE default
+        effective_priority = priority if priority is not None else self.embedding_priority
 
         url = f"{settings.OLLAMA_EMBEDDING_BASE_URL}/api/embed"
         payload = {
             "model": settings.EMBEDDING_MODEL,
             "input": prompt,
         }
-        headers = {"X-Ollama-Priority": str(self.embedding_priority)}
+        headers = {"X-Ollama-Priority": str(effective_priority)}
 
-        logger.info("RAG_READ: EMBEDDING query model=%s priority=%d", settings.EMBEDDING_MODEL, self.embedding_priority)
+        logger.info("RAG: EMBEDDING model=%s priority=%d (explicit=%s default=%d)",
+                    settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority)
 
         try:
             resp = await self.http_client.post(url, json=payload, headers=headers)
@@ -80,7 +85,8 @@ class RagService:
     async def ingest(
         self,
         request: IngestRequest,
-        graph_refs: list[str] = None
+        graph_refs: list[str] = None,
+        embedding_priority: int | None = None
     ) -> tuple[int, list[str]]:
         """
         Ingest content into RAG store.
@@ -88,23 +94,24 @@ class RagService:
         Args:
             request: The ingest request
             graph_refs: Optional list of graph node keys referenced in this content
+            embedding_priority: Optional explicit priority for embedding (overrides KB_MODE default)
 
         Returns:
             Tuple of (chunk_count, list of chunk UUIDs)
         """
         logger.info(
-            "RAG_WRITE: START sourceUrn=%s clientId=%s projectId=%s groupId=%s kind=%s content_len=%d",
+            "RAG_WRITE: START sourceUrn=%s clientId=%s projectId=%s groupId=%s kind=%s content_len=%d priority=%s",
             request.sourceUrn, request.clientId, request.projectId or "",
-            request.groupId or "", request.kind or "", len(request.content)
+            request.groupId or "", request.kind or "", len(request.content), embedding_priority
         )
 
         chunks = self.text_splitter.split_text(request.content)
         logger.info("RAG_WRITE: SPLIT sourceUrn=%s → %d chunks", request.sourceUrn, len(chunks))
 
         # Batch embed all chunks at once (instead of per-chunk embed_query)
-        logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s",
-                    request.sourceUrn, len(chunks), settings.EMBEDDING_MODEL)
-        vectors = await self._embed_with_priority(chunks)
+        logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s priority=%s",
+                    request.sourceUrn, len(chunks), settings.EMBEDDING_MODEL, embedding_priority)
+        vectors = await self._embed_with_priority(chunks, priority=embedding_priority)
         logger.info("RAG_WRITE: EMBEDDED sourceUrn=%s vectors=%d", request.sourceUrn, len(vectors))
 
         def _weaviate_batch_insert():
@@ -253,14 +260,14 @@ class RagService:
 
         return await asyncio.to_thread(_query)
 
-    async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
+    async def retrieve(self, request: RetrievalRequest, embedding_priority: int | None = None) -> EvidencePack:
         logger.info(
-            "RAG_READ: START query='%s' clientId=%s projectId=%s groupId=%s maxResults=%d",
+            "RAG_READ: START query='%s' clientId=%s projectId=%s groupId=%s maxResults=%d priority=%s",
             request.query, request.clientId, request.projectId or "",
-            request.groupId or "", request.maxResults
+            request.groupId or "", request.maxResults, embedding_priority
         )
 
-        vector = await self._embed_with_priority(request.query)
+        vector = await self._embed_with_priority(request.query, priority=embedding_priority)
         logger.info("RAG_READ: EMBEDDED query vector_dim=%d", len(vector))
 
         def _weaviate_query():

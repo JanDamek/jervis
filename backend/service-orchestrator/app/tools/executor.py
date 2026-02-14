@@ -305,9 +305,12 @@ async def _execute_kb_search(
         "expandGraph": True,
     }
 
+    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
+    headers = {"X-Ollama-Priority": "1"}
+
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
     except httpx.TimeoutException:
@@ -375,9 +378,12 @@ async def _execute_store_knowledge(
         },
     }
 
+    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
+    headers = {"X-Ollama-Priority": "1"}
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
     except httpx.TimeoutException:

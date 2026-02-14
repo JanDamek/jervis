@@ -5,7 +5,7 @@ in read-only or write-only mode via the KB_MODE environment variable.
 The legacy `router` includes both for backward compatibility (KB_MODE=all).
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
@@ -33,7 +33,7 @@ read_router = APIRouter()
 
 
 @read_router.post("/retrieve", response_model=EvidencePack)
-async def retrieve(request: RetrievalRequest):
+async def retrieve(request: RetrievalRequest, http_request: Request):
     """
     Standard hybrid retrieval.
 
@@ -41,20 +41,26 @@ async def retrieve(request: RetrievalRequest):
     Uses default settings for hybrid retrieval.
     """
     try:
-        return await service.retrieve(request)
+        # Read priority from header (orchestrator sends X-Ollama-Priority: 1)
+        priority = http_request.headers.get("X-Ollama-Priority")
+        priority_int = int(priority) if priority and priority.isdigit() else None
+        return await service.retrieve(request, embedding_priority=priority_int)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @read_router.post("/retrieve/simple", response_model=EvidencePack)
-async def retrieve_simple(request: RetrievalRequest):
+async def retrieve_simple(request: RetrievalRequest, http_request: Request):
     """
     Simple RAG-only retrieval without graph expansion.
 
     Faster but less comprehensive. Use for quick lookups.
     """
     try:
-        return await service.retrieve_simple(request)
+        # Read priority from header
+        priority = http_request.headers.get("X-Ollama-Priority")
+        priority_int = int(priority) if priority and priority.isdigit() else None
+        return await service.retrieve_simple(request, embedding_priority=priority_int)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -264,9 +270,12 @@ write_router = APIRouter()
 
 
 @write_router.post("/ingest", response_model=IngestResult)
-async def ingest(request: IngestRequest):
+async def ingest(request: IngestRequest, http_request: Request):
     try:
-        return await service.ingest(request)
+        # Read priority from header (orchestrator sends 1, background indexing sends 4)
+        priority = http_request.headers.get("X-Ollama-Priority")
+        priority_int = int(priority) if priority and priority.isdigit() else None
+        return await service.ingest(request, embedding_priority=priority_int)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

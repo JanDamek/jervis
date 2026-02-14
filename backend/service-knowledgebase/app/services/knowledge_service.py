@@ -102,7 +102,7 @@ class KnowledgeService:
 
         await asyncio.to_thread(_mark)
 
-    async def ingest(self, request: IngestRequest) -> IngestResult:
+    async def ingest(self, request: IngestRequest, embedding_priority: int | None = None) -> IngestResult:
         """
         Ingest content with async LLM extraction.
 
@@ -117,13 +117,13 @@ class KnowledgeService:
         - Updates RAG chunks with entity keys after completion
         """
         logger.info(
-            "KB_WRITE: INGEST_START sourceUrn=%s kind=%s clientId=%s projectId=%s groupId=%s content_len=%d",
+            "KB_WRITE: INGEST_START sourceUrn=%s kind=%s clientId=%s projectId=%s groupId=%s content_len=%d priority=%s",
             request.sourceUrn, request.kind or "?", request.clientId,
-            request.projectId or "", request.groupId or "", len(request.content or "")
+            request.projectId or "", request.groupId or "", len(request.content or ""), embedding_priority
         )
 
         # 1. RAG Ingest - get chunk IDs (fast)
-        chunks_count, chunk_ids = await self.rag_service.ingest(request)
+        chunks_count, chunk_ids = await self.rag_service.ingest(request, embedding_priority=embedding_priority)
         logger.info(
             "KB_WRITE: RAG_INGEST_DONE sourceUrn=%s chunks=%d chunk_ids_sample=%s",
             request.sourceUrn, chunks_count, chunk_ids[:3] if len(chunk_ids) > 3 else chunk_ids
@@ -231,7 +231,7 @@ class KnowledgeService:
             "edges_deleted": edges_deleted,
         }
 
-    async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
+    async def retrieve(self, request: RetrievalRequest, embedding_priority: int | None = None) -> EvidencePack:
         """
         Retrieve evidence using hybrid RAG + Graph approach.
 
@@ -243,9 +243,9 @@ class KnowledgeService:
         - Source diversity
         """
         logger.info(
-            "KB_READ: RETRIEVE_START query='%s' clientId=%s projectId=%s groupId=%s expandGraph=%s maxResults=%d",
+            "KB_READ: RETRIEVE_START query='%s' clientId=%s projectId=%s groupId=%s expandGraph=%s maxResults=%d priority=%s",
             request.query, request.clientId, request.projectId or "",
-            request.groupId or "", request.expandGraph, request.maxResults
+            request.groupId or "", request.expandGraph, request.maxResults, embedding_priority
         )
 
         result = await self.hybrid_retriever.retrieve(
@@ -255,7 +255,8 @@ class KnowledgeService:
             use_rrf=True,
             max_graph_hops=2,
             max_seeds=10,
-            diversity_factor=0.7
+            diversity_factor=0.7,
+            embedding_priority=embedding_priority
         )
 
         logger.info(
@@ -264,13 +265,13 @@ class KnowledgeService:
         )
         return result
 
-    async def retrieve_simple(self, request: RetrievalRequest) -> EvidencePack:
+    async def retrieve_simple(self, request: RetrievalRequest, embedding_priority: int | None = None) -> EvidencePack:
         """
         Simple RAG-only retrieval without graph expansion.
 
         Use this for fast queries where graph context is not needed.
         """
-        return await self.rag_service.retrieve(request)
+        return await self.rag_service.retrieve(request, embedding_priority=embedding_priority)
 
     async def traverse(self, request: TraversalRequest) -> list[GraphNode]:
         return await self.graph_service.traverse(request)

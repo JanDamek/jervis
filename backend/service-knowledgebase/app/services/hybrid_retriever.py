@@ -65,7 +65,8 @@ class HybridRetriever:
         use_rrf: bool = True,
         max_graph_hops: int = 2,
         max_seeds: int = 10,
-        diversity_factor: float = 0.7
+        diversity_factor: float = 0.7,
+        embedding_priority: int | None = None
     ) -> EvidencePack:
         """
         Perform hybrid retrieval with advanced ranking.
@@ -78,6 +79,7 @@ class HybridRetriever:
             max_graph_hops: Maximum hops for graph traversal
             max_seeds: Maximum seed nodes for graph expansion
             diversity_factor: Source diversity factor (0-1)
+            embedding_priority: Optional explicit priority for embedding
 
         Returns:
             EvidencePack with ranked results
@@ -85,7 +87,7 @@ class HybridRetriever:
         all_chunks: dict[str, ScoredChunk] = {}
 
         # 1. RAG Vector Search
-        rag_evidence = await self.rag_service.retrieve(request)
+        rag_evidence = await self.rag_service.retrieve(request, embedding_priority=embedding_priority)
         for i, item in enumerate(rag_evidence.items):
             chunk_id = item.metadata.get("id", f"rag_{i}")
             chunk = ScoredChunk(
