@@ -443,10 +443,14 @@ async def _run_and_stream(
     - Each node_start event is pushed to Kotlin via report_progress()
     - Completion/error/interrupt is pushed via report_status_change()
     - SSE queue is still maintained for direct stream subscribers
+
+    CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
+    to prevent blocking subsequent requests. Status pushing happens outside lock.
     """
     query_preview = str(request.query)[:100] if request.query else "NO_QUERY"
     logger.info("ORCHESTRATION_START | thread_id=%s | task_id=%s | query=%s", thread_id, request.task_id, query_preview)
     try:
+        # Acquire semaphore ONLY for graph execution — release immediately after
         async with _orchestration_semaphore:
             async for event in run_orchestration_streaming(request, thread_id):
                 await queue.put(event)
@@ -468,47 +472,48 @@ async def _run_and_stream(
                 elif event.get("type") == "node_end":
                     node = event.get("node", "")
                     logger.info("ORCHESTRATION_NODE_END | thread_id=%s | node=%s", thread_id, node)
+        # Semaphore RELEASED here! Other requests can now proceed.
 
-            # Check if graph was interrupted
-            graph_state = await get_graph_state(thread_id)
-            if graph_state and graph_state.next:
-                interrupt_data = None
-                if graph_state.tasks:
-                    for task in graph_state.tasks:
-                        if hasattr(task, "interrupts") and task.interrupts:
-                            interrupt_data = task.interrupts[0].value
-                            break
-                logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
-                await queue.put({
-                    "type": "approval_required",
-                    "thread_id": thread_id,
-                    "interrupt": interrupt_data,
-                })
+        # Handle completion/interrupt OUTSIDE semaphore lock
+        graph_state = await get_graph_state(thread_id)
+        if graph_state and graph_state.next:
+            interrupt_data = None
+            if graph_state.tasks:
+                for task in graph_state.tasks:
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_data = task.interrupts[0].value
+                        break
+            logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
+            await queue.put({
+                "type": "approval_required",
+                "thread_id": thread_id,
+                "interrupt": interrupt_data,
+            })
 
-                # Push interrupted status to Kotlin
-                await kotlin_client.report_status_change(
-                    task_id=request.task_id,
-                    thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                    interrupt_description=interrupt_data.get("description") if interrupt_data else None,
-                )
-            else:
-                values = graph_state.values if graph_state else {}
-                final_result = values.get("final_result", "")
-                logger.info("ORCHESTRATION_DONE | thread_id=%s | result_len=%d | branch=%s | artifacts=%d",
-                           thread_id, len(final_result), values.get("branch", "none"), len(values.get("artifacts", [])))
-                await queue.put({"type": "done", "thread_id": thread_id})
+            # Push interrupted status to Kotlin
+            await kotlin_client.report_status_change(
+                task_id=request.task_id,
+                thread_id=thread_id,
+                status="interrupted",
+                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
+                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+            )
+        else:
+            values = graph_state.values if graph_state else {}
+            final_result = values.get("final_result", "")
+            logger.info("ORCHESTRATION_DONE | thread_id=%s | result_len=%d | branch=%s | artifacts=%d",
+                       thread_id, len(final_result), values.get("branch", "none"), len(values.get("artifacts", [])))
+            await queue.put({"type": "done", "thread_id": thread_id})
 
-                # Push done status to Kotlin with final state
-                await kotlin_client.report_status_change(
-                    task_id=request.task_id,
-                    thread_id=thread_id,
-                    status="done",
-                    summary=final_result,
-                    branch=values.get("branch"),
-                    artifacts=values.get("artifacts", []),
-                )
+            # Push done status to Kotlin with final state
+            await kotlin_client.report_status_change(
+                task_id=request.task_id,
+                thread_id=thread_id,
+                status="done",
+                summary=final_result,
+                branch=values.get("branch"),
+                artifacts=values.get("artifacts", []),
+            )
     except Exception as e:
         logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
         logger.exception("Full exception traceback:")
@@ -524,6 +529,7 @@ async def _run_and_stream(
     finally:
         await queue.put(None)  # Sentinel to close SSE
         _active_tasks.pop(thread_id, None)
+        logger.info("ORCHESTRATION_CLEANUP | thread_id=%s | task_removed", thread_id)
 
 
 @app.get("/stream/{thread_id}")
@@ -610,6 +616,9 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
 
     Uses streaming to push real-time progress to Kotlin (same as _run_and_stream).
     After resumption completes, pushes status change to Kotlin.
+
+    CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
+    to prevent blocking subsequent requests. Status pushing happens outside lock.
     """
     # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
     parts = thread_id.split("-")
@@ -627,6 +636,7 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
         pass
 
     try:
+        # Acquire semaphore ONLY for graph execution — release immediately after
         async with _orchestration_semaphore:
             # Stream events to push progress to Kotlin in real-time
             async for event in resume_orchestration_streaming(thread_id, resume_value):
@@ -645,46 +655,47 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
                     )
 
             logger.info("Resume completed for thread %s", thread_id)
+        # Semaphore RELEASED here! Other requests can now proceed.
 
-            # Get final state from checkpoint
-            graph_state = await get_graph_state(thread_id)
+        # Handle completion/interrupt OUTSIDE semaphore lock
+        graph_state = await get_graph_state(thread_id)
 
-            if graph_state and graph_state.next:
-                # Graph paused at interrupt again
-                interrupt_data = None
-                if graph_state.tasks:
-                    for task in graph_state.tasks:
-                        if hasattr(task, "interrupts") and task.interrupts:
-                            interrupt_data = task.interrupts[0].value
-                            break
+        if graph_state and graph_state.next:
+            # Graph paused at interrupt again
+            interrupt_data = None
+            if graph_state.tasks:
+                for task in graph_state.tasks:
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_data = task.interrupts[0].value
+                        break
 
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id=thread_id,
+                status="interrupted",
+                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
+                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+            )
+        else:
+            # Completed
+            values = graph_state.values if graph_state else {}
+            error = values.get("error")
+            if error:
                 await kotlin_client.report_status_change(
                     task_id=task_id,
                     thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                    interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+                    status="error",
+                    error=error,
                 )
             else:
-                # Completed
-                values = graph_state.values if graph_state else {}
-                error = values.get("error")
-                if error:
-                    await kotlin_client.report_status_change(
-                        task_id=task_id,
-                        thread_id=thread_id,
-                        status="error",
-                        error=error,
-                    )
-                else:
-                    await kotlin_client.report_status_change(
-                        task_id=task_id,
-                        thread_id=thread_id,
-                        status="done",
-                        summary=values.get("final_result"),
-                        branch=values.get("branch"),
-                        artifacts=values.get("artifacts", []),
-                    )
+                await kotlin_client.report_status_change(
+                    task_id=task_id,
+                    thread_id=thread_id,
+                    status="done",
+                    summary=values.get("final_result"),
+                    branch=values.get("branch"),
+                    artifacts=values.get("artifacts", []),
+                )
     except Exception as e:
         logger.exception("Background resume failed for thread %s: %s", thread_id, e)
 
@@ -696,6 +707,7 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
         )
     finally:
         _active_tasks.pop(thread_id, None)
+        logger.info("RESUME_CLEANUP | thread_id=%s | task_removed", thread_id)
 
 
 # --- Chat History Compression ---
