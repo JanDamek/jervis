@@ -830,6 +830,16 @@ Claude supports two auth methods:
 - **Setup Token** (recommended for Max/Pro): User runs `claude setup-token` locally, pastes the long-lived token (`sk-ant-oat01-...`) in Settings. Stored in MongoDB, passed to the service as `CLAUDE_CODE_OAUTH_TOKEN` env var at each invocation.
 - **API Key**: Console pay-as-you-go key (`ANTHROPIC_API_KEY`).
 
+#### GPG Commit Signing
+
+Per-client GPG private keys for coding agent commit signing:
+
+1. **Storage**: MongoDB `gpg_certificates` collection — one active key per client (key ID, name, email, ASCII-armored private key, optional passphrase)
+2. **Settings UI**: "GPG Certifikáty" tab in Settings — client selector, certificate list, upload form, delete action. Uses `IGpgCertificateService` kRPC interface.
+3. **Distribution**: Python orchestrator fetches the active key via `GET /internal/gpg-key/{clientId}` when `allow_git=True`. Key data is injected as env vars into agent K8s Jobs: `GPG_PRIVATE_KEY`, `GPG_KEY_ID`, `GPG_KEY_PASSPHRASE`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`.
+
+**Key files:** `GpgCertificateDto.kt`, `IGpgCertificateService.kt`, `GpgCertificateDocument.kt`, `GpgCertificateRepository.kt`, `GpgCertificateRpcImpl.kt`, `GpgCertificateSettings.kt`, `job_runner.py` (GPG env var injection).
+
 ### Build & Deploy
 
 Each agent has its own build script in `k8s/build_<name>.sh` which calls the generic `build_service.sh` to:

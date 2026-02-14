@@ -119,6 +119,14 @@ class JobRunner:
             jervis_dir.mkdir(exist_ok=True)
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
+        # Fetch GPG key for commit signing (if configured)
+        gpg_key = None
+        if allow_git and client_id:
+            from app.tools.kotlin_client import kotlin_client
+            gpg_key = await kotlin_client.get_gpg_key(client_id)
+            if gpg_key:
+                logger.info("GPG key found for client %s (keyId=%s)", client_id, gpg_key.get("keyId"))
+
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
         job = self._build_job_manifest(
@@ -129,6 +137,7 @@ class JobRunner:
             project_id=project_id or "",
             workspace_path=workspace_path,
             allow_git=allow_git,
+            gpg_key=gpg_key,
         )
 
         logger.info("Creating K8s Job: %s (agent=%s, task=%s)", job_name, agent_type, task_id)
@@ -338,6 +347,7 @@ class JobRunner:
         project_id: str,
         workspace_path: str,
         allow_git: bool = False,
+        gpg_key: dict | None = None,
     ) -> client.V1Job:
         """Build K8s Job manifest for a coding agent."""
         image = AGENT_IMAGES.get(agent_type)
@@ -375,6 +385,16 @@ class JobRunner:
                 ),
             ),
         ]
+
+        # GPG commit signing (injected from client certificate when allow_git=True)
+        if gpg_key:
+            env_vars.extend([
+                client.V1EnvVar(name="GPG_PRIVATE_KEY", value=gpg_key.get("privateKeyArmored", "")),
+                client.V1EnvVar(name="GPG_KEY_ID", value=gpg_key.get("keyId", "")),
+                client.V1EnvVar(name="GPG_KEY_PASSPHRASE", value=gpg_key.get("passphrase", "")),
+                client.V1EnvVar(name="GIT_COMMITTER_NAME", value=gpg_key.get("userName", "")),
+                client.V1EnvVar(name="GIT_COMMITTER_EMAIL", value=gpg_key.get("userEmail", "")),
+            ])
 
         return client.V1Job(
             metadata=client.V1ObjectMeta(

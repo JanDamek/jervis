@@ -56,6 +56,7 @@ class KtorRpcServer(
     private val projectGroupRpcImpl: ProjectGroupRpcImpl,
     private val environmentRpcImpl: EnvironmentRpcImpl,
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
+    private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
     private val environmentResourceService: com.jervis.service.environment.EnvironmentResourceService,
     private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
@@ -268,6 +269,43 @@ class KtorRpcServer(
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to process orchestrator status callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator fetches GPG key for agent commit signing
+                            get("/internal/gpg-key/{clientId}") {
+                                val clientId = call.parameters["clientId"] ?: return@get call.respondText(
+                                    "{\"ok\":false,\"error\":\"Missing clientId\"}",
+                                    io.ktor.http.ContentType.Application.Json,
+                                    HttpStatusCode.BadRequest,
+                                )
+                                try {
+                                    val keyInfo = gpgCertificateRpcImpl.getActiveKey(clientId)
+                                    if (keyInfo != null) {
+                                        val json = kotlinx.serialization.json.Json.encodeToString(
+                                            GpgKeyResponse.serializer(),
+                                            GpgKeyResponse(
+                                                keyId = keyInfo.keyId,
+                                                userName = keyInfo.userName,
+                                                userEmail = keyInfo.userEmail,
+                                                privateKeyArmored = keyInfo.privateKeyArmored,
+                                                passphrase = keyInfo.passphrase,
+                                            ),
+                                        )
+                                        call.respondText(json, io.ktor.http.ContentType.Application.Json)
+                                    } else {
+                                        call.respondText(
+                                            "{\"ok\":true,\"key\":null}",
+                                            io.ktor.http.ContentType.Application.Json,
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to fetch GPG key for client $clientId" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -520,6 +558,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IBugTrackerSetupService> { bugTrackerSetupRpcImpl }
                                 registerService<com.jervis.service.IIntegrationSettingsService> { integrationSettingsRpcImpl }
                                 registerService<com.jervis.service.ICodingAgentSettingsService> { codingAgentSettingsRpcImpl }
+                                registerService<com.jervis.service.IGpgCertificateService> { gpgCertificateRpcImpl }
                                 registerService<com.jervis.service.IWhisperSettingsService> { whisperSettingsRpcImpl }
                                 registerService<com.jervis.service.IPollingIntervalService> { pollingIntervalRpcImpl }
                                 registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
@@ -592,6 +631,15 @@ data class OrchestratorStreamingTokenCallback(
     val clientId: String,
     val projectId: String,
     val token: String,
+)
+
+@kotlinx.serialization.Serializable
+data class GpgKeyResponse(
+    val keyId: String,
+    val userName: String,
+    val userEmail: String,
+    val privateKeyArmored: String,
+    val passphrase: String? = null,
 )
 
 @kotlinx.serialization.Serializable

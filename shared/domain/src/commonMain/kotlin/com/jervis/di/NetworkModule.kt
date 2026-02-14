@@ -13,6 +13,7 @@ import com.jervis.service.IEnvironmentService
 import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
+import com.jervis.service.IGpgCertificateService
 import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
@@ -139,6 +140,7 @@ object NetworkModule {
             bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>(),
             integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>(),
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>(),
+            gpgCertificateService = rpcClient.withService<IGpgCertificateService>(),
             whisperSettingsService = rpcClient.withService<IWhisperSettingsService>(),
             pollingIntervalService = rpcClient.withService<IPollingIntervalService>(),
             projectGroupService = rpcClient.withService<IProjectGroupService>(),
@@ -170,6 +172,7 @@ object NetworkModule {
         val bugTrackerSetupService: IBugTrackerSetupService,
         val integrationSettingsService: IIntegrationSettingsService,
         val codingAgentSettingsService: ICodingAgentSettingsService,
+        val gpgCertificateService: IGpgCertificateService,
         val whisperSettingsService: IWhisperSettingsService,
         val pollingIntervalService: IPollingIntervalService,
         val projectGroupService: IProjectGroupService,

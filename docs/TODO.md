@@ -78,68 +78,16 @@ které budou implementovány jako separate tickety.
 
 ### GPG Certificate Management for Coding Agents
 
-**Problém:**
-- Coding agenty (OpenHands, Claude, Junie) potřebují mít možnost podepisovat Git commity pomocí GPG
-- Každý agent potřebuje mít přístup k vlastnímu GPG privátnímu klíči (certifikátu)
-- Certifikáty musí být bezpečně uloženy na serveru a distribuovány agentům
-- UI agent musí umožnit uživateli nahrát a spravovat certifikáty
-- Orchestrator musí certifikáty předávat git agentovi a coding agentům při jejich startu
+✅ **DONE** — Full-stack GPG certificate management for coding agent commit signing. Per-client GPG private keys stored in MongoDB (`gpg_certificates` collection). Settings UI with client selector, certificate list, upload form (key ID, name, email, ASCII-armored private key, optional passphrase), delete action. kRPC interface `IGpgCertificateService` with getCertificates, uploadCertificate, deleteCertificate. Internal endpoint `GET /internal/gpg-key/{clientId}` for orchestrator to fetch keys. `job_runner.py` injects `GPG_PRIVATE_KEY`, `GPG_KEY_ID`, `GPG_KEY_PASSPHRASE`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` as env vars into agent K8s Jobs when `allow_git=True`.
 
-**Architektura:**
-
-**1. Certificate Storage (Server)**
-- Server ukládá GPG certifikáty v encrypted form v databázi
-- Každý certifikát je asociován s:
-  - User ID (kdo vlastní certifikát)
-  - Agent type (git, coding, atd.)
-  - Key ID (GPG key fingerprint)
-  - Encrypted private key (pro export)
-  - Passphrase (pokud je zašifrovaný klíč)
-
-**2. UI Agent - Certificate Management**
-- UI zobrazuje seznam existujících certifikátů
-- Možnost nahrát nový certifikát:
-  - Upload privátního klíče (PEM/ASCII armored)
-  - Input passphrase (optional)
-  - Vybrat typ agenta (git, coding)
-- Možnost exportovat certifikát (pro backup)
-- Možnost smazat certifikát
-- Certifikáty se ukládají přes RPC na server
-
-**3. Orchestrator - Certificate Distribution**
-- Při startu agenta (git, coding) orchestrator načte příslušný certifikát z serveru
-- Certifikát se předá agentovi přes RPC jako part of initialization
-- Agent ukládá certifikát do svého local storage (encrypted)
-- Agent používá certifikát pro GPG operace (git commit --gpg-sign)
-
-**4. Git Agent Integration**
-- Git agent přijme certifikát od orchestratoru
-- Certifikát se importuje do GPG keyring (nebo použije jako detached signature)
-- Git operace (clone, commit, push) používají certifikát pro signing
-- Config: `git config commit.gpgsign true` a `user.signingkey <key-id>`
-
-**5. Coding Agent Integration**
-- Coding agent (OpenHands/Claude/Junie) přijme certifikát od orchestratoru
-- Agent ukládá certifikát do secure storage (env variable, temp file)
-- Při git commit operacích použije certifikát pro signing
-- Agent musí vědět jak volat `git commit -S` s správným key
-
-**Implementační kroky:**
-
-**Phase 1: Backend - Certificate DTO & Storage**
-1. Vytvořit `GpgCertificateDto` s poli:
-   - `id: String`
-   - `userId: String`
-   - `agentType: String` (git, coding)
-   - `keyId: String` (fingerprint)
-   - `privateKeyEncrypted: String` (ASCII armored)
-   - `passphrase: String?` (optional, encrypted at rest)
-   - `createdAt: Instant`
-2. Vytvořit `GpgCertificateDocument` (MongoDB entity)
-3. Vytvořit `GpgCertificateRepository` (CRUD operace)
-4. Pridat metodu do `CodingAgentSettingsService` pro správu certifikátů
-
-**Phase 2: Server RPC Endpoints**
-1. Rozšířit `CodingAgentSettingsRpc`:
-   - `uploadGpgCertificate(certificate: GpgCertificateDto): String`
-   - `getGpgCertificate(id: String): GpgCertificateDto?`
+**Key files:**
+- `shared/common-dto/.../coding/GpgCertificateDto.kt` — DTOs (GpgCertificateDto, GpgCertificateUploadDto, GpgCertificateDeleteDto)
+- `shared/common-api/.../service/IGpgCertificateService.kt` — kRPC interface
+- `backend/server/.../entity/GpgCertificateDocument.kt` — MongoDB entity
+- `backend/server/.../repository/GpgCertificateRepository.kt` — Spring Data repository
+- `backend/server/.../rpc/GpgCertificateRpcImpl.kt` — RPC implementation + `getActiveKey()` for orchestrator
+- `backend/server/.../rpc/KtorRpcServer.kt` — `/internal/gpg-key/{clientId}` endpoint, RPC registration
+- `backend/service-orchestrator/app/tools/kotlin_client.py` — `get_gpg_key()` method
+- `backend/service-orchestrator/app/agents/job_runner.py` — GPG env var injection in `_build_job_manifest()`
+- `shared/ui-common/.../screens/settings/sections/GpgCertificateSettings.kt` — Full settings UI
+- `shared/ui-common/.../screens/settings/SettingsScreen.kt` — GPG_CERTIFICATES category
