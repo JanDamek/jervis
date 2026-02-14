@@ -36,6 +36,11 @@ class Settings(BaseSettings):
         "SEARXNG_URL", "http://192.168.100.117:30053"
     )
 
+    # Apache Tika (document extraction, runs on port 8081)
+    tika_url: str = os.getenv(
+        "TIKA_URL", "http://192.168.100.117:8081"
+    )
+
     # LLM providers
     # Ollama Router endpoint - MUST be set via ConfigMap (k8s/configmap.yaml)
     ollama_url: str = os.getenv("OLLAMA_API_BASE")

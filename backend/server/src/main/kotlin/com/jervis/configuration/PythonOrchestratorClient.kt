@@ -289,6 +289,18 @@ data class OrchestrateRequestDto(
     val environment: kotlinx.serialization.json.JsonObject? = null,
     @SerialName("jervis_project_id") val jervisProjectId: String? = null,
     @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
+    val attachments: List<OrchestratorAttachmentDto> = emptyList(),
+)
+
+@Serializable
+data class OrchestratorAttachmentDto(
+    val id: String,
+    val filename: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("size_bytes") val sizeBytes: Long,
+    @SerialName("attachment_type") val attachmentType: String,
+    @SerialName("data_base64") val dataBase64: String,
+    @SerialName("vision_description") val visionDescription: String? = null,
 )
 
 @Serializable

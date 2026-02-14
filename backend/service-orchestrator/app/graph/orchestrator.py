@@ -115,6 +115,9 @@ class OrchestratorState(TypedDict, total=False):
     # --- User context (auto-prefetched from KB) ---
     user_context: str | None            # User-learned knowledge (preferences, domain, etc.)
 
+    # --- Attachment context (extracted text from task attachments) ---
+    attachment_context: str | None
+
     # --- Existing (from clarify) ---
     project_context: str | None
     task_complexity: str | None
@@ -478,6 +481,7 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
             workspace_path=request.workspace_path,
             query=request.query,
             agent_preference=request.agent_preference,
+            attachments=request.attachments,
         ).model_dump(),
         "rules": request.rules.model_dump(),
         "environment": request.environment,
@@ -497,6 +501,8 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "target_branch": None,
         # User context (auto-prefetched from KB)
         "user_context": None,
+        # Attachment context (populated by intake node)
+        "attachment_context": None,
         # Clarification
         "clarification_questions": None,
         "clarification_response": None,

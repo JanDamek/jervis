@@ -1328,6 +1328,43 @@ DB performance, queue health, and request latencies.
 
 ---
 
+### Attachment Passthrough to Python Orchestrator
+
+Attachments from `TaskDocument` are loaded by Kotlin, base64-encoded, and sent
+to the Python orchestrator as part of the `OrchestrateRequestDto`.
+
+**Flow:**
+
+```
+Kotlin: AgentOrchestratorService.dispatchToPythonOrchestrator()
+  └─ task.attachments.forEach { read file from disk, base64-encode }
+  └─ OrchestratorAttachmentDto(id, filename, mimeType, sizeBytes, attachmentType, dataBase64, visionDescription)
+  └─ OrchestrateRequestDto.attachments = [...]
+       ↓ HTTP POST
+Python: OrchestrateRequest.attachments → CodingTask.attachments → state["task"]["attachments"]
+       ↓
+Intake node: process_all_attachments()
+  └─ For each attachment:
+       ├─ If IMAGE/PDF_SCANNED with existing visionDescription → use directly
+       └─ Otherwise → call Tika (POST /api/tika/process with base64 data)
+  └─ Combined text stored in state["attachment_context"]
+  └─ Included in LLM classification prompt
+       ↓
+Downstream nodes: state["attachment_context"] available for evidence, execute, respond
+```
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `PythonOrchestratorClient.kt` | `OrchestratorAttachmentDto` + extended `OrchestrateRequestDto` |
+| `AgentOrchestratorService.kt` | Loads files from disk, base64-encodes, includes vision descriptions |
+| `app/tools/attachment_processor.py` | Tika-based text extraction + vision description reuse |
+| `app/models.py` | `AttachmentData` model, `CodingTask.attachments` field |
+| `app/graph/nodes/intake.py` | Processes attachments in intake, stores in state |
+
+---
+
 ## Project Groups
 
 ### Overview
