@@ -53,6 +53,7 @@ class KtorRpcServer(
     private val indexingQueueRpcImpl: IndexingQueueRpcImpl,
     private val projectGroupRpcImpl: ProjectGroupRpcImpl,
     private val environmentRpcImpl: EnvironmentRpcImpl,
+    private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val environmentResourceService: com.jervis.service.environment.EnvironmentResourceService,
     private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
     private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
@@ -499,6 +500,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IIndexingQueueService> { indexingQueueRpcImpl }
                                 registerService<com.jervis.service.IProjectGroupService> { projectGroupRpcImpl }
                                 registerService<com.jervis.service.IEnvironmentService> { environmentRpcImpl }
+                                registerService<com.jervis.service.IEnvironmentResourceService> { environmentResourceRpcImpl }
                             }
                         }
                     }

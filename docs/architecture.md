@@ -1251,6 +1251,56 @@ GET  /internal/environment/{ns}/status
 | `backend/service-claude/Dockerfile` | Environment MCP server bundled in agent image |
 | `k8s/app_server.yaml` | ClusterRole for cross-namespace access |
 
+### Environment Viewer UI (Phase 2)
+
+The Environment Viewer provides a standalone Compose screen for inspecting K8s resources
+in environments managed by Jervis. Accessible from the main menu ("Prostředí K8s").
+
+**Architecture:**
+
+```
+UI: EnvironmentViewerScreen
+  └─ kRPC: IEnvironmentResourceService
+       └─ EnvironmentResourceRpcImpl (server)
+            ├─ EnvironmentService.getAll() → resolve environmentId → namespace
+            └─ EnvironmentResourceService → fabric8 K8s client → K8s API
+```
+
+**Typed DTOs** (shared/common-dto):
+- `K8sResourceListDto` — wrapper with pods, deployments, services lists
+- `K8sPodDto` — name, namespace, status, ready, restarts, age, nodeName, ip
+- `K8sDeploymentDto` — name, namespace, replicas (desired/ready/available), age, images
+- `K8sServiceDto` — name, namespace, type, clusterIP, ports, selector
+- `K8sNamespaceStatusDto` — total/running/pending/failed/crashing pod counts
+- `K8sDeploymentDetailDto` — full detail with conditions + recent events
+- `K8sConditionDto`, `K8sEventDto` — condition/event metadata
+
+**RPC Operations** (`IEnvironmentResourceService`):
+- `listResources(environmentId, resourceType)` — pods/deployments/services/all
+- `getPodLogs(environmentId, podName, tailLines)` — pod log output
+- `getDeploymentDetails(environmentId, deploymentName)` — conditions + events
+- `scaleDeployment(environmentId, name, replicas)` — scale 0-10
+- `restartDeployment(environmentId, name)` — rolling restart
+- `getNamespaceStatus(environmentId)` — namespace health summary
+
+**UI Components** (EnvironmentViewerScreen.kt):
+- Environment selector (horizontal chips for each environment)
+- Namespace health summary (total/running/pending/failed counts)
+- Collapsible sections for Pods, Deployments, Services
+- Pod log dialog (scrollable text)
+- Deployment detail dialog (conditions + events table)
+- Restart deployment action
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `shared/common-dto/.../environment/K8sResourceDtos.kt` | Typed K8s resource DTOs |
+| `shared/common-api/.../IEnvironmentResourceService.kt` | kRPC interface (6 operations) |
+| `backend/server/.../rpc/EnvironmentResourceRpcImpl.kt` | Server-side RPC implementation |
+| `shared/ui-common/.../screens/EnvironmentViewerScreen.kt` | Full Compose UI screen |
+| `MainScreen.kt` | Menu entry ENVIRONMENT_VIEWER |
+
 ### Non-blocking Agent Execution (AgentJobWatcher)
 
 Coding agent K8s Jobs no longer block the orchestrator thread. Instead, the graph

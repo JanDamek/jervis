@@ -9,6 +9,7 @@ import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
 import com.jervis.service.IIndexingQueueService
 import com.jervis.service.IEnvironmentService
+import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
@@ -52,4 +53,5 @@ class JervisRepository(
     val transcriptCorrections: ITranscriptCorrectionService get() = servicesProvider().transcriptCorrectionService
     val deviceTokens: IDeviceTokenService get() = servicesProvider().deviceTokenService
     val indexingQueue: IIndexingQueueService get() = servicesProvider().indexingQueueService
+    val environmentResources: IEnvironmentResourceService get() = servicesProvider().environmentResourceService
 }

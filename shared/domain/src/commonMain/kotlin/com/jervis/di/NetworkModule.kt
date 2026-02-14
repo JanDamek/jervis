@@ -10,6 +10,7 @@ import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
 import com.jervis.service.IIndexingQueueService
 import com.jervis.service.IEnvironmentService
+import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IIntegrationSettingsService
@@ -146,6 +147,7 @@ object NetworkModule {
             transcriptCorrectionService = rpcClient.withService<ITranscriptCorrectionService>(),
             deviceTokenService = rpcClient.withService<IDeviceTokenService>(),
             indexingQueueService = rpcClient.withService<IIndexingQueueService>(),
+            environmentResourceService = rpcClient.withService<IEnvironmentResourceService>(),
         )
 
     /**
@@ -176,5 +178,6 @@ object NetworkModule {
         val transcriptCorrectionService: ITranscriptCorrectionService,
         val deviceTokenService: IDeviceTokenService,
         val indexingQueueService: IIndexingQueueService,
+        val environmentResourceService: IEnvironmentResourceService,
     )
 }

@@ -17,19 +17,14 @@ které budou implementovány jako separate tickety.
 
 ### Standalone UI Screen for K8s Environment Inspection
 
-**Prerequisite:** Phase 1 (backend + MCP) ✅ DONE — fabric8 K8s methods, EnvironmentResourceService, internal REST endpoints, MCP server, workspace manager integration, RBAC.
+✅ **DONE** — Full K8s resource viewer screen accessible from main menu ("Prostředí K8s"). Typed DTOs (`K8sResourceDtos.kt`) for pods, deployments, services, namespace status, conditions, events. kRPC interface (`IEnvironmentResourceService`) with listResources, getPodLogs, getDeploymentDetails, scaleDeployment, restartDeployment, getNamespaceStatus. Server-side RPC impl maps fabric8 data to typed DTOs. UI: environment selector chips, namespace health summary, collapsible Pod/Deployment/Service sections, pod log dialog, deployment detail dialog with conditions/events, restart action.
 
-**Zbývá:**
-- EnvironmentViewScreen v MainScreen.kt (sidebar s resource tree)
-- K8sResourceTree component (expandable tree view pro pods/deployments/services)
-- LogViewerDialog (real-time log tailing s SSE stream)
-- YAML detail viewer (raw resource yaml/json)
-- EnvironmentViewModel (kRPC calls to server)
-- RPC endpoints pro UI (extend EnvironmentService → EnvironmentResourceService bridge)
-
-**Priorita:** Medium
-**Complexity:** Medium
-**Status:** Planned (Phase 2)
+**Key files:**
+- `shared/common-dto/.../environment/K8sResourceDtos.kt` — typed DTOs
+- `shared/common-api/.../IEnvironmentResourceService.kt` — kRPC interface
+- `backend/server/.../rpc/EnvironmentResourceRpcImpl.kt` — RPC implementation
+- `shared/ui-common/.../screens/EnvironmentViewerScreen.kt` — full Compose screen
+- `MainScreen.kt` — menu entry (ENVIRONMENT_VIEWER)
 
 ---
 

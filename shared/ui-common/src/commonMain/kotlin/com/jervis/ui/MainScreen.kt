@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
@@ -65,6 +66,7 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
     MEETINGS(Icons.Default.Mic, "Meetingy"),
     RAG_SEARCH(Icons.Default.Search, "RAG Hledání"),
     INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace"),
+    ENVIRONMENT_VIEWER(Icons.Default.Cloud, "Prostředí K8s"),
     ERROR_LOGS(Icons.Default.BugReport, "Chybové logy"),
 }
 
@@ -76,6 +78,7 @@ private fun MainMenuItem.toScreen(): Screen = when (this) {
     MainMenuItem.MEETINGS -> Screen.Meetings
     MainMenuItem.RAG_SEARCH -> Screen.RagSearch
     MainMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue
+    MainMenuItem.ENVIRONMENT_VIEWER -> Screen.EnvironmentViewer
     MainMenuItem.ERROR_LOGS -> Screen.ErrorLogs
 }
 
