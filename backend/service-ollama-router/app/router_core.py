@@ -139,35 +139,47 @@ class OllamaRouter:
             # CRITICAL: Reservation allows ONLY :30b model (orchestrator)
             if ":30b" not in model:
                 logger.error("CRITICAL priority requires :30b model, got: %s", model)
-                return await self._send_to_cpu(request)
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "invalid_critical_model", "message": f"CRITICAL requires :30b model, got {model}"},
+                )
 
             # Auto-create reservation if not exists
             if not self._reservation_session:
                 logger.info("Auto-reserving GPU for CRITICAL request %s (model=%s)", request.request_id, model)
                 async with self._reservation_lock:
                     gpu = self.gpu_pool.find_for_reservation()
-                    if gpu:
-                        self._reservation_session = "critical"
-                        self._reservation_gpu = gpu.name
-                        self._reservation_at = time.monotonic()
-                        self._last_critical_activity = time.monotonic()
-                        gpu.reserved_by = "critical"
-                        gpu.reserved_at = time.monotonic()
-                        # Immediately preempt ALL active requests (orchestrator priority)
-                        if gpu.active_request_count() > 0:
-                            logger.warning(
-                                "GPU %s has %d active request(s), preempting ALL for CRITICAL",
-                                gpu.name, gpu.active_request_count(),
-                            )
-                            await self._preempt_all(gpu)
-                        # Unload ALL models (orchestrator :30b fills entire GPU)
-                        await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+                    if not gpu:
+                        logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
+                        return JSONResponse(
+                            status_code=503,
+                            content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
+                        )
+
+                    self._reservation_session = "critical"
+                    self._reservation_gpu = gpu.name
+                    self._reservation_at = time.monotonic()
+                    self._last_critical_activity = time.monotonic()
+                    gpu.reserved_by = "critical"
+                    gpu.reserved_at = time.monotonic()
+                    # Immediately preempt ALL active requests (orchestrator priority)
+                    if gpu.active_request_count() > 0:
+                        logger.warning(
+                            "GPU %s has %d active request(s), preempting ALL for CRITICAL",
+                            gpu.name, gpu.active_request_count(),
+                        )
+                        await self._preempt_all(gpu)
+                    # Unload ALL models (orchestrator :30b fills entire GPU)
+                    await self.gpu_pool.unload_all(gpu, self._mgmt_client)
 
             gpu = self.gpu_pool.find_for_reservation()
             if not gpu:
-                # No healthy GPU – fall back to CPU
-                logger.warning("No healthy GPU for CRITICAL request %s, falling back to CPU", request.request_id)
-                return await self._send_to_cpu(request)
+                # No healthy GPU - CRITICAL NEVER runs on CPU
+                logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
+                )
 
             # Immediately preempt ALL active requests (orchestrator needs GPU NOW)
             if gpu.active_request_count() > 0:
@@ -179,12 +191,21 @@ class OllamaRouter:
 
             # Ensure ONLY :30b model is loaded (nothing else fits)
             if not gpu.has_model(model):
-                # Unload everything first
+                # Unload everything first (force cleanup)
                 await self.gpu_pool.unload_all(gpu, self._mgmt_client)
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                 if not loaded:
-                    logger.error("Failed to load %s on GPU %s, falling back to CPU", model, gpu.name)
-                    return await self._send_to_cpu(request)
+                    # Retry: unload from ALL GPUs and try again
+                    logger.error("CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup", model, gpu.name)
+                    for backend in self.gpu_pool.all_backends:
+                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
+                    loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                    if not loaded:
+                        logger.error("CRITICAL: Failed to load %s even after aggressive cleanup - REFUSING CPU fallback", model)
+                        return JSONResponse(
+                            status_code=503,
+                            content={"error": "model_load_failed", "message": f"Failed to load {model} on GPU, CRITICAL cannot run on CPU"},
+                        )
             elif len(gpu.loaded_models) > 1:
                 # :30b is loaded but other models too - unload them!
                 logger.warning("GPU has :30b + other models, unloading extras")
@@ -364,6 +385,18 @@ class OllamaRouter:
                 gpu, req.model, self._mgmt_client,
                 keep_alive=settings.default_keep_alive,
             )
+
+            # If load failed, retry with aggressive cleanup from ALL GPUs
+            if not model_loaded:
+                logger.error("CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup", req.model, gpu.name)
+                for backend in self.gpu_pool.all_backends:
+                    await self.gpu_pool.unload_all(backend, self._mgmt_client)
+                model_loaded = await self.gpu_pool.load_model(
+                    gpu, req.model, self._mgmt_client,
+                    keep_alive=settings.default_keep_alive,
+                )
+                if not model_loaded:
+                    logger.error("CRITICAL: Failed to load %s even after aggressive cleanup", req.model)
 
             return AnnounceResponse(
                 status="ready" if model_loaded else "error",
