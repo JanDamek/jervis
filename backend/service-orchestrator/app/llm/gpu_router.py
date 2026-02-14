@@ -31,7 +31,8 @@ async def announce_gpu(session_id: str, model: str | None = None) -> bool:
     """
     model = model or settings.default_local_model
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        # 10 min timeout: model loading (~2min) + potential queue waiting
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
             resp = await client.post(
                 f"{settings.ollama_url}/router/announce",
                 json={

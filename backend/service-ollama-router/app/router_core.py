@@ -92,13 +92,29 @@ class OllamaRouter:
             body=body,
         )
 
-        logger.debug(
-            "Routing request %s: model=%s priority=%s path=%s",
+        # ── Entry logging ──
+        logger.info(
+            "REQUEST_IN: id=%s model=%s priority=%s path=%s",
             request_id, model, priority.name, api_path,
         )
 
+        start_time = time.monotonic()
         try:
-            return await self._do_route(request)
+            response = await self._do_route(request)
+            duration = time.monotonic() - start_time
+            # ── Exit logging ──
+            logger.info(
+                "REQUEST_OUT: id=%s duration=%.2fs",
+                request_id, duration,
+            )
+            return response
+        except Exception as e:
+            duration = time.monotonic() - start_time
+            logger.error(
+                "REQUEST_ERROR: id=%s duration=%.2fs error=%s",
+                request_id, duration, str(e),
+            )
+            raise
         finally:
             # Cleanup active request tracking
             for backend in self.gpu_pool.all_backends:
@@ -108,39 +124,74 @@ class OllamaRouter:
         model = request.model
         priority = request.priority
 
-        # ── 1. Find GPU that already has this model loaded ──────────────
+        # ── 1. If GPU is reserved → BACKGROUND to CPU (MUST BE FIRST!) ──
+        if priority >= Priority.BACKGROUND and self._reservation_session:
+            return await self._send_to_cpu(request)
+
+        # ── 2. Find GPU that already has this model loaded ──────────────
         gpu = self.gpu_pool.find_with_model(model)
         if gpu:
             if priority <= Priority.CRITICAL or not self._is_reserved_by_other(gpu):
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 2. P0 CRITICAL: preempt if needed, ensure model loaded ──────
+        # ── 3. P0 CRITICAL: auto-reserve GPU, ensure model loaded ──────
         if priority <= Priority.CRITICAL:
+            # CRITICAL: Reservation allows ONLY :30b model (orchestrator)
+            if ":30b" not in model:
+                logger.error("CRITICAL priority requires :30b model, got: %s", model)
+                return await self._send_to_cpu(request)
+
+            # Auto-create reservation if not exists
+            if not self._reservation_session:
+                logger.info("Auto-reserving GPU for CRITICAL request %s (model=%s)", request.request_id, model)
+                async with self._reservation_lock:
+                    gpu = self.gpu_pool.find_for_reservation()
+                    if gpu:
+                        self._reservation_session = "critical"
+                        self._reservation_gpu = gpu.name
+                        self._reservation_at = time.monotonic()
+                        self._last_critical_activity = time.monotonic()
+                        gpu.reserved_by = "critical"
+                        gpu.reserved_at = time.monotonic()
+                        # Immediately preempt ALL active requests (orchestrator priority)
+                        if gpu.active_request_count() > 0:
+                            logger.warning(
+                                "GPU %s has %d active request(s), preempting ALL for CRITICAL",
+                                gpu.name, gpu.active_request_count(),
+                            )
+                            await self._preempt_all(gpu)
+                        # Unload ALL models (orchestrator :30b fills entire GPU)
+                        await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+
             gpu = self.gpu_pool.find_for_reservation()
             if not gpu:
                 # No healthy GPU – fall back to CPU
                 logger.warning("No healthy GPU for CRITICAL request %s, falling back to CPU", request.request_id)
                 return await self._send_to_cpu(request)
 
-            # Preempt background work on this GPU
-            if gpu.has_active_background():
-                await self._preempt_background(gpu)
+            # Immediately preempt ALL active requests (orchestrator needs GPU NOW)
+            if gpu.active_request_count() > 0:
+                logger.warning(
+                    "GPU %s has %d active request(s), preempting ALL for CRITICAL request %s",
+                    gpu.name, gpu.active_request_count(), request.request_id,
+                )
+                await self._preempt_all(gpu)
 
-            # Ensure model is loaded
+            # Ensure ONLY :30b model is loaded (nothing else fits)
             if not gpu.has_model(model):
-                # Unload other sets first
-                await self.gpu_pool.unload_all(gpu, self._mgmt_client, except_models={model})
+                # Unload everything first
+                await self.gpu_pool.unload_all(gpu, self._mgmt_client)
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                 if not loaded:
                     logger.error("Failed to load %s on GPU %s, falling back to CPU", model, gpu.name)
                     return await self._send_to_cpu(request)
+            elif len(gpu.loaded_models) > 1:
+                # :30b is loaded but other models too - unload them!
+                logger.warning("GPU has :30b + other models, unloading extras")
+                await self.gpu_pool.unload_all(gpu, self._mgmt_client, except_models={model})
 
             self._last_critical_activity = time.monotonic()
             return await self._send_to_gpu(gpu, request)
-
-        # ── 3. If GPU is reserved by orchestrator → background to CPU ──
-        if priority >= Priority.BACKGROUND and self._reservation_session:
-            return await self._send_to_cpu(request)
 
         # ── 4. Find GPU with the model or free VRAM ─────────────────────
         gpu = self.gpu_pool.find_with_model(model)
@@ -180,9 +231,10 @@ class OllamaRouter:
         gpu.last_activity = time.monotonic()
 
         target_url = gpu.url
+        # ── Proxy logging ──
         logger.info(
-            "→ GPU %s: request=%s model=%s priority=%s",
-            gpu.name, request.request_id, request.model, request.priority.name,
+            "REQUEST_PROXY: id=%s → GPU %s (%s) model=%s priority=%s",
+            request.request_id, gpu.name, target_url, request.model, request.priority.name,
         )
 
         if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
@@ -193,14 +245,19 @@ class OllamaRouter:
         request.state = RequestState.RUNNING_CPU
 
         if not self.cpu_healthy:
+            logger.error(
+                "REQUEST_PROXY: id=%s → CPU unavailable (no healthy backend)",
+                request.request_id,
+            )
             return JSONResponse(
                 status_code=503,
                 content={"error": "no_backend_available", "message": "Both GPU and CPU backends are unavailable"},
             )
 
+        # ── Proxy logging ──
         logger.info(
-            "→ CPU: request=%s model=%s priority=%s",
-            request.request_id, request.model, request.priority.name,
+            "REQUEST_PROXY: id=%s → CPU (%s) model=%s priority=%s",
+            request.request_id, self.cpu_url, request.model, request.priority.name,
         )
 
         if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
@@ -219,7 +276,7 @@ class OllamaRouter:
                     continue
                 req.cancel_event.set()
                 req.state = RequestState.PREEMPTED
-                preempted.append(req_id)
+                preempted.append((req_id, req.priority.name))
 
         if preempted:
             logger.info(
@@ -229,10 +286,33 @@ class OllamaRouter:
             # Give a brief grace period for streams to close
             await asyncio.sleep(settings.preempt_grace_s)
 
+    async def _preempt_all(self, gpu: GpuBackend) -> None:
+        """Preempt ALL requests running on a GPU backend (for CRITICAL priority)."""
+        preempted = []
+        for req_id, req in list(gpu.active_requests.items()):
+            # Don't preempt short embedding requests
+            if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
+                continue
+            req.cancel_event.set()
+            req.state = RequestState.PREEMPTED
+            preempted.append((req_id, req.model, req.priority.name))
+            logger.warning(
+                "PREEMPT: id=%s model=%s priority=%s → killed by CRITICAL request",
+                req_id, req.model, req.priority.name,
+            )
+
+        if preempted:
+            logger.warning(
+                "Preempted ALL %d request(s) on GPU %s for CRITICAL work: %s",
+                len(preempted), gpu.name, preempted,
+            )
+            # Give a brief grace period for streams to close
+            await asyncio.sleep(settings.preempt_grace_s)
+
     # ── Orchestrator announce/release ───────────────────────────────────
 
     async def announce(self, req: AnnounceRequest) -> AnnounceResponse:
-        """Reserve a GPU for orchestrator/critical work."""
+        """Reserve a GPU for critical work (session_id ignored - global reservation)."""
         async with self._reservation_lock:
             gpu = self.gpu_pool.find_for_reservation()
             if not gpu:
@@ -246,31 +326,44 @@ class OllamaRouter:
             if self._bg_load_task and not self._bg_load_task.done():
                 self._bg_load_task.cancel()
 
-            # Set reservation
-            self._reservation_session = req.session_id
+            # Set global reservation (session_id not tracked)
+            self._reservation_session = "critical"
             self._reservation_gpu = gpu.name
             self._reservation_at = time.monotonic()
             self._last_critical_activity = time.monotonic()
-            gpu.reserved_by = req.session_id
+            gpu.reserved_by = "critical"
             gpu.reserved_at = time.monotonic()
 
             logger.info(
-                "GPU %s reserved for session %s (model=%s)",
-                gpu.name, req.session_id, req.model,
+                "GPU %s reserved for CRITICAL work (model=%s)",
+                gpu.name, req.model,
             )
 
-            # Preempt background work
-            if gpu.has_active_background():
-                await self._preempt_background(gpu)
-
-            # Ensure model is loaded
-            model_loaded = gpu.has_model(req.model)
-            if not model_loaded:
-                await self.gpu_pool.unload_all(gpu, self._mgmt_client, except_models={req.model})
-                model_loaded = await self.gpu_pool.load_model(
-                    gpu, req.model, self._mgmt_client,
-                    keep_alive=settings.default_keep_alive,
+            # Immediately preempt ALL active requests (orchestrator reservation)
+            if gpu.active_request_count() > 0:
+                logger.warning(
+                    "GPU %s has %d active request(s), preempting ALL for reservation",
+                    gpu.name, gpu.active_request_count(),
                 )
+                await self._preempt_all(gpu)
+
+            # CRITICAL: Orchestrator reservation = ONLY :30b, nothing else!
+            if ":30b" not in req.model:
+                logger.error("Orchestrator reservation requires :30b model, got: %s", req.model)
+                return AnnounceResponse(
+                    status="error",
+                    model_loaded=False,
+                    gpu_available=True,
+                )
+
+            # Unload ALL models (orchestrator :30b fills entire GPU)
+            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+
+            # Load orchestrator model
+            model_loaded = await self.gpu_pool.load_model(
+                gpu, req.model, self._mgmt_client,
+                keep_alive=settings.default_keep_alive,
+            )
 
             return AnnounceResponse(
                 status="ready" if model_loaded else "error",
@@ -280,13 +373,10 @@ class OllamaRouter:
             )
 
     async def release(self, req: ReleaseRequest) -> ReleaseResponse:
-        """Release GPU reservation and start loading background models."""
+        """Release GPU reservation and start loading background models (session_id ignored)."""
         async with self._reservation_lock:
-            if self._reservation_session != req.session_id:
-                logger.warning(
-                    "Release called for session %s but reservation is %s",
-                    req.session_id, self._reservation_session,
-                )
+            if not self._reservation_session:
+                logger.info("Release called but no reservation active")
                 return ReleaseResponse(status="released", background_loading=False)
 
             gpu_name = self._reservation_gpu
@@ -302,7 +392,7 @@ class OllamaRouter:
                     )
                     bg_loading = True
 
-            logger.info("GPU reservation released for session %s", req.session_id)
+            logger.info("GPU reservation released")
             return ReleaseResponse(status="released", background_loading=bg_loading)
 
     def _clear_reservation(self) -> None:
@@ -323,6 +413,11 @@ class OllamaRouter:
 
             # Double-check no reservation happened during the delay
             if self._reservation_session:
+                return
+
+            # CRITICAL: If :30b model still loaded, don't load background set (won't fit)
+            if any(":30b" in m for m in gpu.loaded_models):
+                logger.warning("GPU %s has :30b model, skipping background load (won't fit)", gpu.name)
                 return
 
             logger.info("Loading background model set on GPU %s", gpu.name)

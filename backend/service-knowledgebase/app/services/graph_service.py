@@ -54,6 +54,12 @@ class GraphService:
         Returns:
             Tuple of (nodes_created, edges_created, list of extracted entity keys)
         """
+        logger.info(
+            "GRAPH_WRITE: INGEST_START sourceUrn=%s clientId=%s projectId=%s content_len=%d chunk_ids=%d",
+            request.sourceUrn, request.clientId, request.projectId or "",
+            len(request.content), len(chunk_ids) if chunk_ids else 0
+        )
+
         # 1. Split text into chunks for processing
         chunks = self.text_splitter.split_text(request.content)
 
@@ -61,20 +67,31 @@ class GraphService:
         edges_created = 0
         all_entity_keys = []
 
-        logger.info("Graph ingest: %d text chunks to process via LLM model=%s", len(chunks), settings.LLM_MODEL)
+        logger.info(
+            "GRAPH_WRITE: SPLIT sourceUrn=%s → %d text chunks (will call LLM model=%s)",
+            request.sourceUrn, len(chunks), settings.LLM_MODEL
+        )
 
         # Process chunks sequentially (for LLM rate limiting)
         for i, chunk in enumerate(chunks, 1):
-            logger.info("Calling LLM for entity extraction chunk %d/%d", i, len(chunks))
+            logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", i, len(chunks), request.sourceUrn)
             n, e, keys = await self._process_chunk(chunk, request, chunk_ids)
             nodes_created += n
             edges_created += e
             all_entity_keys.extend(keys)
+            logger.info(
+                "GRAPH_WRITE: CHUNK_DONE %d/%d nodes=%d edges=%d entities=%d",
+                i, len(chunks), n, e, len(keys)
+            )
 
         # Deduplicate entity keys
         all_entity_keys = list(set(all_entity_keys))
 
-        logger.info("Graph ingest done nodes=%d edges=%d entities=%d", nodes_created, edges_created, len(all_entity_keys))
+        logger.info(
+            "GRAPH_WRITE: INGEST_COMPLETE sourceUrn=%s nodes=%d edges=%d entities=%d clientId=%s projectId=%s",
+            request.sourceUrn, nodes_created, edges_created, len(all_entity_keys),
+            request.clientId, request.projectId or ""
+        )
         return nodes_created, edges_created, all_entity_keys
 
     async def _process_chunk(
@@ -112,9 +129,19 @@ Guidelines:
 Text: {text}
 """
 
+        logger.info(
+            "GRAPH_WRITE: LLM_CALL sourceUrn=%s text_len=%d model=%s",
+            request.sourceUrn, len(text), settings.LLM_MODEL
+        )
+
         try:
             response = await self.llm.ainvoke(prompt)
             content = response.content
+            logger.info(
+                "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d",
+                request.sourceUrn, len(content)
+            )
+
             # Clean up markdown code blocks if present
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
@@ -122,8 +149,15 @@ Text: {text}
                 content = content.split("```")[1].split("```")[0]
 
             data = json.loads(content)
+            logger.info(
+                "GRAPH_WRITE: LLM_PARSED sourceUrn=%s nodes=%d edges=%d",
+                request.sourceUrn, len(data.get("nodes", [])), len(data.get("edges", []))
+            )
         except Exception as e:
-            logger.warning("LLM extraction failed: %s", e)
+            logger.warning(
+                "GRAPH_WRITE: LLM_EXTRACTION_FAILED sourceUrn=%s error=%s",
+                request.sourceUrn, e
+            )
             return 0, 0, []
 
         entity_keys = []
@@ -372,9 +406,20 @@ Text: {text}
         #   (clientId == "" OR clientId == NULL OR clientId == @clientId)
         #   AND (projectId == "" OR projectId == NULL OR projectId == @projectId)
 
+        logger.info(
+            "GRAPH_READ: TRAVERSE_START startKey=%s clientId=%s projectId=%s groupId=%s direction=%s depth=%d..%d",
+            request.startKey, request.clientId, request.projectId or "",
+            request.groupId or "", request.spec.direction, request.spec.minDepth, request.spec.maxDepth
+        )
+
         # Resolve startKey through alias registry (async — stays outside thread)
         canonical_key = await self.alias_registry.resolve(request.clientId, request.startKey)
         arango_key = canonical_key.replace(":", "__")
+
+        logger.info(
+            "GRAPH_READ: ALIAS_RESOLVED startKey=%s → canonical=%s arango=%s",
+            request.startKey, canonical_key, arango_key
+        )
 
         bind_vars = {
             "startNode": f"KnowledgeNodes/{arango_key}",
@@ -418,6 +463,8 @@ Text: {text}
         RETURN v
         """
 
+        logger.info("GRAPH_READ: QUERY aql=%s bind_vars=%s", aql.strip(), bind_vars)
+
         def _execute():
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             nodes = []
@@ -431,9 +478,17 @@ Text: {text}
             return nodes
 
         try:
-            return await asyncio.to_thread(_execute)
+            result = await asyncio.to_thread(_execute)
+            logger.info(
+                "GRAPH_READ: TRAVERSE_COMPLETE startKey=%s results=%d",
+                request.startKey, len(result)
+            )
+            return result
         except Exception as e:
-            logger.warning("Traversal failed: %s", e)
+            logger.warning(
+                "GRAPH_READ: TRAVERSE_FAILED startKey=%s error=%s",
+                request.startKey, e
+            )
             return []
 
     async def get_node(self, key: str, client_id: str = "", project_id: str = None, group_id: str = None) -> GraphNode | None:

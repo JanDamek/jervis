@@ -54,6 +54,8 @@ fun IndexingQueueScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
+    var clientFilter by remember { mutableStateOf("") }
+    var projectFilter by remember { mutableStateOf("") }
     var intervalDialog by remember { mutableStateOf<IntervalDialogState?>(null) }
 
     // Section expansion states
@@ -61,6 +63,7 @@ fun IndexingQueueScreen(
     var kbWaitingExpanded by remember { mutableStateOf(true) }
     var executionWaitingExpanded by remember { mutableStateOf(false) }
     var executionRunningExpanded by remember { mutableStateOf(false) }
+    var kbIndexedExpanded by remember { mutableStateOf(false) }
 
     // KB pagination
     var kbPage by remember { mutableStateOf(0) }
@@ -73,7 +76,13 @@ fun IndexingQueueScreen(
             isLoading = true
             error = null
             try {
-                dashboard = repository.indexingQueue.getIndexingDashboard(search, kbPage, kbPageSize)
+                dashboard = repository.indexingQueue.getIndexingDashboard(
+                    search = search,
+                    kbPage = kbPage,
+                    kbPageSize = kbPageSize,
+                    clientFilter = clientFilter,
+                    projectFilter = projectFilter,
+                )
             } catch (e: Exception) {
                 error = "Chyba: ${e.message}"
             } finally {
@@ -123,6 +132,33 @@ fun IndexingQueueScreen(
                         onClick = { loadDashboard() },
                         icon = Icons.Default.Search,
                         contentDescription = "Hledat",
+                    )
+                }
+            }
+
+            // Client and Project filters
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+                ) {
+                    JTextField(
+                        value = clientFilter,
+                        onValueChange = {
+                            clientFilter = it
+                            loadDashboard()
+                        },
+                        label = "Filtr klienta",
+                        modifier = Modifier.weight(1f),
+                    )
+                    JTextField(
+                        value = projectFilter,
+                        onValueChange = {
+                            projectFilter = it
+                            loadDashboard()
+                        },
+                        label = "Filtr projektu",
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -183,7 +219,7 @@ fun IndexingQueueScreen(
                         }
                     }
 
-                    // 2. KB Waiting (READY_FOR_QUALIFICATION) - with pagination + reorder
+                    // 2. KB Waiting (READY_FOR_QUALIFICATION) - with pagination + reorder + process now
                     item {
                         PipelineSection(
                             title = "Čeká na KB (${data.kbWaitingTotalCount})",
@@ -217,7 +253,22 @@ fun IndexingQueueScreen(
                                     }
                                 }
                             },
+                            onProcessNow = { taskId ->
+                                scope.launch {
+                                    try {
+                                        val success = repository.indexingQueue.processKbItemNow(taskId)
+                                        if (success) {
+                                            loadDashboard()
+                                        } else {
+                                            error = "Nelze zpracovat: jiná položka se již zpracovává"
+                                        }
+                                    } catch (e: Exception) {
+                                        error = "Chyba: ${e.message}"
+                                    }
+                                }
+                            },
                             showReorderControls = true,
+                            showProcessNow = true,
                         )
                     }
 
@@ -242,6 +293,20 @@ fun IndexingQueueScreen(
                                 expanded = executionRunningExpanded,
                                 onToggle = { executionRunningExpanded = !executionRunningExpanded },
                                 accentColor = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+
+                    // 5. KB Indexed (INDEXED) - successfully inserted into KB
+                    if (data.kbIndexedTotalCount > 0) {
+                        item { Spacer(Modifier.height(JervisSpacing.sectionGap)) }
+                        item {
+                            PipelineSection(
+                                title = "Úspěšně vloženo do KB (${data.kbIndexedTotalCount})",
+                                items = data.kbIndexed,
+                                expanded = kbIndexedExpanded,
+                                onToggle = { kbIndexedExpanded = !kbIndexedExpanded },
+                                accentColor = MaterialTheme.colorScheme.tertiary,
                             )
                         }
                     }

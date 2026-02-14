@@ -57,10 +57,20 @@ class RagService:
         Returns:
             Tuple of (chunk_count, list of chunk UUIDs)
         """
+        logger.info(
+            "RAG_WRITE: START sourceUrn=%s clientId=%s projectId=%s groupId=%s kind=%s content_len=%d",
+            request.sourceUrn, request.clientId, request.projectId or "",
+            request.groupId or "", request.kind or "", len(request.content)
+        )
+
         chunks = self.text_splitter.split_text(request.content)
+        logger.info("RAG_WRITE: SPLIT sourceUrn=%s → %d chunks", request.sourceUrn, len(chunks))
 
         # Batch embed all chunks at once (instead of per-chunk embed_query)
+        logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s",
+                    request.sourceUrn, len(chunks), settings.EMBEDDING_MODEL)
         vectors = await asyncio.to_thread(self.embeddings.embed_documents, chunks)
+        logger.info("RAG_WRITE: EMBEDDED sourceUrn=%s vectors=%d", request.sourceUrn, len(vectors))
 
         def _weaviate_batch_insert():
             collection = self.client.collections.get("KnowledgeChunk")
@@ -82,9 +92,20 @@ class RagService:
                         vector=vectors[i]
                     )
                     chunk_ids.append(chunk_id)
+                    if i < 3:  # Log first 3 chunks for debugging
+                        logger.info(
+                            "RAG_WRITE: CHUNK[%d] id=%s clientId=%s projectId=%s groupId=%s kind=%s content_preview=%s",
+                            i, chunk_id, request.clientId, request.projectId or "",
+                            request.groupId or "", request.kind or "", chunk[:100]
+                        )
             return chunk_ids
 
         chunk_ids = await asyncio.to_thread(_weaviate_batch_insert)
+        logger.info(
+            "RAG_WRITE: COMPLETE sourceUrn=%s chunks_written=%d clientId=%s projectId=%s chunk_ids=%s",
+            request.sourceUrn, len(chunk_ids), request.clientId, request.projectId or "",
+            chunk_ids[:3] if len(chunk_ids) > 3 else chunk_ids
+        )
         return len(chunk_ids), chunk_ids
 
     async def update_chunk_graph_refs(self, chunk_id: str, graph_refs: list[str]) -> bool:
@@ -198,7 +219,15 @@ class RagService:
         return await asyncio.to_thread(_query)
 
     async def retrieve(self, request: RetrievalRequest) -> EvidencePack:
+        logger.info(
+            "RAG_READ: START query='%s' clientId=%s projectId=%s groupId=%s maxResults=%d",
+            request.query, request.clientId, request.projectId or "",
+            request.groupId or "", request.maxResults
+        )
+
+        logger.info("RAG_READ: EMBEDDING query model=%s", settings.EMBEDDING_MODEL)
         vector = await asyncio.to_thread(self.embeddings.embed_query, request.query)
+        logger.info("RAG_READ: EMBEDDED query vector_dim=%d", len(vector))
 
         def _weaviate_query():
             collection = self.client.collections.get("KnowledgeChunk")
@@ -223,6 +252,14 @@ class RagService:
 
             filters = wvq.Filter.all_of(parts) if len(parts) > 1 else (parts[0] if parts else None)
 
+            logger.info(
+                "RAG_READ: QUERY filters: clientId=%s projectId=%s groupId=%s filter_parts=%d",
+                request.clientId if request.clientId else "ANY",
+                request.projectId if request.projectId else "ANY",
+                request.groupId if request.groupId else "ANY",
+                len(parts)
+            )
+
             return collection.query.near_vector(
                 near_vector=vector,
                 limit=request.maxResults,
@@ -231,14 +268,25 @@ class RagService:
             )
 
         response = await asyncio.to_thread(_weaviate_query)
+        logger.info("RAG_READ: WEAVIATE returned %d results", len(response.objects))
 
         items = []
-        for obj in response.objects:
+        for i, obj in enumerate(response.objects):
             items.append(EvidenceItem(
                 content=obj.properties["content"],
                 score=1.0 - (obj.metadata.distance or 0.0),
                 sourceUrn=obj.properties["sourceUrn"],
                 metadata=obj.properties
             ))
+            if i < 3:  # Log first 3 results
+                logger.info(
+                    "RAG_READ: RESULT[%d] score=%.3f distance=%.3f sourceUrn=%s clientId=%s projectId=%s content_preview=%s",
+                    i, 1.0 - (obj.metadata.distance or 0.0), obj.metadata.distance or 0.0,
+                    obj.properties.get("sourceUrn", "?"),
+                    obj.properties.get("clientId", "?"),
+                    obj.properties.get("projectId", "?"),
+                    obj.properties.get("content", "")[:100]
+                )
 
+        logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)

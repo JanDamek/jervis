@@ -81,7 +81,13 @@ class IndexingQueueRpcImpl(
         )
     }
 
-    override suspend fun getIndexingDashboard(search: String, kbPage: Int, kbPageSize: Int): IndexingDashboardDto {
+    override suspend fun getIndexingDashboard(
+        search: String,
+        kbPage: Int,
+        kbPageSize: Int,
+        clientFilter: String,
+        projectFilter: String,
+    ): IndexingDashboardDto {
         val now = Instant.now()
 
         // Build name caches
@@ -100,6 +106,8 @@ class IndexingQueueRpcImpl(
         val intervalSettings = pollingIntervalRpc.getSettings()
 
         val query = search.trim().lowercase()
+        val clientFilterQuery = clientFilter.trim().lowercase()
+        val projectFilterQuery = projectFilter.trim().lowercase()
 
         // ── Collect pending items (NEW/INDEXING) ──
         val pendingItems = mutableListOf<IndexingQueueItemDto>()
@@ -117,7 +125,10 @@ class IndexingQueueRpcImpl(
         )
 
         // ── Collect pipeline items from tasks collection ──
-        val pipelineResult = collectPipelineTasks(query, clientMap, connectionMap, now, kbPage, kbPageSize)
+        val pipelineResult = collectPipelineTasks(
+            query, clientMap, connectionMap, now, kbPage, kbPageSize,
+            clientFilterQuery, projectFilterQuery,
+        )
 
         return IndexingDashboardDto(
             connectionGroups = connectionGroups,
@@ -129,6 +140,8 @@ class IndexingQueueRpcImpl(
             executionWaitingCount = pipelineResult.executionWaitingCount,
             executionRunning = pipelineResult.executionRunning,
             executionRunningCount = pipelineResult.executionRunningCount,
+            kbIndexed = pipelineResult.kbIndexed,
+            kbIndexedTotalCount = pipelineResult.kbIndexedTotalCount,
             kbPage = kbPage,
             kbPageSize = kbPageSize,
         )
@@ -152,6 +165,33 @@ class IndexingQueueRpcImpl(
 
     override suspend fun prioritizeKbQueueItem(taskId: String): Boolean {
         return reorderKbQueueItem(taskId, 1)
+    }
+
+    override suspend fun processKbItemNow(taskId: String): Boolean {
+        return try {
+            val task = taskRepository.getById(TaskId(ObjectId(taskId))) ?: return false
+
+            // Check if task is in READY_FOR_QUALIFICATION state
+            if (task.state != TaskStateEnum.READY_FOR_QUALIFICATION) {
+                logger.warn { "Cannot process task $taskId: not in READY_FOR_QUALIFICATION state (current: ${task.state})" }
+                return false
+            }
+
+            // Check if another task is already being qualified (only one at a time)
+            val qualifyingCount = taskRepository.countByState(TaskStateEnum.QUALIFYING)
+            if (qualifyingCount > 0) {
+                logger.warn { "Cannot process task $taskId: another task is already being qualified" }
+                return false
+            }
+
+            // Change state to QUALIFYING to start KB processing immediately
+            taskService.updateState(task, TaskStateEnum.QUALIFYING)
+            logger.info { "Task $taskId marked for immediate KB processing" }
+            true
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to process KB item now: $taskId" }
+            false
+        }
     }
 
     // ── Hierarchical grouping: connection → capability → client ──
@@ -245,6 +285,8 @@ class IndexingQueueRpcImpl(
         val executionWaitingCount: Long,
         val executionRunning: List<PipelineItemDto>,
         val executionRunningCount: Long,
+        val kbIndexed: List<PipelineItemDto>,
+        val kbIndexedTotalCount: Long,
     )
 
     private suspend fun collectPipelineTasks(
@@ -254,6 +296,8 @@ class IndexingQueueRpcImpl(
         now: Instant,
         kbPage: Int,
         kbPageSize: Int,
+        clientFilterQuery: String,
+        projectFilterQuery: String,
     ): PipelineResult {
         // Only include indexing task types (exclude USER_INPUT_PROCESSING, USER_TASK, SCHEDULED_TASK)
         val indexingTaskTypes = listOf(
@@ -301,11 +345,15 @@ class IndexingQueueRpcImpl(
             pipelineState = null, // will use actual state
         )
 
-        // Apply search filter
-        val filteredKbWaiting = filterPipelineItems(kbWaitingAll, query)
-        val filteredKbProcessing = filterPipelineItems(kbProcessingAll, query)
-        val filteredExecWaiting = filterPipelineItems(executionWaitingAll, query)
-        val filteredExecRunning = filterPipelineItems(executionRunningAll, query)
+        // Indexed: Collect from polled items (git commits, emails, bugtracker, wiki) that are INDEXED
+        val kbIndexedAll = collectIndexedPolledItems(clientMap, connectionMap)
+
+        // Apply search and client/project filters
+        val filteredKbWaiting = filterPipelineItems(kbWaitingAll, query, clientFilterQuery, projectFilterQuery)
+        val filteredKbProcessing = filterPipelineItems(kbProcessingAll, query, clientFilterQuery, projectFilterQuery)
+        val filteredExecWaiting = filterPipelineItems(executionWaitingAll, query, clientFilterQuery, projectFilterQuery)
+        val filteredExecRunning = filterPipelineItems(executionRunningAll, query, clientFilterQuery, projectFilterQuery)
+        val filteredKbIndexed = filterPipelineItems(kbIndexedAll, query, clientFilterQuery, projectFilterQuery)
 
         // Pagination for KB waiting
         val safeKbPage = kbPage.coerceAtLeast(0)
@@ -321,6 +369,10 @@ class IndexingQueueRpcImpl(
             sortedKbWaiting.subList(kbWaitingStart, (kbWaitingStart + safeKbPageSize).coerceAtMost(sortedKbWaiting.size))
         }
 
+        // Pagination for indexed items (last 50 most recent)
+        val sortedKbIndexed = filteredKbIndexed.sortedByDescending { it.createdAt ?: "" }
+        val pagedKbIndexed = sortedKbIndexed.take(50)
+
         return PipelineResult(
             kbWaiting = pagedKbWaiting,
             kbWaitingTotalCount = filteredKbWaiting.size.toLong(),
@@ -330,6 +382,8 @@ class IndexingQueueRpcImpl(
             executionWaitingCount = filteredExecWaiting.size.toLong(),
             executionRunning = filteredExecRunning,
             executionRunningCount = filteredExecRunning.size.toLong(),
+            kbIndexed = pagedKbIndexed,
+            kbIndexedTotalCount = filteredKbIndexed.size.toLong(),
         )
     }
 
@@ -420,13 +474,139 @@ class IndexingQueueRpcImpl(
         }
     }
 
-    private fun filterPipelineItems(items: List<PipelineItemDto>, query: String): List<PipelineItemDto> {
-        if (query.isBlank()) return items
+    /**
+     * Collect indexed items from polled collections (git commits, emails, bugtracker, wiki).
+     * These are items that have been successfully indexed into KB.
+     */
+    private suspend fun collectIndexedPolledItems(
+        clientMap: Map<ClientId, ClientDocument>,
+        connectionMap: Map<ConnectionId, ConnectionDocument>,
+    ): List<PipelineItemDto> {
+        val items = mutableListOf<PipelineItemDto>()
+
+        // Git commits with INDEXED state
+        val gitQuery = Query(Criteria.where("state").`in`(listOf(GitCommitState.INDEXED.name)))
+            .with(Sort.by(Sort.Direction.DESC, "commitDate"))
+            .limit(100)
+        val gitDocs = mongoTemplate.find(gitQuery, GitCommitDocument::class.java, "git_commits")
+            .collectList().awaitSingle()
+
+        for (doc in gitDocs) {
+            val clientName = clientMap.values.find { it.id.value == doc.clientId }?.name ?: doc.clientId.toHexString()
+            items += PipelineItemDto(
+                id = doc.id.toHexString(),
+                type = IndexingItemType.GIT_COMMIT,
+                title = doc.message?.take(120) ?: doc.commitHash.take(8),
+                connectionName = "Git",
+                clientName = clientName,
+                sourceUrn = doc.projectId?.let { SourceUrn.git(ProjectId(it), doc.commitHash).value },
+                createdAt = doc.commitDate?.formatIso(),
+                pipelineState = "INDEXED",
+                taskId = null,
+                queuePosition = null,
+            )
+        }
+
+        // Email messages with INDEXED state
+        val emailQuery = Query(Criteria.where("state").`in`(listOf(PollingStatusEnum.INDEXED.name)))
+            .with(Sort.by(Sort.Direction.DESC, "receivedDate"))
+            .limit(100)
+        val emailDocs = mongoTemplate.find(emailQuery, EmailMessageIndexDocument::class.java, "email_message_index")
+            .collectList().awaitSingle()
+
+        for (doc in emailDocs) {
+            val connName = connectionMap[doc.connectionId]?.name ?: "Email"
+            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
+            items += PipelineItemDto(
+                id = doc.id.toHexString(),
+                type = IndexingItemType.EMAIL,
+                title = doc.subject ?: "(bez předmětu)",
+                connectionName = connName,
+                clientName = clientName,
+                sourceUrn = doc.messageId?.let { SourceUrn.email(doc.connectionId, it, doc.subject ?: "").value },
+                createdAt = doc.receivedDate.formatIso(),
+                pipelineState = "INDEXED",
+                taskId = null,
+                queuePosition = null,
+            )
+        }
+
+        // Bugtracker issues with INDEXED state
+        val btQuery = Query(Criteria.where("status").`in`(listOf(PollingStatusEnum.INDEXED.name)))
+            .with(Sort.by(Sort.Direction.DESC, "bugtrackerUpdatedAt"))
+            .limit(100)
+        val btDocs = mongoTemplate.find(btQuery, BugTrackerIssueIndexDocument::class.java, "bugtracker_issues")
+            .collectList().awaitSingle()
+
+        for (doc in btDocs) {
+            val conn = connectionMap[doc.connectionId]
+            val connName = conn?.name ?: "Bugtracker"
+            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
+            val sourceUrn = buildBugTrackerSourceUrn(conn?.provider, doc.connectionId.value, doc.issueKey)
+            items += PipelineItemDto(
+                id = doc.id.toHexString(),
+                type = IndexingItemType.BUGTRACKER_ISSUE,
+                title = listOfNotNull(doc.issueKey, doc.summary).joinToString(" – "),
+                connectionName = connName,
+                clientName = clientName,
+                sourceUrn = sourceUrn,
+                createdAt = doc.bugtrackerUpdatedAt.formatIso(),
+                pipelineState = "INDEXED",
+                taskId = null,
+                queuePosition = null,
+            )
+        }
+
+        // Wiki pages with INDEXED state
+        val wikiQuery = Query(Criteria.where("status").`in`(listOf(PollingStatusEnum.INDEXED.name)))
+            .with(Sort.by(Sort.Direction.DESC, "wikiUpdatedAt"))
+            .limit(100)
+        val wikiDocs = mongoTemplate.find(wikiQuery, WikiPageIndexDocument::class.java, "wiki_pages")
+            .collectList().awaitSingle()
+
+        for (doc in wikiDocs) {
+            val connName = connectionMap[doc.connectionDocumentId]?.name ?: "Wiki"
+            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
+            items += PipelineItemDto(
+                id = doc.id.toHexString(),
+                type = IndexingItemType.WIKI_PAGE,
+                title = doc.title,
+                connectionName = connName,
+                clientName = clientName,
+                sourceUrn = SourceUrn.confluence(doc.connectionDocumentId.value, doc.pageId).value,
+                createdAt = doc.wikiUpdatedAt.formatIso(),
+                pipelineState = "INDEXED",
+                taskId = null,
+                queuePosition = null,
+            )
+        }
+
+        return items
+    }
+
+    private fun filterPipelineItems(
+        items: List<PipelineItemDto>,
+        query: String,
+        clientFilterQuery: String,
+        projectFilterQuery: String,
+    ): List<PipelineItemDto> {
         return items.filter { item ->
-            item.title.lowercase().contains(query) ||
+            // Search filter
+            val matchesSearch = query.isBlank() || item.title.lowercase().contains(query) ||
                 item.connectionName.lowercase().contains(query) ||
                 item.clientName.lowercase().contains(query) ||
                 (item.sourceUrn?.lowercase()?.contains(query) == true)
+
+            // Client filter
+            val matchesClient = clientFilterQuery.isBlank() ||
+                item.clientName.lowercase().contains(clientFilterQuery)
+
+            // Project filter (check in title and sourceUrn - projects are encoded in URN)
+            val matchesProject = projectFilterQuery.isBlank() ||
+                item.title.lowercase().contains(projectFilterQuery) ||
+                (item.sourceUrn?.lowercase()?.contains(projectFilterQuery) == true)
+
+            matchesSearch && matchesClient && matchesProject
         }
     }
 

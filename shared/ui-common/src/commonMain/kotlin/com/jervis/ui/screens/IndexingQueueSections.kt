@@ -367,7 +367,9 @@ internal fun PipelineSection(
     onPageChange: ((Int) -> Unit)? = null,
     onPrioritize: ((String) -> Unit)? = null,
     onReorder: ((String, Int) -> Unit)? = null,
+    onProcessNow: ((String) -> Unit)? = null,
     showReorderControls: Boolean = false,
+    showProcessNow: Boolean = false,
     accentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     JCard {
@@ -422,7 +424,9 @@ internal fun PipelineSection(
                             item = item,
                             index = index,
                             showReorderControls = showReorderControls,
+                            showProcessNow = showProcessNow,
                             onPrioritize = onPrioritize,
+                            onProcessNow = onProcessNow,
                             onMoveUp = if (showReorderControls && index > 0 && onReorder != null) {
                                 { item.taskId?.let { id -> onReorder(id, index) } }
                             } else {
@@ -482,7 +486,9 @@ private fun PipelineItemRow(
     item: PipelineItemDto,
     index: Int,
     showReorderControls: Boolean,
+    showProcessNow: Boolean = false,
     onPrioritize: ((String) -> Unit)?,
+    onProcessNow: ((String) -> Unit)?,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
 ) {
@@ -588,6 +594,18 @@ private fun PipelineItemRow(
                     onClick = { onPrioritize(taskId) },
                     icon = Icons.Default.VerticalAlignTop,
                     contentDescription = "Upřednostnit",
+                )
+            }
+        }
+
+        // Process Now button (only for KB waiting queue)
+        if (showProcessNow && onProcessNow != null) {
+            item.taskId?.let { taskId ->
+                JIconButton(
+                    onClick = { onProcessNow(taskId) },
+                    icon = Icons.Default.PlayArrow,
+                    contentDescription = "Zpracovat nyní",
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
         }

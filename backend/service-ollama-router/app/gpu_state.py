@@ -64,7 +64,7 @@ class GpuBackend:
 # ── Approximate VRAM sizes for known models ─────────────────────────────
 
 MODEL_VRAM_ESTIMATES: dict[str, float] = {
-    "qwen3-coder-tool:30b": 20.0,
+    "qwen3-coder-tool:30b": 25.0,  # CRITICAL: fills entire 24GB GPU, nothing else fits!
     "qwen2.5:7b": 5.0,
     "qwen2.5:14b": 10.0,
     "qwen3-embedding:8b": 5.0,
@@ -183,9 +183,24 @@ class GpuPool:
         http_client: httpx.AsyncClient,
         keep_alive: str | None = None,
     ) -> bool:
-        """Load a model into GPU VRAM via empty-prompt generate/embeddings call."""
+        """Load a model into GPU VRAM via empty-prompt generate/embeddings call.
+
+        CRITICAL RULE: If :30b model is loaded, NOTHING else can fit (uses all 24GB VRAM).
+        """
         from .config import settings
         from .models import EMBEDDING_MODELS
+
+        # CRITICAL: :30b models fill entire GPU - reject other models
+        if ":30b" in model:
+            # Loading :30b - unload everything else first
+            if backend.loaded_models:
+                logger.warning("Loading :30b model - unloading all other models first")
+                await self.unload_all(backend, http_client)
+        else:
+            # Loading non-:30b - check if :30b is already loaded
+            if any(":30b" in m for m in backend.loaded_models):
+                logger.error("Cannot load %s - GPU already has :30b model (fills all VRAM)", model)
+                return False
 
         if keep_alive is None:
             keep_alive = settings.default_keep_alive
@@ -252,7 +267,7 @@ class GpuPool:
             resp = await http_client.post(
                 f"{backend.url}{endpoint}",
                 json=payload,
-                timeout=30.0,
+                timeout=120.0,  # 2 min timeout for large models
             )
             resp.raise_for_status()
             backend.loaded_models.pop(model, None)
@@ -269,9 +284,32 @@ class GpuPool:
         http_client: httpx.AsyncClient,
         except_models: set[str] | None = None,
     ) -> None:
-        """Unload all models from a GPU backend, optionally keeping some."""
+        """Unload all models from a GPU backend, optionally keeping some.
+
+        Waits for active requests to complete before unloading to avoid timeouts.
+        """
         except_models = except_models or set()
         models_to_unload = [m for m in list(backend.loaded_models.keys()) if m not in except_models]
+
+        if not models_to_unload:
+            return
+
+        # Wait for active requests to complete (max 60s)
+        wait_start = time.monotonic()
+        while backend.active_request_count() > 0 and (time.monotonic() - wait_start) < 60:
+            logger.info(
+                "Waiting for %d active requests on GPU %s before unload...",
+                backend.active_request_count(), backend.name,
+            )
+            await asyncio.sleep(2)
+
+        # If still has active requests, log warning but proceed
+        if backend.active_request_count() > 0:
+            logger.warning(
+                "GPU %s still has %d active requests after 60s wait, unloading anyway",
+                backend.name, backend.active_request_count(),
+            )
+
         for model in models_to_unload:
             await self.unload_model(backend, model, http_client)
 

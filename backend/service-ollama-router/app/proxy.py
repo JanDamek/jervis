@@ -32,6 +32,8 @@ async def proxy_streaming(
 
     async def stream_generator() -> AsyncIterator[bytes]:
         client = httpx.AsyncClient(timeout=_build_timeout())
+        preempted = False
+        error_occurred = False
         try:
             async with client.stream(
                 "POST",
@@ -42,8 +44,9 @@ async def proxy_streaming(
                 async for line in upstream.aiter_lines():
                     # Check preemption
                     if request.cancel_event.is_set():
-                        logger.info(
-                            "Request %s preempted (model=%s)",
+                        preempted = True
+                        logger.warning(
+                            "PROXY_STREAM: id=%s PREEMPTED (model=%s)",
                             request.request_id, request.model,
                         )
                         yield (json.dumps({
@@ -53,13 +56,32 @@ async def proxy_streaming(
                         return
                     if line.strip():
                         yield (line + "\n").encode()
+                # Stream completed successfully
+                logger.info(
+                    "PROXY_STREAM: id=%s completed successfully",
+                    request.request_id,
+                )
         except httpx.RemoteProtocolError:
             if request.cancel_event.is_set():
+                preempted = True
+                logger.warning(
+                    "PROXY_STREAM: id=%s PREEMPTED (protocol error)",
+                    request.request_id,
+                )
                 yield (json.dumps({"error": "preempted"}) + "\n").encode()
             else:
+                error_occurred = True
+                logger.error(
+                    "PROXY_STREAM: id=%s protocol error",
+                    request.request_id,
+                )
                 raise
         except httpx.HTTPStatusError as e:
-            logger.error("Upstream error %s: %s", e.response.status_code, e.response.text[:500])
+            error_occurred = True
+            logger.error(
+                "PROXY_STREAM: id=%s upstream error status=%s",
+                request.request_id, e.response.status_code,
+            )
             yield (json.dumps({
                 "error": f"upstream_error",
                 "status_code": e.response.status_code,
@@ -67,6 +89,8 @@ async def proxy_streaming(
             }) + "\n").encode()
         finally:
             await client.aclose()
+            if not preempted and not error_occurred:
+                logger.info("PROXY_STREAM: id=%s finished", request.request_id)
 
     return StreamingResponse(
         stream_generator(),
@@ -85,6 +109,10 @@ async def proxy_non_streaming(
                 f"{target_url}{request.api_path}",
                 json=request.body,
             )
+            logger.info(
+                "PROXY_NON_STREAM: id=%s status=%s",
+                request.request_id, resp.status_code,
+            )
             return Response(
                 content=resp.content,
                 status_code=resp.status_code,
@@ -92,13 +120,20 @@ async def proxy_non_streaming(
                 media_type=resp.headers.get("content-type", "application/json"),
             )
         except httpx.HTTPStatusError as e:
+            logger.error(
+                "PROXY_NON_STREAM: id=%s upstream error status=%s",
+                request.request_id, e.response.status_code,
+            )
             return Response(
                 content=e.response.content,
                 status_code=e.response.status_code,
                 media_type="application/json",
             )
         except httpx.ConnectError as e:
-            logger.error("Connection failed to %s: %s", target_url, e)
+            logger.error(
+                "PROXY_NON_STREAM: id=%s connection failed to %s: %s",
+                request.request_id, target_url, e,
+            )
             return JSONResponse(
                 status_code=503,
                 content={"error": "backend_unavailable", "message": str(e)},

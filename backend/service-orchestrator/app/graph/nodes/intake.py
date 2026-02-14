@@ -21,6 +21,80 @@ from app.models import TaskCategory, TaskAction, Complexity
 
 logger = logging.getLogger(__name__)
 
+
+async def transform_user_query_to_kb_queries(query: str, state: dict) -> list[str]:
+    """Transform user query into 2-3 general English technical search queries for KB.
+    
+    The KB contains English technical documentation, code examples, and architecture
+    decisions. User queries may be in other languages or too specific/personal.
+    This function uses LLM to extract the core technical concepts and formulate
+    general search terms that are likely to match KB content.
+    
+    Args:
+        query: The original user query (any language).
+        state: Current orchestrator state (for LLM call).
+        
+    Returns:
+        List of 2-3 search query strings in English. Falls back to [query] if LLM fails.
+    """
+    system_prompt = (
+        "You are a search query optimizer for a technical knowledge base.\n\n"
+        "The knowledge base contains:\n"
+        "- Code implementations and examples\n"
+        "- Architecture decisions and design patterns\n"
+        "- Coding conventions and style guides\n"
+        "- Project structure and module documentation\n"
+        "- Technical specifications and APIs\n\n"
+        "Given a user's query (which may be in any language or phrased conversationally), "
+        "extract 2-3 general English search queries that would find relevant technical content.\n\n"
+        "Rules:\n"
+        "1. Translate non-English queries to English technical terms\n"
+        "2. Remove conversational phrases (\"show me\", \"can you\", \"ukaž mi\", etc.)\n"
+        "3. Focus on technical concepts, not personal context\n"
+        "4. Use general terms that match how documentation is written\n"
+        "5. Include relevant technology/framework names if mentioned\n"
+        "6. Keep queries short (3-7 words)\n\n"
+        "Examples:\n"
+        "- User: \"ukaž mi co najdeš v KB pro email jazyková škola\"\n"
+        "  → [\"email system implementation\", \"language school application\", \"smtp email client\"]\n"
+        "- User: \"how do I add authentication to my API?\"\n"
+        "  → [\"API authentication\", \"JWT tokens\", \"OAuth implementation\"]\n"
+        "- User: \"show me examples of React components\"\n"
+        "  → [\"React components\", \"React examples\", \"frontend components\"]\n\n"
+        "Respond with JSON:\n"
+        "{\n"
+        '  "queries": ["query1", "query2", "query3"]\n'
+        "}\n"
+    )
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"User query: {query}"},
+    ]
+    
+    try:
+        response = await llm_with_cloud_fallback(
+            state=state,
+            messages=messages,
+            task_type="query_transformation",
+            max_tokens=512,
+        )
+        content = response.choices[0].message.content
+        parsed = parse_json_response(content)
+        queries = parsed.get("queries", [])
+        if queries and isinstance(queries, list) and len(queries) > 0:
+            # Ensure all queries are strings and limit to 3
+            queries = [str(q) for q in queries if q][:3]
+            if queries:
+                logger.info("Transformed user query to KB queries: %s", queries)
+                return queries
+    except Exception as e:
+        logger.warning("Failed to transform query: %s", e)
+    
+    # Fallback: return original query as-is
+    logger.info("Using original query for KB (transformation failed or empty)")
+    return [query]
+
 # --- Branch detection ---
 
 # Explicit patterns: "on branch X", "branch: X", "na větvi X"
@@ -99,8 +173,11 @@ async def intake(state: dict) -> dict:
         logger.info("Branch detected from query: %s", target_branch)
 
     # 2. Fetch project context from KB (branch-aware)
+    # Transform user query to general English technical search terms
+    search_queries = await transform_user_query_to_kb_queries(query, state)
+    
     project_context = await fetch_project_context(
-        client_id, project_id, query, target_branch=target_branch,
+        client_id, project_id, query, target_branch=target_branch, search_queries=search_queries,
     )
 
     # 3. Build environment summary
@@ -240,4 +317,5 @@ async def intake(state: dict) -> dict:
         "project_context": project_context,
         "allow_cloud_prompt": allow_cloud_prompt,
         "target_branch": target_branch,
+        "kb_search_queries": search_queries,  # Store for downstream nodes
     }

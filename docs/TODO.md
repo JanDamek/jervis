@@ -3,6 +3,195 @@
 Tento dokument obsahuje seznam plánovaných features, vylepšení a refaktoringů,
 které budou implementovány jako separate tickety.
 
+## Workspace & Orchestrator Reliability
+
+### Workspace Clone Failures and Orchestrator Unavailability
+
+**Problém (převzatý z logu 2026-02-13):**
+
+Logy ukazují na následující chyby pro projekt `nUFO`:
+
+```
+WORKSPACE_CLONE_FAILED: project=nUFO projectId=6899c2575ec8291c20f1a038 
+resources=[mazlusek/moneta/nufo(conn=6986002d8bf32b35197e2bf2), 
+mazlusek/moneta/ufo_engine(conn=6986002d8bf32b35197e2bf2), ...] lastCheck=2026-02-13T22:37:03.359Z
+ORCHESTRATOR_UNAVAILABLE: correlationId=git:1abdfadca923b5e9e5654bfbeae45f7dd6a986f6
+PYTHON_DISPATCH_BUSY: taskId=698f4c5b9e3e128db62ddbd2 — resetting to READY_FOR_GPU for silent retry
+```
+
+**Root Cause Analysis:**
+
+1. **Workspace Clone Failure** (`WORKSPACE_CLONE_FAILED`):
+   - Projekt `nUFO` má 7 git resources (nufo, ufo_engine, ufo_mediator, ufo_repository, ufo_framework, ufo_compiler, ufo_dependencies)
+   - `GitRepositoryService.ensureAgentWorkspaceReady()` vrátila `null` pro alespoň jeden resource
+   - Možné důvody:
+     - Neplatné nebo vypršené přihlašovací údaje (OAuth2 token expired, invalid password)
+     - Síťový problém (timeout, connection refused)
+     - Neplatné repository URL
+     - Permission denied (uživatel nemá přístup k repozitáři)
+     - Repository neexistuje (404)
+   - Když `ensureAgentWorkspaceReady()` selže, vrátí `null` a `initializeProjectWorkspace()` nastaví `workspaceStatus = CLONE_FAILED`
+   - **Status CLONE_FAILED je PERMANENTNÍ** - neautomaticky se neopraví, vyžaduje zásah uživatele (oprava credentials, síťové připojení, atd.)
+
+2. **Orchestrator Unavailability** (`ORCHESTRATOR_UNAVAILABLE`):
+   - `AgentOrchestratorService.dispatchToPythonOrchestrator()` kontroluje `pythonOrchestratorClient.isHealthy()`
+   - Pokud health check selže (HTTP neúspěšný, timeout, connection error), dispatch vrací `false`
+   - `AgentOrchestratorService.run()` pak vrátí error "Orchestrátor není momentálně dostupný. Zkuste to prosím později."
+   - Možné důvody:
+     - Python orchestrator služba není running (pád, restart)
+     - Python orchestrator je přetížený (všechny workery busy)
+     - Síťový problém mezi Kotlin serverem a Python orchestratorem
+     - Health check endpoint `/health` neodpovídá
+
+3. **Python Dispatch Busy** (`PYTHON_DISPATCH_BUSY`):
+   - Toto je **důsledek** orchestrator unavailability, ne samostatný problém
+   - Když `dispatchToPythonOrchestrator()` vrátí `false` (orchestrator unavailable), task zůstane ve stavu `DISPATCHED_GPU`
+   - `BackgroundEngine.executeTask()` detekuje, že `freshTask.state == DISPATCHED_GPU` a `finalResponse.message.isNotBlank()` (error zpráva)
+   - Task se resetuje na `READY_FOR_GPU` pro silent retry po 15 sekundách
+   - Tento retry cyklus se opakuje, dokud orchestrator nebude dostupný nebo workspace nebude ready
+
+**Současné chování:**
+
+- Při `CLONE_FAILED`: Uživatel dostane hlášku "Příprava prostředí selhala. Zkontrolujte připojení k repozitáři a zkuste to znovu." Task se NEresetuje, zůstane ve stavu `READY_FOR_GPU` (nebo `DISPATCHED_GPU`), ale dispatch selže znovu a znovu
+- Při `ORCHESTRATOR_UNAVAILABLE`: Uživatel dostane hlášku "Orchestrátor není momentálně dostupný. Zkuste to prosím později." Task se resetuje na `READY_FOR_GPU` a automaticky se retryuje po 15s
+- **Žádné automatické recovery** z `CLONE_FAILED` stavu - projekt musí být manuálně opraven (credentials, connection settings)
+- **Žádné alerty/notifikace** pro adminy o trvalých selháních
+
+**Problémy s aktuální implementací:**
+
+1. **Workspace status se neaktualizuje automaticky** - `CLONE_FAILED` zůstává navždy, dokud uživatel manuálně neaktualizuje connection nebo project
+2. **Retry loop může být neukončující** - pokud je orchestrator down trvale, tasky se neustále resetují a retryují (15s interval), což generuje nepotřebný log noise a DB zátěž
+3. **Chybí viditelnost** - UI nezobrazuje workspace status ani orchestrator health, uživatel neví proč tasky selhávají
+4. **Chybí alerty** - admini nejsou notifikováni o kritických selháních (workspace clone failed, orchestrator down)
+5. **Connection invalidation je agresivní** - `GitRepositoryService` při auth erroru okamžitě označí connection jako `INVALID`, což může být přehnané (token může být jen vypršený a může se refreshnout)
+6. **No backoff pro workspace retry** - `initializeProjectWorkspace()` se volá při startu a při každém `CLONE_FAILED` (BackgroundEngine.ř.911-916), ale bez žádného backoffu - pokusy se opakují okamžitě při každém startu
+
+**Navrhovaná řešení:**
+
+#### 1. Workspace Recovery Mechanism
+
+**A. Exponential Backoff pro Workspace Retry**
+- Přidat `lastWorkspaceAttempt` a `workspaceRetryCount` do `ProjectDocument`
+- Při `CLONE_FAILED` neokamžitě retryovat, ale s exponential backoff (1h, 2h, 4h, 8h, 24h, ...)
+- Implementovat jako `TaskQualificationService` retry logiku (už existuje pro qualification)
+- Background loop (přidat do `BackgroundEngine`) periodicky kontrolovat projects s `CLONE_FAILED` a zkusit re-initializovat (pokud backoff uplynul)
+
+**B. Connection State Machine Refinement**
+- Rozlišit mezi `INVALID` (permanent failure - wrong credentials, no access) a `EXPIRED` (temporary - token can be refreshed)
+- `INVALID` connections: manuální oprava required (user must update credentials)
+- `EXPIRED` connections: automatický refresh pomocí OAuth2 (už existuje `oauth2Service.refreshAccessToken()`)
+- Při `GitAuthenticationException` zkontrolovat, zda je refresh possible, pokud ano → neinvalidate, jen log warning
+
+**C. Workspace Status Details**
+- Rozšířit `WorkspaceStatus` o více podrobností:
+  - `CLONE_FAILED_AUTH` - auth error (credentials)
+  - `CLONE_FAILED_NETWORK` - network/timeout
+  - `CLONE_FAILED_NOT_FOUND` - repo neexistuje
+  - `CLONE_FAILED_UNKNOWN` - other
+- Uložit `lastWorkspaceError` a `workspaceErrorMessage` do `ProjectDocument` pro lepší diagnostiku
+- UI: zobrazit konkrétní error message a suggerovat akci (e.g., "Přihlašovací údaje vypršely, prosím aktualizujte připojení")
+
+#### 2. Orchestrator Health Monitoring & Circuit Breaker
+
+**A. Enhanced Health Check**
+- Python orchestrator: `/health` endpoint vrací `{status: "ok"|"error", busy: boolean, reason?: string}`
+- Kotlin: `PythonOrchestratorClient.isHealthy()` by měl detekovat i `status != "ok"` (ne jen connection success)
+- Logovat `reason` z health check response pro lepší diagnostiku
+
+**B. Circuit Breaker Pattern**
+- Implementovat circuit breaker pro orchestrator calls (pomocí `io.github.resilience4j:resilience4j-spring-boot3` nebo custom)
+- Config: failure threshold = 5 consecutive failures, timeout = 30s, half-open state after 60s
+- Když circuit breaker je OPEN → okamžitě fail (ne čekat na timeout), log "Circuit breaker OPEN - orchestrator unavailable"
+- Background loop periodicky testovat circuit breaker (half-open) a resetovat při success
+
+**C. Orchestrator Status Dashboard**
+- Přidat endpoint `/internal/orchestrator-health` pro monitoring (nebo rozšířit existující)
+- Vracet: `{healthy: boolean, busy: boolean, activeThreads: number, uptime: string, lastError?: string}`
+- K8s liveness/readiness probes využívat tento endpoint
+- Prometheus metriky: `jervis_orchestrator_healthy`, `jervis_orchestrator_active_threads`
+
+#### 3. Task Retry Throttling
+
+**A. Exponential Backoff pro Orchestrator Unavailable**
+- Currently: 15s fixed delay (BackgroundEngine.ř.350)
+- Vylepšit: exponential backoff s max limit (podobně jako qualification)
+- Přidat `orchestratorRetryCount` a `nextOrchestratorRetryAt` do `TaskDocument`
+- Při resetu `READY_FOR_GPU` nastavit `nextOrchestratorRetryAt` s backoff (5s, 15s, 30s, 60s, 5min, ...)
+- `runExecutionLoop()` before picking task check `nextOrchestratorRetryAt` - skip if future
+
+**B. Stuck Task Detection**
+- `PYTHON_ORCHESTRATING` tasks s `orchestrationStartedAt` starší než 1h → automaticky resetovat na `READY_FOR_GPU`
+- Toto už existuje v `checkOrchestratorTaskStatus()` (HEARTBEAT_DEAD_THRESHOLD_MINUTES = 10), ale heartbeat je optional
+- Pokud heartbeat není implementován ve všech orchestrator typech, fallback na časy
+
+#### 4. Alerting & Notifications
+
+**A. Error Logging Enhancement**
+- Při `CLONE_FAILED` nebo `ORCHESTRATOR_UNAVAILABLE` (opakovaně) logovat na ERROR level s kontextem (project name, connection name, error details)
+- Už existuje `ErrorLogService` - použít ho pro trvalé error záznamy
+
+**B. Admin Notifications**
+- Nový `AdminNotificationService` - posílat email/Slack/webhook při kritických chybách
+- Triggers:
+  - Project workspace `CLONE_FAILED` (first occurrence + daily digest if persists)
+  - Orchestrator unhealthy for >5min
+  - >5 tasks reset due to orchestrator unavailability in last 10min
+- Config: `adminNotifications.enabled`, `admin.email`, `slack.webhook`
+
+**C. UI Indicators**
+- `MainScreen`: zobrazit banner pokud:
+  - Aktuální project má `workspaceStatus != READY` (zobrazit "Workspace not ready" s tooltipem s detail)
+  - Orchestrator je unhealthy (zobrazit "Orchestrator unavailable" banner)
+- `ProjectSettingsScreen`: zobrazit workspace status a last error pro každý project
+- `ConnectionSettingsScreen`: zobrazit connection state (VALID/INVALID/EXPIRED) a last check time
+
+#### 5. Manual Recovery Actions
+
+**A. Project Workspace Reset**
+- UI tlačítko "Retry Workspace Initialization" v project settings
+- RPC: `ProjectRpc.retryWorkspace(projectId)` → resetuje `workspaceStatus` na `null` nebo `CLONING` a triggeruje `initializeProjectWorkspace()`
+- Backend: metoda `projectService.retryWorkspaceInit(projectId)`
+
+**B. Connection Test**
+- Nový RPC: `ConnectionRpc.testConnection(connectionId): ConnectionTestResult`
+- Test: zkusit clone do temp directory, pak smazat
+- Result: `{success: boolean, error?: string, latencyMs: long}`
+- UI: tlačítko "Test Connection" v connection settings
+
+**C. Orchestrator Restart Trigger**
+- K8s: liveness probe → restart orchestrator pod pokud unhealthy
+- Manual: RPC `OrchestratorControlRpc.restart()` (pro emergency)
+- UI: tlačítko "Restart Orchestrator" (admin only)
+
+**Implementační kroky (priority order):**
+
+1. **High:** Workspace status details + error persistence (1.A, 1.C)
+2. **High:** Circuit breaker pro orchestrator calls (2.A, 2.B)
+3. **High:** Task retry throttling (3.A)
+4. **Medium:** Admin notifications (4.A, 4.B)
+5. **Medium:** UI indicators (4.C)
+6. **Low:** Manual recovery actions (5.A, 5.B, 5.C)
+7. **Low:** Connection state machine refinement (1.B)
+
+**Soubory k modifikaci:**
+
+- `backend/server/src/main/kotlin/com/jervis/entity/ProjectDocument.kt` - přidat `lastWorkspaceError`, `workspaceErrorMessage`, `workspaceRetryCount`, `lastWorkspaceAttempt`, `nextWorkspaceRetryAt`
+- `backend/server/src/main/kotlin/com/jervis/entity/WorkspaceStatus.kt` (nebo v ProjectDocument) - rozšířit enum o pod-stavy
+- `backend/server/src/main/kotlin/com/jervis/service/background/BackgroundEngine.kt` - přidat workspace retry loop, circuit breaker, task retry throttling
+- `backend/server/src/main/kotlin/com/jervis/configuration/PythonOrchestratorClient.kt` - vylepšit health check, přidat circuit breaker
+- `backend/server/src/main/kotlin/com/jervis/service/error/ErrorLogService.kt` - trvalé error záznamy pro workspace/orchestrator failures
+- `backend/server/src/main/kotlin/com/jervis/rpc/ProjectRpcImpl.kt` - `retryWorkspace()` metoda
+- `backend/server/src/main/kotlin/com/jervis/rpc/ConnectionRpcImpl.kt` - `testConnection()` metoda
+- `shared/ui-common/.../MainViewModel.kt` - orchestrator health a workspace status monitoring
+- `shared/ui-common/.../screens/ProjectSettingsScreen.kt` - workspace status display, retry button
+- `shared/ui-common/.../screens/ConnectionSettingsScreen.kt` - connection test button
+
+**Priorita:** High (kritické pro reliability a user experience)
+**Complexity:** Medium-High
+**Status:** Analysis complete, awaiting implementation
+
+---
+
 ## Autoscaling & Performance
 
 ### KB Autoscaling při Read Timeout
@@ -120,6 +309,38 @@ které budou implementovány jako separate tickety.
 
 ---
 
+### Frontend Queue Display for Inline Messages During Agent Execution
+
+**Problém:**
+- Když uživatel pošle další zprávu do chatu, zatímco agent (Python orchestrator) ještě zpracovává předchozí požadavek (stav tasku = `PYTHON_ORCHESTRATING`), nová zpráva se uloží do stejného FOREGROUND tasku (inline message)
+- Tato nová zpráva se NEzobrazuje v UI frontě (foreground queue), protože `getPendingForegroundTasks()` vrací pouze tasky se stavem `READY_FOR_GPU`
+- UI zobrazuje pouze aktuálně běžící task (runningTask) a samostatnou frontu (foregroundQueue), ale inline messages jsou "neviditelné"
+- Pouze po dokončení předchozího tasku se fronta aktualizuje a nové zprávy se pak zobrazí
+
+**Požadavek:**
+- Inline messages (tasky ve stavu `PYTHON_ORCHESTRATING`) se mají zobrazovat v UI frontě jako součást fronty
+- User by měl vidět, že do fronty bylo přidáno dalších X zpráv, zatímco agent pracuje
+
+**Root Cause:**
+- `TaskService.getPendingForegroundTasks()` filtruje pouze `TaskStateEnum.READY_FOR_GPU`
+- Tasky ve stavu `PYTHON_ORCHESTRATING` jsou vyloučeny, i když mají nově přidané inline messages
+- `getPendingTasks()` vrací runningTask separately, ale UI foregroundQueue zobrazuje pouze z `getPendingForegroundTasks()`
+
+**Řešení:**
+1. Rozšířit `getPendingForegroundTasks()` o vrácení tasků ve stavu `PYTHON_ORCHESTRATING` (kromě `READY_FOR_GPU`)
+2. Povolit vícevrástý `findByProcessingModeAndStateOrderByQueuePositionAsc()` s `Collection<TaskStateEnum>` parametrem
+3. Aktualizovat repository metodu `findByProcessingModeAndStateOrderByQueuePositionAsc()` → `findByProcessingModeAndStateInOrderByQueuePositionAsc()`
+
+**Soubory:**
+- `backend/server/src/main/kotlin/com/jervis/service/background/TaskService.kt` – upravit `getPendingForegroundTasks()` pro includes `PYTHON_ORCHESTRATING`
+- `backend/server/src/main/kotlin/com/jervis/repository/TaskRepository.kt` – přidat metodu `findByProcessingModeAndStateInOrderByQueuePositionAsc()`
+
+**Priorita:** High (UI/UX - viditelnost fronty)
+**Complexity:** Simple
+**Status:** Planned
+
+---
+
 ## UI & UX
 
 ### Populate Workflow Steps in Chat Messages
@@ -223,6 +444,36 @@ které budou implementovány jako separate tickety.
 - Agent má jen **chat history** (krátkodobá paměť) - komprese starých zpráv do `ChatSummaryDocument`
 - **Chybí KB ingestion** dokončených tasků - dlouhodobá strukturovaná paměť
 - Když agent dokončí úkol, výsledek se neukládá do KB pro budoucí použití
+
+**Předchozí řešení – KB Query Transformation (2026-02-13):**
+
+**Problém s KB vyhledáváním:**
+- Orchestrator přímo používal uživatelský dotaz (v libovolném jazyce) pro KB vyhledávání
+- Např. dotaz "ukaž mi co najdeš v KB pro email jazyková škola" (čeština) vracel 0 výsledků
+- KB obsahuje anglický technický obsah, takže přímé dotazy v češtině nebo příliš specifické nefungovaly
+
+**Řešení – LLM-based query transformation:**
+1. V `intake` node přidána funkce `transform_user_query_to_kb_queries()` která pomocí LLM převádí uživatelský dotaz na 2-3 obecné anglické technické vyhledávací termíny
+2. Transformované dotazy se ukládají do stavu (`kb_search_queries`) a používají pro všechny KB dotazy v rámci celého orchestration workflow
+3. V `prefetch.py` upraveny funkce `prefetch_kb_context()` a `fetch_project_context()` pro podporu více vyhledávacích dotazů (sequentially, first that returns results)
+4. V `evidence.py` a `intake.py` předány `search_queries` do prefetch funkcí
+
+**Výhody:**
+- KB vyhledávání nyní funguje nezávisle na jazyce uživatele
+- Více šancí na nalezení relevantního obsahu (více variant dotazů)
+- Deduplikace výsledků (uniqueness by sourceUrn)
+- Fallback na původní dotaz, pokud transformace selže
+
+**Soubory:**
+- `backend/service-orchestrator/app/graph/nodes/intake.py` – query transformation + state storage
+- `backend/service-orchestrator/app/kb/prefetch.py` – multi-query support
+- `backend/service-orchestrator/app/graph/nodes/evidence.py` – use transformed queries
+
+**Priorita:** High
+**Complexity:** Medium
+**Status:** ✅ **IMPLEMENTED**
+
+---
 
 **Architektura:**
 
@@ -466,255 +717,3 @@ které budou implementovány jako separate tickety.
 1. Rozšířit `CodingAgentSettingsRpc`:
    - `uploadGpgCertificate(certificate: GpgCertificateDto): String`
    - `getGpgCertificate(id: String): GpgCertificateDto?`
-   - `listGpgCertificates(userId: String): List<GpgCertificateDto>`
-   - `deleteGpgCertificate(id: String)`
-2. Implementovat validation:
-   - Check GPG key format (ASCII armored)
-   - Extract key ID from certificate
-   - Verify key is private (has private part)
-3. Encrypt private key before storage (using server key)
-
-**Phase 3: UI Agent - Certificate Management UI**
-1. Rozšířit `SettingsScreen` o nový tab "GPG Certificates"
-2. Vytvořit `GpgCertificateList` composable
-3. Vytvořit `UploadGpgCertificateDialog`:
-   - TextField pro private key (multiline)
-   - TextField pro passphrase (password)
-   - Dropdown pro agent type
-4. Implementovat ViewModel metody pro:
-   - Načtení seznamu certifikátů
-   - Upload certifikátu
-   - Smazání certifikátu
-5. Přidat RPC client volání do `MainViewModel` nebo nového `GpgCertificateViewModel`
-
-**Phase 4: Orchestrator - Certificate Distribution**
-1. V `AgentOrchestrator` při vytváření agenta:
-   - Načíst certifikát pro daného agenta (query by agentType + userId)
-   - Přidat certifikát do agent initialization parameters
-2. V `AgentInitialization` DTO přidat pole:
-   - `gpgCertificate: GpgCertificateDto?`
-3. Při startu agenta předat certifikát přes RPC:
-   - Git agent: `initialize(certificate: ...)`
-   - Coding agent: `initialize(certificate: ...)`
-
-**Phase 5: Git Agent - Certificate Usage**
-1. V `GitAgent` přidat `GpgCertificate` field
-2. Při initialization:
-   - Import certifikátu do GPG keyring (použít `gpg --import`)
-   - Pokud je passphrase, použít `--batch --yes --pinentry-mode loopback`
-   - Uložit key ID pro pozdější použití
-3. Konfigurace Git pro signing:
-   - `git config --global user.signingkey <key-id>`
-   - `git config --global commit.gpgsign true`
-4. Při git operacích (commit, tag) automaticky používat `-S` flag
-
-**Phase 6: Coding Agent - Certificate Usage**
-1. V `CodingEngine` (service-coding-engine) přidat certificate handling
-2. Při příkazu `git commit` v rámci agenta:
-   - Přidat `-S` flag pro GPG signing
-   - Ensure GPG agent je spuštěný s certifikátem
-3. Alternativa: použít `GIT_SEAL_PATH` env variable pro detached signatures
-4. Testování s reálným GPG setupem
-
-**Phase 7: Security Hardening**
-1. Encrypt certifikáty at rest (server DB) - použít AES-256
-2. Encrypt certifikáty in transit (TLS) - už máme
-3. Access control - jen owner může vidět/smazat své certifikáty
-4. Audit logging - kdo uploadoval/smazal certifikát
-5. Certificate rotation - možnost nahradit starý certifikát novým
-6. Expiration check - GPG certifikáty mají expiration, kontrolovat
-
-**Phase 8: Error Handling & Validation**
-1. Invalid certificate format → reject with clear error
-2. Missing passphrase → prompt user
-3. Expired certificate → warn user
-4. Git signing failure → fallback to unsigned commit (with warning)
-5. Logging (no sensitive data) - log operations, not key content
-
-**Soubory:**
-- `shared/common-dto/.../GpgCertificateDto.kt` - NEW DTO
-- `backend/server/src/main/kotlin/com/jervis/domain/security/GpgCertificateDocument.kt` - NEW entity
-- `backend/server/src/main/kotlin/com/jervis/repository/GpgCertificateRepository.kt` - NEW repository
-- `backend/server/src/main/kotlin/com/jervis/rpc/SecuritySettingsRpc.kt` - NEW RPC service
-- `shared/ui-common/.../settings/GpgCertificateManagementScreen.kt` - NEW UI
-- `shared/ui-common/.../settings/GpgCertificateViewModel.kt` - NEW ViewModel
-- `backend/service-orchestrator/app/agent/AgentOrchestrator.kt` - certificate distribution
-- `backend/service-gitlab/.../GitLabAgent.kt` - certificate usage
-- `backend/service-github/.../GitHubAgent.kt` - certificate usage
-- `backend/service-coding-engine/.../CodingEngine.kt` - certificate usage
-
-**Priorita:** High (pro Git commit signing a bezpečnost)
-**Complexity:** High (zahrnuje backend, UI, orchestrator, git agent, coding agent)
-**Status:** Planned
-
-**Poznámka:** Toto je komplexní feature která zahrnuje všechny komponenty systému. Certifikáty musí být bezpečně uloženy a distribuovány. Je důležité mít dobré error handling a validation, aby se neporušilo existující funkcionalita.
-
----
-
-## Indexing & Qualification
-
-### Exclusion Patterns - Vyřazení Položek z Orchestratoru
-
-**Problém:**
-- Některé položky (git commity, emaily, wiki stránky, bugtracker issues) nechceme zpracovávat orchestrátorem, jen je chceme indexovat do KB
-- SimpleQualifierAgent už umí vyřadit neakční obsah (`hasActionableContent=false` → DISPATCHED_GPU), ale to je automatické na základě KB analýzy
-- Uživatel chce mít manuální kontrolu - explicitně vyřadit konkrétní položky nebo typy položek z orchestratoru
-- Potřebujeme pattern-based filtering: "všechny commity od uživatele X", "emaily s předmětem obsahujícím '[IGNORE]'", "wiki stránky v prostoru Y"
-
-**Architektura:**
-
-**1. Exclusion Pattern Storage (Server DB)**
-- Nová MongoDB kolekce `exclusion_patterns` (ne v KB!)
-- Pattern DTO:
-  - `id: String`
-  - `userId: String` (kdo vytvořil pattern)
-  - `name: String` (popisný název, např. "Ignorovat maintenance commity")
-  - `pattern: String` (regex nebo wildcard)
-  - `matchField: ExclusionMatchField` (enum: TITLE, SOURCE_URN, CONNECTION, CLIENT, TYPE, SENDER)
-  - `taskType: TaskTypeEnum?` (volitelné filtrování podle typu tasku)
-  - `isActive: Boolean` (pattern lze deaktivovat)
-  - `createdAt: Instant`
-- Patterny se vztahují na **tasky** (ne na source položky). Když task odpovídá patternu, je hned označen jako DISPATCHED_GPU (přeskočí KB ingest a orchestrator).
-
-**2. UI - Indexing Queue Integration**
-- V `IndexingQueueSections.kt` přidat tlačítko "Vyřadit z orchestratoru" (ikona "Block" nebo "No Entry"):
-  - V `QueueItemRow` (pro pending items - git, email, wiki, bugtracker)
-  - V `PipelineItemRow` (pro pipeline tasks - READY_FOR_QUALIFICATION, QUALIFYING, atd.)
-- Když uživatel klikne, otevře se `ExclusionPatternDialog`:
-  - **TextField** pro pattern (regex, s help textem: "Podporuje regulární výrazy, např. `.*maintenance.*`")
-  - **Dropdown** pro matchField: TITLE (název), SOURCE_URN (URN zdroje), CONNECTION (připojení), CLIENT (klient), TYPE (typ), SENDER (odesílatel)
-  - **TextField** pro name (popis patternu)
-  - **Checkbox** pro taskType (volitelné: GIT_PROCESSING, EMAIL_PROCESSING, WIKI_PROCESSING, BUGTRACKER_PROCESSING)
-  - Tlačítka "Vytvořit pattern" a "Zrušit"
-- Pattern se vytvoří pro aktuální položku (předvyplněné hodnoty podle položky) - uživatel může upravit
-
-**3. Backend - RPC Endpoints**
-- Nový `ExclusionPatternRpc` service (nebo rozšířit `IndexingQueueRpc`):
-  - `createPattern(pattern: ExclusionPatternDto): String` (vrací pattern ID)
-  - `updatePattern(id: String, pattern: ExclusionPatternDto): Boolean`
-  - `deletePattern(id: String): Boolean`
-  - `listPatterns(userId: String): List<ExclusionPatternDto>`
-  - `getPattern(id: String): ExclusionPatternDto?`
-- Implementace v `backend/server/src/main/kotlin/com/jervis/rpc/ExclusionPatternRpc.kt`
-- Repository: `ExclusionPatternRepository` (MongoDB)
-
-**4. Task Qualification - Pre-Filter**
-- V `TaskQualificationService.processOne()` přidat kontrolu exclusion patterns PŘED voláním `simpleQualifierAgent.run()`:
-  ```kotlin
-  // Check exclusion patterns first
-  val exclusionPatternService = ... // inject
-  if (exclusionPatternService.matchesAnyPattern(task)) {
-      // Task matches exclusion pattern → mark as DISPATCHED_GPU (indexed only, no orchestrator)
-      taskService.updateState(task, TaskStateEnum.DISPATCHED_GPU)
-      return "EXCLUDED: matches exclusion pattern"
-  }
-  ```
-- `ExclusionPatternService.matchesAnyPattern(task)`:
-  - Načíst všechny aktivní exclusion patterns (cached, refresh periodically)
-  - Pro každý pattern zkontrolovat, zda task odpovídá:
-    - Pokud `taskType` je nastaven, porovnat s `task.type`
-    - Porovnat `pattern` s `matchField`:
-      - TITLE: `extractTaskTitle(task)` (z TaskDocument)
-      - SOURCE_URN: `task.sourceUrn.value`
-      - CONNECTION: extrahovat connection ID ze sourceUrn (např. "conn:abc123")
-      - CLIENT: `task.clientId.value`
-      - TYPE: `task.type.name`
-      - SENDER: extrahovat z content (např. email "From:", git "Author:")
-    - Regex match (case-insensitive)
-  - Pokud jakýkoliv pattern matches, vrátit true
-- **Cache**: patterns cache s TTL 5 minut (aby se nemusely načítat pro každý task)
-
-**5. Re-Qualification (Re-run Qualification)**
-- Když uživatel vytvoří/upraví/odstraní exclusion pattern, potřebuje se tasky znovu kvalifikovat:
-  - Nový RPC: `POST /indexing-queue/requalify` (nebo `POST /tasks/requalify`)
-  - Tato operace:
-    1. Najde všechny tasky ve stavu READY_FOR_QUALIFICATION (nebo i DISPATCHED_GPU? jen ty, které ještě nebyly kvalifikovány)
-    2. Projde je přes exclusion pattern check znovu
-    3. Pokud nyní odpovídají patternu, označí jako DISPATCHED_GPU
-    4. Pokud neodpovídají a byly DISPATCHED_GPU, může je vrátit na READY_FOR_QUALIFICATION? (možná jen pro tasky které ještě nebyly kvalifikovány)
-  - UI: tlačítko "Překvalifikovat" v Indexing Queue (pro celou frontu nebo pro konkrétní položku)
-- **Pozor**: tasky ve stavu QUALIFYING, READY_FOR_GPU, DISPATCHED_GPU (již kvalifikované) by neměly být znovu kvalifikovány automaticky, jen pokud explicitně uživatel vyžaduje re-qualification pro konkrétní task.
-
-**6. Migration & Data Model**
-- Vytvořit `ExclusionPatternDocument`:
-  ```kotlin
-  @Document(collection = "exclusion_patterns")
-  data class ExclusionPatternDocument(
-      val userId: String,
-      val name: String,
-      val pattern: String, // regex
-      val matchField: String, // enum name
-      val taskType: String? = null,
-      val isActive: Boolean = true,
-      val createdAt: Instant,
-  )
-  ```
-- Repository: `ExclusionPatternRepository extends ReactiveMongoRepository<ExclusionPatternDocument, ObjectId>`
-- Načítání: `findByUserIdAndIsActiveTrue(userId)` + cache
-
-**7. UI - Pattern Management (Settings)**
-- Možnost spravovat patterny i v Settings (nový tab "Exclusion Patterns"):
-  - Seznam patternů s možností edit/delete
-  - Možnost aktivovat/deaktivovat
-  - Náhled kolik tasků odpovídá patternu (volitelné)
-
-**Implementační fáze:**
-
-**Phase 1: Backend DTO & Repository**
-1. Vytvořit `ExclusionPatternDto` a `ExclusionPatternDocument`
-2. Vytvořit `ExclusionPatternRepository`
-3. Přidat DB index: `{ userId: 1, isActive: 1 }`
-
-**Phase 2: RPC Endpoints**
-4. Vytvořit `ExclusionPatternRpc` s CRUD metodami
-5. Přidat registraci v `KtorRpcServer`
-
-**Phase 3: Task Qualification Integration**
-6. Vytvořit `ExclusionPatternService` s `matchesAnyPattern(task)` metodou
-7. Přidat cache (Caffeine nebo simple in-memory s periodic refresh)
-8. Upravit `TaskQualificationService.processOne()` - přidat exclusion check před SimpleQualifierAgent
-9. Test: task odpovídající patternu by měl skončit v DISPATCHED_GPU bez KB volání
-
-**Phase 4: UI - Exclusion Pattern Dialog**
-10. Vytvořit `ExclusionPatternDialog.kt` (JFormDialog s pattern, matchField, name, taskType)
-11. Přidat do `IndexingQueueSections.kt` tlačítko "Exclude" v `QueueItemRow` a `PipelineItemRow`
-12. Přidat ViewModel logiku: `showExclusionDialog(item)`, `createPattern(...)`
-13. Předvyplnit dialog hodnotami z položky (title, sourceUrn, connection, client, type)
-
-**Phase 5: Re-Qualification**
-14. Přidat RPC `requalifyTask(taskId: String)` nebo `requalifyAll()`
-15. UI: tlačítko "Překvalifikovat" (pro konkrétní task nebo celou frontu)
-16. Logika: tasky ve stavu READY_FOR_QUALIFICATION projdou exclusion check znovu
-
-**Phase 6: Settings Management (optional)**
-17. Nový Settings tab "Exclusion Patterns" - seznam, edit, delete, activate/deactivate
-18. Statistiky: kolik tasků bylo vyřazeno patternem
-
-**Phase 7: Testing & Refinement**
-19. Unit testy pro `ExclusionPatternService.matchesAnyPattern()`
-20. Integrační testy: task odpovídající patternu → DISPATCHED_GPU
-21. UI testy: dialog, tlačítka, re-qualification
-
-**Soubory:**
-- `shared/common-dto/.../ExclusionPatternDto.kt` - NEW DTO
-- `backend/server/src/main/kotlin/com/jervis/domain/filter/ExclusionPatternDocument.kt` - NEW entity
-- `backend/server/src/main/kotlin/com/jervis/repository/ExclusionPatternRepository.kt` - NEW repository
-- `backend/server/src/main/kotlin/com/jervis/rpc/ExclusionPatternRpc.kt` - NEW RPC
-- `backend/server/src/main/kotlin/com/jervis/service/qualification/ExclusionPatternService.kt` - NEW service
-- `backend/server/src/main/kotlin/com/jervis/service/background/TaskQualificationService.kt` - modify (add pre-check)
-- `shared/ui-common/.../screens/IndexingQueueSections.kt` - modify (add exclude button)
-- `shared/ui-common/.../dialogs/ExclusionPatternDialog.kt` - NEW dialog
-- `shared/ui-common/.../viewmodel/IndexingQueueViewModel.kt` - modify (add RPC calls)
-- `backend/server/src/main/kotlin/com/jervis/rpc/IndexingQueueRpcImpl.kt` - add requalification endpoint
-
-**Priorita:** Medium (užitečné pro user control, ale není kritické)
-**Complexity:** Medium (zahrnuje backend, UI, qualification flow)
-**Status:** Planned
-
-**Poznámka:** Toto je user-facing feature pro manuální kontrolu, co se má zpracovávat. Je doplněk k automatickému SimpleQualifierAgent. Patterny se vztahují na tasky, ne na source položky - když task odpovídá patternu, je vyřazen z orchestratoru (DISPATCHED_GPU). Uživatel může vytvořit pattern přímo z položky v Indexing Queue.
-
----
-
-## Další TODOs
-
-_(Další features se budou přidávat sem podle potřeby)_

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # ── Timeouts ────────────────────────────────────────────────────────
     orchestrator_reservation_timeout_s: int = 1800  # 30 min max reservation
-    orchestrator_idle_timeout_s: int = 300           # 5 min no requests → auto-release
+    orchestrator_idle_timeout_s: int = 120           # 2 min no critical requests → auto-release
     model_load_timeout_s: int = 120                  # 2 min to load a model
     background_load_delay_s: int = 5                 # delay before loading bg set after release
     proxy_connect_timeout_s: float = 10.0

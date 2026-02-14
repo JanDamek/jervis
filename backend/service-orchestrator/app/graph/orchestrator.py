@@ -524,7 +524,8 @@ async def run_orchestration(
     thread_id: str = "default",
 ) -> dict:
     """Execute the full orchestration workflow (blocking)."""
-    session_id = f"orch-{thread_id}"
+    # Use task_id for stable session_id (thread_id has random suffix that changes)
+    session_id = f"orch-{request.task_id}"
     await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
@@ -579,7 +580,8 @@ async def run_orchestration_streaming(
     thread_id: str = "default",
 ) -> AsyncIterator[dict]:
     """Execute orchestration with streaming node events."""
-    session_id = f"orch-stream-{thread_id}"
+    # Use task_id for stable session_id (thread_id has random suffix that changes)
+    session_id = f"orch-stream-{request.task_id}"
     await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
@@ -676,7 +678,10 @@ async def run_orchestration_streaming(
 
 async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict:
     """Resume a paused orchestration from its checkpoint (blocking)."""
-    session_id = f"orch-resume-{thread_id}"
+    # Get task_id from existing state for stable session_id
+    existing_state = await get_graph_state(thread_id)
+    task_id = existing_state.values.get("task", {}).get("id", thread_id) if existing_state and existing_state.values else thread_id
+    session_id = f"orch-resume-{task_id}"
     await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()

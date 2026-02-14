@@ -42,6 +42,7 @@ from app.graph.orchestrator import (
     init_checkpointer,
     close_checkpointer,
 )
+from app.llm.gpu_router import release_gpu
 from app.models import (
     ApprovalResponse,
     OrchestrateRequest,
@@ -157,6 +158,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    logger.info("Orchestrator shutting down, releasing GPU reservation...")
+    try:
+        await release_gpu("shutdown")
+    except Exception as e:
+        logger.warning("Failed to release GPU on shutdown: %s", e)
+
     if settings.use_delegation_graph:
         from app.context.session_memory import session_memory_store
         from app.monitoring.delegation_metrics import metrics_collector

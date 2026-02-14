@@ -32,11 +32,14 @@ async def evidence_pack(state: dict) -> dict:
     unknowns: list[str] = []
 
     # 1. KB retrieve — task-relevant context
+    # Use search_queries from state if available (transformed by intake node)
+    search_queries = state.get("kb_search_queries")
     try:
         kb_context = await prefetch_kb_context(
             task_description=task.query,
             client_id=task.client_id,
             project_id=task.project_id,
+            search_queries=search_queries,
         )
         if kb_context:
             kb_results.append({

@@ -151,6 +151,11 @@ data class IndexingDashboardDto(
     val executionRunning: List<PipelineItemDto>,
     val executionRunningCount: Long,
 
+    // ── Completed items ──
+    /** Items successfully inserted into KB (INDEXED). */
+    val kbIndexed: List<PipelineItemDto>,
+    val kbIndexedTotalCount: Long,
+
     // ── Pagination (for kbWaiting section) ──
     val kbPage: Int = 0,
     val kbPageSize: Int = 20,
