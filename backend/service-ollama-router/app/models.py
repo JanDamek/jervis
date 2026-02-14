@@ -16,10 +16,11 @@ from pydantic import BaseModel
 
 class Priority(IntEnum):
     """Lower number = higher priority."""
-    CRITICAL = 0       # Orchestrator + interactive chat (preempts everything)
-    CODING = 1         # OpenHands/Aider (GPU preferred, can wait)
-    VLM = 2            # Image description (GPU-only)
-    BACKGROUND = 3     # KB ingest, qualifier, embedding (GPU when free, CPU fallback)
+    CRITICAL = 0              # Orchestrator LLM (30B model, preempts everything)
+    ORCHESTRATOR_EMBEDDING = 1  # Orchestrator-driven embedding (co-located with CRITICAL on GPU)
+    CODING = 2                # OpenHands/Aider (GPU preferred, can wait)
+    VLM = 3                   # Image description (GPU-only)
+    BACKGROUND = 4            # KB ingest, qualifier, non-orchestrator embedding (CPU fallback)
 
 
 # ── Model sets ──────────────────────────────────────────────────────────

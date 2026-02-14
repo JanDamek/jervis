@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+import httpx
 
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,12 +13,18 @@ import weaviate.classes.query as wvq
 
 logger = logging.getLogger(__name__)
 
+
 class RagService:
     def __init__(self):
         self.embeddings = OllamaEmbeddings(
             base_url=settings.OLLAMA_EMBEDDING_BASE_URL,
             model=settings.EMBEDDING_MODEL
         )
+        # Determine priority based on KB_MODE
+        # "read" = orchestrator queries (ORCHESTRATOR_EMBEDDING = 1)
+        # "write" = indexing (BACKGROUND = 4)
+        self.embedding_priority = 1 if settings.KB_MODE == "read" else 4
+        self.http_client = httpx.AsyncClient(timeout=60.0)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
@@ -41,6 +48,34 @@ class RagService:
                     wvc.Property(name="graphRefs", data_type=wvc.DataType.TEXT_ARRAY),
                 ]
             )
+
+    async def _embed_with_priority(self, text: str | list[str]) -> list[float] | list[list[float]]:
+        """Embed text with priority header for router.
+
+        KB_MODE="read" → Priority 1 (ORCHESTRATOR_EMBEDDING, co-located with CRITICAL on GPU)
+        KB_MODE="write" → Priority 4 (BACKGROUND, CPU fallback)
+        """
+        is_batch = isinstance(text, list)
+        prompt = text if is_batch else [text]
+
+        url = f"{settings.OLLAMA_EMBEDDING_BASE_URL}/api/embed"
+        payload = {
+            "model": settings.EMBEDDING_MODEL,
+            "input": prompt,
+        }
+        headers = {"X-Ollama-Priority": str(self.embedding_priority)}
+
+        logger.info("RAG_READ: EMBEDDING query model=%s priority=%d", settings.EMBEDDING_MODEL, self.embedding_priority)
+
+        try:
+            resp = await self.http_client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            embeddings = data.get("embeddings", [])
+            return embeddings if is_batch else embeddings[0]
+        except Exception as e:
+            logger.error("Embedding failed: %s", e)
+            raise
 
     async def ingest(
         self,
@@ -69,7 +104,7 @@ class RagService:
         # Batch embed all chunks at once (instead of per-chunk embed_query)
         logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s",
                     request.sourceUrn, len(chunks), settings.EMBEDDING_MODEL)
-        vectors = await asyncio.to_thread(self.embeddings.embed_documents, chunks)
+        vectors = await self._embed_with_priority(chunks)
         logger.info("RAG_WRITE: EMBEDDED sourceUrn=%s vectors=%d", request.sourceUrn, len(vectors))
 
         def _weaviate_batch_insert():
@@ -225,8 +260,7 @@ class RagService:
             request.groupId or "", request.maxResults
         )
 
-        logger.info("RAG_READ: EMBEDDING query model=%s", settings.EMBEDDING_MODEL)
-        vector = await asyncio.to_thread(self.embeddings.embed_query, request.query)
+        vector = await self._embed_with_priority(request.query)
         logger.info("RAG_READ: EMBEDDED query vector_dim=%d", len(vector))
 
         def _weaviate_query():

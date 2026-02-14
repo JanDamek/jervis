@@ -270,9 +270,10 @@ class AgentOrchestratorRpcImpl(
         }
 
         // Dedup check: skip if this exact message was already processed (idempotent retry)
-        if (!request.clientMessageId.isNullOrBlank()) {
-            if (chatMessageRepository.existsByClientMessageId(request.clientMessageId)) {
-                logger.info { "DEDUP_SKIP | clientMessageId=${request.clientMessageId} | session=$sessionKey" }
+        val clientMsgId = request.clientMessageId
+        if (!clientMsgId.isNullOrBlank()) {
+            if (chatMessageRepository.existsByClientMessageId(clientMsgId)) {
+                logger.info { "DEDUP_SKIP | clientMessageId=$clientMsgId | session=$sessionKey" }
                 return
             }
         }

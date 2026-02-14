@@ -214,6 +214,27 @@ class OllamaRouter:
             self._last_critical_activity = time.monotonic()
             return await self._send_to_gpu(gpu, request)
 
+        # ── 3.5. ORCHESTRATOR_EMBEDDING: Co-locate with CRITICAL if reservation active ───
+        if priority == Priority.ORCHESTRATOR_EMBEDDING:
+            # If CRITICAL reservation is active, try to co-locate embedding on same GPU
+            if self._reservation_session and self._reservation_gpu:
+                gpu = self.gpu_pool.backends.get(self._reservation_gpu)
+                if gpu:
+                    # Try to load embedding on the reserved GPU (may CPU-offload if no VRAM)
+                    logger.info("ORCHESTRATOR_EMBEDDING: Co-locating on CRITICAL GPU %s", gpu.name)
+                    if not gpu.has_model(model):
+                        loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                        if loaded:
+                            logger.info("ORCHESTRATOR_EMBEDDING: Successfully loaded %s on GPU %s", model, gpu.name)
+                        else:
+                            logger.warning("ORCHESTRATOR_EMBEDDING: Failed to load %s on GPU, will use CPU", model)
+                    # Send to GPU (model may be CPU-offloaded but still faster than pure CPU)
+                    if gpu.has_model(model):
+                        return await self._send_to_gpu(gpu, request)
+            # No CRITICAL reservation or co-location failed → CPU fallback
+            logger.info("ORCHESTRATOR_EMBEDDING: No CRITICAL reservation, using CPU")
+            return await self._send_to_cpu(request)
+
         # ── 4. Find GPU with the model or free VRAM ─────────────────────
         gpu = self.gpu_pool.find_with_model(model)
         if gpu:
