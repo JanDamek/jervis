@@ -115,10 +115,14 @@ async def respond(state: dict) -> dict:
                 "• Když ti uživatel řekne NOVOU informaci → VŽDY ji ulož pomocí store_knowledge\n"
                 "• Vzory učení: 'X je Y', 'X znamená Y', 'zapamatuj si', 'pro příště', 'to je'\n"
                 "• Příklady: 'BMS je Brokerage Management System', 'projekt používá Python 3.11'\n"
-                "• Po ÚSPĚŠNÉM uložení (✓ Knowledge stored) → IHNED dej finální odpověď\n"
-                "• POTVRĎ co jsi se naučil a řekni že to bude dostupné pro budoucí dotazy\n"
-                "• NIKDY nevoláš další tools po store_knowledge — jenom odpověz uživateli\n"
+                "• Pokud info vyžaduje BUDOUCÍ ověření → vytvoř scheduled task pomocí create_scheduled_task\n"
+                "• Vzory pro task: 'až budeš mít kód', 'když najdeš X', 'ověř později'\n"
+                "• Po uložení POTVRĎ co jsi se naučil a řekni že to bude dostupné pro budoucí dotazy\n"
                 "• NIKDY neříkej jen 'ok' — vždy AKTIVNĚ ulož nové informace do KB\n\n"
+                "PRAVIDLA PRO ROZLOŽENÍ ÚKOLŮ:\n"
+                "• Pokud dotaz obsahuje VÍCE než jednu samostatnou část → řeš každou ZVLÁŠŤ\n"
+                "• Příklad: 'X je Y, když najdeš Z tak...' = 2 úkoly (ulož X, vytvoř task pro Z)\n"
+                "• Na konci SHRŇ všechny provedené akce pro každou část dotazu\n\n"
                 "Odpovídej česky. Buď konkrétní a faktický."
             ),
         },

@@ -324,10 +324,49 @@ TOOL_STORE_KNOWLEDGE: dict = {
     },
 }
 
+TOOL_CREATE_SCHEDULED_TASK: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_scheduled_task",
+        "description": (
+            "Create a scheduled task or reminder for future work. "
+            "Use this when you need to do something later: verify information when code becomes available, "
+            "check back on incomplete data, follow up on user requests, or schedule future analysis. "
+            "Examples: 'Check BMS code when available', 'Verify architecture matches documentation in 1 week', "
+            "'Follow up on incomplete feature request'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Brief title for the task (e.g., 'Verify BMS code against definition').",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Detailed description of what needs to be done in the future.",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why this task is needed (e.g., 'User provided definition but code not yet indexed').",
+                },
+                "schedule": {
+                    "type": "string",
+                    "description": "When to do this: 'when_code_available', 'in_1_day', 'in_1_week', 'in_1_month', or 'manual'.",
+                    "enum": ["when_code_available", "in_1_day", "in_1_week", "in_1_month", "manual"],
+                    "default": "manual",
+                },
+            },
+            "required": ["title", "description", "reason"],
+        },
+    },
+}
+
 ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
     TOOL_STORE_KNOWLEDGE,
+    TOOL_CREATE_SCHEDULED_TASK,
     TOOL_GET_INDEXED_ITEMS,
     TOOL_GET_KB_STATS,
     TOOL_LIST_PROJECT_FILES,

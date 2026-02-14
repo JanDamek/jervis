@@ -66,6 +66,15 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
             )
+        elif tool_name == "create_scheduled_task":
+            result = await _execute_create_scheduled_task(
+                title=arguments.get("title", ""),
+                description=arguments.get("description", ""),
+                reason=arguments.get("reason", ""),
+                schedule=arguments.get("schedule", "manual"),
+                client_id=client_id,
+                project_id=project_id,
+            )
         elif tool_name == "get_indexed_items":
             result = await _execute_get_indexed_items(
                 item_type=arguments.get("item_type", "all"),
@@ -393,15 +402,87 @@ async def _execute_store_knowledge(
     except Exception as e:
         return f"Error: KB write failed: {str(e)[:200]}"
 
-    # Success response — tell agent to give final response now
+    # Success response
     chunk_count = data.get("chunk_count", 0)
     return (
         f"✓ Knowledge stored successfully in KB!\n"
         f"Subject: {subject}\n"
         f"Category: {category}\n"
-        f"Now give your FINAL RESPONSE to the user confirming what you learned.\n"
         f"Chunks created: {chunk_count}\n"
-        f"This information is now available for future queries."
+        f"This information is now available for future queries.\n"
+        f"If there are other parts to handle, continue with those now."
+    )
+
+
+async def _execute_create_scheduled_task(
+    title: str,
+    description: str,
+    reason: str,
+    schedule: str = "manual",
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Create a scheduled task for future work via Kotlin server task API.
+
+    Creates a task that will be visible in user's task list and can be scheduled
+    for automatic execution or manual review.
+    """
+    if not title.strip():
+        return "Error: Task title cannot be empty."
+    if not description.strip():
+        return "Error: Task description cannot be empty."
+
+    # Map schedule enum to days offset
+    schedule_map = {
+        "when_code_available": None,  # Trigger-based, not time-based
+        "in_1_day": 1,
+        "in_1_week": 7,
+        "in_1_month": 30,
+        "manual": None,  # No automatic scheduling
+    }
+
+    days_offset = schedule_map.get(schedule)
+
+    # Use Kotlin server's internal task creation endpoint
+    kotlin_url = settings.kotlin_server_url or "http://jervis-server:8080"
+    url = f"{kotlin_url}/internal/tasks/create"
+
+    payload = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "title": title,
+        "description": f"{description}\n\nReason: {reason}",
+        "schedule": schedule,
+        "daysOffset": days_offset,
+        "createdBy": "orchestrator_agent",
+        "metadata": {
+            "reason": reason,
+            "schedule_type": schedule,
+            "created_from": "agent_tool",
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            task_id = data.get("taskId", "unknown")
+    except httpx.TimeoutException:
+        return f"Error: Task creation timed out after 5s for: {title}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: Task creation returned HTTP {e.response.status_code} for: {title}"
+    except Exception as e:
+        return f"Error: Task creation failed: {str(e)[:200]}"
+
+    # Success response
+    schedule_info = f"scheduled for {schedule.replace('_', ' ')}" if schedule != "manual" else "created for manual review"
+    return (
+        f"✓ Task created successfully!\n"
+        f"Title: {title}\n"
+        f"Schedule: {schedule_info}\n"
+        f"Task ID: {task_id}\n"
+        f"The task is now in your task list and will be executed when appropriate."
     )
 
 
