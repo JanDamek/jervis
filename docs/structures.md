@@ -517,6 +517,36 @@ NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10
 - **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (DISPATCHED_GPU, QUALIFYING) for >10 minutes back to their retryable state. FOREGROUND tasks in DISPATCHED_GPU are preserved (completed chat tasks, not stuck).
 - **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
+### Workspace Retry with Exponential Backoff
+
+When `initializeProjectWorkspace()` fails (CLONE_FAILED), the project is NOT retried immediately.
+Instead, a periodic retry loop (`runWorkspaceRetryLoop()`, 60s interval) checks for CLONE_FAILED projects
+whose backoff has elapsed:
+
+- **Backoff schedule:** 5min → 15min → 30min → 60min → 5min cap (wraps around)
+- **Fields:** `ProjectDocument.workspaceRetryCount`, `nextWorkspaceRetryAt`, `lastWorkspaceError`
+- **Manual retry:** UI "Zkusit znovu" button calls `IProjectService.retryWorkspace()` → resets all retry fields
+- **UI banner:** `WorkspaceBanner` composable shows CLONING (info) or CLONE_FAILED (error + retry button)
+
+### Orchestrator Dispatch Backoff
+
+When Python orchestrator dispatch fails (unavailable, busy), the task gets exponential backoff
+instead of fixed 15s retry:
+
+- **Backoff schedule:** 5s → 15s → 30s → 60s → 5min cap
+- **Fields:** `TaskDocument.dispatchRetryCount`, `nextDispatchRetryAt`
+- **Task picking:** `getNextForegroundTask()`/`getNextBackgroundTask()` skip tasks where `nextDispatchRetryAt > now`
+- **Reset:** On successful dispatch (PYTHON_ORCHESTRATING), `dispatchRetryCount` resets to 0
+
+### Circuit Breaker for Orchestrator Health
+
+`PythonOrchestratorClient` includes an in-memory circuit breaker for health checks:
+
+- **States:** CLOSED (normal) → OPEN (fast-fail after 5 consecutive failures) → HALF_OPEN (probe after 30s)
+- **When OPEN:** `isHealthy()` returns false immediately without HTTP call
+- **UI indicator:** `OrchestratorHealthBanner` shows warning when circuit breaker is OPEN
+- **Queue status metadata:** `orchestratorHealthy` field pushed via existing QUEUE_STATUS stream
+
 For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestrator-final-spec.md#9-async-dispatch--result-polling-architektura).
 
 ---
