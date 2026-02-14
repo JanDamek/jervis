@@ -908,7 +908,9 @@ class BackgroundEngine(
     }
 
     /**
-     * Periodic loop that retries CLONE_FAILED workspaces whose backoff has elapsed.
+     * Periodic loop that retries retryable CLONE_FAILED workspaces whose backoff has elapsed.
+     * Only retries CLONE_FAILED_NETWORK and CLONE_FAILED_OTHER (transient errors).
+     * CLONE_FAILED_AUTH and CLONE_FAILED_NOT_FOUND require user action — no auto-retry.
      * Runs every 60s, complementing the startup-only check.
      */
     private suspend fun runWorkspaceRetryLoop() {
@@ -918,11 +920,13 @@ class BackgroundEngine(
                 val now = java.time.Instant.now()
                 val allProjects = projectService.getAllProjects()
                 val retryable = allProjects.filter { project ->
-                    project.workspaceStatus == com.jervis.entity.WorkspaceStatus.CLONE_FAILED &&
-                        (project.nextWorkspaceRetryAt == null || !project.nextWorkspaceRetryAt.isAfter(now))
+                    project.workspaceStatus != null &&
+                        project.workspaceStatus.isRetryable &&
+                        project.nextWorkspaceRetryAt != null &&
+                        !project.nextWorkspaceRetryAt.isAfter(now)
                 }
                 for (project in retryable) {
-                    logger.info { "WORKSPACE_RETRY: project=${project.name} retry #${project.workspaceRetryCount + 1}" }
+                    logger.info { "WORKSPACE_RETRY: project=${project.name} status=${project.workspaceStatus} retry #${project.workspaceRetryCount + 1}" }
                     initializeProjectWorkspace(project)
                 }
             } catch (e: CancellationException) {
@@ -961,13 +965,20 @@ class BackgroundEngine(
                         initializeProjectWorkspace(project)
                     }
                 }
-                com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_AUTH,
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NOT_FOUND -> {
+                    // Non-retryable: user must fix connection/URL — skip on startup
+                    logger.info { "Project ${project.name} workspace ${project.workspaceStatus} — user action required, skipping" }
+                }
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NETWORK,
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_OTHER -> {
+                    // Retryable: respect backoff, periodic loop handles these
                     val now = java.time.Instant.now()
                     val nextRetry = project.nextWorkspaceRetryAt
                     if (nextRetry != null && nextRetry.isAfter(now)) {
-                        logger.debug { "Project ${project.name} CLONE_FAILED — backoff until $nextRetry (retry #${project.workspaceRetryCount})" }
+                        logger.debug { "Project ${project.name} ${project.workspaceStatus} — backoff until $nextRetry (retry #${project.workspaceRetryCount})" }
                     } else {
-                        logger.info { "Project ${project.name} was CLONE_FAILED - retrying (attempt #${project.workspaceRetryCount + 1})" }
+                        logger.info { "Project ${project.name} ${project.workspaceStatus} — retrying on startup (attempt #${project.workspaceRetryCount + 1})" }
                         scope.launch {
                             initializeProjectWorkspace(project)
                         }
@@ -985,7 +996,7 @@ class BackgroundEngine(
 
     /**
      * Initialize workspace for a single project - clone all git repositories.
-     * Sets workspaceStatus to CLONING, then READY or CLONE_FAILED.
+     * Sets workspaceStatus to CLONING, then READY or CLONE_FAILED_*.
      *
      * Called from:
      * - Background startup (for existing projects)
@@ -1015,31 +1026,41 @@ class BackgroundEngine(
         )
         projectRepository.save(cloning)
 
-        // Clone all git resources
-        var allSuccess = true
+        // Clone all git resources — classify failures by exception type
+        var failureStatus: com.jervis.entity.WorkspaceStatus? = null
         var errorMessage: String? = null
         for (resource in gitResources) {
             try {
                 logger.info { "WORKSPACE_INIT_START: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
                 val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
-                if (workspacePath == null) {
-                    logger.error { "WORKSPACE_INIT_FAILED (null path): project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
-                    errorMessage = "Clone failed for ${resource.resourceIdentifier} (null path)"
-                    allSuccess = false
-                    break
-                }
                 logger.info { "WORKSPACE_INIT_SUCCESS: project=${project.name} resource=${resource.resourceIdentifier} path=$workspacePath" }
+            } catch (e: com.jervis.service.indexing.git.GitAuthenticationException) {
+                logger.error { "WORKSPACE_INIT_AUTH_FAILED: project=${project.name} resource=${resource.resourceIdentifier} error=${e.message}" }
+                failureStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED_AUTH
+                errorMessage = e.message
+                break
+            } catch (e: com.jervis.service.indexing.git.GitRepositoryNotFoundException) {
+                logger.error { "WORKSPACE_INIT_NOT_FOUND: project=${project.name} resource=${resource.resourceIdentifier} error=${e.message}" }
+                failureStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NOT_FOUND
+                errorMessage = e.message
+                break
+            } catch (e: com.jervis.service.indexing.git.GitNetworkException) {
+                logger.error { "WORKSPACE_INIT_NETWORK: project=${project.name} resource=${resource.resourceIdentifier} error=${e.message}" }
+                failureStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NETWORK
+                errorMessage = e.message
+                break
             } catch (e: Exception) {
-                logger.error(e) { "WORKSPACE_INIT_ERROR: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.javaClass.simpleName}: ${e.message}" }
+                logger.error(e) { "WORKSPACE_INIT_ERROR: project=${project.name} resource=${resource.resourceIdentifier} error=${e.javaClass.simpleName}: ${e.message}" }
+                failureStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED_OTHER
                 errorMessage = "${e.javaClass.simpleName}: ${e.message}"
-                allSuccess = false
                 break
             }
         }
 
         val now = java.time.Instant.now()
 
-        if (allSuccess) {
+        if (failureStatus == null) {
+            // All resources cloned successfully
             val updated = project.copy(
                 workspaceStatus = com.jervis.entity.WorkspaceStatus.READY,
                 lastWorkspaceCheck = now,
@@ -1051,22 +1072,32 @@ class BackgroundEngine(
             logger.info { "Project ${project.name} workspace initialization complete: READY" }
         } else {
             val newRetryCount = project.workspaceRetryCount + 1
-            // Exponential backoff: 1min, 2min, 4min, 8min, 16min, 32min, 60min (cap)
-            val backoffMs = minOf(
-                60_000L * (1L shl minOf(newRetryCount - 1, 30)),
-                3_600_000L, // max 1 hour
-            )
-            val nextRetryAt = now.plusMillis(backoffMs)
+
+            // Non-retryable failures: no auto-retry (user must fix connection/URL)
+            val nextRetryAt = if (failureStatus.isRetryable) {
+                // Exponential backoff: 1min, 2min, 4min, 8min, 16min, 32min, 60min (cap)
+                val backoffMs = minOf(
+                    60_000L * (1L shl minOf(newRetryCount - 1, 30)),
+                    3_600_000L, // max 1 hour
+                )
+                now.plusMillis(backoffMs)
+            } else {
+                null // Non-retryable — no next retry
+            }
 
             val updated = project.copy(
-                workspaceStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED,
+                workspaceStatus = failureStatus,
                 lastWorkspaceCheck = now,
                 workspaceRetryCount = newRetryCount,
                 nextWorkspaceRetryAt = nextRetryAt,
                 lastWorkspaceError = errorMessage,
             )
             projectRepository.save(updated)
-            logger.info { "Project ${project.name} workspace initialization FAILED (retry #$newRetryCount, next retry at $nextRetryAt): $errorMessage" }
+            if (nextRetryAt != null) {
+                logger.info { "Project ${project.name} workspace $failureStatus (retry #$newRetryCount, next retry at $nextRetryAt): $errorMessage" }
+            } else {
+                logger.warn { "Project ${project.name} workspace $failureStatus (non-retryable, user must fix): $errorMessage" }
+            }
         }
     }
 

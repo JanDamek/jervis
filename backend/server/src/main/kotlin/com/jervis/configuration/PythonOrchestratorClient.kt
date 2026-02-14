@@ -134,15 +134,22 @@ class PythonOrchestratorClient(baseUrl: String) {
      */
     suspend fun orchestrateStream(request: OrchestrateRequestDto): StreamStartResponseDto? {
         logger.info { "PYTHON_ORCHESTRATOR_STREAM_START: taskId=${request.taskId}" }
-        val response = client.post("$apiBaseUrl/orchestrate/stream") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
+        return try {
+            val response = client.post("$apiBaseUrl/orchestrate/stream") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            if (response.status.value == 429) {
+                logger.info { "PYTHON_ORCHESTRATOR_BUSY: orchestrator returned 429, skipping dispatch" }
+                // 429 = busy, not a failure — don't trip circuit breaker
+                return null
+            }
+            circuitBreaker.recordSuccess()
+            response.body()
+        } catch (e: Exception) {
+            circuitBreaker.recordFailure()
+            throw e
         }
-        if (response.status.value == 429) {
-            logger.info { "PYTHON_ORCHESTRATOR_BUSY: orchestrator returned 429, skipping dispatch" }
-            return null
-        }
-        return response.body()
     }
 
     /**
@@ -212,20 +219,6 @@ class PythonOrchestratorClient(baseUrl: String) {
             logger.warn { "PYTHON_ORCHESTRATOR_HEALTH_FAIL: ${e.message}" }
             circuitBreaker.recordFailure()
             false
-        }
-    }
-
-    /**
-     * Check if the Python orchestrator is currently busy (running an orchestration).
-     * Uses the "busy" field from /health endpoint.
-     */
-    suspend fun isBusy(): Boolean {
-        return try {
-            val response: JsonObject = client.get("$apiBaseUrl/health").body()
-            response["busy"]?.toString() == "true"
-        } catch (e: Exception) {
-            logger.warn { "PYTHON_ORCHESTRATOR_BUSY_CHECK_FAIL: ${e.message}" }
-            false  // Can't reach → not busy (health check will catch this)
         }
     }
 

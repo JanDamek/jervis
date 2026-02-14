@@ -75,9 +75,22 @@ class ProjectService(
             }
 
             // Trigger workspace initialization for agent (if not already done)
-            if (savedProject.workspaceStatus == null || savedProject.workspaceStatus == com.jervis.entity.WorkspaceStatus.CLONE_FAILED) {
-                logger.info { "Publishing workspace init event for project ${savedProject.name}" }
-                applicationEventPublisher.publishEvent(ProjectWorkspaceInitEvent(savedProject))
+            if (savedProject.workspaceStatus == null || savedProject.workspaceStatus.isCloneFailed) {
+                // Reset retry state so init starts fresh (no stale backoff)
+                val resetProject = if (savedProject.workspaceStatus?.isCloneFailed == true) {
+                    projectRepository.save(
+                        savedProject.copy(
+                            workspaceStatus = null,
+                            workspaceRetryCount = 0,
+                            nextWorkspaceRetryAt = null,
+                            lastWorkspaceError = null,
+                        ),
+                    )
+                } else {
+                    savedProject
+                }
+                logger.info { "Publishing workspace init event for project ${resetProject.name}" }
+                applicationEventPublisher.publishEvent(ProjectWorkspaceInitEvent(resetProject))
             }
         }
 

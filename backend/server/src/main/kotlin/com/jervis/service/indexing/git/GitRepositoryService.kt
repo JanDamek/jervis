@@ -49,6 +49,16 @@ enum class WorkspaceType {
  */
 class GitAuthenticationException(message: String) : RuntimeException(message)
 
+/**
+ * Thrown when git repository is not found (404) or connection/URL is invalid.
+ */
+class GitRepositoryNotFoundException(message: String) : RuntimeException(message)
+
+/**
+ * Thrown when git operations fail due to network/timeout issues (transient).
+ */
+class GitNetworkException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
 /** Patterns in git error output that indicate credential/auth failures. */
 private val AUTH_ERROR_PATTERNS = listOf(
     "HTTP Basic: Access denied",
@@ -153,10 +163,11 @@ class GitRepositoryService(
         for (project in projects) {
             val repoResources = project.resources.filter { it.capability == ConnectionCapability.REPOSITORY }
             for (resource in repoResources) {
-                val result = ensureAgentWorkspaceReady(project, resource)
-                if (result != null) {
+                try {
+                    ensureAgentWorkspaceReady(project, resource)
                     successCount++
-                } else {
+                } catch (e: Exception) {
+                    logger.warn { "Agent workspace sync failed for ${resource.resourceIdentifier}: ${e.message}" }
                     failCount++
                 }
             }
@@ -237,26 +248,31 @@ class GitRepositoryService(
     /**
      * Ensure agent workspace is cloned and ready for orchestrator/agent operations.
      * Simpler than syncRepository - just clone/pull, stay on default branch.
-     * Returns workspace path if successful, null on failure.
+     *
+     * Throws classified exceptions on failure:
+     * - [GitAuthenticationException] — credentials invalid (connection marked INVALID)
+     * - [GitRepositoryNotFoundException] — connection/URL not found or invalid
+     * - [GitNetworkException] — transient network/timeout error
+     * - Other [Exception] — unknown error
      *
      * Used before orchestrator dispatch to ensure workspace exists.
      */
     suspend fun ensureAgentWorkspaceReady(
         project: ProjectDocument,
         resource: ProjectResource,
-    ): Path? {
+    ): Path {
         logger.debug { "ensureAgentWorkspaceReady: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
 
         val initialConnection = connectionService.findById(ConnectionId(resource.connectionId))
-        if (initialConnection == null) {
-            logger.warn { "WORKSPACE_CONNECTION_NOT_FOUND: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
-            return null
-        }
+            ?: throw GitRepositoryNotFoundException(
+                "Connection not found: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}",
+            )
 
-        // Skip INVALID connections
+        // INVALID connections → auth error
         if (initialConnection.state == ConnectionStateEnum.INVALID) {
-            logger.warn { "WORKSPACE_CONNECTION_INVALID: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} connectionName=${initialConnection.name}" }
-            return null
+            throw GitAuthenticationException(
+                "Connection INVALID: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} connectionName=${initialConnection.name}",
+            )
         }
 
         // Refresh OAuth2 token if expired
@@ -268,8 +284,9 @@ class GitRepositoryService(
 
         val repoUrl = buildRepoUrl(connection, resource)
         if (repoUrl.isNullOrBlank()) {
-            logger.warn { "WORKSPACE_NO_REPO_URL: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} provider=${connection.provider}" }
-            return null
+            throw GitRepositoryNotFoundException(
+                "No repo URL: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} provider=${connection.provider}",
+            )
         }
 
         val agentRepoDir = getAgentRepoDir(project, resource)
@@ -295,11 +312,17 @@ class GitRepositoryService(
             logger.error { "WORKSPACE_AUTH_FAILED: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.message}" }
             invalidateConnection(resource.connectionId)
             errorLogService.recordError(e, project.clientId.value, project.id.value)
-            return null
-        } catch (e: Exception) {
-            logger.error(e) { "WORKSPACE_CLONE_EXCEPTION: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} errorType=${e.javaClass.simpleName} error=${e.message}" }
-            return null
+            throw e
+        } catch (e: java.net.SocketException) {
+            throw GitNetworkException("Network error for ${resource.resourceIdentifier}: ${e.message}", e)
+        } catch (e: java.net.SocketTimeoutException) {
+            throw GitNetworkException("Timeout for ${resource.resourceIdentifier}: ${e.message}", e)
+        } catch (e: java.net.ConnectException) {
+            throw GitNetworkException("Connection refused for ${resource.resourceIdentifier}: ${e.message}", e)
+        } catch (e: java.net.UnknownHostException) {
+            throw GitNetworkException("DNS resolution failed for ${resource.resourceIdentifier}: ${e.message}", e)
         }
+        // Other exceptions propagate as-is → caller maps to CLONE_FAILED_OTHER
     }
 
     /**

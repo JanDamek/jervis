@@ -17,10 +17,11 @@
 8. [Transcript Correction Pipeline](#transcript-correction-pipeline)
 9. [Smart Model Selector](#smart-model-selector)
 10. [Security Architecture](#security-architecture)
-11. [Coding Agents](#coding-agents)
-12. [Python Orchestrator](#python-orchestrator)
-13. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
-14. [Notification System](#notification-system)
+11. [Resilience Patterns](#resilience-patterns)
+12. [Coding Agents](#coding-agents)
+13. [Python Orchestrator](#python-orchestrator)
+14. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
+15. [Notification System](#notification-system)
 
 ---
 
@@ -734,6 +735,51 @@ const val PLATFORM_DESKTOP = "Desktop"
 6. **Type safety**: Compile-time checks prevent runtime errors
 7. **Fail-fast design**: Errors propagate, no silent failures
 8. **Multi-tenancy**: Per-client isolation in all storage layers
+9. **Resilient retries**: Exponential backoff with DB-persisted state (survives pod restarts)
+
+---
+
+## Resilience Patterns
+
+### Circuit Breaker (Orchestrator)
+
+`PythonOrchestratorClient.CircuitBreaker` protects health checks and dispatch calls:
+
+| State | Behavior |
+|-------|----------|
+| CLOSED | Normal operation, track consecutive failures |
+| OPEN | After 5 failures → fast-fail (no HTTP call) for 30s |
+| HALF_OPEN | After 30s in OPEN → allow 1 probe. Success → CLOSED, Failure → OPEN |
+
+- `isHealthy()` and `orchestrateStream()` record success/failure
+- HTTP 429 (busy) is NOT recorded as failure (orchestrator is healthy, just saturated)
+
+### Workspace Recovery (Exponential Backoff)
+
+`WorkspaceStatus` classifies clone failures into 4 categories:
+
+| Status | Retryable | User Action |
+|--------|-----------|-------------|
+| `CLONE_FAILED_AUTH` | No | Fix credentials in connection settings |
+| `CLONE_FAILED_NOT_FOUND` | No | Fix repository URL |
+| `CLONE_FAILED_NETWORK` | Yes | Auto-retry with backoff |
+| `CLONE_FAILED_OTHER` | Yes | Auto-retry with backoff |
+
+Backoff schedule (retryable only): 1min → 2min → 4min → 8min → ... → 1h cap.
+
+- **Startup**: non-retryable failures are skipped; retryable failures respect existing backoff
+- **Periodic loop** (`runWorkspaceRetryLoop`, 60s): picks up retryable failures whose backoff elapsed
+- **User save**: resets retry state and triggers immediate re-init
+- **State in DB**: `workspaceRetryCount`, `nextWorkspaceRetryAt`, `lastWorkspaceError` on `ProjectDocument`
+
+### Task Dispatch Throttling (Exponential Backoff)
+
+When orchestrator dispatch fails (busy/error), tasks get DB-persisted backoff:
+
+- Fields: `dispatchRetryCount`, `nextDispatchRetryAt` on `TaskDocument`
+- Backoff: 5s → 15s → 30s → 60s → 5min cap
+- `getNextForegroundTask()`/`getNextBackgroundTask()` skip tasks in backoff
+- Successful dispatch resets retry state to 0
 
 ---
 

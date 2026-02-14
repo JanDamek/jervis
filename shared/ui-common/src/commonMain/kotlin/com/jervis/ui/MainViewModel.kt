@@ -218,7 +218,7 @@ class MainViewModel(
 
     // Workspace status for selected project (derived from _projects + _selectedProjectId)
     data class WorkspaceInfo(
-        val status: String?,    // READY, CLONING, CLONE_FAILED, NOT_NEEDED, null
+        val status: String?,    // READY, CLONING, CLONE_FAILED_AUTH/NETWORK/NOT_FOUND/OTHER, NOT_NEEDED, null
         val error: String?,
         val retryCount: Int,
         val nextRetryAt: String?,

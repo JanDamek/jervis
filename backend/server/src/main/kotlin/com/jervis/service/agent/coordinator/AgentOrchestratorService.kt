@@ -214,11 +214,35 @@ class AgentOrchestratorService(
                             )
                             return false
                         }
-                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
-                            logger.warn { "WORKSPACE_CLONE_FAILED: project=${project.name} projectId=${project.id} resources=[${gitResources.joinToString { "${it.resourceIdentifier}(conn=${it.connectionId})" }}] lastCheck=${project.lastWorkspaceCheck}" }
+                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED_AUTH -> {
+                            logger.warn { "WORKSPACE_CLONE_FAILED_AUTH: project=${project.name} projectId=${project.id}" }
                             onProgress(
-                                "Příprava prostředí selhala. Zkontrolujte připojení k repozitáři a zkuste to znovu.",
-                                mapOf("phase" to "workspace_failed")
+                                "Přihlášení k repozitáři selhalo. Zkontrolujte přístupové údaje v nastavení připojení.",
+                                mapOf("phase" to "workspace_failed", "reason" to "auth")
+                            )
+                            return false
+                        }
+                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NOT_FOUND -> {
+                            logger.warn { "WORKSPACE_CLONE_FAILED_NOT_FOUND: project=${project.name} projectId=${project.id}" }
+                            onProgress(
+                                "Repozitář nebyl nalezen. Zkontrolujte URL repozitáře v nastavení připojení.",
+                                mapOf("phase" to "workspace_failed", "reason" to "not_found")
+                            )
+                            return false
+                        }
+                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NETWORK -> {
+                            logger.warn { "WORKSPACE_CLONE_FAILED_NETWORK: project=${project.name} projectId=${project.id}" }
+                            onProgress(
+                                "Síťová chyba při přístupu k repozitáři. Systém to zkusí znovu automaticky.",
+                                mapOf("phase" to "workspace_failed", "reason" to "network")
+                            )
+                            return false
+                        }
+                        com.jervis.entity.WorkspaceStatus.CLONE_FAILED_OTHER -> {
+                            logger.warn { "WORKSPACE_CLONE_FAILED_OTHER: project=${project.name} projectId=${project.id} error=${project.lastWorkspaceError}" }
+                            onProgress(
+                                "Příprava prostředí selhala. Systém to zkusí znovu automaticky.",
+                                mapOf("phase" to "workspace_failed", "reason" to "other")
                             )
                             return false
                         }

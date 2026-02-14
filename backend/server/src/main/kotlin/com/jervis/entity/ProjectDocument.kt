@@ -136,6 +136,10 @@ data class ProjectConnectionCapability(
 
 /**
  * Status of project workspace (git clone) readiness.
+ *
+ * Failure states are classified to distinguish retryable vs non-retryable errors:
+ * - AUTH/NOT_FOUND: user must fix connection settings (no auto-retry)
+ * - NETWORK/OTHER: transient errors, auto-retry with exponential backoff
  */
 enum class WorkspaceStatus {
     /** Project has no git connection, workspace not needed */
@@ -144,6 +148,25 @@ enum class WorkspaceStatus {
     CLONING,
     /** Workspace ready for use */
     READY,
-    /** Clone failed (auth error, network error, etc.) */
-    CLONE_FAILED,
+    /** Auth error (bad credentials, expired token without refresh) — user must fix */
+    CLONE_FAILED_AUTH,
+    /** Network/timeout error — retryable with exponential backoff */
+    CLONE_FAILED_NETWORK,
+    /** Repository not found (404) — user must fix URL */
+    CLONE_FAILED_NOT_FOUND,
+    /** Unknown failure — retryable with exponential backoff */
+    CLONE_FAILED_OTHER,
+    ;
+
+    /** True if this failure is transient and should be auto-retried with backoff. */
+    val isRetryable: Boolean
+        get() = this == CLONE_FAILED_NETWORK || this == CLONE_FAILED_OTHER
+
+    /** True if this is any kind of clone failure. */
+    val isCloneFailed: Boolean
+        get() = name.startsWith("CLONE_FAILED")
+
+    companion object {
+        val RETRYABLE_FAILURES = entries.filter { it.isRetryable }
+    }
 }

@@ -58,7 +58,7 @@ class ProjectRpcImpl(
         executeWithErrorHandling("retryWorkspace") {
             val project = projectService.getProjectByIdOrNull(ProjectId(ObjectId(projectId)))
                 ?: return@executeWithErrorHandling false
-            if (project.workspaceStatus != WorkspaceStatus.CLONE_FAILED) return@executeWithErrorHandling false
+            if (project.workspaceStatus == null || !project.workspaceStatus.isCloneFailed) return@executeWithErrorHandling false
             projectRepository.save(
                 project.copy(
                     workspaceStatus = null,
