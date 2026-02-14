@@ -16,8 +16,66 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import mu.KotlinLogging
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 private val logger = KotlinLogging.logger {}
+
+/**
+ * Simple in-memory circuit breaker for Python orchestrator health checks.
+ *
+ * States:
+ * - CLOSED: normal operation, track consecutive failures
+ * - OPEN: after [failureThreshold] consecutive failures, immediately return false (no HTTP call)
+ * - HALF_OPEN: after [openDurationMs] in OPEN, allow 1 probe request
+ *   - Success → CLOSED; Failure → back to OPEN
+ */
+class CircuitBreaker(
+    private val failureThreshold: Int = 5,
+    private val openDurationMs: Long = 30_000,
+) {
+    enum class State { CLOSED, OPEN, HALF_OPEN }
+
+    private val state = AtomicReference(State.CLOSED)
+    private val consecutiveFailures = AtomicInteger(0)
+    private val openedAt = AtomicLong(0)
+
+    fun currentState(): State {
+        if (state.get() == State.OPEN) {
+            val elapsed = System.currentTimeMillis() - openedAt.get()
+            if (elapsed >= openDurationMs) {
+                if (state.compareAndSet(State.OPEN, State.HALF_OPEN)) {
+                    logger.info { "CIRCUIT_BREAKER: OPEN → HALF_OPEN (probe allowed after ${elapsed}ms)" }
+                }
+            }
+        }
+        return state.get()
+    }
+
+    fun allowRequest(): Boolean = currentState() != State.OPEN
+
+    fun recordSuccess() {
+        val prev = state.getAndSet(State.CLOSED)
+        consecutiveFailures.set(0)
+        if (prev != State.CLOSED) {
+            logger.info { "CIRCUIT_BREAKER: $prev → CLOSED (success)" }
+        }
+    }
+
+    fun recordFailure() {
+        val count = consecutiveFailures.incrementAndGet()
+        if (count >= failureThreshold && state.get() == State.CLOSED) {
+            state.set(State.OPEN)
+            openedAt.set(System.currentTimeMillis())
+            logger.warn { "CIRCUIT_BREAKER: CLOSED → OPEN (failures=$count)" }
+        } else if (state.get() == State.HALF_OPEN) {
+            state.set(State.OPEN)
+            openedAt.set(System.currentTimeMillis())
+            logger.warn { "CIRCUIT_BREAKER: HALF_OPEN → OPEN (probe failed)" }
+        }
+    }
+}
 
 /**
  * REST client for the Python Orchestrator service.
@@ -35,6 +93,7 @@ private val logger = KotlinLogging.logger {}
 class PythonOrchestratorClient(baseUrl: String) {
 
     private val apiBaseUrl = baseUrl.trimEnd('/')
+    val circuitBreaker = CircuitBreaker()
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -140,11 +199,18 @@ class PythonOrchestratorClient(baseUrl: String) {
      * Health check.
      */
     suspend fun isHealthy(): Boolean {
+        if (!circuitBreaker.allowRequest()) {
+            logger.debug { "PYTHON_ORCHESTRATOR_HEALTH_CIRCUIT_OPEN: fast-fail, no HTTP call" }
+            return false
+        }
         return try {
             val response: JsonObject = client.get("$apiBaseUrl/health").body()
-            response["status"]?.toString()?.trim('"') == "ok"
+            val healthy = response["status"]?.toString()?.trim('"') == "ok"
+            if (healthy) circuitBreaker.recordSuccess() else circuitBreaker.recordFailure()
+            healthy
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_HEALTH_FAIL: ${e.message}" }
+            circuitBreaker.recordFailure()
             false
         }
     }

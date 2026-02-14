@@ -37,6 +37,10 @@ fun ProjectDocument.toDto(): ProjectDto =
         autoUseAnthropic = this.cloudModelPolicy?.autoUseAnthropic,
         autoUseOpenai = this.cloudModelPolicy?.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy?.autoUseGemini,
+        workspaceStatus = this.workspaceStatus?.name,
+        workspaceError = this.lastWorkspaceError,
+        workspaceRetryCount = this.workspaceRetryCount,
+        nextWorkspaceRetryAt = this.nextWorkspaceRetryAt?.toString(),
     )
 
 fun ProjectDto.toDocument(): ProjectDocument {

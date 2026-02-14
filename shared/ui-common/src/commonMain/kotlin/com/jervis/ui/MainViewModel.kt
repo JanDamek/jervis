@@ -43,8 +43,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
@@ -213,6 +215,30 @@ class MainViewModel(
     private val _runningTaskNodes = MutableStateFlow<List<NodeEntry>>(emptyList())
     val runningTaskNodes: StateFlow<List<NodeEntry>> = _runningTaskNodes.asStateFlow()
     private var runningTaskStartTime: String? = null
+
+    // Workspace status for selected project (derived from _projects + _selectedProjectId)
+    data class WorkspaceInfo(
+        val status: String?,    // READY, CLONING, CLONE_FAILED, NOT_NEEDED, null
+        val error: String?,
+        val retryCount: Int,
+        val nextRetryAt: String?,
+    )
+
+    val workspaceInfo: StateFlow<WorkspaceInfo?> = combine(_projects, _selectedProjectId) { projects, projectId ->
+        if (projectId == null) return@combine null
+        val project = projects.find { it.id == projectId } ?: return@combine null
+        if (project.workspaceStatus == null || project.workspaceStatus == "NOT_NEEDED" || project.workspaceStatus == "READY") return@combine null
+        WorkspaceInfo(
+            status = project.workspaceStatus,
+            error = project.workspaceError,
+            retryCount = project.workspaceRetryCount,
+            nextRetryAt = project.nextWorkspaceRetryAt,
+        )
+    }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Orchestrator health (from queue status stream)
+    private val _orchestratorHealthy = MutableStateFlow(true)
+    val orchestratorHealthy: StateFlow<Boolean> = _orchestratorHealthy.asStateFlow()
 
     // Platform notification manager
     val notificationManager = PlatformNotificationManager()
@@ -698,6 +724,10 @@ class MainViewModel(
                         } else null
                     }
                     _backgroundQueue.value = backgroundItems
+
+                    // Orchestrator health
+                    val healthy = response.metadata["orchestratorHealthy"]?.toBooleanStrictOrNull() ?: true
+                    _orchestratorHealthy.value = healthy
                 }
             }
         }
@@ -1250,6 +1280,19 @@ class MainViewModel(
         pendingState = null
         PendingMessageStorage.save(null)
         _pendingMessageInfo.value = null
+    }
+
+    fun retryWorkspace() {
+        val projectId = _selectedProjectId.value ?: return
+        scope.launch {
+            try {
+                repository.projects.retryWorkspace(projectId)
+                // Refresh projects to pick up workspace status change
+                _selectedClientId.value?.let { selectClient(it) }
+            } catch (_: Exception) {
+                // Ignore — will retry automatically via backoff
+            }
+        }
     }
 
     private fun updatePendingInfo(nextRetryInSeconds: Int? = null, isAutoRetrying: Boolean = false) {

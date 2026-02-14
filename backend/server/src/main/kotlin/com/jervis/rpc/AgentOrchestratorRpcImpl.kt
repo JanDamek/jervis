@@ -806,6 +806,9 @@ class AgentOrchestratorRpcImpl(
             }
         }
 
+        val orchestratorHealthy = pythonOrchestratorClient.circuitBreaker.currentState() !=
+            com.jervis.configuration.CircuitBreaker.State.OPEN
+
         val metadata = if (runningTask != null) {
             val projectName = runningTask.projectId?.let { pid ->
                 try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
@@ -826,6 +829,7 @@ class AgentOrchestratorRpcImpl(
                 "runningTaskPreview" to taskPreview,
                 "runningTaskType" to taskTypeLabel,
                 "queueSize" to queueSize.toString(),
+                "orchestratorHealthy" to orchestratorHealthy.toString(),
             )
         } else {
             mapOf(
@@ -834,6 +838,7 @@ class AgentOrchestratorRpcImpl(
                 "runningTaskPreview" to "",
                 "runningTaskType" to "",
                 "queueSize" to queueSize.toString(),
+                "orchestratorHealthy" to orchestratorHealthy.toString(),
             )
         }
 

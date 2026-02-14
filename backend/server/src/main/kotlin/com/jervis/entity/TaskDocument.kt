@@ -124,6 +124,9 @@ data class TaskDocument(
     val orchestratorThreadId: String? = null,
     // Timestamp when task was dispatched to Python orchestrator (for inline message detection)
     val orchestrationStartedAt: Instant? = null,
+    // Dispatch retry tracking (exponential backoff when orchestrator unavailable)
+    val dispatchRetryCount: Int = 0,
+    val nextDispatchRetryAt: Instant? = null,
     // NEW (2026-01): User interaction state for async USER_TASK workflow
     /**
      * Question agent is waiting for user to answer (when state = USER_TASK).

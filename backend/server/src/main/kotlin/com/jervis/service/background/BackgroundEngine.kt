@@ -84,6 +84,7 @@ class BackgroundEngine(
     private var executionJob: Job? = null
     private var schedulerJob: Job? = null
     private var orchestratorResultJob: Job? = null
+    private var workspaceRetryJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
     private val schedulerAdvance = Duration.ofMinutes(10)
@@ -170,7 +171,17 @@ class BackgroundEngine(
                 }
             }
 
-        logger.info { "BackgroundEngine initialization complete - all four loops launched with singleton guarantee" }
+        workspaceRetryJob =
+            scope.launch {
+                try {
+                    logger.info { "Workspace retry loop STARTED (checks every 60s for CLONE_FAILED projects)" }
+                    runWorkspaceRetryLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Workspace retry loop FAILED to start!" }
+                }
+            }
+
+        logger.info { "BackgroundEngine initialization complete - all loops launched with singleton guarantee" }
     }
 
     @PreDestroy
@@ -181,6 +192,7 @@ class BackgroundEngine(
         executionJob?.cancel()
         schedulerJob?.cancel()
         orchestratorResultJob?.cancel()
+        workspaceRetryJob?.cancel()
         supervisor.cancel(CancellationException("Application shutdown"))
 
         try {
@@ -332,6 +344,10 @@ class BackgroundEngine(
                     // Check if task was dispatched to Python orchestrator (fire-and-forget)
                     val freshTask = taskRepository.getById(task.id)
                     if (freshTask?.state == TaskStateEnum.PYTHON_ORCHESTRATING) {
+                        // Reset dispatch retry count on successful dispatch
+                        if (freshTask.dispatchRetryCount > 0) {
+                            taskRepository.save(freshTask.copy(dispatchRetryCount = 0, nextDispatchRetryAt = null))
+                        }
                         logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
                         taskService.setRunningTask(null)
                         // Don't emit idle — orchestrator is still running.
@@ -340,14 +356,25 @@ class BackgroundEngine(
                     }
 
                     // Dispatch to orchestrator failed — task still DISPATCHED_GPU, reset for retry
-                    // This is a TEMPORARY condition (orchestrator busy/down) — silent retry, NO chat emission
+                    // This is a TEMPORARY condition (orchestrator busy/down) — silent retry with exponential backoff
                     if (freshTask?.state == TaskStateEnum.DISPATCHED_GPU && finalResponse.message.isNotBlank()) {
-                        logger.info { "PYTHON_DISPATCH_BUSY: taskId=${task.id} — resetting to READY_FOR_GPU for silent retry" }
-                        taskRepository.save(freshTask.copy(state = TaskStateEnum.READY_FOR_GPU))
+                        val newRetryCount = freshTask.dispatchRetryCount + 1
+                        // Exponential backoff: 5s, 15s, 30s, 60s, 5min (cap)
+                        val backoffMs = minOf(
+                            5_000L * (1L shl minOf(newRetryCount - 1, 30)),
+                            300_000L,
+                        )
+                        val nextRetryAt = java.time.Instant.now().plusMillis(backoffMs)
+                        logger.info { "PYTHON_DISPATCH_BUSY: taskId=${task.id} — retry #$newRetryCount, backoff ${backoffMs}ms, next at $nextRetryAt" }
+                        taskRepository.save(
+                            freshTask.copy(
+                                state = TaskStateEnum.READY_FOR_GPU,
+                                dispatchRetryCount = newRetryCount,
+                                nextDispatchRetryAt = nextRetryAt,
+                            ),
+                        )
                         taskService.setRunningTask(null)
                         emitIdleQueueStatus(task.clientId)
-                        // Wait before retry to avoid tight loop when orchestrator is busy
-                        delay(15_000)
                         return@launch
                     }
 
@@ -881,6 +908,32 @@ class BackgroundEngine(
     }
 
     /**
+     * Periodic loop that retries CLONE_FAILED workspaces whose backoff has elapsed.
+     * Runs every 60s, complementing the startup-only check.
+     */
+    private suspend fun runWorkspaceRetryLoop() {
+        while (scope.isActive) {
+            delay(60_000) // Check every 60 seconds
+            try {
+                val now = java.time.Instant.now()
+                val allProjects = projectService.getAllProjects()
+                val retryable = allProjects.filter { project ->
+                    project.workspaceStatus == com.jervis.entity.WorkspaceStatus.CLONE_FAILED &&
+                        (project.nextWorkspaceRetryAt == null || !project.nextWorkspaceRetryAt.isAfter(now))
+                }
+                for (project in retryable) {
+                    logger.info { "WORKSPACE_RETRY: project=${project.name} retry #${project.workspaceRetryCount + 1}" }
+                    initializeProjectWorkspace(project)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error in workspace retry loop" }
+            }
+        }
+    }
+
+    /**
      * Initialize workspace for all projects with git resources on startup.
      * For projects without workspaceStatus, trigger background clone.
      */
@@ -909,10 +962,15 @@ class BackgroundEngine(
                     }
                 }
                 com.jervis.entity.WorkspaceStatus.CLONE_FAILED -> {
-                    // Failed before - retry
-                    logger.info { "Project ${project.name} was CLONE_FAILED - retrying" }
-                    scope.launch {
-                        initializeProjectWorkspace(project)
+                    val now = java.time.Instant.now()
+                    val nextRetry = project.nextWorkspaceRetryAt
+                    if (nextRetry != null && nextRetry.isAfter(now)) {
+                        logger.debug { "Project ${project.name} CLONE_FAILED — backoff until $nextRetry (retry #${project.workspaceRetryCount})" }
+                    } else {
+                        logger.info { "Project ${project.name} was CLONE_FAILED - retrying (attempt #${project.workspaceRetryCount + 1})" }
+                        scope.launch {
+                            initializeProjectWorkspace(project)
+                        }
                     }
                 }
                 com.jervis.entity.WorkspaceStatus.READY -> {
@@ -959,37 +1017,57 @@ class BackgroundEngine(
 
         // Clone all git resources
         var allSuccess = true
+        var errorMessage: String? = null
         for (resource in gitResources) {
             try {
                 logger.info { "WORKSPACE_INIT_START: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
                 val workspacePath = gitRepositoryService.ensureAgentWorkspaceReady(project, resource)
                 if (workspacePath == null) {
                     logger.error { "WORKSPACE_INIT_FAILED (null path): project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}" }
+                    errorMessage = "Clone failed for ${resource.resourceIdentifier} (null path)"
                     allSuccess = false
                     break
                 }
                 logger.info { "WORKSPACE_INIT_SUCCESS: project=${project.name} resource=${resource.resourceIdentifier} path=$workspacePath" }
             } catch (e: Exception) {
                 logger.error(e) { "WORKSPACE_INIT_ERROR: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.javaClass.simpleName}: ${e.message}" }
+                errorMessage = "${e.javaClass.simpleName}: ${e.message}"
                 allSuccess = false
                 break
             }
         }
 
-        // Update status based on result
-        val finalStatus = if (allSuccess) {
-            com.jervis.entity.WorkspaceStatus.READY
+        val now = java.time.Instant.now()
+
+        if (allSuccess) {
+            val updated = project.copy(
+                workspaceStatus = com.jervis.entity.WorkspaceStatus.READY,
+                lastWorkspaceCheck = now,
+                workspaceRetryCount = 0,
+                nextWorkspaceRetryAt = null,
+                lastWorkspaceError = null,
+            )
+            projectRepository.save(updated)
+            logger.info { "Project ${project.name} workspace initialization complete: READY" }
         } else {
-            com.jervis.entity.WorkspaceStatus.CLONE_FAILED
+            val newRetryCount = project.workspaceRetryCount + 1
+            // Exponential backoff: 1min, 2min, 4min, 8min, 16min, 32min, 60min (cap)
+            val backoffMs = minOf(
+                60_000L * (1L shl minOf(newRetryCount - 1, 30)),
+                3_600_000L, // max 1 hour
+            )
+            val nextRetryAt = now.plusMillis(backoffMs)
+
+            val updated = project.copy(
+                workspaceStatus = com.jervis.entity.WorkspaceStatus.CLONE_FAILED,
+                lastWorkspaceCheck = now,
+                workspaceRetryCount = newRetryCount,
+                nextWorkspaceRetryAt = nextRetryAt,
+                lastWorkspaceError = errorMessage,
+            )
+            projectRepository.save(updated)
+            logger.info { "Project ${project.name} workspace initialization FAILED (retry #$newRetryCount, next retry at $nextRetryAt): $errorMessage" }
         }
-
-        val updated = project.copy(
-            workspaceStatus = finalStatus,
-            lastWorkspaceCheck = java.time.Instant.now(),
-        )
-        projectRepository.save(updated)
-
-        logger.info { "Project ${project.name} workspace initialization complete: $finalStatus" }
     }
 
     /**

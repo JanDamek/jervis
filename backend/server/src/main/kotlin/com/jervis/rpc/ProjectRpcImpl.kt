@@ -1,9 +1,12 @@
 package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.ProjectDto
+import com.jervis.entity.WorkspaceStatus
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
+import com.jervis.repository.ProjectRepository
 import com.jervis.service.IProjectService
 import com.jervis.service.error.ErrorLogService
 import com.jervis.service.project.ProjectService
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Component
 @Component
 class ProjectRpcImpl(
     private val projectService: ProjectService,
+    private val projectRepository: ProjectRepository,
     errorLogService: ErrorLogService,
 ) : BaseRpcImpl(errorLogService),
     IProjectService {
@@ -48,5 +52,21 @@ class ProjectRpcImpl(
     override suspend fun getProjectByName(name: String?): ProjectDto =
         executeWithErrorHandling("getProjectByName") {
             projectService.getProjectByName(name).toDto()
+        }
+
+    override suspend fun retryWorkspace(projectId: String): Boolean =
+        executeWithErrorHandling("retryWorkspace") {
+            val project = projectService.getProjectByIdOrNull(ProjectId(ObjectId(projectId)))
+                ?: return@executeWithErrorHandling false
+            if (project.workspaceStatus != WorkspaceStatus.CLONE_FAILED) return@executeWithErrorHandling false
+            projectRepository.save(
+                project.copy(
+                    workspaceStatus = null,
+                    workspaceRetryCount = 0,
+                    nextWorkspaceRetryAt = null,
+                    lastWorkspaceError = null,
+                ),
+            )
+            true
         }
 }

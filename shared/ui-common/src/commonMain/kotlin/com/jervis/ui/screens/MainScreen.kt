@@ -36,6 +36,8 @@ fun MainScreen(
     val compressionBoundaries by viewModel.compressionBoundaries.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
     val pendingMessageInfo by viewModel.pendingMessageInfo.collectAsState()
+    val workspaceInfo by viewModel.workspaceInfo.collectAsState()
+    val orchestratorHealthy by viewModel.orchestratorHealthy.collectAsState()
 
     MainScreenViewInternal(
         clients = clients,
@@ -72,5 +74,8 @@ fun MainScreen(
         pendingMessageInfo = pendingMessageInfo,
         onRetryPending = viewModel::retrySendMessage,
         onCancelPending = viewModel::cancelRetry,
+        workspaceInfo = workspaceInfo,
+        onRetryWorkspace = viewModel::retryWorkspace,
+        orchestratorHealthy = orchestratorHealthy,
     )
 }

@@ -113,12 +113,14 @@ class TaskService(
      *
      * @return Next FOREGROUND task to process, or null if no tasks
      */
-    suspend fun getNextForegroundTask(): TaskDocument? =
-        taskRepository
+    suspend fun getNextForegroundTask(): TaskDocument? {
+        val now = java.time.Instant.now()
+        return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
                 TaskStateEnum.READY_FOR_GPU,
-            ).firstOrNull()
+            ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
+    }
 
     /**
      * Get next BACKGROUND task (autonomous) ordered by createdAt (oldest first).
@@ -126,12 +128,14 @@ class TaskService(
      *
      * @return Next BACKGROUND task to process, or null if no tasks
      */
-    suspend fun getNextBackgroundTask(): TaskDocument? =
-        taskRepository
+    suspend fun getNextBackgroundTask(): TaskDocument? {
+        val now = java.time.Instant.now()
+        return taskRepository
             .findByProcessingModeAndStateOrderByCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.READY_FOR_GPU,
-            ).firstOrNull()
+            ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
+    }
 
     /**
      * Mark task as currently running (for queue status tracking)

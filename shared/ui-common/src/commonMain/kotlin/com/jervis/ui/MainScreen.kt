@@ -120,6 +120,9 @@ fun MainScreenView(
     pendingMessageInfo: PendingMessageInfo? = null,
     onRetryPending: () -> Unit = {},
     onCancelPending: () -> Unit = {},
+    workspaceInfo: MainViewModel.WorkspaceInfo? = null,
+    onRetryWorkspace: () -> Unit = {},
+    orchestratorHealthy: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -158,6 +161,9 @@ fun MainScreenView(
             pendingMessageInfo = pendingMessageInfo,
             onRetryPending = onRetryPending,
             onCancelPending = onCancelPending,
+            workspaceInfo = workspaceInfo,
+            onRetryWorkspace = onRetryWorkspace,
+            orchestratorHealthy = orchestratorHealthy,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -203,6 +209,9 @@ private fun ChatContent(
     pendingMessageInfo: PendingMessageInfo? = null,
     onRetryPending: () -> Unit = {},
     onCancelPending: () -> Unit = {},
+    workspaceInfo: MainViewModel.WorkspaceInfo? = null,
+    onRetryWorkspace: () -> Unit = {},
+    orchestratorHealthy: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -226,6 +235,19 @@ private fun ChatContent(
         )
 
         HorizontalDivider()
+
+        // Workspace status banner
+        if (workspaceInfo != null) {
+            WorkspaceBanner(
+                info = workspaceInfo,
+                onRetry = onRetryWorkspace,
+            )
+        }
+
+        // Orchestrator health banner
+        if (!orchestratorHealthy) {
+            OrchestratorHealthBanner()
+        }
 
         // Chat area
         ChatArea(
@@ -536,6 +558,92 @@ private fun PendingMessageBanner(
             }
             TextButton(onClick = onRetry) { Text("Znovu") }
             TextButton(onClick = onCancel) { Text("Zrušit") }
+        }
+    }
+}
+
+/**
+ * Banner shown when workspace clone failed or is in progress.
+ */
+@Composable
+private fun WorkspaceBanner(
+    info: MainViewModel.WorkspaceInfo,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isCloning = info.status == "CLONING"
+    val containerColor = if (isCloning) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+    val contentColor = if (isCloning) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (isCloning) Icons.Default.Refresh else Icons.Default.Warning,
+                contentDescription = null,
+                tint = if (isCloning) contentColor else MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isCloning) "Probíhá příprava prostředí..." else "Příprava prostředí selhala",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                )
+                if (!isCloning && info.error != null) {
+                    Text(
+                        text = info.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.7f),
+                        maxLines = 1,
+                    )
+                }
+            }
+            if (!isCloning) {
+                TextButton(onClick = onRetry) { Text("Zkusit znovu") }
+            }
+        }
+    }
+}
+
+/**
+ * Banner shown when the Python orchestrator is unhealthy (circuit breaker OPEN).
+ */
+@Composable
+private fun OrchestratorHealthBanner(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Orchestrátor není dostupný. Tasky budou zpracovány po obnovení.",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
         }
     }
 }

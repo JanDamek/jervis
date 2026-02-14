@@ -23,4 +23,6 @@ interface IProjectService {
     suspend fun deleteProject(project: ProjectDto)
 
     suspend fun getProjectByName(name: String?): ProjectDto
+
+    suspend fun retryWorkspace(projectId: String): Boolean
 }

@@ -50,6 +50,12 @@ data class ProjectDocument(
     val workspaceStatus: WorkspaceStatus? = null,
     /** Last time workspace status was checked. */
     val lastWorkspaceCheck: java.time.Instant? = null,
+    /** Number of consecutive workspace clone retry attempts. Reset to 0 on success. */
+    val workspaceRetryCount: Int = 0,
+    /** Earliest time for next workspace retry (exponential backoff). Null = retry immediately. */
+    val nextWorkspaceRetryAt: java.time.Instant? = null,
+    /** Last workspace error message for diagnostics. */
+    val lastWorkspaceError: String? = null,
 )
 
 /**
