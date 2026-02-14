@@ -10,6 +10,7 @@ import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -274,12 +275,16 @@ class BackgroundEngine(
                     val waitingForegroundTask = taskService.getNextForegroundTask()
 
                     if (waitingForegroundTask != null) {
-                        // Get currently running task
-                        val runningTask = taskService.getCurrentRunningTask()
+                        // Find currently running task from DB (currentRunningTask is cleared when dispatched to Python)
+                        val runningTasks =
+                            taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                                .toList()
+                        val runningTask = runningTasks.firstOrNull()
 
                         if (runningTask != null && runningTask.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
                             logger.warn {
-                                "PREEMPT: FOREGROUND task ${waitingForegroundTask.id} arrived while BACKGROUND task ${runningTask.id} is running → interrupting BACKGROUND"
+                                "PREEMPT: FOREGROUND task ${waitingForegroundTask.id} (queue=${waitingForegroundTask.queuePosition}) " +
+                                    "arrived while BACKGROUND task ${runningTask.id} is running → interrupting BACKGROUND"
                             }
 
                             // Interrupt the BACKGROUND task - orchestrator will save checkpoint and return

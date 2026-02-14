@@ -577,10 +577,69 @@ Only one Python orchestration runs at a time:
 3. **`PythonOrchestratorClient.approve()`** is now fire-and-forget (returns `Unit`).
    Python returns `{"status": "resuming"}` immediately. Result polled via GET /status.
 
+### Preemptive Priority (FOREGROUND vs BACKGROUND)
+
+**Problem**: BACKGROUND tasks (indexing) running in Python orchestrator block FOREGROUND tasks (chat) from starting, causing poor UX responsiveness.
+
+**Solution**: Preemptive priority system where FOREGROUND tasks interrupt BACKGROUND tasks mid-execution.
+
+**Implementation** (`BackgroundEngine.runExecutionLoop()`):
+
+1. **Detection** (lines 269-280):
+   ```kotlin
+   val orchestratingCount = taskRepository.countByState(PYTHON_ORCHESTRATING)
+   if (orchestratingCount > 0) {
+       val waitingForegroundTask = taskService.getNextForegroundTask()
+       if (waitingForegroundTask != null) {
+           // Find currently running task from DB
+           val runningTasks = taskRepository
+               .findByStateOrderByCreatedAtAsc(PYTHON_ORCHESTRATING)
+               .toList()
+           val runningTask = runningTasks.firstOrNull()
+   ```
+
+   **CRITICAL**: Must query DB for `PYTHON_ORCHESTRATING` tasks, NOT use `getCurrentRunningTask()`.
+   When tasks are dispatched to Python, `setRunningTask(null)` is called immediately (line 430),
+   so the in-memory tracker is cleared even though the task is still running in Python.
+
+2. **Interrupt** (lines 280-296):
+   ```kotlin
+   if (runningTask.processingMode == ProcessingMode.BACKGROUND) {
+       val interrupted = interruptBackgroundTask(runningTask)
+       if (interrupted) {
+           // Reset to READY_FOR_GPU with orchestratorThreadId preserved
+           // Next iteration picks up FOREGROUND task
+           continue
+       }
+   }
+   ```
+
+3. **State Preservation** (`interruptBackgroundTask()`, lines 359-395):
+   - Calls `pythonOrchestratorClient.interrupt(threadId)`
+   - Python orchestrator saves LangGraph checkpoint to MongoDB
+   - Task reset to `READY_FOR_GPU` (keeps `orchestratorThreadId` for resume)
+   - Cleared from running tracker
+
+4. **Resume** (next cycle):
+   - When FOREGROUND completes, execution loop picks up BACKGROUND again
+   - `orchestratorThreadId` present → Python resumes from checkpoint
+   - Continues exactly where interrupted (LangGraph checkpoint preserves full state)
+
+**ProcessingMode Enum**:
+- `FOREGROUND`: Chat messages, ordered by `queuePosition` (user can reorder)
+- `BACKGROUND`: Autonomous indexing, ordered by `createdAt` (FIFO)
+
+**Python Side** (`main.py`, `/interrupt/{thread_id}`):
+- Calls `task.cancel()` on asyncio task
+- LangGraph automatically saves checkpoint before cancellation completes
+- Returns `{"success": true}` immediately
+- Task removed from `_active_tasks` and SSE stream closed
+
 ### Key Technical Details
 
 - `TaskStateEnum.PYTHON_ORCHESTRATING`: New state for dispatched tasks
 - `TaskDocument.orchestratorThreadId`: Links to LangGraph checkpoint
+- `TaskDocument.processingMode`: FOREGROUND (chat) vs BACKGROUND (indexing)
 - `OrchestrateRequestDto.jervisProjectId`: JERVIS internal project for tracker ops
 - `OrchestrateRequestDto.chatHistory`: Conversation context (recent messages + compressed summaries)
 - MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument), `orchestrator_context` (hierarchical context), `orchestrator_locks` (distributed lock), `chat_messages` (conversation messages), `chat_summaries` (compressed history blocks)
