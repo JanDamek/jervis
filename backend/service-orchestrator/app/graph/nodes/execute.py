@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import logging
 
+from langgraph.types import interrupt
+
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
@@ -139,15 +141,40 @@ async def _execute_code_step(
         environment_context=state.get("environment"),
     )
 
-    # Run coding agent as K8s Job
-    result = await job_runner.run_coding_agent(
-        task_id=f"{task.id}-step-{step.index}",
+    # Create K8s Job (non-blocking) and pause graph until job completes.
+    # AgentJobWatcher polls K8s and resumes the graph when the job finishes.
+    step_task_id = f"{task.id}-step-{step.index}"
+    workspace_full = f"{settings.data_root}/{task.workspace_path}"
+
+    job_name = await job_runner.create_coding_agent_job(
+        task_id=step_task_id,
         agent_type=step.agent_type.value,
         client_id=task.client_id,
         project_id=task.project_id,
-        workspace_path=f"{settings.data_root}/{task.workspace_path}",
+        workspace_path=workspace_full,
     )
 
+    logger.info(
+        "K8s Job created: %s — pausing graph (interrupt), watcher will resume",
+        job_name,
+    )
+
+    # interrupt() pauses the graph and checkpoints to MongoDB.
+    # AgentJobWatcher detects this interrupt, monitors the K8s Job,
+    # and resumes the graph with the job result when it completes.
+    result = interrupt({
+        "type": "waiting_for_agent",
+        "action": "agent_wait",
+        "job_name": job_name,
+        "agent_type": step.agent_type.value,
+        "task_id": step_task_id,
+        "workspace_path": workspace_full,
+        "thread_id": state.get("_thread_id", ""),
+        "kotlin_task_id": task.id,
+        "client_id": task.client_id,
+    })
+
+    # result is the job result dict, provided by AgentJobWatcher on resume
     step_result = StepResult(
         step_index=step.index,
         success=result.get("success", False),

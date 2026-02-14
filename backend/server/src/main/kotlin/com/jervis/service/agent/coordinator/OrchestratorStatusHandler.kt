@@ -105,6 +105,13 @@ class OrchestratorStatusHandler(
         val action = interruptAction ?: "unknown"
         val description = interruptDescription ?: "Schválení vyžadováno"
 
+        // agent_wait: coding agent working as K8s Job — keep PYTHON_ORCHESTRATING, don't escalate.
+        // AgentJobWatcher on the Python side will resume the graph when the job completes.
+        if (action == "agent_wait") {
+            logger.info { "ORCHESTRATOR_AGENT_WAIT: taskId=${task.id} — coding agent running, keeping PYTHON_ORCHESTRATING" }
+            return
+        }
+
         // Clarification vs approval: different question format for the user
         val (pendingQuestion, questionContext, phase) = when (action) {
             "clarify" -> Triple(

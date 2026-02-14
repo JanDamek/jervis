@@ -1251,6 +1251,48 @@ GET  /internal/environment/{ns}/status
 | `backend/service-claude/Dockerfile` | Environment MCP server bundled in agent image |
 | `k8s/app_server.yaml` | ClusterRole for cross-namespace access |
 
+### Non-blocking Agent Execution (AgentJobWatcher)
+
+Coding agent K8s Jobs no longer block the orchestrator thread. Instead, the graph
+creates the job, calls `interrupt()`, and the AgentJobWatcher background service
+polls K8s and resumes the graph when the job completes.
+
+**Architecture:**
+
+```
+execute_step / git_ops
+  └─ job_runner.create_coding_agent_job()  → K8s Job created
+  └─ interrupt({type: "waiting_for_agent"}) → graph checkpointed to MongoDB
+  └─ semaphore RELEASED → slot freed for other orchestrations
+
+AgentJobWatcher (background asyncio task, polls every 10s)
+  └─ job_runner.check_job_status(job_name) → K8s API
+  └─ if succeeded/failed:
+       └─ job_runner.read_job_result() → read .jervis/result.json from PVC
+       └─ _resume_in_background(thread_id, result) → graph continues
+  └─ kotlin_client.report_progress() → heartbeat to Kotlin (keeps liveness)
+
+Kotlin OrchestratorStatusHandler
+  └─ action == "agent_wait" → return (no escalation, keep PYTHON_ORCHESTRATING)
+```
+
+**Key design decisions:**
+- Reuses existing LangGraph `interrupt()` / `Command(resume=value)` mechanism (same as approval flow)
+- No new TaskDocument fields needed — `orchestratorThreadId` suffices
+- Heartbeats via `report_progress()` keep BackgroundEngine from marking task as dead
+- `GET /status/{thread_id}` reports agent_wait as "running" (not "interrupted")
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `backend/service-orchestrator/app/agents/agent_job_watcher.py` | Background watcher (singleton) |
+| `backend/service-orchestrator/app/agents/job_runner.py` | Split API: create + check + read |
+| `backend/service-orchestrator/app/graph/nodes/execute.py` | Non-blocking agent dispatch via interrupt() |
+| `backend/service-orchestrator/app/graph/nodes/git_ops.py` | Non-blocking git delegation via interrupt() |
+| `backend/service-orchestrator/app/main.py` | Watcher lifecycle + job registration on interrupt |
+| `backend/server/.../coordinator/OrchestratorStatusHandler.kt` | agent_wait action handler |
+
 ---
 
 ## Project Groups
