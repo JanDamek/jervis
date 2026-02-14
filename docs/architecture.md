@@ -1295,6 +1295,39 @@ Kotlin OrchestratorStatusHandler
 
 ---
 
+### Knowledge Base Performance Monitoring
+
+The KB service exposes Prometheus metrics via `/metrics` endpoint for monitoring
+DB performance, queue health, and request latencies.
+
+**Metrics categories:**
+
+| Category | Metrics | Labels |
+|----------|---------|--------|
+| RAG write (Weaviate) | `kb_rag_ingest_duration_seconds`, `kb_rag_chunks_created_total` | operation: embed, weaviate_write, total |
+| RAG read (Weaviate) | `kb_rag_query_duration_seconds`, `kb_rag_query_results_count` | operation: embed, weaviate_search |
+| Graph write (ArangoDB) | `kb_graph_ingest_duration_seconds`, `kb_graph_nodes_created_total`, `kb_graph_edges_created_total`, `kb_graph_llm_calls_total` | operation: llm_extract, arango_upsert; status: success, failure |
+| Graph read (ArangoDB) | `kb_graph_query_duration_seconds` | operation: traverse, get_node, search_nodes |
+| Extraction queue | `kb_queue_depth`, `kb_queue_enqueued_total`, `kb_queue_completed_total`, `kb_queue_failed_total` | status: pending, in_progress, failed |
+| Worker | `kb_worker_task_duration_seconds`, `kb_worker_active` | — |
+| Concurrency | `kb_active_reads`, `kb_active_writes` | — |
+| Errors | `kb_errors_total` | subsystem: rag_write, rag_read, graph_write, graph_read, queue, worker |
+
+**Scraping:** Prometheus ServiceMonitor (`k8s/kb-servicemonitor.yaml`) scrapes both read and write deployments every 30s.
+
+**Dashboard:** `grafana/kb-dashboard.json` — import into Grafana for latency graphs, queue depth, throughput, concurrency.
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `backend/service-knowledgebase/app/metrics.py` | Prometheus metric definitions |
+| `backend/service-knowledgebase/app/main.py` | `/metrics` endpoint + concurrency gauges |
+| `k8s/kb-servicemonitor.yaml` | ServiceMonitor for Prometheus Operator |
+| `grafana/kb-dashboard.json` | Grafana dashboard JSON |
+
+---
+
 ## Project Groups
 
 ### Overview

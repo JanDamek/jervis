@@ -12,6 +12,7 @@ PRODUCTION-GRADE with:
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 import uuid
 import socket
@@ -19,6 +20,10 @@ import socket
 from app.services.llm_extraction_queue import LLMExtractionQueue, ExtractionTask
 from app.services.graph_service import GraphService
 from app.services.rag_service import RagService
+from app.metrics import (
+    QUEUE_DEPTH, QUEUE_COMPLETED, QUEUE_FAILED,
+    WORKER_TASK_DURATION, WORKER_ACTIVE, ERRORS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,7 @@ class LLMExtractionWorker:
                     now = asyncio.get_event_loop().time()
                     if now - last_stats_log > 300:  # 5 minutes
                         stats = await self.queue.stats()
+                        self._update_queue_gauges(stats)
                         if stats["total"] > 0:
                             logger.info(
                                 "Queue stats: total=%d pending=%d in_progress=%d failed=%d",
@@ -110,14 +116,20 @@ class LLMExtractionWorker:
                 )
 
                 try:
+                    WORKER_ACTIVE.set(1)
+                    task_start = time.perf_counter()
                     await self._process_task(task)
+                    WORKER_TASK_DURATION.observe(time.perf_counter() - task_start)
 
                     # Mark as COMPLETED (removes from queue)
                     await self.queue.mark_completed(task.task_id)
+                    QUEUE_COMPLETED.inc()
                     logger.info("Worker %s completed task %s", self.worker_id, task.task_id)
 
                 except Exception as e:
                     error_msg = f"{type(e).__name__}: {str(e)}"
+                    QUEUE_FAILED.inc()
+                    ERRORS.labels("worker").inc()
                     logger.error(
                         "Worker %s failed task %s (attempt %d/3): %s",
                         self.worker_id,
@@ -129,6 +141,8 @@ class LLMExtractionWorker:
 
                     # Mark as FAILED (resets to PENDING if attempts < 3, else marks FAILED)
                     await self.queue.mark_failed(task.task_id, error_msg, max_attempts=3)
+                finally:
+                    WORKER_ACTIVE.set(0)
 
             except asyncio.CancelledError:
                 logger.info("Worker %s loop cancelled", self.worker_id)
@@ -136,6 +150,13 @@ class LLMExtractionWorker:
             except Exception as e:
                 logger.error("Error in worker %s loop: %s", self.worker_id, e, exc_info=True)
                 await asyncio.sleep(10)  # Back off on error
+
+    @staticmethod
+    def _update_queue_gauges(stats: dict):
+        """Push queue depth values to Prometheus gauges."""
+        QUEUE_DEPTH.labels("pending").set(stats.get("pending", 0))
+        QUEUE_DEPTH.labels("in_progress").set(stats.get("in_progress", 0))
+        QUEUE_DEPTH.labels("failed").set(stats.get("failed", 0))
 
     async def _process_task(self, task: ExtractionTask):
         """Process a single extraction task by calling graph service LLM extraction."""
