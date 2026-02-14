@@ -112,6 +112,9 @@ class OrchestratorState(TypedDict, total=False):
     # --- Branch awareness ---
     target_branch: str | None           # Branch detected from user query or context
 
+    # --- User context (auto-prefetched from KB) ---
+    user_context: str | None            # User-learned knowledge (preferences, domain, etc.)
+
     # --- Existing (from clarify) ---
     project_context: str | None
     task_complexity: str | None
@@ -489,6 +492,8 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "needs_clarification": False,
         # Branch awareness
         "target_branch": None,
+        # User context (auto-prefetched from KB)
+        "user_context": None,
         # Clarification
         "clarification_questions": None,
         "clarification_response": None,

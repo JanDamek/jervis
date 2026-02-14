@@ -315,7 +315,16 @@ TOOL_STORE_KNOWLEDGE: dict = {
                 },
                 "category": {
                     "type": "string",
-                    "description": "Category of knowledge (e.g., 'definition', 'tech_stack', 'architecture', 'business_rule', 'general').",
+                    "description": (
+                        "Category of knowledge. Choose the most specific match:\n"
+                        "- preference: coding style, tooling, workflow (e.g., 'preferuji Kotlin idiomaticky')\n"
+                        "- domain: business domain, industry, location (e.g., 'jsme z Palkovic', 'BMS je...')\n"
+                        "- team: people, roles, processes (e.g., 'Jan je tech lead', 'Scrum s 2-week sprinty')\n"
+                        "- tech_stack: frameworks, libraries, patterns (e.g., 'Kotlin Multiplatform', 'MongoDB')\n"
+                        "- personal: personal info about the user (e.g., 'jmenuju se Jan')\n"
+                        "- general: anything that doesn't fit above categories"
+                    ),
+                    "enum": ["preference", "domain", "team", "tech_stack", "personal", "general"],
                     "default": "general",
                 },
             },

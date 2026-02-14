@@ -47,6 +47,11 @@ async def respond(state: dict) -> dict:
     if identity_parts:
         context_parts.append("## Task Context\n" + "\n".join(identity_parts))
 
+    # User context — auto-prefetched knowledge from previous conversations
+    user_context = state.get("user_context")
+    if user_context:
+        context_parts.append(f"## User Context (learned from previous conversations)\n{user_context}")
+
     if project_context:
         context_parts.append(f"## Project Context (from Knowledge Base)\n{project_context[:4000]}")
 
@@ -125,6 +130,10 @@ async def respond(state: dict) -> dict:
                 "• Pokud dotaz obsahuje VÍCE než jednu samostatnou část → řeš každou ZVLÁŠŤ\n"
                 "• Příklad: 'X je Y, když najdeš Z tak...' = 2 úkoly (ulož X, vytvoř task pro Z)\n"
                 "• Na konci SHRŇ všechny provedené akce pro každou část dotazu\n\n"
+                "PRAVIDLA PRO USER CONTEXT:\n"
+                "• V kontextu máš informace naučené od uživatele z předchozích konverzací\n"
+                "• NEUKLÁDEJ znovu to, co už v user context vidíš — pouze NOVÉ informace\n"
+                "• Využívej naučený kontext pro personalizované odpovědi\n\n"
                 "PRAVIDLA PRO DOTAZY NA UŽIVATELE:\n"
                 "• Pokud je dotaz nejednoznačný nebo ti chybí kritická informace → použij ask_user\n"
                 "• Příklady: 'Který modul myslíte?', 'Preferujete řešení A nebo B?'\n"

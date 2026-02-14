@@ -16,7 +16,7 @@ from app.graph.nodes._helpers import (
     detect_cloud_prompt,
     is_error_message,
 )
-from app.kb.prefetch import fetch_project_context
+from app.kb.prefetch import fetch_project_context, fetch_user_context
 from app.models import TaskCategory, TaskAction, Complexity
 
 logger = logging.getLogger(__name__)
@@ -172,13 +172,16 @@ async def intake(state: dict) -> dict:
     if target_branch:
         logger.info("Branch detected from query: %s", target_branch)
 
-    # 2. Fetch project context from KB (branch-aware)
+    # 2. Fetch project context from KB (branch-aware) + user context (learned facts)
     # Transform user query to general English technical search terms
     search_queries = await transform_user_query_to_kb_queries(query, state)
-    
+
     project_context = await fetch_project_context(
         client_id, project_id, query, target_branch=target_branch, search_queries=search_queries,
     )
+
+    # Fetch user-learned knowledge (preferences, domain, tech stack, etc.)
+    user_context = await fetch_user_context(client_id, project_id)
 
     # 3. Build environment summary
     environment = state.get("environment")
@@ -315,6 +318,7 @@ async def intake(state: dict) -> dict:
         "needs_clarification": needs_clarification,
         "clarification_questions": clarification_questions if needs_clarification else None,
         "project_context": project_context,
+        "user_context": user_context,
         "allow_cloud_prompt": allow_cloud_prompt,
         "target_branch": target_branch,
         "kb_search_queries": search_queries,  # Store for downstream nodes

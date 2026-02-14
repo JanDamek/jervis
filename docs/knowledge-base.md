@@ -690,6 +690,57 @@ finalize()
 
 ---
 
+## User Context Auto-Prefetch
+
+### Overview
+
+Agent automatically retrieves user-learned knowledge from previous conversations at the start of each new orchestration. This enables personalized responses without re-asking questions.
+
+### Structured Categories
+
+Knowledge stored via `store_knowledge` tool uses structured categories (kind = `user_knowledge_{category}`):
+
+| Category | Kind | Examples |
+|----------|------|----------|
+| preference | `user_knowledge_preference` | Coding style, tooling, workflow preferences |
+| domain | `user_knowledge_domain` | Business domain, industry, location info |
+| team | `user_knowledge_team` | People, roles, processes |
+| tech_stack | `user_knowledge_tech_stack` | Frameworks, libraries, patterns |
+| personal | `user_knowledge_personal` | Personal info about the user |
+| general | `user_knowledge_general` | Anything else |
+
+### Auto-Prefetch Flow
+
+1. **Intake node** calls `fetch_user_context(client_id, project_id)`
+2. Function queries KB `/api/v1/chunks/by-kind` for each of the 6 categories
+3. Pure Weaviate filter — **no embeddings, no GPU** — very fast (~30ms)
+4. Results assembled into markdown with category headers
+5. Stored in `state["user_context"]` for downstream nodes
+6. **Respond node** injects into `context_parts` as "User Context (learned from previous conversations)"
+7. System prompt instructs agent to use existing context and not re-store known facts
+
+### Implementation Files
+
+- `backend/service-orchestrator/app/kb/prefetch.py` — `fetch_user_context()`, `USER_CONTEXT_KINDS`
+- `backend/service-orchestrator/app/tools/definitions.py` — `TOOL_STORE_KNOWLEDGE` with category enum
+- `backend/service-orchestrator/app/tools/executor.py` — `_execute_store_knowledge()` (writes `kind=user_knowledge_{category}`)
+- `backend/service-orchestrator/app/graph/nodes/intake.py` — calls `fetch_user_context()`
+- `backend/service-orchestrator/app/graph/nodes/respond.py` — injects `user_context` into LLM prompt
+
+### Data Flow
+
+```
+store_knowledge(subject="BMS", content="Brokerage Management System", category="domain")
+  → KB ingest: kind=user_knowledge_domain, sourceUrn=user-knowledge:domain:BMS:{ts}
+
+Next conversation:
+  intake → fetch_user_context(client_id) → queries 6 user_knowledge_* kinds
+  → state["user_context"] = "### Domain Context\n- **BMS**: Brokerage Management System\n..."
+  → respond node includes in LLM context → personalized answer
+```
+
+---
+
 ## Knowledge Base Best Practices
 
 ### Key Practices

@@ -1,8 +1,9 @@
 """KB pre-fetch – queries Knowledge Base before agent launch.
 
-Two main functions:
+Three main functions:
 - prefetch_kb_context(): Task-specific context for coding agents (written to .jervis/kb-context.md)
 - fetch_project_context(): Project-level overview for orchestrator's clarify/decompose nodes
+- fetch_user_context(): Auto-prefetch user-learned knowledge for personalized responses
 """
 
 from __future__ import annotations
@@ -14,6 +15,19 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Structured categories for user-learned knowledge (maps to kind=user_knowledge_{category})
+USER_CONTEXT_KINDS: dict[str, str] = {
+    "user_knowledge_preference": "Preferences",
+    "user_knowledge_domain": "Domain Context",
+    "user_knowledge_team": "Team & Organization",
+    "user_knowledge_tech_stack": "Technical Stack",
+    "user_knowledge_personal": "Personal",
+    "user_knowledge_general": "General Knowledge",
+}
+
+# Maximum total characters for user context (prevent bloating LLM prompt)
+_USER_CONTEXT_MAX_CHARS = 4000
 
 
 async def prefetch_kb_context(
@@ -428,3 +442,91 @@ async def _graph_search_branch_aware(
             node_type, branch_name, e,
         )
         return []
+
+
+async def fetch_user_context(
+    client_id: str,
+    project_id: str | None = None,
+) -> str:
+    """Fetch all user-learned knowledge from KB for context injection.
+
+    Queries each structured category (preference, domain, team, tech_stack,
+    personal, general) via the /chunks/by-kind endpoint. This is a pure
+    Weaviate filter query — no embeddings, no GPU, very fast.
+
+    Args:
+        client_id: Client ID for scoping.
+        project_id: Project ID (optional).
+
+    Returns:
+        Markdown string with user context organized by category,
+        or empty string if no user knowledge exists.
+    """
+    kb_url = f"{settings.knowledgebase_url}/api/v1"
+    sections: list[str] = []
+    total_chars = 0
+
+    async with httpx.AsyncClient(timeout=30.0) as http:
+        for kind, label in USER_CONTEXT_KINDS.items():
+            if total_chars >= _USER_CONTEXT_MAX_CHARS:
+                break
+
+            try:
+                payload: dict = {
+                    "kind": kind,
+                    "clientId": client_id,
+                    "limit": 20,
+                }
+                if project_id:
+                    payload["projectId"] = project_id
+
+                resp = await http.post(
+                    f"{kb_url}/chunks/by-kind",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                chunks = resp.json().get("chunks", [])
+
+                if not chunks:
+                    continue
+
+                section_lines = [f"### {label}"]
+                for chunk in chunks:
+                    content = chunk.get("content", "").strip()
+                    if not content:
+                        continue
+                    # Extract just the meaningful part (strip markdown header if present)
+                    if content.startswith("# "):
+                        # Format: "# Subject\n\nContent" — show as "Subject: Content"
+                        parts = content.split("\n\n", 1)
+                        subject = parts[0].lstrip("# ").strip()
+                        body = parts[1].strip() if len(parts) > 1 else ""
+                        line = f"- **{subject}**: {body}" if body else f"- {subject}"
+                    else:
+                        line = f"- {content}"
+
+                    # Truncate individual entries
+                    if len(line) > 300:
+                        line = line[:297] + "..."
+
+                    section_lines.append(line)
+                    total_chars += len(line)
+
+                    if total_chars >= _USER_CONTEXT_MAX_CHARS:
+                        break
+
+                if len(section_lines) > 1:  # More than just the header
+                    sections.append("\n".join(section_lines))
+
+            except Exception as e:
+                logger.debug("User context fetch failed for kind=%s: %s", kind, e)
+                continue
+
+    context = "\n\n".join(sections) if sections else ""
+    if context:
+        logger.info(
+            "User context prefetch: %d categories, %d chars",
+            len(sections),
+            len(context),
+        )
+    return context
