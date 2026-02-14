@@ -2,6 +2,9 @@
 
 Creates K8s Jobs, streams logs, waits for completion.
 Each coding task runs as an ephemeral K8s Job – no persistent Deployments.
+
+Supports both blocking (run_coding_agent) and non-blocking (create + check + read)
+modes. Non-blocking mode is used with AgentJobWatcher for interrupt-based execution.
 """
 
 from __future__ import annotations
@@ -69,7 +72,9 @@ class JobRunner:
         self._init_k8s()
         return self._core_v1
 
-    async def run_coding_agent(
+    # --- Non-blocking API (used with AgentJobWatcher + interrupt) ---
+
+    async def create_coding_agent_job(
         self,
         task_id: str,
         agent_type: str,
@@ -78,9 +83,8 @@ class JobRunner:
         workspace_path: str,
         allow_git: bool = False,
         instructions_override: str | None = None,
-        on_log_line: callable | None = None,
-    ) -> dict:
-        """Run a coding agent as a K8s Job and wait for completion.
+    ) -> str:
+        """Create K8s Job and return job_name. Does NOT wait for completion.
 
         Args:
             task_id: Unique task identifier.
@@ -90,10 +94,12 @@ class JobRunner:
             workspace_path: Absolute path to workspace on shared PVC.
             allow_git: If True, agent may perform git operations.
             instructions_override: Override workspace instructions (for git delegation).
-            on_log_line: Callback for streaming log lines.
 
         Returns:
-            Result dict from result.json or job status.
+            job_name: Name of the created K8s Job.
+
+        Raises:
+            RuntimeError: If concurrent job limit exceeded for this agent type.
         """
         ns = settings.k8s_namespace
 
@@ -127,20 +133,36 @@ class JobRunner:
         logger.info("Creating K8s Job: %s (agent=%s, task=%s)", job_name, agent_type, task_id)
         self.batch_v1.create_namespaced_job(namespace=ns, body=job)
 
-        # Stream logs in background
-        log_task = None
-        if on_log_line:
-            log_task = asyncio.create_task(
-                self._stream_job_logs(job_name, on_log_line)
-            )
+        return job_name
 
-        # Wait for completion
-        result = await self._wait_for_job(job_name)
+    def check_job_status(self, job_name: str) -> dict:
+        """Check K8s Job status (single non-blocking check).
 
-        if log_task:
-            log_task.cancel()
+        Returns:
+            {"status": "running"|"succeeded"|"failed"|"not_found", "succeeded": bool}
+        """
+        ns = settings.k8s_namespace
+        try:
+            job = self.batch_v1.read_namespaced_job(name=job_name, namespace=ns)
 
-        # Read result.json from workspace
+            if job.status.succeeded and job.status.succeeded > 0:
+                return {"status": "succeeded", "succeeded": True}
+
+            if job.status.failed and job.status.failed > 0:
+                return {"status": "failed", "succeeded": False}
+
+            return {"status": "running", "succeeded": False}
+        except client.ApiException as e:
+            if e.status == 404:
+                return {"status": "not_found", "succeeded": False}
+            raise
+
+    def read_job_result(self, task_id: str, workspace_path: str, job_name: str) -> dict:
+        """Read result.json from workspace after job completes.
+
+        Returns:
+            Result dict from result.json or fallback status dict.
+        """
         result_file = Path(workspace_path) / ".jervis" / "result.json"
         if result_file.exists():
             try:
@@ -148,12 +170,70 @@ class JobRunner:
             except json.JSONDecodeError:
                 pass
 
+        # Fallback: check job status for summary
+        status = self.check_job_status(job_name)
         return {
             "taskId": task_id,
-            "success": result.get("succeeded", False),
-            "summary": f"Job {job_name} finished: {result.get('status', 'unknown')}",
-            "agentType": agent_type,
+            "success": status.get("succeeded", False),
+            "summary": f"Job {job_name} finished: {status.get('status', 'unknown')}",
+            "agentType": "",
         }
+
+    # --- Blocking API (legacy, wraps non-blocking methods) ---
+
+    async def run_coding_agent(
+        self,
+        task_id: str,
+        agent_type: str,
+        client_id: str,
+        project_id: str | None,
+        workspace_path: str,
+        allow_git: bool = False,
+        instructions_override: str | None = None,
+        on_log_line: callable | None = None,
+    ) -> dict:
+        """Run a coding agent as a K8s Job and wait for completion (blocking).
+
+        This is the legacy blocking API. For non-blocking execution,
+        use create_coding_agent_job() + check_job_status() + read_job_result().
+
+        Args:
+            task_id: Unique task identifier.
+            agent_type: "aider" | "openhands" | "claude" | "junie"
+            client_id: Client ID for scoping.
+            project_id: Project ID (optional).
+            workspace_path: Absolute path to workspace on shared PVC.
+            allow_git: If True, agent may perform git operations.
+            instructions_override: Override workspace instructions (for git delegation).
+            on_log_line: Callback for streaming log lines.
+
+        Returns:
+            Result dict from result.json or job status.
+        """
+        job_name = await self.create_coding_agent_job(
+            task_id=task_id,
+            agent_type=agent_type,
+            client_id=client_id,
+            project_id=project_id,
+            workspace_path=workspace_path,
+            allow_git=allow_git,
+            instructions_override=instructions_override,
+        )
+
+        # Stream logs in background
+        log_task = None
+        if on_log_line:
+            log_task = asyncio.create_task(
+                self._stream_job_logs(job_name, on_log_line)
+            )
+
+        # Wait for completion (blocking poll)
+        result = await self._wait_for_job(job_name)
+
+        if log_task:
+            log_task.cancel()
+
+        return self.read_job_result(task_id, workspace_path, job_name)
 
     def count_running_jobs(self, agent_type: str) -> int:
         """Count active Jobs for an agent type."""
@@ -171,7 +251,7 @@ class JobRunner:
     async def _wait_for_job(
         self, job_name: str, timeout_seconds: int = 2700
     ) -> dict:
-        """Wait for K8s Job to complete."""
+        """Wait for K8s Job to complete (blocking poll loop)."""
         ns = settings.k8s_namespace
         deadline = asyncio.get_event_loop().time() + timeout_seconds
 
