@@ -13,4 +13,9 @@ data class ChatRequestDto(
      * When false (default), this is a new user message that should trigger agent processing.
      */
     val isHistoryReplay: Boolean = false,
+    /**
+     * Client-generated UUID for deduplication. If a message with this ID already exists
+     * in the database, the server skips processing (idempotent retry).
+     */
+    val clientMessageId: String? = null,
 )

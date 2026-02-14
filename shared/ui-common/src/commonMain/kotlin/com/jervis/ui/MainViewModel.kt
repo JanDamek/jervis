@@ -20,25 +20,33 @@ import com.jervis.ui.model.TaskHistoryEntry
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
+import com.jervis.ui.model.PendingMessageInfo
+import com.jervis.ui.model.classifySendError
+import com.jervis.ui.storage.PendingMessageState
 import com.jervis.ui.storage.PendingMessageStorage
+import com.jervis.ui.storage.isExpired
 import com.jervis.ui.util.PickedFile
 import com.jervis.ui.util.pickFile
 import com.jervis.dto.AttachmentDto
 import com.jervis.dto.CompressionBoundaryDto
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 
 /**
  * ViewModel for MainScreen
@@ -110,10 +118,17 @@ class MainViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private val _showReconnectDialog = MutableStateFlow(false)
-    val showReconnectDialog: StateFlow<Boolean> = _showReconnectDialog.asStateFlow()
+    // Pending message state (replaces old plain-text pendingMessage)
+    private var pendingState: PendingMessageState? = null
+    private var retryJob: Job? = null
 
-    private var pendingMessage: String? = null
+    private val _pendingMessageInfo = MutableStateFlow<PendingMessageInfo?>(null)
+    val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
+
+    companion object {
+        private val BACKOFF_DELAYS_MS = listOf(0L, 5_000L, 30_000L, 300_000L)
+        private const val MAX_AUTO_RETRIES = 4
+    }
 
     // Connection state
     enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
@@ -211,7 +226,10 @@ class MainViewModel(
         notificationManager.initialize()
 
         // Restore pending message from persistent storage (survives app restart)
-        pendingMessage = PendingMessageStorage.load()
+        pendingState = PendingMessageStorage.load()?.takeIf { !it.isExpired() }
+        if (pendingState != null) {
+            updatePendingInfo()
+        }
 
         // Observe RpcConnectionManager state → drive local connection state + overlay
         scope.launch {
@@ -794,9 +812,12 @@ class MainViewModel(
                 }
 
                 // Clear pending message - server confirmed delivery
-                if (pendingMessage == response.message) {
-                    pendingMessage = null
+                val pending = pendingState
+                if (pending != null && pending.text == response.message) {
+                    retryJob?.cancel()
+                    pendingState = null
                     PendingMessageStorage.save(null)
+                    _pendingMessageInfo.value = null
                     println("=== Pending message cleared (confirmed by server) ===")
                 }
             }
@@ -882,13 +903,17 @@ class MainViewModel(
             oldestSequence = history.oldestSequence
             _compressionBoundaries.value = history.compressionBoundaries
 
-            // After successful reconnect, retry pending message
-            pendingMessage?.let { msg ->
-                println("=== Retrying pending message after reconnect ===")
-                _inputText.value = msg
-                pendingMessage = null
-                PendingMessageStorage.save(null)
-                sendMessage()
+            // After successful reconnect, schedule retry for pending message
+            pendingState?.let { state ->
+                if (!state.isExpired()) {
+                    println("=== Scheduling retry for pending message after reconnect ===")
+                    updatePendingInfo()
+                    scheduleAutoRetry()
+                } else {
+                    pendingState = null
+                    PendingMessageStorage.save(null)
+                    _pendingMessageInfo.value = null
+                }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -1081,7 +1106,7 @@ class MainViewModel(
         connectionManager.requestReconnect()
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
+    @OptIn(ExperimentalEncodingApi::class, ExperimentalUuidApi::class)
     fun sendMessage() {
         val text = _inputText.value.trim()
         val currentAttachments = _attachments.value
@@ -1115,6 +1140,8 @@ class MainViewModel(
             )
         }
 
+        val clientMessageId = Uuid.random().toString()
+
         // Send message - server echo will be deduplicated in handleChatResponse
         scope.launch {
             _isLoading.value = true
@@ -1132,10 +1159,11 @@ class MainViewModel(
                                 projectId = projectId,
                             ),
                         attachments = attachmentDtos,
+                        clientMessageId = clientMessageId,
                     ),
                 )
                 println("=== Message sent successfully (RPC) ===")
-                // NOTE: pendingMessage cleared only when server confirms via stream (handleChatResponse)
+                // NOTE: pending cleared only when server confirms via stream (handleChatResponse)
 
                 // Show progress message — agent is now processing
                 val isQueued = _runningProjectId.value != null &&
@@ -1150,14 +1178,26 @@ class MainViewModel(
                 )
                 _chatMessages.value = _chatMessages.value + progressMsg
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 println("Error sending message: ${e.message}")
                 e.printStackTrace()
-                pendingMessage = originalText
-                PendingMessageStorage.save(originalText)
+                val error = classifySendError(e)
+                pendingState = PendingMessageState(
+                    text = originalText,
+                    clientMessageId = clientMessageId,
+                    timestampMs = Clock.System.now().toEpochMilliseconds(),
+                    attemptCount = 0,
+                    contextClientId = clientId,
+                    contextProjectId = projectId,
+                    lastErrorType = if (error.isRetryable) "network" else "server",
+                    lastErrorMessage = error.displayMessage,
+                )
+                PendingMessageStorage.save(pendingState)
                 // Remove optimistic message on failure
                 _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
                 _attachments.value = currentAttachments // Restore attachments on failure
-                _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
+                _errorMessage.value = error.displayMessage
+                scheduleAutoRetry()
             } finally {
                 _isLoading.value = false
             }
@@ -1165,31 +1205,40 @@ class MainViewModel(
     }
 
     fun retrySendMessage() {
-        val text = pendingMessage ?: return
-        val clientId = _selectedClientId.value
-        val projectId = _selectedProjectId.value
+        val state = pendingState ?: return
+        val clientId = state.contextClientId ?: _selectedClientId.value ?: return
+        val projectId = state.contextProjectId ?: _selectedProjectId.value
 
-        if (clientId == null) return
-
+        retryJob?.cancel()
         scope.launch {
             _isLoading.value = true
             try {
                 repository.agentOrchestrator.sendMessage(
                     ChatRequestDto(
-                        text = text,
-                        context =
-                            ChatRequestContextDto(
-                                clientId = clientId,
-                                projectId = projectId,
-                            ),
+                        text = state.text,
+                        context = ChatRequestContextDto(
+                            clientId = clientId,
+                            projectId = projectId,
+                        ),
+                        clientMessageId = state.clientMessageId,
                     ),
                 )
                 println("=== Retried message sent successfully ===")
-                pendingMessage = null
+                pendingState = null
                 PendingMessageStorage.save(null)
+                _pendingMessageInfo.value = null
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 println("Error retrying message: ${e.message}")
-                _errorMessage.value = "Nepodařilo se odeslat zprávu: ${e.message}"
+                val error = classifySendError(e)
+                pendingState = state.copy(
+                    attemptCount = state.attemptCount + 1,
+                    lastErrorType = if (error.isRetryable) "network" else "server",
+                    lastErrorMessage = error.displayMessage,
+                )
+                PendingMessageStorage.save(pendingState)
+                _errorMessage.value = error.displayMessage
+                scheduleAutoRetry()
             } finally {
                 _isLoading.value = false
             }
@@ -1197,8 +1246,61 @@ class MainViewModel(
     }
 
     fun cancelRetry() {
-        pendingMessage = null
+        retryJob?.cancel()
+        pendingState = null
         PendingMessageStorage.save(null)
+        _pendingMessageInfo.value = null
+    }
+
+    private fun updatePendingInfo(nextRetryInSeconds: Int? = null, isAutoRetrying: Boolean = false) {
+        val state = pendingState ?: run {
+            _pendingMessageInfo.value = null
+            return
+        }
+        _pendingMessageInfo.value = PendingMessageInfo(
+            text = state.text,
+            attemptCount = state.attemptCount,
+            isAutoRetrying = isAutoRetrying,
+            nextRetryInSeconds = nextRetryInSeconds,
+            errorMessage = state.lastErrorMessage,
+            isRetryable = state.lastErrorType == "network",
+        )
+    }
+
+    private fun scheduleAutoRetry() {
+        retryJob?.cancel()
+        val state = pendingState ?: return
+
+        if (state.attemptCount >= MAX_AUTO_RETRIES) {
+            updatePendingInfo()
+            return
+        }
+
+        if (state.lastErrorType == "server") {
+            updatePendingInfo()
+            return
+        }
+
+        val delayMs = BACKOFF_DELAYS_MS.getOrElse(state.attemptCount) { Long.MAX_VALUE }
+        if (delayMs == Long.MAX_VALUE) {
+            updatePendingInfo()
+            return
+        }
+
+        retryJob = scope.launch {
+            if (delayMs > 0) {
+                val startTime = Clock.System.now().toEpochMilliseconds()
+                while (true) {
+                    val elapsed = Clock.System.now().toEpochMilliseconds() - startTime
+                    val remaining = ((delayMs - elapsed) / 1000).toInt()
+                    if (remaining <= 0) break
+                    updatePendingInfo(nextRetryInSeconds = remaining, isAutoRetrying = true)
+                    delay(1000)
+                }
+            }
+            updatePendingInfo(isAutoRetrying = true)
+            retrySendMessage()
+        }
     }
 
     fun clearError() {

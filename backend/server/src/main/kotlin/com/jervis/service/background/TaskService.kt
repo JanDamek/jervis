@@ -180,13 +180,15 @@ class TaskService(
     /**
      * Get pending FOREGROUND tasks for queue display.
      * Returns tasks waiting to be processed, excluding the currently running task.
+     * Includes PYTHON_ORCHESTRATING tasks so inline messages sent during orchestration
+     * are visible in the UI queue.
      */
     suspend fun getPendingForegroundTasks(clientId: ClientId): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
-            .findByProcessingModeAndStateOrderByQueuePositionAsc(
+            .findByProcessingModeAndStateInOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
-                TaskStateEnum.READY_FOR_GPU,
+                listOf(TaskStateEnum.READY_FOR_GPU, TaskStateEnum.PYTHON_ORCHESTRATING),
             ).toList()
             .filter { it.clientId == clientId && it.id != running?.id }
     }

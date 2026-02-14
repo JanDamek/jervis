@@ -1,19 +1,27 @@
 package com.jervis.ui.storage
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
 
 actual object PendingMessageStorage {
-    private val file = File(System.getProperty("user.home"), ".jervis/pending_message.txt")
+    private val file = File(System.getProperty("user.home"), ".jervis/pending_message.json")
 
-    actual fun save(message: String?) {
-        if (message == null) {
+    actual fun save(state: PendingMessageState?) {
+        if (state == null) {
             file.delete()
             return
         }
         file.parentFile.mkdirs()
-        file.writeText(message)
+        file.writeText(Json.encodeToString(state))
     }
 
-    actual fun load(): String? =
-        if (file.exists()) file.readText().takeIf { it.isNotBlank() } else null
+    actual fun load(): PendingMessageState? {
+        if (!file.exists()) return null
+        return try {
+            Json.decodeFromString<PendingMessageState>(file.readText())
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

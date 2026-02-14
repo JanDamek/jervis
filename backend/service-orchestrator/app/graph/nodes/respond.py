@@ -16,7 +16,7 @@ from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 25
+_MAX_TOOL_ITERATIONS = 5
 
 
 async def respond(state: dict) -> dict:
@@ -106,11 +106,17 @@ async def respond(state: dict) -> dict:
                 "1. Použij dostupné nástroje k načtení dat\n"
                 "2. Analyzuj získané informace\n"
                 "3. Odpověz konkrétně s fakty z nástrojů\n\n"
-                "PRAVIDLA:\n"
+                "PRAVIDLA PRO ČTENÍ:\n"
                 "• Vždy NEJDŘÍV načti data nástroji (get_kb_stats, kb_search, read_file, atd.)\n"
                 "• NIKDY neodpovídej z obecných znalostí — pouze z dat získaných nástroji\n"
                 "• NIKDY neříkej 'potřebuji přístup' — přístup už máš přes dostupné nástroje\n"
                 "• Pokud KB neobsahuje data → použij workspace nástroje (list_files, read_file, grep_files)\n\n"
+                "PRAVIDLA PRO UČENÍ (CRITICAL!):\n"
+                "• Když ti uživatel řekne NOVOU informaci → VŽDY ji ulož pomocí store_knowledge\n"
+                "• Vzory učení: 'X je Y', 'X znamená Y', 'zapamatuj si', 'pro příště', 'to je'\n"
+                "• Příklady: 'BMS je Brokerage Management System', 'projekt používá Python 3.11'\n"
+                "• Po uložení POTVRĎ co jsi se naučil a řekni že to bude dostupné pro budoucí dotazy\n"
+                "• NIKDY neříkej jen 'ok' — vždy AKTIVNĚ ulož nové informace do KB\n\n"
                 "Odpovídej česky. Buď konkrétní a faktický."
             ),
         },

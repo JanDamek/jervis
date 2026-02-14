@@ -58,6 +58,14 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
             )
+        elif tool_name == "store_knowledge":
+            result = await _execute_store_knowledge(
+                subject=arguments.get("subject", ""),
+                content=arguments.get("content", ""),
+                category=arguments.get("category", "general"),
+                client_id=client_id,
+                project_id=project_id,
+            )
         elif tool_name == "get_indexed_items":
             result = await _execute_get_indexed_items(
                 item_type=arguments.get("item_type", "all"),
@@ -326,6 +334,68 @@ async def _execute_kb_search(
         lines.append("")
 
     return "\n".join(lines)
+
+
+async def _execute_store_knowledge(
+    subject: str,
+    content: str,
+    category: str = "general",
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Store new knowledge into the Knowledge Base via POST /api/v1/ingest.
+
+    Stores user-provided facts, definitions, and information for future reference.
+    Uses the write endpoint which routes to jervis-knowledgebase-write service.
+    """
+    if not subject.strip():
+        return "Error: Subject cannot be empty when storing knowledge."
+    if not content.strip():
+        return "Error: Content cannot be empty when storing knowledge."
+
+    # Use KB write endpoint (separate deployment for write operations)
+    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    url = f"{kb_write_url}/api/v1/ingest"
+
+    # Generate unique sourceUrn for user-provided knowledge
+    timestamp = datetime.now().isoformat()
+    source_urn = f"user-knowledge:{category}:{subject}:{timestamp}"
+
+    payload = {
+        "clientId": client_id,
+        "projectId": project_id,
+        "sourceUrn": source_urn,
+        "kind": f"user_knowledge_{category}",
+        "content": f"# {subject}\n\n{content}",
+        "metadata": {
+            "subject": subject,
+            "category": category,
+            "stored_at": timestamp,
+            "source": "agent_learning",
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException:
+        return f"Error: KB write timed out after 10s for subject: {subject}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: Knowledge Base write returned HTTP {e.response.status_code} for subject: {subject}"
+    except Exception as e:
+        return f"Error: KB write failed: {str(e)[:200]}"
+
+    # Success response
+    chunk_count = data.get("chunk_count", 0)
+    return (
+        f"✓ Knowledge stored successfully!\n"
+        f"Subject: {subject}\n"
+        f"Category: {category}\n"
+        f"Chunks created: {chunk_count}\n"
+        f"This information is now available for future queries."
+    )
 
 
 async def _execute_get_indexed_items(

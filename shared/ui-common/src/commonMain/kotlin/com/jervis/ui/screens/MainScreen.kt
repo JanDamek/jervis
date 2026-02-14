@@ -35,6 +35,7 @@ fun MainScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val compressionBoundaries by viewModel.compressionBoundaries.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
+    val pendingMessageInfo by viewModel.pendingMessageInfo.collectAsState()
 
     MainScreenViewInternal(
         clients = clients,
@@ -68,5 +69,8 @@ fun MainScreen(
         onLoadMore = viewModel::loadMoreHistory,
         onAttachFile = viewModel::attachFile,
         onRemoveAttachment = viewModel::removeAttachment,
+        pendingMessageInfo = pendingMessageInfo,
+        onRetryPending = viewModel::retrySendMessage,
+        onCancelPending = viewModel::cancelRetry,
     )
 }

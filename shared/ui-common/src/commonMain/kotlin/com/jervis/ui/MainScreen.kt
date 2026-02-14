@@ -4,11 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,8 +30,11 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +49,7 @@ import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.JIconButton
+import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.util.PickedFile
 
@@ -110,6 +117,9 @@ fun MainScreenView(
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
+    pendingMessageInfo: PendingMessageInfo? = null,
+    onRetryPending: () -> Unit = {},
+    onCancelPending: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().imePadding()) {
@@ -145,6 +155,9 @@ fun MainScreenView(
             onLoadMore = onLoadMore,
             onAttachFile = onAttachFile,
             onRemoveAttachment = onRemoveAttachment,
+            pendingMessageInfo = pendingMessageInfo,
+            onRetryPending = onRetryPending,
+            onCancelPending = onCancelPending,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -187,6 +200,9 @@ private fun ChatContent(
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
+    pendingMessageInfo: PendingMessageInfo? = null,
+    onRetryPending: () -> Unit = {},
+    onCancelPending: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -233,6 +249,15 @@ private fun ChatContent(
             queueSize = queueSize,
             onClick = onAgentStatusClick,
         )
+
+        // Pending message banner — shown when message failed to send
+        if (pendingMessageInfo != null) {
+            PendingMessageBanner(
+                info = pendingMessageInfo,
+                onRetry = onRetryPending,
+                onCancel = onCancelPending,
+            )
+        }
 
         HorizontalDivider()
 
@@ -454,6 +479,63 @@ private fun ConnectionStatusIndicator(
         } else {
             // Just show status badge
             com.jervis.ui.design.JStatusBadge(status = statusText)
+        }
+    }
+}
+
+/**
+ * Banner shown when a message failed to send and is pending retry.
+ * Shows truncated message text, retry countdown, and Retry/Cancel buttons.
+ */
+@Composable
+private fun PendingMessageBanner(
+    info: PendingMessageInfo,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Zpráva nebyla odeslána",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                val detail = buildString {
+                    val preview = info.text.take(50)
+                    append("\"$preview\"")
+                    if (info.text.length > 50) append("...")
+                    if (info.isAutoRetrying && info.nextRetryInSeconds != null) {
+                        append(" — Další pokus za ${info.nextRetryInSeconds}s")
+                    } else if (!info.isRetryable) {
+                        append(" — ${info.errorMessage ?: "Chyba serveru"}")
+                    } else if (info.attemptCount >= 4) {
+                        append(" — Automatické pokusy vyčerpány")
+                    }
+                }
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+            }
+            TextButton(onClick = onRetry) { Text("Znovu") }
+            TextButton(onClick = onCancel) { Text("Zrušit") }
         }
     }
 }

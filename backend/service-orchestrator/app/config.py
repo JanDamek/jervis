@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     knowledgebase_url: str = os.getenv(
         "KNOWLEDGEBASE_URL", "http://jervis-knowledgebase:8080"
     )
+    # Knowledge Base write endpoint (separate deployment for write operations)
+    knowledgebase_write_url: str = os.getenv(
+        "KNOWLEDGEBASE_WRITE_URL", "http://jervis-knowledgebase-write:8080"
+    )
 
     # SearXNG web search (runs on port 30053)
     searxng_url: str = os.getenv(

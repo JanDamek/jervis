@@ -80,7 +80,6 @@ fun App(
         val isLoading by viewModel.isLoading.collectAsState()
         val currentScreen by appNavigator.currentScreen.collectAsState()
         val connectionState by viewModel.connectionState.collectAsState()
-        val showReconnectDialog by viewModel.showReconnectDialog.collectAsState()
         val isOverlayVisible by viewModel.isOverlayVisible.collectAsState()
         val reconnectAttempt by viewModel.reconnectAttemptDisplay.collectAsState()
         val isInitialLoading by viewModel.isInitialLoading.collectAsState()
@@ -196,16 +195,6 @@ fun App(
                 onDismiss = { viewModel.dismissApprovalDialog() },
             )
         }
-
-        com.jervis.ui.util.ConfirmDialog(
-            visible = showReconnectDialog,
-            title = "Odeslání selhalo",
-            message = "Zprávu se nepodařilo odeslat. Zkontrolujte připojení k internetu a zkuste to znovu.",
-            confirmText = "Zkusit znovu",
-            onConfirm = viewModel::retrySendMessage,
-            onDismiss = viewModel::cancelRetry,
-            isDestructive = false
-        )
 
         if (isOverlayVisible) {
             androidx.compose.ui.window.Dialog(

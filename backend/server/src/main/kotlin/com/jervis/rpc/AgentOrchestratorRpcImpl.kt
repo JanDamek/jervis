@@ -269,6 +269,14 @@ class AgentOrchestratorRpcImpl(
             return
         }
 
+        // Dedup check: skip if this exact message was already processed (idempotent retry)
+        if (!request.clientMessageId.isNullOrBlank()) {
+            if (chatMessageRepository.existsByClientMessageId(request.clientMessageId)) {
+                logger.info { "DEDUP_SKIP | clientMessageId=${request.clientMessageId} | session=$sessionKey" }
+                return
+            }
+        }
+
         val stream =
             chatStreams.getOrPut(sessionKey) {
                 MutableSharedFlow(
@@ -404,6 +412,7 @@ class AgentOrchestratorRpcImpl(
                     content = request.text,
                     sequence = messageSequence,
                     timestamp = timestamp,
+                    clientMessageId = request.clientMessageId,
                 )
             chatMessageRepository.save(userMessage)
             logger.info { "USER_MESSAGE_SAVED | taskId=${taskDocument.id} | sequence=$messageSequence | processingMode=FOREGROUND" }

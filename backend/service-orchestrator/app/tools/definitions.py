@@ -291,9 +291,43 @@ TOOL_CODE_SEARCH: dict = {
     },
 }
 
+TOOL_STORE_KNOWLEDGE: dict = {
+    "type": "function",
+    "function": {
+        "name": "store_knowledge",
+        "description": (
+            "Store new knowledge or facts into the Knowledge Base. "
+            "Use this when the user teaches you something new, provides definitions, "
+            "explains concepts, or shares information that should be remembered for future reference. "
+            "Examples: 'BMS is Brokerage Management System', 'project uses Python 3.11', "
+            "'authentication uses JWT tokens', 'deployment is on AWS'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": "Brief subject/title of the knowledge being stored (e.g., 'BMS definition', 'Tech stack info').",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The actual knowledge/fact to store. Be specific and factual.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category of knowledge (e.g., 'definition', 'tech_stack', 'architecture', 'business_rule', 'general').",
+                    "default": "general",
+                },
+            },
+            "required": ["subject", "content"],
+        },
+    },
+}
+
 ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
+    TOOL_STORE_KNOWLEDGE,
     TOOL_GET_INDEXED_ITEMS,
     TOOL_GET_KB_STATS,
     TOOL_LIST_PROJECT_FILES,

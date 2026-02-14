@@ -94,4 +94,10 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
         taskId: TaskId,
         searchText: String,
     ): Flow<ChatMessageDocument>
+
+    /**
+     * Check if a message with the given client-generated ID already exists.
+     * Used for deduplication — prevents duplicate processing on retry.
+     */
+    suspend fun existsByClientMessageId(clientMessageId: String): Boolean
 }

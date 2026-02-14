@@ -46,6 +46,8 @@ data class ChatMessageDocument(
     @Indexed
     val sequence: Long,
     val metadata: Map<String, String> = emptyMap(),
+    @Indexed
+    val clientMessageId: String? = null,
 )
 
 /**
