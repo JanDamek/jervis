@@ -881,6 +881,8 @@ intake → evidence_pack → plan_delegations → execute_delegation(s) → synt
 | Layer | Storage | TTL |
 |-------|---------|-----|
 | Working Memory | LangGraph state | Per-orchestration |
+| Chat History | MongoDB `chat_messages` + `ChatSummaryDocument` | Permanent (compressed) |
+| Task Outcomes | KB via `task-outcome:{taskId}` sourceUrn | Permanent |
 | Session Memory | MongoDB `session_memory` | 7 days |
 | Semantic Memory | KB (Weaviate + ArangoDB) | Permanent |
 | Procedural Memory | ArangoDB `ProcedureNode` | Permanent (usage-decay) |
@@ -895,5 +897,5 @@ All default to `False` (opt-in):
 
 ---
 
-**Document Version:** 6.0
-**Last Updated:** 2026-02-13
+**Document Version:** 7.0
+**Last Updated:** 2026-02-14

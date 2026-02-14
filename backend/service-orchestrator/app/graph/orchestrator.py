@@ -133,6 +133,7 @@ class OrchestratorState(TypedDict, total=False):
     artifacts: list
     error: str | None
     evaluation: dict | None
+    kb_ingested: bool               # Whether task outcome was stored to KB
 
     # --- Delegation system (multi-agent, opt-in via use_delegation_graph) ---
     execution_plan: dict | None
@@ -507,6 +508,7 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "artifacts": [],
         "error": None,
         "evaluation": None,
+        "kb_ingested": False,
         # Delegation system (populated when use_delegation_graph is True)
         "execution_plan": None,
         "delegation_states": {},

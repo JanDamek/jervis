@@ -1,28 +1,52 @@
-"""Finalize node — generate final report.
+"""Finalize node — generate final report + KB outcome ingestion.
 
 Replaces the old `report` node with support for all task categories.
 Uses LLM to produce a human-readable Czech summary.
+
+After summary generation, significant tasks are ingested into KB
+for long-term memory (fire-and-forget, never blocks completion).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 
 from app.models import CodingTask, StepResult
 from app.graph.nodes._helpers import llm_with_cloud_fallback
+from app.kb.outcome_ingest import is_significant_task, extract_outcome, ingest_outcome_to_kb
 
 logger = logging.getLogger(__name__)
 
 
 async def finalize(state: dict) -> dict:
-    """Generate final report based on task category and results."""
+    """Generate final report based on task category and results.
+
+    Two phases:
+    1. Summary generation (existing) — Czech report for user
+    2. KB outcome ingestion (new) — structured knowledge for long-term memory
+    """
     task_category = state.get("task_category", "advice")
+
+    # --- Phase 1: Generate summary ---
 
     # ADVICE / respond: final_result already set by respond node
     if state.get("final_result"):
-        return {}
+        result = {}
+    else:
+        result = await _generate_summary_async(state, task_category)
 
+    # --- Phase 2: KB outcome ingestion (fire-and-forget) ---
+    # Merge state with result so is_significant_task sees final_result
+    merged_state = {**state, **result} if result else state
+    kb_ingested = await _try_kb_ingest(merged_state)
+    if kb_ingested:
+        result["kb_ingested"] = True
+
+    return result
+
+
+async def _generate_summary_async(state: dict, task_category: str) -> dict:
+    """Generate the Czech summary for the user (existing logic, extracted)."""
     task = CodingTask(**state["task"])
     step_results = [StepResult(**r) for r in state.get("step_results", [])]
     branch = state.get("branch")
@@ -138,3 +162,36 @@ async def finalize(state: dict) -> dict:
         "final_result": summary,
         "artifacts": list(set(artifacts)),
     }
+
+
+async def _try_kb_ingest(state: dict) -> bool:
+    """Attempt KB outcome ingestion. Never raises — all errors are logged.
+
+    Returns True if outcome was successfully ingested, False otherwise.
+    """
+    try:
+        if not is_significant_task(state):
+            return False
+
+        outcome = await extract_outcome(state)
+        if not outcome:
+            return False
+
+        task = CodingTask(**state["task"])
+        ingested = await ingest_outcome_to_kb(
+            task_id=task.id,
+            client_id=task.client_id,
+            project_id=task.project_id,
+            outcome=outcome,
+            task_query=task.query,
+        )
+        if ingested:
+            logger.info(
+                "KB_OUTCOME_INGESTED | task=%s | topics=%s",
+                task.id, outcome.get("topics", []),
+            )
+        return ingested
+
+    except Exception as e:
+        logger.warning("KB outcome ingestion failed (non-blocking): %s", e)
+        return False

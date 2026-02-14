@@ -12,9 +12,10 @@
 3. [Knowledge Base Implementation](#knowledge-base-implementation)
 4. [Continuous Indexers](#continuous-indexers)
 5. [RAG Integration](#rag-integration)
-6. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
-7. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
-8. [Knowledge Base Best Practices](#knowledge-base-best-practices)
+6. [Task Outcome Ingestion](#task-outcome-ingestion)
+7. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
+8. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
+9. [Knowledge Base Best Practices](#knowledge-base-best-practices)
 
 ---
 
@@ -603,6 +604,89 @@ BugTracker and Wiki items use provider-specific SourceUrn factories:
 | CONFLUENCE / other | — | `SourceUrn.confluence()` |
 
 This ensures correct source type display in the indexing queue UI (e.g., GitHub Issues connections show "GitHub" not "Jira").
+
+---
+
+## Task Outcome Ingestion
+
+### Overview
+
+When a task completes in the `finalize` node, the orchestrator automatically extracts structured knowledge from the completed task and ingests it into KB for long-term memory. This enables the agent to learn from past work and avoid solving the same problems repeatedly.
+
+### Two-Level Memory Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   MEMORY LAYERS                          │
+├────────────────────────┬────────────────────────────────┤
+│    Local Memory        │    Knowledge Base               │
+│    (Chat History)      │    (Long-term)                  │
+├────────────────────────┼────────────────────────────────┤
+│ • ChatMessageDocument  │ • Task outcomes                 │
+│ • ChatSummaryDocument  │ • Key decisions                 │
+│ • MongoDB              │ • Code patterns                 │
+│ • Temporary, cheap     │ • Lessons learned               │
+│ • Back-and-forth       │ • ArangoDB + Weaviate           │
+│ • ✅ Already exists     │ • Permanent, expensive          │
+│                        │ • ✅ Implemented                 │
+└────────────────────────┴────────────────────────────────┘
+```
+
+### Significance Filter
+
+Not all tasks are worth ingesting. The filter is deterministic (no LLM call):
+
+| Task Category | Task Action | Ingested? |
+|---------------|-------------|-----------|
+| `single_task` | `code`, `tracker_ops`, `mixed` | ✅ Yes |
+| `single_task` | `respond` (with step_results) | ✅ Yes |
+| `single_task` | `respond` (no steps) | ❌ No |
+| `epic` | any | ✅ Yes |
+| `generative` | any | ✅ Yes |
+| `advice` | any | ❌ No (simple Q&A) |
+| any | error present | ❌ No |
+| any | empty final_result | ❌ No |
+
+### Extraction Schema
+
+LLM extracts structured JSON from the completed task context:
+
+```json
+{
+  "outcome_summary": "2-3 sentences describing what was done",
+  "key_decisions": ["why solution X over Y"],
+  "patterns_used": ["exponential backoff", "circuit breaker"],
+  "artifacts": ["BackgroundEngine.kt", "OrchestratorCircuitBreaker.kt"],
+  "lessons_learned": ["non-retryable errors should not have backoff"],
+  "topics": ["workspace", "retry", "resilience"]
+}
+```
+
+### Ingest Details
+
+- **sourceUrn:** `task-outcome:{task_id}` — stable, re-runs overwrite previous entry
+- **kind:** `task_outcome`
+- **Priority:** `X-Ollama-Priority: 4` (background, non-urgent embedding)
+- **Endpoint:** KB write service (`jervis-knowledgebase-write:8080/api/v1/ingest`)
+- **Content:** Markdown document with sections: Summary, Key Decisions, Patterns, Artifacts, Lessons
+
+### Implementation Files
+
+- `backend/service-orchestrator/app/kb/outcome_ingest.py` — extraction + ingestion logic
+- `backend/service-orchestrator/app/graph/nodes/finalize.py` — integration point (Phase 2 after summary)
+
+### Data Flow
+
+```
+finalize()
+  ├── Phase 1: Generate Czech summary for user (existing)
+  │
+  └── Phase 2: KB outcome ingestion (fire-and-forget)
+        ├── is_significant_task() — deterministic filter
+        ├── extract_outcome() — LLM LOCAL_FAST → structured JSON
+        └── ingest_outcome_to_kb() — POST /api/v1/ingest
+              └── Never blocks, never fails the task
+```
 
 ---
 

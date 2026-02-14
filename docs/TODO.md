@@ -156,65 +156,347 @@ které budou implementovány jako separate tickety.
 
 ---
 
-### Dvouúrovňová paměťová architektura
+## Kubernetes Environment Viewer & MCP Integration
+
+### Environment Sidebar with K8s Namespace Inspection
 
 **Problém:**
-- Agent má jen **chat history** (krátkodobá paměť) - komprese starých zpráv do `ChatSummaryDocument`
-- **Chybí KB ingestion** dokončených tasků - dlouhodobá strukturovaná paměť
-- Když agent dokončí úkol, výsledek se neukládá do KB pro budoucí použití
+- Aktuálně neexistuje UI pro zobrazení Kubernetes prostředí (namespace) asociovaného s clientem/groupem/projektem
+- Uživatel nemá přehled o tom, co je v namespace nasazeno (configmaps, secrets, deployments, pods, services, atd.)
+- Chybí možnost správy prostředí (scaling deploymentů, zobrazení logů, tail logů)
+- Orchestrator a agenti nemají přístup k informacím o prostředí přes MCP (Model Context Protocol)
+- Nelze automaticky detekovat problémy v prostředí (crashing pod, nedostatek resources, chybějící config)
 
 **Architektura:**
 
-**1. Local Memory (Chat History)** - krátkodobá, dočasná
-- Průběžná konverzace (back-and-forth)
-- MongoDB `ChatMessageDocument` + `ChatSummaryDocument` (komprese)
-- **Levné**, rychlé, dočasné
-- ✅ **Již implementováno** (`ChatHistoryService`)
+**1. Environment Detection & Sidebar UI**
+- V MainScreen.kt přidat nový EnvironmentViewScreen do MainMenuItem enum
+- Sidebar zobrazuje environment pro aktuálně vybraný client/group/project:
+  - Hierarchické dědičnost: project-level → group-level → client-level
+  - Pokud existuje environment, zobrazit indikator (ikona) v selectors row
+  - Kliknutím otevřít EnvironmentViewScreen jako sidebar/panel
+- EnvironmentViewScreen zobrazuje:
+  - Namespace name a stav (RUNNING, ERROR, STOPPED)
+  - Seznam všech K8s resources ve namespace (přehledově)
+  - Pro každý resource typ: configmaps, secrets, deployments, statefulsets, pods, services, ingress, pvc, atd.
 
-**2. Knowledge Base** - dlouhodobá, strukturovaná
-- **Jen významné celky** co dávají smysl jako celek
-- Dokončené úkoly, implementace, rozhodnutí
-- Code patterns, best practices, lessons learned
-- ArangoDB graph + Weaviate embeddings
-- **Drahé** (embedding, graph), trvalé
-- ❌ **CHYBÍ ingestion dokončených tasků**
+**2. K8s Resource Inspection**
+- Backend RPC endpoint pro get namespace resources:
+  - `GET /api/environment/{envId}/resources` – vrátí seznam všech resources ve namespace
+  - Filter by resource type (pods, deployments, configmaps, secrets)
+  - Detail view pro každý resource (yaml/json)
+- UI komponenty:
+  - Expandable tree view pro resource typy
+  - Kliknutím na resource zobrazit detail (yaml viewer)
+  - Live status indicators (pod conditions, deployment replicas, atd.)
+  - Timestampy (created, last modified)
 
-**Kdy ukládat do KB:**
-- ✅ Task COMPLETED → extract outcomes, ingest to KB
-- ✅ Architektonické rozhodnutí přijato
-- ✅ Bug vyřešen (root cause + fix)
-- ✅ Feature implementován (design + code)
-- ❌ Nedokončená konverzace
-- ❌ Exploratorní dotazy ("co je X?")
-- ❌ Back-and-forth debugging (to je pro chat history)
+**3. Runtime Operations (Scaling, Logs, etc.)**
+- **Scaling:**
+  - Pro Deployments/StatefulSets: slider pro počet replic (min/max)
+  - Button "Apply Scaling" → volá backend API
+  - Backend: patch deployment replicas via K8s API
+- **Log Viewing:**
+  - Pro pody: "View Logs" button → otevře LogViewer dialog
+  - LogViewer: real-time tailing s možností:
+    - Follow mode (auto-scroll)
+    - Filter by container (multi-container pods)
+    - Filter by log level (INFO, WARN, ERROR)
+    - Search within logs
+    - Download logs as file
+  - Backend: K8s API `read_namespaced_pod_log()` s `tail_lines` a `follow` parametrem
+  - SSE stream pro live log tailing
+- **Other Operations:**
+  - Restart deployment (rollout restart)
+  - Exec into pod (terminal)
+  - Port-forward (tunnel to local)
+  - Delete resource (with confirmation)
 
-**Co extrahovat z dokončeného tasku:**
-1. **Outcome summary** - co bylo vyřešeno, jak
-2. **Key decisions** - proč zvoleno řešení X místo Y
-3. **Code patterns** - použité patterns, best practices
-4. **Artifacts** - changed files, PRs, commits
-5. **Related entities** - project, client, capabilities
-6. **Lessons learned** - co fungovalo, co ne
+**4. MCP Server Integration (Environment Tools)**
+- Vytvořit nový MCP server `jervis-environment` (Python) s těmito tools:
+  - `list_namespace_resources(namespace, resource_type=None)` – list all resources
+  - `get_resource_details(namespace, kind, name)` – get yaml/json
+  - `scale_deployment(namespace, name, replicas)` – scale deployment
+  - `get_pod_logs(namespace, pod_name, container=None, tail_lines=100, follow=False)` – stream logs
+  - `restart_deployment(namespace, name)` – trigger rollout restart
+  - `list_namespaces()` – list all namespaces accessible
+  - `get_namespace_status(namespace)` – overall health check
+- MCP server config:
+  - Spouští se jako sidecar alongside orchestrator (nebo jako standalone)
+  - Přistupuje ke K8s clusteru přes in-cluster config (service account)
+  - Omezení: pouze read-only pro secrets (ne expose values), write pro scaling/restart
+  - RBAC: ServiceAccount s permissions pro get/list/watch na resources, patch pro deployments
+- MCP config se předává agentům:
+  - Orchestrator přidá `jervis-environment` MCP server do workspace_manager.py pro všechny agenty
+  - Agent (OpenHands, Claude, Junie) má přístup k environment tools přes MCP
+  - CLAUDE.md includes environment tool descriptions
 
-**Implementace:**
-1. `OrchestratorStatusHandler` - když task → COMPLETED, trigger KB ingestion
-2. `TaskFinalizationService` - extract meaningful data z chat history
-3. LLM-based summarization - distill conversation → structured outcome
-4. `KnowledgeService.ingestTaskOutcome()` - ingest do KB
-5. Graph connections - task → project → client → capabilities
-6. Embeddings - outcome summary pro semantic search
+**5. Orchestrator Integration for Bug Detection**
+- Orchestrator může použít MCP environment tools pro diagnostic:
+  - Při chybě v tasku: "Check environment health" → volá MCP tools
+  - Automatická diagnostika:
+    1. `list_namespace_resources()` – zkontrolovat stav podů (CrashLoopBackOff, Pending)
+    2. `get_pod_logs()` – fetch recent logs z failing podů
+    3. `get_resource_details()` – zkontrolovat configmaps/secrets pro chybějící values
+    4. `get_namespace_status()` – overall health
+  - Výsledek diagnostiky vložit do kontextu pro coding agenta
+- Agent může pomocí MCP tools:
+  - Zjistit, že deployment má 0/3 replic → scale up
+  - Vidět chybějící env var v configmap → update configmap
+  - Detekovat CrashLoopBackOff → fetch logs, analyze, fix
+  - All without leaving the agent workspace
+
+**6. UI Navigation from Main Menu**
+- Přidat `ENVIRONMENT` do `MainMenuItem` enum v MainScreen.kt
+- `toScreen()` → `Screen.Environment` (nový screen)
+- EnvironmentViewScreen:
+  - Zobrazuje environment pro aktuální client/group/project
+  - Pokud žádný environment → zobrazit "No environment defined" + button "Create Environment" (přes EnvironmentService)
+  - Live refresh (poll every 30s nebo SSE)
+  - Actions menu pro každý resource
+- Screen registration v Navigation.kt
+
+**7. Backend APIs**
+- Nový `EnvironmentResourceController`:
+  - `GET /api/environment/{envId}/resources` – list resources
+  - `GET /api/environment/{envId}/resources/{kind}/{name}` – get details
+  - `PATCH /api/environment/{envId}/deployments/{name}/scale` – scale (body: {"replicas": N})
+  - `GET /api/environment/{envId}/pods/{podName}/logs` – stream logs (SSE)
+  - `POST /api/environment/{envId}/deployments/{name}/restart` – restart
+- Rozšířit `EnvironmentService` o metody pro K8s operations:
+  - `listResources(namespace, resourceType)` – using fabric8 K8s client
+  - `getResource(namespace, kind, name)` – get raw yaml/json
+  - `scaleDeployment(namespace, name, replicas)` – patch deployment
+  - `getPodLogs(namespace, podName, options)` – stream logs
+  - `restartDeployment(namespace, name)` – rollout restart
+- Implementovat K8s client v `EnvironmentK8sService` (doplnit TODO implementace)
+
+**8. K8s Client Implementation**
+- Použít fabric8 Kubernetes client (již používáno v WhisperJobRunner)
+- Config:
+  - In-cluster: `/var/run/secrets/kubernetes.io/serviceaccount/token`
+  - Out-of-cluster: kubeconfig (pro development)
+- RBAC ServiceAccount:
+  - Permissions: get/list/watch na all resources v namespace
+  - Patch na deployments/statefulsets (scale)
+  - Create/delete configmaps/secrets (optional, pro advanced ops)
+- Error handling: handle NotFound, Forbidden, Connection errors
 
 **Soubory:**
-- `backend/server/.../service/task/TaskFinalizationService.kt` - extract outcomes
-- `backend/server/.../service/agent/coordinator/OrchestratorStatusHandler.kt` - trigger ingestion
-- `backend/service-knowledgebase/app/api/routes.py` - POST `/ingest-task-outcome`
-- `backend/service-orchestrator/app/summarization/` - LLM summarization
+- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/screen/EnvironmentViewScreen.kt` – UI screen
+- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/components/K8sResourceTree.kt` – tree view component
+- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/components/LogViewerDialog.kt` – log viewer dialog
+- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/model/EnvironmentViewModel.kt` – viewmodel
+- `backend/server/src/main/kotlin/com/jervis/controller/EnvironmentResourceController.kt` – REST endpoints
+- `backend/server/src/main/kotlin/com/jervis/service/environment/EnvironmentK8sService.kt` – K8s operations (implement)
+- `backend/service-orchestrator/app/mcp/environment_server.py` – MCP server pro environment tools
+- `backend/service-orchestrator/app/agents/workspace_manager.py` – add jervis-environment MCP config
+- `docs/mcp-environment-tools.md` – MCP tool documentation pro agenty
 
-**Priorita:** High
-**Complexity:** Medium
+**Priorita:** High (pro debugging a operaci)
+**Complexity:** High
 **Status:** Planned
 
-**Poznámka:** Toto je kritické pro long-term agent memory. Agent si musí pamatovat co udělal, aby se z toho učil a neřešil stejné problémy znovu.
+**Poznámka:** Toto je komplexní feature zahrnující UI, backend API, K8s integration, a MCP. Vyžaduje pečlivý RBAC design a security (secrets nejsou expose-ovány).
+
+---
+
+## Orchestrator & Agent Flow
+
+### Non-blocking Coding Agent Invocation with Background Task Queue
+
+**Problém:**
+- Když orchestrator volá coding agenta (OpenHands, Claude, Junie) přes `JobRunner.run_coding_agent()`, volání je **blocking** – čeká na dokončení K8s Job
+- Během čekání je orchestrator thread **blokovaný** a nemůže zpracovávat další tasky
+- Semaphore (`_orchestration_semaphore`) je držen po celou dobu běhu coding agenta (až 30 minut)
+- To omezuje throughput: jen jeden coding agent najednou, i když by mohly běžet paralelně
+- Chybí mechanismus pro background processing s monitorováním stavu
+
+**Současné chování:**
+1. Orchestrator graph node (např. `execute.py`) volá `await job_runner.run_coding_agent()`
+2. `run_coding_agent()` wait na K8s Job completion (polling every 10s, timeout 600-1800s)
+3. Orchestrator thread blokovaný – semaphore držen – žádné další orchestration může běžet
+4. Po dokončení: vrátí result, thread pokračuje, semaphore uvolněn
+
+**Požadované chování (Non-blocking Async):**
+1. Orchestrator graph node volá `await job_runner.run_coding_agent_async()`
+2. `run_coding_agent_async()`:
+   - Vytvoří K8s Job
+   - Vrátí TaskDocument s `state = RUNNING` a `agentTaskId = jobName`
+   - **Okamžitě vrátí control** – nečeká na dokončení
+3. Orchestrator thread:
+   - Uloží `agentTaskId` do LangGraph state
+   - **Uvolní semaphore** – může zpracovávat další tasky
+   - Vrátí `interrupt()` nebo `pending` state – graph se checkpointne
+4. Background watcher (`AgentTaskWatcher`):
+   - Spuštěný jako independent background service (ne v orchestrator threadu)
+   - Periodicky polluje K8s Jobs s `agentTaskId` (nebo čeká na K8s events)
+   - Detekuje job completion (success/failure)
+   - Pro dokončený job:
+     - Načte job result (logs, exit code, artifacts)
+     - Najde odpovídající TaskDocument (podle agentTaskId)
+     - Aktualizuje TaskDocument state → COMPLETED/FAILED
+     - **Resume orchestration thread**:
+       - Najde LangGraph thread_id pro tento task (uložené v TaskDocument)
+       - Zavolá `resume_orchestration(thread_id, result)` – vrací control do graphu
+       - Graph pokračuje od místa kde byl interruptnut
+5. Multi-tasking:
+   - Více orchestration threadů může běžet současně (každý s vlastním semaphore)
+   - Každý může volat coding agenta async – všechny K8s Jobs běží paralelně
+   - Watcher monitoruje všechny jobs a resume-uje odpovídající threads
+6. Health monitoring (ping):
+   - Watcher periodicky kontroluje "živost" coding agent jobs (stuck, no progress)
+   - Pokud job přestane běžet nečekaně (pod deleted, crash), detekuje to
+   - Může triggerovat restart jobu nebo fail task s error message
+   - TaskDocument: přidat `agentHeartbeat` timestamp (update-ováno z jobu)
+   - Pokud `agentHeartbeat` starší než X minut → považovat za dead
+
+**Architektura:**
+
+**A. TaskDocument Extensions**
+```kotlin
+data class TaskDocument(
+    ...
+    val agentTaskId: String? = null,      // K8s job name (for async agent tasks)
+    val agentTaskState: String? = null,   // RUNNING, COMPLETED, FAILED
+    val agentHeartbeat: Instant? = null,  // Last heartbeat from agent
+    val agentResultJson: String? = null,  // Serialized result from agent
+)
+```
+
+**B. JobRunner Async API**
+- `run_coding_agent_async(task_id, agent_type, ...) -> AgentTaskDto`
+  - Vytvoří K8s Job s unique name (job-{task_id}-{uuid})
+  - Uloží job name do TaskDocument.agentTaskId
+  - Vrátí AgentTaskDto{jobName, namespace, status="RUNNING"}
+  - **Nepočká** na dokončení
+- `get_agent_task_status(agentTaskId) -> AgentTaskStatusDto`
+  - Poll K8s Job status (Complete/Failed/Running)
+  - Pro Running: vrátit progress (pod phase, restart count, atd.)
+- `cancel_agent_task(agentTaskId)` – delete K8s Job
+
+**C. AgentTaskWatcher Service**
+- Singleton service spuštěný při startupu orchestratoru
+- Background loop (every 10s):
+  1. Query: `TaskDocument.findByAgentTaskIdNotNullAndAgentTaskStateNotIn(COMPLETED, FAILED)`
+  2. Pro každý task s agentTaskId:
+     - Zavolat `job_runner.get_agent_task_status(agentTaskId)`
+     - Pokud dokončeno:
+       - Načíst job result (logs, exit code, artifacts)
+       - Update TaskDocument (state, resultJson, completedAt)
+       - Najít LangGraph thread_id (z TaskDocument.orchestratorThreadId)
+       - Zavolat `resume_orchestration_streaming(thread_id, result)` (fire-and-forget)
+     - Pokud still running: check heartbeat, detect stalls
+  3. Remove stale tasks (older than timeout)
+- Implementovat jako asyncio task v `main.py` (spustit při startupu)
+
+**D. Orchestrator Graph Changes**
+- Node `execute.py` (a `git_ops.py`, `epic.py`):
+  - Místo `result = await job_runner.run_coding_agent(...)`
+  - Použít `agentTask = await job_runner.run_coding_agent_async(...)`
+  - Uložit `agentTaskId` do state: `state["agent_task_id"] = agentTask.jobName`
+  - Vrátit `interrupt()` s `action="waiting_for_agent"` a `agent_task_id`
+  - LangGraph checkpointne state (včetně agent_task_id)
+- Nový node `wait_for_agent`:
+  - Když graph resumed z interruptu, zkontrolovat:
+    - Pokud agent task dokončeno → načíst result z TaskDocument, pokračovat
+    - Pokud still running → znovu `interrupt()` (wait again)
+  - Tento node běží vždy, když je `agent_task_id` present
+- Simplified flow:
+  ```
+  execute → interrupt(waiting_for_agent) → checkpoint
+  [background watcher monitored job, resumed when done]
+  wait_for_agent → [resumed] → get result from TaskDocument → continue
+  ```
+
+**E. Concurrency & Semaphore**
+- Aktuálně: `_orchestration_semaphore` limituje počet concurrent orchestrations (default 1)
+- S async agent tasks:
+  - Orchestrator thread **uvolní semaphore hned po dispatch** (ne po dokončení)
+  - To umožňuje více orchestrations běžet současně (každý v jiném threadu)
+  - Každý orchestration může mít svůj coding agent job běžící v background
+  - Semaphore stále chrání před oversubscription (max concurrent orchestrations)
+- Config: `MAX_CONCURRENT_ORCHESTRATIONS` (default 3-5)
+
+**F. TaskDocument State Machine**
+```
+NEW → RUNNING (orchestration started)
+    → PYTHON_ORCHESTRATING (dispatched to Python)
+    → [interrupted] WAITING_FOR_AGENT (coding agent running)
+    → [agent completed] COMPLETED/FAILED
+```
+- Stav `WAITING_FOR_AGENT` nový (nebo použít `USER_TASK` s flagem)
+- TaskDocument: `agentTaskId`, `agentTaskState`, `agentResultJson`
+
+**G. Health Monitoring & Recovery**
+- AgentTaskWatcher:
+  - Check `agentHeartbeat` (last log timestamp from agent)
+  - Pokud žádný heartbeat > 5 minut → považovat za stuck
+  - Stuck detection:
+    - Log "Agent heartbeat missing for X minutes" do ErrorLog
+    - Optionally: cancel K8s Job (if still running)
+    - TaskDocument.state = ERROR, errorMessage = "Agent heartbeat timeout"
+    - Resume orchestration s error → graph can handle failure
+- Job failure handling:
+  - K8s Job failed (exitCode != 0) → capture logs
+  - TaskDocument.state = FAILED, agentResultJson = {error, logs}
+  - Resume orchestration s error → graph can retry or fail task
+
+**H. Result Retrieval**
+- Když coding agent job dokončí:
+  - Job result uložen do K8s (configmap, PVC, nebo stdout logs)
+  - AgentTaskWatcher načte:
+    - Exit code
+    - Stdout/stderr logs (pro debugging)
+    - Artifacts (changed files, PR links, atd.)
+  - Serializuje do JSON a uloží do TaskDocument.agentResultJson
+- Při resume orchestration:
+  - Node `wait_for_agent` načte TaskDocument.agentResultJson
+  - Parsuje result a předá do graph state
+  - Graph pokračuje s result (success nebo error)
+
+**I. Error Handling & Retries**
+- Job creation failure:
+  - `run_coding_agent_async()` může fail (invalid image, quota exceeded)
+  - Vrátit error hned, orchestrator může retry s jiným agentem
+- Job runtime failure:
+  - Watcher detekuje failed job → TaskDocument.state = FAILED
+  - Resume orchestration s error → graph can decide:
+    - Retry with same agent (if transient)
+    - Switch agent type (if agent-specific issue)
+    - Fail task (if unrecoverable)
+- Orchestrator pod restart:
+  - TaskDocument.trvalé (MongoDB) – agentTaskId přežije restart
+  - AgentTaskWatcher po restartu načte všechny RUNNING agent tasks a pokračuje v monitorování
+  - LangGraph checkpointy v MongoDB – orchestration thread může být resumed
+
+**J. Implementation Steps**
+1. Extend TaskDocument (Kotlin) – add agentTaskId, agentTaskState, agentHeartbeat, agentResultJson
+2. JobRunner (Python) – add `run_coding_agent_async()`, `get_agent_task_status()`, `cancel_agent_task()`
+3. AgentTaskWatcher (Python) – new background service
+4. Orchestrator graph nodes – modify `execute.py`, `git_ops.py`, `epic.py` to use async dispatch + interrupt
+5. New node `wait_for_agent` – poll TaskDocument until agent task completes
+6. Update `resume_orchestration()` – handle agent task result injection
+7. Config – add `MAX_CONCURRENT_ORCHESTRATIONS`, agent heartbeat timeout
+8. Testing – simulate long-running agent jobs, verify concurrent orchestrations
+
+**Soubory:**
+- `backend/server/src/main/kotlin/com/jervis/entity/TaskDocument.kt` – add agent task fields
+- `backend/server/src/main/kotlin/com/jervis/dto/TaskDto.kt` – extend DTO
+- `backend/service-orchestrator/app/agents/job_runner.py` – add async methods
+- `backend/service-orchestrator/app/agent_task_watcher.py` – new watcher service
+- `backend/service-orchestrator/app/graph/nodes/execute.py` – async dispatch
+- `backend/service-orchestrator/app/graph/nodes/git_ops.py` – async dispatch
+- `backend/service-orchestrator/app/graph/nodes/epic.py` – async dispatch
+- `backend/service-orchestrator/app/graph/nodes/wait_for_agent.py` – new node
+- `backend/service-orchestrator/app/main.py` – start AgentTaskWatcher on startup
+- `backend/service-orchestrator/app/config.py` – add config options
+
+**Priorita:** High (pro scalability)
+**Complexity:** High
+**Status:** Planned
+
+**Poznámka:** Toto je kritické pro orchestrator scalability. Bez non-blocking agent invocation je orchestrator limitován na 1 úkol najednou. Tato změna umožní X koncurentních úkolů (configurabitelné) a výrazně zlepší throughput.
 
 ---
 
