@@ -5,6 +5,8 @@ Each coding task runs as an ephemeral K8s Job – no persistent Deployments.
 
 Supports both blocking (run_coding_agent) and non-blocking (create + check + read)
 modes. Non-blocking mode is used with AgentJobWatcher for interrupt-based execution.
+
+Phase 2: Uses AgentPool for configurable concurrent limits with priority queue.
 """
 
 from __future__ import annotations
@@ -34,14 +36,6 @@ AGENT_TIMEOUTS: dict[str, int] = {
     "openhands": settings.agent_timeout_openhands,
     "claude": settings.agent_timeout_claude,
     "junie": settings.agent_timeout_junie,
-}
-
-# Max concurrent jobs per agent type
-MAX_CONCURRENT: dict[str, int] = {
-    "aider": 3,
-    "openhands": 2,
-    "claude": 2,
-    "junie": 1,
 }
 
 
@@ -83,8 +77,14 @@ class JobRunner:
         workspace_path: str,
         allow_git: bool = False,
         instructions_override: str | None = None,
+        thread_id: str = "",
+        priority: int = 0,
     ) -> str:
         """Create K8s Job and return job_name. Does NOT wait for completion.
+
+        Uses AgentPool for concurrency control. If all slots for this agent type
+        are occupied, blocks (with priority ordering) until a slot is freed or
+        the pool wait timeout is reached.
 
         Args:
             task_id: Unique task identifier.
@@ -94,23 +94,24 @@ class JobRunner:
             workspace_path: Absolute path to workspace on shared PVC.
             allow_git: If True, agent may perform git operations.
             instructions_override: Override workspace instructions (for git delegation).
+            thread_id: LangGraph thread ID (for pool tracking).
+            priority: Task priority (0=foreground, 10=background).
 
         Returns:
             job_name: Name of the created K8s Job.
 
         Raises:
-            RuntimeError: If concurrent job limit exceeded for this agent type.
+            AgentPoolFullError: If no slot available within timeout.
         """
+        from app.agents.agent_pool import agent_pool, TaskPriority
+
         ns = settings.k8s_namespace
 
-        # Check concurrent limit
-        running = self.count_running_jobs(agent_type)
-        max_concurrent = MAX_CONCURRENT.get(agent_type, 1)
-        if running >= max_concurrent:
-            raise RuntimeError(
-                f"Agent {agent_type} has {running}/{max_concurrent} running jobs. "
-                f"Wait or increase limit."
-            )
+        # Acquire pool slot (blocks if full, with priority ordering)
+        await agent_pool.acquire(
+            agent_type=agent_type,
+            priority=TaskPriority(priority),
+        )
 
         # Write override instructions if provided
         if instructions_override:
@@ -132,6 +133,16 @@ class JobRunner:
 
         logger.info("Creating K8s Job: %s (agent=%s, task=%s)", job_name, agent_type, task_id)
         self.batch_v1.create_namespaced_job(namespace=ns, body=job)
+
+        # Track job in pool for stuck detection and metrics
+        timeout = AGENT_TIMEOUTS.get(agent_type, 1800)
+        agent_pool.mark_started(
+            job_name=job_name,
+            agent_type=agent_type,
+            task_id=task_id,
+            thread_id=thread_id,
+            timeout_seconds=timeout,
+        )
 
         return job_name
 
@@ -236,7 +247,15 @@ class JobRunner:
         return self.read_job_result(task_id, workspace_path, job_name)
 
     def count_running_jobs(self, agent_type: str) -> int:
-        """Count active Jobs for an agent type."""
+        """Count active Jobs for an agent type.
+
+        Uses in-memory pool count (fast). Falls back to K8s API for verification.
+        """
+        from app.agents.agent_pool import agent_pool
+        return agent_pool.active_count(agent_type)
+
+    def count_running_jobs_k8s(self, agent_type: str) -> int:
+        """Count active Jobs via K8s API (slower, for verification/recovery)."""
         ns = settings.k8s_namespace
         jobs = self.batch_v1.list_namespaced_job(
             namespace=ns,

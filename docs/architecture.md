@@ -1332,15 +1332,45 @@ Kotlin OrchestratorStatusHandler
 - Heartbeats via `report_progress()` keep BackgroundEngine from marking task as dead
 - `GET /status/{thread_id}` reports agent_wait as "running" (not "interrupted")
 
+**Phase 2: Agent Pool & Queue**
+
+```
+AgentPool (in-memory singleton)
+  ├─ Per-type limits: aider=3, openhands=2, claude=2, junie=1 (configurable via env)
+  ├─ Priority queue: FOREGROUND(0) > BACKGROUND(10) via asyncio.Event waiters
+  ├─ Slot tracking: acquire() blocks with priority, release() wakes highest-priority waiter
+  ├─ Stuck detection: get_stuck_jobs() finds jobs > timeout × multiplier
+  └─ Metrics: Prometheus gauges/histograms/counters
+
+AgentJobWatcher (Phase 2)
+  ├─ On job complete: agent_pool.mark_completed() + agent_pool.release()
+  ├─ Stuck watchdog: _check_stuck_jobs() → delete K8s Job + resume graph with error
+  ├─ MongoDB persistence: watched_jobs collection (upsert on register, delete on complete)
+  └─ Recovery: recover() on startup → re-register running jobs, resume completed/lost
+
+Prometheus Metrics (exposed via /metrics):
+  ├─ jervis_agent_slots_active{agent_type} — active slot count
+  ├─ jervis_agent_slots_limit{agent_type} — configured limit
+  ├─ jervis_agent_queue_depth{agent_type} — waiting tasks
+  ├─ jervis_agent_job_duration_seconds{agent_type,status} — histogram
+  ├─ jervis_agent_jobs_total{agent_type} — created count
+  ├─ jervis_agent_jobs_completed_total{agent_type,status} — completed count
+  ├─ jervis_agent_stuck_detected_total{agent_type} — stuck cleanups
+  └─ jervis_agent_queue_wait_seconds{agent_type} — queue wait time
+```
+
 **Key Files:**
 
 | File | Purpose |
 |------|---------|
-| `backend/service-orchestrator/app/agents/agent_job_watcher.py` | Background watcher (singleton) |
-| `backend/service-orchestrator/app/agents/job_runner.py` | Split API: create + check + read |
+| `backend/service-orchestrator/app/agents/agent_pool.py` | AgentPool: limits, priority queue, metrics, stuck detection |
+| `backend/service-orchestrator/app/agents/agent_job_watcher.py` | Background watcher + recovery + pool integration |
+| `backend/service-orchestrator/app/agents/job_runner.py` | Uses pool acquire/release, split API: create + check + read |
 | `backend/service-orchestrator/app/graph/nodes/execute.py` | Non-blocking agent dispatch via interrupt() |
 | `backend/service-orchestrator/app/graph/nodes/git_ops.py` | Non-blocking git delegation via interrupt() |
-| `backend/service-orchestrator/app/main.py` | Watcher lifecycle + job registration on interrupt |
+| `backend/service-orchestrator/app/main.py` | Watcher lifecycle + recovery + /metrics endpoint |
+| `backend/service-orchestrator/app/config.py` | max_concurrent_*, pool_wait_timeout, stuck multiplier |
+| `k8s/orchestrator-servicemonitor.yaml` | Prometheus ServiceMonitor for auto-scraping |
 | `backend/server/.../coordinator/OrchestratorStatusHandler.kt` | agent_wait action handler |
 
 ---

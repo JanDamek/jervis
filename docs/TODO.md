@@ -34,16 +34,14 @@ které budou implementovány jako separate tickety.
 
 **Phase 1:** ✅ DONE — job_runner split (create + check + read), interrupt()-based execution in execute.py and git_ops.py, AgentJobWatcher background service, Kotlin agent_wait handling.
 
-**Zbývá (Phase 2):**
-- Agent pool s konfigurovatelným limitem (MAX_CONCURRENT_PER_TYPE)
-- Priority queue pro agent tasks (foreground > background)
-- K8s Job timeout watchdog (stuck detection)
-- Pod restart recovery — re-scan MongoDB checkpoints for paused agent_wait tasks
-- Metrics: agent utilization, job duration, queue depth (Prometheus)
+✅ **DONE (Phase 2)** — Agent pool with configurable per-type limits (`max_concurrent_aider/openhands/claude/junie` via env vars). Priority queue using `asyncio.Event` with foreground > background ordering. K8s Job timeout watchdog (stuck detection at `N × timeout`, auto-cleanup). Pod restart recovery via MongoDB persistence (`jervis_agent_watcher.watched_jobs` collection). Prometheus metrics: `jervis_agent_slots_active`, `jervis_agent_job_duration_seconds`, `jervis_agent_queue_depth`, `jervis_agent_jobs_total`, `jervis_agent_stuck_detected_total`, `jervis_agent_queue_wait_seconds`. ServiceMonitor + `/metrics` endpoint.
 
-**Priorita:** Medium
-**Complexity:** Medium
-**Status:** Planned (Phase 2)
+**Key files:**
+- `app/agents/agent_pool.py` — `AgentPool` with limits, priority queue, metrics, stuck detection
+- `app/agents/agent_job_watcher.py` — pool integration, recovery, stuck watchdog, MongoDB persistence
+- `app/agents/job_runner.py` — uses pool acquire/release instead of K8s API counting
+- `app/config.py` — `max_concurrent_*`, `pool_wait_timeout`, `stuck_job_timeout_multiplier`
+- `k8s/orchestrator-servicemonitor.yaml` — Prometheus auto-scraping
 
 ---
 

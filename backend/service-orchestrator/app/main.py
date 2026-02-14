@@ -79,7 +79,7 @@ class _HealthCheckAccessFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        if "GET /health " in msg:
+        if "GET /health " in msg or "GET /metrics " in msg:
             return False
         return True
 
@@ -111,6 +111,9 @@ async def lifespan(app: FastAPI):
     # Start AgentJobWatcher (polls K8s Jobs, resumes paused graphs)
     await agent_job_watcher.start()
     logger.info("AgentJobWatcher ready (non-blocking agent execution)")
+    # Recover agent_wait tasks from MongoDB (pod restart recovery)
+    await agent_job_watcher.recover()
+    logger.info("AgentJobWatcher recovery complete")
     # Initialize multi-agent delegation system (opt-in)
     if settings.use_delegation_graph:
         logger.info("Initializing multi-agent delegation system...")
@@ -242,11 +245,25 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    from app.agents.agent_pool import agent_pool
     return {
         "status": "ok",
         "service": "orchestrator",
         "busy": _orchestration_semaphore.locked(),
+        "agent_pool": agent_pool.status_summary(),
+        "watched_jobs": agent_job_watcher.watched_count,
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from starlette.responses import Response
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 @app.get("/status/{thread_id}")

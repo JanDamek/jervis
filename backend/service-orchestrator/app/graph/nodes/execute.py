@@ -152,6 +152,7 @@ async def _execute_code_step(
         client_id=task.client_id,
         project_id=task.project_id,
         workspace_path=workspace_full,
+        thread_id=state.get("_thread_id", ""),
     )
 
     logger.info(

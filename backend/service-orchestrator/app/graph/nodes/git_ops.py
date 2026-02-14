@@ -90,6 +90,7 @@ async def git_operations(state: dict) -> dict:
         workspace_path=workspace_path,
         allow_git=True,
         instructions_override=commit_instructions,
+        thread_id=state.get("_thread_id", ""),
     )
 
     logger.info("Git commit Job created: %s — pausing graph", commit_job_name)
@@ -135,6 +136,7 @@ async def git_operations(state: dict) -> dict:
             workspace_path=workspace_path,
             allow_git=True,
             instructions_override=push_instructions,
+            thread_id=state.get("_thread_id", ""),
         )
 
         logger.info("Git push Job created: %s — pausing graph", push_job_name)

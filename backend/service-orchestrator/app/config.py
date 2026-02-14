@@ -83,6 +83,20 @@ class Settings(BaseSettings):
     agent_timeout_claude: int = 1800
     agent_timeout_junie: int = 1200
 
+    # Agent pool — configurable concurrent limits per type
+    max_concurrent_aider: int = int(os.getenv("MAX_CONCURRENT_AIDER", "3"))
+    max_concurrent_openhands: int = int(os.getenv("MAX_CONCURRENT_OPENHANDS", "2"))
+    max_concurrent_claude: int = int(os.getenv("MAX_CONCURRENT_CLAUDE", "2"))
+    max_concurrent_junie: int = int(os.getenv("MAX_CONCURRENT_JUNIE", "1"))
+
+    # Pool wait timeout (seconds) — how long to wait for a free slot before error
+    pool_wait_timeout: float = float(os.getenv("POOL_WAIT_TIMEOUT", "120"))
+
+    # Stuck job detection — job is stuck if age > timeout * multiplier
+    stuck_job_timeout_multiplier: float = float(
+        os.getenv("STUCK_JOB_TIMEOUT_MULTIPLIER", "1.5")
+    )
+
     # Job cleanup
     job_ttl_seconds: int = 300
 
