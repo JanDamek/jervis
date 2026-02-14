@@ -2,7 +2,7 @@
 
 > Kompletní referenční dokument pro Python orchestrátor a jeho integraci s Kotlin serverem.
 > Základ pro analýzu, rozšiřování a debugging celé orchestrační vrstvy.
-> **Automaticky aktualizováno:** 2026-02-13
+> **Automaticky aktualizováno:** 2026-02-14
 
 ---
 
@@ -631,6 +631,11 @@ class OrchestratorState(TypedDict, total=False):
 
 **LLM system prompt**: "You are Jervis, an AI assistant... Use Czech language."
 
+**Agentic tool-use loop** (max 8 iterations): LLM call → tool calls → execute → repeat.
+Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_scheduled_task`, + KB stats, git, filesystem, terminal tools.
+
+**ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
+
 **Output**: `final_result` — odpověď v češtině
 
 ### 7.4 plan
@@ -1051,6 +1056,7 @@ interrupt({
 | Node | Action | Kdy |
 |------|--------|-----|
 | `intake` | `clarify` | Goal is unclear → mandatory clarification |
+| `respond` | `clarify` | Agent needs user input (via `ask_user` tool) |
 | `git_operations` | `commit` | Before commit (if `require_approval_commit`) |
 | `git_operations` | `push` | Before push (if `require_approval_push && auto_push`) |
 | `_helpers.py` | `cloud_model` | Local LLM failed, cloud not auto-enabled |

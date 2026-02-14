@@ -324,6 +324,30 @@ TOOL_STORE_KNOWLEDGE: dict = {
     },
 }
 
+TOOL_ASK_USER: dict = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": (
+            "Ask the user a clarification question when you need more information "
+            "to complete the task. Use this when the query is ambiguous, you need "
+            "a preference choice, or missing critical details. The execution will "
+            "pause until the user responds. Use sparingly — only when you truly "
+            "cannot proceed without user input."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question to ask the user. Be specific and concise.",
+                },
+            },
+            "required": ["question"],
+        },
+    },
+}
+
 TOOL_CREATE_SCHEDULED_TASK: dict = {
     "type": "function",
     "function": {
@@ -366,6 +390,7 @@ ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
     TOOL_STORE_KNOWLEDGE,
+    TOOL_ASK_USER,
     TOOL_CREATE_SCHEDULED_TASK,
     TOOL_GET_INDEXED_ITEMS,
     TOOL_GET_KB_STATS,

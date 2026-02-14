@@ -9,10 +9,12 @@ from __future__ import annotations
 import json
 import logging
 
+from langgraph.types import interrupt
+
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
-from app.tools.executor import execute_tool
+from app.tools.executor import execute_tool, AskUserInterrupt
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,12 @@ async def respond(state: dict) -> dict:
                 "• Pokud dotaz obsahuje VÍCE než jednu samostatnou část → řeš každou ZVLÁŠŤ\n"
                 "• Příklad: 'X je Y, když najdeš Z tak...' = 2 úkoly (ulož X, vytvoř task pro Z)\n"
                 "• Na konci SHRŇ všechny provedené akce pro každou část dotazu\n\n"
+                "PRAVIDLA PRO DOTAZY NA UŽIVATELE:\n"
+                "• Pokud je dotaz nejednoznačný nebo ti chybí kritická informace → použij ask_user\n"
+                "• Příklady: 'Který modul myslíte?', 'Preferujete řešení A nebo B?'\n"
+                "• NIKDY nehádej — pokud si nejsi jistý, ZEPTEJ SE\n"
+                "• Používej ask_user střídmě — jen když OPRAVDU nemůžeš pokračovat bez odpovědi\n"
+                "• Po odpovědi uživatele pokračuj v řešení úkolu\n\n"
                 "PRAVIDLA PRO FINÁLNÍ ODPOVĚĎ (CRITICAL!):\n"
                 "• Po dokončení VŠECH požadovaných úkolů → IHNED dej finální odpověď (message.content)\n"
                 "• NIKDY nevolej další nástroje jen pro ověření — výsledky nástrojů VĚŘÍ a jsou finální\n"
@@ -251,13 +259,34 @@ async def respond(state: dict) -> dict:
 
             logger.info("Respond: calling tool %s with args: %s", tool_name, arguments)
 
-            # Execute tool (never raises)
-            result = await execute_tool(
-                tool_name=tool_name,
-                arguments=arguments,
-                client_id=client_id,
-                project_id=project_id,
-            )
+            # Execute tool — may raise AskUserInterrupt for ask_user tool
+            try:
+                result = await execute_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    client_id=client_id,
+                    project_id=project_id,
+                )
+            except AskUserInterrupt as e:
+                # Agent needs user input — interrupt graph execution
+                logger.info("ASK_USER: tool requested user input: %s", e.question)
+
+                # interrupt() pauses graph, saves checkpoint, returns when resumed
+                user_response = interrupt({
+                    "type": "clarification_request",
+                    "action": "clarify",
+                    "description": e.question,
+                })
+
+                # After resume: user_response is the resume_value from Kotlin
+                # Format: {"approved": true, "reason": "user's answer text"}
+                if isinstance(user_response, dict):
+                    answer = user_response.get("reason", str(user_response))
+                else:
+                    answer = str(user_response)
+
+                logger.info("ASK_USER: user responded (%d chars)", len(answer))
+                result = f"User answered: {answer}"
 
             logger.info("Respond: tool %s returned %d chars", tool_name, len(result))
             logger.debug("Respond: tool %s full result: %s", tool_name, result)

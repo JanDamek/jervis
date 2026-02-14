@@ -23,6 +23,18 @@ _TIMEOUT_WEB_SEARCH = 15.0  # seconds
 _TIMEOUT_KB_SEARCH = 10.0   # seconds
 
 
+class AskUserInterrupt(Exception):
+    """Raised by ask_user tool to signal that respond node should interrupt.
+
+    This is NOT an error — it's a control flow mechanism. The respond node
+    catches this, calls langgraph interrupt(), and resumes when the user answers.
+    """
+
+    def __init__(self, question: str):
+        self.question = question
+        super().__init__(question)
+
+
 async def execute_tool(
     tool_name: str,
     arguments: dict,
@@ -44,6 +56,16 @@ async def execute_tool(
         "execute_tool START: tool=%s, args=%s, client_id=%s, project_id=%s",
         tool_name, arguments, client_id, project_id
     )
+
+    # ask_user is special — it raises AskUserInterrupt (not caught here).
+    # The respond node catches it to trigger langgraph interrupt().
+    if tool_name == "ask_user":
+        question = arguments.get("question", "").strip()
+        if not question:
+            return "Error: Question cannot be empty."
+        logger.info("ASK_USER: raising interrupt for question: %s", question)
+        raise AskUserInterrupt(question)
+
     try:
         result = None
         if tool_name == "web_search":
