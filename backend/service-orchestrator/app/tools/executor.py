@@ -393,12 +393,13 @@ async def _execute_store_knowledge(
     except Exception as e:
         return f"Error: KB write failed: {str(e)[:200]}"
 
-    # Success response
+    # Success response — tell agent to give final response now
     chunk_count = data.get("chunk_count", 0)
     return (
-        f"✓ Knowledge stored successfully!\n"
+        f"✓ Knowledge stored successfully in KB!\n"
         f"Subject: {subject}\n"
         f"Category: {category}\n"
+        f"Now give your FINAL RESPONSE to the user confirming what you learned.\n"
         f"Chunks created: {chunk_count}\n"
         f"This information is now available for future queries."
     )

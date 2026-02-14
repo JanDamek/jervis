@@ -16,7 +16,7 @@ from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 5
+_MAX_TOOL_ITERATIONS = 8  # Increased from 5 to give agent more room for complex queries
 
 
 async def respond(state: dict) -> dict:
@@ -115,7 +115,9 @@ async def respond(state: dict) -> dict:
                 "• Když ti uživatel řekne NOVOU informaci → VŽDY ji ulož pomocí store_knowledge\n"
                 "• Vzory učení: 'X je Y', 'X znamená Y', 'zapamatuj si', 'pro příště', 'to je'\n"
                 "• Příklady: 'BMS je Brokerage Management System', 'projekt používá Python 3.11'\n"
-                "• Po uložení POTVRĎ co jsi se naučil a řekni že to bude dostupné pro budoucí dotazy\n"
+                "• Po ÚSPĚŠNÉM uložení (✓ Knowledge stored) → IHNED dej finální odpověď\n"
+                "• POTVRĎ co jsi se naučil a řekni že to bude dostupné pro budoucí dotazy\n"
+                "• NIKDY nevoláš další tools po store_knowledge — jenom odpověz uživateli\n"
                 "• NIKDY neříkej jen 'ok' — vždy AKTIVNĚ ulož nové informace do KB\n\n"
                 "Odpovídej česky. Buď konkrétní a faktický."
             ),
