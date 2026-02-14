@@ -83,6 +83,11 @@ COPY backend/service-joern-mcp/requirements.txt /opt/jervis/mcp/joern-requiremen
 RUN pip install --no-cache-dir -r /opt/jervis/mcp/joern-requirements.txt
 COPY backend/service-joern-mcp/server.py /opt/jervis/mcp/joern-server.py
 
+# Environment MCP server (stdio subprocess – calls Kotlin server internal API)
+COPY backend/service-environment-mcp/requirements.txt /opt/jervis/mcp/env-requirements.txt
+RUN pip install --no-cache-dir -r /opt/jervis/mcp/env-requirements.txt
+COPY backend/service-environment-mcp/server.py /opt/jervis/mcp/environment-server.py
+
 # === Application JAR ===
 WORKDIR /opt/jervis/claude
 COPY backend/service-claude/build/libs/service-claude-*.jar jervis-claude.jar

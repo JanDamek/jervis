@@ -1188,6 +1188,69 @@ When a coding task is dispatched to the Python orchestrator:
 | `backend/server/.../mapper/EnvironmentMapper.kt` | Document ↔ DTO + toAgentContextJson() |
 | `shared/common-dto/.../dto/environment/EnvironmentDtos.kt` | Cross-platform DTOs |
 
+### Environment MCP Integration (Runtime K8s Access for Agents)
+
+Coding agents (Claude, OpenHands, Junie) can inspect and manage the K8s environment
+associated with their project via the `jervis-environment` MCP server.
+
+**Architecture:**
+
+```
+Agent (Claude Code)
+  └─ MCP stdio: jervis-environment (Python, service-environment-mcp/server.py)
+       └─ httpx → Kotlin server :5500/internal/environment/{ns}/*
+            └─ EnvironmentResourceService → fabric8 K8s client → K8s API
+```
+
+**MCP server runs as stdio subprocess** within the agent's Docker container (same pattern as `jervis-kb`).
+The MCP server does NOT talk to K8s directly — it calls Kotlin backend internal REST endpoints,
+keeping K8s credentials and ServiceAccount tokens server-side.
+
+**MCP Tools:**
+
+| Tool | Purpose |
+|------|---------|
+| `list_namespace_resources(resource_type)` | List pods/deployments/services/secrets in namespace |
+| `get_pod_logs(pod_name, tail_lines)` | Read recent pod logs (max 1000 lines) |
+| `get_deployment_status(name)` | Deployment health, conditions, recent events |
+| `scale_deployment(name, replicas)` | Scale deployment up/down (0-10 replicas) |
+| `restart_deployment(name)` | Trigger rolling restart |
+| `get_namespace_status()` | Overall namespace health (pod counts, crashing pods) |
+
+**Internal REST Endpoints (KtorRpcServer):**
+
+```
+GET  /internal/environment/{ns}/resources?type=pods|deployments|services|all
+GET  /internal/environment/{ns}/pods/{name}/logs?tail=100
+GET  /internal/environment/{ns}/deployments/{name}
+POST /internal/environment/{ns}/deployments/{name}/scale  → {"replicas": N}
+POST /internal/environment/{ns}/deployments/{name}/restart
+GET  /internal/environment/{ns}/status
+```
+
+**Security:**
+- All endpoints validate namespace has `managed-by=jervis-server` label (prevents access to non-Jervis namespaces)
+- Secrets: only names returned, NEVER values
+- Replica scaling capped at 0-10
+- ClusterRole `jervis-server-environment-role` grants cross-namespace K8s access
+
+**Workspace Integration:**
+- `workspace_manager.py` adds `jervis-environment` to `.claude/mcp.json` when environment has a namespace
+- `CLAUDE.md` includes environment tool descriptions
+- Agent receives `NAMESPACE` and `SERVER_URL` env vars via MCP config
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `backend/service-environment-mcp/server.py` | Python MCP server (6 tools, httpx → Kotlin) |
+| `backend/server/.../environment/EnvironmentResourceService.kt` | K8s resource inspection via fabric8 |
+| `backend/server/.../environment/EnvironmentK8sService.kt` | Namespace/deployment/service lifecycle |
+| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints for MCP |
+| `backend/service-orchestrator/app/agents/workspace_manager.py` | MCP config injection |
+| `backend/service-claude/Dockerfile` | Environment MCP server bundled in agent image |
+| `k8s/app_server.yaml` | ClusterRole for cross-namespace access |
+
 ---
 
 ## Project Groups

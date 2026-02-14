@@ -44,8 +44,6 @@ data class ProjectDocument(
     val resourceLinks: List<ResourceLink> = emptyList(),
     /** JERVIS internal project for orchestrator planning. Max 1 per client. */
     val isJervisInternal: Boolean = false,
-    /** Local workspace path where git repository is cloned. Null if not cloned yet. */
-    val workspacePath: String? = null,
     /** Workspace clone/readiness status. Null if no git connection. */
     val workspaceStatus: WorkspaceStatus? = null,
     /** Last time workspace status was checked. */

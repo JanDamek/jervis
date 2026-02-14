@@ -41,148 +41,23 @@ které budou implementovány jako separate tickety.
 
 ---
 
-## Kubernetes Environment Viewer & MCP Integration
+## Environment Viewer UI (Phase 2)
 
-### Environment Sidebar with K8s Namespace Inspection
+### Standalone UI Screen for K8s Environment Inspection
 
-**Problém:**
-- Aktuálně neexistuje UI pro zobrazení Kubernetes prostředí (namespace) asociovaného s clientem/groupem/projektem
-- Uživatel nemá přehled o tom, co je v namespace nasazeno (configmaps, secrets, deployments, pods, services, atd.)
-- Chybí možnost správy prostředí (scaling deploymentů, zobrazení logů, tail logů)
-- Orchestrator a agenti nemají přístup k informacím o prostředí přes MCP (Model Context Protocol)
-- Nelze automaticky detekovat problémy v prostředí (crashing pod, nedostatek resources, chybějící config)
+**Prerequisite:** Phase 1 (backend + MCP) ✅ DONE — fabric8 K8s methods, EnvironmentResourceService, internal REST endpoints, MCP server, workspace manager integration, RBAC.
 
-**Architektura:**
+**Zbývá:**
+- EnvironmentViewScreen v MainScreen.kt (sidebar s resource tree)
+- K8sResourceTree component (expandable tree view pro pods/deployments/services)
+- LogViewerDialog (real-time log tailing s SSE stream)
+- YAML detail viewer (raw resource yaml/json)
+- EnvironmentViewModel (kRPC calls to server)
+- RPC endpoints pro UI (extend EnvironmentService → EnvironmentResourceService bridge)
 
-**1. Environment Detection & Sidebar UI**
-- V MainScreen.kt přidat nový EnvironmentViewScreen do MainMenuItem enum
-- Sidebar zobrazuje environment pro aktuálně vybraný client/group/project:
-  - Hierarchické dědičnost: project-level → group-level → client-level
-  - Pokud existuje environment, zobrazit indikator (ikona) v selectors row
-  - Kliknutím otevřít EnvironmentViewScreen jako sidebar/panel
-- EnvironmentViewScreen zobrazuje:
-  - Namespace name a stav (RUNNING, ERROR, STOPPED)
-  - Seznam všech K8s resources ve namespace (přehledově)
-  - Pro každý resource typ: configmaps, secrets, deployments, statefulsets, pods, services, ingress, pvc, atd.
-
-**2. K8s Resource Inspection**
-- Backend RPC endpoint pro get namespace resources:
-  - `GET /api/environment/{envId}/resources` – vrátí seznam všech resources ve namespace
-  - Filter by resource type (pods, deployments, configmaps, secrets)
-  - Detail view pro každý resource (yaml/json)
-- UI komponenty:
-  - Expandable tree view pro resource typy
-  - Kliknutím na resource zobrazit detail (yaml viewer)
-  - Live status indicators (pod conditions, deployment replicas, atd.)
-  - Timestampy (created, last modified)
-
-**3. Runtime Operations (Scaling, Logs, etc.)**
-- **Scaling:**
-  - Pro Deployments/StatefulSets: slider pro počet replic (min/max)
-  - Button "Apply Scaling" → volá backend API
-  - Backend: patch deployment replicas via K8s API
-- **Log Viewing:**
-  - Pro pody: "View Logs" button → otevře LogViewer dialog
-  - LogViewer: real-time tailing s možností:
-    - Follow mode (auto-scroll)
-    - Filter by container (multi-container pods)
-    - Filter by log level (INFO, WARN, ERROR)
-    - Search within logs
-    - Download logs as file
-  - Backend: K8s API `read_namespaced_pod_log()` s `tail_lines` a `follow` parametrem
-  - SSE stream pro live log tailing
-- **Other Operations:**
-  - Restart deployment (rollout restart)
-  - Exec into pod (terminal)
-  - Port-forward (tunnel to local)
-  - Delete resource (with confirmation)
-
-**4. MCP Server Integration (Environment Tools)**
-- Vytvořit nový MCP server `jervis-environment` (Python) s těmito tools:
-  - `list_namespace_resources(namespace, resource_type=None)` – list all resources
-  - `get_resource_details(namespace, kind, name)` – get yaml/json
-  - `scale_deployment(namespace, name, replicas)` – scale deployment
-  - `get_pod_logs(namespace, pod_name, container=None, tail_lines=100, follow=False)` – stream logs
-  - `restart_deployment(namespace, name)` – trigger rollout restart
-  - `list_namespaces()` – list all namespaces accessible
-  - `get_namespace_status(namespace)` – overall health check
-- MCP server config:
-  - Spouští se jako sidecar alongside orchestrator (nebo jako standalone)
-  - Přistupuje ke K8s clusteru přes in-cluster config (service account)
-  - Omezení: pouze read-only pro secrets (ne expose values), write pro scaling/restart
-  - RBAC: ServiceAccount s permissions pro get/list/watch na resources, patch pro deployments
-- MCP config se předává agentům:
-  - Orchestrator přidá `jervis-environment` MCP server do workspace_manager.py pro všechny agenty
-  - Agent (OpenHands, Claude, Junie) má přístup k environment tools přes MCP
-  - CLAUDE.md includes environment tool descriptions
-
-**5. Orchestrator Integration for Bug Detection**
-- Orchestrator může použít MCP environment tools pro diagnostic:
-  - Při chybě v tasku: "Check environment health" → volá MCP tools
-  - Automatická diagnostika:
-    1. `list_namespace_resources()` – zkontrolovat stav podů (CrashLoopBackOff, Pending)
-    2. `get_pod_logs()` – fetch recent logs z failing podů
-    3. `get_resource_details()` – zkontrolovat configmaps/secrets pro chybějící values
-    4. `get_namespace_status()` – overall health
-  - Výsledek diagnostiky vložit do kontextu pro coding agenta
-- Agent může pomocí MCP tools:
-  - Zjistit, že deployment má 0/3 replic → scale up
-  - Vidět chybějící env var v configmap → update configmap
-  - Detekovat CrashLoopBackOff → fetch logs, analyze, fix
-  - All without leaving the agent workspace
-
-**6. UI Navigation from Main Menu**
-- Přidat `ENVIRONMENT` do `MainMenuItem` enum v MainScreen.kt
-- `toScreen()` → `Screen.Environment` (nový screen)
-- EnvironmentViewScreen:
-  - Zobrazuje environment pro aktuální client/group/project
-  - Pokud žádný environment → zobrazit "No environment defined" + button "Create Environment" (přes EnvironmentService)
-  - Live refresh (poll every 30s nebo SSE)
-  - Actions menu pro každý resource
-- Screen registration v Navigation.kt
-
-**7. Backend APIs**
-- Nový `EnvironmentResourceController`:
-  - `GET /api/environment/{envId}/resources` – list resources
-  - `GET /api/environment/{envId}/resources/{kind}/{name}` – get details
-  - `PATCH /api/environment/{envId}/deployments/{name}/scale` – scale (body: {"replicas": N})
-  - `GET /api/environment/{envId}/pods/{podName}/logs` – stream logs (SSE)
-  - `POST /api/environment/{envId}/deployments/{name}/restart` – restart
-- Rozšířit `EnvironmentService` o metody pro K8s operations:
-  - `listResources(namespace, resourceType)` – using fabric8 K8s client
-  - `getResource(namespace, kind, name)` – get raw yaml/json
-  - `scaleDeployment(namespace, name, replicas)` – patch deployment
-  - `getPodLogs(namespace, podName, options)` – stream logs
-  - `restartDeployment(namespace, name)` – rollout restart
-- Implementovat K8s client v `EnvironmentK8sService` (doplnit TODO implementace)
-
-**8. K8s Client Implementation**
-- Použít fabric8 Kubernetes client (již používáno v WhisperJobRunner)
-- Config:
-  - In-cluster: `/var/run/secrets/kubernetes.io/serviceaccount/token`
-  - Out-of-cluster: kubeconfig (pro development)
-- RBAC ServiceAccount:
-  - Permissions: get/list/watch na all resources v namespace
-  - Patch na deployments/statefulsets (scale)
-  - Create/delete configmaps/secrets (optional, pro advanced ops)
-- Error handling: handle NotFound, Forbidden, Connection errors
-
-**Soubory:**
-- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/screen/EnvironmentViewScreen.kt` – UI screen
-- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/components/K8sResourceTree.kt` – tree view component
-- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/components/LogViewerDialog.kt` – log viewer dialog
-- `shared/ui-common/src/commonMain/kotlin/com/jervis/ui/model/EnvironmentViewModel.kt` – viewmodel
-- `backend/server/src/main/kotlin/com/jervis/controller/EnvironmentResourceController.kt` – REST endpoints
-- `backend/server/src/main/kotlin/com/jervis/service/environment/EnvironmentK8sService.kt` – K8s operations (implement)
-- `backend/service-orchestrator/app/mcp/environment_server.py` – MCP server pro environment tools
-- `backend/service-orchestrator/app/agents/workspace_manager.py` – add jervis-environment MCP config
-- `docs/mcp-environment-tools.md` – MCP tool documentation pro agenty
-
-**Priorita:** High (pro debugging a operaci)
-**Complexity:** High
-**Status:** Planned
-
-**Poznámka:** Toto je komplexní feature zahrnující UI, backend API, K8s integration, a MCP. Vyžaduje pečlivý RBAC design a security (secrets nejsou expose-ovány).
+**Priorita:** Medium
+**Complexity:** Medium
+**Status:** Planned (Phase 2)
 
 ---
 

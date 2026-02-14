@@ -138,6 +138,18 @@ class WorkspaceManager:
                 }
             }
         }
+
+        # Add environment MCP server if environment is provisioned
+        if environment_context and environment_context.get("namespace"):
+            mcp_config["mcpServers"]["jervis-environment"] = {
+                "command": "python",
+                "args": ["/opt/jervis/mcp/environment-server.py"],
+                "env": {
+                    "NAMESPACE": environment_context["namespace"],
+                    "SERVER_URL": settings.kotlin_server_url,
+                },
+            }
+
         (claude_dir / "mcp.json").write_text(json.dumps(mcp_config, indent=2))
 
         # CLAUDE.md with project context and MCP tool descriptions
@@ -180,6 +192,25 @@ class WorkspaceManager:
                     self._render_environment_md(environment_context),
                 ]
             )
+
+            # Add environment MCP tool descriptions if namespace is present
+            if environment_context.get("namespace"):
+                claude_md_parts.extend(
+                    [
+                        "",
+                        "## Environment Tools",
+                        "You have access to the `jervis-environment` MCP server with these tools:",
+                        "- `list_namespace_resources(resource_type)` – list pods/deployments/services",
+                        "- `get_pod_logs(pod_name, tail_lines)` – read pod logs",
+                        "- `get_deployment_status(name)` – deployment health and events",
+                        "- `scale_deployment(name, replicas)` – scale up/down (0-10)",
+                        "- `restart_deployment(name)` – trigger rolling restart",
+                        "- `get_namespace_status()` – overall namespace health",
+                        "",
+                        "Use these tools to diagnose runtime issues, check service health,",
+                        "and manage the environment when fixing bugs.",
+                    ]
+                )
 
         (workspace / "CLAUDE.md").write_text("\n".join(claude_md_parts))
 

@@ -7,7 +7,19 @@ import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.entity.ComponentType
 import com.jervis.entity.EnvironmentDocument
 import com.jervis.entity.EnvironmentState
+import com.jervis.entity.PortMapping
 import com.jervis.entity.PropertyMapping
+import io.fabric8.kubernetes.api.model.ContainerPortBuilder
+import io.fabric8.kubernetes.api.model.EnvVarBuilder
+import io.fabric8.kubernetes.api.model.IntOrString
+import io.fabric8.kubernetes.api.model.NamespaceBuilder
+import io.fabric8.kubernetes.api.model.Quantity
+import io.fabric8.kubernetes.api.model.ServiceBuilder
+import io.fabric8.kubernetes.api.model.ServicePortBuilder
+import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder
+import io.fabric8.kubernetes.client.ConfigBuilder
+import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -154,51 +166,189 @@ class EnvironmentK8sService(
         )
     }
 
-    // --- K8s operations (to be implemented with fabric8 or official K8s client) ---
+    // --- K8s operations via fabric8 client ---
+
+    private fun buildK8sClient(): KubernetesClient {
+        val config = ConfigBuilder()
+            .withRequestTimeout(60_000)
+            .withConnectionTimeout(15_000)
+            .build()
+        return KubernetesClientBuilder()
+            .withConfig(config)
+            .build()
+    }
 
     private fun createNamespace(namespace: String) {
-        // TODO: Implement with K8s client
-        // kubernetesClient.namespaces().createOrReplace(
-        //     NamespaceBuilder().withNewMetadata().withName(namespace).endMetadata().build()
-        // )
-        logger.info { "K8s: Creating namespace $namespace" }
+        buildK8sClient().use { client ->
+            val ns = NamespaceBuilder()
+                .withNewMetadata()
+                    .withName(namespace)
+                    .addToLabels("app", "jervis")
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .build()
+            client.namespaces().resource(ns).serverSideApply()
+            logger.info { "K8s: Created namespace $namespace" }
+        }
     }
 
     private fun deleteNamespace(namespace: String) {
-        // TODO: Implement with K8s client
-        logger.info { "K8s: Deleting namespace $namespace" }
+        buildK8sClient().use { client ->
+            // Safety: only delete namespaces managed by Jervis
+            val ns = client.namespaces().withName(namespace).get()
+            if (ns?.metadata?.labels?.get("managed-by") != "jervis-server") {
+                throw IllegalStateException(
+                    "Namespace $namespace is not managed by Jervis (missing managed-by label), refusing to delete"
+                )
+            }
+            client.namespaces().withName(namespace).delete()
+            logger.info { "K8s: Deleted namespace $namespace" }
+        }
     }
 
     private fun deployComponent(
         namespace: String,
         name: String,
         image: String,
-        ports: List<com.jervis.entity.PortMapping>,
+        ports: List<PortMapping>,
         envVars: Map<String, String>,
         cpuLimit: String?,
         memoryLimit: String?,
     ) {
-        // TODO: Implement with K8s client
-        // Creates: Deployment + Service
-        // Deployment: 1 replica, specified image, ports, env vars, resource limits
-        // Service: ClusterIP, maps ports for internal DNS ({name}.{namespace}.svc.cluster.local)
-        logger.info { "K8s: Deploying $name ($image) in namespace $namespace" }
+        buildK8sClient().use { client ->
+            // 1. Create Deployment
+            val containerPorts = ports.map { pm ->
+                ContainerPortBuilder()
+                    .withContainerPort(pm.containerPort)
+                    .withName(pm.name.ifEmpty { "port-${pm.containerPort}" })
+                    .build()
+            }
+            val envList = envVars.map { (k, v) ->
+                EnvVarBuilder().withName(k).withValue(v).build()
+            }
+
+            val deploymentBuilder = DeploymentBuilder()
+                .withNewMetadata()
+                    .withName(name)
+                    .withNamespace(namespace)
+                    .addToLabels("app", name)
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .withNewSpec()
+                    .withReplicas(1)
+                    .withNewSelector()
+                        .addToMatchLabels("app", name)
+                    .endSelector()
+                    .withNewTemplate()
+                        .withNewMetadata()
+                            .addToLabels("app", name)
+                        .endMetadata()
+                        .withNewSpec()
+                            .addNewContainer()
+                                .withName(name)
+                                .withImage(image)
+                                .withPorts(containerPorts)
+                                .withEnv(envList)
+                                .withNewResources()
+                                    .addToLimits(buildResourceMap(cpuLimit, memoryLimit))
+                                .endResources()
+                            .endContainer()
+                        .endSpec()
+                    .endTemplate()
+                .endSpec()
+
+            client.apps().deployments()
+                .inNamespace(namespace)
+                .resource(deploymentBuilder.build())
+                .serverSideApply()
+
+            // 2. Create Service (ClusterIP for internal DNS)
+            val servicePorts = ports.map { pm ->
+                ServicePortBuilder()
+                    .withPort(pm.servicePort ?: pm.containerPort)
+                    .withTargetPort(IntOrString(pm.containerPort))
+                    .withName(pm.name.ifEmpty { "port-${pm.containerPort}" })
+                    .build()
+            }
+
+            val service = ServiceBuilder()
+                .withNewMetadata()
+                    .withName(name)
+                    .withNamespace(namespace)
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .withNewSpec()
+                    .withType("ClusterIP")
+                    .addToSelector("app", name)
+                    .withPorts(servicePorts)
+                .endSpec()
+                .build()
+
+            client.services()
+                .inNamespace(namespace)
+                .resource(service)
+                .serverSideApply()
+
+            logger.info { "K8s: Deployed $name ($image) in namespace $namespace" }
+        }
     }
 
     private fun deleteComponent(namespace: String, name: String) {
-        // TODO: Implement with K8s client
-        // Deletes: Deployment + Service
-        logger.info { "K8s: Deleting $name from namespace $namespace" }
+        buildK8sClient().use { client ->
+            client.apps().deployments().inNamespace(namespace).withName(name).delete()
+            client.services().inNamespace(namespace).withName(name).delete()
+            logger.info { "K8s: Deleted $name from namespace $namespace" }
+        }
     }
 
     private fun getComponentStatus(namespace: String, name: String, componentId: String): ComponentStatusDto {
-        // TODO: Implement with K8s client
-        // Reads deployment status
-        return ComponentStatusDto(
-            componentId = componentId,
-            name = name,
-            ready = false,
-            message = "K8s client not yet implemented",
-        )
+        return try {
+            buildK8sClient().use { client ->
+                val deployment = client.apps().deployments()
+                    .inNamespace(namespace)
+                    .withName(name)
+                    .get()
+
+                if (deployment == null) {
+                    return ComponentStatusDto(
+                        componentId = componentId,
+                        name = name,
+                        ready = false,
+                        message = "Deployment not found",
+                    )
+                }
+
+                val status = deployment.status
+                val replicas = status?.replicas ?: 0
+                val available = status?.availableReplicas ?: 0
+                val message = status?.conditions
+                    ?.firstOrNull { it.type == "Available" }
+                    ?.message
+
+                ComponentStatusDto(
+                    componentId = componentId,
+                    name = name,
+                    ready = available > 0 && available >= replicas,
+                    replicas = replicas,
+                    availableReplicas = available,
+                    message = message,
+                )
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to get status for $name in $namespace" }
+            ComponentStatusDto(
+                componentId = componentId,
+                name = name,
+                ready = false,
+                message = "Error: ${e.message}",
+            )
+        }
+    }
+
+    private fun buildResourceMap(cpuLimit: String?, memoryLimit: String?): Map<String, Quantity> {
+        val map = mutableMapOf<String, Quantity>()
+        cpuLimit?.let { map["cpu"] = Quantity(it) }
+        memoryLimit?.let { map["memory"] = Quantity(it) }
+        return map
     }
 }
