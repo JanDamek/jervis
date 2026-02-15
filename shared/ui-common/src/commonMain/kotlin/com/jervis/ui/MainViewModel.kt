@@ -1014,6 +1014,8 @@ class MainViewModel(
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            // kRPC wraps cancellation as IllegalStateException — don't log as error
+            if (e is IllegalStateException && e.message?.contains("cancelled") == true) return
             println("Failed to reload history: ${e.message}")
         }
     }
@@ -1469,6 +1471,8 @@ class MainViewModel(
                     )
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is IllegalStateException && e.message?.contains("cancelled") == true) return@launch
                 println("Error refreshing queues: ${e.message}")
             }
         }

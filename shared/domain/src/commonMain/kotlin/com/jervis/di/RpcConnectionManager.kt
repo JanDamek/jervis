@@ -239,6 +239,11 @@ class RpcConnectionManager(private val baseUrl: String) {
                 emitAll(
                     subscribe(services).catch { e ->
                         if (e is CancellationException) throw e
+                        // kRPC wraps cancellation as IllegalStateException("RpcClient was cancelled")
+                        if (e is IllegalStateException && e.message?.contains("cancelled") == true) {
+                            println("RpcConnectionManager: RPC client cancelled (gen=$gen), not reconnecting")
+                            return@catch
+                        }
                         println("RpcConnectionManager: Stream error (gen=$gen): ${e::class.simpleName}: ${e.message}")
                         e.printStackTrace()
                         // Mark disconnected and trigger reconnect after cooldown
