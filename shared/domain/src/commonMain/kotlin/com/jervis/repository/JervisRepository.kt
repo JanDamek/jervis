@@ -5,10 +5,12 @@ import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
+import com.jervis.service.IGpgCertificateService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
 import com.jervis.service.IIndexingQueueService
 import com.jervis.service.IEnvironmentService
+import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
@@ -46,10 +48,12 @@ class JervisRepository(
     val notifications: INotificationService get() = servicesProvider().notificationService
     val bugTrackerSetup: IBugTrackerSetupService get() = servicesProvider().bugTrackerSetupService
     val codingAgents: ICodingAgentSettingsService get() = servicesProvider().codingAgentSettingsService
+    val gpgCertificates: IGpgCertificateService get() = servicesProvider().gpgCertificateService
     val whisperSettings: IWhisperSettingsService get() = servicesProvider().whisperSettingsService
     val pollingIntervals: IPollingIntervalService get() = servicesProvider().pollingIntervalService
     val meetings: IMeetingService get() = servicesProvider().meetingService
     val transcriptCorrections: ITranscriptCorrectionService get() = servicesProvider().transcriptCorrectionService
     val deviceTokens: IDeviceTokenService get() = servicesProvider().deviceTokenService
     val indexingQueue: IIndexingQueueService get() = servicesProvider().indexingQueueService
+    val environmentResources: IEnvironmentResourceService get() = servicesProvider().environmentResourceService
 }

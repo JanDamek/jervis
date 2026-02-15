@@ -81,7 +81,8 @@ async def git_operations(state: dict) -> dict:
         f"- Do NOT push"
     )
 
-    await job_runner.run_coding_agent(
+    # Create K8s Job for commit (non-blocking) and pause for AgentJobWatcher
+    commit_job_name = await job_runner.create_coding_agent_job(
         task_id=f"{task.id}-git-commit",
         agent_type=AgentType.CLAUDE.value,
         client_id=task.client_id,
@@ -89,7 +90,22 @@ async def git_operations(state: dict) -> dict:
         workspace_path=workspace_path,
         allow_git=True,
         instructions_override=commit_instructions,
+        thread_id=state.get("_thread_id", ""),
     )
+
+    logger.info("Git commit Job created: %s — pausing graph", commit_job_name)
+
+    interrupt({
+        "type": "waiting_for_agent",
+        "action": "agent_wait",
+        "job_name": commit_job_name,
+        "agent_type": AgentType.CLAUDE.value,
+        "task_id": f"{task.id}-git-commit",
+        "workspace_path": workspace_path,
+        "thread_id": state.get("_thread_id", ""),
+        "kotlin_task_id": task.id,
+        "client_id": task.client_id,
+    })
 
     # --- PUSH approval gate ---
     if rules.auto_push:
@@ -110,7 +126,9 @@ async def git_operations(state: dict) -> dict:
         push_instructions = (
             f"Push branch '{branch}' to origin. Do NOT force push."
         )
-        await job_runner.run_coding_agent(
+
+        # Create K8s Job for push (non-blocking) and pause for AgentJobWatcher
+        push_job_name = await job_runner.create_coding_agent_job(
             task_id=f"{task.id}-git-push",
             agent_type=AgentType.CLAUDE.value,
             client_id=task.client_id,
@@ -118,6 +136,21 @@ async def git_operations(state: dict) -> dict:
             workspace_path=workspace_path,
             allow_git=True,
             instructions_override=push_instructions,
+            thread_id=state.get("_thread_id", ""),
         )
+
+        logger.info("Git push Job created: %s — pausing graph", push_job_name)
+
+        interrupt({
+            "type": "waiting_for_agent",
+            "action": "agent_wait",
+            "job_name": push_job_name,
+            "agent_type": AgentType.CLAUDE.value,
+            "task_id": f"{task.id}-git-push",
+            "workspace_path": workspace_path,
+            "thread_id": state.get("_thread_id", ""),
+            "kotlin_task_id": task.id,
+            "client_id": task.client_id,
+        })
 
     return {"branch": branch}

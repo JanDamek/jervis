@@ -21,6 +21,8 @@ from typing import Optional
 from datetime import datetime, timedelta
 from enum import Enum
 
+from app.metrics import QUEUE_ENQUEUED
+
 logger = logging.getLogger(__name__)
 
 
@@ -188,6 +190,7 @@ class LLMExtractionQueue:
             ))
             conn.commit()
 
+            QUEUE_ENQUEUED.inc()
             # Get queue size for logging
             size = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             logger.info("Enqueued extraction task: %s (queue size: %d)", task.task_id, size)

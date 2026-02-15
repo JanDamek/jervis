@@ -164,9 +164,11 @@ Kotlin → Python:
   POST /internal/compress-chat — async chat komprese (po dokončení)
 
 Python → Kotlin:
-  POST /internal/orchestrator-progress  — node transitions (heartbeat)
-  POST /internal/orchestrator-status    — completion/error/interrupt
-  POST /internal/correction-progress    — correction agent progress
+  POST /internal/orchestrator-progress          — node transitions (heartbeat)
+  POST /internal/orchestrator-status            — completion/error/interrupt
+  POST /internal/orchestrator-streaming-token   — token-by-token streaming (typewriter)
+  POST /internal/correction-progress            — correction agent progress
+  GET  /internal/gpg-key/{clientId}             — fetch GPG key for agent commit signing (one-time pull)
 ```
 
 ### 2.2 Push-based model (primární)
@@ -636,6 +638,14 @@ Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_schedul
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 
+**Token-by-token streaming**: Po vygenerování finální odpovědi ji node odešle na UI jako "typewriter" efekt:
+1. Text se rozseká na chunky (~32 znaků, `_STREAM_CHUNK_SIZE`)
+2. Každý chunk se emituje přes `kotlin_client.emit_streaming_token()` → `POST /internal/orchestrator-streaming-token`
+3. Kotlin broadcastuje `ChatResponseDto(type=STREAMING_TOKEN)` přes `MutableSharedFlow`
+4. `MainViewModel` akumuluje chunky do jedné `STREAMING` zprávy (typewriter efekt)
+5. Následný `FINAL` message z `OrchestratorStatusHandler.handleDone()` nahradí streaming preview (obsahuje workflow steps)
+6. Mezi chunky je 10ms delay (`_STREAM_CHUNK_DELAY`) pro přirozený efekt
+
 **Output**: `final_result` — odpověď v češtině
 
 ### 7.4 plan
@@ -915,6 +925,11 @@ spec:
             - OLLAMA_URL, KNOWLEDGEBASE_URL
             - ALLOW_GIT (true/false)
             - ANTHROPIC_API_KEY (pro Claude agenta)
+            # Conditional (if allow_git=true AND client has GPG key):
+            - GPG_PRIVATE_KEY (ASCII armored)
+            - GPG_KEY_ID (fingerprint)
+            - GPG_KEY_PASSPHRASE (optional)
+            - GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL
           volumeMounts:
             - /opt/jervis/data (PVC shared s orchestrátorem)
           resources:
@@ -993,6 +1008,7 @@ Permisivní verze — `ALLOW_GIT=true`:
 - Povoleno: git add, commit, push, branch
 - Zakázáno: force push, reset --hard, rebase
 - Used: `git_operations` node deleguje commit/push na Claude agenta
+- **GPG commit signing**: Pokud klient má nastavený GPG certifikát (Settings → GPG Certifikáty), `job_runner` načte klíč přes `GET /internal/gpg-key/{clientId}` a injektuje env vars: `GPG_PRIVATE_KEY`, `GPG_KEY_ID`, `GPG_KEY_PASSPHRASE`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`. Agent entrypoint importuje GPG klíč a konfiguruje git pro podepisování.
 
 ---
 
@@ -2168,10 +2184,20 @@ POST /internal/orchestrator-status
   → OrchestratorStatusHandler.handleStatusChange(...)
   → Emit OrchestratorTaskStatusChange to UI
 
+POST /internal/orchestrator-streaming-token
+  Body: { taskId, clientId, projectId, token }
+  → Emit ChatResponseDto(type=STREAMING_TOKEN, message=token) to chat stream
+  → MainViewModel accumulates tokens into STREAMING message (typewriter effect)
+
 POST /internal/correction-progress
   Body: { meetingId, phase, chunkIndex, totalChunks, segmentsProcessed, totalSegments, message }
   → CorrectionHeartbeatTracker.updateHeartbeat(meetingId)
   → Emit notification to UI
+
+GET /internal/gpg-key/{clientId}
+  → GpgCertificateRpcImpl.getActiveKey(clientId)
+  → Returns: { ok: true, key: { keyId, userName, userEmail, privateKeyArmored, passphrase } }
+  → Used by job_runner to inject GPG env vars into K8s Job pods (one-time pull, not streaming)
 ```
 
 ### 26.3 AgentOrchestratorService

@@ -21,6 +21,7 @@ data class ChatMessage(
     enum class MessageType {
         USER_MESSAGE, // User's message (for synchronization across clients)
         PROGRESS,     // Intermediate progress update
+        STREAMING,    // Streaming token-by-token (typewriter effect, replaced by FINAL)
         FINAL,        // Final answer
         ERROR,        // Error message (displayed with red styling)
     }
