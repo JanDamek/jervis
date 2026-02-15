@@ -144,8 +144,11 @@ class MainViewModel(
     private val _isInitialLoading = MutableStateFlow(true)
     val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
 
-    private val _reconnectAttemptDisplay = MutableStateFlow(0)
-    val reconnectAttemptDisplay: StateFlow<Int> = _reconnectAttemptDisplay.asStateFlow()
+    /** Reconnect attempt counter — delegated to RpcConnectionManager */
+    val reconnectAttemptDisplay: StateFlow<Int> = connectionManager.reconnectAttempt
+
+    /** Job for debouncing overlay hide on reconnect */
+    private var overlayDebounceJob: Job? = null
 
     private val _notifications = MutableStateFlow<List<com.jervis.dto.events.JervisEvent>>(emptyList())
     val notifications: StateFlow<List<com.jervis.dto.events.JervisEvent>> = _notifications.asStateFlow()
@@ -263,8 +266,21 @@ class MainViewModel(
                 when (rpcState) {
                     is RpcConnectionState.Connected -> {
                         _connectionState.value = ConnectionState.CONNECTED
-                        _isOverlayVisible.value = false
-                        _reconnectAttemptDisplay.value = 0
+
+                        // Debounce overlay hiding on reconnect — wait 2s to confirm
+                        // connection stability before hiding the overlay.
+                        // If disconnected again within 2s, the overlay stays visible.
+                        if (connectionManager.generation.value > 1 && _isOverlayVisible.value) {
+                            overlayDebounceJob?.cancel()
+                            overlayDebounceJob = scope.launch {
+                                delay(2000)
+                                if (_connectionState.value == ConnectionState.CONNECTED) {
+                                    _isOverlayVisible.value = false
+                                }
+                            }
+                        } else {
+                            _isOverlayVisible.value = false
+                        }
 
                         // Load clients when connected (fixes initial load before connection ready)
                         if (_clients.value.isEmpty()) {
@@ -273,6 +289,8 @@ class MainViewModel(
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
+                        // Cancel pending overlay hide — connection is not stable
+                        overlayDebounceJob?.cancel()
                         // Show overlay only on reconnect (generation > 1), not initial connect
                         if (connectionManager.generation.value > 1) {
                             _isOverlayVisible.value = true
@@ -280,6 +298,8 @@ class MainViewModel(
                     }
                     is RpcConnectionState.Disconnected -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
+                        // Cancel pending overlay hide — connection dropped
+                        overlayDebounceJob?.cancel()
                         if (connectionManager.generation.value > 0) {
                             _isOverlayVisible.value = true
                         }

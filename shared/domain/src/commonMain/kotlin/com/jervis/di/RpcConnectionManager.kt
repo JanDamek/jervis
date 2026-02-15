@@ -52,6 +52,13 @@ class RpcConnectionManager(private val baseUrl: String) {
     private val _generation = MutableStateFlow(0L)
     val generation: StateFlow<Long> = _generation.asStateFlow()
 
+    /**
+     * Current reconnect attempt number (0 = not retrying).
+     * Exposed to UI for display in the disconnect overlay.
+     */
+    private val _reconnectAttempt = MutableStateFlow(0)
+    val reconnectAttempt: StateFlow<Int> = _reconnectAttempt.asStateFlow()
+
     private var httpClient: HttpClient? = null
     private var rpcClient: KtorRpcClient? = null
     private var currentServices: NetworkModule.Services? = null
@@ -103,6 +110,7 @@ class RpcConnectionManager(private val baseUrl: String) {
         while (true) {
             try {
                 _state.value = RpcConnectionState.Connecting
+                _reconnectAttempt.value = attempt
 
                 // Create fresh HttpClient (critical for iOS Darwin engine after background)
                 val newHttpClient = NetworkModule.createHttpClient()
@@ -120,6 +128,18 @@ class RpcConnectionManager(private val baseUrl: String) {
                 val newRpcClient = NetworkModule.createRpcClient(baseUrl, newHttpClient)
                 val newServices = NetworkModule.createServices(newRpcClient)
 
+                // Verify RPC connection with a lightweight call before declaring Connected.
+                // This prevents false "connected" state when server responds to HTTP
+                // but RPC/WebSocket services aren't ready yet (e.g., during server restart).
+                try {
+                    newServices.clientService.getAllClients()
+                } catch (e: Exception) {
+                    println("RpcConnectionManager: RPC verification failed: ${e.message}")
+                    try { newRpcClient.close() } catch (_: Exception) {}
+                    try { newHttpClient.close() } catch (_: Exception) {}
+                    throw e
+                }
+
                 // Store references
                 httpClient = newHttpClient
                 rpcClient = newRpcClient
@@ -129,6 +149,7 @@ class RpcConnectionManager(private val baseUrl: String) {
                 _state.value = RpcConnectionState.Connected(newServices)
                 _generation.value++
                 attempt = 0
+                _reconnectAttempt.value = 0
 
                 println("RpcConnectionManager: Connected (generation=${_generation.value})")
 
@@ -140,7 +161,9 @@ class RpcConnectionManager(private val baseUrl: String) {
                 throw e
             } catch (e: Exception) {
                 attempt++
-                val delayMs = min(1000L * (1L shl min(attempt - 1, 5)), 30_000L)
+                _reconnectAttempt.value = attempt
+                // Minimum 5s delay between attempts, increasing linearly, capped at 30s
+                val delayMs = min(5000L + 5000L * min(attempt - 1, 5).toLong(), 30_000L)
                 println("RpcConnectionManager: Connection failed (attempt $attempt), retry in ${delayMs}ms: ${e.message}")
                 _state.value = RpcConnectionState.Disconnected
                 delay(delayMs)
@@ -170,6 +193,7 @@ class RpcConnectionManager(private val baseUrl: String) {
                 } catch (e: Exception) {
                     println("RpcConnectionManager: Heartbeat failed: ${e.message}")
                     _state.value = RpcConnectionState.Disconnected
+                    delay(5000) // 5s cooldown before reconnect to prevent flickering
                     _generation.value++
                     reconnect()
                     break
@@ -214,9 +238,11 @@ class RpcConnectionManager(private val baseUrl: String) {
                     subscribe(services).catch { e ->
                         if (e is CancellationException) throw e
                         println("RpcConnectionManager: Stream error: ${e.message}")
-                        // Mark disconnected and trigger reconnect
+                        // Mark disconnected and trigger reconnect after cooldown
+                        // to prevent rapid flickering during server restart
                         _state.value = RpcConnectionState.Disconnected
                         scope.launch {
+                            delay(5000) // 5s cooldown before reconnect attempt
                             _generation.value++
                             reconnect()
                         }
