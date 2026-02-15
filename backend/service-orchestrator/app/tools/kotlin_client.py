@@ -3,7 +3,6 @@
 Push-based communication model:
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress during execution)
 - Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
-- Python → Kotlin: POST /internal/orchestrator-streaming-token (token-by-token chat streaming)
 - Python → Kotlin: POST /internal/correction-progress (correction agent progress)
 - Kotlin → Python: POST /orchestrate/stream (fire-and-forget dispatch)
 - Kotlin → Python: POST /approve/{thread_id} (resume graph)
@@ -136,55 +135,6 @@ class KotlinServerClient:
         except Exception as e:
             logger.warning("Failed to report status to Kotlin: %s", e)
             return False
-
-    async def emit_streaming_token(
-        self,
-        task_id: str,
-        client_id: str,
-        project_id: str,
-        token: str,
-    ) -> bool:
-        """Push a streaming token chunk to Kotlin for live chat display.
-
-        Called during final answer generation in respond node.
-        Kotlin emits to chat stream as STREAMING_TOKEN type.
-        UI accumulates tokens into a growing message (typewriter effect).
-        """
-        try:
-            client = await self._get_client()
-            await client.post(
-                "/internal/orchestrator-streaming-token",
-                json={
-                    "taskId": task_id,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "token": token,
-                },
-            )
-            return True
-        except Exception as e:
-            logger.debug("Failed to emit streaming token to Kotlin: %s", e)
-            return False
-
-    async def get_gpg_key(self, client_id: str) -> dict | None:
-        """Fetch GPG key for a client from Kotlin server.
-
-        Used by job_runner to inject GPG signing key into agent K8s Jobs.
-        Returns dict with keyId, userName, userEmail, privateKeyArmored, passphrase
-        or None if no certificate is configured.
-        """
-        try:
-            client = await self._get_client()
-            response = await client.get(f"/internal/gpg-key/{client_id}")
-            response.raise_for_status()
-            data = response.json()
-            # Endpoint returns {ok:true, key:null} when no key configured
-            if "keyId" in data:
-                return data
-            return None
-        except Exception as e:
-            logger.debug("Failed to fetch GPG key for client %s: %s", client_id, e)
-            return None
 
     async def report_task_error(self, task_id: str, error: str) -> bool:
         """Report a critical task error to Kotlin server.

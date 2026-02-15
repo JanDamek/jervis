@@ -110,6 +110,13 @@ fun App(
                 UserTasksScreen(
                     repository = repository,
                     onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onNavigateToProject = { clientId, projectId ->
+                        viewModel.selectClient(clientId)
+                        if (projectId != null) {
+                            viewModel.selectProject(projectId)
+                        }
+                        appNavigator.navigateTo(Screen.Main)
+                    },
                 )
             }
 

@@ -849,9 +849,7 @@ All services have dedicated build scripts in `k8s/`:
 6. **Clear module boundaries and contracts**
 7. **Documentation in existing files ONLY - no status/summary files**
 8. **No hard timeouts — streaming + heartbeat everywhere**: All LLM/GPU operations (Ollama, correction agent, orchestrator) MUST use streaming. Liveness is determined by whether tokens keep arriving, not by a fixed timeout. If tokens stop arriving for an extended period, the operation is considered dead and retried/reset. This principle applies to ALL LLM calls in the project.
-9. **Push-based communication — no polling as primary**: All real-time progress and status changes use push callbacks (Python → Kotlin POST endpoints → Flow-based UI subscriptions). Polling is reduced to safety-net only (60s interval). Heartbeat trackers (CorrectionHeartbeatTracker, OrchestratorHeartbeatTracker) detect dead processes. Connection errors reset to retryable state, not FAILED. Exception: `GET /internal/gpg-key/{clientId}` is a one-time pull for GPG key fetch during K8s Job creation (not streaming data).
-10. **Token-by-token chat streaming**: Final answers from respond node are delivered to UI progressively via `STREAMING_TOKEN` messages (32-char chunks, 10ms delay). `MainViewModel` accumulates tokens into a `STREAMING` message (typewriter effect). Authoritative `FINAL` message replaces the streaming preview. See `respond.py:_stream_answer_to_ui()`.
-11. **Per-client GPG certificate management**: GPG private keys stored in MongoDB (`gpg_certificates` collection), managed via Settings UI ("GPG Certifikáty"). Keys distributed to coding agent K8s Jobs as env vars (`GPG_PRIVATE_KEY`, `GPG_KEY_ID`, etc.) when `allow_git=true`. See `GpgCertificateRpcImpl.kt`, `job_runner.py`.
+9. **Push-based communication — no polling as primary**: All real-time progress and status changes use push callbacks (Python → Kotlin POST endpoints → Flow-based UI subscriptions). Polling is reduced to safety-net only (60s interval). Heartbeat trackers (CorrectionHeartbeatTracker, OrchestratorHeartbeatTracker) detect dead processes. Connection errors reset to retryable state, not FAILED.
 
 ### Benefits
 

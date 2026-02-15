@@ -105,13 +105,6 @@ class OrchestratorStatusHandler(
         val action = interruptAction ?: "unknown"
         val description = interruptDescription ?: "Schválení vyžadováno"
 
-        // agent_wait: coding agent working as K8s Job — keep PYTHON_ORCHESTRATING, don't escalate.
-        // AgentJobWatcher on the Python side will resume the graph when the job completes.
-        if (action == "agent_wait") {
-            logger.info { "ORCHESTRATOR_AGENT_WAIT: taskId=${task.id} — coding agent running, keeping PYTHON_ORCHESTRATING" }
-            return
-        }
-
         // Clarification vs approval: different question format for the user
         val (pendingQuestion, questionContext, phase) = when (action) {
             "clarify" -> Triple(
@@ -165,10 +158,6 @@ class OrchestratorStatusHandler(
             )
             taskRepository.save(updatedTask)
 
-            // Clear running task — agent is waiting for user input, not actively processing
-            taskService.setRunningTask(null)
-            emitQueueIdle(task)
-
             logger.info { "ORCHESTRATOR_INTERRUPTED_CHAT: taskId=${task.id} action=$action phase=$phase → DISPATCHED_GPU (chat clarification)" }
             return
         }
@@ -184,7 +173,6 @@ class OrchestratorStatusHandler(
         )
 
         // BACKGROUND: agent is now truly idle (task escalated to user)
-        taskService.setRunningTask(null)
         emitQueueIdle(task)
 
         logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$action phase=$phase → USER_TASK" }
@@ -245,9 +233,6 @@ class OrchestratorStatusHandler(
                 false
             }
         } ?: false
-
-        // Clear running task — orchestration finished, execution slot is free
-        taskService.setRunningTask(null)
 
         if (hasInlineMessages && task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
             // New messages arrived during orchestration — auto-requeue for processing
@@ -332,8 +317,7 @@ class OrchestratorStatusHandler(
         )
         taskService.updateState(task, TaskStateEnum.ERROR)
 
-        // Clear running task and emit idle queue status — orchestration errored out
-        taskService.setRunningTask(null)
+        // Emit idle queue status — orchestration errored out
         emitQueueIdle(task)
     }
 

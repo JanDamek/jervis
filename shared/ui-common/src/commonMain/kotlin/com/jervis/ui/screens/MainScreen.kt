@@ -4,12 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.jervis.ui.MainViewModel
+import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
 
-/**
- * Main Screen - Simplified version for initial setup
- * TODO: Copy full implementation from mobile-app after testing
- */
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
@@ -38,6 +35,17 @@ fun MainScreen(
     val pendingMessageInfo by viewModel.pendingMessageInfo.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.orchestratorHealthy.collectAsState()
+
+    // Environment panel state
+    val environments by viewModel.environments.collectAsState()
+    val resolvedEnvId by viewModel.resolvedEnvId.collectAsState()
+    val environmentStatuses by viewModel.environmentStatuses.collectAsState()
+    val environmentPanelVisible by viewModel.environmentPanelVisible.collectAsState()
+    val environmentPanelWidthFraction by viewModel.environmentPanelWidthFraction.collectAsState()
+    val expandedEnvIds by viewModel.expandedEnvIds.collectAsState()
+    val expandedComponentIds by viewModel.expandedComponentIds.collectAsState()
+    val environmentLoading by viewModel.environmentLoading.collectAsState()
+    val environmentError by viewModel.environmentError.collectAsState()
 
     MainScreenViewInternal(
         clients = clients,
@@ -77,5 +85,26 @@ fun MainScreen(
         workspaceInfo = workspaceInfo,
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
+        hasEnvironment = environments.isNotEmpty(),
+        environmentPanelVisible = environmentPanelVisible,
+        onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,
+        panelWidthFraction = environmentPanelWidthFraction,
+        onPanelWidthChange = viewModel::updatePanelWidthFraction,
+        environmentPanelContent = { isCompact ->
+            EnvironmentPanel(
+                environments = environments,
+                statuses = environmentStatuses,
+                resolvedEnvId = resolvedEnvId,
+                isLoading = environmentLoading,
+                error = environmentError,
+                isCompact = isCompact,
+                expandedEnvIds = expandedEnvIds,
+                expandedComponentIds = expandedComponentIds,
+                onToggleEnv = viewModel::toggleEnvExpanded,
+                onToggleComponent = viewModel::toggleComponentExpanded,
+                onClose = viewModel::closeEnvironmentPanel,
+                onRefresh = viewModel::refreshEnvironments,
+            )
+        },
     )
 }

@@ -75,9 +75,6 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Whisper runner: `backend/service-whisper/whisper_runner.py`, `backend/service-whisper/entrypoint-whisper-job.sh`
 - Whisper REST server: `backend/service-whisper/whisper_rest_server.py`, `backend/service-whisper/Dockerfile.rest`
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
-- GPG certificates: `shared/common-dto/.../coding/GpgCertificateDto.kt`, `backend/server/.../rpc/GpgCertificateRpcImpl.kt`, `sections/GpgCertificateSettings.kt`
-- Chat streaming: `ChatResponseDto.kt` (`STREAMING_TOKEN`), `respond.py` (`_stream_answer_to_ui`), `MainViewModel.kt` (token accumulation)
-- Job runner: `backend/service-orchestrator/app/agents/job_runner.py` (K8s Job creation, GPG env var injection)
 
 ## Build Notes
 

@@ -36,12 +36,16 @@ import com.jervis.ui.design.*
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.DeleteIconButton
 import com.jervis.ui.util.RefreshIconButton
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @Composable
 fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
+    onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
 ) {
     var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
@@ -73,20 +77,23 @@ fun UserTasksScreen(
             errorMessage = null
             try {
                 val clients = repository.clients.getAllClients()
-                val allTasksList = mutableListOf<UserTaskDto>()
 
-                for (client in clients) {
-                    try {
+                // Load tasks for all clients in parallel
+                val results = coroutineScope {
+                    clients.mapNotNull { client ->
                         client.id?.let { clientId ->
-                            val clientTasks = repository.userTasks.listActive(clientId)
-                            allTasksList.addAll(clientTasks)
+                            async {
+                                try {
+                                    repository.userTasks.listActive(clientId)
+                                } catch (_: Exception) {
+                                    emptyList<UserTaskDto>()
+                                }
+                            }
                         }
-                    } catch (_: Exception) {
-                        // Continue loading other clients' tasks even if one fails
-                    }
+                    }.awaitAll()
                 }
 
-                allTasks = allTasksList.sortedBy { it.createdAtEpochMillis }
+                allTasks = results.flatten().sortedBy { it.createdAtEpochMillis }
                 applyFilter()
             } catch (e: Exception) {
                 errorMessage = "Chyba načítání úloh: ${e.message}"
@@ -157,9 +164,13 @@ fun UserTasksScreen(
                     task = task,
                     repository = repository,
                     onBack = { selectedTask = null },
-                    onTaskSent = {
+                    onTaskSent = { mode ->
                         selectedTask = null
                         loadTasks()
+                        // On DIRECT_TO_AGENT, navigate to the task's project in main screen
+                        if (mode == TaskRoutingMode.DIRECT_TO_AGENT) {
+                            onNavigateToProject?.invoke(task.clientId, task.projectId)
+                        }
                     },
                     onError = { errorMessage = it },
                     onDelete = {
@@ -231,7 +242,7 @@ private fun UserTaskDetail(
     task: UserTaskDto,
     repository: JervisRepository,
     onBack: () -> Unit,
-    onTaskSent: () -> Unit,
+    onTaskSent: (TaskRoutingMode) -> Unit,
     onError: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -249,7 +260,7 @@ private fun UserTaskDetail(
                     mode,
                     additionalInput.takeIf { it.isNotBlank() },
                 )
-                onTaskSent()
+                onTaskSent(mode)
             } catch (e: Exception) {
                 onError(e.message ?: "Selhalo odeslání úlohy")
             } finally {

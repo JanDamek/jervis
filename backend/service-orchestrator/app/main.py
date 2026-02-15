@@ -49,7 +49,6 @@ from app.models import (
     OrchestrateResponse,
     StepResult,
 )
-from app.agents.agent_job_watcher import agent_job_watcher
 from app.context.context_store import context_store
 from app.context.distributed_lock import distributed_lock
 from app.context.session_memory import session_memory_store
@@ -79,7 +78,7 @@ class _HealthCheckAccessFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        if "GET /health " in msg or "GET /metrics " in msg:
+        if "GET /health " in msg:
             return False
         return True
 
@@ -108,12 +107,6 @@ async def lifespan(app: FastAPI):
     # Initialize distributed lock (multi-pod concurrency)
     await distributed_lock.init()
     logger.info("Distributed lock ready (multi-pod orchestration)")
-    # Start AgentJobWatcher (polls K8s Jobs, resumes paused graphs)
-    await agent_job_watcher.start()
-    logger.info("AgentJobWatcher ready (non-blocking agent execution)")
-    # Recover agent_wait tasks from MongoDB (pod restart recovery)
-    await agent_job_watcher.recover()
-    logger.info("AgentJobWatcher recovery complete")
     # Initialize multi-agent delegation system (opt-in)
     if settings.use_delegation_graph:
         logger.info("Initializing multi-agent delegation system...")
@@ -166,7 +159,6 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Orchestrator shutting down, releasing GPU reservation...")
-    await agent_job_watcher.stop()
     try:
         await release_gpu("shutdown")
     except Exception as e:
@@ -245,25 +237,11 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    from app.agents.agent_pool import agent_pool
     return {
         "status": "ok",
         "service": "orchestrator",
         "busy": _orchestration_semaphore.locked(),
-        "agent_pool": agent_pool.status_summary(),
-        "watched_jobs": agent_job_watcher.watched_count,
     }
-
-
-@app.get("/metrics")
-async def metrics():
-    """Prometheus metrics endpoint."""
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    from starlette.responses import Response
-    return Response(
-        content=generate_latest(),
-        media_type=CONTENT_TYPE_LATEST,
-    )
 
 
 @app.get("/status/{thread_id}")
@@ -293,16 +271,6 @@ async def status(thread_id: str):
                     break
 
         if interrupt_data:
-            # agent_wait = coding agent running → report as "running" (not interrupted)
-            if interrupt_data.get("type") == "waiting_for_agent":
-                return {
-                    "status": "running",
-                    "thread_id": thread_id,
-                    "agent_working": True,
-                    "job_name": interrupt_data.get("job_name", ""),
-                    "agent_type": interrupt_data.get("agent_type", ""),
-                }
-
             return {
                 "status": "interrupted",
                 "thread_id": thread_id,
@@ -312,23 +280,16 @@ async def status(thread_id: str):
 
         # Check if thread has an active asyncio task — if not, it's stale
         # (checkpoint says "running" but no actual task after pod restart)
-        # Exception: agent_wait threads are watched by AgentJobWatcher, not _active_tasks
         if thread_id not in _active_tasks:
-            # Check if any watched job belongs to this thread
-            is_watched = any(
-                w.thread_id == thread_id
-                for w in agent_job_watcher._watched_jobs.values()
+            logger.warning(
+                "Stale thread detected: %s has pending nodes but no active task (pod restarted?)",
+                thread_id,
             )
-            if not is_watched:
-                logger.warning(
-                    "Stale thread detected: %s has pending nodes but no active task (pod restarted?)",
-                    thread_id,
-                )
-                return {
-                    "status": "error",
-                    "thread_id": thread_id,
-                    "error": "Orchestrace přerušena restartem — úloha bude automaticky obnovena",
-                }
+            return {
+                "status": "error",
+                "thread_id": thread_id,
+                "error": "Orchestrace přerušena restartem — úloha bude automaticky obnovena",
+            }
 
         return {"status": "running", "thread_id": thread_id}
 
@@ -522,44 +483,21 @@ async def _run_and_stream(
                     if hasattr(task, "interrupts") and task.interrupts:
                         interrupt_data = task.interrupts[0].value
                         break
-            interrupt_action = interrupt_data.get("action") if interrupt_data else "unknown"
-            logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_action)
+            logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
+            await queue.put({
+                "type": "approval_required",
+                "thread_id": thread_id,
+                "interrupt": interrupt_data,
+            })
 
-            # agent_wait: coding agent running as K8s Job — register with watcher, DON'T escalate
-            if interrupt_data and interrupt_data.get("type") == "waiting_for_agent":
-                agent_job_watcher.register(
-                    job_name=interrupt_data["job_name"],
-                    thread_id=thread_id,
-                    task_id=interrupt_data.get("task_id", ""),
-                    kotlin_task_id=interrupt_data.get("kotlin_task_id", request.task_id),
-                    client_id=interrupt_data.get("client_id", request.client_id),
-                    workspace_path=interrupt_data.get("workspace_path", ""),
-                    agent_type=interrupt_data.get("agent_type", ""),
-                )
-                # Push agent_wait status to Kotlin (keeps PYTHON_ORCHESTRATING, no escalation)
-                await kotlin_client.report_status_change(
-                    task_id=request.task_id,
-                    thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action="agent_wait",
-                    interrupt_description=f"Coding agent {interrupt_data.get('agent_type', '')} working...",
-                )
-            else:
-                # Normal interrupt (approval/clarification)
-                await queue.put({
-                    "type": "approval_required",
-                    "thread_id": thread_id,
-                    "interrupt": interrupt_data,
-                })
-
-                # Push interrupted status to Kotlin
-                await kotlin_client.report_status_change(
-                    task_id=request.task_id,
-                    thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                    interrupt_description=interrupt_data.get("description") if interrupt_data else None,
-                )
+            # Push interrupted status to Kotlin
+            await kotlin_client.report_status_change(
+                task_id=request.task_id,
+                thread_id=thread_id,
+                status="interrupted",
+                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
+                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+            )
         else:
             values = graph_state.values if graph_state else {}
             final_result = values.get("final_result", "")
@@ -769,32 +707,13 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
                         interrupt_data = task.interrupts[0].value
                         break
 
-            # agent_wait: register with watcher, don't escalate to user
-            if interrupt_data and interrupt_data.get("type") == "waiting_for_agent":
-                agent_job_watcher.register(
-                    job_name=interrupt_data["job_name"],
-                    thread_id=thread_id,
-                    task_id=interrupt_data.get("task_id", ""),
-                    kotlin_task_id=interrupt_data.get("kotlin_task_id", task_id),
-                    client_id=interrupt_data.get("client_id", client_id),
-                    workspace_path=interrupt_data.get("workspace_path", ""),
-                    agent_type=interrupt_data.get("agent_type", ""),
-                )
-                await kotlin_client.report_status_change(
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action="agent_wait",
-                    interrupt_description=f"Coding agent {interrupt_data.get('agent_type', '')} working...",
-                )
-            else:
-                await kotlin_client.report_status_change(
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    status="interrupted",
-                    interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                    interrupt_description=interrupt_data.get("description") if interrupt_data else None,
-                )
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id=thread_id,
+                status="interrupted",
+                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
+                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
+            )
         else:
             # Completed
             values = graph_state.values if graph_state else {}

@@ -423,6 +423,62 @@ fun JVerticalSplitLayout(
     }
 }
 
+/**
+ * Horizontal split layout with draggable vertical divider.
+ * Left and right content areas separated by a 6dp draggable divider.
+ */
+@Composable
+fun JHorizontalSplitLayout(
+    splitFraction: Float,
+    onSplitChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    minFraction: Float = 0.2f,
+    maxFraction: Float = 0.8f,
+    leftContent: @Composable (Modifier) -> Unit,
+    rightContent: @Composable (Modifier) -> Unit,
+) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val totalWidthPx = constraints.maxWidth.toFloat()
+        val totalWidth = maxWidth
+        val dividerWidth = 6.dp
+        val leftWidth = totalWidth * splitFraction
+        val rightWidth = totalWidth * (1f - splitFraction)
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxHeight().width(leftWidth)) {
+                leftContent(Modifier.fillMaxSize())
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(dividerWidth)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+                    .pointerInput(Unit) {
+                        detectDragGestures { _, dragAmount ->
+                            val delta = dragAmount.x / totalWidthPx
+                            val newFraction = (splitFraction + delta).coerceIn(minFraction, maxFraction)
+                            onSplitChange(newFraction)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .height(40.dp)
+                        .width(3.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            shape = MaterialTheme.shapes.small,
+                        ),
+                )
+            }
+            Box(modifier = Modifier.fillMaxHeight().width(rightWidth)) {
+                rightContent(Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
 @Composable
 fun JWatchApprovalCard(
     title: String,

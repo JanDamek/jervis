@@ -476,9 +476,8 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
 **Chat message types** (`ChatMessage.MessageType`):
 - `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
 - `PROGRESS` — compact row with `CircularProgressIndicator` (16dp) + bodySmall text
-- `STREAMING` — typewriter effect: tokens accumulate into a single assistant bubble. First token removes PROGRESS messages. Replaced by FINAL when orchestration completes. Source: `ChatResponseType.STREAMING_TOKEN` chunks from `respond.py` via `/internal/orchestrator-streaming-token`
-- `FINAL` — assistant bubble (secondaryContainer, left-aligned). Replaces STREAMING message with full answer + workflow steps
-- `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`. Also removes any STREAMING messages
+- `FINAL` — assistant bubble (secondaryContainer, left-aligned)
+- `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
 
 **Chat bubble layout** (`ChatMessageDisplay.kt`):
 
@@ -1183,60 +1182,6 @@ Legacy: `getPendingItems()` / `getIndexedItems()` kept for backward compat
 
 ---
 
-### 5.10) Environment Viewer Screen (K8s Resources)
-
-Standalone screen for inspecting K8s resources in Jervis-managed environments. Accessible from main menu ("Prostředí K8s").
-
-```
-+---------------------------------------------------------------+
-| JTopBar: "Prostředí K8s"                          [<- Zpět]   |
-+---------------------------------------------------------------+
-| [env-1] [env-2] [env-3]        <- environment selector chips  |
-+---------------------------------------------------------------+
-| Namespace: my-namespace                                        |
-| Celkem: 12  Běží: 10  Čeká: 1  Chyba: 1  Crash: 0           |
-+---------------------------------------------------------------+
-| ▼ Pody (8)                                        [Obnovit]   |
-|   JCard: my-pod-abc123                                         |
-|   | Running | Ready | Restarts: 0 | 2h | node-1              |
-|   | [Zobrazit logy]                                            |
-|   JCard: my-pod-def456                                         |
-|   | CrashLoopBackOff | NotReady | Restarts: 5 | 1h           |
-+---------------------------------------------------------------+
-| ▼ Deploymenty (3)                                              |
-|   JCard: my-deployment                                         |
-|   | Repliky: 2/3 | 5d | [nginx:1.25]                         |
-|   | [Detail] [Restartovat]                                     |
-+---------------------------------------------------------------+
-| ▼ Servisy (4)                                                  |
-|   JCard: my-service                                            |
-|   | ClusterIP | 10.0.0.1 | 80:TCP, 443:TCP                   |
-+---------------------------------------------------------------+
-```
-
-**Layout:** Flat list with `JTopBar` + `LazyColumn`. Collapsible sections for Pods, Deployments, Services.
-
-**Components:**
-- Environment selector: horizontal `LazyRow` with `FilterChip` per environment
-- Namespace status: `JCard` with pod count metrics
-- Collapsible sections: `CollapsibleHeader` toggles `AnimatedVisibility`
-- Pod card: status badge, ready indicator, restart count, log viewer button
-- Deployment card: replica counts, images, detail + restart actions
-- Service card: type, clusterIP, ports
-- Pod log dialog: scrollable `SelectionContainer` with monospace text
-- Deployment detail dialog: conditions table + events list
-
-**Data:**
-- `K8sResourceListDto` with `pods`, `deployments`, `services` lists
-- `K8sPodDto`, `K8sDeploymentDto`, `K8sServiceDto` — typed resource DTOs
-- `K8sNamespaceStatusDto` — namespace health metrics
-- `K8sDeploymentDetailDto` — conditions + events for detail dialog
-
-**RPC:** `IEnvironmentResourceService.listResources(environmentId, resourceType)` — main data load.
-Additional RPCs: `getPodLogs(environmentId, podName, tailLines)`, `getDeploymentDetails(environmentId, name)`, `restartDeployment(environmentId, name)`, `scaleDeployment(environmentId, name, replicas)`, `getNamespaceStatus(environmentId)`
-
----
-
 ## 6) Expandable / Collapsible Sections
 
 For complex nested content (e.g., connection capabilities per connection), use an expandable card pattern:
@@ -1538,7 +1483,6 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 +-- UserTasksScreen.kt                <- Escalated task list + detail
 +-- PendingTasksScreen.kt             <- Task queue with filters
 +-- ErrorLogsScreen.kt                <- Error logs display
-+-- EnvironmentViewerScreen.kt       <- K8s environment resource viewer (pods/deployments/services)
 +-- model/
 |   +-- AgentActivityEntry.kt         <- Data models for agent activity
 +-- viewmodels/

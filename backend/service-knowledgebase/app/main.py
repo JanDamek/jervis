@@ -3,11 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI
 
 from app.core.config import settings
 from app.logging_utils import LocalTimeFormatter
-from app.metrics import KB_INFO, ACTIVE_READS, ACTIVE_WRITES
 
 # Configure root logger with local timezone
 handler = logging.StreamHandler()
@@ -22,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class _HealthCheckAccessFilter(logging.Filter):
-    """Drop GET / and GET /health and GET /metrics from uvicorn access log."""
+    """Drop GET / and GET /health from uvicorn access log."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        if "GET / " in msg or "GET /health " in msg or "GET /metrics " in msg:
+        if "GET / " in msg or "GET /health " in msg:
             return False
         return True
 
@@ -35,9 +34,6 @@ class _HealthCheckAccessFilter(logging.Filter):
 async def lifespan(app: FastAPI):
     # Startup: apply filter when uvicorn's access logger is guaranteed to exist
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
-
-    # Set service info metric
-    KB_INFO.info({"mode": settings.KB_MODE, "version": "1.0.0"})
 
     # Initialize services
     from pathlib import Path
@@ -91,22 +87,14 @@ _write_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_WRITES)
 
 async def acquire_read_slot() -> AsyncGenerator[None, None]:
     """Dependency: acquire read concurrency slot (up to 40 concurrent)."""
-    ACTIVE_READS.inc()
-    try:
-        async with _read_semaphore:
-            yield
-    finally:
-        ACTIVE_READS.dec()
+    async with _read_semaphore:
+        yield
 
 
 async def acquire_write_slot() -> AsyncGenerator[None, None]:
     """Dependency: acquire write concurrency slot (up to 10 concurrent, queue others)."""
-    ACTIVE_WRITES.inc()
-    try:
-        async with _write_semaphore:
-            yield
-    finally:
-        ACTIVE_WRITES.dec()
+    async with _write_semaphore:
+        yield
 
 
 app = FastAPI(title="Knowledge Service", version="1.0.0", lifespan=lifespan)
@@ -127,13 +115,6 @@ if settings.KB_MODE in ("all", "write"):
         prefix="/api/v1",
         dependencies=[Depends(acquire_write_slot)],
     )
-
-
-@app.get("/metrics")
-async def metrics():
-    """Prometheus metrics endpoint."""
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")

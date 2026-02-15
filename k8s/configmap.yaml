@@ -230,7 +230,6 @@ data:
   # -- Microservice endpoints -------------------------------------------------
   KOTLIN_SERVER_URL: "http://jervis-server:5500"
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
-  TIKA_URL: "http://jervis-tika:8081"
   SEARXNG_URL: "http://192.168.100.117:30053"
   # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
   OLLAMA_API_BASE: "http://jervis-ollama-router:11430"

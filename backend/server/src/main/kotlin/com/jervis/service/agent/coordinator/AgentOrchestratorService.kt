@@ -4,7 +4,6 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.SourceUrn
 import com.jervis.configuration.OrchestrateRequestDto
-import com.jervis.configuration.OrchestratorAttachmentDto
 import com.jervis.configuration.ProjectRulesDto
 import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.domain.atlassian.AttachmentMetadata
@@ -299,33 +298,6 @@ class AgentOrchestratorService(
             null
         }
 
-        // Load attachments from disk and encode as base64
-        val attachmentDtos = task.attachments.mapNotNull { meta ->
-            try {
-                val file = java.io.File(meta.storagePath)
-                if (file.exists() && file.isFile) {
-                    OrchestratorAttachmentDto(
-                        id = meta.id,
-                        filename = meta.filename,
-                        mimeType = meta.mimeType,
-                        sizeBytes = meta.sizeBytes,
-                        attachmentType = meta.type.name,
-                        dataBase64 = java.util.Base64.getEncoder().encodeToString(file.readBytes()),
-                        visionDescription = meta.visionAnalysis?.description,
-                    )
-                } else {
-                    logger.warn { "Attachment file not found: ${meta.storagePath}" }
-                    null
-                }
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to load attachment for orchestrator: ${meta.storagePath}" }
-                null
-            }
-        }
-        if (attachmentDtos.isNotEmpty()) {
-            logger.info { "ORCHESTRATOR_ATTACHMENTS: loaded ${attachmentDtos.size}/${task.attachments.size} attachments for task ${task.id}" }
-        }
-
         val request = OrchestrateRequestDto(
             taskId = task.id.toString(),
             clientId = task.clientId.toString(),
@@ -338,7 +310,6 @@ class AgentOrchestratorService(
             environment = environmentJson,
             jervisProjectId = jervisProjectId,
             chatHistory = chatHistory,
-            attachments = attachmentDtos,
         )
 
         val streamResponse = pythonOrchestratorClient.orchestrateStream(request)

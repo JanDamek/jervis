@@ -10,10 +10,6 @@ from app.services.normalizer import (
     build_graph_key
 )
 from app.services.alias_registry import AliasRegistry
-from app.metrics import (
-    GRAPH_INGEST_DURATION, GRAPH_NODES_CREATED, GRAPH_EDGES_CREATED,
-    GRAPH_LLM_CALLS, GRAPH_QUERY_DURATION, ERRORS, observe_duration,
-)
 from langchain_ollama import ChatOllama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
@@ -79,8 +75,7 @@ class GraphService:
         # Process chunks sequentially (for LLM rate limiting)
         for i, chunk in enumerate(chunks, 1):
             logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", i, len(chunks), request.sourceUrn)
-            with observe_duration(GRAPH_INGEST_DURATION, ["llm_extract"]):
-                n, e, keys = await self._process_chunk(chunk, request, chunk_ids)
+            n, e, keys = await self._process_chunk(chunk, request, chunk_ids)
             nodes_created += n
             edges_created += e
             all_entity_keys.extend(keys)
@@ -154,14 +149,11 @@ Text: {text}
                 content = content.split("```")[1].split("```")[0]
 
             data = json.loads(content)
-            GRAPH_LLM_CALLS.labels("success").inc()
             logger.info(
                 "GRAPH_WRITE: LLM_PARSED sourceUrn=%s nodes=%d edges=%d",
                 request.sourceUrn, len(data.get("nodes", [])), len(data.get("edges", []))
             )
         except Exception as e:
-            GRAPH_LLM_CALLS.labels("failure").inc()
-            ERRORS.labels("graph_write").inc()
             logger.warning(
                 "GRAPH_WRITE: LLM_EXTRACTION_FAILED sourceUrn=%s error=%s",
                 request.sourceUrn, e
@@ -287,10 +279,7 @@ Text: {text}
 
             return local_nodes, local_edges
 
-        with observe_duration(GRAPH_INGEST_DURATION, ["arango_upsert"]):
-            local_nodes, local_edges = await asyncio.to_thread(_arango_upsert)
-        GRAPH_NODES_CREATED.inc(local_nodes)
-        GRAPH_EDGES_CREATED.inc(local_edges)
+        local_nodes, local_edges = await asyncio.to_thread(_arango_upsert)
         return local_nodes, local_edges, entity_keys
 
     async def purge_chunk_refs(self, deleted_chunk_ids: list[str]) -> tuple[int, int, int, int]:
@@ -489,15 +478,13 @@ Text: {text}
             return nodes
 
         try:
-            with observe_duration(GRAPH_QUERY_DURATION, ["traverse"]):
-                result = await asyncio.to_thread(_execute)
+            result = await asyncio.to_thread(_execute)
             logger.info(
                 "GRAPH_READ: TRAVERSE_COMPLETE startKey=%s results=%d",
                 request.startKey, len(result)
             )
             return result
         except Exception as e:
-            ERRORS.labels("graph_read").inc()
             logger.warning(
                 "GRAPH_READ: TRAVERSE_FAILED startKey=%s error=%s",
                 request.startKey, e

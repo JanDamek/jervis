@@ -229,15 +229,18 @@ class RpcConnectionManager(private val baseUrl: String) {
     fun <T> resilientFlow(
         subscribe: (NetworkModule.Services) -> Flow<T>,
     ): Flow<T> =
-        generation.flatMapLatest {
+        generation.flatMapLatest { gen ->
             flow {
+                println("RpcConnectionManager: resilientFlow restarting (gen=$gen), waiting for Connected state...")
                 // Wait until we're connected
                 val connected = state.first { it is RpcConnectionState.Connected }
                 val services = (connected as RpcConnectionState.Connected).services
+                println("RpcConnectionManager: resilientFlow got Connected (gen=$gen), subscribing...")
                 emitAll(
                     subscribe(services).catch { e ->
                         if (e is CancellationException) throw e
-                        println("RpcConnectionManager: Stream error: ${e.message}")
+                        println("RpcConnectionManager: Stream error (gen=$gen): ${e::class.simpleName}: ${e.message}")
+                        e.printStackTrace()
                         // Mark disconnected and trigger reconnect after cooldown
                         // to prevent rapid flickering during server restart
                         _state.value = RpcConnectionState.Disconnected

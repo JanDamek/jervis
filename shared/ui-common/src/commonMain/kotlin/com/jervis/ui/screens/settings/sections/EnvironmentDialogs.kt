@@ -76,7 +76,7 @@ internal fun AddComponentDialog(
     }
 }
 
-internal fun componentTypeLabel(type: ComponentTypeEnum): String = when (type) {
+fun componentTypeLabel(type: ComponentTypeEnum): String = when (type) {
     ComponentTypeEnum.POSTGRESQL -> "PostgreSQL"
     ComponentTypeEnum.MONGODB -> "MongoDB"
     ComponentTypeEnum.REDIS -> "Redis"

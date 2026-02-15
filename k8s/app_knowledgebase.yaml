@@ -161,8 +161,6 @@ kind: Service
 metadata:
   name: jervis-knowledgebase
   namespace: jervis
-  labels:
-    app: jervis-knowledgebase-read
 spec:
   selector:
     app: jervis-knowledgebase-read
@@ -177,8 +175,6 @@ kind: Service
 metadata:
   name: jervis-knowledgebase-write
   namespace: jervis
-  labels:
-    app: jervis-knowledgebase-write
 spec:
   selector:
     app: jervis-knowledgebase-write

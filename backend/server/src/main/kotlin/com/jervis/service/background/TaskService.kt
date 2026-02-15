@@ -166,18 +166,7 @@ class TaskService(
                 clientId = clientId,
             )
         // Exclude the currently running task from the count (its DB state is still READY_FOR_GPU)
-        var running = currentRunningTask
-
-        // Fallback: if no in-memory running task, check DB for PYTHON_ORCHESTRATING tasks.
-        // This handles pod restarts where the in-memory state is lost but the task is
-        // still being processed by the Python orchestrator.
-        if (running == null) {
-            running = taskRepository
-                .findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
-                .toList()
-                .firstOrNull { it.clientId == clientId }
-        }
-
+        val running = currentRunningTask
         val isRunningCounted = running != null &&
             running.clientId == clientId &&
             running.processingMode == ProcessingMode.FOREGROUND &&
@@ -211,15 +200,13 @@ class TaskService(
     /**
      * Get pending BACKGROUND tasks for queue display.
      * Returns tasks waiting to be processed, excluding the currently running task.
-     * Includes PYTHON_ORCHESTRATING tasks so actively orchestrated background tasks
-     * remain visible in the UI queue.
      */
     suspend fun getPendingBackgroundTasks(clientId: ClientId): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
-            .findByProcessingModeAndStateInOrderByQueuePositionAscCreatedAtAsc(
+            .findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
-                listOf(TaskStateEnum.READY_FOR_GPU, TaskStateEnum.PYTHON_ORCHESTRATING),
+                TaskStateEnum.READY_FOR_GPU,
             ).toList()
             .filter { it.clientId == clientId && it.id != running?.id }
     }

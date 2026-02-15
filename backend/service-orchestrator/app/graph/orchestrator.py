@@ -115,9 +115,6 @@ class OrchestratorState(TypedDict, total=False):
     # --- User context (auto-prefetched from KB) ---
     user_context: str | None            # User-learned knowledge (preferences, domain, etc.)
 
-    # --- Attachment context (extracted text from task attachments) ---
-    attachment_context: str | None
-
     # --- Existing (from clarify) ---
     project_context: str | None
     task_complexity: str | None
@@ -140,9 +137,6 @@ class OrchestratorState(TypedDict, total=False):
     error: str | None
     evaluation: dict | None
     kb_ingested: bool               # Whether task outcome was stored to KB
-
-    # --- Internal (not user-facing) ---
-    _thread_id: str                     # LangGraph thread ID — needed for AgentJobWatcher to resume
 
     # --- Delegation system (multi-agent, opt-in via use_delegation_graph) ---
     execution_plan: dict | None
@@ -481,7 +475,6 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
             workspace_path=request.workspace_path,
             query=request.query,
             agent_preference=request.agent_preference,
-            attachments=request.attachments,
         ).model_dump(),
         "rules": request.rules.model_dump(),
         "environment": request.environment,
@@ -501,8 +494,6 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "target_branch": None,
         # User context (auto-prefetched from KB)
         "user_context": None,
-        # Attachment context (populated by intake node)
-        "attachment_context": None,
         # Clarification
         "clarification_questions": None,
         "clarification_response": None,
@@ -523,8 +514,6 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "error": None,
         "evaluation": None,
         "kb_ingested": False,
-        # Internal
-        "_thread_id": "",
         # Delegation system (populated when use_delegation_graph is True)
         "execution_plan": None,
         "delegation_states": {},
@@ -580,7 +569,6 @@ async def run_orchestration(
             else:
                 logger.info("Starting fresh orchestration: task=%s thread=%s", request.task_id, thread_id)
             initial_state = _build_initial_state(request)
-            initial_state["_thread_id"] = thread_id
             final_state = await graph.ainvoke(initial_state, config=config)
 
         logger.info(
@@ -636,9 +624,6 @@ async def run_orchestration_streaming(
             else:
                 logger.info("Starting fresh streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
             state_to_use = _build_initial_state(request)
-
-        # Inject thread_id so nodes (execute_step, git_ops) can register with AgentJobWatcher
-        state_to_use["_thread_id"] = thread_id
 
         # Track state for progress info
         tracked = {

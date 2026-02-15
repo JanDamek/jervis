@@ -1,5 +1,6 @@
 package com.jervis.ui.util
 
+import kotlin.time.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -21,12 +22,14 @@ fun formatMessageTime(isoTimestamp: String): String {
 
     val tz = TimeZone.currentSystemDefault()
     val messageDateTime = instant.toLocalDateTime(tz)
-    val nowDateTime = kotlin.time.Clock.System.now().toLocalDateTime(tz)
+    val nowDateTime = Clock.System.now().toLocalDateTime(tz)
 
     val messageDate = messageDateTime.date
     val nowDate = nowDateTime.date
 
-    val time = "%02d:%02d".format(messageDateTime.hour, messageDateTime.minute)
+    val h = messageDateTime.hour.toString().padStart(2, '0')
+    val m = messageDateTime.minute.toString().padStart(2, '0')
+    val time = "$h:$m"
 
     return when {
         messageDate == nowDate -> time

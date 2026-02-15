@@ -432,10 +432,9 @@ class BackgroundEngine(
                             taskRepository.save(freshTask.copy(dispatchRetryCount = 0, nextDispatchRetryAt = null))
                         }
                         logger.info { "PYTHON_DISPATCHED: taskId=${task.id} → releasing execution slot, result via orchestratorResultLoop" }
-                        // Keep currentRunningTask set — task is still running on Python orchestrator.
-                        // OrchestratorStatusHandler will clear it when orchestration finishes.
-                        // Re-emit queue status so UI reflects the task is still processing.
-                        emitQueueStatus(freshTask ?: task)
+                        taskService.setRunningTask(null)
+                        // Don't emit idle — orchestrator is still running.
+                        // OrchestratorStatusHandler emits idle when orchestration finishes.
                         return@launch
                     }
 

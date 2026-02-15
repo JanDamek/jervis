@@ -4,7 +4,3 @@ build/
 .gradle/
 .kotlin/
 jervis backup/
-
-# Python
-__pycache__/
-*.pyc

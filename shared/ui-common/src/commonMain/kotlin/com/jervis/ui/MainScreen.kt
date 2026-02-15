@@ -2,6 +2,7 @@ package com.jervis.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,12 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoveToInbox
@@ -45,10 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
+import com.jervis.ui.design.JHorizontalSplitLayout
 import com.jervis.ui.design.JIconButton
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.navigation.Screen
@@ -62,11 +67,11 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
     SETTINGS(Icons.Default.Settings, "Nastavení"),
     USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy"),
     PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh"),
+    ENVIRONMENT_VIEWER(Icons.Default.Dns, "Prostředí K8s"),
     SCHEDULER(Icons.Default.CalendarMonth, "Plánovač"),
     MEETINGS(Icons.Default.Mic, "Meetingy"),
     RAG_SEARCH(Icons.Default.Search, "RAG Hledání"),
     INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace"),
-    ENVIRONMENT_VIEWER(Icons.Default.Cloud, "Prostředí K8s"),
     ERROR_LOGS(Icons.Default.BugReport, "Chybové logy"),
 }
 
@@ -74,11 +79,11 @@ private fun MainMenuItem.toScreen(): Screen = when (this) {
     MainMenuItem.SETTINGS -> Screen.Settings
     MainMenuItem.USER_TASKS -> Screen.UserTasks
     MainMenuItem.PENDING_TASKS -> Screen.PendingTasks
+    MainMenuItem.ENVIRONMENT_VIEWER -> Screen.EnvironmentViewer
     MainMenuItem.SCHEDULER -> Screen.Scheduler
     MainMenuItem.MEETINGS -> Screen.Meetings
     MainMenuItem.RAG_SEARCH -> Screen.RagSearch
     MainMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue
-    MainMenuItem.ENVIRONMENT_VIEWER -> Screen.EnvironmentViewer
     MainMenuItem.ERROR_LOGS -> Screen.ErrorLogs
 }
 
@@ -126,49 +131,124 @@ fun MainScreenView(
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
+    hasEnvironment: Boolean = false,
+    environmentPanelVisible: Boolean = false,
+    onToggleEnvironmentPanel: () -> Unit = {},
+    panelWidthFraction: Float = 0.35f,
+    onPanelWidthChange: (Float) -> Unit = {},
+    environmentPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize().imePadding()) {
-        ChatContent(
-            clients = clients,
-            projects = projects,
-            projectGroups = projectGroups,
-            selectedClientId = selectedClientId,
-            selectedProjectId = selectedProjectId,
-            selectedGroupId = selectedGroupId,
-            chatMessages = chatMessages,
-            inputText = inputText,
-            isLoading = isLoading,
-            queueSize = queueSize,
-            runningProjectId = runningProjectId,
-            runningProjectName = runningProjectName,
-            runningTaskPreview = runningTaskPreview,
-            runningTaskType = runningTaskType,
-            hasMore = hasMore,
-            isLoadingMore = isLoadingMore,
-            compressionBoundaries = compressionBoundaries,
-            attachments = attachments,
-            onClientSelected = onClientSelected,
-            onProjectSelected = onProjectSelected,
-            onGroupSelected = onGroupSelected,
-            onInputChanged = onInputChanged,
-            onSendClick = onSendClick,
-            onAgentStatusClick = onAgentStatusClick,
-            onNavigate = onNavigate,
-            connectionState = connectionState,
-            onReconnect = onReconnect,
-            onEditMessage = onEditMessage,
-            onLoadMore = onLoadMore,
-            onAttachFile = onAttachFile,
-            onRemoveAttachment = onRemoveAttachment,
-            pendingMessageInfo = pendingMessageInfo,
-            onRetryPending = onRetryPending,
-            onCancelPending = onCancelPending,
-            workspaceInfo = workspaceInfo,
-            onRetryWorkspace = onRetryWorkspace,
-            orchestratorHealthy = orchestratorHealthy,
-            modifier = Modifier.fillMaxSize(),
-        )
+    BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
+        val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
+
+        when {
+            // Compact + panel visible → show panel full-screen
+            isCompact && environmentPanelVisible -> {
+                environmentPanelContent(true)
+            }
+            // Expanded + panel visible → split layout
+            !isCompact && environmentPanelVisible -> {
+                JHorizontalSplitLayout(
+                    splitFraction = 1f - panelWidthFraction,
+                    onSplitChange = { onPanelWidthChange(1f - it) },
+                    minFraction = 0.5f,
+                    maxFraction = 0.8f,
+                    leftContent = { _ ->
+                        ChatContent(
+                            clients = clients,
+                            projects = projects,
+                            projectGroups = projectGroups,
+                            selectedClientId = selectedClientId,
+                            selectedProjectId = selectedProjectId,
+                            selectedGroupId = selectedGroupId,
+                            chatMessages = chatMessages,
+                            inputText = inputText,
+                            isLoading = isLoading,
+                            queueSize = queueSize,
+                            runningProjectId = runningProjectId,
+                            runningProjectName = runningProjectName,
+                            runningTaskPreview = runningTaskPreview,
+                            runningTaskType = runningTaskType,
+                            hasMore = hasMore,
+                            isLoadingMore = isLoadingMore,
+                            compressionBoundaries = compressionBoundaries,
+                            attachments = attachments,
+                            onClientSelected = onClientSelected,
+                            onProjectSelected = onProjectSelected,
+                            onGroupSelected = onGroupSelected,
+                            onInputChanged = onInputChanged,
+                            onSendClick = onSendClick,
+                            onAgentStatusClick = onAgentStatusClick,
+                            onNavigate = onNavigate,
+                            connectionState = connectionState,
+                            onReconnect = onReconnect,
+                            onEditMessage = onEditMessage,
+                            onLoadMore = onLoadMore,
+                            onAttachFile = onAttachFile,
+                            onRemoveAttachment = onRemoveAttachment,
+                            pendingMessageInfo = pendingMessageInfo,
+                            onRetryPending = onRetryPending,
+                            onCancelPending = onCancelPending,
+                            workspaceInfo = workspaceInfo,
+                            onRetryWorkspace = onRetryWorkspace,
+                            orchestratorHealthy = orchestratorHealthy,
+                            hasEnvironment = hasEnvironment,
+                            onToggleEnvironmentPanel = onToggleEnvironmentPanel,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    },
+                    rightContent = { _ ->
+                        environmentPanelContent(false)
+                    },
+                )
+            }
+            // No panel → normal chat
+            else -> {
+                ChatContent(
+                    clients = clients,
+                    projects = projects,
+                    projectGroups = projectGroups,
+                    selectedClientId = selectedClientId,
+                    selectedProjectId = selectedProjectId,
+                    selectedGroupId = selectedGroupId,
+                    chatMessages = chatMessages,
+                    inputText = inputText,
+                    isLoading = isLoading,
+                    queueSize = queueSize,
+                    runningProjectId = runningProjectId,
+                    runningProjectName = runningProjectName,
+                    runningTaskPreview = runningTaskPreview,
+                    runningTaskType = runningTaskType,
+                    hasMore = hasMore,
+                    isLoadingMore = isLoadingMore,
+                    compressionBoundaries = compressionBoundaries,
+                    attachments = attachments,
+                    onClientSelected = onClientSelected,
+                    onProjectSelected = onProjectSelected,
+                    onGroupSelected = onGroupSelected,
+                    onInputChanged = onInputChanged,
+                    onSendClick = onSendClick,
+                    onAgentStatusClick = onAgentStatusClick,
+                    onNavigate = onNavigate,
+                    connectionState = connectionState,
+                    onReconnect = onReconnect,
+                    onEditMessage = onEditMessage,
+                    onLoadMore = onLoadMore,
+                    onAttachFile = onAttachFile,
+                    onRemoveAttachment = onRemoveAttachment,
+                    pendingMessageInfo = pendingMessageInfo,
+                    onRetryPending = onRetryPending,
+                    onCancelPending = onCancelPending,
+                    workspaceInfo = workspaceInfo,
+                    onRetryWorkspace = onRetryWorkspace,
+                    orchestratorHealthy = orchestratorHealthy,
+                    hasEnvironment = hasEnvironment,
+                    onToggleEnvironmentPanel = onToggleEnvironmentPanel,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
     }
 }
 
@@ -215,6 +295,8 @@ private fun ChatContent(
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
+    hasEnvironment: Boolean = false,
+    onToggleEnvironmentPanel: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -232,6 +314,8 @@ private fun ChatContent(
             onNavigate = onNavigate,
             connectionState = connectionState,
             onReconnect = onReconnect,
+            hasEnvironment = hasEnvironment,
+            onToggleEnvironmentPanel = onToggleEnvironmentPanel,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -320,6 +404,8 @@ private fun SelectorsRow(
     onNavigate: (Screen) -> Unit,
     connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
     onReconnect: () -> Unit = {},
+    hasEnvironment: Boolean = false,
+    onToggleEnvironmentPanel: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -434,76 +520,86 @@ private fun SelectorsRow(
             }
         }
 
-        // Connection status indicator
-        ConnectionStatusIndicator(
-            connectionState = connectionState,
-            onReconnect = onReconnect,
-        )
+        // Right side: "connected" label on top, icons below
+        Column(
+            modifier = Modifier.align(Alignment.Bottom),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // "connected" label — only when connected/connecting
+            if (connectionState != MainViewModel.ConnectionState.DISCONNECTED) {
+                val semanticColors = com.jervis.ui.design.LocalJervisSemanticColors.current
+                val statusColor = when (connectionState) {
+                    MainViewModel.ConnectionState.CONNECTED -> semanticColors.success
+                    else -> semanticColors.warning
+                }
+                Text(
+                    text = when (connectionState) {
+                        MainViewModel.ConnectionState.CONNECTED -> "connected"
+                        else -> "connecting"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                    color = statusColor,
+                )
+            }
 
-        // Menu dropdown
-        Box {
-            var menuExpanded by remember { mutableStateOf(false) }
-
-            JIconButton(
-                onClick = { menuExpanded = true },
-                icon = Icons.Default.Menu,
-                contentDescription = "Menu",
-            )
-
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
+            // Icons row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                MainMenuItem.entries.forEach { item ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Text(item.title)
-                            }
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onNavigate(item.toScreen())
-                        },
+                // Reconnect button when disconnected
+                if (connectionState == MainViewModel.ConnectionState.DISCONNECTED) {
+                    JIconButton(
+                        onClick = onReconnect,
+                        icon = Icons.Default.Refresh,
+                        contentDescription = "Reconnect",
                     )
                 }
+
+                // K8s environment badge
+                if (hasEnvironment) {
+                    JIconButton(
+                        onClick = onToggleEnvironmentPanel,
+                        icon = Icons.Default.Dns,
+                        contentDescription = "Prostředí",
+                    )
+                }
+
+                // Menu dropdown
+                Box {
+                    var menuExpanded by remember { mutableStateOf(false) }
+
+                    JIconButton(
+                        onClick = { menuExpanded = true },
+                        icon = Icons.Default.Menu,
+                        contentDescription = "Menu",
+                    )
+
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        MainMenuItem.entries.forEach { item ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Text(item.title)
+                                    }
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNavigate(item.toScreen())
+                                },
+                            )
+                        }
+                    }
+                }
             }
-        }
-    }
-}
-
-/**
- * Connection status indicator with manual reconnect button.
- * Shows green dot for connected, yellow for connecting, red for disconnected.
- */
-@Composable
-private fun ConnectionStatusIndicator(
-    connectionState: MainViewModel.ConnectionState,
-    onReconnect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val statusText = when (connectionState) {
-        MainViewModel.ConnectionState.CONNECTED -> "CONNECTED"
-        MainViewModel.ConnectionState.CONNECTING -> "CONNECTING"
-        MainViewModel.ConnectionState.RECONNECTING -> "CONNECTING"
-        MainViewModel.ConnectionState.DISCONNECTED -> "DISCONNECTED"
-    }
-
-    Box(modifier = modifier) {
-        if (connectionState == MainViewModel.ConnectionState.DISCONNECTED) {
-            // Show reconnect button when disconnected
-            JIconButton(
-                onClick = onReconnect,
-                icon = Icons.Default.Refresh,
-                contentDescription = "Reconnect",
-            )
-        } else {
-            // Just show status badge
-            com.jervis.ui.design.JStatusBadge(status = statusText)
         }
     }
 }

@@ -29,6 +29,9 @@ import com.jervis.ui.util.PickedFile
 import com.jervis.ui.util.pickFile
 import com.jervis.dto.AttachmentDto
 import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.environment.EnvironmentDto
+import com.jervis.dto.environment.EnvironmentStateEnum
+import com.jervis.dto.environment.EnvironmentStatusDto
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.uuid.ExperimentalUuidApi
@@ -243,6 +246,39 @@ class MainViewModel(
     private val _orchestratorHealthy = MutableStateFlow(true)
     val orchestratorHealthy: StateFlow<Boolean> = _orchestratorHealthy.asStateFlow()
 
+    // Environment panel state
+    private val _environments = MutableStateFlow<List<EnvironmentDto>>(emptyList())
+    val environments: StateFlow<List<EnvironmentDto>> = _environments.asStateFlow()
+
+    private val _resolvedEnvId = MutableStateFlow<String?>(null)
+    val resolvedEnvId: StateFlow<String?> = _resolvedEnvId.asStateFlow()
+
+    private val _environmentStatuses = MutableStateFlow<Map<String, EnvironmentStatusDto>>(emptyMap())
+    val environmentStatuses: StateFlow<Map<String, EnvironmentStatusDto>> = _environmentStatuses.asStateFlow()
+
+    private val _environmentPanelVisible = MutableStateFlow(false)
+    val environmentPanelVisible: StateFlow<Boolean> = _environmentPanelVisible.asStateFlow()
+
+    private val _environmentPanelWidthFraction = MutableStateFlow(0.35f)
+    val environmentPanelWidthFraction: StateFlow<Float> = _environmentPanelWidthFraction.asStateFlow()
+
+    private val _expandedEnvIds = MutableStateFlow<Set<String>>(emptySet())
+    val expandedEnvIds: StateFlow<Set<String>> = _expandedEnvIds.asStateFlow()
+
+    private val _expandedComponentIds = MutableStateFlow<Set<String>>(emptySet())
+    val expandedComponentIds: StateFlow<Set<String>> = _expandedComponentIds.asStateFlow()
+
+    private val _environmentLoading = MutableStateFlow(false)
+    val environmentLoading: StateFlow<Boolean> = _environmentLoading.asStateFlow()
+
+    private val _environmentError = MutableStateFlow<String?>(null)
+    val environmentError: StateFlow<String?> = _environmentError.asStateFlow()
+
+    // Show K8s badge only when environments actually exist for the client
+    val hasEnvironment: Boolean get() = _environments.value.isNotEmpty()
+
+    private var environmentPollingJob: Job? = null
+
     // Platform notification manager
     val notificationManager = PlatformNotificationManager()
 
@@ -263,6 +299,8 @@ class MainViewModel(
         // Observe RpcConnectionManager state → drive local connection state + overlay
         scope.launch {
             connectionManager.state.collect { rpcState ->
+                val gen = connectionManager.generation.value
+                println("MainViewModel: RpcConnectionState changed to ${rpcState::class.simpleName} (gen=$gen)")
                 when (rpcState) {
                     is RpcConnectionState.Connected -> {
                         _connectionState.value = ConnectionState.CONNECTED
@@ -270,11 +308,12 @@ class MainViewModel(
                         // Debounce overlay hiding on reconnect — wait 2s to confirm
                         // connection stability before hiding the overlay.
                         // If disconnected again within 2s, the overlay stays visible.
-                        if (connectionManager.generation.value > 1 && _isOverlayVisible.value) {
+                        if (gen > 1 && _isOverlayVisible.value) {
                             overlayDebounceJob?.cancel()
                             overlayDebounceJob = scope.launch {
                                 delay(2000)
                                 if (_connectionState.value == ConnectionState.CONNECTED) {
+                                    println("MainViewModel: Hiding overlay after 2s stability check")
                                     _isOverlayVisible.value = false
                                 }
                             }
@@ -289,18 +328,17 @@ class MainViewModel(
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
-                        // Cancel pending overlay hide — connection is not stable
                         overlayDebounceJob?.cancel()
-                        // Show overlay only on reconnect (generation > 1), not initial connect
-                        if (connectionManager.generation.value > 1) {
+                        if (gen > 1) {
+                            println("MainViewModel: Showing overlay (reconnecting, gen=$gen)")
                             _isOverlayVisible.value = true
                         }
                     }
                     is RpcConnectionState.Disconnected -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
-                        // Cancel pending overlay hide — connection dropped
                         overlayDebounceJob?.cancel()
-                        if (connectionManager.generation.value > 0) {
+                        if (gen > 0) {
+                            println("MainViewModel: Showing overlay (disconnected, gen=$gen)")
                             _isOverlayVisible.value = true
                         }
                     }
@@ -318,6 +356,7 @@ class MainViewModel(
             combine(_selectedClientId, _selectedProjectId) { clientId, projectId ->
                 clientId to projectId
             }.collect { (clientId, projectId) ->
+                println("MainViewModel: combine(client=$clientId, project=$projectId) emitted")
                 if (clientId != null && projectId != null) {
                     subscribeToChatStream(clientId, projectId)
                 }
@@ -327,6 +366,7 @@ class MainViewModel(
         // Subscribe to global events for the selected client
         scope.launch {
             _selectedClientId.collect { clientId ->
+                println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
                     subscribeToQueueStatus(clientId)
@@ -336,6 +376,7 @@ class MainViewModel(
                 }
             }
         }
+
 
         // Collect notification action results from platform-specific handlers
         scope.launch {
@@ -370,9 +411,11 @@ class MainViewModel(
     }
 
     private fun subscribeToEventStream(clientId: String) {
+        println("MainViewModel: subscribeToEventStream(client=$clientId) — cancelling previous eventJob")
         eventJob?.cancel()
         eventJob = scope.launch {
             connectionManager.resilientFlow { services ->
+                println("MainViewModel: resilientFlow subscribing to events (client=$clientId, gen=${connectionManager.generation.value})")
                 services.notificationService.subscribeToEvents(clientId)
             }.collect { event ->
                 handleGlobalEvent(event)
@@ -641,9 +684,11 @@ class MainViewModel(
     }
 
     private fun subscribeToQueueStatus(clientId: String) {
+        println("MainViewModel: subscribeToQueueStatus(client=$clientId) — cancelling previous queueStatusJob")
         queueStatusJob?.cancel()
         queueStatusJob = scope.launch {
             connectionManager.resilientFlow { services ->
+                println("MainViewModel: resilientFlow subscribing to queueStatus (client=$clientId, gen=${connectionManager.generation.value})")
                 services.agentOrchestratorService.subscribeToQueueStatus(clientId)
             }.collect { response ->
                 if (response.type == ChatResponseType.QUEUE_STATUS) {
@@ -757,13 +802,15 @@ class MainViewModel(
         clientId: String,
         projectId: String,
     ) {
+        println("MainViewModel: subscribeToChatStream(client=$clientId, project=$projectId) — cancelling previous chatJob")
         chatJob?.cancel()
 
         chatJob = scope.launch {
             connectionManager.resilientFlow { services ->
+                println("MainViewModel: resilientFlow subscribing to chat (client=$clientId, project=$projectId, gen=${connectionManager.generation.value})")
                 services.agentOrchestratorService.subscribeToChat(clientId, projectId)
             }.onStart {
-                println("=== Chat stream started, reloading history ===")
+                println("MainViewModel: Chat stream started (client=$clientId, project=$projectId), reloading history")
                 _connectionState.value = ConnectionState.CONNECTED
                 reloadHistory(clientId, projectId)
             }.collect { response ->
@@ -802,10 +849,6 @@ class MainViewModel(
 
                 ChatResponseType.ERROR -> {
                     ChatMessage.MessageType.ERROR
-                }
-
-                ChatResponseType.STREAMING_TOKEN -> {
-                    ChatMessage.MessageType.STREAMING
                 }
 
                 ChatResponseType.CHAT_CHANGED -> {
@@ -902,36 +945,9 @@ class MainViewModel(
                 }
             }
 
-            ChatMessage.MessageType.STREAMING -> {
-                // Accumulate streaming token into existing streaming message (typewriter effect)
-                val existingIdx = messages.indexOfLast {
-                    it.messageType == ChatMessage.MessageType.STREAMING
-                }
-                if (existingIdx >= 0) {
-                    // Append token to existing streaming message
-                    messages[existingIdx] = messages[existingIdx].copy(
-                        text = messages[existingIdx].text + response.message,
-                    )
-                } else {
-                    // First token — remove progress messages, start streaming message
-                    messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
-                    messages.add(
-                        ChatMessage(
-                            from = ChatMessage.Sender.Assistant,
-                            text = response.message,
-                            contextId = projectId,
-                            messageType = ChatMessage.MessageType.STREAMING,
-                        ),
-                    )
-                }
-            }
-
             ChatMessage.MessageType.FINAL -> {
-                // Remove ALL progress and streaming messages — FINAL is the authoritative response
-                messages.removeAll {
-                    it.messageType == ChatMessage.MessageType.PROGRESS ||
-                        it.messageType == ChatMessage.MessageType.STREAMING
-                }
+                // Remove ALL progress messages (not just last) to clean up stacked indicators
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -945,10 +961,7 @@ class MainViewModel(
             }
 
             ChatMessage.MessageType.ERROR -> {
-                messages.removeAll {
-                    it.messageType == ChatMessage.MessageType.PROGRESS ||
-                        it.messageType == ChatMessage.MessageType.STREAMING
-                }
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -1096,17 +1109,30 @@ class MainViewModel(
 
     fun selectClient(clientId: String) {
         if (_selectedClientId.value == clientId) return
+        println("MainViewModel: selectClient($clientId) — previous: ${_selectedClientId.value}")
 
+        // Cancel existing streams FIRST to prevent stale subscriptions
+        chatJob?.cancel()
+        chatJob = null
+
+        // Set projectId to null BEFORE clientId to prevent combine() from emitting
+        // (newClient, oldProject) which would subscribe to chat with wrong parameters
+        _selectedProjectId.value = null
+        _selectedGroupId.value = null
         _selectedClientId.value = clientId
-        _selectedProjectId.value = null // Reset project selection temporarily
-        _selectedGroupId.value = null // Reset group selection
+
         _projects.value = emptyList()
         _projectGroups.value = emptyList()
-        _chatMessages.value = emptyList() // Clear messages for the new client
+        _chatMessages.value = emptyList()
 
-        chatJob?.cancel() // Cancel stream for previous client
-        _connectionState.value = ConnectionState.DISCONNECTED
-        _isOverlayVisible.value = false // Hide overlay on client change
+        // Reset environment state for new client
+        _environments.value = emptyList()
+        _resolvedEnvId.value = null
+        _environmentStatuses.value = emptyMap()
+        closeEnvironmentPanel()
+
+        // Do NOT set _connectionState = DISCONNECTED — the RPC connection is still alive,
+        // only the chat stream is being restarted. The connection observer handles real disconnects.
 
         scope.launch {
             _isLoading.value = true
@@ -1126,6 +1152,9 @@ class MainViewModel(
                         _selectedProjectId.value = lastProjectId
                     }
                 }
+
+                // Eagerly load environments to determine badge visibility
+                loadEnvironments(clientId)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _errorMessage.value = "Failed to load projects: ${e.message}"
@@ -1150,14 +1179,18 @@ class MainViewModel(
             return
         }
         if (_selectedProjectId.value == projectId) return
+        println("MainViewModel: selectProject($projectId) — previous: ${_selectedProjectId.value}")
+
+        // Cancel existing stream FIRST
+        chatJob?.cancel()
+        chatJob = null
 
         _selectedProjectId.value = projectId
-        _selectedGroupId.value = null // Clear group selection when project is selected
-        _chatMessages.value = emptyList() // Clear messages for the new project
+        _selectedGroupId.value = null
+        _chatMessages.value = emptyList()
 
-        chatJob?.cancel()
-        _connectionState.value = ConnectionState.DISCONNECTED
-        _isOverlayVisible.value = false // Hide overlay on project change
+        // Do NOT set _connectionState = DISCONNECTED — the RPC connection is still alive,
+        // only the chat stream is being restarted. The connection observer handles real disconnects.
 
         // Save selection to server
         val clientId = _selectedClientId.value
@@ -1496,8 +1529,122 @@ class MainViewModel(
         }
     }
 
+    // --- Environment Panel ---
+
+    fun loadEnvironments(clientId: String) {
+        scope.launch {
+            _environmentLoading.value = true
+            _environmentError.value = null
+            try {
+                val envList = repository.environments.listEnvironments(clientId)
+                _environments.value = envList
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _environmentError.value = "Nepodařilo se načíst prostředí: ${e.message}"
+            } finally {
+                _environmentLoading.value = false
+            }
+        }
+    }
+
+    fun resolveEnvironment(projectId: String) {
+        scope.launch {
+            try {
+                val env = repository.environments.resolveEnvironmentForProject(projectId)
+                _resolvedEnvId.value = env?.id
+                // Auto-expand the resolved environment
+                if (env != null) {
+                    _expandedEnvIds.value = _expandedEnvIds.value + env.id
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _resolvedEnvId.value = null
+            }
+        }
+    }
+
+    fun toggleEnvironmentPanel() {
+        val newVisible = !_environmentPanelVisible.value
+        _environmentPanelVisible.value = newVisible
+        if (newVisible) {
+            // Lazy load: fetch environments only when panel is opened
+            val clientId = _selectedClientId.value
+            if (clientId != null && _environments.value.isEmpty()) {
+                loadEnvironments(clientId)
+            }
+            val projectId = _selectedProjectId.value
+            if (projectId != null && _resolvedEnvId.value == null) {
+                resolveEnvironment(projectId)
+            }
+            startEnvironmentPolling()
+        } else {
+            stopEnvironmentPolling()
+        }
+    }
+
+    fun closeEnvironmentPanel() {
+        _environmentPanelVisible.value = false
+        stopEnvironmentPolling()
+    }
+
+    fun updatePanelWidthFraction(fraction: Float) {
+        _environmentPanelWidthFraction.value = fraction
+    }
+
+    fun toggleEnvExpanded(envId: String) {
+        val current = _expandedEnvIds.value
+        _expandedEnvIds.value = if (current.contains(envId)) current - envId else current + envId
+    }
+
+    fun toggleComponentExpanded(componentId: String) {
+        val current = _expandedComponentIds.value
+        _expandedComponentIds.value = if (current.contains(componentId)) current - componentId else current + componentId
+    }
+
+    fun refreshEnvironments() {
+        val clientId = _selectedClientId.value ?: return
+        loadEnvironments(clientId)
+        pollEnvironmentStatuses()
+    }
+
+    private fun startEnvironmentPolling() {
+        stopEnvironmentPolling()
+        environmentPollingJob = scope.launch {
+            while (true) {
+                pollEnvironmentStatuses()
+                delay(30_000)
+            }
+        }
+    }
+
+    private fun stopEnvironmentPolling() {
+        environmentPollingJob?.cancel()
+        environmentPollingJob = null
+    }
+
+    private fun pollEnvironmentStatuses() {
+        scope.launch {
+            val envs = _environments.value
+            val pollableStates = setOf(EnvironmentStateEnum.RUNNING, EnvironmentStateEnum.CREATING)
+            val toPoll = envs.filter { it.state in pollableStates }
+            val statuses = mutableMapOf<String, EnvironmentStatusDto>()
+            // Keep old statuses for envs we don't re-poll
+            statuses.putAll(_environmentStatuses.value)
+            toPoll.forEach { env ->
+                try {
+                    val status = repository.environments.getEnvironmentStatus(env.id)
+                    statuses[env.id] = status
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    // Keep old status on error
+                }
+            }
+            _environmentStatuses.value = statuses
+        }
+    }
+
     fun onDispose() {
-        // Cleanup if needed
+        stopEnvironmentPolling()
     }
 }
 
