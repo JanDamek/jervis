@@ -1,4 +1,10 @@
-"""OllamaRouter – multi-GPU routing logic, preemption, announce/release."""
+"""OllamaRouter – multi-GPU routing logic, preemption, announce/release.
+
+Supports multiple GPU backends with per-GPU reservations:
+- CRITICAL requests spread across GPUs (2 CRITICALs → 2 GPUs)
+- BACKGROUND requests use unreserved GPUs (not blanket-CPU)
+- Reservations track per-GPU with independent idle/absolute timeouts
+"""
 
 from __future__ import annotations
 
@@ -36,15 +42,14 @@ class OllamaRouter:
         self.cpu_url = settings.cpu_backend_url.rstrip("/")
         self.cpu_healthy = True
 
-        # Orchestrator reservation state
-        self._reservation_session: str | None = None
-        self._reservation_gpu: str | None = None
-        self._reservation_at: float | None = None
-        self._last_critical_activity: float | None = None
+        # Per-GPU reservation state (supports multiple concurrent reservations)
+        self._reservations: dict[str, str] = {}            # gpu_name → session_id
+        self._reservation_times: dict[str, float] = {}     # gpu_name → reserved_at
+        self._last_critical_activity: dict[str, float] = {}  # gpu_name → last_activity
         self._reservation_lock = asyncio.Lock()
 
-        # Background model loading task
-        self._bg_load_task: asyncio.Task | None = None
+        # Background model loading tasks (per GPU)
+        self._bg_load_tasks: dict[str, asyncio.Task] = {}  # gpu_name → task
 
         # HTTP client for internal management calls (load/unload/health)
         self._mgmt_client: httpx.AsyncClient | None = None
@@ -66,8 +71,9 @@ class OllamaRouter:
         """Cleanup on shutdown."""
         if self._watchdog_task:
             self._watchdog_task.cancel()
-        if self._bg_load_task and not self._bg_load_task.done():
-            self._bg_load_task.cancel()
+        for task in self._bg_load_tasks.values():
+            if not task.done():
+                task.cancel()
         if self._mgmt_client:
             await self._mgmt_client.aclose()
 
@@ -124,145 +130,232 @@ class OllamaRouter:
         model = request.model
         priority = request.priority
 
-        # ── 1. If GPU is reserved → BACKGROUND to CPU (MUST BE FIRST!) ──
-        if priority >= Priority.BACKGROUND and self._reservation_session:
-            return await self._send_to_cpu(request)
+        # ── 1. BACKGROUND with reservations → use unreserved GPU or CPU ──
+        if priority >= Priority.BACKGROUND and self._reservations:
+            # If ALL GPUs are reserved, go to CPU immediately
+            if not self.gpu_pool.find_unreserved():
+                return await self._send_to_cpu(request)
+            # Otherwise fall through — steps below use reservation-aware methods
+
+        # ── 1.5. BACKGROUND embedding yields GPU to ORCHESTRATOR_EMBEDDING ──
+        if priority >= Priority.BACKGROUND and model in EMBEDDING_MODELS:
+            for b in self.gpu_pool.healthy_backends:
+                if not b.reserved_by and b.has_active_orchestrator_embedding():
+                    logger.info("BACKGROUND embedding → CPU (ORCHESTRATOR_EMBEDDING active on GPU %s)", b.name)
+                    return await self._send_to_cpu(request)
 
         # ── 2. Find GPU that already has this model loaded ──────────────
         gpu = self.gpu_pool.find_with_model(model)
         if gpu:
-            if priority <= Priority.CRITICAL or not self._is_reserved_by_other(gpu):
+            if priority <= Priority.CRITICAL:
+                # CRITICAL: prefer spreading across GPUs
+                # If this GPU already has active CRITICAL, try another in step 3
+                if not gpu.has_active_critical():
+                    # Ensure reservation exists (e.g. after router restart, model still loaded)
+                    await self._ensure_critical_reservation(gpu)
+                    return await self._send_to_gpu(gpu, request)
+                # Fall through to step 3 for load-balancing
+            elif not gpu.reserved_by:
+                # Non-CRITICAL: use only unreserved GPUs
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 3. P0 CRITICAL: auto-reserve GPU, ensure model loaded ──────
+        # ── 3. CRITICAL: auto-reserve GPU, ensure model loaded ──────────
         if priority <= Priority.CRITICAL:
-            # CRITICAL: Reservation allows ONLY :30b model (orchestrator)
-            if ":30b" not in model:
-                logger.error("CRITICAL priority requires :30b model, got: %s", model)
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "invalid_critical_model", "message": f"CRITICAL requires :30b model, got {model}"},
-                )
+            return await self._route_critical(request)
 
-            # Auto-create reservation if not exists
-            if not self._reservation_session:
-                logger.info("Auto-reserving GPU for CRITICAL request %s (model=%s)", request.request_id, model)
-                async with self._reservation_lock:
-                    gpu = self.gpu_pool.find_for_reservation()
-                    if not gpu:
-                        logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
-                        return JSONResponse(
-                            status_code=503,
-                            content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
-                        )
+        # ── 3.5. ORCHESTRATOR_EMBEDDING: prefer unreserved GPU, fallback co-locate ──
+        if priority == Priority.ORCHESTRATOR_EMBEDDING:
+            # 1. Prefer unreserved GPU with embedding model (2-GPU: uses GPU2)
+            gpu = self.gpu_pool.find_unreserved_with_model(model)
+            if gpu:
+                logger.info("ORCHESTRATOR_EMBEDDING: Using unreserved GPU %s", gpu.name)
+                return await self._send_to_gpu(gpu, request)
 
-                    self._reservation_session = "critical"
-                    self._reservation_gpu = gpu.name
-                    self._reservation_at = time.monotonic()
-                    self._last_critical_activity = time.monotonic()
-                    gpu.reserved_by = "critical"
-                    gpu.reserved_at = time.monotonic()
-                    # Immediately preempt ALL active requests (orchestrator priority)
-                    if gpu.active_request_count() > 0:
-                        logger.warning(
-                            "GPU %s has %d active request(s), preempting ALL for CRITICAL",
-                            gpu.name, gpu.active_request_count(),
-                        )
-                        await self._preempt_all(gpu)
-                    # Unload ALL models (orchestrator :30b fills entire GPU)
-                    await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-
-            gpu = self.gpu_pool.find_for_reservation()
-            if not gpu:
-                # No healthy GPU - CRITICAL NEVER runs on CPU
-                logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
-                )
-
-            # Immediately preempt ALL active requests (orchestrator needs GPU NOW)
-            if gpu.active_request_count() > 0:
-                logger.warning(
-                    "GPU %s has %d active request(s), preempting ALL for CRITICAL request %s",
-                    gpu.name, gpu.active_request_count(), request.request_id,
-                )
-                await self._preempt_all(gpu)
-
-            # Ensure ONLY :30b model is loaded (nothing else fits)
-            if not gpu.has_model(model):
-                # Unload everything first (force cleanup)
-                await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+            # 2. Try any unreserved GPU (load model there)
+            gpu = self.gpu_pool.find_unreserved_with_free_vram(model)
+            if gpu:
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if not loaded:
-                    # Retry: unload from ALL GPUs and try again
-                    logger.error("CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup", model, gpu.name)
-                    for backend in self.gpu_pool.all_backends:
-                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
+                if loaded:
+                    logger.info("ORCHESTRATOR_EMBEDDING: Loaded %s on unreserved GPU %s", model, gpu.name)
+                    return await self._send_to_gpu(gpu, request)
+
+            # 3. Co-locate with CRITICAL on reserved GPU (1-GPU fallback)
+            for gpu_name in self._reservations:
+                gpu = self.gpu_pool.backends.get(gpu_name)
+                if not gpu:
+                    continue
+                logger.info("ORCHESTRATOR_EMBEDDING: Co-locating on CRITICAL GPU %s (1-GPU fallback)", gpu.name)
+                if not gpu.has_model(model):
                     loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                     if not loaded:
-                        logger.error("CRITICAL: Failed to load %s even after aggressive cleanup - REFUSING CPU fallback", model)
-                        return JSONResponse(
-                            status_code=503,
-                            content={"error": "model_load_failed", "message": f"Failed to load {model} on GPU, CRITICAL cannot run on CPU"},
-                        )
-            elif len(gpu.loaded_models) > 1:
-                # :30b is loaded but other models too - unload them!
-                logger.warning("GPU has :30b + other models, unloading extras")
-                await self.gpu_pool.unload_all(gpu, self._mgmt_client, except_models={model})
+                        logger.warning("ORCHESTRATOR_EMBEDDING: Failed to load %s on GPU %s", model, gpu.name)
+                        continue
+                    logger.info("ORCHESTRATOR_EMBEDDING: Loaded %s on GPU %s", model, gpu.name)
+                return await self._send_to_gpu(gpu, request)
 
-            self._last_critical_activity = time.monotonic()
-            return await self._send_to_gpu(gpu, request)
-
-        # ── 3.5. ORCHESTRATOR_EMBEDDING: Co-locate with CRITICAL if reservation active ───
-        if priority == Priority.ORCHESTRATOR_EMBEDDING:
-            # If CRITICAL reservation is active, try to co-locate embedding on same GPU
-            if self._reservation_session and self._reservation_gpu:
-                gpu = self.gpu_pool.backends.get(self._reservation_gpu)
-                if gpu:
-                    # Try to load embedding on the reserved GPU (may CPU-offload if no VRAM)
-                    logger.info("ORCHESTRATOR_EMBEDDING: Co-locating on CRITICAL GPU %s", gpu.name)
-                    if not gpu.has_model(model):
-                        loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                        if loaded:
-                            logger.info("ORCHESTRATOR_EMBEDDING: Successfully loaded %s on GPU %s", model, gpu.name)
-                        else:
-                            logger.warning("ORCHESTRATOR_EMBEDDING: Failed to load %s on GPU, will use CPU", model)
-                    # Send to GPU (model may be CPU-offloaded but still faster than pure CPU)
-                    if gpu.has_model(model):
-                        return await self._send_to_gpu(gpu, request)
-            # No CRITICAL reservation or co-location failed → CPU fallback
-            logger.info("ORCHESTRATOR_EMBEDDING: No CRITICAL reservation, using CPU")
+            # 4. CPU fallback
+            logger.info("ORCHESTRATOR_EMBEDDING: No GPU available, using CPU")
             return await self._send_to_cpu(request)
 
-        # ── 4. Find GPU with the model or free VRAM ─────────────────────
-        gpu = self.gpu_pool.find_with_model(model)
+        # ── 4. Find unreserved GPU with model or free VRAM ──────────────
+        gpu = self.gpu_pool.find_unreserved_with_model(model)
         if gpu:
             return await self._send_to_gpu(gpu, request)
 
-        gpu = self.gpu_pool.find_with_free_vram(model)
+        gpu = self.gpu_pool.find_unreserved_with_free_vram(model)
         if gpu:
             loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
             if loaded:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 5. Try to make space on GPU if idle (unload IDLE models) ───
+        # ── 5. BACKGROUND: idle unreserved GPU or CPU ───────────────────
         if priority >= Priority.BACKGROUND:
-            gpu = self.gpu_pool.find_least_busy()
+            gpu = self.gpu_pool.find_unreserved_least_busy()
             if gpu and gpu.active_request_count() == 0:
                 # GPU is IDLE - unload old models and load requested model
                 await self.gpu_pool.unload_all(gpu, self._mgmt_client)
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                 if loaded:
                     return await self._send_to_gpu(gpu, request)
-            # No idle GPU - fallback to CPU
+            # No idle unreserved GPU → CPU
             return await self._send_to_cpu(request)
 
-        # ── 6. Mid-priority (CODING, VLM) – already handled above ──────
-        # (CODING/VLM would have been routed in step 5 if GPU was idle)
-
-        # Last resort – CPU
+        # ── 6. Last resort – CPU ────────────────────────────────────────
         return await self._send_to_cpu(request)
+
+    # ── CRITICAL routing (step 3) ────────────────────────────────────────
+
+    async def _route_critical(self, request: TrackedRequest) -> Response:
+        """Route a CRITICAL request: auto-reserve GPU, spread across GPUs."""
+        model = request.model
+
+        if ":30b" not in model:
+            logger.error("CRITICAL priority requires :30b model, got: %s", model)
+            return JSONResponse(
+                status_code=503,
+                content={"error": "invalid_critical_model", "message": f"CRITICAL requires :30b model, got {model}"},
+            )
+
+        target_gpu = None
+        async with self._reservation_lock:
+            target_gpu = self._find_best_gpu_for_critical(model)
+
+            if not target_gpu:
+                logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
+                )
+
+            # Auto-reserve if not already reserved
+            if target_gpu.name not in self._reservations:
+                logger.info(
+                    "Auto-reserving GPU %s for CRITICAL request %s (model=%s)",
+                    target_gpu.name, request.request_id, model,
+                )
+
+                # Cancel background load on this GPU
+                bg_task = self._bg_load_tasks.get(target_gpu.name)
+                if bg_task and not bg_task.done():
+                    bg_task.cancel()
+
+                self._reservations[target_gpu.name] = "critical"
+                self._reservation_times[target_gpu.name] = time.monotonic()
+                self._last_critical_activity[target_gpu.name] = time.monotonic()
+                target_gpu.reserved_by = "critical"
+                target_gpu.reserved_at = time.monotonic()
+
+                # Preempt all non-CRITICAL work
+                if target_gpu.active_request_count() > 0:
+                    logger.warning(
+                        "GPU %s has %d active request(s), preempting for CRITICAL",
+                        target_gpu.name, target_gpu.active_request_count(),
+                    )
+                    await self._preempt_all(target_gpu)
+
+                # Unload ALL models (orchestrator :30b fills entire GPU)
+                await self.gpu_pool.unload_all(target_gpu, self._mgmt_client)
+            else:
+                # GPU already reserved — update activity timestamp
+                self._last_critical_activity[target_gpu.name] = time.monotonic()
+
+        # Load :30b if not present
+        if not target_gpu.has_model(model):
+            loaded = await self.gpu_pool.load_model(target_gpu, model, self._mgmt_client)
+            if not loaded:
+                # Aggressive retry: unload from ALL GPUs
+                logger.error(
+                    "CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup",
+                    model, target_gpu.name,
+                )
+                for backend in self.gpu_pool.all_backends:
+                    if backend.name != target_gpu.name:
+                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
+                loaded = await self.gpu_pool.load_model(target_gpu, model, self._mgmt_client)
+                if not loaded:
+                    logger.error("CRITICAL: Failed to load %s even after aggressive cleanup - REFUSING CPU fallback", model)
+                    return JSONResponse(
+                        status_code=503,
+                        content={"error": "model_load_failed", "message": f"Failed to load {model} on GPU, CRITICAL cannot run on CPU"},
+                    )
+        elif len(target_gpu.loaded_models) > 1:
+            # :30b is loaded but other models too - unload extras
+            logger.warning("GPU %s has :30b + other models, unloading extras", target_gpu.name)
+            await self.gpu_pool.unload_all(target_gpu, self._mgmt_client, except_models={model})
+
+        self._last_critical_activity[target_gpu.name] = time.monotonic()
+        return await self._send_to_gpu(target_gpu, request)
+
+    async def _ensure_critical_reservation(self, gpu: GpuBackend) -> None:
+        """Ensure GPU has a CRITICAL reservation (creates one if missing).
+
+        Needed when router restarts but model is still loaded on GPU — step 2
+        routes CRITICAL there directly, but the reservation dict is empty.
+        Without this, ORCHESTRATOR_EMBEDDING won't find a reservation to co-locate with.
+        """
+        if gpu.name in self._reservations:
+            self._last_critical_activity[gpu.name] = time.monotonic()
+            return
+        async with self._reservation_lock:
+            if gpu.name in self._reservations:  # Double-check after lock
+                self._last_critical_activity[gpu.name] = time.monotonic()
+                return
+            self._reservations[gpu.name] = "critical"
+            self._reservation_times[gpu.name] = time.monotonic()
+            self._last_critical_activity[gpu.name] = time.monotonic()
+            gpu.reserved_by = "critical"
+            gpu.reserved_at = time.monotonic()
+            logger.info("Auto-created reservation for GPU %s (CRITICAL fast-path)", gpu.name)
+
+    def _find_best_gpu_for_critical(self, model: str) -> GpuBackend | None:
+        """Find best GPU for CRITICAL request, preferring to spread across GPUs.
+
+        Priority order:
+        1. GPU with model loaded and NO active CRITICAL (ideal: zero wait)
+        2. Unreserved GPU (will load model, but no contention)
+        3. GPU with model loaded, least busy (serialize behind other CRITICAL)
+        4. Any healthy GPU, least busy
+        """
+        # 1. GPU with model loaded and NO active CRITICAL
+        for b in self.gpu_pool.healthy_backends:
+            if b.has_model(model) and not b.has_active_critical():
+                return b
+
+        # 2. Unreserved GPU (will need to load model)
+        for b in self.gpu_pool.healthy_backends:
+            if b.name not in self._reservations:
+                return b
+
+        # 3. GPU with model loaded, least busy (serialize)
+        candidates = [b for b in self.gpu_pool.healthy_backends if b.has_model(model)]
+        if candidates:
+            return min(candidates, key=lambda b: b.active_request_count())
+
+        # 4. Any healthy GPU
+        if self.gpu_pool.healthy_backends:
+            return min(self.gpu_pool.healthy_backends, key=lambda b: b.active_request_count())
+
+        return None
 
     # ── Send to backend ─────────────────────────────────────────────────
 
@@ -329,9 +422,12 @@ class OllamaRouter:
             await asyncio.sleep(settings.preempt_grace_s)
 
     async def _preempt_all(self, gpu: GpuBackend) -> None:
-        """Preempt ALL requests running on a GPU backend (for CRITICAL priority)."""
+        """Preempt ALL non-CRITICAL requests running on a GPU backend."""
         preempted = []
         for req_id, req in list(gpu.active_requests.items()):
+            # Never preempt CRITICAL requests (they take precedence)
+            if req.priority <= Priority.CRITICAL:
+                continue
             # Don't preempt short embedding requests
             if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
                 continue
@@ -345,7 +441,7 @@ class OllamaRouter:
 
         if preempted:
             logger.warning(
-                "Preempted ALL %d request(s) on GPU %s for CRITICAL work: %s",
+                "Preempted %d request(s) on GPU %s for CRITICAL work: %s",
                 len(preempted), gpu.name, preempted,
             )
             # Give a brief grace period for streams to close
@@ -354,9 +450,10 @@ class OllamaRouter:
     # ── Orchestrator announce/release ───────────────────────────────────
 
     async def announce(self, req: AnnounceRequest) -> AnnounceResponse:
-        """Reserve a GPU for critical work (session_id ignored - global reservation)."""
+        """Reserve a GPU for critical work. Supports multiple concurrent reservations."""
         async with self._reservation_lock:
-            gpu = self.gpu_pool.find_for_reservation()
+            # Find best GPU: prefer unreserved, exclude already-reserved
+            gpu = self.gpu_pool.find_for_reservation(exclude_gpus=set(self._reservations.keys()))
             if not gpu:
                 return AnnounceResponse(
                     status="degraded",
@@ -364,27 +461,27 @@ class OllamaRouter:
                     gpu_available=False,
                 )
 
-            # Cancel background model loading if in progress
-            if self._bg_load_task and not self._bg_load_task.done():
-                self._bg_load_task.cancel()
+            # Cancel background model loading on this GPU
+            bg_task = self._bg_load_tasks.get(gpu.name)
+            if bg_task and not bg_task.done():
+                bg_task.cancel()
 
-            # Set global reservation (session_id not tracked)
-            self._reservation_session = "critical"
-            self._reservation_gpu = gpu.name
-            self._reservation_at = time.monotonic()
-            self._last_critical_activity = time.monotonic()
-            gpu.reserved_by = "critical"
+            # Reserve this GPU
+            self._reservations[gpu.name] = req.session_id
+            self._reservation_times[gpu.name] = time.monotonic()
+            self._last_critical_activity[gpu.name] = time.monotonic()
+            gpu.reserved_by = req.session_id
             gpu.reserved_at = time.monotonic()
 
             logger.info(
-                "GPU %s reserved for CRITICAL work (model=%s)",
-                gpu.name, req.model,
+                "GPU %s reserved for CRITICAL work (session=%s, model=%s, total_reservations=%d)",
+                gpu.name, req.session_id, req.model, len(self._reservations),
             )
 
-            # Immediately preempt ALL active requests (orchestrator reservation)
+            # Immediately preempt non-CRITICAL active requests
             if gpu.active_request_count() > 0:
                 logger.warning(
-                    "GPU %s has %d active request(s), preempting ALL for reservation",
+                    "GPU %s has %d active request(s), preempting for reservation",
                     gpu.name, gpu.active_request_count(),
                 )
                 await self._preempt_all(gpu)
@@ -411,7 +508,8 @@ class OllamaRouter:
             if not model_loaded:
                 logger.error("CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup", req.model, gpu.name)
                 for backend in self.gpu_pool.all_backends:
-                    await self.gpu_pool.unload_all(backend, self._mgmt_client)
+                    if backend.name != gpu.name:
+                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
                 model_loaded = await self.gpu_pool.load_model(
                     gpu, req.model, self._mgmt_client,
                     keep_alive=settings.default_keep_alive,
@@ -427,46 +525,65 @@ class OllamaRouter:
             )
 
     async def release(self, req: ReleaseRequest) -> ReleaseResponse:
-        """Release GPU reservation and start loading background models (session_id ignored)."""
+        """Release GPU reservation. Finds GPU by session_id, or releases all if not found."""
         async with self._reservation_lock:
-            if not self._reservation_session:
-                logger.info("Release called but no reservation active")
+            if not self._reservations:
+                logger.info("Release called but no reservations active")
                 return ReleaseResponse(status="released", background_loading=False)
 
-            gpu_name = self._reservation_gpu
-            self._clear_reservation()
+            # Find GPU reserved by this session_id
+            gpu_to_release = None
+            for gpu_name, session_id in self._reservations.items():
+                if session_id == req.session_id:
+                    gpu_to_release = gpu_name
+                    break
 
-            # Schedule background model loading after a delay
-            bg_loading = False
-            if gpu_name:
-                gpu = self.gpu_pool.backends.get(gpu_name)
-                if gpu:
-                    self._bg_load_task = asyncio.create_task(
-                        self._delayed_background_load(gpu)
-                    )
-                    bg_loading = True
+            if gpu_to_release:
+                # Release specific GPU
+                self._clear_reservation(gpu_to_release)
+                self._schedule_bg_load(gpu_to_release)
+                logger.info("GPU %s reservation released (session=%s)", gpu_to_release, req.session_id)
+                return ReleaseResponse(status="released", background_loading=True)
 
-            logger.info("GPU reservation released")
-            return ReleaseResponse(status="released", background_loading=bg_loading)
+            # Session not found — release all "critical" auto-reservations
+            released = []
+            for gpu_name, session_id in list(self._reservations.items()):
+                if session_id == "critical":
+                    released.append(gpu_name)
+                    self._clear_reservation(gpu_name)
+                    self._schedule_bg_load(gpu_name)
 
-    def _clear_reservation(self) -> None:
-        if self._reservation_gpu:
-            gpu = self.gpu_pool.backends.get(self._reservation_gpu)
-            if gpu:
-                gpu.reserved_by = None
-                gpu.reserved_at = None
-        self._reservation_session = None
-        self._reservation_gpu = None
-        self._reservation_at = None
-        self._last_critical_activity = None
+            if released:
+                logger.info("Released %d auto-reservation(s): %s", len(released), released)
+                return ReleaseResponse(status="released", background_loading=True)
+
+            logger.info("Release called but no matching reservation for session=%s", req.session_id)
+            return ReleaseResponse(status="released", background_loading=False)
+
+    def _clear_reservation(self, gpu_name: str) -> None:
+        """Clear reservation for a specific GPU."""
+        gpu = self.gpu_pool.backends.get(gpu_name)
+        if gpu:
+            gpu.reserved_by = None
+            gpu.reserved_at = None
+        self._reservations.pop(gpu_name, None)
+        self._reservation_times.pop(gpu_name, None)
+        self._last_critical_activity.pop(gpu_name, None)
+
+    def _schedule_bg_load(self, gpu_name: str) -> None:
+        """Schedule background model loading on a GPU after reservation release."""
+        gpu = self.gpu_pool.backends.get(gpu_name)
+        if gpu:
+            task = asyncio.create_task(self._delayed_background_load(gpu))
+            self._bg_load_tasks[gpu_name] = task
 
     async def _delayed_background_load(self, gpu: GpuBackend) -> None:
         """After a delay, load background model set onto GPU."""
         try:
             await asyncio.sleep(settings.background_load_delay_s)
 
-            # Double-check no reservation happened during the delay
-            if self._reservation_session:
+            # Double-check GPU didn't get reserved during the delay
+            if gpu.name in self._reservations:
                 return
 
             # CRITICAL: If :30b model still loaded, don't load background set (won't fit)
@@ -478,48 +595,45 @@ class OllamaRouter:
             await self.gpu_pool.unload_all(gpu, self._mgmt_client)
             await self.gpu_pool.load_model_set(gpu, "background", self._mgmt_client)
         except asyncio.CancelledError:
-            logger.info("Background model loading cancelled")
+            logger.info("Background model loading cancelled for GPU %s", gpu.name)
         except Exception as e:
-            logger.error("Background model loading failed: %s", e)
+            logger.error("Background model loading failed for GPU %s: %s", gpu.name, e)
 
     # ── Reservation watchdog ────────────────────────────────────────────
 
     async def _reservation_watchdog(self) -> None:
-        """Auto-release GPU reservation on timeout."""
+        """Auto-release GPU reservations on timeout (per-GPU)."""
         while True:
             try:
                 await asyncio.sleep(30)
                 async with self._reservation_lock:
-                    if not self._reservation_session:
+                    if not self._reservations:
                         continue
 
                     now = time.monotonic()
 
-                    # Absolute timeout
-                    if self._reservation_at and (now - self._reservation_at) > settings.orchestrator_reservation_timeout_s:
-                        logger.warning(
-                            "Reservation for session %s exceeded %ds absolute timeout, auto-releasing",
-                            self._reservation_session, settings.orchestrator_reservation_timeout_s,
-                        )
-                        self._clear_reservation()
-                        continue
+                    for gpu_name in list(self._reservations.keys()):
+                        reserved_at = self._reservation_times.get(gpu_name)
+                        last_activity = self._last_critical_activity.get(gpu_name)
 
-                    # Idle timeout
-                    if self._last_critical_activity and (now - self._last_critical_activity) > settings.orchestrator_idle_timeout_s:
-                        logger.warning(
-                            "Reservation for session %s idle for %ds, auto-releasing",
-                            self._reservation_session, settings.orchestrator_idle_timeout_s,
-                        )
-                        gpu_name = self._reservation_gpu
-                        self._clear_reservation()
+                        # Absolute timeout
+                        if reserved_at and (now - reserved_at) > settings.orchestrator_reservation_timeout_s:
+                            logger.warning(
+                                "GPU %s reservation exceeded %ds absolute timeout, auto-releasing",
+                                gpu_name, settings.orchestrator_reservation_timeout_s,
+                            )
+                            self._clear_reservation(gpu_name)
+                            self._schedule_bg_load(gpu_name)
+                            continue
 
-                        # Start background loading
-                        if gpu_name:
-                            gpu = self.gpu_pool.backends.get(gpu_name)
-                            if gpu:
-                                self._bg_load_task = asyncio.create_task(
-                                    self._delayed_background_load(gpu)
-                                )
+                        # Idle timeout
+                        if last_activity and (now - last_activity) > settings.orchestrator_idle_timeout_s:
+                            logger.warning(
+                                "GPU %s reservation idle for %ds, auto-releasing",
+                                gpu_name, settings.orchestrator_idle_timeout_s,
+                            )
+                            self._clear_reservation(gpu_name)
+                            self._schedule_bg_load(gpu_name)
 
             except asyncio.CancelledError:
                 return
@@ -552,9 +666,9 @@ class OllamaRouter:
         return MODEL_TO_PRIORITY.get(model, Priority.BACKGROUND)
 
     def _is_reserved_by_other(self, gpu: GpuBackend) -> bool:
-        """Check if GPU is reserved by a different session."""
+        """Check if GPU is reserved."""
         return gpu.reserved_by is not None
 
     @property
     def is_reserved(self) -> bool:
-        return self._reservation_session is not None
+        return bool(self._reservations)

@@ -17,6 +17,7 @@ import com.jervis.knowledgebase.service.graphdb.model.GraphNode
 import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -25,6 +26,7 @@ import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.isSuccess
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -108,7 +110,7 @@ class KnowledgeServiceRestClient(
         logger.debug { "Calling knowledgebase ingestFull: sourceUrn=${request.sourceUrn}, attachments=${request.attachments.size}" }
 
         return try {
-            val response: PythonFullIngestResult = client.submitFormWithBinaryData(
+            val httpResponse = client.submitFormWithBinaryData(
                 url = "$apiBaseUrl/ingest/full",
                 formData = formData {
                     append("clientId", request.clientId.toString())
@@ -133,7 +135,14 @@ class KnowledgeServiceRestClient(
                         )
                     }
                 },
-            ).body()
+            )
+
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = httpResponse.bodyAsText()
+                throw RuntimeException("KB ingest/full returned ${httpResponse.status}: $errorBody")
+            }
+
+            val response: PythonFullIngestResult = httpResponse.body()
 
             FullIngestResult(
                 success = response.status == "success",

@@ -8,10 +8,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 from app.db.weaviate import get_weaviate_client
 from app.api.models import IngestRequest, RetrievalRequest, EvidenceItem, EvidencePack
-from app.metrics import (
-    RAG_INGEST_DURATION, RAG_CHUNKS_CREATED, RAG_QUERY_DURATION,
-    RAG_QUERY_RESULTS, ERRORS, observe_duration,
-)
 import weaviate.classes.config as wvc
 import weaviate.classes.query as wvq
 
@@ -28,7 +24,7 @@ class RagService:
         # "read" = orchestrator queries (ORCHESTRATOR_EMBEDDING = 1)
         # "write" = indexing (BACKGROUND = 4)
         self.embedding_priority = 1 if settings.KB_MODE == "read" else 4
-        self.http_client = httpx.AsyncClient(timeout=60.0)
+        self.http_client = httpx.AsyncClient(timeout=3600.0)  # 1 hour — CPU embedding is slow, queues behind other work
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
@@ -109,23 +105,13 @@ class RagService:
             request.groupId or "", request.kind or "", len(request.content), embedding_priority
         )
 
-        with observe_duration(RAG_INGEST_DURATION, ["total"]):
-            return await self._ingest_inner(request, graph_refs, embedding_priority)
-
-    async def _ingest_inner(
-        self,
-        request: IngestRequest,
-        graph_refs: list[str] = None,
-        embedding_priority: int | None = None,
-    ) -> tuple[int, list[str]]:
         chunks = self.text_splitter.split_text(request.content)
         logger.info("RAG_WRITE: SPLIT sourceUrn=%s → %d chunks", request.sourceUrn, len(chunks))
 
         # Batch embed all chunks at once (instead of per-chunk embed_query)
         logger.info("RAG_WRITE: EMBEDDING sourceUrn=%s chunks=%d model=%s priority=%s",
                     request.sourceUrn, len(chunks), settings.EMBEDDING_MODEL, embedding_priority)
-        with observe_duration(RAG_INGEST_DURATION, ["embed"]):
-            vectors = await self._embed_with_priority(chunks, priority=embedding_priority)
+        vectors = await self._embed_with_priority(chunks, priority=embedding_priority)
         logger.info("RAG_WRITE: EMBEDDED sourceUrn=%s vectors=%d", request.sourceUrn, len(vectors))
 
         def _weaviate_batch_insert():
@@ -156,9 +142,7 @@ class RagService:
                         )
             return chunk_ids
 
-        with observe_duration(RAG_INGEST_DURATION, ["weaviate_write"]):
-            chunk_ids = await asyncio.to_thread(_weaviate_batch_insert)
-        RAG_CHUNKS_CREATED.inc(len(chunk_ids))
+        chunk_ids = await asyncio.to_thread(_weaviate_batch_insert)
         logger.info(
             "RAG_WRITE: COMPLETE sourceUrn=%s chunks_written=%d clientId=%s projectId=%s chunk_ids=%s",
             request.sourceUrn, len(chunk_ids), request.clientId, request.projectId or "",
@@ -283,8 +267,7 @@ class RagService:
             request.groupId or "", request.maxResults, embedding_priority
         )
 
-        with observe_duration(RAG_QUERY_DURATION, ["embed"]):
-            vector = await self._embed_with_priority(request.query, priority=embedding_priority)
+        vector = await self._embed_with_priority(request.query, priority=embedding_priority)
         logger.info("RAG_READ: EMBEDDED query vector_dim=%d", len(vector))
 
         def _weaviate_query():
@@ -325,8 +308,7 @@ class RagService:
                 return_metadata=wvq.MetadataQuery(distance=True)
             )
 
-        with observe_duration(RAG_QUERY_DURATION, ["weaviate_search"]):
-            response = await asyncio.to_thread(_weaviate_query)
+        response = await asyncio.to_thread(_weaviate_query)
         logger.info("RAG_READ: WEAVIATE returned %d results", len(response.objects))
 
         items = []
@@ -347,6 +329,5 @@ class RagService:
                     obj.properties.get("content", "")[:100]
                 )
 
-        RAG_QUERY_RESULTS.observe(len(items))
         logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)

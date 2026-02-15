@@ -57,6 +57,20 @@ class GpuBackend:
             for r in self.active_requests.values()
         )
 
+    def has_active_critical(self) -> bool:
+        from .models import Priority
+        return any(
+            r.priority <= Priority.CRITICAL
+            for r in self.active_requests.values()
+        )
+
+    def has_active_orchestrator_embedding(self) -> bool:
+        from .models import Priority
+        return any(
+            r.priority == Priority.ORCHESTRATOR_EMBEDDING
+            for r in self.active_requests.values()
+        )
+
     def active_request_count(self) -> int:
         return len(self.active_requests)
 
@@ -129,22 +143,50 @@ class GpuPool:
             return None
         return min(backends, key=lambda b: b.active_request_count())
 
-    def find_for_reservation(self) -> GpuBackend | None:
+    def find_unreserved_with_model(self, model: str) -> GpuBackend | None:
+        """Find a healthy unreserved GPU that already has this model loaded."""
+        for b in self.healthy_backends:
+            if b.has_model(model) and b.reserved_by is None:
+                return b
+        return None
+
+    def find_unreserved_with_free_vram(self, model: str) -> GpuBackend | None:
+        """Find a healthy unreserved GPU with enough free VRAM for the model."""
+        needed = estimate_vram(model)
+        candidates = [b for b in self.healthy_backends if b.free_vram_gb >= needed and b.reserved_by is None]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda b: b.free_vram_gb)
+
+    def find_unreserved_least_busy(self) -> GpuBackend | None:
+        """Find the least busy healthy unreserved GPU."""
+        candidates = [b for b in self.healthy_backends if b.reserved_by is None]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda b: b.active_request_count())
+
+    def find_for_reservation(self, exclude_gpus: set[str] | None = None) -> GpuBackend | None:
         """Find the best GPU to reserve for orchestrator.
 
         Prefer: already has orchestrator model > unreserved > least busy.
+        Optionally excludes GPUs (e.g. already reserved ones).
         """
         from .config import settings as s
+        exclude = exclude_gpus or set()
+        candidates = [b for b in self.healthy_backends if b.name not in exclude]
+        if not candidates:
+            return None
+
         # 1. Already has the model
-        gpu = self.find_with_model(s.orchestrator_model)
-        if gpu:
-            return gpu
+        for b in candidates:
+            if b.has_model(s.orchestrator_model):
+                return b
         # 2. Unreserved
-        gpu = self.find_unreserved()
-        if gpu:
-            return gpu
-        # 3. Any healthy
-        return self.find_least_busy()
+        unreserved = [b for b in candidates if b.reserved_by is None]
+        if unreserved:
+            return min(unreserved, key=lambda b: b.active_request_count())
+        # 3. Any healthy candidate
+        return min(candidates, key=lambda b: b.active_request_count())
 
     async def sync_state(self, http_client: httpx.AsyncClient) -> None:
         """Query /api/ps on each backend to reconstruct loaded model state."""

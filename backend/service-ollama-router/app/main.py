@@ -389,10 +389,9 @@ async def router_status():
         },
         orchestrator={
             "reserved": router.is_reserved,
-            "session_id": router._reservation_session,
-            "gpu": router._reservation_gpu,
-            "reserved_at": router._reservation_at,
-            "last_activity": router._last_critical_activity,
+            "reservations": router._reservations,
+            "reservation_times": {k: v for k, v in router._reservation_times.items()},
+            "last_activity": {k: v for k, v in router._last_critical_activity.items()},
         },
         metrics={
             "note": "See /router/metrics for Prometheus format",
