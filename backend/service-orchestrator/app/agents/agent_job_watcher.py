@@ -133,7 +133,7 @@ class AgentJobWatcher:
         Re-registers any persisted watched jobs, then verifies each
         against K8s to check if the job is still running.
         """
-        if not self._db:
+        if self._db is None:
             logger.info("AgentJobWatcher: recovery skipped (no MongoDB)")
             return
 
@@ -402,7 +402,7 @@ class AgentJobWatcher:
 
     async def _persist_job(self, job_name: str):
         """Persist watched job to MongoDB for pod restart recovery."""
-        if not self._db:
+        if self._db is None:
             return
 
         watched = self._watched_jobs.get(job_name)
@@ -428,7 +428,7 @@ class AgentJobWatcher:
 
     async def _remove_persisted_job(self, job_name: str):
         """Remove persisted watched job from MongoDB."""
-        if not self._db:
+        if self._db is None:
             return
 
         try:

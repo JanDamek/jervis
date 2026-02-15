@@ -6,6 +6,7 @@ import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.environment.EnvironmentResourceService
 import com.jervis.service.environment.EnvironmentService
 import com.jervis.service.error.ErrorLogService
+import org.bson.types.ObjectId
 import org.springframework.stereotype.Component
 
 @Component
@@ -16,8 +17,8 @@ class EnvironmentResourceRpcImpl(
 ) : BaseRpcImpl(errorLogService),
     IEnvironmentResourceService {
 
-    private fun resolveNamespace(environmentId: String): String {
-        val env = environmentService.getEnvironment(EnvironmentId(environmentId))
+    private suspend fun resolveNamespace(environmentId: String): String {
+        val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(environmentId)))
         return env.namespace
     }
 
