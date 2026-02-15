@@ -95,6 +95,18 @@ class ProjectRules(BaseModel):
 # --- Task Models ---
 
 
+class AttachmentData(BaseModel):
+    """Attachment sent from Kotlin server with base64-encoded file data."""
+
+    id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    attachment_type: str  # IMAGE, PDF_SCANNED, PDF_STRUCTURED, DOCUMENT, UNKNOWN
+    data_base64: str
+    vision_description: str | None = None
+
+
 class CodingTask(BaseModel):
     """Input task for the orchestrator."""
 
@@ -106,6 +118,7 @@ class CodingTask(BaseModel):
     workspace_path: str
     query: str
     agent_preference: str = "auto"
+    attachments: list[AttachmentData] = Field(default_factory=list)
 
 
 class Goal(BaseModel):
@@ -256,6 +269,7 @@ class OrchestrateRequest(BaseModel):
     environment: dict | None = None  # Resolved environment context from server
     jervis_project_id: str | None = None  # JERVIS internal project for planning
     chat_history: ChatHistoryPayload | None = None  # Conversation context
+    attachments: list[AttachmentData] = Field(default_factory=list)
 
 
 class OrchestrateResponse(BaseModel):

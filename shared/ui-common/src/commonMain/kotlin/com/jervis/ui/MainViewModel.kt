@@ -784,6 +784,10 @@ class MainViewModel(
                     ChatMessage.MessageType.ERROR
                 }
 
+                ChatResponseType.STREAMING_TOKEN -> {
+                    ChatMessage.MessageType.STREAMING
+                }
+
                 ChatResponseType.CHAT_CHANGED -> {
                     println("=== Chat session changed, reloading history... ===")
                     reloadHistory(clientId, projectId)
@@ -878,9 +882,36 @@ class MainViewModel(
                 }
             }
 
+            ChatMessage.MessageType.STREAMING -> {
+                // Accumulate streaming token into existing streaming message (typewriter effect)
+                val existingIdx = messages.indexOfLast {
+                    it.messageType == ChatMessage.MessageType.STREAMING
+                }
+                if (existingIdx >= 0) {
+                    // Append token to existing streaming message
+                    messages[existingIdx] = messages[existingIdx].copy(
+                        text = messages[existingIdx].text + response.message,
+                    )
+                } else {
+                    // First token — remove progress messages, start streaming message
+                    messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                    messages.add(
+                        ChatMessage(
+                            from = ChatMessage.Sender.Assistant,
+                            text = response.message,
+                            contextId = projectId,
+                            messageType = ChatMessage.MessageType.STREAMING,
+                        ),
+                    )
+                }
+            }
+
             ChatMessage.MessageType.FINAL -> {
-                // Remove ALL progress messages (not just last) to clean up stacked indicators
-                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                // Remove ALL progress and streaming messages — FINAL is the authoritative response
+                messages.removeAll {
+                    it.messageType == ChatMessage.MessageType.PROGRESS ||
+                        it.messageType == ChatMessage.MessageType.STREAMING
+                }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -894,7 +925,10 @@ class MainViewModel(
             }
 
             ChatMessage.MessageType.ERROR -> {
-                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                messages.removeAll {
+                    it.messageType == ChatMessage.MessageType.PROGRESS ||
+                        it.messageType == ChatMessage.MessageType.STREAMING
+                }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,

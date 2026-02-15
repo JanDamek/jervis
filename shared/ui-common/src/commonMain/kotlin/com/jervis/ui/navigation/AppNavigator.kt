@@ -35,6 +35,9 @@ sealed class Screen {
     // Indexing queue overview
     object IndexingQueue : Screen()
 
+    // Environment viewer (K8s resource inspection)
+    object EnvironmentViewer : Screen()
+
     // Debug console (WebSocket)
     object DebugConsole : Screen()
 }

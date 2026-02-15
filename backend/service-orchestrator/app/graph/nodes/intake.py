@@ -18,6 +18,7 @@ from app.graph.nodes._helpers import (
 )
 from app.kb.prefetch import fetch_project_context, fetch_user_context
 from app.models import TaskCategory, TaskAction, Complexity
+from app.tools.attachment_processor import process_all_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,21 @@ async def intake(state: dict) -> dict:
     project_id = task.get("project_id")
     chat_history = state.get("chat_history")
 
+    # 0. Process attachments — extract text and append to query context
+    attachments = task.get("attachments", [])
+    attachment_context = ""
+    if attachments:
+        logger.info("INTAKE: processing %d attachments", len(attachments))
+        try:
+            attachment_context = await process_all_attachments(attachments)
+            if attachment_context:
+                logger.info(
+                    "INTAKE: attachment text extracted (%d chars from %d attachments)",
+                    len(attachment_context), len(attachments),
+                )
+        except Exception as e:
+            logger.warning("INTAKE: attachment processing failed: %s", e)
+
     # 1. Detect target branch
     target_branch = _detect_branch_reference(query)
     if target_branch:
@@ -263,6 +279,7 @@ async def intake(state: dict) -> dict:
             "role": "user",
             "content": (
                 f"Query: {query}"
+                + (f"\n\nAttachments:\n{attachment_context}" if attachment_context else "")
                 + (f"\n\nContext:\n{context_block}" if context_block else "")
             ),
         },
@@ -310,7 +327,7 @@ async def intake(state: dict) -> dict:
     # 7. Check if clarification is needed
     needs_clarification = not goal_clear and bool(clarification_questions)
 
-    return {
+    result = {
         "task_category": category,
         "task_action": action,
         "task_complexity": complexity,
@@ -323,3 +340,9 @@ async def intake(state: dict) -> dict:
         "target_branch": target_branch,
         "kb_search_queries": search_queries,  # Store for downstream nodes
     }
+
+    # Store attachment text for downstream nodes (evidence, execute, respond)
+    if attachment_context:
+        result["attachment_context"] = attachment_context
+
+    return result
