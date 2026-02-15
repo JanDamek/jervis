@@ -129,6 +129,16 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * Find tasks by processingMode matching any of the given states, ordered by queuePosition then createdAt.
+     * Used for BACKGROUND queue display: includes both READY_FOR_GPU and PYTHON_ORCHESTRATING tasks
+     * so actively orchestrated background tasks remain visible in the UI.
+     */
+    suspend fun findByProcessingModeAndStateInOrderByQueuePositionAscCreatedAtAsc(
+        processingMode: ProcessingMode,
+        states: Collection<TaskStateEnum>,
+    ): Flow<TaskDocument>
+
+    /**
      * Find all pending tasks for a client by processing mode and state.
      * Used for queue management UI display.
      */
