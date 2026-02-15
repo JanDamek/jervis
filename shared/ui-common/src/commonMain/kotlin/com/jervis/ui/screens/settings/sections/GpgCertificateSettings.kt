@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,10 +37,12 @@ import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JSnackbarHost
+import com.jervis.ui.design.JStatusBadge
 import com.jervis.ui.design.JTextField
 import kotlinx.coroutines.launch
 
@@ -90,20 +95,13 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                     JSection(title = "Klient") {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
                         ) {
                             clientNames.forEach { (id, name) ->
-                                SuggestionChip(
+                                FilterChip(
+                                    selected = id == selectedClientId,
                                     onClick = { selectedClientId = id },
-                                    label = {
-                                        Text(
-                                            name,
-                                            color = if (id == selectedClientId) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                        )
-                                    },
+                                    label = { Text(name) },
                                 )
                             }
                         }
@@ -114,8 +112,8 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                 if (certificates.isEmpty()) {
                     item {
                         JEmptyState(
-                            title = "Žádné GPG certifikáty",
-                            description = "Nahrajte GPG klíč pro podepisování commitů coding agentů.",
+                            message = "Žádné GPG certifikáty\nNahrajte GPG klíč pro podepisování commitů coding agentů.",
+                            icon = Icons.Default.Lock,
                         )
                     }
                 } else {
@@ -181,22 +179,14 @@ private fun GpgCertificateCard(
 ) {
     JCard {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
+            ) {
                 Text("GPG klíč", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(8.dp))
-                SuggestionChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            if (certificate.hasPrivateKey) "Aktivní" else "Bez klíče",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (certificate.hasPrivateKey) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                        )
-                    },
+                JStatusBadge(
+                    status = if (certificate.hasPrivateKey) "ACTIVE" else "DISCONNECTED",
                 )
             }
 
@@ -213,8 +203,13 @@ private fun GpgCertificateCard(
             }
 
             Spacer(Modifier.height(12.dp))
-            JSecondaryButton(onClick = onDelete) {
-                Text("Smazat")
+            Row(
+                modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                JSecondaryButton(onClick = onDelete) {
+                    Text("Smazat")
+                }
             }
         }
     }
@@ -276,7 +271,9 @@ private fun GpgUploadForm(
                     label = "ASCII Armored Private Key",
                     placeholder = "-----BEGIN PGP PRIVATE KEY BLOCK-----\n...\n-----END PGP PRIVATE KEY BLOCK-----",
                     singleLine = false,
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    minLines = 6,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 JTextField(

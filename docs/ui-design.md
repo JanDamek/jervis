@@ -476,8 +476,9 @@ private enum class MainMenuItem(val icon: ImageVector, val title: String) {
 **Chat message types** (`ChatMessage.MessageType`):
 - `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
 - `PROGRESS` — compact row with `CircularProgressIndicator` (16dp) + bodySmall text
-- `FINAL` — assistant bubble (secondaryContainer, left-aligned)
-- `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
+- `STREAMING` — typewriter effect: tokens accumulate into a single assistant bubble. First token removes PROGRESS messages. Replaced by FINAL when orchestration completes. Source: `ChatResponseType.STREAMING_TOKEN` chunks from `respond.py` via `/internal/orchestrator-streaming-token`
+- `FINAL` — assistant bubble (secondaryContainer, left-aligned). Replaces STREAMING message with full answer + workflow steps
+- `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`. Also removes any STREAMING messages
 
 **Chat bubble layout** (`ChatMessageDisplay.kt`):
 
