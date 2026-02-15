@@ -1,7 +1,32 @@
 """Configuration for the Python Orchestrator service."""
 
+import logging
 import os
 from pydantic_settings import BaseSettings
+
+_log = logging.getLogger(__name__)
+
+
+def _safe_int(env: str, default: int) -> int:
+    raw = os.getenv(env)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        _log.warning("Invalid %s=%r, using default %d", env, raw, default)
+        return default
+
+
+def _safe_float(env: str, default: float) -> float:
+    raw = os.getenv(env)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        _log.warning("Invalid %s=%r, using default %.1f", env, raw, default)
+        return default
 
 
 class Settings(BaseSettings):
@@ -84,13 +109,13 @@ class Settings(BaseSettings):
     agent_timeout_junie: int = 1200
 
     # Agent pool — configurable concurrent limits per type
-    max_concurrent_aider: int = int(os.getenv("MAX_CONCURRENT_AIDER", "3"))
-    max_concurrent_openhands: int = int(os.getenv("MAX_CONCURRENT_OPENHANDS", "2"))
-    max_concurrent_claude: int = int(os.getenv("MAX_CONCURRENT_CLAUDE", "2"))
-    max_concurrent_junie: int = int(os.getenv("MAX_CONCURRENT_JUNIE", "1"))
+    max_concurrent_aider: int = _safe_int("MAX_CONCURRENT_AIDER", 3)
+    max_concurrent_openhands: int = _safe_int("MAX_CONCURRENT_OPENHANDS", 2)
+    max_concurrent_claude: int = _safe_int("MAX_CONCURRENT_CLAUDE", 2)
+    max_concurrent_junie: int = _safe_int("MAX_CONCURRENT_JUNIE", 1)
 
     # Pool wait timeout (seconds) — how long to wait for a free slot before error
-    pool_wait_timeout: float = float(os.getenv("POOL_WAIT_TIMEOUT", "120"))
+    pool_wait_timeout: float = _safe_float("POOL_WAIT_TIMEOUT", 120.0)
 
     # Stuck job detection — job is stuck if age > timeout * multiplier
     stuck_job_timeout_multiplier: float = float(

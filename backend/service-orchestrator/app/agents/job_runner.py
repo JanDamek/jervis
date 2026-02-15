@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from kubernetes import client, config, watch
@@ -210,7 +211,7 @@ class JobRunner:
         workspace_path: str,
         allow_git: bool = False,
         instructions_override: str | None = None,
-        on_log_line: callable | None = None,
+        on_log_line: Callable | None = None,
     ) -> dict:
         """Run a coding agent as a K8s Job and wait for completion (blocking).
 
@@ -299,7 +300,7 @@ class JobRunner:
         return {"status": "timeout", "succeeded": False}
 
     async def _stream_job_logs(
-        self, job_name: str, callback: callable
+        self, job_name: str, callback: Callable
     ):
         """Stream logs from Job pod."""
         ns = settings.k8s_namespace

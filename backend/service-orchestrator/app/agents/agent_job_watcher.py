@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 from app.agents.job_runner import job_runner
@@ -319,7 +320,7 @@ class AgentJobWatcher:
                 continue
 
             watched = self._watched_jobs[stuck.job_name]
-            elapsed = __import__("time").time() - stuck.started_at
+            elapsed = time.time() - stuck.started_at
 
             logger.warning(
                 "AgentJobWatcher: STUCK JOB DETECTED — %s (agent=%s, elapsed=%.0fs, timeout=%ds)",
