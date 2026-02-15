@@ -354,7 +354,6 @@ private fun ChatMessageItem(
                                 content = message.text,
                                 colors = markdownColor(
                                     text = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    codeText = MaterialTheme.colorScheme.onSecondaryContainer,
                                     codeBackground = MaterialTheme.colorScheme.surfaceVariant,
                                 ),
                                 typography = markdownTypography(
