@@ -145,9 +145,21 @@ class TaskService(
     }
 
     /**
-     * Get currently running task (for progress display)
+     * Get currently running task (for progress display).
+     * First checks in-memory tracking, then falls back to DB query
+     * for PYTHON_ORCHESTRATING tasks (dispatched to orchestrator but still active).
      */
-    fun getCurrentRunningTask(): TaskDocument? = currentRunningTask
+    suspend fun getCurrentRunningTask(): TaskDocument? =
+        currentRunningTask ?: getOrchestratingTask()
+
+    /**
+     * Find any task currently being processed by the Python orchestrator.
+     * Covers both FOREGROUND and BACKGROUND tasks in PYTHON_ORCHESTRATING state.
+     */
+    private suspend fun getOrchestratingTask(): TaskDocument? =
+        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+            .toList()
+            .firstOrNull()
 
     /**
      * Get queue status: currently running task and queue size.
@@ -166,7 +178,7 @@ class TaskService(
                 clientId = clientId,
             )
         // Exclude the currently running task from the count (its DB state is still READY_FOR_GPU)
-        val running = currentRunningTask
+        val running = getCurrentRunningTask()
         val isRunningCounted = running != null &&
             running.clientId == clientId &&
             running.processingMode == ProcessingMode.FOREGROUND &&
@@ -183,16 +195,15 @@ class TaskService(
 
     /**
      * Get pending FOREGROUND tasks for queue display.
-     * Returns tasks waiting to be processed, excluding the currently running task.
-     * Includes PYTHON_ORCHESTRATING tasks so inline messages sent during orchestration
-     * are visible in the UI queue.
+     * Returns only tasks actually waiting to be processed (READY_FOR_GPU).
+     * PYTHON_ORCHESTRATING tasks are NOT in the queue — they're shown in the Agent section.
      */
     suspend fun getPendingForegroundTasks(clientId: ClientId): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
-            .findByProcessingModeAndStateInOrderByQueuePositionAsc(
+            .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
-                listOf(TaskStateEnum.READY_FOR_GPU, TaskStateEnum.PYTHON_ORCHESTRATING),
+                TaskStateEnum.READY_FOR_GPU,
             ).toList()
             .filter { it.clientId == clientId && it.id != running?.id }
     }
