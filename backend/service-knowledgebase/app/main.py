@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 
 from app.core.config import settings
 from app.logging_utils import LocalTimeFormatter
@@ -82,19 +82,33 @@ async def lifespan(app: FastAPI):
 
 # Concurrency limiters (prioritize reads over writes)
 _read_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_READS)
-_write_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_WRITES)
+
+# Dual write semaphores: priority writes (<=2) never wait behind normal writes (>2)
+_priority_write_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_WRITES // 2 or 5)
+_normal_write_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_WRITES // 2 or 5)
 
 
 async def acquire_read_slot() -> AsyncGenerator[None, None]:
-    """Dependency: acquire read concurrency slot (up to 40 concurrent)."""
+    """Dependency: acquire read concurrency slot."""
     async with _read_semaphore:
         yield
 
 
-async def acquire_write_slot() -> AsyncGenerator[None, None]:
-    """Dependency: acquire write concurrency slot (up to 10 concurrent, queue others)."""
-    async with _write_semaphore:
-        yield
+async def acquire_write_slot_with_priority(request: Request) -> AsyncGenerator[None, None]:
+    """Dependency: acquire write concurrency slot based on X-Ollama-Priority header.
+
+    Priority writes (X-Ollama-Priority <= 2) use a separate semaphore from
+    normal/background writes, so MCP/orchestrator writes never queue behind bulk indexing.
+    """
+    priority_header = request.headers.get("X-Ollama-Priority")
+    priority = int(priority_header) if priority_header and priority_header.isdigit() else 99
+
+    if priority <= 2:
+        async with _priority_write_semaphore:
+            yield
+    else:
+        async with _normal_write_semaphore:
+            yield
 
 
 app = FastAPI(title="Knowledge Service", version="1.0.0", lifespan=lifespan)
@@ -113,7 +127,7 @@ if settings.KB_MODE in ("all", "write"):
     app.include_router(
         write_router,
         prefix="/api/v1",
-        dependencies=[Depends(acquire_write_slot)],
+        dependencies=[Depends(acquire_write_slot_with_priority)],
     )
 
 

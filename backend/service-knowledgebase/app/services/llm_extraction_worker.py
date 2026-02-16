@@ -101,11 +101,12 @@ class LLMExtractionWorker:
 
                 # Process the task
                 logger.info(
-                    "Worker %s processing task %s: source=%s kind=%s (attempt %d/3)",
+                    "Worker %s processing task %s: source=%s kind=%s priority=%d (attempt %d/3)",
                     self.worker_id,
                     task.task_id,
                     task.source_urn,
                     task.kind,
+                    task.priority,
                     task.attempts,
                 )
 
@@ -155,6 +156,7 @@ class LLMExtractionWorker:
         nodes, edges, entity_keys = await self.graph_service.ingest(
             request=request,
             chunk_ids=task.chunk_ids,
+            embedding_priority=task.priority,
         )
 
         logger.info(

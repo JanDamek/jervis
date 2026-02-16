@@ -2,6 +2,7 @@ import json
 import asyncio
 import logging
 
+import httpx
 from app.db.arango import get_arango_db
 from app.api.models import IngestRequest, TraversalRequest, GraphNode, TraversalSpec
 from app.services.normalizer import (
@@ -10,7 +11,6 @@ from app.services.normalizer import (
     build_graph_key
 )
 from app.services.alias_registry import AliasRegistry
-from langchain_ollama import ChatOllama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 
@@ -21,12 +21,7 @@ class GraphService:
     def __init__(self):
         self.db = get_arango_db()
         self.alias_registry = AliasRegistry(self.db)
-        self.llm = ChatOllama(
-            base_url=settings.OLLAMA_INGEST_BASE_URL,
-            model=settings.LLM_MODEL,
-            format="json",
-            temperature=0
-        )
+        self.http_client = httpx.AsyncClient(timeout=600.0)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=200
@@ -39,10 +34,31 @@ class GraphService:
         if not self.db.has_collection("KnowledgeEdges"):
             self.db.create_collection("KnowledgeEdges", edge=True)
 
+    async def _llm_call(self, prompt: str, priority: int | None = None) -> str:
+        """Direct httpx call to Ollama Router with X-Ollama-Priority header.
+
+        Same pattern as rag_service._embed_with_priority() — direct httpx gives
+        full control over the X-Ollama-Priority header, which ChatOllama doesn't expose.
+        """
+        url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
+        effective_priority = priority if priority is not None else 4  # default: BACKGROUND
+        headers = {"X-Ollama-Priority": str(effective_priority)}
+        payload = {
+            "model": settings.LLM_MODEL,
+            "prompt": prompt,
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0},
+        }
+        resp = await self.http_client.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
+        return resp.json()["response"]
+
     async def ingest(
         self,
         request: IngestRequest,
-        chunk_ids: list[str] = None
+        chunk_ids: list[str] = None,
+        embedding_priority: int | None = None,
     ) -> tuple[int, int, list[str]]:
         """
         Ingest content into graph store with bidirectional linking.
@@ -50,6 +66,7 @@ class GraphService:
         Args:
             request: The ingest request
             chunk_ids: List of RAG chunk UUIDs that contain this content
+            embedding_priority: Ollama priority (1=high, 4=background)
 
         Returns:
             Tuple of (nodes_created, edges_created, list of extracted entity keys)
@@ -75,7 +92,7 @@ class GraphService:
         # Process chunks sequentially (for LLM rate limiting)
         for i, chunk in enumerate(chunks, 1):
             logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", i, len(chunks), request.sourceUrn)
-            n, e, keys = await self._process_chunk(chunk, request, chunk_ids)
+            n, e, keys = await self._process_chunk(chunk, request, chunk_ids, embedding_priority=embedding_priority)
             nodes_created += n
             edges_created += e
             all_entity_keys.extend(keys)
@@ -98,7 +115,8 @@ class GraphService:
         self,
         text: str,
         request: IngestRequest,
-        chunk_ids: list[str] = None
+        chunk_ids: list[str] = None,
+        embedding_priority: int | None = None,
     ) -> tuple[int, int, list[str]]:
         """
         Process a single chunk: extract entities and relationships.
@@ -130,13 +148,12 @@ Text: {text}
 """
 
         logger.info(
-            "GRAPH_WRITE: LLM_CALL sourceUrn=%s text_len=%d model=%s",
-            request.sourceUrn, len(text), settings.LLM_MODEL
+            "GRAPH_WRITE: LLM_CALL sourceUrn=%s text_len=%d model=%s priority=%s",
+            request.sourceUrn, len(text), settings.LLM_MODEL, embedding_priority
         )
 
         try:
-            response = await self.llm.ainvoke(prompt)
-            content = response.content
+            content = await self._llm_call(prompt, priority=embedding_priority)
             logger.info(
                 "GRAPH_WRITE: LLM_RESPONSE sourceUrn=%s response_len=%d",
                 request.sourceUrn, len(content)
@@ -1237,4 +1254,131 @@ Text: {text}
             "cpg_types": len(types_data),
             "cpg_calls": len(calls_data),
             "cpg_type_refs": len(type_refs_data),
+        }
+
+    # -----------------------------------------------------------------------
+    # Git commit ingest — structured commit nodes + edges
+    # -----------------------------------------------------------------------
+
+    def _make_commit_key(self, commit_hash: str, project_id: str) -> str:
+        return self._safe_arango_key(["commit", commit_hash, project_id])
+
+    async def ingest_git_commits(
+        self,
+        client_id: str,
+        project_id: str,
+        repo_identifier: str,
+        branch: str,
+        commits: list[dict],
+    ) -> dict:
+        """Create graph nodes/edges for git commits. No LLM involved.
+
+        Per commit:
+        - Node: commit::{hash}::{projectId}
+        - Edge: branch --[has_commit]--> commit
+        - Edge: commit --[modifies]--> file (if file node exists)
+        - Edge: commit --[creates]--> file
+        - Edge: commit --[deletes]--> file
+
+        Args:
+            client_id: Client ID
+            project_id: Project ID
+            repo_identifier: Repository identifier
+            branch: Branch name
+            commits: List of commit info dicts
+
+        Returns:
+            Dict with counts.
+        """
+        branch_key = self._make_branch_key(branch, project_id)
+
+        def _upsert():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            created = 0
+            edge_count = 0
+
+            for c in commits:
+                commit_hash = c.get("hash", "")
+                if not commit_hash:
+                    continue
+
+                c_key = self._make_commit_key(commit_hash, project_id)
+
+                # Upsert commit node
+                if not nodes_col.has(c_key):
+                    nodes_col.insert({
+                        "_key": c_key,
+                        "canonicalKey": f"commit:{commit_hash}:{project_id}",
+                        "label": f"{commit_hash[:8]}: {(c.get('message', '') or '')[:80]}",
+                        "type": "commit",
+                        "hash": commit_hash,
+                        "message": c.get("message", ""),
+                        "author": c.get("author", ""),
+                        "date": c.get("date", ""),
+                        "branch": branch,
+                        "parentHash": c.get("parent_hash", ""),
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "groupId": "",
+                        "ragChunks": [],
+                    })
+                    created += 1
+
+                # branch -> commit edge
+                if nodes_col.has(branch_key):
+                    e_key = self._safe_arango_key([branch_key, "has_commit", c_key], max_len=250)
+                    if not edges_col.has(e_key):
+                        try:
+                            edges_col.insert({
+                                "_key": e_key,
+                                "_from": f"KnowledgeNodes/{branch_key}",
+                                "_to": f"KnowledgeNodes/{c_key}",
+                                "relation": "has_commit",
+                                "relationNormalized": "has_commit",
+                                "evidenceChunkIds": [],
+                            })
+                            edge_count += 1
+                        except Exception:
+                            pass
+
+                # commit -> file edges (modifies, creates, deletes)
+                file_actions = [
+                    ("modifies", c.get("files_modified", [])),
+                    ("creates", c.get("files_created", [])),
+                    ("deletes", c.get("files_deleted", [])),
+                ]
+                for relation, file_paths in file_actions:
+                    for fp in file_paths[:100]:  # Limit per commit
+                        f_key = self._make_file_key(fp, branch, project_id)
+                        if not nodes_col.has(f_key):
+                            continue
+                        e_key = self._safe_arango_key([c_key, relation, f_key], max_len=250)
+                        if not edges_col.has(e_key):
+                            try:
+                                edges_col.insert({
+                                    "_key": e_key,
+                                    "_from": f"KnowledgeNodes/{c_key}",
+                                    "_to": f"KnowledgeNodes/{f_key}",
+                                    "relation": relation,
+                                    "relationNormalized": relation,
+                                    "evidenceChunkIds": [],
+                                })
+                                edge_count += 1
+                            except Exception:
+                                pass
+
+            return created, edge_count
+
+        nodes_created, edges_created = await asyncio.to_thread(_upsert)
+
+        logger.info(
+            "Git commit ingest: repo=%s branch=%s commits=%d nodes=%d edges=%d",
+            repo_identifier, branch, len(commits), nodes_created, edges_created,
+        )
+
+        return {
+            "commits_ingested": len(commits),
+            "nodes_created": nodes_created,
+            "edges_created": edges_created,
         }

@@ -12,6 +12,8 @@ import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.CpgIngestRequest
 import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.EvidencePack
+import com.jervis.knowledgebase.model.GitCommitIngestRequest
+import com.jervis.knowledgebase.model.GitCommitIngestResult
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
@@ -74,6 +76,7 @@ class RpcClientsConfig(
             override suspend fun ingestFull(request: FullIngestRequest): FullIngestResult = getKnowledgeService().ingestFull(request)
             override suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult = getKnowledgeService().ingestGitStructure(request)
             override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult = getKnowledgeService().ingestCpg(request)
+            override suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult = getKnowledgeService().ingestGitCommits(request)
             override suspend fun retrieve(request: RetrievalRequest): EvidencePack = getKnowledgeService().retrieve(request)
             override suspend fun traverse(
                 clientId: ClientId,

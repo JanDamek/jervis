@@ -1,6 +1,6 @@
 # Knowledge Base - Implementation and Architecture
 
-**Status:** Production Documentation (2026-02-12)
+**Status:** Production Documentation (2026-02-16)
 **Purpose:** Knowledge base implementation, graph design, and architecture
 
 ---
@@ -166,10 +166,11 @@ type: "class"
 props: { qualifiedName: String?, filePath: String, branchName: String, visibility: String?,
          clientId: String, projectId: String }
 
-// Git Commit
-nodeKey: "commit::{commitHash}"
+// Git Commit (created by POST /ingest/git-commits — structured ingest, no LLM)
+nodeKey: "commit::{hash}::{projectId}"
 type: "commit"
-props: { hash: String, message: String, authorName: String, timestamp: Instant, branchName: String? }
+props: { hash: String, message: String, author: String, date: String, branch: String,
+         clientId: String, projectId: String }
 ```
 
 > **Key length guard**: ArangoDB `_key` max 254 bytes. Keys exceeding 200 chars get
@@ -225,9 +226,11 @@ file --[contains]--> class
 class --[has_method]--> method     // tree-sitter extracted
 file --[imports]--> class           // tree-sitter import analysis
 
-// Git commit relationships (commit-level ingest)
+// Git commit relationships (POST /ingest/git-commits — structured, no LLM)
+branch --[has_commit]--> commit
 commit --[modifies]--> file
 commit --[creates]--> file
+commit --[deletes]--> file
 commit --[parent]--> commit
 
 // Joern CPG edges (POST /ingest/cpg — deep analysis)
@@ -263,7 +266,8 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 *   **Framework**: FastAPI
 *   **RAG**: LangChain, Weaviate Client v4
 *   **Graph**: Python-Arango
-*   **LLM**: Ollama (Qwen 2.5, Qwen 3-VL)
+*   **LLM**: Direct httpx to Ollama Router (`/api/generate`) with `X-Ollama-Priority` header (replaced LangChain ChatOllama for full priority control)
+*   **Embeddings**: Direct httpx to Ollama Router (`/api/embeddings`) with `X-Ollama-Priority` header
 
 ### Features
 1.  **Web Crawling**: `POST /crawl` endpoint to index documentation from URLs.
@@ -273,6 +277,38 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 5.  **Scoped Search**: Filters results by Client, Project, and Group.
 6.  **Structural Code Ingest**: `POST /ingest/git-structure` — tree-sitter extracts classes, methods, imports from source code.
 7.  **Deep Code Analysis**: `POST /ingest/cpg` — Joern CPG export adds semantic edges (calls, extends, uses_type).
+8.  **Git Commit Ingest**: `POST /ingest/git-commits` — structured commit nodes with graph edges to branches/files + diff as RAG chunks.
+
+### Priority Write Queue (Dual Semaphore)
+
+KB write service uses dual semaphore to ensure MCP/orchestrator writes are never blocked by bulk indexing:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              WRITE SERVICE (main.py)                      │
+├──────────────────────────┬───────────────────────────────┤
+│  Priority Semaphore (5)  │  Normal Semaphore (5)         │
+│  X-Ollama-Priority ≤ 2   │  X-Ollama-Priority > 2        │
+│  MCP, orchestrator       │  Bulk indexing, git commits   │
+├──────────────────────────┴───────────────────────────────┤
+│  Priority routing: acquire_write_slot_with_priority()    │
+│  Reads X-Ollama-Priority header → selects semaphore      │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Priority propagation through full stack:**
+1. **HTTP level** — `acquire_write_slot_with_priority()` routes to priority or normal semaphore
+2. **LLM Extraction Queue** — SQLite `priority` column, dequeue `ORDER BY priority ASC, created_at ASC`
+3. **Graph LLM calls** — Direct httpx POST to Ollama Router `/api/generate` with `X-Ollama-Priority` header (replaced LangChain ChatOllama)
+4. **Embeddings** — Direct httpx POST to Ollama Router `/api/embeddings` with `X-Ollama-Priority` header
+
+**Effect:** `kb_store` (MCP, priority 1) completes in seconds even during heavy bulk indexing (priority 4).
+
+**Key files:**
+- `app/main.py` — dual semaphore, `acquire_write_slot_with_priority()`
+- `app/services/graph_service.py` — `_llm_call(prompt, priority)` with httpx
+- `app/services/llm_extraction_queue.py` — priority column, priority-aware dequeue
+- `app/services/llm_extraction_worker.py` — passes priority to graph service
 
 ### Multi-tenant Scoping (with Project Groups)
 
@@ -470,7 +506,11 @@ graphRefLocks["client-abc|user:john"] = Mutex()
   2. **Structural Ingest** — tree-sitter extracts classes, methods, imports from source files → `POST /ingest/git-structure` → ArangoDB graph nodes (repo→branch→file→class→method)
   3. **CPG Deep Analysis** — Joern generates Code Property Graph → `POST /ingest/cpg` → semantic edges (calls, extends, uses_type)
 - **Process (incremental commits):**
-  1. Commit diff + metadata → `GIT_PROCESSING` task → Qualifier indexes to KB
+  1. Parses `git diff-tree --name-status` → classifies files as modified/created/deleted
+  2. Sends structured data directly via `knowledgeService.ingestGitCommits()` → `POST /ingest/git-commits`
+  3. KB creates commit nodes in ArangoDB with edges (`has_commit`, `modifies`, `creates`, `deletes`)
+  4. Diff content indexed as RAG chunks for fulltext search
+  5. **No LLM involved** — purely structural graph ingest + RAG embedding
 
 #### Tree-sitter Pipeline (Phase 1 — fast, ~5s per 100 files)
 
@@ -505,6 +545,29 @@ GitContinuousIndexer.createCpgAnalysisTask()
 **CPG Pruning Strategy:** Only actionable edges are imported. Skipped: AST nodes, CFG/CDG edges, reaching-def edges, ARGUMENT/RECEIVER details (too granular for agent use).
 
 **Failure handling:** CPG analysis failure is non-fatal — the structural graph from tree-sitter remains fully usable.
+
+#### Git Commit Ingest Pipeline (incremental — per commit)
+
+Kotlin sends structured commit data directly to KB, bypassing the generic qualification pipeline.
+
+```
+GitContinuousIndexer.processCommit()
+  → git diff-tree --name-status → classify M/A/D/R files
+  → git diff <hash> → full diff text
+  → knowledgeService.ingestGitCommits(GitCommitIngestRequest)
+    → POST /ingest/git-commits (KB write service)
+    → graph_service.ingest_git_commits():
+      - Creates commit node: commit::{hash}::{projectId}
+      - Edge: branch --[has_commit]--> commit
+      - Edge: commit --[modifies]--> file (for each M file)
+      - Edge: commit --[creates]--> file (for each A file)
+      - Edge: commit --[deletes]--> file (for each D file)
+      - Edge: commit --[parent]--> commit (if parent hash known)
+    → rag_service.ingest() for diff text (RAG chunks for fulltext)
+```
+
+**Key files (Python):** `app/api/models.py` (GitCommitInfo, GitCommitIngestRequest), `app/services/graph_service.py` (ingest_git_commits), `app/api/routes.py` (POST /ingest/git-commits)
+**Key files (Kotlin):** `GitCommitIngestRequest.kt` (DTOs), `KnowledgeServiceRestClient.kt` (REST client), `GitContinuousIndexer.kt` (caller)
 
 ### MeetingContinuousIndexer
 
@@ -754,8 +817,10 @@ Next conversation:
 7. **Type safety:** Explicit input/output types throughout
 8. **Infinite retry for operational errors:** Ollama busy/timeout → exponential backoff, never marks ERROR
 9. **Queue priority:** Manual reordering of qualification queue items via `queuePosition`
-10. **Procedural Memory:** Learned workflows stored per-client for automatic procedure reuse
-11. **Session Memory:** 7-day short-term memory bridging orchestrations for recent context
+10. **Write priority:** Dual semaphore ensures MCP/orchestrator writes never blocked by bulk indexing
+11. **Direct structured ingest:** Git commits bypass LLM qualification — structured graph nodes + RAG embedding only
+12. **Procedural Memory:** Learned workflows stored per-client for automatic procedure reuse
+13. **Session Memory:** 7-day short-term memory bridging orchestrations for recent context
 
 ### Benefits
 

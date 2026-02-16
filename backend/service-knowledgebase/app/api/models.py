@@ -401,6 +401,54 @@ class CpgIngestResult(BaseModel):
     uses_type_edges: int = 0
 
 
+# === Git Commit Ingest Models ===
+
+class GitCommitInfo(BaseModel):
+    """Single git commit metadata."""
+    hash: str
+    message: str
+    author: str
+    date: str
+    branch: str
+    parent_hash: Optional[str] = None
+    files_modified: List[str] = []
+    files_created: List[str] = []
+    files_deleted: List[str] = []
+
+
+class GitCommitIngestRequest(BaseModel):
+    """Request to ingest structured git commit data into KB graph.
+
+    Creates commit nodes in ArangoDB with edges to branch and file nodes.
+    Optional diff_content is ingested as RAG chunks for fulltext search.
+
+    Multi-tenant scoping: same rules as GitStructureIngestRequest.
+    """
+    clientId: str
+    projectId: str
+    repositoryIdentifier: str
+    branch: str
+    commits: List[GitCommitInfo]
+    diff_content: Optional[str] = None
+
+    @model_validator(mode='after')
+    def validate_tenant_hierarchy(self):
+        if not self.clientId:
+            raise ValueError("clientId is required for git commit ingest")
+        if not self.projectId:
+            raise ValueError("projectId is required for git commit ingest")
+        return self
+
+
+class GitCommitIngestResult(BaseModel):
+    """Result of git commit ingest."""
+    status: str
+    commits_ingested: int = 0
+    nodes_created: int = 0
+    edges_created: int = 0
+    rag_chunks: int = 0
+
+
 # === Joern Quick Scan Models ===
 
 class JoernScanRequest(BaseModel):

@@ -6,6 +6,8 @@ import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
 import com.jervis.knowledgebase.model.CpgIngestRequest
 import com.jervis.knowledgebase.model.CpgIngestResult
+import com.jervis.knowledgebase.model.GitCommitIngestRequest
+import com.jervis.knowledgebase.model.GitCommitIngestResult
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
 import com.jervis.knowledgebase.model.GitStructureIngestResult
 import com.jervis.knowledgebase.model.IngestRequest
@@ -52,6 +54,13 @@ interface KnowledgeService {
      * Called from GitContinuousIndexer during initial branch index.
      */
     suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult
+
+    /**
+     * Ingest structured git commit data into KB graph.
+     * Creates commit nodes with edges to branch and file nodes.
+     * Optional diffContent is indexed as RAG chunks for fulltext search.
+     */
+    suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult
 
     /**
      * Run Joern CPG deep analysis and import semantic edges.

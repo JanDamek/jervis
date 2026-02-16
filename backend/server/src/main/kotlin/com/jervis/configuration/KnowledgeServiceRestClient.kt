@@ -5,6 +5,8 @@ import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.CpgIngestRequest
 import com.jervis.knowledgebase.model.CpgIngestResult
 import com.jervis.knowledgebase.model.EvidenceItem
+import com.jervis.knowledgebase.model.GitCommitIngestRequest
+import com.jervis.knowledgebase.model.GitCommitIngestResult
 import com.jervis.knowledgebase.model.EvidencePack
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
@@ -318,6 +320,51 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    override suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult {
+        logger.debug { "Calling knowledgebase ingestGitCommits: repo=${request.repositoryIdentifier} branch=${request.branch} commits=${request.commits.size}" }
+
+        val pythonRequest = PythonGitCommitIngestRequest(
+            clientId = request.clientId,
+            projectId = request.projectId,
+            repositoryIdentifier = request.repositoryIdentifier,
+            branch = request.branch,
+            commits = request.commits.map { c ->
+                PythonGitCommitInfo(
+                    hash = c.hash,
+                    message = c.message,
+                    author = c.author,
+                    date = c.date,
+                    branch = c.branch,
+                    parentHash = c.parentHash,
+                    filesModified = c.filesModified,
+                    filesCreated = c.filesCreated,
+                    filesDeleted = c.filesDeleted,
+                )
+            },
+            diffContent = request.diffContent,
+        )
+
+        return try {
+            val response: PythonGitCommitIngestResult = client.post("$apiBaseUrl/ingest/git-commits") {
+                contentType(ContentType.Application.Json)
+                setBody(pythonRequest)
+            }.body()
+
+            GitCommitIngestResult(
+                status = response.status,
+                commitsIngested = response.commitsIngested,
+                nodesCreated = response.nodesCreated,
+                edgesCreated = response.edgesCreated,
+                ragChunks = response.ragChunks,
+            )
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ingest git commits to knowledgebase: ${e.message}" }
+            GitCommitIngestResult(
+                status = "error: ${e.message}",
+            )
+        }
+    }
+
     override suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult {
         logger.debug { "Calling knowledgebase ingestCpg: project=${request.projectId} branch=${request.branch}" }
 
@@ -553,6 +600,47 @@ private data class PythonGitStructureIngestResult(
     val filesIndexed: Int = 0,
     @SerialName("classes_indexed")
     val classesIndexed: Int = 0,
+)
+
+@Serializable
+private data class PythonGitCommitInfo(
+    val hash: String,
+    val message: String,
+    val author: String,
+    val date: String,
+    val branch: String,
+    @SerialName("parent_hash")
+    val parentHash: String? = null,
+    @SerialName("files_modified")
+    val filesModified: List<String> = emptyList(),
+    @SerialName("files_created")
+    val filesCreated: List<String> = emptyList(),
+    @SerialName("files_deleted")
+    val filesDeleted: List<String> = emptyList(),
+)
+
+@Serializable
+private data class PythonGitCommitIngestRequest(
+    val clientId: String,
+    val projectId: String,
+    val repositoryIdentifier: String,
+    val branch: String,
+    val commits: List<PythonGitCommitInfo>,
+    @SerialName("diff_content")
+    val diffContent: String? = null,
+)
+
+@Serializable
+private data class PythonGitCommitIngestResult(
+    val status: String,
+    @SerialName("commits_ingested")
+    val commitsIngested: Int = 0,
+    @SerialName("nodes_created")
+    val nodesCreated: Int = 0,
+    @SerialName("edges_created")
+    val edgesCreated: Int = 0,
+    @SerialName("rag_chunks")
+    val ragChunks: Int = 0,
 )
 
 @Serializable

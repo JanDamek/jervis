@@ -14,6 +14,7 @@ from app.api.models import (
     PurgeRequest, PurgeResult,
     ListByKindRequest,
     GitStructureIngestRequest, GitStructureIngestResult,
+    GitCommitIngestRequest, GitCommitIngestResult,
     CpgIngestRequest, CpgIngestResult,
     JoernScanRequest, JoernScanResult,
 )
@@ -364,6 +365,20 @@ async def ingest_git_structure(request: GitStructureIngestRequest):
     """
     try:
         return await service.ingest_git_structure(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/ingest/git-commits", response_model=GitCommitIngestResult)
+async def ingest_git_commits(request: GitCommitIngestRequest):
+    """Ingest structured git commit data into KB graph.
+
+    Creates commit nodes in ArangoDB with edges to branch and file nodes.
+    Optional diff_content is ingested as RAG chunks for fulltext search.
+    Called from Kotlin GitContinuousIndexer for individual commits.
+    """
+    try:
+        return await service.ingest_git_commits(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

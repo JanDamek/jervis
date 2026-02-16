@@ -8,6 +8,7 @@ from app.api.models import (
     TraversalRequest, GraphNode, CrawlRequest,
     FullIngestRequest, FullIngestResult, AttachmentResult,
     GitStructureIngestRequest, GitStructureIngestResult,
+    GitCommitIngestRequest, GitCommitIngestResult,
     CpgIngestRequest, CpgIngestResult,
     JoernScanRequest, JoernScanResult,
 )
@@ -141,6 +142,7 @@ class KnowledgeService:
                 kind=request.kind,
                 chunk_ids=chunk_ids,
                 created_at=datetime.utcnow().isoformat(),
+                priority=embedding_priority if embedding_priority is not None else 4,
             )
             await self.extraction_queue.enqueue(task)
             logger.info(
@@ -675,6 +677,61 @@ Respond ONLY with valid JSON."""
             files_indexed=result["files_indexed"],
             classes_indexed=result["classes_indexed"],
             methods_indexed=result.get("methods_indexed", 0),
+        )
+
+    async def ingest_git_commits(
+        self,
+        request: GitCommitIngestRequest,
+    ) -> GitCommitIngestResult:
+        """Ingest structured git commit data into graph + optional RAG.
+
+        Creates commit nodes with edges to branch and file nodes.
+        If diff_content is provided, also indexes it as RAG chunks.
+        """
+        logger.info(
+            "Git commit ingest started repo=%s branch=%s commits=%d has_diff=%s",
+            request.repositoryIdentifier, request.branch,
+            len(request.commits), bool(request.diff_content),
+        )
+
+        # 1. Create graph nodes/edges for commits
+        result = await self.graph_service.ingest_git_commits(
+            client_id=request.clientId,
+            project_id=request.projectId,
+            repo_identifier=request.repositoryIdentifier,
+            branch=request.branch,
+            commits=[c.model_dump() for c in request.commits],
+        )
+
+        # 2. If diff content provided, ingest to RAG for fulltext search
+        rag_chunks = 0
+        if request.diff_content:
+            commit_hashes = ",".join(c.hash[:8] for c in request.commits[:5])
+            source_urn = f"git:commits:{request.repositoryIdentifier}:{commit_hashes}"
+            ingest_req = IngestRequest(
+                clientId=request.clientId,
+                projectId=request.projectId,
+                sourceUrn=source_urn,
+                kind="git_commit",
+                content=request.diff_content,
+            )
+            rag_result = await self.ingest(ingest_req, embedding_priority=4)
+            rag_chunks = rag_result.chunks_count
+
+        logger.info(
+            "Git commit ingest complete repo=%s branch=%s commits=%d "
+            "nodes=%d edges=%d rag_chunks=%d",
+            request.repositoryIdentifier, request.branch,
+            result["commits_ingested"], result["nodes_created"],
+            result["edges_created"], rag_chunks,
+        )
+
+        return GitCommitIngestResult(
+            status="success",
+            commits_ingested=result["commits_ingested"],
+            nodes_created=result["nodes_created"],
+            edges_created=result["edges_created"],
+            rag_chunks=rag_chunks,
         )
 
     async def ingest_cpg(

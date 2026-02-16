@@ -9,6 +9,8 @@ import com.jervis.entity.ProjectDocument
 import com.jervis.entity.ProjectResource
 import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.CpgIngestRequest
+import com.jervis.knowledgebase.model.GitCommitIngestRequest
+import com.jervis.knowledgebase.model.GitCommitInfo
 import com.jervis.knowledgebase.model.GitStructureIngestRequest
 import com.jervis.knowledgebase.model.GitBranchInfo
 import com.jervis.knowledgebase.model.GitFileContent
@@ -313,7 +315,10 @@ class GitContinuousIndexer(
     }
 
     /**
-     * Process a single commit: create task with diff and metadata.
+     * Process a single commit: send structured data to KB graph + RAG.
+     *
+     * Creates commit nodes in ArangoDB with edges to branch/file nodes,
+     * and indexes the diff as RAG chunks for fulltext search.
      */
     private suspend fun processCommit(
         project: ProjectDocument,
@@ -327,36 +332,90 @@ class GitContinuousIndexer(
 
         val diff = gitRepositoryService.getCommitDiff(repoDir, doc.commitHash)
 
-        val content = buildString {
-            appendLine("# Git Commit: ${doc.commitHash.take(8)}")
-            appendLine("**Branch:** $branch")
-            appendLine("**Author:** ${doc.author}")
-            appendLine("**Date:** ${doc.commitDate}")
-            appendLine("**Message:** ${doc.message}")
-            appendLine()
+        // Parse file changes from git diff-tree
+        val (modified, created, deleted) = parseFileChanges(repoDir, doc.commitHash)
 
-            if (diff.isNotBlank()) {
-                appendLine("## Changes")
-                appendLine("```diff")
-                appendLine(diff)
-                appendLine("```")
+        // Find repository identifier from project resources
+        val repoResource = project.resources.firstOrNull { it.capability == ConnectionCapability.REPOSITORY }
+        val repoIdentifier = repoResource?.resourceIdentifier ?: ""
+
+        // Get parent hash
+        val parentResult = gitRepositoryService.executeGitCommand(
+            listOf("git", "rev-parse", "${doc.commitHash}^"),
+            workingDir = repoDir,
+        )
+        val parentHash = if (parentResult.success) parentResult.output.trim() else null
+
+        val commitInfo = GitCommitInfo(
+            hash = doc.commitHash,
+            message = doc.message ?: "",
+            author = doc.author ?: "",
+            date = doc.commitDate?.toString() ?: "",
+            branch = branch,
+            parentHash = parentHash,
+            filesModified = modified,
+            filesCreated = created,
+            filesDeleted = deleted,
+        )
+
+        val request = GitCommitIngestRequest(
+            clientId = doc.clientId.toHexString(),
+            projectId = projectId.toHexString(),
+            repositoryIdentifier = repoIdentifier,
+            branch = branch,
+            commits = listOf(commitInfo),
+            diffContent = diff.takeIf { it.isNotBlank() },
+        )
+
+        try {
+            val result = knowledgeService.ingestGitCommits(request)
+            logger.info {
+                "KB commit ingest for ${doc.commitHash.take(8)}: " +
+                    "nodes=${result.nodesCreated} edges=${result.edgesCreated} " +
+                    "rag=${result.ragChunks} files=M${modified.size}/A${created.size}/D${deleted.size}"
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "KB commit ingest failed for ${doc.commitHash.take(8)}, falling back to task" }
+        }
+
+        stateManager.markAsIndexed(doc)
+    }
+
+    /**
+     * Parse file changes from git diff-tree --name-status.
+     * Returns triple of (modified, created, deleted) file path lists.
+     */
+    private fun parseFileChanges(repoDir: Path, commitHash: String): Triple<List<String>, List<String>, List<String>> {
+        val result = gitRepositoryService.executeGitCommand(
+            listOf("git", "diff-tree", "--no-commit-id", "--name-status", "-r", commitHash),
+            workingDir = repoDir,
+        )
+        if (!result.success) return Triple(emptyList(), emptyList(), emptyList())
+
+        val modified = mutableListOf<String>()
+        val created = mutableListOf<String>()
+        val deleted = mutableListOf<String>()
+
+        for (line in result.output.lines()) {
+            val parts = line.split("\t", limit = 2)
+            if (parts.size < 2) continue
+            val status = parts[0].trim()
+            val path = parts[1].trim()
+            when {
+                status.startsWith("M") -> modified.add(path)
+                status.startsWith("A") -> created.add(path)
+                status.startsWith("D") -> deleted.add(path)
+                status.startsWith("R") -> {
+                    // Rename: R100\told\tnew — treat as delete old + create new
+                    val renameParts = line.split("\t")
+                    if (renameParts.size >= 3) {
+                        deleted.add(renameParts[1].trim())
+                        created.add(renameParts[2].trim())
+                    }
+                }
             }
         }
 
-        taskService.createTask(
-            taskType = TaskTypeEnum.GIT_PROCESSING,
-            content = content,
-            projectId = ProjectId(projectId),
-            clientId = ClientId(doc.clientId),
-            correlationId = "git:${doc.commitHash}",
-            sourceUrn = SourceUrn.git(
-                projectId = ProjectId(projectId),
-                commitHash = doc.commitHash,
-            ),
-            taskName = "${doc.commitHash.take(8)}: ${(doc.message ?: "").take(100)}",
-        )
-
-        stateManager.markAsIndexed(doc)
-        logger.info { "Created GIT_PROCESSING task for commit ${doc.commitHash.take(8)} on $branch" }
+        return Triple(modified, created, deleted)
     }
 }

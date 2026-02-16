@@ -50,6 +50,7 @@ class ExtractionTask:
         last_attempt_at: Optional[str] = None,
         worker_id: Optional[str] = None,
         error: Optional[str] = None,
+        priority: int = 4,
     ):
         self.task_id = task_id
         self.source_urn = source_urn
@@ -64,6 +65,7 @@ class ExtractionTask:
         self.last_attempt_at = last_attempt_at
         self.worker_id = worker_id
         self.error = error
+        self.priority = priority
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +82,7 @@ class ExtractionTask:
             "last_attempt_at": self.last_attempt_at,
             "worker_id": self.worker_id,
             "error": self.error,
+            "priority": self.priority,
         }
 
     @classmethod
@@ -142,7 +145,18 @@ class LLMExtractionQueue:
                 )
             """)
 
+            # Migration: add priority column (safe to run on existing DBs)
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 4")
+                logger.info("Added priority column to tasks table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Indexes for fast dequeue and stats
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status_priority_created
+                ON tasks(status, priority, created_at)
+            """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_status_attempts_created
                 ON tasks(status, attempts, created_at)
@@ -172,8 +186,8 @@ class LLMExtractionQueue:
             conn.execute("""
                 INSERT INTO tasks (
                     task_id, source_urn, content, client_id, project_id, kind,
-                    chunk_ids, created_at, status, attempts
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    chunk_ids, created_at, status, attempts, priority
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 task.task_id,
                 task.source_urn,
@@ -184,7 +198,8 @@ class LLMExtractionQueue:
                 json.dumps(task.chunk_ids),
                 task.created_at,
                 TaskStatus.PENDING,
-                0
+                0,
+                task.priority,
             ))
             conn.commit()
 
@@ -205,11 +220,11 @@ class LLMExtractionQueue:
             # Atomic claim: SELECT + UPDATE in single transaction
             conn.execute("BEGIN IMMEDIATE")  # Write lock
 
-            # Find first PENDING task with attempts < max
+            # Find first PENDING task with attempts < max (priority 1 before 4)
             row = conn.execute("""
                 SELECT * FROM tasks
                 WHERE status = ? AND attempts < ?
-                ORDER BY created_at ASC
+                ORDER BY priority ASC, created_at ASC
                 LIMIT 1
             """, (TaskStatus.PENDING, max_attempts)).fetchone()
 
@@ -244,6 +259,7 @@ class LLMExtractionQueue:
                 attempts=attempts,
                 last_attempt_at=now,
                 worker_id=worker_id,
+                priority=row["priority"] if "priority" in row.keys() else 4,
             )
 
             # Log stats
