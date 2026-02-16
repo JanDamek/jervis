@@ -298,9 +298,11 @@ Each `Design*.kt` file groups related components (buttons, forms, cards, etc.).
 | Component | Purpose | Key params |
 |-----------|---------|------------|
 | `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon: @Composable (T) -> Unit`, `categoryTitle`, `categoryDescription`, `content` |
-| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
+| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listFooter?`, `listItem`, `detailContent` |
 | `JDetailScreen` | Full-screen edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
 | `JNavigationRow` | Touch-friendly nav row (compact mode) | `icon: @Composable () -> Unit`, `title`, `subtitle?`, `onClick`, `trailing` |
+| `JVerticalSplitLayout` | Draggable vertical split (top/bottom) | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
+| `JHorizontalSplitLayout` | Draggable horizontal split (left/right) | `splitFraction`, `onSplitChange`, `minFraction`, `maxFraction`, `leftContent`, `rightContent` |
 
 Note: `categoryIcon` in `JAdaptiveSidebarLayout` takes a `@Composable (T) -> Unit` lambda (not a `String`). `JNavigationRow.icon` is also `@Composable () -> Unit` (not `String`).
 
@@ -1486,7 +1488,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 +-- design/                            <- Design system (split by component category)
 |   +-- DesignTheme.kt                <- JervisTheme, JervisSpacing, COMPACT_BREAKPOINT_DP
 |   +-- DesignState.kt                <- JCenteredLoading, JErrorState, JEmptyState
-|   +-- DesignLayout.kt               <- JTopBar, JSection, JActionBar, JAdaptiveSidebarLayout, JListDetailLayout, JDetailScreen, JNavigationRow, JVerticalSplitLayout
+|   +-- DesignLayout.kt               <- JTopBar, JSection, JActionBar, JAdaptiveSidebarLayout, JListDetailLayout, JDetailScreen, JNavigationRow, JVerticalSplitLayout, JHorizontalSplitLayout
 |   +-- DesignButtons.kt              <- JPrimaryButton, JSecondaryButton, JTextButton, JDestructiveButton, JRunTextButton, JIconButton, JRefreshButton, JDeleteButton, JEditButton, JAddButton, JRemoveIconButton
 |   +-- DesignCards.kt                <- JCard, JListItemCard, JTableHeaderRow, JTableHeaderCell, JTableRowCard
 |   +-- DesignForms.kt                <- JTextField, JDropdown, JSwitch, JSlider, JCheckboxRow

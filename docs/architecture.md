@@ -105,9 +105,10 @@ The Jervis system is built on several key architectural patterns:
    - Can checkout any branch/commit
    - Never touches agent workspace
 
-3. **GitWorkspaceService (agent):**
-   - Ensures `projectGitDir()` is cloned and ready
-   - Tracks workspace status in DB (CLONING, READY, FAILED)
+3. **BackgroundEngine (agent workspace):**
+   - Manages `projectGitDir()` clone lifecycle via `initializeProjectWorkspace()`
+   - Tracks workspace status in DB (`WorkspaceStatus`: CLONING, READY, CLONE_FAILED_*)
+   - Listens to `ProjectWorkspaceInitEvent` for on-demand initialization
    - Used by orchestrator pre-dispatch validation
 
 4. **Python Orchestrator Tools:**
@@ -118,20 +119,27 @@ The Jervis system is built on several key architectural patterns:
 ### Startup Flow
 
 1. **DirectoryStructureService** creates directory structure
-2. **GitWorkspaceService** (background, async):
-   - For each project with git connection → clone to `git/{resourceId}/`
-   - Update `workspaceStatus` field in ProjectDocument
-3. **GitRepositoryService** (existing indexing):
-   - Clone to `git-indexing/{resourceId}/` ✅ (refactored - complete)
+2. **BackgroundEngine.initializeAllProjectWorkspaces()** (background, async):
+   - For each project with REPOSITORY resources:
+     - `null` status → trigger clone to `git/{resourceId}/`
+     - `READY` → **verify `.git` exists on disk** (files may be gone after pod restart/PVC loss); if missing → reset status to null and re-clone
+     - `CLONING` → skip (in progress)
+     - `CLONE_FAILED_AUTH`/`CLONE_FAILED_NOT_FOUND` → skip (needs user fix)
+     - `CLONE_FAILED_NETWORK`/`CLONE_FAILED_OTHER` → respect backoff, retry when elapsed
+     - `NOT_NEEDED` → skip
+   - Updates `workspaceStatus` field in ProjectDocument
+3. **GitRepositoryService.syncAllOnStartup()** (indexing only):
+   - Clone to `git-indexing/{resourceId}/` for KB indexing
    - Index commits, branches, files
+   - Does NOT touch agent workspaces (managed by BackgroundEngine)
 
 ### Pre-Dispatch Validation
 
-Before orchestrator dispatch:
+Before orchestrator dispatch, `AgentOrchestratorService` checks workspace status:
 ```kotlin
-val status = gitWorkspaceService.ensureWorkspaceReady(projectId)
-if (status != WorkspaceStatus.READY) {
-    return "Workspace se připravuje, zkus to za chvíli..."
+val workspace = project.workspaceStatus
+if (workspace != WorkspaceStatus.READY) {
+    // Return user-friendly message based on status
 }
 ```
 
@@ -767,9 +775,9 @@ const val PLATFORM_DESKTOP = "Desktop"
 
 Backoff schedule (retryable only): 1min → 2min → 4min → 8min → ... → 1h cap.
 
-- **Startup**: non-retryable failures are skipped; retryable failures respect existing backoff
+- **Startup**: READY workspaces verified on disk (`.git` exists); if missing → reset to null and re-clone. Non-retryable failures skipped; retryable failures respect existing backoff.
 - **Periodic loop** (`runWorkspaceRetryLoop`, 60s): picks up retryable failures whose backoff elapsed
-- **User save**: resets retry state and triggers immediate re-init
+- **User save** (`ProjectService.saveProject`): always publishes `ProjectWorkspaceInitEvent` for projects with REPOSITORY resources (except when status is CLONING). For CLONE_FAILED_* statuses, resets retry state before re-triggering. For READY workspaces, triggers git fetch refresh.
 - **State in DB**: `workspaceRetryCount`, `nextWorkspaceRetryAt`, `lastWorkspaceError` on `ProjectDocument`
 
 ### Task Dispatch Throttling (Exponential Backoff)

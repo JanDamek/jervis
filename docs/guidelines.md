@@ -490,10 +490,11 @@ Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
 | Component | Purpose | Key params |
 |-----------|---------|------------|
 | `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon: @Composable (T) -> Unit`, `categoryTitle`, `categoryDescription`, `content` |
-| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listItem`, `detailContent` |
+| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listFooter?`, `listItem`, `detailContent` |
 | `JDetailScreen` | Edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
 | `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon: @Composable () -> Unit`, `title`, `subtitle?`, `onClick`, `trailing` |
 | `JVerticalSplitLayout` | Draggable vertical split (top/bottom) | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
+| `JHorizontalSplitLayout` | Draggable horizontal split (left/right) | `splitFraction`, `onSplitChange`, `minFraction`, `maxFraction`, `leftContent`, `rightContent` |
 
 ### Pattern 1: Category-Based Settings
 
