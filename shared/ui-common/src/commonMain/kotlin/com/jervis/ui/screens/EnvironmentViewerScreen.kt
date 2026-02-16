@@ -64,6 +64,12 @@ import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
 import kotlinx.coroutines.launch
 
+/**
+ * Legacy environment viewer — K8s resource inspection standalone screen.
+ *
+ * @deprecated Use [com.jervis.ui.screens.environment.EnvironmentManagerScreen] with the K8s Resources tab instead.
+ * This screen remains for backward compatibility but all new features go into EnvironmentManagerScreen.
+ */
 @Composable
 fun EnvironmentViewerScreen(
     repository: JervisRepository,

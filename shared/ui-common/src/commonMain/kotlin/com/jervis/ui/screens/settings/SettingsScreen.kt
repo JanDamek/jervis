@@ -28,6 +28,7 @@ import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
+import com.jervis.ui.navigation.Screen
 import com.jervis.ui.screens.settings.sections.*
 import kotlinx.coroutines.launch
 
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
+    onNavigate: (Screen) -> Unit = {},
 ) {
     val categories = remember { SettingsCategory.entries.toList() }
     var selectedIndex by remember { mutableIntStateOf(0) }
@@ -51,6 +53,7 @@ fun SettingsScreen(
             SettingsContent(
                 category = category,
                 repository = repository,
+                onNavigate = onNavigate,
             )
         },
     )
@@ -244,6 +247,7 @@ private fun GeneralSettings(repository: JervisRepository) {
 private fun SettingsContent(
     category: SettingsCategory,
     repository: JervisRepository,
+    onNavigate: (Screen) -> Unit,
 ) {
     when (category) {
         SettingsCategory.GENERAL -> GeneralSettings(repository)
@@ -251,7 +255,12 @@ private fun SettingsContent(
         SettingsCategory.PROJECT_GROUPS -> ProjectGroupsSettings(repository)
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
         SettingsCategory.INDEXING -> IndexingSettings(repository)
-        SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(repository)
+        SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(
+            repository = repository,
+            onOpenInManager = { environmentId ->
+                onNavigate(Screen.EnvironmentManager(initialEnvironmentId = environmentId))
+            },
+        )
         SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
         SettingsCategory.WHISPER -> WhisperSettings(repository)

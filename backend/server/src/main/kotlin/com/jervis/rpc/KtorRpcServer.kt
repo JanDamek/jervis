@@ -64,6 +64,7 @@ class KtorRpcServer(
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
+    private val taskRepository: com.jervis.repository.TaskRepository,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
     private val properties: KtorClientProperties,
 ) {
@@ -308,32 +309,6 @@ class KtorRpcServer(
                                     }
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to fetch GPG key for client $clientId" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            // Internal endpoint: orchestrator streams answer tokens here (typewriter effect)
-                            post("/internal/orchestrator-streaming-token") {
-                                try {
-                                    val body = call.receive<OrchestratorStreamingTokenCallback>()
-                                    launch {
-                                        agentOrchestratorRpcImpl.emitToChatStream(
-                                            clientId = body.clientId,
-                                            projectId = body.projectId,
-                                            response = ChatResponseDto(
-                                                message = body.token,
-                                                type = ChatResponseType.STREAMING_TOKEN,
-                                                metadata = mapOf("taskId" to body.taskId),
-                                            ),
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process streaming token callback" }
                                     call.respondText(
                                         "{\"ok\":false}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -749,6 +724,141 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: AgentTaskWatcher fetches tasks waiting for agent
+                            get("/internal/tasks/by-state") {
+                                val stateStr = call.request.queryParameters["state"]
+                                    ?: return@get call.respondText(
+                                        "[]", io.ktor.http.ContentType.Application.Json,
+                                    )
+                                try {
+                                    val state = com.jervis.dto.TaskStateEnum.valueOf(stateStr)
+                                    val tasks = mutableListOf<Map<String, Any?>>()
+                                    taskRepository.findByStateOrderByCreatedAtAsc(state).collect { task ->
+                                        tasks.add(
+                                            mapOf(
+                                                "id" to task.id.toString(),
+                                                "agentJobName" to task.agentJobName,
+                                                "orchestratorThreadId" to task.orchestratorThreadId,
+                                                "agentJobStartedAt" to task.agentJobStartedAt?.toString(),
+                                            ),
+                                        )
+                                    }
+                                    val jsonStr = kotlinx.serialization.json.Json.encodeToString(
+                                        kotlinx.serialization.json.JsonElement.serializer(),
+                                        toJsonElement(tasks),
+                                    )
+                                    call.respondText(jsonStr, io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to fetch tasks by state: $stateStr" }
+                                    call.respondText(
+                                        "[]", io.ktor.http.ContentType.Application.Json,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: AgentTaskWatcher reports agent job completion
+                            post("/internal/tasks/{taskId}/agent-completed") {
+                                val taskIdStr = call.parameters["taskId"]
+                                    ?: return@post call.respondText(
+                                        "{\"ok\":false}", io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.BadRequest,
+                                    )
+                                try {
+                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val task = taskRepository.getById(taskId)
+                                        ?: return@post call.respondText(
+                                            "{\"ok\":false,\"error\":\"Task not found\"}",
+                                            io.ktor.http.ContentType.Application.Json,
+                                            HttpStatusCode.NotFound,
+                                        )
+                                    // Transition back to PYTHON_ORCHESTRATING (graph will resume)
+                                    val updated = task.copy(
+                                        state = com.jervis.dto.TaskStateEnum.PYTHON_ORCHESTRATING,
+                                        agentJobState = "COMPLETED",
+                                    )
+                                    taskRepository.save(updated)
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to update task after agent completion: $taskIdStr" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator sets task to WAITING_FOR_AGENT with job info
+                            post("/internal/tasks/{taskId}/agent-dispatched") {
+                                val taskIdStr = call.parameters["taskId"]
+                                    ?: return@post call.respondText(
+                                        "{\"ok\":false}", io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.BadRequest,
+                                    )
+                                try {
+                                    val body = call.receive<AgentDispatchedRequest>()
+                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val task = taskRepository.getById(taskId)
+                                        ?: return@post call.respondText(
+                                            "{\"ok\":false,\"error\":\"Task not found\"}",
+                                            io.ktor.http.ContentType.Application.Json,
+                                            HttpStatusCode.NotFound,
+                                        )
+                                    val updated = task.copy(
+                                        state = com.jervis.dto.TaskStateEnum.WAITING_FOR_AGENT,
+                                        agentJobName = body.jobName,
+                                        agentJobState = "RUNNING",
+                                        agentJobStartedAt = java.time.Instant.now(),
+                                    )
+                                    taskRepository.save(updated)
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to mark task as agent-dispatched: $taskIdStr" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: Python orchestrator streams LLM tokens for real-time UI display
+                            post("/internal/streaming-token") {
+                                try {
+                                    val body = call.receive<StreamingTokenRequest>()
+                                    // isFinal=true is just a signal to stop streaming, don't relay it
+                                    // The actual FINAL message comes later from OrchestratorStatusHandler
+                                    if (!body.isFinal) {
+                                        agentOrchestratorRpcImpl.emitToChatStream(
+                                            clientId = body.clientId,
+                                            projectId = body.projectId.ifBlank { null },
+                                            response = com.jervis.dto.ChatResponseDto(
+                                                message = body.token,
+                                                type = com.jervis.dto.ChatResponseType.STREAMING_TOKEN,
+                                                messageId = body.messageId,
+                                            ),
+                                        )
+                                    }
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.debug(e) { "Failed to emit streaming token" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -839,14 +949,6 @@ data class OrchestratorStatusCallback(
 )
 
 @kotlinx.serialization.Serializable
-data class OrchestratorStreamingTokenCallback(
-    val taskId: String,
-    val clientId: String,
-    val projectId: String,
-    val token: String,
-)
-
-@kotlinx.serialization.Serializable
 data class GpgKeyResponse(
     val keyId: String,
     val userName: String,
@@ -877,6 +979,21 @@ data class TrackerUpdateIssueRequest(
 @kotlinx.serialization.Serializable
 data class ScaleRequest(
     val replicas: Int,
+)
+
+@kotlinx.serialization.Serializable
+data class AgentDispatchedRequest(
+    val jobName: String,
+)
+
+@kotlinx.serialization.Serializable
+data class StreamingTokenRequest(
+    val taskId: String,
+    val clientId: String,
+    val projectId: String = "",
+    val token: String,
+    val messageId: String,
+    val isFinal: Boolean = false,
 )
 
 // --- Brain internal DTOs ---

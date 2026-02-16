@@ -13,6 +13,7 @@ from langgraph.types import interrupt
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
+from app.tools.kotlin_client import kotlin_client
 from app.models import (
     AgentType,
     CodingTask,
@@ -71,7 +72,7 @@ async def git_operations(state: dict) -> dict:
         project_id=task.project_id,
     )
 
-    # Delegate commit to coding agent (ALLOW_GIT=true)
+    # Delegate commit to coding agent (ALLOW_GIT=true, non-blocking)
     commit_instructions = (
         f"Commit all current changes on branch '{branch}'.\n"
         f"Rules:\n"
@@ -81,7 +82,7 @@ async def git_operations(state: dict) -> dict:
         f"- Do NOT push"
     )
 
-    await job_runner.run_coding_agent(
+    dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=f"{task.id}-git-commit",
         agent_type=AgentType.CLAUDE.value,
         client_id=task.client_id,
@@ -90,6 +91,20 @@ async def git_operations(state: dict) -> dict:
         allow_git=True,
         instructions_override=commit_instructions,
     )
+
+    # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+    await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])
+
+    # Interrupt — watcher resumes when commit job completes
+    commit_result = interrupt({
+        "type": "waiting_for_agent",
+        "job_name": dispatch_info["job_name"],
+        "agent_type": dispatch_info["agent_type"],
+        "task_id": task.id,
+        "workspace_path": workspace_path,
+    })
+
+    logger.info("Git commit completed: job=%s success=%s", dispatch_info["job_name"], commit_result.get("success"))
 
     # --- PUSH approval gate ---
     if rules.auto_push:
@@ -110,7 +125,7 @@ async def git_operations(state: dict) -> dict:
         push_instructions = (
             f"Push branch '{branch}' to origin. Do NOT force push."
         )
-        await job_runner.run_coding_agent(
+        push_dispatch = await job_runner.dispatch_coding_agent(
             task_id=f"{task.id}-git-push",
             agent_type=AgentType.CLAUDE.value,
             client_id=task.client_id,
@@ -119,5 +134,17 @@ async def git_operations(state: dict) -> dict:
             allow_git=True,
             instructions_override=push_instructions,
         )
+
+        # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+        await kotlin_client.notify_agent_dispatched(task.id, push_dispatch["job_name"])
+
+        # Interrupt — watcher resumes when push job completes
+        interrupt({
+            "type": "waiting_for_agent",
+            "job_name": push_dispatch["job_name"],
+            "agent_type": push_dispatch["agent_type"],
+            "task_id": task.id,
+            "workspace_path": workspace_path,
+        })
 
     return {"branch": branch}

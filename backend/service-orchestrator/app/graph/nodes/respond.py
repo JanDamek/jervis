@@ -1,13 +1,15 @@
 """Respond node — ADVICE + SINGLE_TASK/respond answers.
 
 Generates answers using LLM + tools (web search, KB search) in an agentic loop.
-Max 5 iterations to prevent infinite loops.
+Max 8 iterations to prevent infinite loops.
+Streams final LLM answer token-by-token to UI via kotlin_client.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 
 from langgraph.types import interrupt
 
@@ -15,6 +17,7 @@ from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool, AskUserInterrupt
+from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +264,10 @@ async def respond(state: dict) -> dict:
             # No more tool calls → final answer
             answer = message.content or ""
             logger.info("Respond: final answer after %d iterations (%d chars)", iteration, len(answer))
+
+            # Stream tokens to UI for real-time display
+            await _stream_answer_to_ui(state, answer)
+
             return {"final_result": answer}
 
         # Execute tool calls
@@ -335,4 +342,60 @@ async def respond(state: dict) -> dict:
         max_tokens=4096,
     )
     answer = final_response.choices[0].message.content or ""
+
+    # Stream tokens to UI for real-time display
+    await _stream_answer_to_ui(state, answer)
+
     return {"final_result": answer}
+
+
+# Token chunk size for streaming: send N chars at a time for efficiency
+_STREAM_CHUNK_SIZE = 12
+
+
+async def _stream_answer_to_ui(state: dict, answer: str) -> None:
+    """Stream an already-generated answer to UI token-by-token.
+
+    Splits the answer into small chunks and emits each via kotlin_client.
+    This provides ChatGPT-style progressive text display in the UI.
+    The final FINAL message is still sent separately by OrchestratorStatusHandler.
+    """
+    if not answer:
+        return
+
+    task = CodingTask(**state["task"])
+    client_id = state.get("client_id", "")
+    project_id = state.get("project_id")
+    message_id = f"stream-{uuid.uuid4().hex[:12]}"
+
+    # Split into chunks and emit
+    offset = 0
+    emitted = 0
+    while offset < len(answer):
+        chunk = answer[offset:offset + _STREAM_CHUNK_SIZE]
+        offset += _STREAM_CHUNK_SIZE
+
+        ok = await kotlin_client.emit_streaming_token(
+            task_id=task.id,
+            client_id=client_id,
+            project_id=project_id,
+            token=chunk,
+            message_id=message_id,
+        )
+        if ok:
+            emitted += 1
+
+    # Emit final token to signal stream end
+    await kotlin_client.emit_streaming_token(
+        task_id=task.id,
+        client_id=client_id,
+        project_id=project_id,
+        token="",
+        message_id=message_id,
+        is_final=True,
+    )
+
+    logger.info(
+        "Streamed answer to UI: %d chunks, %d chars, message_id=%s",
+        emitted, len(answer), message_id,
+    )

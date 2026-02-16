@@ -230,6 +230,107 @@ class JobRunner:
         except Exception:
             pass  # Pod terminated
 
+    async def dispatch_coding_agent(
+        self,
+        task_id: str,
+        agent_type: str,
+        client_id: str,
+        project_id: str | None,
+        workspace_path: str,
+        allow_git: bool = False,
+        instructions_override: str | None = None,
+    ) -> dict:
+        """Dispatch a coding agent as a K8s Job and return immediately (non-blocking).
+
+        Returns:
+            Dict with job_name and metadata — does NOT wait for completion.
+        """
+        # Check concurrent limit
+        running = self.count_running_jobs(agent_type)
+        max_concurrent = MAX_CONCURRENT.get(agent_type, 1)
+        if running >= max_concurrent:
+            raise RuntimeError(
+                f"Agent {agent_type} has {running}/{max_concurrent} running jobs. "
+                f"Wait or increase limit."
+            )
+
+        # Write override instructions if provided
+        if instructions_override:
+            jervis_dir = Path(workspace_path) / ".jervis"
+            jervis_dir.mkdir(exist_ok=True)
+            (jervis_dir / "instructions.md").write_text(instructions_override)
+
+        # Build and create Job
+        job_name = f"jervis-{agent_type}-{task_id[:12]}"
+        job = self._build_job_manifest(
+            job_name=job_name,
+            agent_type=agent_type,
+            task_id=task_id,
+            client_id=client_id,
+            project_id=project_id or "",
+            workspace_path=workspace_path,
+            allow_git=allow_git,
+        )
+
+        logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s)", job_name, agent_type, task_id)
+        self.batch_v1.create_namespaced_job(namespace=settings.k8s_namespace, body=job)
+
+        return {
+            "job_name": job_name,
+            "agent_type": agent_type,
+            "task_id": task_id,
+            "workspace_path": workspace_path,
+        }
+
+    def get_job_status(self, job_name: str) -> dict:
+        """Check K8s Job status (non-blocking, single poll).
+
+        Returns:
+            Dict with status: "running", "succeeded", or "failed".
+        """
+        try:
+            job = self.batch_v1.read_namespaced_job(
+                name=job_name, namespace=settings.k8s_namespace,
+            )
+        except Exception as e:
+            logger.warning("Failed to read job %s: %s", job_name, e)
+            return {"status": "unknown", "error": str(e)}
+
+        if job.status.succeeded and job.status.succeeded > 0:
+            return {"status": "succeeded"}
+        if job.status.failed and job.status.failed > 0:
+            return {"status": "failed"}
+        return {"status": "running"}
+
+    def collect_result(self, workspace_path: str, job_name: str, task_id: str, agent_type: str) -> dict:
+        """Collect result from completed K8s Job workspace."""
+        result_file = Path(workspace_path) / ".jervis" / "result.json"
+        if result_file.exists():
+            try:
+                return json.loads(result_file.read_text())
+            except json.JSONDecodeError:
+                pass
+
+        status = self.get_job_status(job_name)
+        return {
+            "taskId": task_id,
+            "success": status.get("status") == "succeeded",
+            "summary": f"Job {job_name} finished: {status.get('status', 'unknown')}",
+            "agentType": agent_type,
+        }
+
+    def cancel_job(self, job_name: str):
+        """Cancel (delete) a K8s Job."""
+        try:
+            self.batch_v1.delete_namespaced_job(
+                name=job_name,
+                namespace=settings.k8s_namespace,
+                propagation_policy="Background",
+            )
+            logger.info("Cancelled K8s Job: %s", job_name)
+        except Exception as e:
+            logger.warning("Failed to cancel job %s: %s", job_name, e)
+
     def _build_job_manifest(
         self,
         job_name: str,

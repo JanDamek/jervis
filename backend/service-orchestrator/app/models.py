@@ -205,6 +205,7 @@ class ApprovalResponse(BaseModel):
     approved: bool
     modification: str | None = None
     reason: str | None = None
+    chat_history: "ChatHistoryPayload | None" = None
 
 
 # --- Chat History ---

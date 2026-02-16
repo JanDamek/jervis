@@ -115,6 +115,24 @@ class EnvironmentResourceRpcImpl(
             environmentResourceService.restartDeployment(namespace, deploymentName)
         }
 
+    override suspend fun getNamespaceEvents(environmentId: String, limit: Int): K8sNamespaceEventsDto =
+        executeWithErrorHandling("getNamespaceEvents") {
+            val namespace = resolveNamespace(environmentId)
+            val events = environmentResourceService.getNamespaceEvents(namespace, limit)
+
+            K8sNamespaceEventsDto(
+                namespace = namespace,
+                events = events.map { e ->
+                    K8sEventDto(
+                        type = e["type"] as? String,
+                        reason = e["reason"] as? String,
+                        message = e["message"] as? String,
+                        time = e["time"]?.toString(),
+                    )
+                },
+            )
+        }
+
     @Suppress("UNCHECKED_CAST")
     override suspend fun getNamespaceStatus(environmentId: String): K8sNamespaceStatusDto =
         executeWithErrorHandling("getNamespaceStatus") {

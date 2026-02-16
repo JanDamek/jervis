@@ -1,12 +1,16 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import Depends, FastAPI, Request
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from starlette.responses import Response
 
 from app.core.config import settings
 from app.logging_utils import LocalTimeFormatter
+from app.metrics import http_requests_total, http_request_duration
 
 # Configure root logger with local timezone
 handler = logging.StreamHandler()
@@ -129,6 +133,34 @@ if settings.KB_MODE in ("all", "write"):
         prefix="/api/v1",
         dependencies=[Depends(acquire_write_slot_with_priority)],
     )
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Track HTTP request count and duration."""
+    # Skip metrics for health checks and the metrics endpoint itself
+    path = request.url.path
+    if path in ("/", "/health", "/metrics"):
+        return await call_next(request)
+
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+
+    # Normalize endpoint path (strip IDs to avoid cardinality explosion)
+    endpoint = path.split("?")[0]
+    http_requests_total.labels(
+        method=request.method, endpoint=endpoint, status_code=str(response.status_code),
+    ).inc()
+    http_request_duration.labels(method=request.method, endpoint=endpoint).observe(duration)
+
+    return response
 
 
 @app.get("/health")

@@ -128,6 +128,9 @@ class MainViewModel(
     private var pendingState: PendingMessageState? = null
     private var retryJob: Job? = null
 
+    // Streaming token accumulation buffer: messageId → accumulated text
+    private val streamingBuffer = mutableMapOf<String, String>()
+
     private val _pendingMessageInfo = MutableStateFlow<PendingMessageInfo?>(null)
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
@@ -899,6 +902,12 @@ class MainViewModel(
                     ChatMessage.MessageType.ERROR
                 }
 
+                ChatResponseType.STREAMING_TOKEN -> {
+                    // Handle streaming tokens: accumulate by messageId, show progressive text
+                    handleStreamingToken(response, projectId)
+                    null // handled separately, skip normal flow
+                }
+
                 ChatResponseType.CHAT_CHANGED -> {
                     println("=== Chat session changed, reloading history... ===")
                     reloadHistory(clientId, projectId)
@@ -994,8 +1003,14 @@ class MainViewModel(
             }
 
             ChatMessage.MessageType.FINAL -> {
-                // Remove ALL progress messages (not just last) to clean up stacked indicators
-                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                // Remove ALL progress and streaming messages to clean up before final
+                messages.removeAll {
+                    it.messageType == ChatMessage.MessageType.PROGRESS ||
+                        it.metadata["streaming"] == "true"
+                }
+                // Clear streaming buffer
+                streamingBuffer.clear()
+
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -1021,6 +1036,39 @@ class MainViewModel(
                 )
             }
         }
+        _chatMessages.value = messages
+    }
+
+    private fun handleStreamingToken(
+        response: com.jervis.dto.ChatResponseDto,
+        projectId: String,
+    ) {
+        val messageId = response.messageId ?: return
+
+        // Accumulate token into buffer
+        val accumulated = (streamingBuffer[messageId] ?: "") + response.message
+        streamingBuffer[messageId] = accumulated
+
+        // Update or create streaming message in chat
+        val messages = _chatMessages.value.toMutableList()
+        val existingIdx = messages.indexOfLast { it.metadata["streamingId"] == messageId }
+
+        val streamingMessage = ChatMessage(
+            from = ChatMessage.Sender.Assistant,
+            text = accumulated,
+            contextId = projectId,
+            messageType = ChatMessage.MessageType.FINAL,
+            metadata = mapOf("streaming" to "true", "streamingId" to messageId),
+        )
+
+        if (existingIdx >= 0) {
+            messages[existingIdx] = streamingMessage
+        } else {
+            // Remove progress messages when streaming starts
+            messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+            messages.add(streamingMessage)
+        }
+
         _chatMessages.value = messages
     }
 

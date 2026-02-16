@@ -1,0 +1,25 @@
+# ServiceMonitor for Prometheus scraping of KB service metrics.
+# Covers both read and write deployments.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jervis-knowledgebase
+  namespace: jervis
+  labels:
+    app: jervis-knowledgebase
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - jervis-knowledgebase-read
+          - jervis-knowledgebase-write
+  namespaceSelector:
+    matchNames:
+      - jervis
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

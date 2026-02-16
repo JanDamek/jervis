@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # Job cleanup
     job_ttl_seconds: int = 300
 
+    # Non-blocking agent dispatch
+    max_concurrent_orchestrations: int = 5
+    agent_watcher_poll_interval: int = 10  # seconds between job status polls
+    agent_heartbeat_timeout: int = 300  # seconds — consider agent dead if no progress
+
     # --- Multi-agent delegation system (feature-flagged, all default OFF) ---
 
     # Feature flags

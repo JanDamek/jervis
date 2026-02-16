@@ -166,6 +166,7 @@ fun App(
                 com.jervis.ui.screens.settings.SettingsScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
+                    onNavigate = { screen -> appNavigator.navigateTo(screen) },
                 )
             }
 
@@ -240,6 +241,14 @@ fun App(
                 EnvironmentViewerScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
+                )
+            }
+
+            is Screen.EnvironmentManager -> {
+                com.jervis.ui.screens.environment.EnvironmentManagerScreen(
+                    repository = repository,
+                    onBack = { appNavigator.goBack() },
+                    initialEnvironmentId = screen.initialEnvironmentId,
                 )
             }
 

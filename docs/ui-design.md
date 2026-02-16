@@ -1334,6 +1334,49 @@ JCard(
 }
 ```
 
+### 5.10) Environment Manager Screen (`EnvironmentManagerScreen.kt`)
+
+Full environment management screen accessed from the hamburger menu ("Správa prostředí").
+Uses `JListDetailLayout` for list→detail navigation with `TabRow` for detail tabs.
+
+```
+Expanded (>=600dp):
++-- JTopBar ("Správa prostředí") -------+
+|                                        |
+| +-- List ----+  +-- Detail ----------+|
+| | [Nové prostředí]  | JDetailScreen    ||
+| |             |  | TabRow:             ||
+| | JCard       |  | Přehled|Komponenty| ||
+| |  name       |  | K8s|Logy           ||
+| |  namespace  |  |                     ||
+| |  ● Běží     |  | (tab content)      ||
+| |             |  |                     ||
+| +-------------+  +--------------------+|
++----------------------------------------+
+```
+
+**Tabs (EnvironmentManagerTab enum):**
+- Přehled — name, namespace, state badge, assignment, component summary, actions (Provision/Stop/Delete)
+- Komponenty — expandable JCards with inline editing (ComponentsTab + ComponentEditPanel)
+- K8s zdroje — pod/deployment/service inspection (migrated from EnvironmentViewerScreen)
+- Logy & Události — pod logs + K8s events
+
+**Key components:**
+- `EnvironmentManagerScreen` — `JListDetailLayout` with list header ("Nové prostředí" button)
+- `EnvironmentListItem` — `JCard` with name, namespace (monospace), component count, `EnvironmentStateBadge`
+- `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
+- `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
+- `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
+- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config
+- `K8sResourcesTab` — namespace health summary, collapsible pods/deployments/services sections, pod log dialog, deployment detail dialog, restart
+- `LogsEventsTab` — pod log viewer (dropdown pod selector, tail lines, monospace text area) + K8s events list (Warning/Normal coloring)
+
+**Navigation:**
+- `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link from Settings
+- Menu item: "Správa prostředí" (Icons.Default.Dns)
+- Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt`
+- Reuses `EnvironmentStateBadge` from `EnvironmentTreeComponents.kt`
+
 ---
 
 ## 7) Dialog Patterns
@@ -1568,15 +1611,22 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- ProjectGroupsSettings.kt <- Group list
 |   |       +-- ProjectGroupEditForm.kt  <- Group edit form (internal)
 |   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
-|   |       +-- EnvironmentsSettings.kt  <- Environment list
-|   |       +-- EnvironmentEditForm.kt   <- Environment edit form (internal)
-|   |       +-- EnvironmentDialogs.kt    <- Environment create dialog (internal)
+|   |       +-- EnvironmentsSettings.kt  <- Environment list + read-only summary + cross-link to Environment Manager
+|   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel()
 |   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
 |   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
 |   |       +-- ConnectionFormComponents.kt <- Connection form fields (internal)
 |   |       +-- CodingAgentsSettings.kt <- Coding agent config
 |   |       +-- IndexingSettings.kt     <- Indexing intervals config
 |   |       +-- WhisperSettings.kt      <- Whisper transcription config
+|   +-- environment/
+|   |   +-- EnvironmentManagerScreen.kt  <- JListDetailLayout + tabbed detail (Správa prostředí)
+|   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, K8S_RESOURCES, LOGS_EVENTS)
+|   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
+|   |   +-- ComponentsTab.kt            <- Components tab: expandable JCards with inline editing
+|   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
+|   |   +-- K8sResourcesTab.kt          <- K8s resources tab: pods, deployments, services (migrated from EnvironmentViewerScreen)
+|   |   +-- LogsEventsTab.kt            <- Logs & Events tab: pod log viewer + K8s namespace events
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)

@@ -713,7 +713,7 @@ async def run_orchestration_streaming(
         await release_gpu(session_id)
 
 
-async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict:
+async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_history: dict | None = None) -> dict:
     """Resume a paused orchestration from its checkpoint (blocking)."""
     # Get task_id from existing state for stable session_id
     existing_state = await get_graph_state(thread_id)
@@ -723,6 +723,11 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+
+        # Update graph state with fresh chat history before resuming
+        if chat_history:
+            logger.info("Updating graph state with fresh chat history: thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
+            await graph.aupdate_state(config, {"chat_history": chat_history})
 
         logger.info("Resuming orchestration: thread=%s resume_value=%s", thread_id, resume_value)
 
@@ -745,6 +750,7 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None) -> dict
 async def resume_orchestration_streaming(
     thread_id: str,
     resume_value: Any = None,
+    chat_history: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Resume orchestration with streaming node events (for progress reporting)."""
     session_id = f"orch-resume-stream-{thread_id}"
@@ -752,6 +758,11 @@ async def resume_orchestration_streaming(
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+
+        # Update graph state with fresh chat history before resuming
+        if chat_history:
+            logger.info("Updating graph state with fresh chat history (streaming): thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
+            await graph.aupdate_state(config, {"chat_history": chat_history})
 
         logger.info("Resuming streaming orchestration: thread=%s", thread_id)
 
