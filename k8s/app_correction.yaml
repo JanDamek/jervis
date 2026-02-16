@@ -65,6 +65,6 @@ metadata:
   namespace: jervis
 data:
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
-  OLLAMA_URL: "http://ollama-router.jervis.svc.cluster.local:11434"
+  OLLAMA_URL: "http://jervis-ollama-router:11430"
   DEFAULT_CORRECTION_MODEL: "qwen3-coder-tool:30b"
   KOTLIN_SERVER_URL: "http://server-service:8080"
