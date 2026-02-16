@@ -50,8 +50,12 @@ def is_significant_task(state: dict) -> bool:
     task_category = state.get("task_category", "advice")
     task_action = state.get("task_action", "respond")
 
-    # ADVICE = simple Q&A, not worth long-term storage
+    # ADVICE — normally not significant, UNLESS Memory Agent tracked an affair
     if task_category == "advice":
+        if settings.use_memory_agent and state.get("memory_agent"):
+            # Affair context means this ADVICE had structured context worth preserving
+            logger.debug("ADVICE task with affair context → significant for KB ingestion")
+            return True
         return False
 
     # EPIC and GENERATIVE are always significant
@@ -142,6 +146,21 @@ async def extract_outcome(state: dict) -> dict | None:
         context_parts.append(f"Goals:\n{goals_text}")
     if artifacts:
         context_parts.append(f"Artifacts: {', '.join(artifacts[:10])}")
+    # Enrich with affair context when Memory Agent is active
+    if settings.use_memory_agent and state.get("memory_agent"):
+        memory_agent_data = state["memory_agent"]
+        session = memory_agent_data.get("session", {})
+        active = session.get("active_affair")
+        if active:
+            context_parts.append(f"Active affair: {active.get('title', 'Unknown')}")
+            key_facts = active.get("key_facts", [])
+            if key_facts:
+                context_parts.append(f"Key facts: {'; '.join(key_facts[:10])}")
+        parked = session.get("parked_affairs", [])
+        if parked:
+            parked_titles = [a.get("title", "?") for a in parked[:5]]
+            context_parts.append(f"Parked affairs: {', '.join(parked_titles)}")
+
     context_parts.append(f"Final result: {final_result[:2000]}")
 
     messages = [

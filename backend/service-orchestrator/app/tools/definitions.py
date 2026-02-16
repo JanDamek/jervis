@@ -691,6 +691,103 @@ ALL_RESPOND_TOOLS_FULL: list[dict] = (
 
 
 # ============================================================
+# Memory Agent tools (opt-in via use_memory_agent)
+# ============================================================
+
+TOOL_MEMORY_STORE: dict = {
+    "type": "function",
+    "function": {
+        "name": "memory_store",
+        "description": (
+            "Store a fact, decision, or piece of information into working memory. "
+            "Information is immediately available for recall and will be persisted to KB. "
+            "Use this when the user tells you something important: orders, deadlines, "
+            "contacts, preferences, procedures, or any fact worth remembering."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": "Brief subject/title (e.g., 'eBay order status', 'meeting deadline').",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The fact or information to remember.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category: fact, decision, order, deadline, contact, preference, procedure.",
+                    "enum": ["fact", "decision", "order", "deadline", "contact", "preference", "procedure"],
+                    "default": "fact",
+                },
+                "priority": {
+                    "type": "string",
+                    "description": "Write priority: critical (sync), high (fast), normal (best-effort).",
+                    "enum": ["critical", "high", "normal"],
+                    "default": "normal",
+                },
+            },
+            "required": ["subject", "content"],
+        },
+    },
+}
+
+TOOL_MEMORY_RECALL: dict = {
+    "type": "function",
+    "function": {
+        "name": "memory_recall",
+        "description": (
+            "Search working memory (recent facts, write buffer) and Knowledge Base "
+            "for relevant information. Use this to recall previously stored facts, "
+            "check affair details, or find information from past conversations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for (e.g., 'eBay order', 'meeting notes').",
+                },
+                "scope": {
+                    "type": "string",
+                    "description": (
+                        "Search scope: "
+                        "'current' = active affair + write buffer only, "
+                        "'all' = all affairs + write buffer + KB, "
+                        "'kb_only' = Knowledge Base only."
+                    ),
+                    "enum": ["current", "all", "kb_only"],
+                    "default": "all",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+TOOL_LIST_AFFAIRS: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_affairs",
+        "description": (
+            "List all active and parked affairs (thematic contexts). "
+            "Shows titles, status, key facts, and pending actions for each affair. "
+            "Use this to understand what topics are being tracked."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+}
+
+MEMORY_TOOLS: list[dict] = [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL, TOOL_LIST_AFFAIRS]
+ALL_RESPOND_TOOLS_FULL_WITH_MEMORY: list[dict] = ALL_RESPOND_TOOLS_FULL + MEMORY_TOOLS
+
+
+# ============================================================
 # Per-agent tool sets (multi-agent delegation system)
 # Each specialist agent gets ONLY its own tools.
 # ============================================================

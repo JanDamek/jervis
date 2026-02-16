@@ -2721,6 +2721,71 @@ If orchestrator needs code exploration:
 
 ---
 
+## Memory Agent (opt-in)
+
+> **Feature flag:** `use_memory_agent=True` (default: `False`)
+> **Spec:** See `docs/orchestrator-memory-spec.md` for full architecture.
+
+### Overview
+
+The Memory Agent provides structured working memory between turns, context switching when users change topics, and immediate availability of recently stored data. When enabled, it adds two new graph nodes and three new LLM tools.
+
+### New Graph Nodes
+
+**`memory_load`** — runs between `intake` and `evidence_pack`:
+- Creates/restores `MemoryAgent` from serialized state (or cold-starts from KB)
+- Detects context switches via LLM classification: `CONTINUE`, `SWITCH`, `AD_HOC`, `NEW_AFFAIR`
+- Parks current affair and activates target on SWITCH
+- Composes token-budgeted context string for downstream nodes
+- Returns: `memory_agent` (dict), `memory_context` (str), `context_switch_type` (str)
+
+**`memory_flush`** — runs between `respond`/`synthesize` and `finalize`:
+- Appends current query + response to active affair messages (max 20)
+- Drains write buffer (pending KB writes)
+- Returns: updated `memory_agent` (dict)
+
+### New State Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `memory_agent` | `dict \| None` | Serialized MemoryAgent (affairs, session, LQM reference) |
+| `memory_context` | `str \| None` | Composed context string injected into respond node |
+| `context_switch_type` | `str \| None` | Last detected switch type |
+
+### New LLM Tools (respond node)
+
+| Tool | Description |
+|------|-------------|
+| `memory_store` | Store facts/decisions/orders to active affair + KB write buffer |
+| `memory_recall` | Search LQM write buffer + affairs + KB with scope (current/all/kb_only) |
+| `list_affairs` | List active + parked affairs with details |
+
+### Key Components (`app/memory/`)
+
+- **`models.py`** — `Affair`, `AffairStatus`, `SessionContext`, `ContextSwitchResult`, `PendingWrite`, `WritePriority`
+- **`lqm.py`** — Local Quick Memory: 3-layer RAM cache (hot affairs dict, async write buffer queue, LRU warm cache with TTL)
+- **`context_switch.py`** — LLM-based context switch detection (Czech prompt, confidence threshold 0.7)
+- **`affairs.py`** — Affair lifecycle: create, park (with LLM summarization), resume, resolve, load from KB
+- **`composer.py`** — Token-budgeted context composition (40% active affair, 10% parked, 15% user context)
+- **`agent.py`** — `MemoryAgent` facade; process-global LQM singleton, per-orchestration agent instances
+
+### Graph Flow (when enabled)
+
+```
+intake → memory_load → evidence_pack → ... → respond → memory_flush → finalize
+```
+
+For delegation graph:
+```
+intake → memory_load → evidence_pack → plan_delegations → execute_delegation → synthesize → memory_flush → finalize
+```
+
+### Outcome Ingestion
+
+When Memory Agent is active, ADVICE tasks with affair context become significant for KB ingestion. The extraction prompt is enriched with active affair title, key facts, and parked affair titles.
+
+---
+
 ## TODO / Future Improvements
 
 ### Short-Term Conversation Memory (Priority: HIGH) — PARTIALLY ADDRESSED

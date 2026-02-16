@@ -1,6 +1,6 @@
 # Orchestrator Memory Architecture — Specifikace
 
-> **Status**: Analýza + implementační plán
+> **Status**: Implementováno (Phase 1, 3, 4) — Phase 2 (KB extensions) deferred, Phase 5 (testing) pending
 > **Cíl**: Orchestrátor musí pracovat jako inteligentní asistent s dlouhodobou pamětí,
 > schopný přepínat kontexty, ukládat a vybavovat si informace přesně a rychle,
 > a to vše v rámci 48k tokenového okna.
@@ -773,7 +773,7 @@ GET    /api/v1/affairs/{id}/search?query=...         # Search within affair
 
 ## 7. Implementační plán
 
-### Fáze 1: Základ Memory Agenta (2-3 dny)
+### Fáze 1: Základ Memory Agenta (2-3 dny) ✅ DONE
 
 | # | Úkol | Soubory |
 |---|------|---------|
@@ -784,7 +784,7 @@ GET    /api/v1/affairs/{id}/search?query=...         # Search within affair
 | 1.5 | Affair lifecycle (create, park, resume, resolve) | `orchestrator/app/memory/affairs.py` (NEW) |
 | 1.6 | Context composition (token budgeting, priority sections) | `orchestrator/app/memory/composer.py` (NEW) |
 
-### Fáze 2: KB rozšíření (1-2 dny)
+### Fáze 2: KB rozšíření (1-2 dny) ⏳ DEFERRED (orchestrator has fallback paths)
 
 | # | Úkol | Soubory |
 |---|------|---------|
@@ -794,7 +794,7 @@ GET    /api/v1/affairs/{id}/search?query=...         # Search within affair
 | 2.4 | Priority routing v embedding worker | `knowledgebase/app/services/llm_extraction_worker.py` |
 | 2.5 | Ollama Router: MEMORY_WRITE_CRITICAL priorita | `ollama-router/app/models.py` |
 
-### Fáze 3: Integrace do orchestrátoru (2-3 dny)
+### Fáze 3: Integrace do orchestrátoru (2-3 dny) ✅ DONE
 
 | # | Úkol | Soubory |
 |---|------|---------|
@@ -805,7 +805,7 @@ GET    /api/v1/affairs/{id}/search?query=...         # Search within affair
 | 3.5 | Upravit orchestrator graph flow | `orchestrator/app/graph/orchestrator.py` |
 | 3.6 | Upravit state model — přidat memory_agent, affairs | `orchestrator/app/models.py` |
 
-### Fáze 4: Outcome ingestion rozšíření (1 den)
+### Fáze 4: Outcome ingestion rozšíření (1 den) ✅ DONE
 
 | # | Úkol | Soubory |
 |---|------|---------|
@@ -813,7 +813,7 @@ GET    /api/v1/affairs/{id}/search?query=...         # Search within affair
 | 4.2 | Rozšířit `is_significant_task` — ADVICE s affairs je significant | `orchestrator/app/graph/nodes/finalize.py` |
 | 4.3 | Session persistence na konci orchestrace | `orchestrator/app/memory/agent.py` |
 
-### Fáze 5: Testing a ladění (1-2 dny)
+### Fáze 5: Testing a ladění (1-2 dny) ⏳ PENDING
 
 | # | Úkol |
 |---|------|
