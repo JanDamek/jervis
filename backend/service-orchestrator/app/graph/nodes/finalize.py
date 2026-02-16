@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from app.config import settings
 from app.models import CodingTask, StepResult
 from app.graph.nodes._helpers import llm_with_cloud_fallback
 from app.kb.outcome_ingest import is_significant_task, extract_outcome, ingest_outcome_to_kb
@@ -41,6 +42,16 @@ async def finalize(state: dict) -> dict:
     kb_ingested = await _try_kb_ingest(merged_state)
     if kb_ingested:
         result["kb_ingested"] = True
+
+    # --- Phase 3: Memory Agent safety net (idempotent flush) ---
+    if settings.use_memory_agent and state.get("memory_agent"):
+        try:
+            from app.memory.agent import MemoryAgent
+            agent = MemoryAgent.from_state_dict(state["memory_agent"])
+            await agent.flush_session()
+            logger.debug("Finalize: Memory Agent safety-net flush complete")
+        except Exception as e:
+            logger.warning("Finalize: Memory Agent safety-net flush failed (non-blocking): %s", e)
 
     return result
 

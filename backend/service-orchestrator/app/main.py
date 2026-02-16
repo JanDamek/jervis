@@ -155,6 +155,10 @@ async def lifespan(app: FastAPI):
             await procedural_memory.init()
             logger.info("Procedural memory ready")
 
+    # Memory Agent (opt-in)
+    if settings.use_memory_agent:
+        logger.info("Memory Agent enabled (affairs + LQM)")
+
     yield
 
     # Cleanup
@@ -173,6 +177,10 @@ async def lifespan(app: FastAPI):
             from app.context.procedural_memory import procedural_memory
             await procedural_memory.close()
         logger.info("Multi-agent delegation system stopped")
+    if settings.use_memory_agent:
+        from app.memory.agent import reset_lqm
+        reset_lqm()
+        logger.info("Memory Agent LQM cleared")
     await distributed_lock.close()
     await context_store.close()
     await close_checkpointer()
@@ -429,6 +437,9 @@ _NODE_MESSAGES = {
     "plan_delegations": "Planning agent delegations...",
     "execute_delegation": "Executing agent delegations...",
     "synthesize": "Synthesizing agent results...",
+    # Memory Agent nodes
+    "memory_load": "Loading memory context...",
+    "memory_flush": "Persisting memory...",
 }
 
 

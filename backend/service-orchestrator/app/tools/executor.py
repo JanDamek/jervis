@@ -234,6 +234,26 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
             )
+        elif tool_name == "memory_store":
+            result = await _execute_memory_store(
+                subject=arguments.get("subject", ""),
+                content=arguments.get("content", ""),
+                category=arguments.get("category", "fact"),
+                priority=arguments.get("priority", "normal"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "memory_recall":
+            result = await _execute_memory_recall(
+                query=arguments.get("query", ""),
+                scope=arguments.get("scope", "all"),
+                client_id=client_id,
+                project_id=project_id,
+            )
+        elif tool_name == "list_affairs":
+            result = await _execute_list_affairs(
+                client_id=client_id,
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -1545,6 +1565,212 @@ async def _execute_file_info(
         return "\n".join(lines)
     except Exception as e:
         return f"Error: Failed to get file info: {str(e)[:200]}"
+
+
+# ========== Memory Agent Tools ==========
+
+
+async def _execute_memory_store(
+    subject: str,
+    content: str,
+    category: str = "fact",
+    priority: str = "normal",
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Store a fact/decision into Memory Agent's LQM + KB write buffer."""
+    if not subject.strip():
+        return "Error: Subject cannot be empty."
+    if not content.strip():
+        return "Error: Content cannot be empty."
+
+    try:
+        from app.memory.agent import _get_or_create_lqm
+        from app.memory.models import PendingWrite, WritePriority
+
+        priority_map = {
+            "critical": WritePriority.CRITICAL,
+            "high": WritePriority.HIGH,
+            "normal": WritePriority.NORMAL,
+        }
+        write_priority = priority_map.get(priority, WritePriority.NORMAL)
+
+        lqm = _get_or_create_lqm()
+
+        # Add to active affair key_facts if one exists
+        active = lqm.get_active_affair(client_id)
+        if active:
+            active.key_facts[subject] = content[:500]
+            lqm.store_affair(active)
+
+        # Buffer KB write
+        now = datetime.now().isoformat()
+        kind_map = {
+            "fact": "user_knowledge_fact",
+            "decision": "user_knowledge_preference",
+            "order": "user_knowledge_general",
+            "deadline": "user_knowledge_general",
+            "contact": "user_knowledge_personal",
+            "preference": "user_knowledge_preference",
+            "procedure": "user_knowledge_domain",
+        }
+
+        write = PendingWrite(
+            source_urn=f"memory:{client_id}:{subject[:50]}",
+            content=f"# {subject}\n\n{content}",
+            kind=kind_map.get(category, "user_knowledge_fact"),
+            metadata={
+                "category": category,
+                "subject": subject,
+                "client_id": client_id,
+                "project_id": project_id or "",
+            },
+            priority=write_priority,
+            created_at=now,
+        )
+        await lqm.buffer_write(write)
+
+        affair_note = f" (added to affair: {active.title})" if active else ""
+        return (
+            f"✓ Stored in memory: '{subject}' ({category}){affair_note}\n"
+            f"Priority: {priority}\n"
+            f"Available immediately for recall; will be persisted to KB."
+        )
+    except Exception as e:
+        logger.warning("memory_store failed: %s", e)
+        return f"Error storing to memory: {str(e)[:200]}"
+
+
+async def _execute_memory_recall(
+    query: str,
+    scope: str = "all",
+    client_id: str = "",
+    project_id: str | None = None,
+) -> str:
+    """Search Memory Agent's LQM + KB for relevant information."""
+    if not query.strip():
+        return "Error: Empty recall query."
+
+    try:
+        from app.memory.agent import _get_or_create_lqm
+
+        lqm = _get_or_create_lqm()
+        results: list[str] = []
+
+        # Search write buffer (recent unsync'd writes)
+        if scope in ("current", "all"):
+            buffer_hits = lqm.search_write_buffer(query)
+            for hit in buffer_hits[:3]:
+                results.append(
+                    f"[Memory Buffer] {hit.get('source_urn', '?')}\n{hit.get('content', '')[:500]}"
+                )
+
+        # Search active affair key_facts
+        if scope in ("current", "all"):
+            active = lqm.get_active_affair(client_id)
+            if active:
+                for key, value in active.key_facts.items():
+                    if query.lower() in key.lower() or query.lower() in value.lower():
+                        results.append(f"[Active Affair: {active.title}] {key}: {value}")
+
+        # Search parked affairs
+        if scope == "all":
+            parked = lqm.get_parked_affairs(client_id)
+            for affair in parked:
+                searchable = (
+                    f"{affair.title} {affair.summary} "
+                    f"{' '.join(affair.key_facts.values())}"
+                )
+                if query.lower() in searchable.lower():
+                    facts = ", ".join(f"{k}: {v}" for k, v in affair.key_facts.items())
+                    results.append(
+                        f"[Parked Affair: {affair.title}] {affair.summary}\nFacts: {facts}"
+                    )
+
+        # Search cache / KB
+        if scope in ("all", "kb_only"):
+            cached = lqm.get_cached_search(query)
+            if cached is not None:
+                for item in cached[:3]:
+                    content = item.get("content", "")[:500]
+                    source = item.get("sourceUrn", "?")
+                    results.append(f"[KB Cache] {source}\n{content}")
+            else:
+                # KB search fallback
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.post(
+                            f"{settings.knowledgebase_url}/api/v1/retrieve",
+                            json={
+                                "query": query,
+                                "clientId": client_id,
+                                "maxResults": 3,
+                            },
+                            headers={"X-Ollama-Priority": "1"},
+                        )
+                        if resp.status_code == 200:
+                            kb_items = resp.json().get("items", [])
+                            lqm.cache_search(query, kb_items)
+                            for item in kb_items[:3]:
+                                content = item.get("content", "")[:500]
+                                source = item.get("sourceUrn", "?")
+                                results.append(f"[KB] {source}\n{content}")
+                except Exception as kb_err:
+                    logger.debug("KB search in memory_recall failed: %s", kb_err)
+
+        if not results:
+            return f"No memory results found for: {query}"
+
+        return f"## Memory Recall: {query}\n\n" + "\n\n---\n\n".join(results)
+    except Exception as e:
+        logger.warning("memory_recall failed: %s", e)
+        return f"Error recalling from memory: {str(e)[:200]}"
+
+
+async def _execute_list_affairs(
+    client_id: str = "",
+) -> str:
+    """List all active and parked affairs from LQM."""
+    try:
+        from app.memory.agent import _get_or_create_lqm
+
+        lqm = _get_or_create_lqm()
+        active = lqm.get_active_affair(client_id)
+        parked = lqm.get_parked_affairs(client_id)
+
+        if not active and not parked:
+            return "No affairs currently tracked."
+
+        lines = ["## Affairs Overview\n"]
+
+        if active:
+            lines.append(f"### 🟢 Active: {active.title}")
+            if active.summary:
+                lines.append(f"Summary: {active.summary}")
+            if active.key_facts:
+                lines.append("Key facts:")
+                for k, v in active.key_facts.items():
+                    lines.append(f"  - {k}: {v}")
+            if active.pending_actions:
+                lines.append("Pending actions:")
+                for a in active.pending_actions:
+                    lines.append(f"  - {a}")
+            lines.append("")
+
+        if parked:
+            lines.append(f"### ⏸️ Parked ({len(parked)}):")
+            for affair in parked:
+                lines.append(f"- **{affair.title}** (ID: {affair.id})")
+                if affair.summary:
+                    lines.append(f"  {affair.summary[:200]}")
+                if affair.pending_actions:
+                    lines.append(f"  Pending: {', '.join(affair.pending_actions[:3])}")
+            lines.append("")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("list_affairs failed: %s", e)
+        return f"Error listing affairs: {str(e)[:200]}"
 
 
 # ========== Terminal Tool ==========

@@ -31,6 +31,10 @@ from app.graph.nodes.plan_delegations import plan_delegations
 from app.graph.nodes.execute_delegation import execute_delegation
 from app.graph.nodes.synthesize import synthesize
 
+# Memory Agent nodes (opt-in via use_memory_agent)
+from app.graph.nodes.memory_load import memory_load
+from app.graph.nodes.memory_flush import memory_flush
+
 __all__ = [
     # Legacy graph nodes
     "intake",
@@ -56,4 +60,7 @@ __all__ = [
     "plan_delegations",
     "execute_delegation",
     "synthesize",
+    # Memory Agent nodes
+    "memory_load",
+    "memory_flush",
 ]
