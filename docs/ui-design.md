@@ -523,6 +523,14 @@ fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
 }
 ```
 
+**GENERAL category content (3 sections):**
+
+| JSection title | Fields | Notes |
+|---|---|---|
+| "Nastavení aplikace" | Theme dropdown (Light/Dark/System) | Basic app preferences |
+| "Notifikace" | Enable notifications toggle | Notification settings |
+| "Mozek Jervise" | Bugtracker connection dropdown, Jira project key dropdown, Wiki connection dropdown, Confluence space key dropdown | Selects the internal Jira+Confluence used as Jervis's central brain. Connections filtered by capability (BUGTRACKER/WIKI). Project/space dropdowns load dynamically after connection selection. Saved via `SystemConfigService`. |
+
 ### 5.1.1) App Layout with PersistentTopBar
 
 The app uses a global `PersistentTopBar` above all screens. The main screen (chat) has no SelectorsRow or AgentStatusRow — these live in the PersistentTopBar.

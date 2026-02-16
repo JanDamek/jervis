@@ -395,6 +395,276 @@ TOOL_CREATE_SCHEDULED_TASK: dict = {
     },
 }
 
+# ============================================================
+# Brain tools (Jervis's internal Jira + Confluence project management)
+# ============================================================
+
+TOOL_BRAIN_CREATE_ISSUE: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_create_issue",
+        "description": (
+            "Create a Jira issue in Jervis's internal brain project. "
+            "Use this to plan work, track tasks, create EPICs, or log findings. "
+            "Issues are automatically scoped to the configured brain Jira project."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Issue title/summary.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Detailed description of the issue (optional).",
+                },
+                "issue_type": {
+                    "type": "string",
+                    "description": "Issue type: Task, Story, Bug, Epic (default: Task).",
+                    "enum": ["Task", "Story", "Bug", "Epic"],
+                    "default": "Task",
+                },
+                "priority": {
+                    "type": "string",
+                    "description": "Priority: Highest, High, Medium, Low, Lowest (optional).",
+                    "enum": ["Highest", "High", "Medium", "Low", "Lowest"],
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Labels to apply (e.g., ['auto-ingest', 'review']).",
+                },
+                "epic_key": {
+                    "type": "string",
+                    "description": "Parent Epic issue key (e.g., 'JERVIS-10') to link to.",
+                },
+            },
+            "required": ["summary"],
+        },
+    },
+}
+
+TOOL_BRAIN_UPDATE_ISSUE: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_update_issue",
+        "description": (
+            "Update an existing Jira issue in the brain project. "
+            "Can change summary, description, assignee, priority, or labels."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issue_key": {
+                    "type": "string",
+                    "description": "Issue key (e.g., 'JERVIS-42').",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "New summary (optional).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "New description (optional).",
+                },
+                "assignee": {
+                    "type": "string",
+                    "description": "Assignee account ID (optional).",
+                },
+                "priority": {
+                    "type": "string",
+                    "description": "New priority (optional).",
+                    "enum": ["Highest", "High", "Medium", "Low", "Lowest"],
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Replace labels (optional).",
+                },
+            },
+            "required": ["issue_key"],
+        },
+    },
+}
+
+TOOL_BRAIN_ADD_COMMENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_add_comment",
+        "description": (
+            "Add a comment to a Jira issue in the brain project. "
+            "Use this to log progress, notes, or findings on an existing issue."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issue_key": {
+                    "type": "string",
+                    "description": "Issue key (e.g., 'JERVIS-42').",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Comment text.",
+                },
+            },
+            "required": ["issue_key", "body"],
+        },
+    },
+}
+
+TOOL_BRAIN_TRANSITION_ISSUE: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_transition_issue",
+        "description": (
+            "Transition a Jira issue to a new status. "
+            "Common transitions: 'To Do', 'In Progress', 'Done', 'In Review'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issue_key": {
+                    "type": "string",
+                    "description": "Issue key (e.g., 'JERVIS-42').",
+                },
+                "transition_name": {
+                    "type": "string",
+                    "description": "Target status name (e.g., 'In Progress', 'Done').",
+                },
+            },
+            "required": ["issue_key", "transition_name"],
+        },
+    },
+}
+
+TOOL_BRAIN_SEARCH_ISSUES: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_search_issues",
+        "description": (
+            "Search Jira issues in the brain project using JQL. "
+            "The query is automatically scoped to the brain project. "
+            "Examples: 'status = \"To Do\"', 'labels = auto-ingest', "
+            "'summary ~ \"review\" ORDER BY created DESC'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "jql": {
+                    "type": "string",
+                    "description": "JQL query (project filter is added automatically).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 20).",
+                    "default": 20,
+                },
+            },
+            "required": ["jql"],
+        },
+    },
+}
+
+TOOL_BRAIN_CREATE_PAGE: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_create_page",
+        "description": (
+            "Create a Confluence page in the brain wiki space. "
+            "Use this to store documentation, architecture decisions, "
+            "meeting notes, or project plans."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Page title.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Page content (Confluence storage format or plain text).",
+                },
+                "parent_page_id": {
+                    "type": "string",
+                    "description": "Parent page ID to create under (optional, defaults to root).",
+                },
+            },
+            "required": ["title", "content"],
+        },
+    },
+}
+
+TOOL_BRAIN_UPDATE_PAGE: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_update_page",
+        "description": (
+            "Update an existing Confluence page in the brain wiki space."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "page_id": {
+                    "type": "string",
+                    "description": "Page ID to update.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "New page title.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "New page content.",
+                },
+                "version": {
+                    "type": "integer",
+                    "description": "Current version number (required for optimistic locking).",
+                },
+            },
+            "required": ["page_id", "title", "content", "version"],
+        },
+    },
+}
+
+TOOL_BRAIN_SEARCH_PAGES: dict = {
+    "type": "function",
+    "function": {
+        "name": "brain_search_pages",
+        "description": (
+            "Search Confluence pages in the brain wiki space. "
+            "Finds pages by title or content keywords."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for Confluence pages.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 20).",
+                    "default": 20,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+BRAIN_TOOLS: list[dict] = [
+    TOOL_BRAIN_CREATE_ISSUE,
+    TOOL_BRAIN_UPDATE_ISSUE,
+    TOOL_BRAIN_ADD_COMMENT,
+    TOOL_BRAIN_TRANSITION_ISSUE,
+    TOOL_BRAIN_SEARCH_ISSUES,
+    TOOL_BRAIN_CREATE_PAGE,
+    TOOL_BRAIN_UPDATE_PAGE,
+    TOOL_BRAIN_SEARCH_PAGES,
+]
+
 ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
@@ -784,7 +1054,7 @@ TOOL_LIST_AFFAIRS: dict = {
 }
 
 MEMORY_TOOLS: list[dict] = [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL, TOOL_LIST_AFFAIRS]
-ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS
+ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + BRAIN_TOOLS
 
 
 # ============================================================
@@ -811,8 +1081,8 @@ CODE_REVIEW_AGENT_TOOLS: list[dict] = [
 # TestAgent — terminal + filesystem (for running tests, reading results)
 TEST_AGENT_TOOLS: list[dict] = TERMINAL_TOOLS + FILESYSTEM_TOOLS
 
-# IssueTrackerAgent — KB search for context
-TRACKER_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+# IssueTrackerAgent — KB search + brain tools for cross-project work
+TRACKER_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS] + BRAIN_TOOLS
 
 # WikiAgent — KB search for context
 WIKI_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
@@ -827,8 +1097,8 @@ DOCUMENTATION_AGENT_TOOLS: list[dict] = [
 # DevOpsAgent — no tools (uses k8s API via executor)
 DEVOPS_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
 
-# ProjectManagementAgent — KB search
-PROJECT_MANAGEMENT_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+# ProjectManagementAgent — KB search + brain tools for planning
+PROJECT_MANAGEMENT_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS] + BRAIN_TOOLS
 
 # SecurityAgent — Joern + KB
 SECURITY_AGENT_TOOLS: list[dict] = [
