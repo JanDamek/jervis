@@ -166,60 +166,53 @@ class TaskService(
      * Queue size counts only FOREGROUND tasks in READY_FOR_GPU state.
      * Running task is atomically claimed (DISPATCHED_GPU) so it's excluded automatically.
      */
-    suspend fun getQueueStatus(
-        clientId: ClientId,
-        projectId: ProjectId?,
-    ): Pair<TaskDocument?, Int> {
+    suspend fun getGlobalQueueStatus(): Pair<TaskDocument?, Int> {
         val rawCount =
-            taskRepository.countByProcessingModeAndStateAndTypeAndClientId(
+            taskRepository.countByProcessingModeAndState(
                 processingMode = ProcessingMode.FOREGROUND,
                 state = TaskStateEnum.READY_FOR_GPU,
-                type = TaskTypeEnum.USER_INPUT_PROCESSING,
-                clientId = clientId,
             )
         // Exclude the currently running task from the count (its DB state is still READY_FOR_GPU)
         val running = getCurrentRunningTask()
         val isRunningCounted = running != null &&
-            running.clientId == clientId &&
             running.processingMode == ProcessingMode.FOREGROUND &&
-            running.type == TaskTypeEnum.USER_INPUT_PROCESSING &&
             running.state == TaskStateEnum.READY_FOR_GPU
         val queueSize = if (isRunningCounted) (rawCount - 1).coerceAtLeast(0) else rawCount
 
         logger.debug {
-            "GET_QUEUE_STATUS | clientId=$clientId | projectId=$projectId | " +
+            "GET_GLOBAL_QUEUE_STATUS | " +
                 "rawCount=$rawCount | queueSize=$queueSize | hasRunningTask=${running != null} | isRunningCounted=$isRunningCounted"
         }
         return running to queueSize.toInt()
     }
 
     /**
-     * Get pending FOREGROUND tasks for queue display.
+     * Get ALL pending FOREGROUND tasks for queue display (global, not per-client).
      * Returns only tasks actually waiting to be processed (READY_FOR_GPU).
      * PYTHON_ORCHESTRATING tasks are NOT in the queue — they're shown in the Agent section.
      */
-    suspend fun getPendingForegroundTasks(clientId: ClientId): List<TaskDocument> {
+    suspend fun getPendingForegroundTasks(): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
                 TaskStateEnum.READY_FOR_GPU,
             ).toList()
-            .filter { it.clientId == clientId && it.id != running?.id }
+            .filter { it.id != running?.id }
     }
 
     /**
-     * Get pending BACKGROUND tasks for queue display.
+     * Get ALL pending BACKGROUND tasks for queue display (global, not per-client).
      * Returns tasks waiting to be processed, excluding the currently running task.
      */
-    suspend fun getPendingBackgroundTasks(clientId: ClientId): List<TaskDocument> {
+    suspend fun getPendingBackgroundTasks(): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.READY_FOR_GPU,
             ).toList()
-            .filter { it.clientId == clientId && it.id != running?.id }
+            .filter { it.id != running?.id }
     }
 
     /**
@@ -228,8 +221,8 @@ class TaskService(
      */
     suspend fun reorderTaskInQueue(task: TaskDocument, newPosition: Int) {
         val allTasks = when (task.processingMode) {
-            ProcessingMode.FOREGROUND -> getPendingForegroundTasks(task.clientId)
-            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks(task.clientId)
+            ProcessingMode.FOREGROUND -> getPendingForegroundTasks()
+            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks()
         }.sortedBy { it.queuePosition ?: Int.MAX_VALUE }.toMutableList()
 
         // Remove the target task from the list
@@ -264,8 +257,8 @@ class TaskService(
 
         // Calculate next position in target queue
         val targetTasks = when (targetMode) {
-            ProcessingMode.FOREGROUND -> getPendingForegroundTasks(task.clientId)
-            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks(task.clientId)
+            ProcessingMode.FOREGROUND -> getPendingForegroundTasks()
+            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks()
         }
         val maxPosition = targetTasks.maxOfOrNull { it.queuePosition ?: 0 } ?: 0
 

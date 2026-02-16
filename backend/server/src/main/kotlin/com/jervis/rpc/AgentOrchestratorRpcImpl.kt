@@ -66,14 +66,13 @@ class AgentOrchestratorRpcImpl(
     }
 
     /**
-     * Internal method to emit queue status to the client stream.
-     * Used by CentralPoller to send queue updates.
+     * Emit queue status to ALL connected client streams.
+     * Queue/agent status is global — all clients see the same orchestrator state.
      */
-    suspend fun emitQueueStatus(
-        clientId: String,
-        response: ChatResponseDto,
-    ) {
-        queueStatusStreams[clientId]?.emit(response)
+    suspend fun emitQueueStatusToAll(response: ChatResponseDto) {
+        for ((_, stream) in queueStatusStreams) {
+            stream.emit(response)
+        }
     }
 
     /**
@@ -534,76 +533,13 @@ class AgentOrchestratorRpcImpl(
                 )
             }
 
+        // Emit initial global queue status
         backgroundScope.launch {
             try {
-                val clientIdTyped = ClientId.fromString(clientId)
-
-                val (runningTask, queueSize) = taskService.getQueueStatus(clientIdTyped, null)
-
-                // Get pending queue items for display
-                val pendingTasks = taskService.getPendingForegroundTasks(clientIdTyped)
-                val pendingItems = pendingTasks.mapIndexed { index, task ->
-                    val preview = task.content.take(60).let {
-                        if (task.content.length > 60) "$it..." else it
-                    }
-                    val pName = task.projectId?.let { pid ->
-                        try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
-                    } ?: "General"
-                    listOf(
-                        "pendingItem_${index}_preview" to preview,
-                        "pendingItem_${index}_project" to pName,
-                    )
-                }.flatten().toMap() + mapOf("pendingItemCount" to pendingTasks.size.toString())
-
-                val response =
-                    if (runningTask != null) {
-                        val projectName =
-                            runningTask.projectId?.let { pid ->
-                                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
-                            } ?: "General"
-                        val taskPreview =
-                            runningTask.content.take(50).let {
-                                if (runningTask.content.length > 50) "$it..." else it
-                            }
-                        val taskTypeLabel =
-                            when (runningTask.type) {
-                                com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING -> "Asistent"
-                                com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING -> "Wiki"
-                                com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING -> "BugTracker"
-                                com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING -> "Email"
-                                else -> runningTask.type.toString()
-                            }
-
-                        ChatResponseDto(
-                            message = "Queue status",
-                            type = ChatResponseType.QUEUE_STATUS,
-                            metadata =
-                                mapOf(
-                                    "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
-                                    "runningProjectName" to projectName,
-                                    "runningTaskPreview" to taskPreview,
-                                    "runningTaskType" to taskTypeLabel,
-                                    "queueSize" to queueSize.toString(),
-                                ) + pendingItems,
-                        )
-                    } else {
-                        ChatResponseDto(
-                            message = if (queueSize > 0) "Queue: $queueSize tasks waiting" else "Queue is empty",
-                            type = ChatResponseType.QUEUE_STATUS,
-                            metadata =
-                                mapOf(
-                                    "runningProjectId" to "none",
-                                    "runningProjectName" to "None",
-                                    "runningTaskPreview" to "",
-                                    "runningTaskType" to "",
-                                    "queueSize" to queueSize.toString(),
-                                ) + pendingItems,
-                        )
-                    }
-
+                val response = buildGlobalQueueStatusResponse()
                 sharedFlow.emit(response)
                 logger.info {
-                    "INITIAL_QUEUE_STATUS_EMITTED | clientId=$clientId | queueSize=$queueSize | pendingItems=${pendingTasks.size} | hasRunningTask=${runningTask != null} | taskType=${runningTask?.type}"
+                    "INITIAL_QUEUE_STATUS_EMITTED | clientId=$clientId | ${response.metadata}"
                 }
             } catch (e: Exception) {
                 logger.error(e) { "Failed to emit initial queue status for clientId=$clientId" }
@@ -616,18 +552,17 @@ class AgentOrchestratorRpcImpl(
     // --- Queue Management RPC Methods ---
 
     override suspend fun getPendingTasks(clientId: String): com.jervis.dto.PendingTasksDto {
-        val clientIdTyped = ClientId.fromString(clientId)
-        logger.info { "GET_PENDING_TASKS | clientId=$clientId" }
+        logger.info { "GET_PENDING_TASKS | clientId=$clientId (global)" }
 
         val running = taskService.getCurrentRunningTask()
 
-        val foregroundTasks = taskService.getPendingForegroundTasks(clientIdTyped)
-        val backgroundTasks = taskService.getPendingBackgroundTasks(clientIdTyped)
+        val foregroundTasks = taskService.getPendingForegroundTasks()
+        val backgroundTasks = taskService.getPendingBackgroundTasks()
 
         val foregroundItems = foregroundTasks.map { task -> task.toPendingTaskItemDto() }
         val backgroundItems = backgroundTasks.map { task -> task.toPendingTaskItemDto() }
 
-        val runningItem = running?.takeIf { it.clientId == clientIdTyped }?.toPendingTaskItemDto()
+        val runningItem = running?.toPendingTaskItemDto()
 
         logger.info {
             "PENDING_TASKS_RESULT | clientId=$clientId | foreground=${foregroundItems.size} | background=${backgroundItems.size} | hasRunning=${runningItem != null}"
@@ -659,7 +594,7 @@ class AgentOrchestratorRpcImpl(
 
         // Emit updated queue status
         try {
-            emitQueueStatusForClient(task.clientId.toString())
+            emitGlobalQueueStatus()
         } catch (e: Exception) {
             logger.warn(e) { "Failed to emit queue status after reorder" }
         }
@@ -693,7 +628,7 @@ class AgentOrchestratorRpcImpl(
 
         // Emit updated queue status
         try {
-            emitQueueStatusForClient(task.clientId.toString())
+            emitGlobalQueueStatus()
         } catch (e: Exception) {
             logger.warn(e) { "Failed to emit queue status after move" }
         }
@@ -769,15 +704,13 @@ class AgentOrchestratorRpcImpl(
     }
 
     /**
-     * Emit updated queue status for a client after queue changes (reorder/move).
+     * Build a global queue status response (all clients, all queues).
      */
-    private suspend fun emitQueueStatusForClient(clientId: String) {
-        val clientIdTyped = ClientId.fromString(clientId)
-        val (runningTask, queueSize) = taskService.getQueueStatus(clientIdTyped, null)
+    suspend fun buildGlobalQueueStatusResponse(): ChatResponseDto {
+        val (runningTask, queueSize) = taskService.getGlobalQueueStatus()
 
-        // Build pending items for metadata
-        val foregroundTasks = taskService.getPendingForegroundTasks(clientIdTyped)
-        val backgroundTasks = taskService.getPendingBackgroundTasks(clientIdTyped)
+        val foregroundTasks = taskService.getPendingForegroundTasks()
+        val backgroundTasks = taskService.getPendingBackgroundTasks()
 
         val pendingItems = buildMap {
             put("pendingItemCount", foregroundTasks.size.toString())
@@ -842,12 +775,18 @@ class AgentOrchestratorRpcImpl(
             )
         }
 
-        val response = ChatResponseDto(
+        return ChatResponseDto(
             message = "Queue status update",
             type = ChatResponseType.QUEUE_STATUS,
             metadata = metadata + pendingItems,
         )
+    }
 
-        emitQueueStatus(clientId, response)
+    /**
+     * Emit global queue status to all connected clients.
+     */
+    suspend fun emitGlobalQueueStatus() {
+        val response = buildGlobalQueueStatusResponse()
+        emitQueueStatusToAll(response)
     }
 }

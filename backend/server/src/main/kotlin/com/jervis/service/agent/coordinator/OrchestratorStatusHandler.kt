@@ -328,23 +328,7 @@ class OrchestratorStatusHandler(
      */
     private suspend fun emitQueueIdle(task: TaskDocument) {
         try {
-            agentOrchestratorRpc.emitQueueStatus(
-                task.clientId.toString(),
-                com.jervis.dto.ChatResponseDto(
-                    message = "Queue status update",
-                    type = com.jervis.dto.ChatResponseType.QUEUE_STATUS,
-                    metadata = mapOf(
-                        "runningProjectId" to "none",
-                        "runningProjectName" to "",
-                        "runningTaskPreview" to "",
-                        "runningTaskType" to "",
-                        "runningTaskId" to "",
-                        "queueSize" to "0",
-                        "pendingItemCount" to "0",
-                        "backgroundItemCount" to "0",
-                    ),
-                ),
-            )
+            agentOrchestratorRpc.emitGlobalQueueStatus()
         } catch (e: Exception) {
             logger.warn(e) { "Failed to emit idle queue status for task ${task.id}" }
         }
