@@ -151,9 +151,9 @@ data class CorrectionSubmitRequestDto(
 
 @kotlinx.serialization.Serializable
 data class CorrectionSubmitResultDto(
-    @kotlinx.serialization.SerialName("correctionId") val correctionId: String,
-    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String,
-    val status: String,
+    @kotlinx.serialization.SerialName("correctionId") val correctionId: String = "",
+    @kotlinx.serialization.SerialName("sourceUrn") val sourceUrn: String = "",
+    val status: String = "",
 )
 
 @kotlinx.serialization.Serializable

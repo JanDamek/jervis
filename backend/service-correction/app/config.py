@@ -6,10 +6,17 @@ import os
 class Settings:
     """Service configuration from environment variables."""
 
-    # KB service URL for storing/retrieving correction rules
+    # KB service URL for reading correction rules (retrieve, search, list)
     knowledgebase_url: str = os.getenv(
         "KNOWLEDGEBASE_URL",
-        "http://service-knowledgebase:8000",
+        "http://jervis-knowledgebase:8080",
+    )
+
+    # KB service URL for writing correction rules (ingest, purge)
+    # Split deployment: read replicas don't expose write endpoints
+    knowledgebase_write_url: str = os.getenv(
+        "KNOWLEDGEBASE_WRITE_URL",
+        "http://jervis-knowledgebase-write:8080",
     )
 
     # Ollama URL for LLM calls

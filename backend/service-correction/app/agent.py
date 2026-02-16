@@ -61,7 +61,8 @@ class CorrectionAgent:
     """Transcript correction agent backed by KB + Ollama."""
 
     def __init__(self):
-        self.kb_url = f"{settings.knowledgebase_url}/api/v1"
+        self.kb_url = f"{settings.knowledgebase_url}/api/v1"  # read operations
+        self.kb_write_url = f"{settings.knowledgebase_write_url}/api/v1"  # write operations (ingest, purge)
         self.ollama_url = settings.ollama_url
         self.model = settings.default_correction_model  # qwen3-coder-tool:30b (num_ctx overridden dynamically)
 
@@ -96,7 +97,7 @@ class CorrectionAgent:
         }
 
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
-            resp = await http.post(f"{self.kb_url}/ingest", json=ingest_payload)
+            resp = await http.post(f"{self.kb_write_url}/ingest", json=ingest_payload)
             resp.raise_for_status()
 
         logger.info(
@@ -113,7 +114,7 @@ class CorrectionAgent:
         """Delete a correction from KB."""
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_WRITE) as http:
             resp = await http.post(
-                f"{self.kb_url}/purge",
+                f"{self.kb_write_url}/purge",
                 json={"sourceUrn": source_urn},
             )
             resp.raise_for_status()
