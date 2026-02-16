@@ -35,8 +35,11 @@ sealed class Screen {
     // Indexing queue overview
     object IndexingQueue : Screen()
 
-    // Environment viewer (K8s resource inspection)
+    // Environment viewer (K8s resource inspection) — legacy, use EnvironmentManager
     object EnvironmentViewer : Screen()
+
+    // Environment manager (full CRUD + K8s inspection)
+    data class EnvironmentManager(val initialEnvironmentId: String? = null) : Screen()
 
     // Debug console (WebSocket)
     object DebugConsole : Screen()

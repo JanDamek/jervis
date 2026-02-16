@@ -744,6 +744,23 @@ class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
 // LLM agent filters KB-known questions automatically
 ```
 
+### Pattern 8: Environment Manager (List + Tabbed Detail)
+
+```kotlin
+// EnvironmentManagerScreen: JListDetailLayout + TabRow in detail
+EnvironmentManagerScreen(
+    repository = repository,
+    onBack = { appNavigator.goBack() },
+    initialEnvironmentId = screen.initialEnvironmentId,  // deep-link from Settings
+)
+
+// Detail uses JDetailScreen + TabRow with EnvironmentManagerTab enum:
+// OVERVIEW | COMPONENTS | K8S_RESOURCES | LOGS_EVENTS
+// OverviewTab: JSection blocks (info, assignment, components summary) + action buttons
+// Reuses: NewEnvironmentDialog, EnvironmentStateBadge, componentTypeLabel()
+// Navigation: Screen.EnvironmentManager(initialEnvironmentId: String? = null)
+```
+
 ### Shared Form Helpers
 
 | Helper | Location | Purpose |

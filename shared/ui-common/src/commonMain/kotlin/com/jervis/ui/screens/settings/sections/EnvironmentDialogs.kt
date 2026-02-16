@@ -95,7 +95,7 @@ enum class EnvironmentScope {
 }
 
 @Composable
-internal fun NewEnvironmentDialog(
+fun NewEnvironmentDialog(
     repository: JervisRepository,
     onCreated: () -> Unit,
     onDismiss: () -> Unit,

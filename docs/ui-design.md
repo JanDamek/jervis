@@ -1326,6 +1326,45 @@ JCard(
 }
 ```
 
+### 5.10) Environment Manager Screen (`EnvironmentManagerScreen.kt`)
+
+Full environment management screen accessed from the hamburger menu ("Správa prostředí").
+Uses `JListDetailLayout` for list→detail navigation with `TabRow` for detail tabs.
+
+```
+Expanded (>=600dp):
++-- JTopBar ("Správa prostředí") -------+
+|                                        |
+| +-- List ----+  +-- Detail ----------+|
+| | [Nové prostředí]  | JDetailScreen    ||
+| |             |  | TabRow:             ||
+| | JCard       |  | Přehled|Komponenty| ||
+| |  name       |  | K8s|Logy           ||
+| |  namespace  |  |                     ||
+| |  ● Běží     |  | (tab content)      ||
+| |             |  |                     ||
+| +-------------+  +--------------------+|
++----------------------------------------+
+```
+
+**Tabs (EnvironmentManagerTab enum):**
+- Přehled — name, namespace, state badge, assignment, component summary, actions (Provision/Stop/Delete)
+- Komponenty — CRUD list of components (Commit 2)
+- K8s zdroje — pod/deployment/service inspection (Commit 3, migrated from EnvironmentViewerScreen)
+- Logy & Události — pod logs + K8s events (Commit 4)
+
+**Key components:**
+- `EnvironmentManagerScreen` — `JListDetailLayout` with list header ("Nové prostředí" button)
+- `EnvironmentListItem` — `JCard` with name, namespace (monospace), component count, `EnvironmentStateBadge`
+- `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
+- `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
+
+**Navigation:**
+- `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link from Settings
+- Menu item: "Správa prostředí" (Icons.Default.Dns)
+- Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt`
+- Reuses `EnvironmentStateBadge` from `EnvironmentTreeComponents.kt`
+
 ---
 
 ## 7) Dialog Patterns
@@ -1562,13 +1601,17 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
 |   |       +-- EnvironmentsSettings.kt  <- Environment list
 |   |       +-- EnvironmentEditForm.kt   <- Environment edit form (internal)
-|   |       +-- EnvironmentDialogs.kt    <- Environment create dialog (internal)
+|   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel()
 |   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
 |   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
 |   |       +-- ConnectionFormComponents.kt <- Connection form fields (internal)
 |   |       +-- CodingAgentsSettings.kt <- Coding agent config
 |   |       +-- IndexingSettings.kt     <- Indexing intervals config
 |   |       +-- WhisperSettings.kt      <- Whisper transcription config
+|   +-- environment/
+|   |   +-- EnvironmentManagerScreen.kt  <- JListDetailLayout + tabbed detail (Správa prostředí)
+|   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, K8S_RESOURCES, LOGS_EVENTS)
+|   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)

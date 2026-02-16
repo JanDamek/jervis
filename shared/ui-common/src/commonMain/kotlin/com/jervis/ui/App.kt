@@ -238,6 +238,14 @@ fun App(
                 )
             }
 
+            is Screen.EnvironmentManager -> {
+                com.jervis.ui.screens.environment.EnvironmentManagerScreen(
+                    repository = repository,
+                    onBack = { appNavigator.goBack() },
+                    initialEnvironmentId = screen.initialEnvironmentId,
+                )
+            }
+
             // Debug console removed - server does not publish debug WebSocket
             Screen.DebugConsole -> {
                 // No debug window - navigate back to main

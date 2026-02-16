@@ -74,7 +74,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
     PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
     SCHEDULER(Icons.Default.CalendarMonth, "Plánovač", 1),
     INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace", 1),
-    ENVIRONMENT_VIEWER(Icons.Default.Dns, "Prostředí K8s", 1),
+    ENVIRONMENT_MANAGER(Icons.Default.Dns, "Správa prostředí", 1),
     // Group 2: Debug
     ERROR_LOGS(Icons.Default.BugReport, "Chybové logy", 2),
     RAG_SEARCH(Icons.Default.Search, "RAG Hledání", 2),
@@ -88,7 +88,7 @@ private fun TopBarMenuItem.toScreen(): Screen = when (this) {
     TopBarMenuItem.PENDING_TASKS -> Screen.PendingTasks
     TopBarMenuItem.SCHEDULER -> Screen.Scheduler
     TopBarMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue
-    TopBarMenuItem.ENVIRONMENT_VIEWER -> Screen.EnvironmentViewer
+    TopBarMenuItem.ENVIRONMENT_MANAGER -> Screen.EnvironmentManager()
     TopBarMenuItem.ERROR_LOGS -> Screen.ErrorLogs
     TopBarMenuItem.RAG_SEARCH -> Screen.RagSearch
     TopBarMenuItem.SETTINGS -> Screen.Settings
