@@ -123,6 +123,14 @@ class RpcClientsConfig(
                 withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().getIssue(request) }
             override suspend fun listProjects(request: BugTrackerProjectsRequest) =
                 withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().listProjects(request) }
+            override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().createIssue(request) }
+            override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().updateIssue(request) }
+            override suspend fun addComment(request: BugTrackerAddCommentRpcRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().addComment(request) }
+            override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
+                withAutoReconnect({ _bugTrackerClient = null }) { getBugTracker().transitionIssue(request) }
         }
 
     @Bean
@@ -136,6 +144,14 @@ class RpcClientsConfig(
                 withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().getIssue(request) }
             override suspend fun listProjects(request: BugTrackerProjectsRequest) =
                 withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().listProjects(request) }
+            override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().createIssue(request) }
+            override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().updateIssue(request) }
+            override suspend fun addComment(request: BugTrackerAddCommentRpcRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().addComment(request) }
+            override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
+                withAutoReconnect({ _githubBugTrackerClient = null }) { getGitHubBugTracker().transitionIssue(request) }
         }
 
     @Bean
@@ -149,6 +165,14 @@ class RpcClientsConfig(
                 withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().getIssue(request) }
             override suspend fun listProjects(request: BugTrackerProjectsRequest) =
                 withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().listProjects(request) }
+            override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().createIssue(request) }
+            override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().updateIssue(request) }
+            override suspend fun addComment(request: BugTrackerAddCommentRpcRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().addComment(request) }
+            override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
+                withAutoReconnect({ _gitlabBugTrackerClient = null }) { getGitLabBugTracker().transitionIssue(request) }
         }
 
     @Bean
@@ -162,6 +186,10 @@ class RpcClientsConfig(
                 withAutoReconnect({ _wikiClient = null }) { getWiki().getPage(request) }
             override suspend fun listSpaces(request: WikiSpacesRequest) =
                 withAutoReconnect({ _wikiClient = null }) { getWiki().listSpaces(request) }
+            override suspend fun createPage(request: WikiCreatePageRpcRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().createPage(request) }
+            override suspend fun updatePage(request: WikiUpdatePageRpcRequest) =
+                withAutoReconnect({ _wikiClient = null }) { getWiki().updatePage(request) }
         }
 
     @Bean

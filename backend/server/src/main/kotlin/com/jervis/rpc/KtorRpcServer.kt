@@ -764,7 +764,7 @@ class KtorRpcServer(
                                         HttpStatusCode.BadRequest,
                                     )
                                 try {
-                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(taskIdStr))
                                     val task = taskRepository.getById(taskId)
                                         ?: return@post call.respondText(
                                             "{\"ok\":false,\"error\":\"Task not found\"}",
@@ -800,7 +800,7 @@ class KtorRpcServer(
                                     )
                                 try {
                                     val body = call.receive<AgentDispatchedRequest>()
-                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(taskIdStr))
                                     val task = taskRepository.getById(taskId)
                                         ?: return@post call.respondText(
                                             "{\"ok\":false,\"error\":\"Task not found\"}",
