@@ -50,6 +50,7 @@ class SimpleQualifierAgent(
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val directoryStructureService: DirectoryStructureService,
+    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -116,7 +117,12 @@ class SimpleQualifierAgent(
                 return "FAILED: $errorMsg"
             }
 
-            // 5. Three-way routing based on KB analysis
+            // 5. Cross-project aggregation: write actionable findings to brain Jira
+            if (result.hasActionableContent) {
+                writeToBrain(task, result)
+            }
+
+            // 6. Three-way routing based on KB analysis
             val routingDecision = routeTask(task, result, onProgress)
 
             taskService.updateState(task, routingDecision.state)
@@ -311,6 +317,7 @@ class SimpleQualifierAgent(
             TaskTypeEnum.SCHEDULED_TASK -> "scheduled"
             TaskTypeEnum.LINK_PROCESSING -> "link"
             TaskTypeEnum.MEETING_PROCESSING -> "meeting"
+            TaskTypeEnum.IDLE_REVIEW -> "idle_review"
         }
     }
 
@@ -324,6 +331,59 @@ class SimpleQualifierAgent(
             message.contains("socket", ignoreCase = true) ||
             message.contains("network", ignoreCase = true) ||
             message.contains("prematurely closed", ignoreCase = true)
+
+    /**
+     * Write actionable finding to brain Jira for cross-project aggregation.
+     * Non-critical: failure does not block qualification.
+     *
+     * Deduplicates by correlationId label to prevent duplicate issues.
+     */
+    private suspend fun writeToBrain(task: TaskDocument, result: FullIngestResult) {
+        try {
+            if (!brainWriteService.isConfigured()) return
+
+            val summary = "${mapTaskTypeToSourceType(task.type).uppercase()}: ${result.summary.take(150)}"
+            val description = buildString {
+                appendLine("**Source:** ${task.type.name}")
+                appendLine("**Correlation ID:** ${task.correlationId}")
+                task.projectId?.let { appendLine("**Project ID:** $it") }
+                appendLine("**Urgency:** ${result.urgency}")
+                if (result.suggestedActions.isNotEmpty()) {
+                    appendLine("**Suggested actions:** ${result.suggestedActions}")
+                }
+                appendLine()
+                appendLine(result.summary)
+            }
+
+            val labels = listOf("auto-ingest", mapTaskTypeToSourceType(task.type))
+
+            // Deduplication: check if issue with this correlationId already exists
+            val existing = try {
+                brainWriteService.searchIssues(
+                    jql = "labels = \"corr:${task.correlationId}\"",
+                    maxResults = 1,
+                )
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            if (existing.isNotEmpty()) {
+                logger.debug { "BRAIN_WRITE_SKIP | taskId=${task.id} | correlationId=${task.correlationId} | already exists" }
+                return
+            }
+
+            brainWriteService.createIssue(
+                summary = summary,
+                description = description,
+                labels = labels + "corr:${task.correlationId}",
+            )
+
+            logger.info { "BRAIN_WRITE_OK | taskId=${task.id} | correlationId=${task.correlationId}" }
+        } catch (e: Exception) {
+            // Non-critical: log and continue
+            logger.warn(e) { "BRAIN_WRITE_FAILED | taskId=${task.id} | error=${e.message}" }
+        }
+    }
 
     private fun buildMetadata(task: TaskDocument): Map<String, String> {
         return buildMap {

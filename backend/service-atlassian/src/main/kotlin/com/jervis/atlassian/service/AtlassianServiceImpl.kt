@@ -133,6 +133,76 @@ class AtlassianServiceImpl(
             atlassianApiClient.listJiraProjects(request)
         }
 
+    override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest): BugTrackerIssueResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: createIssue in project=${request.projectKey}, summary=${request.summary}" }
+            atlassianApiClient.createJiraIssue(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                projectKey = request.projectKey,
+                summary = request.summary,
+                description = request.description,
+                issueType = request.issueType,
+                priority = request.priority,
+                assignee = request.assignee,
+                labels = request.labels,
+                epicKey = request.epicKey,
+            )
+        }
+
+    override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest): BugTrackerIssueResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: updateIssue key=${request.issueKey}" }
+            atlassianApiClient.updateJiraIssue(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                issueKey = request.issueKey,
+                summary = request.summary,
+                description = request.description,
+                assignee = request.assignee,
+                priority = request.priority,
+                labels = request.labels,
+            )
+        }
+
+    override suspend fun addComment(request: BugTrackerAddCommentRpcRequest): BugTrackerCommentResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: addComment to issue=${request.issueKey}" }
+            atlassianApiClient.addJiraComment(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                issueKey = request.issueKey,
+                commentBody = request.body,
+            )
+        }
+
+    override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) =
+        withContext(Dispatchers.IO) {
+            logger.info { "BugTracker: transitionIssue key=${request.issueKey} to ${request.transitionName}" }
+            atlassianApiClient.transitionJiraIssue(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                issueKey = request.issueKey,
+                transitionName = request.transitionName,
+            )
+        }
+
     // --- IWikiClient ---
 
     override suspend fun getUser(request: WikiUserRequest): WikiUserDto =
@@ -204,6 +274,40 @@ class AtlassianServiceImpl(
         withContext(Dispatchers.IO) {
             logger.info { "Wiki: listSpaces request for baseUrl=${request.baseUrl}" }
             atlassianApiClient.listConfluenceSpaces(request)
+        }
+
+    override suspend fun createPage(request: WikiCreatePageRpcRequest): WikiPageResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "Wiki: createPage in space=${request.spaceKey}, title=${request.title}" }
+            atlassianApiClient.createConfluencePage(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                spaceKey = request.spaceKey,
+                title = request.title,
+                content = request.content,
+                parentPageId = request.parentPageId,
+            )
+        }
+
+    override suspend fun updatePage(request: WikiUpdatePageRpcRequest): WikiPageResponse =
+        withContext(Dispatchers.IO) {
+            logger.info { "Wiki: updatePage id=${request.pageId}, title=${request.title}" }
+            atlassianApiClient.updateConfluencePage(
+                baseUrl = request.baseUrl,
+                authType = request.authType,
+                basicUsername = request.basicUsername,
+                basicPassword = request.basicPassword,
+                bearerToken = request.bearerToken,
+                cloudId = request.cloudId,
+                pageId = request.pageId,
+                title = request.title,
+                content = request.content,
+                version = request.version,
+            )
         }
 
     // --- Helpers ---

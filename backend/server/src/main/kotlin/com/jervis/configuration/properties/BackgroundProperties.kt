@@ -16,4 +16,6 @@ data class BackgroundProperties(
     val waitOnError: Duration,    // Delay after error before retrying (default 1m)
     val waitOnStartup: Duration,  // Delay before BackgroundEngine starts processing (default 10s)
     val waitInterval: Duration,   // Qualification loop sleep between cycles (default 30s)
+    val idleReviewInterval: Duration = Duration.ofMinutes(30), // How often idle review runs
+    val idleReviewEnabled: Boolean = true,  // Feature flag to disable idle review
 )
