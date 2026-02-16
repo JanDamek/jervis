@@ -1369,3 +1369,47 @@ NotificationActionChannel (MutableSharedFlow)
 | `backend/server/.../service/notification/FcmPushService.kt` | Firebase Cloud Messaging sender |
 | `backend/server/.../entity/DeviceTokenDocument.kt` | FCM token storage |
 | `shared/common-api/.../IDeviceTokenService.kt` | Token registration RPC |
+
+---
+
+## K8s Deployment Rules
+
+### Image Tagging: Always `latest`
+
+**All Docker images MUST use the `:latest` tag.** No versioned tags (commit hashes, timestamps).
+
+- Build scripts (`k8s/build_*.sh`) build and push only `:latest`
+- K8s Deployments reference `image: registry.damek-soft.eu/jandamek/<service>:latest`
+- `imagePullPolicy: Always` on all containers — K8s pulls fresh image on every pod start
+- `revisionHistoryLimit: 2` on all Deployments — prevents old ReplicaSet buildup
+
+### Deployment Flow
+
+```
+build_*.sh:
+  1. docker build -t <registry>/<service>:latest
+  2. docker push <registry>/<service>:latest
+  3. kubectl apply -f app_<service>.yaml     (ensures YAML changes propagate)
+  4. kubectl rollout restart deployment/...   (forces new pod with fresh pull)
+  5. kubectl rollout status deployment/...    (waits for healthy rollout)
+```
+
+### Why `latest` Only
+
+- PoC stage — no rollback requirements, no multi-version deployments
+- Simpler build scripts, no tag management overhead
+- `rollout restart` + `Always` pull policy guarantees fresh image every deploy
+- Old ReplicaSets cleaned up automatically (`revisionHistoryLimit: 2`)
+
+### Build Scripts Reference
+
+| Script | Service | Type |
+|--------|---------|------|
+| `build_server.sh` | jervis-server | Gradle + Docker + K8s |
+| `build_orchestrator.sh` | jervis-orchestrator | Docker + K8s |
+| `build_kb.sh` | jervis-knowledgebase (read+write) | Docker + K8s |
+| `build_ollama_router.sh` | jervis-ollama-router | Docker + K8s |
+| `build_correction.sh` | jervis-correction | Docker + K8s |
+| `build_mcp.sh` | jervis-mcp | Docker + K8s |
+| `build_service.sh` | Generic (provider services) | Gradle + Docker + K8s |
+| `build_image.sh` | Generic (Job-only images) | Docker only (no K8s Deployment) |

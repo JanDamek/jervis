@@ -17,15 +17,9 @@ if [ -z "$IMAGE_NAME" ] || [ -z "$DOCKERFILE" ]; then
     exit 1
 fi
 
-GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-VERSION_TAG="${GIT_HASH}-${TIMESTAMP}"
-
-IMAGE_VERSIONED="${REGISTRY}/${IMAGE_NAME}:${VERSION_TAG}"
-IMAGE_LATEST="${REGISTRY}/${IMAGE_NAME}:latest"
+IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
 
 echo "=== Building image ${IMAGE_NAME} (Job-only, no K8s deploy) ==="
-echo "Version: ${VERSION_TAG}"
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -40,10 +34,9 @@ fi
 # Docker build
 echo "Step 2: Building Docker image..."
 docker build --platform linux/amd64 \
-  -t "${IMAGE_VERSIONED}" \
-  -t "${IMAGE_LATEST}" \
+  -t "${IMAGE}" \
   -f "${DOCKERFILE}" "$PROJECT_ROOT"
-echo "✓ Docker image built: ${VERSION_TAG}"
+echo "✓ Docker image built"
 
 # Push with retry
 push_with_retry() {
@@ -68,10 +61,9 @@ push_with_retry() {
     return 1
 }
 
-echo "Step 3: Pushing Docker images..."
-push_with_retry "${IMAGE_VERSIONED}" || exit 1
-push_with_retry "${IMAGE_LATEST}" || exit 1
-echo "✓ Images pushed"
+echo "Step 3: Pushing Docker image..."
+push_with_retry "${IMAGE}" || exit 1
+echo "✓ Image pushed"
 
-echo "=== ✓ ${IMAGE_NAME} image ready (version: ${VERSION_TAG}) ==="
-echo "  Orchestrator will spawn K8s Jobs from: ${IMAGE_LATEST}"
+echo "=== ✓ ${IMAGE_NAME} image ready ==="
+echo "  Orchestrator will spawn K8s Jobs from: ${IMAGE}"

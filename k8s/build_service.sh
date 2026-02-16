@@ -19,37 +19,27 @@ if [ -z "$SERVICE_NAME" ] || [ -z "$MODULE" ] || [ -z "$DOCKERFILE" ]; then
     exit 1
 fi
 
-# Generate version tag from git commit hash + timestamp
-GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-VERSION_TAG="${GIT_HASH}-${TIMESTAMP}"
-
-IMAGE_VERSIONED="${REGISTRY}/${SERVICE_NAME}:${VERSION_TAG}"
-IMAGE_LATEST="${REGISTRY}/${SERVICE_NAME}:latest"
+IMAGE="${REGISTRY}/${SERVICE_NAME}:latest"
 
 echo "=== Building and deploying ${SERVICE_NAME} (deploy as ${DEPLOY_NAME}) ==="
-echo "Version: ${VERSION_TAG}"
 
-# 1. Gradle Build (local build with cache for speed)
+# 1. Gradle Build
 echo "Step 1/4: Building JAR with Gradle..."
-# Get project root - assume we are in <root>/k8s
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 ./gradlew ${MODULE}:clean ${MODULE}:build -x test
 echo "✓ JAR built successfully"
 
-# 2. Docker Build (copies pre-built JAR)
+# 2. Docker Build
 echo "Step 2/4: Building Docker image..."
 docker build --platform linux/amd64 \
-  -t "${IMAGE_VERSIONED}" \
-  -t "${IMAGE_LATEST}" \
+  -t "${IMAGE}" \
   -f "${DOCKERFILE}" "$PROJECT_ROOT"
-echo "✓ Docker images built: ${VERSION_TAG} and latest"
+echo "✓ Docker image built"
 
-# 3. Docker Push (both tags) with retry
-echo "Step 3/4: Pushing Docker images..."
+# 3. Docker Push with retry
+echo "Step 3/4: Pushing Docker image..."
 
-# Function to push with retry
 push_with_retry() {
     local image=$1
     local max_attempts=3
@@ -74,24 +64,21 @@ push_with_retry() {
     return 1
 }
 
-push_with_retry "${IMAGE_VERSIONED}" || exit 1
-push_with_retry "${IMAGE_LATEST}" || exit 1
-echo "✓ Docker images pushed"
+push_with_retry "${IMAGE}" || exit 1
+echo "✓ Docker image pushed"
 
 # 4. Deploy to Kubernetes
 echo "Step 4/4: Deploying to Kubernetes..."
-# Fix for service names like jervis-coding-engine -> app_coding_engine.yaml
 CLEAN_NAME=${DEPLOY_NAME#jervis-}
 CLEAN_NAME=${CLEAN_NAME//-/_}
 YAML_FILE="$SCRIPT_DIR/app_${CLEAN_NAME}.yaml"
 
-# Apply deployment - kubectl will decide if update is needed
 kubectl apply -f "$YAML_FILE" -n "${NAMESPACE}"
 
 # Validate YAML changes propagated to K8s
 validate_deployment_spec "$DEPLOY_NAME" "$NAMESPACE"
 
 kubectl rollout restart deployment/${DEPLOY_NAME} -n "${NAMESPACE}"
-kubectl get pods -n "${NAMESPACE}" -l "app=${DEPLOY_NAME}"
+kubectl rollout status deployment/${DEPLOY_NAME} -n "${NAMESPACE}"
 echo "✓ ${DEPLOY_NAME} deployment applied"
-echo "=== ✓ ${SERVICE_NAME} complete (version: ${VERSION_TAG}) ==="
+echo "=== ✓ ${SERVICE_NAME} complete ==="
