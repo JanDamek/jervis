@@ -22,7 +22,7 @@ import com.jervis.ui.design.JTextField
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun AddComponentDialog(
+fun AddComponentDialog(
     existingComponents: List<EnvironmentComponentDto>,
     onAdd: (EnvironmentComponentDto) -> Unit,
     onDismiss: () -> Unit,

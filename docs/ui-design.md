@@ -1349,15 +1349,17 @@ Expanded (>=600dp):
 
 **Tabs (EnvironmentManagerTab enum):**
 - Přehled — name, namespace, state badge, assignment, component summary, actions (Provision/Stop/Delete)
-- Komponenty — CRUD list of components (Commit 2)
-- K8s zdroje — pod/deployment/service inspection (Commit 3, migrated from EnvironmentViewerScreen)
-- Logy & Události — pod logs + K8s events (Commit 4)
+- Komponenty — expandable JCards with inline editing (ComponentsTab + ComponentEditPanel)
+- K8s zdroje — pod/deployment/service inspection (migrated from EnvironmentViewerScreen)
+- Logy & Události — pod logs + K8s events
 
 **Key components:**
 - `EnvironmentManagerScreen` — `JListDetailLayout` with list header ("Nové prostředí" button)
 - `EnvironmentListItem` — `JCard` with name, namespace (monospace), component count, `EnvironmentStateBadge`
 - `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
 - `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
+- `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
+- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config
 
 **Navigation:**
 - `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link from Settings
@@ -1612,6 +1614,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |   +-- EnvironmentManagerScreen.kt  <- JListDetailLayout + tabbed detail (Správa prostředí)
 |   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, K8S_RESOURCES, LOGS_EVENTS)
 |   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
+|   |   +-- ComponentsTab.kt            <- Components tab: expandable JCards with inline editing
+|   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)

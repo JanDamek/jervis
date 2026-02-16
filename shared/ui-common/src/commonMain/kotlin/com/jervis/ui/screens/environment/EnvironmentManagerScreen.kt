@@ -281,9 +281,10 @@ private fun EnvironmentDetail(
             }
 
             EnvironmentManagerTab.COMPONENTS -> {
-                JEmptyState(
-                    message = "Správa komponent bude dostupná v další verzi",
-                    icon = "\uD83D\uDEE0\uFE0F",
+                ComponentsTab(
+                    environment = environment,
+                    repository = repository,
+                    onUpdated = onUpdated,
                 )
             }
 
