@@ -110,7 +110,7 @@ class GitRepositoryService(
 
         scope.launch {
             delay(15_000) // Let Spring context fully start
-            logger.info { "GitRepositoryService: syncing all project repositories on startup..." }
+            logger.info { "GitRepositoryService: syncing all project repositories on startup (indexing workspaces)..." }
             try {
                 syncAllProjects()
             } catch (e: Exception) {
@@ -118,15 +118,8 @@ class GitRepositoryService(
             }
         }
 
-        scope.launch {
-            delay(20_000) // Start slightly after indexing to avoid resource contention
-            logger.info { "GitRepositoryService: preparing all agent workspaces on startup..." }
-            try {
-                syncAllAgentWorkspaces()
-            } catch (e: Exception) {
-                logger.error(e) { "GitRepositoryService: agent workspace sync failed" }
-            }
-        }
+        // NOTE: Agent workspaces are managed by BackgroundEngine.initializeAllProjectWorkspaces()
+        // with proper status tracking (workspaceStatus field). Do NOT duplicate here.
     }
 
     /**

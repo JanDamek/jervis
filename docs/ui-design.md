@@ -197,6 +197,78 @@ Inline per-card actions -> Row with Arrangement.spacedBy(8.dp, Alignment.End)
 Delete with confirm     -> JConfirmDialog triggered by JDeleteButton
 ```
 
+### 2.5) List Pagination & Server-Side Filtering (Universal Pattern)
+
+**RULE:** Never load unbounded data into UI. All list screens MUST paginate server-side.
+
+| Aspect            | Value                                                        |
+|-------------------|--------------------------------------------------------------|
+| **Page size**     | 10–20 items (configurable per screen, default 20)            |
+| **Loading**       | First page on screen open. More via "Načíst další" button or scroll trigger |
+| **Filter/search** | Server-side query (regex/like on DB), debounced 300ms        |
+| **Chat history**  | Last 10 messages, older loaded on scroll up (`beforeSequence` cursor) |
+| **Sort**          | Server-side (typically `createdAt DESC`)                     |
+
+**Backend pattern:**
+```kotlin
+// RPC interface — offset-based pagination with server-side filter
+suspend fun listAll(query: String? = null, offset: Int = 0, limit: Int = 20): PageDto
+
+// PageDto — generic shape for paginated responses
+data class PageDto(
+    val items: List<ItemDto>,
+    val totalCount: Int,
+    val hasMore: Boolean,
+)
+
+// Service — MongoDB query with regex filter + skip/limit
+val criteria = Criteria.where("type").`is`(TYPE)
+if (!query.isNullOrBlank()) {
+    criteria.orOperator(
+        Criteria.where("field1").regex(".*${Regex.escape(query)}.*", "i"),
+        Criteria.where("field2").regex(".*${Regex.escape(query)}.*", "i"),
+    )
+}
+val dataQuery = Query(criteria)
+    .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+    .skip(offset.toLong()).limit(limit)
+```
+
+**UI pattern:**
+```kotlin
+// State
+var items by remember { mutableStateOf<List<T>>(emptyList()) }
+var hasMore by remember { mutableStateOf(false) }
+var totalCount by remember { mutableStateOf(0) }
+
+// Load function (append=true for "load more")
+fun load(query: String?, append: Boolean = false) {
+    val offset = if (append) items.size else 0
+    val page = repository.service.listAll(query, offset, PAGE_SIZE)
+    items = if (append) items + page.items else page.items
+    hasMore = page.hasMore
+    totalCount = page.totalCount
+}
+
+// Debounced filter (server-side)
+LaunchedEffect(filterText) {
+    delay(300)
+    load(filterText)
+}
+
+// JListDetailLayout with listFooter for "load more"
+JListDetailLayout(
+    items = items,
+    listFooter = if (hasMore) { { LoadMoreButton(...) } } else null,
+    ...
+)
+```
+
+**Forbidden:**
+- Loading all records and filtering client-side (`findAll().toList().filter{}`)
+- Displaying unbounded lists without pagination
+- Client-side sorting of server data (sort on DB)
+
 ---
 
 ## 3) Shared Components Reference

@@ -309,6 +309,7 @@ fun <T> JListDetailLayout(
     emptyMessage: String,
     emptyIcon: String = "📋",
     listHeader: @Composable () -> Unit = {},
+    listFooter: @Composable (() -> Unit)? = null,
     listItem: @Composable (T) -> Unit,
     detailContent: @Composable (T) -> Unit,
 ) {
@@ -329,6 +330,9 @@ fun <T> JListDetailLayout(
                 ) {
                     items(items.size) { index ->
                         listItem(items[index])
+                    }
+                    if (listFooter != null) {
+                        item { listFooter() }
                     }
                 }
             }

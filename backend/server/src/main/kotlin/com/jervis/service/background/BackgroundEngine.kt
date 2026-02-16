@@ -1068,7 +1068,30 @@ class BackgroundEngine(
                     }
                 }
                 com.jervis.entity.WorkspaceStatus.READY -> {
-                    logger.debug { "Project ${project.name} workspace already READY" }
+                    // Verify workspace actually exists on disk (files may be gone after pod restart/PVC loss)
+                    val gitResources = project.resources.filter {
+                        it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+                    }
+                    val allExist = gitResources.all { resource ->
+                        val repoDir = gitRepositoryService.getAgentRepoDir(project, resource)
+                        repoDir.resolve(".git").toFile().exists()
+                    }
+                    if (allExist) {
+                        logger.info { "Project ${project.name} workspace READY — verified ${gitResources.size} repo(s) exist on disk" }
+                    } else {
+                        logger.warn { "Project ${project.name} workspace READY in DB but files missing on disk — re-initializing" }
+                        val resetProject = projectRepository.save(
+                            project.copy(
+                                workspaceStatus = null,
+                                workspaceRetryCount = 0,
+                                nextWorkspaceRetryAt = null,
+                                lastWorkspaceError = null,
+                            ),
+                        )
+                        scope.launch {
+                            initializeProjectWorkspace(resetProject)
+                        }
+                    }
                 }
                 com.jervis.entity.WorkspaceStatus.NOT_NEEDED -> {
                     logger.debug { "Project ${project.name} workspace NOT_NEEDED" }

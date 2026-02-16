@@ -7,7 +7,12 @@ import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.notification.FcmPushService
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactive.awaitSingle
 import mu.KotlinLogging
+import org.springframework.data.domain.Sort
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate
+import org.springframework.data.mongodb.core.query.Criteria
+import org.springframework.data.mongodb.core.query.Query
 import org.springframework.stereotype.Service
 
 @Service
@@ -15,6 +20,7 @@ class UserTaskService(
     private val userTaskRepository: TaskRepository,
     private val notificationRpc: NotificationRpcImpl,
     private val fcmPushService: FcmPushService,
+    private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -93,10 +99,51 @@ class UserTaskService(
         logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }
     }
 
-    suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
-        userTaskRepository.findAll().toList().filter {
-            it.clientId == clientId && it.type == com.jervis.dto.TaskTypeEnum.USER_TASK
+    data class PagedTasks(
+        val items: List<TaskDocument>,
+        val totalCount: Int,
+        val hasMore: Boolean,
+    )
+
+    suspend fun findPagedTasks(query: String?, offset: Int, limit: Int): PagedTasks {
+        val criteria = Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+
+        if (!query.isNullOrBlank()) {
+            val regex = ".*${Regex.escape(query)}.*"
+            criteria.orOperator(
+                Criteria.where("taskName").regex(regex, "i"),
+                Criteria.where("content").regex(regex, "i"),
+            )
         }
+
+        val countQuery = Query(criteria)
+        val totalCount = mongoTemplate.count(countQuery, TaskDocument::class.java).awaitSingle().toInt()
+
+        val dataQuery = Query(criteria)
+            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .skip(offset.toLong())
+            .limit(limit)
+
+        val items = mongoTemplate.find(dataQuery, TaskDocument::class.java)
+            .collectList()
+            .awaitSingle()
+
+        return PagedTasks(
+            items = items,
+            totalCount = totalCount,
+            hasMore = offset + items.size < totalCount,
+        )
+    }
+
+    suspend fun findActiveTasksByClient(clientId: ClientId): List<TaskDocument> =
+        userTaskRepository.findByClientIdAndType(clientId, com.jervis.dto.TaskTypeEnum.USER_TASK).toList()
+
+    suspend fun countActiveTasksByClient(clientId: ClientId): Long =
+        userTaskRepository.countByStateAndTypeAndClientId(
+            com.jervis.dto.TaskStateEnum.USER_TASK,
+            com.jervis.dto.TaskTypeEnum.USER_TASK,
+            clientId,
+        )
 
     suspend fun cancelTask(taskId: TaskId): TaskDocument {
         val task = getTaskByIdOrNull(taskId) ?: throw IllegalArgumentException("Task not found: $taskId")

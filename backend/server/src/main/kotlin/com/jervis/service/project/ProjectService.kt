@@ -74,9 +74,10 @@ class ProjectService(
                 }
             }
 
-            // Trigger workspace initialization for agent (if not already done)
-            if (savedProject.workspaceStatus == null || savedProject.workspaceStatus.isCloneFailed) {
-                // Reset retry state so init starts fresh (no stale backoff)
+            // Trigger workspace initialization for agent — always unless already CLONING
+            // READY → refresh (git fetch), null → clone, CLONE_FAILED_* → retry, NOT_NEEDED → re-check
+            if (savedProject.workspaceStatus != com.jervis.entity.WorkspaceStatus.CLONING) {
+                // Reset retry state for failed clones so init starts fresh (no stale backoff)
                 val resetProject = if (savedProject.workspaceStatus?.isCloneFailed == true) {
                     projectRepository.save(
                         savedProject.copy(
@@ -89,8 +90,10 @@ class ProjectService(
                 } else {
                     savedProject
                 }
-                logger.info { "Publishing workspace init event for project ${resetProject.name}" }
+                logger.info { "Publishing workspace init event for project ${resetProject.name} (current status: ${savedProject.workspaceStatus})" }
                 applicationEventPublisher.publishEvent(ProjectWorkspaceInitEvent(resetProject))
+            } else {
+                logger.info { "Project ${savedProject.name} workspace is CLONING — skipping re-trigger" }
             }
         }
 

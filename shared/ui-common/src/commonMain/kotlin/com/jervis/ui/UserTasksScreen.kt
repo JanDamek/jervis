@@ -1,6 +1,5 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,10 +35,11 @@ import com.jervis.ui.design.*
 import com.jervis.ui.util.ConfirmDialog
 import com.jervis.ui.util.DeleteIconButton
 import com.jervis.ui.util.RefreshIconButton
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private const val PAGE_SIZE = 20
 
 @Composable
 fun UserTasksScreen(
@@ -47,9 +47,11 @@ fun UserTasksScreen(
     onBack: () -> Unit,
     onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
 ) {
-    var allTasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
+    var hasMore by remember { mutableStateOf(false) }
+    var totalCount by remember { mutableStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var filterText by remember { mutableStateOf("") }
     var selectedTask by remember { mutableStateOf<UserTaskDto?>(null) }
@@ -58,47 +60,22 @@ fun UserTasksScreen(
 
     val scope = rememberCoroutineScope()
 
-    fun applyFilter() {
-        val query = filterText.trim().lowercase()
-        tasks = if (query.isBlank()) {
-            allTasks
-        } else {
-            allTasks.filter { task ->
-                task.title.lowercase().contains(query) ||
-                    (task.description?.lowercase()?.contains(query) == true) ||
-                    (task.projectId?.lowercase()?.contains(query) == true)
-            }
-        }
-    }
-
-    fun loadTasks() {
+    fun loadTasks(query: String? = null, append: Boolean = false) {
         scope.launch {
-            isLoading = true
+            if (append) isLoadingMore = true else isLoading = true
             errorMessage = null
             try {
-                val clients = repository.clients.getAllClients()
-
-                // Load tasks for all clients in parallel
-                val results = coroutineScope {
-                    clients.mapNotNull { client ->
-                        client.id?.let { clientId ->
-                            async {
-                                try {
-                                    repository.userTasks.listActive(clientId)
-                                } catch (_: Exception) {
-                                    emptyList<UserTaskDto>()
-                                }
-                            }
-                        }
-                    }.awaitAll()
-                }
-
-                allTasks = results.flatten().sortedBy { it.createdAtEpochMillis }
-                applyFilter()
+                val offset = if (append) tasks.size else 0
+                val serverQuery = query?.takeIf { it.isNotBlank() }
+                val page = repository.userTasks.listAll(serverQuery, offset, PAGE_SIZE)
+                tasks = if (append) tasks + page.items else page.items
+                hasMore = page.hasMore
+                totalCount = page.totalCount
             } catch (e: Exception) {
                 errorMessage = "Chyba načítání úloh: ${e.message}"
             } finally {
                 isLoading = false
+                isLoadingMore = false
             }
         }
     }
@@ -111,21 +88,30 @@ fun UserTasksScreen(
                 showDeleteConfirm = false
                 taskToDelete = null
                 if (selectedTask?.id == task.id) selectedTask = null
-                loadTasks()
+                loadTasks(filterText)
             } catch (e: Exception) {
                 errorMessage = "Chyba mazání úlohy: ${e.message}"
             }
         }
     }
 
+    // Initial load
     LaunchedEffect(Unit) { loadTasks() }
 
-    LaunchedEffect(filterText) { applyFilter() }
+    // Debounced server-side filter
+    var filterJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(filterText) {
+        filterJob?.cancel()
+        filterJob = scope.launch {
+            delay(300) // debounce 300ms
+            loadTasks(filterText)
+        }
+    }
 
     if (errorMessage != null && selectedTask == null) {
         Column {
             JTopBar(title = "Uživatelské úlohy", onBack = onBack)
-            JErrorState(message = errorMessage!!, onRetry = { loadTasks() })
+            JErrorState(message = errorMessage!!, onRetry = { loadTasks(filterText) })
         }
     } else {
         JListDetailLayout(
@@ -137,18 +123,34 @@ fun UserTasksScreen(
             emptyIcon = "📋",
             listHeader = {
                 JTopBar(title = "Uživatelské úlohy", onBack = onBack, actions = {
-                    RefreshIconButton(onClick = { loadTasks() })
+                    RefreshIconButton(onClick = { loadTasks(filterText) })
                 })
 
                 JTextField(
                     value = filterText,
                     onValueChange = { filterText = it },
                     label = "Filtr",
-                    placeholder = "Hledat podle názvu, popisu nebo projektu...",
+                    placeholder = "Hledat podle názvu nebo popisu...",
                     modifier = Modifier.fillMaxWidth().padding(horizontal = JervisSpacing.outerPadding),
                     singleLine = true,
                 )
             },
+            listFooter = if (hasMore) {
+                {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        if (isLoadingMore) {
+                            JCenteredLoading()
+                        } else {
+                            JSecondaryButton(onClick = { loadTasks(filterText, append = true) }) {
+                                Text("Načíst další (${tasks.size}/$totalCount)")
+                            }
+                        }
+                    }
+                }
+            } else null,
             listItem = { task ->
                 UserTaskRow(
                     task = task,
@@ -166,8 +168,7 @@ fun UserTasksScreen(
                     onBack = { selectedTask = null },
                     onTaskSent = { mode ->
                         selectedTask = null
-                        loadTasks()
-                        // On DIRECT_TO_AGENT, navigate to the task's project in main screen
+                        loadTasks(filterText)
                         if (mode == TaskRoutingMode.DIRECT_TO_AGENT) {
                             onNavigateToProject?.invoke(task.clientId, task.projectId)
                         }
@@ -216,19 +217,7 @@ private fun UserTaskRow(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 4.dp),
-                ) {
-                    Badge { Text(task.state) }
-                    if (!task.projectId.isNullOrBlank()) {
-                        Text(
-                            text = task.projectId!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                Badge(modifier = Modifier.padding(top = 4.dp)) { Text(task.state) }
             }
             DeleteIconButton(onClick = onDelete)
             Spacer(Modifier.width(4.dp))
@@ -246,19 +235,19 @@ private fun UserTaskDetail(
     onError: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var additionalInput by remember(task.id) { mutableStateOf("") }
+    var replyInput by remember(task.id) { mutableStateOf("") }
     var isSending by remember(task.id) { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
-    fun sendToAgent(mode: TaskRoutingMode) {
+    fun sendReply(mode: TaskRoutingMode) {
         scope.launch {
             isSending = true
             try {
                 repository.userTasks.sendToAgent(
                     task.id,
                     mode,
-                    additionalInput.takeIf { it.isNotBlank() },
+                    replyInput.takeIf { it.isNotBlank() },
                 )
                 onTaskSent(mode)
             } catch (e: Exception) {
@@ -277,66 +266,73 @@ private fun UserTaskDetail(
         },
     ) {
         val scrollState = rememberScrollState()
-        SelectionContainer {
-            Column(
-                modifier = Modifier.weight(1f).verticalScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                JSection(title = "Základní údaje") {
-                    JKeyValueRow("Stav", task.state)
-                    JKeyValueRow("Projekt", task.projectId ?: "-")
-                    JKeyValueRow("Klient", task.clientId)
-                }
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Show pending question prominently if present
+                    if (!task.pendingQuestion.isNullOrBlank()) {
+                        JSection(title = "Otázka agenta") {
+                            Text(
+                                text = task.pendingQuestion!!,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            if (!task.questionContext.isNullOrBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = task.questionContext!!,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
 
-                if (!task.sourceUri.isNullOrBlank()) {
-                    JSection(title = "Odkaz na zdroj") {
-                        Text(
-                            text = task.sourceUri!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    if (!task.description.isNullOrBlank()) {
+                        JSection(title = "Popis") {
+                            Text(
+                                text = task.description!!,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
-
-                if (!task.description.isNullOrBlank()) {
-                    JSection(title = "Popis") {
-                        Text(
-                            text = task.description!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-
-                JSection(title = "Dodatečné instrukce (volitelné)") {
-                    JTextField(
-                        value = additionalInput,
-                        onValueChange = { additionalInput = it },
-                        label = "Instrukce",
-                        placeholder = "Přidejte kontext nebo instrukce...",
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = false,
-                        minLines = 3,
-                        maxLines = 6,
-                        enabled = !isSending,
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
             }
+
+            // Reply input — outside SelectionContainer so keyboard interaction works
+            JSection(title = "Odpověď") {
+                JTextField(
+                    value = replyInput,
+                    onValueChange = { replyInput = it },
+                    label = "Vaše odpověď",
+                    placeholder = if (task.pendingQuestion != null) "Napište odpověď na otázku agenta..." else "Napište instrukce nebo odpověď...",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 3,
+                    maxLines = 6,
+                    enabled = !isSending,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
 
-        // Action buttons at the bottom
+        // Action buttons at the bottom — outside scroll, always visible
         JActionBar(modifier = Modifier.padding(vertical = JervisSpacing.outerPadding)) {
             JSecondaryButton(
-                onClick = { sendToAgent(TaskRoutingMode.BACK_TO_PENDING) },
-                enabled = !isSending,
+                onClick = { /* TODO: move to frontend chat */ },
+                enabled = false,
             ) {
-                Text("Do fronty")
+                Text("Převzít do chatu")
             }
             JPrimaryButton(
-                onClick = { sendToAgent(TaskRoutingMode.DIRECT_TO_AGENT) },
-                enabled = !isSending,
+                onClick = { sendReply(TaskRoutingMode.BACK_TO_PENDING) },
+                enabled = !isSending && replyInput.isNotBlank(),
             ) {
-                Text("Agentovi")
+                Text("Odpovědět")
             }
         }
     }

@@ -14,7 +14,9 @@ fun TaskDocument.toUserTaskDto(): UserTaskDto =
         clientId = this.clientId.toString(),
         sourceUri = this.correlationId,
         createdAtEpochMillis = this.createdAt.toEpochMilli(),
-        attachments = this.attachments.map { it.toDto() }
+        attachments = this.attachments.map { it.toDto() },
+        pendingQuestion = this.pendingUserQuestion,
+        questionContext = this.userQuestionContext,
     )
 
 fun TaskDocument.toPendingTaskDto(): PendingTaskDto =

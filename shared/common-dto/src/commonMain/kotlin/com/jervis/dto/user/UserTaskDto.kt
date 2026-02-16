@@ -14,4 +14,13 @@ data class UserTaskDto(
     val sourceUri: String? = null,
     val createdAtEpochMillis: Long,
     val attachments: List<AttachmentDto> = emptyList(),
+    val pendingQuestion: String? = null,
+    val questionContext: String? = null,
+)
+
+@Serializable
+data class UserTaskPageDto(
+    val items: List<UserTaskDto> = emptyList(),
+    val totalCount: Int = 0,
+    val hasMore: Boolean = false,
 )

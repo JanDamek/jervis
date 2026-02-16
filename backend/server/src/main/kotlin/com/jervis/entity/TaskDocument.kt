@@ -102,6 +102,7 @@ data class TaskDocument(
     val taskName: String = "Unnamed Task",
     val content: String,
     val projectId: ProjectId? = null,
+    @Indexed
     val clientId: ClientId,
     @Indexed
     val createdAt: Instant = Instant.now(),
