@@ -43,18 +43,36 @@ sealed class Screen {
 }
 
 /**
- * Simple navigator for mobile app navigation
- * Desktop uses multiple windows, mobile uses single screen with navigation
+ * Stack-based navigator for app navigation.
+ * Maintains a back-stack so goBack() returns to previous screen (not always Main).
  */
 class AppNavigator {
+    private val _backStack = mutableListOf<Screen>()
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Main)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
+    private val _canGoBack = MutableStateFlow(false)
+    val canGoBack: StateFlow<Boolean> = _canGoBack.asStateFlow()
+
     fun navigateTo(screen: Screen) {
-        _currentScreen.value = screen
+        if (_currentScreen.value != screen) {
+            _backStack.add(_currentScreen.value)
+            _currentScreen.value = screen
+            _canGoBack.value = _backStack.isNotEmpty()
+        }
     }
 
     fun goBack() {
-        navigateTo(Screen.Main)
+        if (_backStack.isNotEmpty()) {
+            _currentScreen.value = _backStack.removeLast()
+            _canGoBack.value = _backStack.isNotEmpty()
+        }
+    }
+
+    /** Navigate to screen, clearing entire history (e.g., menu resets to fresh). */
+    fun navigateAndClearHistory(screen: Screen) {
+        _backStack.clear()
+        _currentScreen.value = screen
+        _canGoBack.value = false
     }
 }

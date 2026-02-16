@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-12
+**Last updated:** 2026-02-16
 **Status:** Production Documentation
 
 This document is the **single source of truth** for UI guidelines, design patterns, and shared components.
@@ -100,15 +100,37 @@ fun rememberWindowSizeClass(): WindowSizeClass
 Detection uses `BoxWithConstraints` inside the layout composables. **Never add platform
 expect/actual for layout decisions** -- width-based detection works everywhere.
 
-### 1.2) Navigation Patterns by Mode
+### 1.2) App-Level Navigation Architecture
+
+**Stack-based navigation** with `AppNavigator`:
+- `navigateTo(screen)` pushes current screen to back-stack, shows new screen
+- `goBack()` pops back-stack (returns to previous screen, not always Main)
+- `navigateAndClearHistory(screen)` resets stack (e.g., navigating to Main from project link)
+- `canGoBack: StateFlow<Boolean>` — true when back-stack is not empty
+
+**PersistentTopBar** (always visible above all screens):
+```
+┌─────────────────────────────────────────────────────┐
+│ [←] [≡]  Client ▾ / Project ▾   ● REC  🤖agent K8s●│
+└─────────────────────────────────────────────────────┘
+```
+- **Back arrow** — shown only when `canGoBack` is true
+- **Menu dropdown** — reorganized: Daily (User Tasks, Meetings) → Management (Fronta, Plánovač, Indexace, K8s) → Debug (Logs, RAG) → Config (Settings)
+- **Client/Project selector** — compact text "ClientName / ProjectName" with dropdown, `weight(1f)`, truncates on small screens
+- **Recording indicator** — red blinking dot + duration, clickable → Meetings
+- **Agent status** — spinner when running / dot when idle, clickable → AgentWorkload
+- **K8s badge** — clickable → toggle environment panel
+- **Connection dot** — green (connected), spinner (connecting), refresh icon (disconnected)
+
+**Per-screen JTopBar** shows only the **title** (no back arrow — handled by PersistentTopBar).
+Internal navigation (detail → list within a screen) still uses JTopBar's onBack.
+
+### 1.2.1) Navigation Patterns by Mode
 
 | Mode       | Category nav                          | Entity list -> detail            |
 |------------|---------------------------------------|---------------------------------|
 | Compact    | Full-screen list; tap -> full-screen section | List replaces with full-screen detail form |
 | Expanded   | 240 dp sidebar + content side-by-side   | Same (list replaces with detail form)       |
-
-On compact a JTopBar with back arrow is **always** visible at the top so the user can go back.
-On expanded the sidebar has a "Zpet" text button and the content area has a heading.
 
 ### 1.3) Decision Tree -- Which Layout Composable to Use
 
@@ -501,51 +523,57 @@ fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
 }
 ```
 
-### 5.1.1) Main Screen -- Dropdown Menu Navigation
+### 5.1.1) App Layout with PersistentTopBar
 
-The main screen uses a unified layout for all screen sizes. No sidebar -- menu is accessible via a dropdown button in the SelectorsRow.
+The app uses a global `PersistentTopBar` above all screens. The main screen (chat) has no SelectorsRow or AgentStatusRow — these live in the PersistentTopBar.
 
 ```
 ALL SCREEN SIZES:
 +----------------------------------------------+
-| [Klient v]  [Projekt v]  [Menu]              |
+| [←] [≡] Client / Project ▾  ●REC 🤖idle K8s●|  <-- PersistentTopBar (always visible)
 |----------------------------------------------|
-| Chat messages...                             |
+| [Recording bar — if recording]               |  <-- RecordingBar (global)
+|----------------------------------------------|
+| Chat messages...                             |  <-- Per-screen content
 |                                              |
-| +-- AgentStatusRow ------------------------+ |
-| | Agent: Necinny                       [>] | |
-| +------------------------------------------+ |
 |----------------------------------------------|
 | [Napiste zpravu...]                [Odeslat] |
 +----------------------------------------------+
 
-Menu dropdown (on click Menu):
-+---------------------+
-| [Settings]  Nastaveni       |
-| [List]      Uzivatelske ul. |
-| [Inbox]     Fronta uloh     |
-| [Calendar]  Planovac        |
-| [Mic]       Meetingy        |
-| [Search]    RAG Hledani     |
-| [BugReport] Chybove logy   |
-+---------------------+
+Menu dropdown (on click ≡):
++----------------------------+
+| [List]      Uzivatelske ul.|  ← Daily
+| [Mic]       Meetingy       |
+|----------------------------|
+| [Inbox]     Fronta uloh    |  ← Management
+| [Calendar]  Planovac       |
+| [Schedule]  Fronta indexace|
+| [Dns]       Prostredi K8s  |
+|----------------------------|
+| [BugReport] Chybove logy  |  ← Debug
+| [Search]    RAG Hledani    |
+|----------------------------|
+| [Settings]  Nastaveni      |  ← Config
++----------------------------+
 ```
 
-**Menu items use Material Icons:**
+**Menu items (reorganized — daily first, settings last):**
 
 ```kotlin
-private enum class MainMenuItem(val icon: ImageVector, val title: String) {
-    SETTINGS(Icons.Default.Settings, "Nastaveni"),
-    USER_TASKS(Icons.AutoMirrored.Filled.List, "Uzivatelske ulohy"),
-    PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta uloh"),
-    SCHEDULER(Icons.Default.CalendarMonth, "Planovac"),
-    MEETINGS(Icons.Default.Mic, "Meetingy"),
-    RAG_SEARCH(Icons.Default.Search, "RAG Hledani"),
-    ERROR_LOGS(Icons.Default.BugReport, "Chybove logy"),
+private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val group: Int) {
+    USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy", 0),
+    MEETINGS(Icons.Default.Mic, "Meetingy", 0),
+    PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
+    SCHEDULER(Icons.Default.CalendarMonth, "Plánovač", 1),
+    INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace", 1),
+    ENVIRONMENT_VIEWER(Icons.Default.Dns, "Prostředí K8s", 1),
+    ERROR_LOGS(Icons.Default.BugReport, "Chybové logy", 2),
+    RAG_SEARCH(Icons.Default.Search, "RAG Hledání", 2),
+    SETTINGS(Icons.Default.Settings, "Nastavení", 3),
 }
 ```
 
-**Implementation:** `MainScreenView` in `MainScreen.kt` uses a simple `Column` layout. `SelectorsRow` contains client/project selectors + a `DropdownMenu` with `MainMenuItem` enum entries. Each item renders `Icon(item.icon, ...)` + `Text(item.title)` and navigates via `onNavigate(screen)`.
+**Implementation:** `PersistentTopBar` in `PersistentTopBar.kt` is rendered in `App.kt` above `RecordingBar` and the screen `when` block. It contains the compact client/project selector, menu, recording indicator, agent status icon, K8s badge, and connection indicator. `MainScreenView` in `MainScreen.kt` only contains chat content (banners, messages, input).
 
 **Chat message types** (`ChatMessage.MessageType`):
 - `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
@@ -772,7 +800,7 @@ Column(modifier = Modifier.fillMaxSize()) {
 
 ### 5.5) Agent Workload Screen (`AgentWorkloadScreen.kt`) — Accordion Layout
 
-Full-screen view accessed by clicking the `AgentStatusRow` on the main screen.
+Full-screen view accessed by clicking the agent status icon in `PersistentTopBar`.
 Uses an **accordion (harmonika) layout** with 4 sections — only one expanded at a time.
 Clicking a collapsed header expands it and collapses the previously expanded section.
 
@@ -1544,10 +1572,11 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
-+-- MainScreen.kt                      <- Public entry point (ViewModel -> MainScreenView)
++-- MainScreen.kt                      <- Chat content (no selectors — moved to PersistentTopBar)
++-- PersistentTopBar.kt               <- Global top bar: back, menu, client/project, recording, agent, K8s, connection
 +-- MainViewModel.kt                   <- Main ViewModel (user actions, state)
 +-- ChatMessageDisplay.kt             <- Chat messages, workflow steps display
-+-- AgentStatusRow.kt                 <- Agent status indicator row
++-- AgentStatusRow.kt                 <- Agent status indicator (legacy, replaced by PersistentTopBar icon)
 +-- ChatInputArea.kt                  <- Message input + send button
 +-- AgentWorkloadScreen.kt            <- Agent workload accordion layout
 +-- AgentWorkloadSections.kt          <- Agent/queue/history sections (internal)

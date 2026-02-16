@@ -80,7 +80,6 @@ fun SchedulerScreen(
             listHeader = {
                 JTopBar(
                     title = "Plánovač úloh",
-                    onBack = onBack,
                     actions = {
                         RefreshIconButton(onClick = { loadTasks() })
                         Spacer(Modifier.width(8.dp))

@@ -114,7 +114,6 @@ fun RagSearchScreen(
         topBar = {
             JTopBar(
                 title = "RAG Hledání${if (resultCount > 0) " - $resultCount výsledků" else ""}",
-                onBack = onBack,
             )
         },
     ) { padding ->

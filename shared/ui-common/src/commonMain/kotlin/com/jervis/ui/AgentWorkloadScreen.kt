@@ -76,7 +76,6 @@ fun AgentWorkloadScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         JTopBar(
             title = "Aktivita agenta",
-            onBack = onBack,
         )
 
         // Expanded header

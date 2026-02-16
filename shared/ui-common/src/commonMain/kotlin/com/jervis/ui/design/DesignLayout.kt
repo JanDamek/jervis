@@ -125,7 +125,7 @@ fun <T> JAdaptiveSidebarLayout(
     categories: List<T>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     title: String,
     categoryIcon: @Composable (T) -> Unit,
     categoryTitle: (T) -> String,
@@ -174,15 +174,17 @@ fun <T> JAdaptiveSidebarLayout(
                         .fillMaxHeight()
                         .padding(vertical = 16.dp),
                 ) {
-                    TextButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .padding(horizontal = 8.dp)
-                            .height(JervisSpacing.touchTarget),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zpět")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Zpět")
+                    if (onBack != null) {
+                        TextButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp)
+                                .height(JervisSpacing.touchTarget),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zpět")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Zpět")
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))

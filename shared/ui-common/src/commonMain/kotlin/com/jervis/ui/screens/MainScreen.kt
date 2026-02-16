@@ -10,24 +10,15 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
-    onNavigate: (com.jervis.ui.navigation.Screen) -> Unit = {},
 ) {
-    val clients by viewModel.clients.collectAsState()
-    val projects by viewModel.projects.collectAsState()
-    val projectGroups by viewModel.projectGroups.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val connectionState by viewModel.connectionState.collectAsState()
     val isInitialLoading by viewModel.isInitialLoading.collectAsState()
     val queueSize by viewModel.queueSize.collectAsState()
     val runningProjectId by viewModel.runningProjectId.collectAsState()
-    val runningProjectName by viewModel.runningProjectName.collectAsState()
-    val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
-    val runningTaskType by viewModel.runningTaskType.collectAsState()
     val hasMore by viewModel.hasMore.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val compressionBoundaries by viewModel.compressionBoundaries.collectAsState()
@@ -48,33 +39,19 @@ fun MainScreen(
     val environmentError by viewModel.environmentError.collectAsState()
 
     MainScreenViewInternal(
-        clients = clients,
-        projects = projects,
-        projectGroups = projectGroups,
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
-        selectedGroupId = selectedGroupId,
         chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isLoading || isInitialLoading,
         queueSize = queueSize,
         runningProjectId = runningProjectId,
-        runningProjectName = runningProjectName,
-        runningTaskPreview = runningTaskPreview,
-        runningTaskType = runningTaskType,
         hasMore = hasMore,
         isLoadingMore = isLoadingMore,
         compressionBoundaries = compressionBoundaries,
         attachments = attachments,
-        onClientSelected = viewModel::selectClient,
-        onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
-        onGroupSelected = viewModel::selectGroup,
         onInputChanged = viewModel::updateInputText,
         onSendClick = viewModel::sendMessage,
-        onNavigate = onNavigate,
-        onAgentStatusClick = { onNavigate(com.jervis.ui.navigation.Screen.AgentWorkload) },
-        connectionState = connectionState,
-        onReconnect = viewModel::manualReconnect,
         onEditMessage = viewModel::editMessage,
         onLoadMore = viewModel::loadMoreHistory,
         onAttachFile = viewModel::attachFile,

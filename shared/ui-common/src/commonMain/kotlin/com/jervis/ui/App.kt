@@ -79,23 +79,68 @@ fun App(
       ) {
         val clients by viewModel.clients.collectAsState()
         val projects by viewModel.projects.collectAsState()
+        val projectGroups by viewModel.projectGroups.collectAsState()
         val selectedClientId by viewModel.selectedClientId.collectAsState()
         val selectedProjectId by viewModel.selectedProjectId.collectAsState()
+        val selectedGroupId by viewModel.selectedGroupId.collectAsState()
         val chatMessages by viewModel.chatMessages.collectAsState()
         val inputText by viewModel.inputText.collectAsState()
         val isLoading by viewModel.isLoading.collectAsState()
         val currentScreen by appNavigator.currentScreen.collectAsState()
+        val canGoBack by appNavigator.canGoBack.collectAsState()
         val connectionState by viewModel.connectionState.collectAsState()
         val isOverlayVisible by viewModel.isOverlayVisible.collectAsState()
         val reconnectAttempt by viewModel.reconnectAttemptDisplay.collectAsState()
         val isInitialLoading by viewModel.isInitialLoading.collectAsState()
 
-        // Global recording bar — always visible when recording, from any screen
+        // Global recording state
         val isRecordingGlobal by meetingViewModel.isRecording.collectAsState()
         val recordingDurationGlobal by meetingViewModel.recordingDuration.collectAsState()
         val uploadStateGlobal by meetingViewModel.uploadState.collectAsState()
 
+        // Agent status
+        val runningProjectId by viewModel.runningProjectId.collectAsState()
+        val runningTaskType by viewModel.runningTaskType.collectAsState()
+        val queueSize by viewModel.queueSize.collectAsState()
+
+        // Environment
+        val environments by viewModel.environments.collectAsState()
+
         Column(modifier = Modifier.fillMaxSize()) {
+        // Persistent top bar — always visible
+        PersistentTopBar(
+            canGoBack = canGoBack,
+            onBack = { appNavigator.goBack() },
+            onNavigate = { screen ->
+                if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
+                    onOpenDebugWindow()
+                } else {
+                    appNavigator.navigateTo(screen)
+                }
+            },
+            clients = clients,
+            projects = projects,
+            projectGroups = projectGroups,
+            selectedClientId = selectedClientId,
+            selectedProjectId = selectedProjectId,
+            selectedGroupId = selectedGroupId,
+            onClientSelected = viewModel::selectClient,
+            onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
+            onGroupSelected = viewModel::selectGroup,
+            connectionState = connectionState,
+            onReconnect = viewModel::manualReconnect,
+            isRecording = isRecordingGlobal,
+            recordingDuration = recordingDurationGlobal,
+            onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
+            isAgentRunning = runningProjectId != null && runningProjectId != "none",
+            runningTaskType = runningTaskType,
+            queueSize = queueSize,
+            onAgentStatusClick = { appNavigator.navigateTo(Screen.AgentWorkload) },
+            hasEnvironment = environments.isNotEmpty(),
+            onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,
+        )
+
+        // Global recording bar — full controls when recording
         if (isRecordingGlobal) {
             com.jervis.ui.meeting.RecordingBar(
                 durationSeconds = recordingDurationGlobal,
@@ -110,34 +155,26 @@ fun App(
             Screen.Main -> {
                 MainScreen(
                     viewModel = viewModel,
-                    onNavigate = { screen ->
-                        // Desktop has separate debug window, mobile uses navigation
-                        if (screen == Screen.DebugConsole && onOpenDebugWindow != null) {
-                            onOpenDebugWindow()
-                        } else {
-                            appNavigator.navigateTo(screen)
-                        }
-                    }
                 )
             }
 
             Screen.Settings -> {
                 com.jervis.ui.screens.settings.SettingsScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.UserTasks -> {
                 UserTasksScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                     onNavigateToProject = { clientId, projectId ->
                         viewModel.selectClient(clientId)
                         if (projectId != null) {
                             viewModel.selectProject(projectId)
                         }
-                        appNavigator.navigateTo(Screen.Main)
+                        appNavigator.navigateAndClearHistory(Screen.Main)
                     },
                 )
             }
@@ -145,35 +182,35 @@ fun App(
             Screen.PendingTasks -> {
                 PendingTasksScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.ErrorLogs -> {
                 ErrorLogsScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.RagSearch -> {
                 RagSearchScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.Scheduler -> {
                 SchedulerScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.AgentWorkload -> {
                 AgentWorkloadScreen(
                     viewModel = viewModel,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
@@ -183,21 +220,21 @@ fun App(
                     clients = clients,
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.IndexingQueue -> {
                 IndexingQueueScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
             Screen.EnvironmentViewer -> {
                 EnvironmentViewerScreen(
                     repository = repository,
-                    onBack = { appNavigator.navigateTo(Screen.Main) },
+                    onBack = { appNavigator.goBack() },
                 )
             }
 
@@ -205,7 +242,7 @@ fun App(
             Screen.DebugConsole -> {
                 // No debug window - navigate back to main
                 LaunchedEffect(Unit) {
-                    appNavigator.navigateTo(Screen.Main)
+                    appNavigator.navigateAndClearHistory(Screen.Main)
                 }
             }
         }
@@ -256,7 +293,7 @@ fun App(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Server je momentálně nedostupný.\nPokouším se o znovupřipojení..." + 
+                            text = "Server je momentálně nedostupný.\nPokouším se o znovupřipojení..." +
                                    if (reconnectAttempt > 0) "\n(Pokus $reconnectAttempt)" else "",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),

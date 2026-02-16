@@ -77,7 +77,6 @@ fun ErrorLogsScreen(
         topBar = {
             JTopBar(
                 title = "Chybové logy",
-                onBack = onBack,
                 actions = {
                     RefreshIconButton(onClick = { loadErrorLogs() })
                 },

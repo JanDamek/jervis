@@ -35,7 +35,6 @@ fun SettingsScreen(
         categories = categories,
         selectedIndex = selectedIndex,
         onSelect = { selectedIndex = it },
-        onBack = onBack,
         title = "Nastavení",
         categoryIcon = { Icon(it.icon, contentDescription = it.title) },
         categoryTitle = { it.title },

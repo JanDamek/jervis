@@ -1,7 +1,5 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,116 +9,47 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MoveToInbox
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.jervis.dto.ClientDto
 import com.jervis.dto.CompressionBoundaryDto
-import com.jervis.dto.ProjectDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
-import com.jervis.ui.design.JIconButton
 import com.jervis.ui.model.PendingMessageInfo
-import com.jervis.ui.navigation.Screen
 import com.jervis.ui.util.PickedFile
 
 /**
- * Main menu items for the dropdown menu.
- * Each item navigates to a separate screen.
+ * Main screen for Jervis – chat content area.
+ * Client/project selectors and menu are now in PersistentTopBar.
+ * AgentStatusRow is now in PersistentTopBar icon.
  */
-private enum class MainMenuItem(val icon: ImageVector, val title: String) {
-    SETTINGS(Icons.Default.Settings, "Nastavení"),
-    USER_TASKS(Icons.AutoMirrored.Filled.List, "Uživatelské úlohy"),
-    PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh"),
-    ENVIRONMENT_VIEWER(Icons.Default.Dns, "Prostředí K8s"),
-    SCHEDULER(Icons.Default.CalendarMonth, "Plánovač"),
-    MEETINGS(Icons.Default.Mic, "Meetingy"),
-    RAG_SEARCH(Icons.Default.Search, "RAG Hledání"),
-    INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace"),
-    ERROR_LOGS(Icons.Default.BugReport, "Chybové logy"),
-}
-
-private fun MainMenuItem.toScreen(): Screen = when (this) {
-    MainMenuItem.SETTINGS -> Screen.Settings
-    MainMenuItem.USER_TASKS -> Screen.UserTasks
-    MainMenuItem.PENDING_TASKS -> Screen.PendingTasks
-    MainMenuItem.ENVIRONMENT_VIEWER -> Screen.EnvironmentViewer
-    MainMenuItem.SCHEDULER -> Screen.Scheduler
-    MainMenuItem.MEETINGS -> Screen.Meetings
-    MainMenuItem.RAG_SEARCH -> Screen.RagSearch
-    MainMenuItem.INDEXING_QUEUE -> Screen.IndexingQueue
-    MainMenuItem.ERROR_LOGS -> Screen.ErrorLogs
-}
-
-/**
- * Main screen for Jervis – unified layout for all screen sizes.
- * No sidebar; menu is accessible via dropdown in the selectors row.
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreenView(
-    clients: List<ClientDto>,
-    projects: List<ProjectDto>,
-    projectGroups: List<com.jervis.dto.ProjectGroupDto> = emptyList(),
     selectedClientId: String?,
     selectedProjectId: String?,
-    selectedGroupId: String? = null,
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
-    queueSize: Int = 0,
-    runningProjectId: String? = null,
-    runningProjectName: String? = null,
-    runningTaskPreview: String? = null,
-    runningTaskType: String? = null,
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
     compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     attachments: List<PickedFile> = emptyList(),
-    onClientSelected: (String) -> Unit,
-    onProjectSelected: (String?) -> Unit,
-    onGroupSelected: (String) -> Unit = {},
+    queueSize: Int = 0,
+    runningProjectId: String? = null,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
-    onNavigate: (Screen) -> Unit = {},
-    onAgentStatusClick: () -> Unit = {},
-    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
-    onReconnect: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
@@ -143,11 +72,11 @@ fun MainScreenView(
         val isCompact = maxWidth < COMPACT_BREAKPOINT_DP.dp
 
         when {
-            // Compact + panel visible → show panel full-screen
+            // Compact + panel visible -> show panel full-screen
             isCompact && environmentPanelVisible -> {
                 environmentPanelContent(true)
             }
-            // Expanded + panel visible → split layout
+            // Expanded + panel visible -> split layout
             !isCompact && environmentPanelVisible -> {
                 JHorizontalSplitLayout(
                     splitFraction = 1f - panelWidthFraction,
@@ -156,33 +85,19 @@ fun MainScreenView(
                     maxFraction = 0.8f,
                     leftContent = { _ ->
                         ChatContent(
-                            clients = clients,
-                            projects = projects,
-                            projectGroups = projectGroups,
                             selectedClientId = selectedClientId,
                             selectedProjectId = selectedProjectId,
-                            selectedGroupId = selectedGroupId,
                             chatMessages = chatMessages,
                             inputText = inputText,
                             isLoading = isLoading,
-                            queueSize = queueSize,
-                            runningProjectId = runningProjectId,
-                            runningProjectName = runningProjectName,
-                            runningTaskPreview = runningTaskPreview,
-                            runningTaskType = runningTaskType,
                             hasMore = hasMore,
                             isLoadingMore = isLoadingMore,
                             compressionBoundaries = compressionBoundaries,
                             attachments = attachments,
-                            onClientSelected = onClientSelected,
-                            onProjectSelected = onProjectSelected,
-                            onGroupSelected = onGroupSelected,
+                            queueSize = queueSize,
+                            runningProjectId = runningProjectId,
                             onInputChanged = onInputChanged,
                             onSendClick = onSendClick,
-                            onAgentStatusClick = onAgentStatusClick,
-                            onNavigate = onNavigate,
-                            connectionState = connectionState,
-                            onReconnect = onReconnect,
                             onEditMessage = onEditMessage,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
@@ -193,8 +108,6 @@ fun MainScreenView(
                             workspaceInfo = workspaceInfo,
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
-                            hasEnvironment = hasEnvironment,
-                            onToggleEnvironmentPanel = onToggleEnvironmentPanel,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -203,36 +116,22 @@ fun MainScreenView(
                     },
                 )
             }
-            // No panel → normal chat
+            // No panel -> normal chat
             else -> {
                 ChatContent(
-                    clients = clients,
-                    projects = projects,
-                    projectGroups = projectGroups,
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
-                    selectedGroupId = selectedGroupId,
                     chatMessages = chatMessages,
                     inputText = inputText,
                     isLoading = isLoading,
-                    queueSize = queueSize,
-                    runningProjectId = runningProjectId,
-                    runningProjectName = runningProjectName,
-                    runningTaskPreview = runningTaskPreview,
-                    runningTaskType = runningTaskType,
                     hasMore = hasMore,
                     isLoadingMore = isLoadingMore,
                     compressionBoundaries = compressionBoundaries,
                     attachments = attachments,
-                    onClientSelected = onClientSelected,
-                    onProjectSelected = onProjectSelected,
-                    onGroupSelected = onGroupSelected,
+                    queueSize = queueSize,
+                    runningProjectId = runningProjectId,
                     onInputChanged = onInputChanged,
                     onSendClick = onSendClick,
-                    onAgentStatusClick = onAgentStatusClick,
-                    onNavigate = onNavigate,
-                    connectionState = connectionState,
-                    onReconnect = onReconnect,
                     onEditMessage = onEditMessage,
                     onLoadMore = onLoadMore,
                     onAttachFile = onAttachFile,
@@ -243,8 +142,6 @@ fun MainScreenView(
                     workspaceInfo = workspaceInfo,
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
-                    hasEnvironment = hasEnvironment,
-                    onToggleEnvironmentPanel = onToggleEnvironmentPanel,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -253,38 +150,23 @@ fun MainScreenView(
 }
 
 /**
- * Chat content area – selectors, messages, agent status, input.
+ * Chat content area – messages, input. No selectors (moved to PersistentTopBar).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatContent(
-    clients: List<ClientDto>,
-    projects: List<ProjectDto>,
-    projectGroups: List<com.jervis.dto.ProjectGroupDto>,
     selectedClientId: String?,
     selectedProjectId: String?,
-    selectedGroupId: String?,
     chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
-    queueSize: Int,
-    runningProjectId: String?,
-    runningProjectName: String?,
-    runningTaskPreview: String?,
-    runningTaskType: String?,
     hasMore: Boolean,
     isLoadingMore: Boolean,
     compressionBoundaries: List<CompressionBoundaryDto>,
     attachments: List<PickedFile>,
-    onClientSelected: (String) -> Unit,
-    onProjectSelected: (String?) -> Unit,
-    onGroupSelected: (String) -> Unit,
+    queueSize: Int,
+    runningProjectId: String?,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
-    onAgentStatusClick: () -> Unit,
-    onNavigate: (Screen) -> Unit,
-    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
-    onReconnect: () -> Unit = {},
     onEditMessage: (String) -> Unit,
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
@@ -295,34 +177,9 @@ private fun ChatContent(
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
-    hasEnvironment: Boolean = false,
-    onToggleEnvironmentPanel: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        // Client and Project Selectors + Menu
-        SelectorsRow(
-            clients = clients,
-            projects = projects,
-            projectGroups = projectGroups,
-            selectedClientId = selectedClientId,
-            selectedProjectId = selectedProjectId,
-            selectedGroupId = selectedGroupId,
-            onClientSelected = onClientSelected,
-            onProjectSelected = onProjectSelected,
-            onGroupSelected = onGroupSelected,
-            onNavigate = onNavigate,
-            connectionState = connectionState,
-            onReconnect = onReconnect,
-            hasEnvironment = hasEnvironment,
-            onToggleEnvironmentPanel = onToggleEnvironmentPanel,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-
-        HorizontalDivider()
-
         // Workspace status banner
         if (workspaceInfo != null) {
             WorkspaceBanner(
@@ -347,16 +204,6 @@ private fun ChatContent(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-        )
-
-        // Agent status row – clickable, navigates to workload detail
-        AgentStatusRow(
-            runningProjectId = runningProjectId,
-            runningProjectName = runningProjectName,
-            runningTaskPreview = runningTaskPreview,
-            runningTaskType = runningTaskType,
-            queueSize = queueSize,
-            onClick = onAgentStatusClick,
         )
 
         // Pending message banner — shown when message failed to send
@@ -386,221 +233,6 @@ private fun ChatContent(
                 .fillMaxWidth()
                 .padding(20.dp),
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SelectorsRow(
-    clients: List<ClientDto>,
-    projects: List<ProjectDto>,
-    projectGroups: List<com.jervis.dto.ProjectGroupDto>,
-    selectedClientId: String?,
-    selectedProjectId: String?,
-    selectedGroupId: String?,
-    onClientSelected: (String) -> Unit,
-    onProjectSelected: (String?) -> Unit,
-    onGroupSelected: (String) -> Unit,
-    onNavigate: (Screen) -> Unit,
-    connectionState: MainViewModel.ConnectionState = MainViewModel.ConnectionState.CONNECTED,
-    onReconnect: () -> Unit = {},
-    hasEnvironment: Boolean = false,
-    onToggleEnvironmentPanel: () -> Unit = {},
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Client selector
-        var clientExpanded by remember { mutableStateOf(false) }
-
-        ExposedDropdownMenuBox(
-            expanded = clientExpanded,
-            onExpandedChange = { clientExpanded = it },
-            modifier = Modifier.weight(1f),
-        ) {
-            OutlinedTextField(
-                value = clients.find { it.id == selectedClientId }?.name ?: "Vyberte klienta...",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Klient") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientExpanded) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-            )
-
-            ExposedDropdownMenu(
-                expanded = clientExpanded,
-                onDismissRequest = { clientExpanded = false },
-            ) {
-                clients.forEach { client ->
-                    DropdownMenuItem(
-                        text = { Text(client.name) },
-                        onClick = {
-                            onClientSelected(client.id)
-                            clientExpanded = false
-                        },
-                    )
-                }
-            }
-        }
-
-        // Project / Group selector
-        var projectExpanded by remember { mutableStateOf(false) }
-
-        ExposedDropdownMenuBox(
-            expanded = projectExpanded,
-            onExpandedChange = { projectExpanded = it },
-            modifier = Modifier.weight(1f),
-        ) {
-            // Display selected project or group name
-            val displayText = when {
-                selectedProjectId != null -> projects.find { it.id == selectedProjectId }?.name ?: "Vyberte projekt..."
-                selectedGroupId != null -> {
-                    val group = projectGroups.find { it.id == selectedGroupId }
-                    if (group != null) "📁 ${group.name}" else "Vyberte projekt..."
-                }
-                else -> "Vyberte projekt..."
-            }
-
-            OutlinedTextField(
-                value = displayText,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Projekt / Skupina") },
-                enabled = selectedClientId != null,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-            )
-
-            ExposedDropdownMenu(
-                expanded = projectExpanded,
-                onDismissRequest = { projectExpanded = false },
-            ) {
-                // Show projects first (only ungrouped projects or all projects)
-                val ungroupedProjects = projects.filter { it.groupId == null }
-                if (ungroupedProjects.isNotEmpty()) {
-                    ungroupedProjects.forEach { project ->
-                        DropdownMenuItem(
-                            text = { Text(project.name) },
-                            onClick = {
-                                onProjectSelected(project.id)
-                                projectExpanded = false
-                            },
-                        )
-                    }
-                }
-
-                // Show separator if we have both projects and groups
-                if (ungroupedProjects.isNotEmpty() && projectGroups.isNotEmpty()) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                }
-
-                // Show project groups
-                if (projectGroups.isNotEmpty()) {
-                    projectGroups.forEach { group ->
-                        DropdownMenuItem(
-                            text = { Text("📁 ${group.name}") },
-                            onClick = {
-                                onGroupSelected(group.id)
-                                projectExpanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        // Right side: "connected" label on top, icons below
-        Column(
-            modifier = Modifier.align(Alignment.Bottom),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // "connected" label — only when connected/connecting
-            if (connectionState != MainViewModel.ConnectionState.DISCONNECTED) {
-                val semanticColors = com.jervis.ui.design.LocalJervisSemanticColors.current
-                val statusColor = when (connectionState) {
-                    MainViewModel.ConnectionState.CONNECTED -> semanticColors.success
-                    else -> semanticColors.warning
-                }
-                Text(
-                    text = when (connectionState) {
-                        MainViewModel.ConnectionState.CONNECTED -> "connected"
-                        else -> "connecting"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    lineHeight = 10.sp,
-                    color = statusColor,
-                )
-            }
-
-            // Icons row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Reconnect button when disconnected
-                if (connectionState == MainViewModel.ConnectionState.DISCONNECTED) {
-                    JIconButton(
-                        onClick = onReconnect,
-                        icon = Icons.Default.Refresh,
-                        contentDescription = "Reconnect",
-                    )
-                }
-
-                // K8s environment badge
-                if (hasEnvironment) {
-                    JIconButton(
-                        onClick = onToggleEnvironmentPanel,
-                        icon = Icons.Default.Dns,
-                        contentDescription = "Prostředí",
-                    )
-                }
-
-                // Menu dropdown
-                Box {
-                    var menuExpanded by remember { mutableStateOf(false) }
-
-                    JIconButton(
-                        onClick = { menuExpanded = true },
-                        icon = Icons.Default.Menu,
-                        contentDescription = "Menu",
-                    )
-
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        MainMenuItem.entries.forEach { item ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                                        Text(item.title)
-                                    }
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onNavigate(item.toScreen())
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

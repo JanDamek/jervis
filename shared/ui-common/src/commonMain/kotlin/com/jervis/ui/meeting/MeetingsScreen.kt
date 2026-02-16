@@ -4,22 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,9 +39,8 @@ import com.jervis.ui.util.ConfirmDialog
 
 /**
  * Meetings screen - list of recordings with detail view.
- * Supports starting new recordings, viewing transcripts, and managing meetings.
+ * Uses global client/project selection from PersistentTopBar.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeetingsScreen(
     viewModel: MeetingViewModel,
@@ -75,10 +67,6 @@ fun MeetingsScreen(
     val error by viewModel.error.collectAsState()
     val uploadState by viewModel.uploadState.collectAsState()
 
-    // Filter state — pre-filled from main window selection
-    var filterClientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id) }
-    var filterProjectId by remember { mutableStateOf<String?>(selectedProjectId) }
-
     val deletedMeetings by viewModel.deletedMeetings.collectAsState()
 
     var showSetupDialog by remember { mutableStateOf(false) }
@@ -96,21 +84,21 @@ fun MeetingsScreen(
         }
     }
 
-    // Load meetings + projects when filter changes
-    LaunchedEffect(filterClientId, filterProjectId, showTrash) {
-        filterClientId?.let { clientId ->
+    // Load meetings + projects when global selection changes
+    LaunchedEffect(selectedClientId, selectedProjectId, showTrash) {
+        selectedClientId?.let { clientId ->
             if (showTrash) {
-                viewModel.loadDeletedMeetings(clientId, filterProjectId)
+                viewModel.loadDeletedMeetings(clientId, selectedProjectId)
             } else {
-                viewModel.loadMeetings(clientId, filterProjectId)
+                viewModel.loadMeetings(clientId, selectedProjectId)
             }
             viewModel.loadProjects(clientId)
         }
     }
 
     // Subscribe to real-time events
-    LaunchedEffect(filterClientId) {
-        filterClientId?.let { viewModel.subscribeToEvents(it) }
+    LaunchedEffect(selectedClientId) {
+        selectedClientId?.let { viewModel.subscribeToEvents(it) }
     }
 
     // Corrections sub-view state
@@ -179,7 +167,6 @@ fun MeetingsScreen(
         topBar = {
             JTopBar(
                 title = "Meetingy",
-                onBack = onBack,
                 actions = {
                     JAddButton(
                         onClick = { showSetupDialog = true },
@@ -195,19 +182,6 @@ fun MeetingsScreen(
                     .fillMaxSize()
                     .padding(padding),
         ) {
-            // Client/Project filter
-            ClientProjectFilter(
-                clients = clients,
-                projects = vmProjects,
-                selectedClientId = filterClientId,
-                selectedProjectId = filterProjectId,
-                onClientSelected = { id ->
-                    filterClientId = id
-                    filterProjectId = null
-                },
-                onProjectSelected = { id -> filterProjectId = id },
-            )
-
             // Trash / Active toggle
             Row(
                 modifier = Modifier
@@ -227,8 +201,6 @@ fun MeetingsScreen(
                 )
             }
 
-            // Recording indicator is now global (RecordingBar in App.kt)
-
             // Saving indicator (after stop, during upload + finalization)
             if (isSaving && !showTrash) {
                 Row(
@@ -247,8 +219,6 @@ fun MeetingsScreen(
                 }
             }
 
-            // Upload state indicator is now in the global RecordingBar (App.kt)
-
             // Error display
             error?.let { errorMsg ->
                 Text(
@@ -263,7 +233,7 @@ fun MeetingsScreen(
             if (showTrash) {
                 // Trash view
                 when {
-                    filterClientId == null -> {
+                    selectedClientId == null -> {
                         JEmptyState(message = "Vyberte klienta", icon = "")
                     }
                     isLoading -> {
@@ -291,7 +261,7 @@ fun MeetingsScreen(
             } else {
                 // Active meetings view
                 when {
-                    filterClientId == null -> {
+                    selectedClientId == null -> {
                         JEmptyState(message = "Vyberte klienta", icon = "")
                     }
                     isLoading -> {
@@ -323,13 +293,13 @@ fun MeetingsScreen(
         }
     }
 
-    // Setup dialog
+    // Setup dialog — still has its own client/project selectors for choosing recording target
     if (showSetupDialog) {
         RecordingSetupDialog(
             clients = clients,
             projects = vmProjects,
-            selectedClientId = filterClientId,
-            selectedProjectId = filterProjectId,
+            selectedClientId = selectedClientId,
+            selectedProjectId = selectedProjectId,
             audioDevices = audioRecorder.getAvailableInputDevices(),
             systemAudioCapability = audioRecorder.getSystemAudioCapabilities(),
             onStart = { clientId, projectId, audioInputType, selectedDevice, title, meetingType ->
@@ -351,7 +321,7 @@ fun MeetingsScreen(
         )
     }
 
-    // Delete confirmation dialog (soft delete → trash)
+    // Delete confirmation dialog (soft delete -> trash)
     ConfirmDialog(
         visible = showDeleteConfirmDialog != null,
         title = "Smazat nahrávku?",
@@ -403,94 +373,4 @@ fun MeetingsScreen(
         isDestructive = false,
         dismissText = "Zahodit",
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ClientProjectFilter(
-    clients: List<ClientDto>,
-    projects: List<com.jervis.dto.ProjectDto>,
-    selectedClientId: String?,
-    selectedProjectId: String?,
-    onClientSelected: (String) -> Unit,
-    onProjectSelected: (String?) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // Client dropdown
-        var clientExpanded by remember { mutableStateOf(false) }
-        ExposedDropdownMenuBox(
-            expanded = clientExpanded,
-            onExpandedChange = { clientExpanded = it },
-            modifier = Modifier.weight(1f),
-        ) {
-            OutlinedTextField(
-                value = clients.find { it.id == selectedClientId }?.name ?: "Vyberte klienta...",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Klient") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = clientExpanded) },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                singleLine = true,
-            )
-            ExposedDropdownMenu(
-                expanded = clientExpanded,
-                onDismissRequest = { clientExpanded = false },
-            ) {
-                clients.forEach { client ->
-                    DropdownMenuItem(
-                        text = { Text(client.name) },
-                        onClick = {
-                            onClientSelected(client.id)
-                            clientExpanded = false
-                        },
-                    )
-                }
-            }
-        }
-
-        // Project dropdown
-        var projectExpanded by remember { mutableStateOf(false) }
-        ExposedDropdownMenuBox(
-            expanded = projectExpanded,
-            onExpandedChange = { projectExpanded = it },
-            modifier = Modifier.weight(1f),
-        ) {
-            OutlinedTextField(
-                value = projects.find { it.id == selectedProjectId }?.name ?: "(Vše)",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Projekt") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projectExpanded) },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                singleLine = true,
-                enabled = selectedClientId != null,
-            )
-            ExposedDropdownMenu(
-                expanded = projectExpanded,
-                onDismissRequest = { projectExpanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text("(Vše)") },
-                    onClick = {
-                        onProjectSelected(null)
-                        projectExpanded = false
-                    },
-                )
-                projects.forEach { project ->
-                    DropdownMenuItem(
-                        text = { Text(project.name) },
-                        onClick = {
-                            onProjectSelected(project.id)
-                            projectExpanded = false
-                        },
-                    )
-                }
-            }
-        }
-    }
 }

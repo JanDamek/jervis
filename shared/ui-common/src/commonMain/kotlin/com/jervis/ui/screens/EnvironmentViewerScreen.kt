@@ -157,7 +157,6 @@ fun EnvironmentViewerScreen(
         topBar = {
             JTopBar(
                 title = "Prostředí – K8s zdroje",
-                onBack = onBack,
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing,

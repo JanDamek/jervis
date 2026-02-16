@@ -84,7 +84,6 @@ fun PendingTasksScreen(
         topBar = {
             JTopBar(
                 title = "Fronta úloh ($totalTasks)",
-                onBack = onBack,
                 actions = {
                     RefreshIconButton(onClick = { load() })
                 },

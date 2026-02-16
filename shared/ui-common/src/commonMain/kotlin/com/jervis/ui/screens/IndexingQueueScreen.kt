@@ -98,7 +98,6 @@ fun IndexingQueueScreen(
         topBar = {
             JTopBar(
                 title = "Fronta indexace",
-                onBack = onBack,
             )
         },
     ) { padding ->

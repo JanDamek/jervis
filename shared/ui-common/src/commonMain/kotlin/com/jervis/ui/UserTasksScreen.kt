@@ -110,7 +110,7 @@ fun UserTasksScreen(
 
     if (errorMessage != null && selectedTask == null) {
         Column {
-            JTopBar(title = "Uživatelské úlohy", onBack = onBack)
+            JTopBar(title = "Uživatelské úlohy")
             JErrorState(message = errorMessage!!, onRetry = { loadTasks(filterText) })
         }
     } else {
@@ -122,7 +122,7 @@ fun UserTasksScreen(
             emptyMessage = "Žádné úlohy nenalezeny",
             emptyIcon = "📋",
             listHeader = {
-                JTopBar(title = "Uživatelské úlohy", onBack = onBack, actions = {
+                JTopBar(title = "Uživatelské úlohy", actions = {
                     RefreshIconButton(onClick = { loadTasks(filterText) })
                 })
 
