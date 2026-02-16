@@ -52,7 +52,7 @@ def is_significant_task(state: dict) -> bool:
 
     # ADVICE — normally not significant, UNLESS Memory Agent tracked an affair
     if task_category == "advice":
-        if settings.use_memory_agent and state.get("memory_agent"):
+        if state.get("memory_agent"):
             # Affair context means this ADVICE had structured context worth preserving
             logger.debug("ADVICE task with affair context → significant for KB ingestion")
             return True
@@ -147,7 +147,7 @@ async def extract_outcome(state: dict) -> dict | None:
     if artifacts:
         context_parts.append(f"Artifacts: {', '.join(artifacts[:10])}")
     # Enrich with affair context when Memory Agent is active
-    if settings.use_memory_agent and state.get("memory_agent"):
+    if state.get("memory_agent"):
         memory_agent_data = state["memory_agent"]
         session = memory_agent_data.get("session", {})
         active = session.get("active_affair")

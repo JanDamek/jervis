@@ -1,7 +1,6 @@
 """Memory flush node — persist memory state after response generation.
 
-Runs between respond and finalize when use_memory_agent is enabled.
-Feature-gated: returns empty dict when disabled.
+Runs between respond and finalize.
 
 Responsibilities:
 1. Restore MemoryAgent from state
@@ -15,7 +14,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from app.config import settings
 from app.memory.agent import MemoryAgent
 from app.memory.models import AffairMessage
 
@@ -28,9 +26,6 @@ async def memory_flush(state: dict) -> dict:
     Returns:
         memory_agent: updated serialized MemoryAgent state dict
     """
-    if not settings.use_memory_agent:
-        return {}
-
     try:
         agent_data = state.get("memory_agent")
         if not agent_data or not isinstance(agent_data, dict):

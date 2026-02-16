@@ -31,7 +31,7 @@ from app.graph.nodes.plan_delegations import plan_delegations
 from app.graph.nodes.execute_delegation import execute_delegation
 from app.graph.nodes.synthesize import synthesize
 
-# Memory Agent nodes (opt-in via use_memory_agent)
+# Memory Agent nodes
 from app.graph.nodes.memory_load import memory_load
 from app.graph.nodes.memory_flush import memory_flush
 

@@ -685,13 +685,13 @@ TERMINAL_TOOLS: list[dict] = [
 ]
 
 ALL_RESPOND_TOOLS_WITH_GIT: list[dict] = ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS
-ALL_RESPOND_TOOLS_FULL: list[dict] = (
+ALL_RESPOND_TOOLS_FULL_BASE: list[dict] = (
     ALL_RESPOND_TOOLS + GIT_WORKSPACE_TOOLS + FILESYSTEM_TOOLS + TERMINAL_TOOLS
 )
 
 
 # ============================================================
-# Memory Agent tools (opt-in via use_memory_agent)
+# Memory Agent tools
 # ============================================================
 
 TOOL_MEMORY_STORE: dict = {
@@ -784,7 +784,7 @@ TOOL_LIST_AFFAIRS: dict = {
 }
 
 MEMORY_TOOLS: list[dict] = [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL, TOOL_LIST_AFFAIRS]
-ALL_RESPOND_TOOLS_FULL_WITH_MEMORY: list[dict] = ALL_RESPOND_TOOLS_FULL + MEMORY_TOOLS
+ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS
 
 
 # ============================================================

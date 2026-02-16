@@ -2721,14 +2721,13 @@ If orchestrator needs code exploration:
 
 ---
 
-## Memory Agent (opt-in)
+## Memory Agent
 
-> **Feature flag:** `use_memory_agent=True` (default: `False`)
 > **Spec:** See `docs/orchestrator-memory-spec.md` for full architecture.
 
 ### Overview
 
-The Memory Agent provides structured working memory between turns, context switching when users change topics, and immediate availability of recently stored data. When enabled, it adds two new graph nodes and three new LLM tools.
+The Memory Agent provides structured working memory between turns, context switching when users change topics, and immediate availability of recently stored data. It adds two graph nodes (`memory_load`, `memory_flush`) and three LLM tools to every orchestration.
 
 ### New Graph Nodes
 

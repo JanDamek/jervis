@@ -11,10 +11,9 @@ import logging
 
 from langgraph.types import interrupt
 
-from app.config import settings
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
-from app.tools.definitions import ALL_RESPOND_TOOLS_FULL, ALL_RESPOND_TOOLS_FULL_WITH_MEMORY
+from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool, AskUserInterrupt
 
 logger = logging.getLogger(__name__)
@@ -169,12 +168,8 @@ async def respond(state: dict) -> dict:
     project_id = state.get("project_id")
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
 
-    # Select tool list based on memory agent enablement
-    respond_tools = (
-        ALL_RESPOND_TOOLS_FULL_WITH_MEMORY
-        if settings.use_memory_agent and state.get("memory_agent")
-        else ALL_RESPOND_TOOLS_FULL
-    )
+    # Tool list (includes memory tools)
+    respond_tools = ALL_RESPOND_TOOLS_FULL
 
     # Agentic tool-use loop (max 25 iterations)
     iteration = 0
@@ -188,7 +183,7 @@ async def respond(state: dict) -> dict:
         message_tokens = message_chars // 4
 
         # Tools add ~2500-3000 tokens depending on tool set
-        tools_tokens = 3000 if respond_tools is ALL_RESPOND_TOOLS_FULL_WITH_MEMORY else 2500
+        tools_tokens = 3000  # includes memory tools
 
         # Reserve space for output
         output_tokens = 4096
