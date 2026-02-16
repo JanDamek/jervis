@@ -289,9 +289,9 @@ private fun EnvironmentDetail(
             }
 
             EnvironmentManagerTab.K8S_RESOURCES -> {
-                JEmptyState(
-                    message = "Inspekce K8s zdrojů bude dostupná v další verzi",
-                    icon = "\u2601\uFE0F",
+                K8sResourcesTab(
+                    environment = environment,
+                    repository = repository,
                 )
             }
 

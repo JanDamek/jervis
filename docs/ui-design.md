@@ -1360,6 +1360,7 @@ Expanded (>=600dp):
 - `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
 - `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
 - `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config
+- `K8sResourcesTab` — namespace health summary, collapsible pods/deployments/services sections, pod log dialog, deployment detail dialog, restart
 
 **Navigation:**
 - `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link from Settings
@@ -1616,6 +1617,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
 |   |   +-- ComponentsTab.kt            <- Components tab: expandable JCards with inline editing
 |   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
+|   |   +-- K8sResourcesTab.kt          <- K8s resources tab: pods, deployments, services (migrated from EnvironmentViewerScreen)
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
