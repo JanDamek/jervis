@@ -15,5 +15,9 @@ object IosTokenHolder {
     fun setToken(hexToken: String, deviceId: String) {
         this.apnsToken = hexToken
         this.deviceId = deviceId
+        println("=== APNs TOKEN (KMP) ===")
+        println("Token: $hexToken")
+        println("Device: $deviceId")
+        println("========================")
     }
 }
