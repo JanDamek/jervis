@@ -63,6 +63,7 @@ class KtorRpcServer(
     private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
+    private val taskRepository: com.jervis.repository.TaskRepository,
     private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -537,6 +538,110 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: AgentTaskWatcher fetches tasks waiting for agent
+                            get("/internal/tasks/by-state") {
+                                val stateStr = call.request.queryParameters["state"]
+                                    ?: return@get call.respondText(
+                                        "[]", io.ktor.http.ContentType.Application.Json,
+                                    )
+                                try {
+                                    val state = com.jervis.dto.TaskStateEnum.valueOf(stateStr)
+                                    val tasks = mutableListOf<Map<String, Any?>>()
+                                    taskRepository.findByStateOrderByCreatedAtAsc(state).collect { task ->
+                                        tasks.add(
+                                            mapOf(
+                                                "id" to task.id.toString(),
+                                                "agentJobName" to task.agentJobName,
+                                                "orchestratorThreadId" to task.orchestratorThreadId,
+                                                "agentJobStartedAt" to task.agentJobStartedAt?.toString(),
+                                            ),
+                                        )
+                                    }
+                                    val jsonStr = kotlinx.serialization.json.Json.encodeToString(
+                                        kotlinx.serialization.json.JsonElement.serializer(),
+                                        toJsonElement(tasks),
+                                    )
+                                    call.respondText(jsonStr, io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to fetch tasks by state: $stateStr" }
+                                    call.respondText(
+                                        "[]", io.ktor.http.ContentType.Application.Json,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: AgentTaskWatcher reports agent job completion
+                            post("/internal/tasks/{taskId}/agent-completed") {
+                                val taskIdStr = call.parameters["taskId"]
+                                    ?: return@post call.respondText(
+                                        "{\"ok\":false}", io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.BadRequest,
+                                    )
+                                try {
+                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val task = taskRepository.getById(taskId)
+                                        ?: return@post call.respondText(
+                                            "{\"ok\":false,\"error\":\"Task not found\"}",
+                                            io.ktor.http.ContentType.Application.Json,
+                                            HttpStatusCode.NotFound,
+                                        )
+                                    // Transition back to PYTHON_ORCHESTRATING (graph will resume)
+                                    val updated = task.copy(
+                                        state = com.jervis.dto.TaskStateEnum.PYTHON_ORCHESTRATING,
+                                        agentJobState = "COMPLETED",
+                                    )
+                                    taskRepository.save(updated)
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to update task after agent completion: $taskIdStr" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Internal endpoint: orchestrator sets task to WAITING_FOR_AGENT with job info
+                            post("/internal/tasks/{taskId}/agent-dispatched") {
+                                val taskIdStr = call.parameters["taskId"]
+                                    ?: return@post call.respondText(
+                                        "{\"ok\":false}", io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.BadRequest,
+                                    )
+                                try {
+                                    val body = call.receive<AgentDispatchedRequest>()
+                                    val taskId = com.jervis.common.types.TaskId(taskIdStr)
+                                    val task = taskRepository.getById(taskId)
+                                        ?: return@post call.respondText(
+                                            "{\"ok\":false,\"error\":\"Task not found\"}",
+                                            io.ktor.http.ContentType.Application.Json,
+                                            HttpStatusCode.NotFound,
+                                        )
+                                    val updated = task.copy(
+                                        state = com.jervis.dto.TaskStateEnum.WAITING_FOR_AGENT,
+                                        agentJobName = body.jobName,
+                                        agentJobState = "RUNNING",
+                                        agentJobStartedAt = java.time.Instant.now(),
+                                    )
+                                    taskRepository.save(updated)
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to mark task as agent-dispatched: $taskIdStr" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -664,6 +769,11 @@ data class TrackerUpdateIssueRequest(
 @kotlinx.serialization.Serializable
 data class ScaleRequest(
     val replicas: Int,
+)
+
+@kotlinx.serialization.Serializable
+data class AgentDispatchedRequest(
+    val jobName: String,
 )
 
 /**

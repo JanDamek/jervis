@@ -499,7 +499,10 @@ NEW (from API) → INDEXING (processing) → INDEXED (task created)
 READY_FOR_QUALIFICATION → QUALIFYING (atomic findAndModify) → DONE or READY_FOR_GPU
     ↓
 READY_FOR_GPU → DISPATCHED_GPU (atomic findAndModify) → PYTHON_ORCHESTRATING → COMPLETED
-                    │                     │
+                    │                     │                    │
+                    │                     │                    └── coding agent dispatched →
+                    │                     │                        WAITING_FOR_AGENT → (watcher resumes) →
+                    │                     │                        PYTHON_ORCHESTRATING (loop)
                     │                     └── new messages arrived? → READY_FOR_GPU (auto-requeue)
                     └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
 

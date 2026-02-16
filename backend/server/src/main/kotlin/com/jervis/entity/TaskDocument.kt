@@ -140,6 +140,13 @@ data class TaskDocument(
      * Helps user understand what agent needs and why.
      */
     val userQuestionContext: String? = null,
+    // Non-blocking coding agent dispatch (state = WAITING_FOR_AGENT)
+    /** K8s Job name for the coding agent (when dispatched async). */
+    val agentJobName: String? = null,
+    /** State of the agent job: RUNNING, SUCCEEDED, FAILED. */
+    val agentJobState: String? = null,
+    /** When the agent job was dispatched. */
+    val agentJobStartedAt: Instant? = null,
 )
 
 /**

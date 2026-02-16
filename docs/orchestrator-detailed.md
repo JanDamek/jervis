@@ -2,7 +2,7 @@
 
 > Kompletní referenční dokument pro Python orchestrátor a jeho integraci s Kotlin serverem.
 > Základ pro analýzu, rozšiřování a debugging celé orchestrační vrstvy.
-> **Automaticky aktualizováno:** 2026-02-14
+> **Automaticky aktualizováno:** 2026-02-16
 
 ---
 
@@ -78,7 +78,7 @@ coding-tools:
 11. [Workspace Manager — příprava prostředí](#11-workspace-manager--příprava-prostředí)
 12. [Context Store — hierarchické úložiště](#12-context-store--hierarchické-úložiště)
 13. [Approval Flow — interrupt/resume mechanismus](#13-approval-flow--interruptresume-mechanismus)
-14. [Concurrency Control — single-orchestration](#14-concurrency-control--single-orchestration)
+14. [Concurrency Control — multi-orchestration](#14-concurrency-control--multi-orchestration)
 15. [Heartbeat a liveness detection](#15-heartbeat-a-liveness-detection)
 16. [Chat Context Persistence — paměť agenta](#16-chat-context-persistence--paměť-agenta)
 17. [Correction Agent — korekce přepisů](#17-correction-agent--korekce-přepisů)
@@ -923,15 +923,37 @@ spec:
       restartPolicy: Never
 ```
 
-### 10.3 Lifecycle
+### 10.3 Lifecycle (Non-blocking Async Dispatch)
+
+Coding agent dispatch je **non-blocking** — orchestrátor nepotí na dokončení jobu, ale použije LangGraph `interrupt()` pattern:
+
+```
+execute_step() → dispatch_coding_agent() → notify_agent_dispatched() → interrupt()
+    ↓ graph checkpoints, thread released
+AgentTaskWatcher._poll_once() → get_job_status() → [succeeded] → collect_result()
+    → POST /internal/tasks/{id}/agent-completed
+    → resume_orchestration_streaming(thread_id, result)
+    ↓ graph resumes from interrupt, processes result
+```
+
+**Krokový detail:**
 
 1. `prepare_workspace()` — zapíše instrukce do `.jervis/`
-2. K8s Job create → pod se spustí
-3. Agent čte `.jervis/instructions.md`, pracuje v workspace
-4. Agent zapíše `.jervis/result.json` s výsledkem
-5. Job runner čeká na completion (watch pod logs)
-6. Orchestrátor čte `result.json`
-7. `cleanup_workspace()` — smaže `.jervis/` a agent-specific soubory
+2. `dispatch_coding_agent()` — vytvoří K8s Job, **vrátí okamžitě** s `{job_name, agent_type}`
+3. `notify_agent_dispatched()` — POST na Kotlin, nastaví task state na `WAITING_FOR_AGENT`
+4. `interrupt({"type": "waiting_for_agent", ...})` — graph se checkpointne, thread uvolněn
+5. Agent čte `.jervis/instructions.md`, pracuje v workspace
+6. Agent zapíše `.jervis/result.json` s výsledkem
+7. `AgentTaskWatcher` polluje WAITING_FOR_AGENT tasks (každých 10s)
+8. Watcher detekuje completed job → `collect_result()` čte `result.json`
+9. Watcher notifikuje Kotlin (→ PYTHON_ORCHESTRATING) a resumuje orchestraci
+10. Graph pokračuje od `interrupt()`, zpracuje result
+
+**Klíčové soubory:**
+- `app/agents/job_runner.py` — `dispatch_coding_agent()`, `get_job_status()`, `collect_result()`
+- `app/agent_task_watcher.py` — background polling service
+- `app/graph/nodes/execute.py` — dispatch + interrupt pattern
+- `app/graph/nodes/git_ops.py` — same pattern for commit/push
 
 ### 10.4 Result format
 
@@ -1085,25 +1107,53 @@ Pro clarification: `approved=True` vždy, `reason` = user's answer text
 
 ---
 
-## 14. Concurrency Control — single-orchestration
+## 14. Concurrency Control — multi-orchestration
 
-### 14.1 Dvě vrstvy
+### 14.1 Tři vrstvy
 
 **Kotlin (early guard)**:
 ```kotlin
 val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
-if (orchestratingCount > 0) return false  // skip dispatch
+if (orchestratingCount >= maxConcurrent) return false  // skip dispatch
 ```
 
 **Python (definitive)**:
 ```python
-_orchestration_semaphore = asyncio.Semaphore(1)
+_orchestration_semaphore = asyncio.Semaphore(settings.max_concurrent_orchestrations)  # default 5
 
 if _orchestration_semaphore.locked():
     raise HTTPException(status_code=429, detail="Orchestrator busy")
 ```
 
-### 14.2 Multi-pod concurrency
+**Per-agent type limits** (K8s Job level):
+```python
+MAX_CONCURRENT = {"aider": 3, "openhands": 2, "claude": 2, "junie": 1}
+```
+
+### 14.2 Non-blocking dispatch model
+
+S async agent dispatch se semaphore uvolní hned po `interrupt()` — ne po dokončení jobu:
+
+```
+Thread 1: dispatch → interrupt → semaphore released → thread free
+Thread 2: dispatch → interrupt → semaphore released → thread free
+  [oba K8s Jobs běží paralelně, AgentTaskWatcher je resumuje]
+Thread 1: [watcher resumuje] → process result → done
+Thread 2: [watcher resumuje] → process result → done
+```
+
+Config: `max_concurrent_orchestrations = 5` (v `app/config.py`)
+
+### 14.3 Task state machine
+
+```
+NEW → PYTHON_ORCHESTRATING (dispatch to Python)
+    → WAITING_FOR_AGENT (coding agent K8s Job dispatched)
+    → PYTHON_ORCHESTRATING (agent completed, graph resumed)
+    → DONE / FAILED
+```
+
+### 14.4 Multi-pod concurrency
 
 **Soubor**: `app/context/distributed_lock.py`
 
@@ -1113,13 +1163,6 @@ MongoDB distributed lock:
 - Atomic acquire via `findOneAndUpdate`
 - Heartbeat: 10s interval (updates `locked_at`)
 - Stale recovery: 300s timeout → auto-release
-
-### 14.3 Důvod omezení
-
-LLM (Ollama) nedokáže efektivně zpracovávat souběžné requesty. Jeden GPU request najednou zajišťuje:
-- Předvídatelný výkon
-- Žádné OOM na GPU
-- Jednodušší debugging
 
 ---
 
@@ -1174,6 +1217,30 @@ async def _iter_with_heartbeat(stream):
         last_token_time = time.monotonic()
         yield chunk
 ```
+
+### 15.4 AgentTaskWatcher — K8s Job monitoring
+
+**Soubor**: `app/agent_task_watcher.py`
+
+Background asyncio service polling for WAITING_FOR_AGENT tasks:
+
+```python
+class AgentTaskWatcher:
+    async def _poll_once(self):
+        # 1. GET /internal/tasks/by-state?state=WAITING_FOR_AGENT
+        # 2. For each task: check K8s Job status via job_runner.get_job_status()
+        # 3. On completion: collect result, notify Kotlin, resume orchestration
+```
+
+- Poll interval: `agent_watcher_poll_interval` (default 10s)
+- Heartbeat timeout: `agent_heartbeat_timeout` (default 300s)
+- Started/stopped in `main.py` lifespan
+- Survives pod restarts — all state in MongoDB (TaskDocument + LangGraph checkpoints)
+
+**Internal Kotlin endpoints used by watcher:**
+- `GET /internal/tasks/by-state?state=WAITING_FOR_AGENT` — fetch waiting tasks
+- `POST /internal/tasks/{taskId}/agent-completed` — mark agent done, transition to PYTHON_ORCHESTRATING
+- `POST /internal/tasks/{taskId}/agent-dispatched` — mark task as WAITING_FOR_AGENT (called from graph nodes)
 
 ---
 
@@ -2491,6 +2558,7 @@ backend/service-orchestrator/
 ├── app/
 │   ├── main.py                          # FastAPI app, endpoints, SSE, concurrency
 │   ├── config.py                        # Environment-based configuration (+feature flags)
+│   ├── agent_task_watcher.py            # Background watcher for async K8s Job monitoring
 │   ├── models.py                        # Pydantic models (ALL data structures + delegation models)
 │   ├── graph/
 │   │   ├── orchestrator.py              # LangGraph StateGraph, state, routing, streaming
@@ -2523,7 +2591,7 @@ backend/service-orchestrator/
 │   │   ├── base.py                      # NEW: BaseAgent abstract class, agentic loop
 │   │   ├── registry.py                  # NEW: AgentRegistry singleton
 │   │   ├── legacy_agent.py              # NEW: Wrapper of existing 14-node logic (fallback)
-│   │   ├── job_runner.py                # K8s Job creation, log streaming, result reading
+│   │   ├── job_runner.py                # K8s Job creation, async dispatch, status polling, result reading
 │   │   ├── workspace_manager.py         # .jervis/ files, CLAUDE.md, MCP, Aider config
 │   │   └── specialists/                 # NEW: 19 specialist agents
 │   │       ├── __init__.py

@@ -158,7 +158,14 @@ async def lifespan(app: FastAPI):
     # Memory Agent
     logger.info("Memory Agent ready (affairs + LQM)")
 
+    # Start AgentTaskWatcher (monitors async coding agent K8s Jobs)
+    from app.agent_task_watcher import agent_task_watcher
+    await agent_task_watcher.start()
+
     yield
+
+    # Stop AgentTaskWatcher
+    await agent_task_watcher.stop()
 
     # Cleanup
     logger.info("Orchestrator shutting down, releasing GPU reservation...")

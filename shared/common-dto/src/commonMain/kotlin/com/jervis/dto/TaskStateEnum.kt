@@ -11,6 +11,7 @@ enum class TaskStateEnum {
     READY_FOR_GPU, // Qualification complete, complex task needs GPU execution
     DISPATCHED_GPU, // Delegated to strong model / GPU pipeline
     PYTHON_ORCHESTRATING, // Dispatched to Python orchestrator (LangGraph), awaiting result
+    WAITING_FOR_AGENT, // Coding agent K8s Job dispatched, waiting for completion
     USER_TASK, // Waiting for user input/decision
     ERROR,
 }

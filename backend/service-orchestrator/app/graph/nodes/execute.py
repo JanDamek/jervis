@@ -8,9 +8,12 @@ from __future__ import annotations
 import json
 import logging
 
+from langgraph.types import interrupt
+
 from app.agents.job_runner import job_runner
 from app.agents.workspace_manager import workspace_manager
 from app.config import settings
+from app.tools.kotlin_client import kotlin_client
 from app.models import (
     CodingStep,
     CodingTask,
@@ -110,7 +113,37 @@ async def _execute_respond_step(
 async def _execute_code_step(
     state: dict, task: CodingTask, step: CodingStep,
 ) -> dict:
-    """Execute a coding step via K8s Job."""
+    """Execute a coding step via K8s Job (non-blocking async dispatch).
+
+    1. If agent_job is already set → this is a resume after job completion, process result.
+    2. Otherwise → prepare workspace, dispatch K8s Job, interrupt to wait.
+    """
+    agent_job = state.get("agent_job")
+
+    # --- RESUME PATH: agent job completed, process result ---
+    if agent_job and agent_job.get("completed"):
+        result = agent_job.get("result", {})
+        logger.info(
+            "Processing agent result: task=%s success=%s",
+            task.id, result.get("success", False),
+        )
+
+        step_result = StepResult(
+            step_index=step.index,
+            success=result.get("success", False),
+            summary=result.get("summary", "No result"),
+            agent_type=step.agent_type.value,
+            changed_files=result.get("changedFiles", []),
+        )
+
+        existing_results = list(state.get("step_results", []))
+        existing_results.append(step_result.model_dump())
+
+        # Clear agent_job for next step
+        return {"step_results": existing_results, "agent_job": None}
+
+    # --- DISPATCH PATH: prepare and dispatch K8s Job ---
+
     # Pre-fetch KB context (best-effort)
     try:
         kb_context = await _prefetch_kb_context(
@@ -139,15 +172,34 @@ async def _execute_code_step(
         environment_context=state.get("environment"),
     )
 
-    # Run coding agent as K8s Job
-    result = await job_runner.run_coding_agent(
+    # Dispatch coding agent (returns immediately)
+    workspace_path = f"{settings.data_root}/{task.workspace_path}"
+    dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=f"{task.id}-step-{step.index}",
         agent_type=step.agent_type.value,
         client_id=task.client_id,
         project_id=task.project_id,
-        workspace_path=f"{settings.data_root}/{task.workspace_path}",
+        workspace_path=workspace_path,
     )
 
+    logger.info(
+        "Agent dispatched (async): job=%s task=%s — interrupting for watcher",
+        dispatch_info["job_name"], task.id,
+    )
+
+    # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+    await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])
+
+    # Interrupt: graph checkpoints here, AgentTaskWatcher will resume when job completes
+    result = interrupt({
+        "type": "waiting_for_agent",
+        "job_name": dispatch_info["job_name"],
+        "agent_type": dispatch_info["agent_type"],
+        "task_id": task.id,
+        "workspace_path": workspace_path,
+    })
+
+    # When resumed by watcher, result contains the agent output
     step_result = StepResult(
         step_index=step.index,
         success=result.get("success", False),
@@ -159,7 +211,7 @@ async def _execute_code_step(
     existing_results = list(state.get("step_results", []))
     existing_results.append(step_result.model_dump())
 
-    return {"step_results": existing_results}
+    return {"step_results": existing_results, "agent_job": None}
 
 
 async def _execute_tracker_step(
