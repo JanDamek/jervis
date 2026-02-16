@@ -5,44 +5,6 @@ které budou implementovány jako separate tickety.
 
 ---
 
-## Autoscaling & Performance
-
-### DB Performance Metrics & Monitoring
-
-**Problém:**
-- KB ingest operace nyní běží async v background queue
-- Není viditelnost do toho, jestli DB (ArangoDB, Weaviate) není bottleneck
-- Může se stát, že všechny PODy čekají na DB a fronta roste
-- Žádné metriky pro monitorování DB výkonu
-
-**Řešení:**
-- Přidat metriky pro KB operace:
-  - RAG ingest latency (Weaviate write)
-  - Graph ingest latency (ArangoDB write)
-  - Query latency (read operations)
-  - Queue depth (pending extraction tasks)
-  - Active workers count
-- Exportovat metriky do Prometheus/Grafana
-- Alert při vysoké latenci nebo rostoucí frontě
-
-**Implementace:**
-1. KB Python service: instrumentace pomocí `prometheus_client`
-2. Metriky endpointy: `/metrics` (Prometheus format)
-3. K8s ServiceMonitor pro automatický scraping
-4. Grafana dashboard s latency graphs a queue depth
-
-**Soubory:**
-- `backend/service-knowledgebase/app/metrics.py` – Prometheus metrics
-- `backend/service-knowledgebase/app/main.py` – expose /metrics endpoint
-- `k8s/kb-servicemonitor.yaml` – Prometheus ServiceMonitor
-- `grafana/kb-dashboard.json` – Grafana dashboard
-
-**Priorita:** High (pro detekci DB bottlenecks)
-**Complexity:** Medium
-**Status:** Planned
-
----
-
 ## Environment Management (Phase 2 + 3)
 
 ### Kontext – 3 vrstvy interakce s prostředím

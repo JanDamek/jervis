@@ -16,6 +16,7 @@
 7. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
 8. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
 9. [Knowledge Base Best Practices](#knowledge-base-best-practices)
+10. [Monitoring & Metrics](#monitoring--metrics)
 
 ---
 
@@ -921,3 +922,34 @@ class SessionEntry(BaseModel):
 | `app/context/procedural_memory.py` | ArangoDB CRUD for procedural memory |
 | `app/context/retention_policy.py` | Decides what to save to KB vs context_store |
 | `app/context/summarizer.py` | Summarization utilities (no truncation of agent outputs) |
+
+---
+
+## Monitoring & Metrics
+
+### Prometheus Metrics
+
+KB service exposes Prometheus metrics at `/metrics` endpoint (both read and write deployments).
+
+**Metric categories:**
+
+| Category | Metrics | Labels |
+|----------|---------|--------|
+| **RAG operations** | `kb_rag_ingest_total`, `kb_rag_ingest_duration_seconds`, `kb_rag_ingest_chunks`, `kb_rag_query_total`, `kb_rag_query_duration_seconds` | `status` (success/error) |
+| **Graph operations** | `kb_graph_write_total`, `kb_graph_write_duration_seconds`, `kb_graph_query_total`, `kb_graph_query_duration_seconds` | `operation`, `status` |
+| **Extraction queue** | `kb_extraction_queue_depth`, `kb_extraction_workers_active`, `kb_extraction_task_total`, `kb_extraction_task_duration_seconds` | `status` |
+| **HTTP requests** | `kb_http_requests_total`, `kb_http_request_duration_seconds` | `method`, `endpoint`, `status_code` |
+
+### Scraping
+
+K8s `ServiceMonitor` (`k8s/kb-servicemonitor.yaml`) scrapes both read and write services every 30s.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/metrics.py` | Prometheus metric definitions |
+| `app/main.py` | `/metrics` endpoint + HTTP middleware |
+| `app/services/knowledge_service.py` | RAG/Graph operation instrumentation |
+| `app/services/llm_extraction_worker.py` | Extraction queue instrumentation |
+| `k8s/kb-servicemonitor.yaml` | Prometheus ServiceMonitor |

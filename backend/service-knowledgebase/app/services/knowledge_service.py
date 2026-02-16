@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse
 
@@ -21,6 +22,13 @@ from app.services.image_service import ImageService
 from app.services.llm_extraction_queue import LLMExtractionQueue, ExtractionTask
 from app.core.config import settings
 from app.db.arango import get_arango_db
+from app.metrics import (
+    rag_ingest_total, rag_ingest_duration, rag_ingest_chunks,
+    rag_query_total, rag_query_duration,
+    graph_write_total, graph_write_duration,
+    graph_query_total, graph_query_duration,
+    extraction_queue_depth,
+)
 from langchain_community.document_loaders import RecursiveUrlLoader
 from langchain_ollama import ChatOllama
 
@@ -124,7 +132,11 @@ class KnowledgeService:
         )
 
         # 1. RAG Ingest - get chunk IDs (fast)
+        rag_start = time.time()
         chunks_count, chunk_ids = await self.rag_service.ingest(request, embedding_priority=embedding_priority)
+        rag_ingest_duration.observe(time.time() - rag_start)
+        rag_ingest_total.labels(status="success").inc()
+        rag_ingest_chunks.observe(chunks_count)
         logger.info(
             "KB_WRITE: RAG_INGEST_DONE sourceUrn=%s chunks=%d chunk_ids_sample=%s",
             request.sourceUrn, chunks_count, chunk_ids[:3] if len(chunk_ids) > 3 else chunk_ids
@@ -143,10 +155,13 @@ class KnowledgeService:
                 "KB_WRITE: SYNC_EXTRACTION sourceUrn=%s priority=%d",
                 request.sourceUrn, effective_priority
             )
+            graph_start = time.time()
             try:
                 nodes_created, edges_created, entity_keys = await self.graph_service.ingest(
                     request, chunk_ids=chunk_ids, embedding_priority=effective_priority
                 )
+                graph_write_total.labels(operation="ingest", status="success").inc()
+                graph_write_duration.labels(operation="ingest").observe(time.time() - graph_start)
                 # Update RAG chunks with discovered entity keys
                 if entity_keys:
                     for chunk_id in chunk_ids:
@@ -159,6 +174,8 @@ class KnowledgeService:
                     request.sourceUrn, nodes_created, edges_created, len(entity_keys)
                 )
             except Exception as e:
+                graph_write_total.labels(operation="ingest", status="error").inc()
+                graph_write_duration.labels(operation="ingest").observe(time.time() - graph_start)
                 logger.error(
                     "KB_WRITE: SYNC_EXTRACTION_FAILED sourceUrn=%s error=%s — falling back to queue",
                     request.sourceUrn, e
@@ -290,16 +307,24 @@ class KnowledgeService:
             request.groupId or "", request.expandGraph, request.maxResults, embedding_priority
         )
 
-        result = await self.hybrid_retriever.retrieve(
-            request,
-            expand_graph=request.expandGraph,
-            extract_entities=True,
-            use_rrf=True,
-            max_graph_hops=2,
-            max_seeds=10,
-            diversity_factor=0.7,
-            embedding_priority=embedding_priority
-        )
+        query_start = time.time()
+        try:
+            result = await self.hybrid_retriever.retrieve(
+                request,
+                expand_graph=request.expandGraph,
+                extract_entities=True,
+                use_rrf=True,
+                max_graph_hops=2,
+                max_seeds=10,
+                diversity_factor=0.7,
+                embedding_priority=embedding_priority
+            )
+            rag_query_total.labels(status="success").inc()
+            rag_query_duration.observe(time.time() - query_start)
+        except Exception as e:
+            rag_query_total.labels(status="error").inc()
+            rag_query_duration.observe(time.time() - query_start)
+            raise
 
         logger.info(
             "KB_READ: RETRIEVE_COMPLETE query='%s' results=%d",
@@ -316,7 +341,16 @@ class KnowledgeService:
         return await self.rag_service.retrieve(request, embedding_priority=embedding_priority)
 
     async def traverse(self, request: TraversalRequest) -> list[GraphNode]:
-        return await self.graph_service.traverse(request)
+        traverse_start = time.time()
+        try:
+            result = await self.graph_service.traverse(request)
+            graph_query_total.labels(operation="traverse", status="success").inc()
+            graph_query_duration.labels(operation="traverse").observe(time.time() - traverse_start)
+            return result
+        except Exception as e:
+            graph_query_total.labels(operation="traverse", status="error").inc()
+            graph_query_duration.labels(operation="traverse").observe(time.time() - traverse_start)
+            raise
 
     async def crawl(self, request: CrawlRequest) -> IngestResult:
         """
