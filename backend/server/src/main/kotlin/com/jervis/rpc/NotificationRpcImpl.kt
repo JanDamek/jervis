@@ -58,6 +58,7 @@ class NotificationRpcImpl : INotificationService {
         interruptAction: String? = null,
         interruptDescription: String? = null,
         isApproval: Boolean = false,
+        projectId: String? = null,
     ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
@@ -67,8 +68,16 @@ class NotificationRpcImpl : INotificationService {
             interruptAction = interruptAction,
             interruptDescription = interruptDescription,
             isApproval = isApproval,
+            projectId = projectId,
         ))
     }
+
+    /**
+     * Check if any client app is actively subscribed to events via kRPC WebSocket.
+     * Used to decide whether to send FCM push (skip if app is connected and will get in-app dialog).
+     */
+    fun hasActiveSubscribers(clientId: String): Boolean =
+        (eventStreams[clientId]?.subscriptionCount?.value ?: 0) > 0
 
     suspend fun emitUserTaskCancelled(clientId: String, taskId: String, title: String) {
         emitEvent(clientId, JervisEvent.UserTaskCancelled(

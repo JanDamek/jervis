@@ -142,11 +142,8 @@ class KnowledgeService:
             request.sourceUrn, chunks_count, chunk_ids[:3] if len(chunk_ids) > 3 else chunk_ids
         )
 
-        # 2. Graph extraction: sync for priority requests, async for bulk
+        # 2. Enqueue LLM extraction task (always async, priority queue handles ordering)
         effective_priority = embedding_priority if embedding_priority is not None else 4
-        nodes_created = 0
-        edges_created = 0
-        entity_keys = []
 
         if effective_priority <= 2 and chunk_ids:
             # Priority requests (MCP, orchestrator): extract graph SYNCHRONOUSLY
@@ -185,25 +182,25 @@ class KnowledgeService:
         elif self.extraction_queue and chunk_ids:
             # Bulk indexing (priority > 2): queue for background processing
             await self._enqueue_extraction(request, chunk_ids, effective_priority)
-        else:
+        elif chunk_ids:
             logger.warning(
-                "KB_WRITE: NO_EXTRACTION_QUEUE sourceUrn=%s has_queue=%s has_chunks=%s",
-                request.sourceUrn, bool(self.extraction_queue), bool(chunk_ids)
+                "KB_WRITE: NO_EXTRACTION_QUEUE sourceUrn=%s has_chunks=%s",
+                request.sourceUrn, bool(chunk_ids)
             )
 
         logger.info(
-            "KB_WRITE: INGEST_COMPLETE sourceUrn=%s chunks=%d nodes=%d edges=%d clientId=%s projectId=%s",
-            request.sourceUrn, chunks_count, nodes_created, edges_created,
+            "KB_WRITE: INGEST_COMPLETE sourceUrn=%s chunks=%d priority=%d clientId=%s projectId=%s",
+            request.sourceUrn, chunks_count, effective_priority,
             request.clientId, request.projectId or ""
         )
 
         return IngestResult(
             status="success",
             chunks_count=chunks_count,
-            nodes_created=nodes_created,
-            edges_created=edges_created,
+            nodes_created=0,
+            edges_created=0,
             chunk_ids=chunk_ids,
-            entity_keys=entity_keys,
+            entity_keys=[],
         )
 
     async def _enqueue_extraction(self, request: IngestRequest, chunk_ids: list[str], priority: int):

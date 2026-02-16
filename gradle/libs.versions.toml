@@ -27,6 +27,8 @@ compose = "1.9.3"
 agp = "8.12.3"
 badass-runtime = "2.0.1"
 firebase-admin = "9.4.2"
+google-services = "4.4.2"
+firebase-bom = "33.7.0"
 
 [libraries]
 # Kotlin
@@ -112,6 +114,8 @@ jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" 
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 jtokkit = { module = "com.knuddels:jtokkit", version.ref = "jtokkit" }
 firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 fabric8-kubernetes-client = { module = "io.fabric8:kubernetes-client", version.ref = "fabric8" }
 
 # Testing
@@ -131,3 +135,4 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 badass-runtime = { id = "org.beryx.runtime", version.ref = "badass-runtime" }
+google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }

@@ -178,11 +178,16 @@ spec:
                 secretKeyRef:
                   name: jervis-oauth2-secrets
                   key: ATLASSIAN_CLIENT_SECRET
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/firebase/firebase-sa.json
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data
             - name: config
               mountPath: /opt/jervis/server/config
+              readOnly: true
+            - name: firebase-sa
+              mountPath: /etc/firebase
               readOnly: true
           livenessProbe:
             httpGet:
@@ -213,6 +218,9 @@ spec:
         - name: config
           configMap:
             name: jervis-server-config
+        - name: firebase-sa
+          secret:
+            secretName: firebase-sa
 ---
 apiVersion: v1
 kind: Service

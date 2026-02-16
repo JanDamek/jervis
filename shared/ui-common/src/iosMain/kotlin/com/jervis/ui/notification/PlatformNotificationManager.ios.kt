@@ -78,6 +78,7 @@ actual class PlatformNotificationManager actual constructor() {
         taskId: String?,
         isApproval: Boolean,
         interruptAction: String?,
+        badgeCount: Int?,
     ) {
         val content = UNMutableNotificationContent().apply {
             setTitle(title)

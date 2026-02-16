@@ -83,6 +83,7 @@ actual class PlatformNotificationManager actual constructor() {
         taskId: String?,
         isApproval: Boolean,
         interruptAction: String?,
+        badgeCount: Int?,
     ) {
         val context = AndroidContextHolder.applicationContext
         if (!hasPermission) return
@@ -99,6 +100,9 @@ actual class PlatformNotificationManager actual constructor() {
                 if (isApproval) NotificationCompat.PRIORITY_HIGH
                 else NotificationCompat.PRIORITY_DEFAULT,
             )
+            .apply {
+                if (badgeCount != null) setNumber(badgeCount)
+            }
 
         // Add action buttons for approval notifications
         if (isApproval && taskId != null) {

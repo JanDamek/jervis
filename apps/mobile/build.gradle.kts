@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.google.services)
 }
 
 group = "com.jervis"
@@ -30,6 +31,8 @@ kotlin {
 
         androidMain.dependencies {
             implementation("androidx.activity:activity-compose:1.9.3")
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.messaging)
         }
     }
 

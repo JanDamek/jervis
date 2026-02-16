@@ -81,6 +81,9 @@ if (System.getenv("DOCKER_BUILD") != "true") {
                 implementation("androidx.activity:activity-compose:1.9.3")
                 implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
                 implementation("io.ktor:ktor-client-okhttp:3.3.2")
+                implementation(project.dependencies.platform(libs.firebase.bom))
+                implementation(libs.firebase.messaging)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
             }
 
             iosMain.dependencies {

@@ -45,6 +45,7 @@ expect class PlatformNotificationManager() {
         taskId: String? = null,
         isApproval: Boolean = false,
         interruptAction: String? = null,
+        badgeCount: Int? = null,
     )
 
     /**

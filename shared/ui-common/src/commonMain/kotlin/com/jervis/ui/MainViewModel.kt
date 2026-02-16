@@ -20,6 +20,7 @@ import com.jervis.ui.model.TaskHistoryEntry
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
+import com.jervis.ui.notification.PushTokenRegistrar
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.model.classifySendError
 import com.jervis.ui.storage.PendingMessageState
@@ -208,9 +209,29 @@ class MainViewModel(
     // Track previous running state for transition detection
     private var previousRunningProjectId: String? = null
 
-    // Approval dialog state — shown when orchestrator interrupt arrives
-    private val _approvalDialogEvent = MutableStateFlow<JervisEvent.UserTaskCreated?>(null)
-    val approvalDialogEvent: StateFlow<JervisEvent.UserTaskCreated?> = _approvalDialogEvent.asStateFlow()
+    // User task badge count — number of active user tasks requiring attention
+    private val _userTaskCount = MutableStateFlow(0)
+    val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
+
+    /**
+     * Sync badge count from server. Call when navigating to UserTasks screen
+     * or when badge might be out of sync with reality.
+     */
+    fun refreshUserTaskCount() {
+        val clientId = _selectedClientId.value ?: return
+        scope.launch {
+            try {
+                val countDto = repository.userTasks.activeCount(clientId)
+                _userTaskCount.value = countDto.activeCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
+    // User task dialog state — shown when any user task arrives (approval or clarification)
+    private val _userTaskDialogEvent = MutableStateFlow<JervisEvent.UserTaskCreated?>(null)
+    val userTaskDialogEvent: StateFlow<JervisEvent.UserTaskCreated?> = _userTaskDialogEvent.asStateFlow()
 
     // Orchestrator task progress (push-based from Python via Kotlin)
     private val _orchestratorProgress = MutableStateFlow<OrchestratorProgressInfo?>(null)
@@ -366,13 +387,17 @@ class MainViewModel(
             }
         }
 
-        // Subscribe to global events for the selected client
+        // Subscribe to global events for the selected client + register FCM token
         scope.launch {
             _selectedClientId.collect { clientId ->
                 println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
                     subscribeToQueueStatus(clientId)
+                    // Register FCM push token (Android only, no-op on other platforms)
+                    scope.launch {
+                        PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
+                    }
                 } else {
                     eventJob?.cancel()
                     queueStatusJob?.cancel()
@@ -392,16 +417,17 @@ class MainViewModel(
                                 routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
                                 additionalInput = null,
                             )
+                            refreshUserTaskCount()
                         } catch (e: Exception) {
                             println("Failed to approve task ${result.taskId}: ${e.message}")
                             _errorMessage.value = "Schválení selhalo: ${e.message}"
                         }
-                        _approvalDialogEvent.value = null
+                        _userTaskDialogEvent.value = null
                     }
                     NotificationAction.DENY -> {
                         // Deny from notification → show in-app dialog for reason input
-                        // The approval dialog will handle the actual deny with reason
-                        _approvalDialogEvent.value?.let { event ->
+                        // The user task dialog will handle the actual deny with reason
+                        _userTaskDialogEvent.value?.let { event ->
                             // Already showing dialog, user will provide reason there
                         }
                     }
@@ -432,6 +458,7 @@ class MainViewModel(
         when (event) {
             is JervisEvent.UserTaskCreated -> {
                 _notifications.value = currentNotifications + event
+                refreshUserTaskCount()
 
                 // Show platform notification
                 notificationManager.showNotification(
@@ -442,10 +469,8 @@ class MainViewModel(
                     interruptAction = event.interruptAction,
                 )
 
-                // Show in-app approval dialog for approval events
-                if (event.isApproval) {
-                    _approvalDialogEvent.value = event
-                }
+                // Show in-app dialog for ALL user tasks (approval + clarification)
+                _userTaskDialogEvent.value = event
             }
 
             is JervisEvent.UserTaskCancelled -> {
@@ -453,10 +478,11 @@ class MainViewModel(
                     currentNotifications.filter {
                         !(it is JervisEvent.UserTaskCreated && it.taskId == event.taskId)
                     }
+                refreshUserTaskCount()
                 notificationManager.cancelNotification(event.taskId)
-                // Dismiss approval dialog if this task was cancelled
-                if (_approvalDialogEvent.value?.taskId == event.taskId) {
-                    _approvalDialogEvent.value = null
+                // Dismiss dialog if this task was cancelled
+                if (_userTaskDialogEvent.value?.taskId == event.taskId) {
+                    _userTaskDialogEvent.value = null
                 }
             }
 
@@ -533,8 +559,9 @@ class MainViewModel(
                     routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
                     additionalInput = null,
                 )
-                _approvalDialogEvent.value = null
+                _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
+                refreshUserTaskCount()
             } catch (e: Exception) {
                 _errorMessage.value = "Schválení selhalo: ${e.message}"
             }
@@ -567,8 +594,9 @@ class MainViewModel(
                     routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
                     additionalInput = reason,
                 )
-                _approvalDialogEvent.value = null
+                _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
+                refreshUserTaskCount()
             } catch (e: Exception) {
                 _errorMessage.value = "Zamítnutí selhalo: ${e.message}"
             }
@@ -576,11 +604,31 @@ class MainViewModel(
     }
 
     /**
-     * Dismiss the approval dialog without action.
+     * Reply to a clarification user task from the in-app dialog.
+     */
+    fun replyToTask(taskId: String, reply: String) {
+        scope.launch {
+            try {
+                repository.userTasks.sendToAgent(
+                    taskId = taskId,
+                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                    additionalInput = reply,
+                )
+                _userTaskDialogEvent.value = null
+                notificationManager.cancelNotification(taskId)
+                refreshUserTaskCount()
+            } catch (e: Exception) {
+                _errorMessage.value = "Odeslání odpovědi selhalo: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Dismiss the user task dialog without action.
      * The task remains in the user tasks list.
      */
-    fun dismissApprovalDialog() {
-        _approvalDialogEvent.value = null
+    fun dismissUserTaskDialog() {
+        _userTaskDialogEvent.value = null
     }
 
     /** Node name to Czech label for orchestrator pipeline steps. */
@@ -1205,6 +1253,15 @@ class MainViewModel(
 
                 // Eagerly load environments to determine badge visibility
                 loadEnvironments(clientId)
+
+                // Load active user task count for badge
+                try {
+                    val countDto = repository.userTasks.activeCount(clientId)
+                    _userTaskCount.value = countDto.activeCount
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    println("Failed to load user task count: ${e.message}")
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _errorMessage.value = "Failed to load projects: ${e.message}"

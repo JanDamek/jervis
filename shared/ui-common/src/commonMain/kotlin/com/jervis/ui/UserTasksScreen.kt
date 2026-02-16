@@ -46,6 +46,7 @@ fun UserTasksScreen(
     repository: JervisRepository,
     onBack: () -> Unit,
     onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
+    onRefreshBadge: (() -> Unit)? = null,
 ) {
     var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -95,8 +96,11 @@ fun UserTasksScreen(
         }
     }
 
-    // Initial load
-    LaunchedEffect(Unit) { loadTasks() }
+    // Initial load + sync badge
+    LaunchedEffect(Unit) {
+        loadTasks()
+        onRefreshBadge?.invoke()
+    }
 
     // Debounced server-side filter
     var filterJob by remember { mutableStateOf<Job?>(null) }

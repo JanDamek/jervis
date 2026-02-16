@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -131,6 +133,8 @@ fun PersistentTopBar(
     // Environment
     hasEnvironment: Boolean,
     onToggleEnvironmentPanel: () -> Unit,
+    // User task badge
+    userTaskCount: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -154,7 +158,7 @@ fun PersistentTopBar(
             }
 
             // Menu
-            MenuDropdown(onNavigate = onNavigate)
+            MenuDropdown(onNavigate = onNavigate, userTaskCount = userTaskCount)
 
             // Client / Project compact selector — takes remaining space
             ClientProjectCompactSelector(
@@ -207,15 +211,24 @@ fun PersistentTopBar(
 @Composable
 private fun MenuDropdown(
     onNavigate: (Screen) -> Unit,
+    userTaskCount: Int = 0,
 ) {
     Box {
         var menuExpanded by remember { mutableStateOf(false) }
 
-        JIconButton(
-            onClick = { menuExpanded = true },
-            icon = Icons.Default.Menu,
-            contentDescription = "Menu",
-        )
+        BadgedBox(
+            badge = {
+                if (userTaskCount > 0) {
+                    Badge { Text("$userTaskCount") }
+                }
+            },
+        ) {
+            JIconButton(
+                onClick = { menuExpanded = true },
+                icon = Icons.Default.Menu,
+                contentDescription = "Menu",
+            )
+        }
 
         DropdownMenu(
             expanded = menuExpanded,
@@ -236,6 +249,9 @@ private fun MenuDropdown(
                         ) {
                             Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp))
                             Text(item.title)
+                            if (item == TopBarMenuItem.USER_TASKS && userTaskCount > 0) {
+                                Badge { Text("$userTaskCount") }
+                            }
                         }
                     },
                     onClick = {
