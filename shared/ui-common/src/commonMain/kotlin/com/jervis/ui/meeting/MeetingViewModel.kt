@@ -13,13 +13,14 @@ import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
 import com.jervis.di.RpcConnectionManager
 import com.jervis.dto.events.JervisEvent
-import com.jervis.service.IMeetingService
-import com.jervis.service.IProjectService
+import com.jervis.repository.JervisRepository
 import com.jervis.ui.audio.AudioPlayer
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.audio.PlatformRecordingService
 import com.jervis.ui.audio.RecordingServiceBridge
+import com.jervis.ui.storage.AudioChunkQueue
+import com.jervis.ui.storage.PendingChunk
 import com.jervis.ui.storage.RecordingStateStorage
 import com.jervis.ui.storage.RecordingState
 import kotlinx.coroutines.CoroutineScope
@@ -45,9 +46,7 @@ sealed class UploadState {
 
 class MeetingViewModel(
     private val connectionManager: RpcConnectionManager,
-    private val meetingService: IMeetingService,
-    private val projectService: IProjectService,
-    internal val correctionService: com.jervis.service.ITranscriptCorrectionService? = null,
+    internal val repository: JervisRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -147,7 +146,7 @@ class MeetingViewModel(
         scope.launch {
             if (!silent) _isLoading.value = true
             try {
-                _meetings.value = meetingService.listMeetings(clientId, projectId)
+                _meetings.value = repository.meetings.listMeetings(clientId, projectId)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se načíst schůzky: ${e.message}"
             } finally {
@@ -159,7 +158,7 @@ class MeetingViewModel(
     fun loadProjects(clientId: String) {
         scope.launch {
             try {
-                _projects.value = projectService.listProjectsForClient(clientId)
+                _projects.value = repository.projects.listProjectsForClient(clientId)
             } catch (_: Exception) {
                 _projects.value = emptyList()
             }
@@ -249,7 +248,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 println("[Meeting] Starting recording for client=$clientId project=$projectId")
-                val meeting = meetingService.startRecording(
+                val meeting = repository.meetings.startRecording(
                     MeetingCreateDto(
                         clientId = clientId,
                         projectId = projectId,
@@ -266,7 +265,7 @@ class MeetingViewModel(
                 if (!started) {
                     println("[Meeting] AudioRecorder failed to start")
                     _error.value = "Nepodařilo se spustit nahrávání zvuku"
-                    meetingService.cancelRecording(meeting.id)
+                    repository.meetings.cancelRecording(meeting.id)
                     _currentMeetingId.value = null
                     return@launch
                 }
@@ -325,10 +324,13 @@ class MeetingViewModel(
                 println("[Meeting] AudioRecorder returned ${tailData?.size ?: 0} tail bytes")
 
                 if (tailData != null && tailData.isNotEmpty()) {
-                    val uploaded = uploadChunkWithRetry(meetingId, tailData)
-                    if (!uploaded) {
-                        println("[Meeting] Tail upload failed — meeting preserved on server for retry")
-                        // Do NOT cancel meeting — partial data is safe on server
+                    // Persist tail to disk before upload
+                    val pending = AudioChunkQueue.enqueue(meetingId, chunkIndex, tailData)
+                    val uploaded = uploadChunkFromQueue(meetingId, pending)
+                    if (uploaded) {
+                        AudioChunkQueue.dequeue(pending)
+                    } else {
+                        println("[Meeting] Tail upload failed — chunk saved on disk for retry")
                         _uploadState.value = UploadState.RetryFailed
                         return@launch
                     }
@@ -360,7 +362,7 @@ class MeetingViewModel(
         scope.launch {
             try {
                 println("[Meeting] Finalizing meeting=$meetingId title=$title type=$meetingType duration=${duration}s")
-                meetingService.finalizeRecording(
+                repository.meetings.finalizeRecording(
                     MeetingFinalizeDto(
                         meetingId = meetingId,
                         title = title,
@@ -371,8 +373,9 @@ class MeetingViewModel(
                 _currentMeetingId.value = null
                 _recordingDuration.value = 0
 
-                // Clear persisted recording state — successfully finalized
+                // Clear persisted recording state + disk queue — successfully finalized
                 RecordingStateStorage.save(null)
+                AudioChunkQueue.clearMeeting(meetingId)
 
                 lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
                 println("[Meeting] Finalization complete")
@@ -398,10 +401,11 @@ class MeetingViewModel(
 
         scope.launch {
             try {
-                meetingService.cancelRecording(meetingId)
+                repository.meetings.cancelRecording(meetingId)
             } catch (_: Exception) {}
             _currentMeetingId.value = null
             RecordingStateStorage.save(null)
+            AudioChunkQueue.clearMeeting(meetingId)
         }
     }
 
@@ -412,11 +416,11 @@ class MeetingViewModel(
         return RecordingStateStorage.load()
     }
 
-    /** Resume an interrupted recording: verify on server and finalize (server has partial data). */
+    /** Resume an interrupted recording: retry pending disk chunks, then finalize. */
     fun resumeInterruptedUpload(state: RecordingState) {
         scope.launch {
             try {
-                val uploadState = meetingService.getUploadState(state.meetingId)
+                val uploadState = repository.meetings.getUploadState(state.meetingId)
                 if (uploadState.state == MeetingStateEnum.RECORDING || uploadState.state == MeetingStateEnum.UPLOADING) {
                     _currentMeetingId.value = state.meetingId
                     chunkIndex = state.chunkIndex
@@ -424,7 +428,30 @@ class MeetingViewModel(
                     pendingMeetingType = state.meetingType?.let {
                         try { MeetingTypeEnum.valueOf(it) } catch (_: Exception) { null }
                     }
-                    // Server has partial data from incremental uploads — finalize it
+
+                    // Retry any pending chunks saved on disk
+                    val pendingChunks = AudioChunkQueue.getAllPending()
+                        .filter { it.meetingId == state.meetingId }
+                        .sortedBy { it.chunkIndex }
+
+                    var allUploaded = true
+                    for (chunk in pendingChunks) {
+                        val ok = uploadChunkFromQueue(state.meetingId, chunk)
+                        if (ok) {
+                            AudioChunkQueue.dequeue(chunk)
+                        } else {
+                            allUploaded = false
+                            break // stop on first failure
+                        }
+                    }
+
+                    if (!allUploaded) {
+                        println("[Meeting] Some pending chunks failed to upload during recovery")
+                        _error.value = "Některé části nahrávky se nepodařilo odeslat"
+                        return@launch
+                    }
+
+                    // All uploaded (or no pending) — finalize
                     finalizeRecording(
                         state.title,
                         pendingMeetingType ?: MeetingTypeEnum.MEETING,
@@ -432,6 +459,7 @@ class MeetingViewModel(
                 } else {
                     // Meeting was already finalized/cancelled
                     RecordingStateStorage.save(null)
+                    AudioChunkQueue.clearMeeting(state.meetingId)
                 }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se obnovit nahrávku: ${e.message}"
@@ -443,9 +471,10 @@ class MeetingViewModel(
     fun discardInterruptedRecording(state: RecordingState) {
         scope.launch {
             try {
-                meetingService.cancelRecording(state.meetingId)
+                repository.meetings.cancelRecording(state.meetingId)
             } catch (_: Exception) {}
             RecordingStateStorage.save(null)
+            AudioChunkQueue.clearMeeting(state.meetingId)
         }
     }
 
@@ -462,7 +491,7 @@ class MeetingViewModel(
         _playingMeetingId.value = meetingId
         scope.launch {
             try {
-                val base64Data = meetingService.getAudioData(meetingId)
+                val base64Data = repository.meetings.getAudioData(meetingId)
                 val audioBytes = Base64.decode(base64Data)
                 val player = AudioPlayer()
                 audioPlayer = player
@@ -517,7 +546,7 @@ class MeetingViewModel(
                 val audioBytes = if (cachedAudioMeetingId == meetingId && cachedAudioBytes != null) {
                     cachedAudioBytes!!
                 } else {
-                    val base64Data = meetingService.getAudioData(meetingId)
+                    val base64Data = repository.meetings.getAudioData(meetingId)
                     val bytes = Base64.decode(base64Data)
                     cachedAudioMeetingId = meetingId
                     cachedAudioBytes = bytes
@@ -571,7 +600,7 @@ class MeetingViewModel(
     }
 
     private suspend fun doRefreshMeeting(meetingId: String) {
-        val updated = meetingService.getMeeting(meetingId)
+        val updated = repository.meetings.getMeeting(meetingId)
         _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
         if (_selectedMeeting.value?.id == meetingId) {
             _selectedMeeting.value = updated
@@ -581,7 +610,7 @@ class MeetingViewModel(
     fun deleteMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.deleteMeeting(meetingId)
+                repository.meetings.deleteMeeting(meetingId)
                 _meetings.value = _meetings.value.filter { it.id != meetingId }
                 if (_selectedMeeting.value?.id == meetingId) {
                     _selectedMeeting.value = null
@@ -596,7 +625,7 @@ class MeetingViewModel(
         scope.launch {
             _isLoading.value = true
             try {
-                _deletedMeetings.value = meetingService.listDeletedMeetings(clientId, projectId)
+                _deletedMeetings.value = repository.meetings.listDeletedMeetings(clientId, projectId)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se načíst koš: ${e.message}"
             } finally {
@@ -608,7 +637,7 @@ class MeetingViewModel(
     fun restoreMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.restoreMeeting(meetingId)
+                repository.meetings.restoreMeeting(meetingId)
                 _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
                 // Refresh active meetings to show restored item
                 lastClientId?.let { loadMeetings(it, lastProjectId) }
@@ -621,7 +650,7 @@ class MeetingViewModel(
     fun permanentlyDeleteMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.permanentlyDeleteMeeting(meetingId)
+                repository.meetings.permanentlyDeleteMeeting(meetingId)
                 _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se trvale smazat schůzku: ${e.message}"
@@ -634,7 +663,7 @@ class MeetingViewModel(
     fun stopTranscription(meetingId: String) {
         scope.launch {
             try {
-                meetingService.stopTranscription(meetingId)
+                repository.meetings.stopTranscription(meetingId)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba při zastavení přepisu: ${e.message}"
@@ -645,7 +674,7 @@ class MeetingViewModel(
     fun retranscribeMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.retranscribeMeeting(meetingId)
+                repository.meetings.retranscribeMeeting(meetingId)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri obnove prepisu: ${e.message}"
@@ -656,7 +685,7 @@ class MeetingViewModel(
     fun dismissMeetingError(meetingId: String) {
         scope.launch {
             try {
-                meetingService.dismissMeetingError(meetingId)
+                repository.meetings.dismissMeetingError(meetingId)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba při zamítnutí chyby: ${e.message}"
@@ -667,7 +696,7 @@ class MeetingViewModel(
     fun retranscribeSegment(meetingId: String, segmentIndex: Int) {
         scope.launch {
             try {
-                meetingService.retranscribeSegments(meetingId, listOf(segmentIndex))
+                repository.meetings.retranscribeSegments(meetingId, listOf(segmentIndex))
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba při přepisu segmentu: ${e.message}"
@@ -678,7 +707,7 @@ class MeetingViewModel(
     fun recorrectMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.recorrectMeeting(meetingId)
+                repository.meetings.recorrectMeeting(meetingId)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri oprave prepisu: ${e.message}"
@@ -689,7 +718,7 @@ class MeetingViewModel(
     fun reindexMeeting(meetingId: String) {
         scope.launch {
             try {
-                meetingService.reindexMeeting(meetingId)
+                repository.meetings.reindexMeeting(meetingId)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri reindexaci: ${e.message}"
@@ -700,7 +729,7 @@ class MeetingViewModel(
     fun answerQuestions(meetingId: String, answers: List<CorrectionAnswerDto>) {
         scope.launch {
             try {
-                meetingService.answerCorrectionQuestions(meetingId, answers)
+                repository.meetings.answerCorrectionQuestions(meetingId, answers)
                 doRefreshMeeting(meetingId)
             } catch (e: Exception) {
                 _error.value = "Chyba pri odesilani odpovedi: ${e.message}"
@@ -715,7 +744,7 @@ class MeetingViewModel(
     ) {
         scope.launch {
             try {
-                correctionService?.submitCorrection(
+                repository.transcriptCorrections.submitCorrection(
                     submit.copy(clientId = clientId, projectId = projectId),
                 )
             } catch (e: Exception) {
@@ -727,7 +756,7 @@ class MeetingViewModel(
     fun applySegmentCorrection(meetingId: String, segmentIndex: Int, correctedText: String) {
         scope.launch {
             try {
-                val updated = meetingService.applySegmentCorrection(meetingId, segmentIndex, correctedText)
+                val updated = repository.meetings.applySegmentCorrection(meetingId, segmentIndex, correctedText)
                 _selectedMeeting.value = updated
                 _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
             } catch (e: Exception) {
@@ -749,7 +778,7 @@ class MeetingViewModel(
             )
             _pendingChatMessage.value = userMsg
             try {
-                val updated = meetingService.correctWithInstruction(meetingId, instruction)
+                val updated = repository.meetings.correctWithInstruction(meetingId, instruction)
                 _selectedMeeting.value = updated
                 _meetings.value = _meetings.value.map { if (it.id == meetingId) updated else it }
             } catch (e: Exception) {
@@ -767,7 +796,7 @@ class MeetingViewModel(
 
     // ── Chunked upload internals ────────────────────────────────────────
 
-    /** Periodic job that drains the recorder buffer and uploads chunks during recording. */
+    /** Periodic job that drains the recorder buffer, persists to disk, and uploads chunks. */
     private fun startChunkUploadJob(meetingId: String) {
         chunkUploadJob = scope.launch {
             delay(CHUNK_UPLOAD_INTERVAL_MS) // initial accumulation delay
@@ -776,18 +805,32 @@ class MeetingViewModel(
                 val chunk = recorder.getAndClearBuffer()
                 if (chunk != null && chunk.isNotEmpty()) {
                     println("[Meeting] Periodic upload: ${chunk.size} bytes for meeting=$meetingId")
+                    // Persist to disk before upload — survives crashes
+                    val pending = AudioChunkQueue.enqueue(meetingId, chunkIndex, chunk)
                     _uploadState.value = UploadState.Uploading
-                    val ok = uploadChunkWithRetry(meetingId, chunk)
-                    if (!ok) {
-                        println("[Meeting] Periodic chunk upload failed — will retry next cycle")
-                        // Don't break the loop — keep recording, try again next interval
-                    } else {
+                    val ok = uploadChunkFromQueue(meetingId, pending)
+                    if (ok) {
+                        AudioChunkQueue.dequeue(pending)
                         _uploadState.value = UploadState.Idle
+                    } else {
+                        println("[Meeting] Periodic chunk upload failed — chunk saved on disk for retry")
+                        // Don't break the loop — keep recording, try again next interval
                     }
                 }
                 delay(CHUNK_UPLOAD_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * Upload raw audio data in 4MB sub-chunks with exponential backoff retry.
+     * Reads from disk queue for crash resilience.
+     * Returns true if all sub-chunks were uploaded successfully.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    private suspend fun uploadChunkFromQueue(meetingId: String, pending: PendingChunk): Boolean {
+        val rawData = AudioChunkQueue.readChunk(pending) ?: return false
+        return uploadChunkWithRetry(meetingId, rawData)
     }
 
     /**
@@ -807,7 +850,7 @@ class MeetingViewModel(
             var success = false
             while (retryCount < MAX_UPLOAD_RETRIES && !success) {
                 try {
-                    meetingService.uploadAudioChunk(
+                    repository.meetings.uploadAudioChunk(
                         AudioChunkDto(
                             meetingId = meetingId,
                             chunkIndex = chunkIndex,

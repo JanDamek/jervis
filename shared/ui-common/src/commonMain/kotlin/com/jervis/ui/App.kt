@@ -47,6 +47,12 @@ fun App(
     onOpenDebugWindow: (() -> Unit)? = null,
 ) {
     val viewModel = remember(repository) { MainViewModel(repository, connectionManager, defaultClientId, defaultProjectId) }
+    val meetingViewModel = remember(repository) {
+        com.jervis.ui.meeting.MeetingViewModel(
+            connectionManager = connectionManager,
+            repository = repository,
+        )
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val appNavigator = navigator ?: remember { AppNavigator() }
 
@@ -83,6 +89,22 @@ fun App(
         val isOverlayVisible by viewModel.isOverlayVisible.collectAsState()
         val reconnectAttempt by viewModel.reconnectAttemptDisplay.collectAsState()
         val isInitialLoading by viewModel.isInitialLoading.collectAsState()
+
+        // Global recording bar — always visible when recording, from any screen
+        val isRecordingGlobal by meetingViewModel.isRecording.collectAsState()
+        val recordingDurationGlobal by meetingViewModel.recordingDuration.collectAsState()
+        val uploadStateGlobal by meetingViewModel.uploadState.collectAsState()
+
+        Column(modifier = Modifier.fillMaxSize()) {
+        if (isRecordingGlobal) {
+            com.jervis.ui.meeting.RecordingBar(
+                durationSeconds = recordingDurationGlobal,
+                uploadState = uploadStateGlobal,
+                onStop = { meetingViewModel.stopRecording() },
+                onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
+                isOnMeetingsScreen = currentScreen == Screen.Meetings,
+            )
+        }
 
         when (val screen = currentScreen) {
             Screen.Main -> {
@@ -156,15 +178,6 @@ fun App(
             }
 
             Screen.Meetings -> {
-                val meetingViewModel = remember {
-                    com.jervis.ui.meeting.MeetingViewModel(
-                        connectionManager = connectionManager,
-                        meetingService = repository.meetings,
-                        projectService = repository.projects,
-                        correctionService = repository.transcriptCorrections,
-                    )
-                }
-
                 com.jervis.ui.meeting.MeetingsScreen(
                     viewModel = meetingViewModel,
                     clients = clients,
@@ -196,6 +209,7 @@ fun App(
                 }
             }
         }
+        } // Column
 
         SnackbarHost(hostState = snackbarHostState)
 

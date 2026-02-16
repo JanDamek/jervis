@@ -121,7 +121,7 @@ fun MeetingsScreen(
     if (currentDetail != null) {
         if (showCorrections) {
             CorrectionsScreen(
-                correctionService = viewModel.correctionService,
+                correctionService = viewModel.repository.transcriptCorrections,
                 clientId = currentDetail.clientId,
                 projectId = currentDetail.projectId,
                 onBack = { showCorrections = false },
@@ -227,13 +227,7 @@ fun MeetingsScreen(
                 )
             }
 
-            // Recording indicator (when recording)
-            if (isRecording && !showTrash) {
-                RecordingIndicator(
-                    durationSeconds = recordingDuration,
-                    onStop = { viewModel.stopRecording() },
-                )
-            }
+            // Recording indicator is now global (RecordingBar in App.kt)
 
             // Saving indicator (after stop, during upload + finalization)
             if (isSaving && !showTrash) {
@@ -253,36 +247,7 @@ fun MeetingsScreen(
                 }
             }
 
-            // Upload state indicator (during recording — retrying / failed)
-            if (isRecording && !showTrash) {
-                when (val state = uploadState) {
-                    is UploadState.Retrying -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Text(
-                                text = "Odesílání se opakuje (${state.attempt}/${state.maxAttempts})…",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.tertiary,
-                            )
-                        }
-                    }
-                    is UploadState.RetryFailed -> {
-                        Text(
-                            text = "Odesílání se nezdařilo. Data jsou uložena na serveru.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
-                    }
-                    else -> {} // Idle, Uploading — no extra indicator needed
-                }
-            }
+            // Upload state indicator is now in the global RecordingBar (App.kt)
 
             // Error display
             error?.let { errorMsg ->
