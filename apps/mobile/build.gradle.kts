@@ -31,7 +31,7 @@ kotlin {
 
         androidMain.dependencies {
             implementation("androidx.activity:activity-compose:1.9.3")
-            implementation(platform(libs.firebase.bom))
+            implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.messaging)
         }
     }
