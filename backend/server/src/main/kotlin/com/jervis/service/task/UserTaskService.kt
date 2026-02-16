@@ -80,25 +80,21 @@ class UserTaskService(
             projectId = task.projectId?.toString(),
         )
 
-        // Send FCM push only if no active kRPC subscriber (app not in foreground)
-        if (!notificationRpc.hasActiveSubscribers(task.clientId.toString())) {
-            try {
-                fcmPushService.sendPushNotification(
-                    clientId = task.clientId.toString(),
-                    title = if (isApproval) "Schválení vyžadováno" else "Nová úloha",
-                    body = title,
-                    data = buildMap {
-                        put("taskId", task.id.toString())
-                        put("type", if (isApproval) "approval" else "user_task")
-                        interruptAction?.let { put("interruptAction", it) }
-                        put("isApproval", isApproval.toString())
-                    },
-                )
-            } catch (e: Exception) {
-                logger.warn { "FCM push failed for task ${task.id}: ${e.message}" }
-            }
-        } else {
-            logger.info { "Skipping FCM — active kRPC subscriber for client ${task.clientId}" }
+        // Always send FCM push (broadcast to all devices — first responder wins)
+        try {
+            fcmPushService.sendPushNotification(
+                clientId = task.clientId.toString(),
+                title = if (isApproval) "Schválení vyžadováno" else "Nová úloha",
+                body = title,
+                data = buildMap {
+                    put("taskId", task.id.toString())
+                    put("type", if (isApproval) "approval" else "user_task")
+                    interruptAction?.let { put("interruptAction", it) }
+                    put("isApproval", isApproval.toString())
+                },
+            )
+        } catch (e: Exception) {
+            logger.warn { "FCM push failed for task ${task.id}: ${e.message}" }
         }
 
         logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }

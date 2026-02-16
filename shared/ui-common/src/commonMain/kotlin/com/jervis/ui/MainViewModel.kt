@@ -20,6 +20,7 @@ import com.jervis.ui.model.TaskHistoryEntry
 import com.jervis.ui.notification.NotificationAction
 import com.jervis.ui.notification.NotificationActionChannel
 import com.jervis.ui.notification.PlatformNotificationManager
+import com.jervis.ui.notification.PushTokenRegistrar
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.model.classifySendError
 import com.jervis.ui.storage.PendingMessageState
@@ -1180,6 +1181,11 @@ class MainViewModel(
                     if (projectList.any { it.id == lastProjectId }) {
                         _selectedProjectId.value = lastProjectId
                     }
+                }
+
+                // Register FCM push token for this client (Android only, no-op on other platforms)
+                scope.launch {
+                    PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
                 }
 
                 // Eagerly load environments to determine badge visibility
