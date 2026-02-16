@@ -29,8 +29,6 @@ import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.design.JCenteredLoading
-import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JListDetailLayout
 import com.jervis.ui.design.JTopBar
@@ -296,9 +294,9 @@ private fun EnvironmentDetail(
             }
 
             EnvironmentManagerTab.LOGS_EVENTS -> {
-                JEmptyState(
-                    message = "Logy a události budou dostupné v další verzi",
-                    icon = "\uD83D\uDCDC",
+                LogsEventsTab(
+                    environment = environment,
+                    repository = repository,
                 )
             }
         }

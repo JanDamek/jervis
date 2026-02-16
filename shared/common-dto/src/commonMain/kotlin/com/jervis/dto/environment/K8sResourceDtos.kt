@@ -81,3 +81,12 @@ data class K8sEventDto(
     val message: String? = null,
     val time: String? = null,
 )
+
+/**
+ * Namespace-level K8s events (not tied to a specific deployment).
+ */
+@Serializable
+data class K8sNamespaceEventsDto(
+    val namespace: String,
+    val events: List<K8sEventDto> = emptyList(),
+)

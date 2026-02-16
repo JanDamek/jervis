@@ -1,6 +1,7 @@
 package com.jervis.service
 
 import com.jervis.dto.environment.K8sDeploymentDetailDto
+import com.jervis.dto.environment.K8sNamespaceEventsDto
 import com.jervis.dto.environment.K8sNamespaceStatusDto
 import com.jervis.dto.environment.K8sResourceListDto
 import kotlinx.rpc.annotations.Rpc
@@ -28,4 +29,7 @@ interface IEnvironmentResourceService {
 
     /** Get overall namespace health. */
     suspend fun getNamespaceStatus(environmentId: String): K8sNamespaceStatusDto
+
+    /** Get recent K8s events for the namespace (all resources, not just deployments). */
+    suspend fun getNamespaceEvents(environmentId: String, limit: Int = 50): K8sNamespaceEventsDto
 }

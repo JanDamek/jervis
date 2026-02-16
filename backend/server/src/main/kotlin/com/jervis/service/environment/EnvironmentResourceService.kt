@@ -219,6 +219,32 @@ class EnvironmentResourceService {
     }
 
     /**
+     * Get recent K8s events for a namespace (Warning + Normal events).
+     *
+     * @param namespace K8s namespace
+     * @param limit Max events to return
+     * @return List of event maps sorted by time descending
+     */
+    fun getNamespaceEvents(namespace: String, limit: Int = 50): List<Map<String, Any?>> {
+        buildK8sClient().use { client ->
+            validateNamespace(client, namespace)
+            return client.v1().events()
+                .inNamespace(namespace)
+                .list().items
+                .sortedByDescending { it.lastTimestamp ?: it.metadata?.creationTimestamp }
+                .take(limit)
+                .map { event ->
+                    mapOf(
+                        "type" to event.type,
+                        "reason" to event.reason,
+                        "message" to event.message,
+                        "time" to (event.lastTimestamp ?: event.metadata?.creationTimestamp),
+                    )
+                }
+        }
+    }
+
+    /**
      * Get overall namespace health status.
      */
     fun getNamespaceStatus(namespace: String): Map<String, Any?> {
