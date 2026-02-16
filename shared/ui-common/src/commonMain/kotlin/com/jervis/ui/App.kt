@@ -180,6 +180,7 @@ fun App(
                         }
                         appNavigator.navigateAndClearHistory(Screen.Main)
                     },
+                    onRefreshBadge = { viewModel.refreshUserTaskCount() },
                 )
             }
 

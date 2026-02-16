@@ -82,6 +82,7 @@ class UserTaskService(
 
         // Always send FCM push (broadcast to all devices — first responder wins)
         try {
+            val activeCount = countActiveTasksByClient(task.clientId)
             fcmPushService.sendPushNotification(
                 clientId = task.clientId.toString(),
                 title = if (isApproval) "Schválení vyžadováno" else "Nová úloha",
@@ -91,6 +92,7 @@ class UserTaskService(
                     put("type", if (isApproval) "approval" else "user_task")
                     interruptAction?.let { put("interruptAction", it) }
                     put("isApproval", isApproval.toString())
+                    put("badgeCount", activeCount.toString())
                 },
             )
         } catch (e: Exception) {

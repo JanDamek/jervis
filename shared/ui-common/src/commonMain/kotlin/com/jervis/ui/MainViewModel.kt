@@ -210,6 +210,22 @@ class MainViewModel(
     private val _userTaskCount = MutableStateFlow(0)
     val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
 
+    /**
+     * Sync badge count from server. Call when navigating to UserTasks screen
+     * or when badge might be out of sync with reality.
+     */
+    fun refreshUserTaskCount() {
+        val clientId = _selectedClientId.value ?: return
+        scope.launch {
+            try {
+                val countDto = repository.userTasks.activeCount(clientId)
+                _userTaskCount.value = countDto.activeCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
     // User task dialog state — shown when any user task arrives (approval or clarification)
     private val _userTaskDialogEvent = MutableStateFlow<JervisEvent.UserTaskCreated?>(null)
     val userTaskDialogEvent: StateFlow<JervisEvent.UserTaskCreated?> = _userTaskDialogEvent.asStateFlow()
@@ -368,13 +384,17 @@ class MainViewModel(
             }
         }
 
-        // Subscribe to global events for the selected client
+        // Subscribe to global events for the selected client + register FCM token
         scope.launch {
             _selectedClientId.collect { clientId ->
                 println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
                     subscribeToQueueStatus(clientId)
+                    // Register FCM push token (Android only, no-op on other platforms)
+                    scope.launch {
+                        PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
+                    }
                 } else {
                     eventJob?.cancel()
                     queueStatusJob?.cancel()
@@ -394,7 +414,7 @@ class MainViewModel(
                                 routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
                                 additionalInput = null,
                             )
-                            _userTaskCount.value = maxOf(0, _userTaskCount.value - 1)
+                            refreshUserTaskCount()
                         } catch (e: Exception) {
                             println("Failed to approve task ${result.taskId}: ${e.message}")
                             _errorMessage.value = "Schválení selhalo: ${e.message}"
@@ -435,7 +455,7 @@ class MainViewModel(
         when (event) {
             is JervisEvent.UserTaskCreated -> {
                 _notifications.value = currentNotifications + event
-                _userTaskCount.value++
+                refreshUserTaskCount()
 
                 // Show platform notification
                 notificationManager.showNotification(
@@ -455,7 +475,7 @@ class MainViewModel(
                     currentNotifications.filter {
                         !(it is JervisEvent.UserTaskCreated && it.taskId == event.taskId)
                     }
-                _userTaskCount.value = maxOf(0, _userTaskCount.value - 1)
+                refreshUserTaskCount()
                 notificationManager.cancelNotification(event.taskId)
                 // Dismiss dialog if this task was cancelled
                 if (_userTaskDialogEvent.value?.taskId == event.taskId) {
@@ -538,7 +558,7 @@ class MainViewModel(
                 )
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
-                _userTaskCount.value = maxOf(0, _userTaskCount.value - 1)
+                refreshUserTaskCount()
             } catch (e: Exception) {
                 _errorMessage.value = "Schválení selhalo: ${e.message}"
             }
@@ -573,7 +593,7 @@ class MainViewModel(
                 )
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
-                _userTaskCount.value = maxOf(0, _userTaskCount.value - 1)
+                refreshUserTaskCount()
             } catch (e: Exception) {
                 _errorMessage.value = "Zamítnutí selhalo: ${e.message}"
             }
@@ -593,7 +613,7 @@ class MainViewModel(
                 )
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
-                _userTaskCount.value = maxOf(0, _userTaskCount.value - 1)
+                refreshUserTaskCount()
             } catch (e: Exception) {
                 _errorMessage.value = "Odeslání odpovědi selhalo: ${e.message}"
             }
@@ -1181,11 +1201,6 @@ class MainViewModel(
                     if (projectList.any { it.id == lastProjectId }) {
                         _selectedProjectId.value = lastProjectId
                     }
-                }
-
-                // Register FCM push token for this client (Android only, no-op on other platforms)
-                scope.launch {
-                    PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
                 }
 
                 // Eagerly load environments to determine badge visibility

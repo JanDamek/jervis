@@ -1,5 +1,7 @@
 package com.jervis.mobile
 
+import android.app.NotificationManager
+import android.content.Context
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.jervis.ui.notification.AndroidContextHolder
@@ -12,6 +14,7 @@ import com.jervis.ui.notification.PlatformNotificationManager
  * Handles:
  * - Token refresh → persists new token for next registration
  * - Incoming data messages → shows local notification via PlatformNotificationManager
+ * - Badge count update from server-provided badgeCount in data payload
  */
 class JervisFcmService : FirebaseMessagingService() {
 
@@ -34,6 +37,7 @@ class JervisFcmService : FirebaseMessagingService() {
         val taskId = data["taskId"]
         val isApproval = data["isApproval"]?.toBooleanStrictOrNull() ?: false
         val interruptAction = data["interruptAction"]
+        val badgeCount = data["badgeCount"]?.toIntOrNull()
 
         val notificationManager = PlatformNotificationManager()
         notificationManager.initialize()
@@ -43,6 +47,7 @@ class JervisFcmService : FirebaseMessagingService() {
             taskId = taskId,
             isApproval = isApproval,
             interruptAction = interruptAction,
+            badgeCount = badgeCount,
         )
     }
 }
