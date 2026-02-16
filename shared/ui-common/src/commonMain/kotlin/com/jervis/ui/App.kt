@@ -162,6 +162,7 @@ fun App(
                 com.jervis.ui.screens.settings.SettingsScreen(
                     repository = repository,
                     onBack = { appNavigator.goBack() },
+                    onNavigate = { screen -> appNavigator.navigateTo(screen) },
                 )
             }
 

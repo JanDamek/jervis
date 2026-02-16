@@ -1603,8 +1603,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- ProjectGroupsSettings.kt <- Group list
 |   |       +-- ProjectGroupEditForm.kt  <- Group edit form (internal)
 |   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
-|   |       +-- EnvironmentsSettings.kt  <- Environment list
-|   |       +-- EnvironmentEditForm.kt   <- Environment edit form (internal)
+|   |       +-- EnvironmentsSettings.kt  <- Environment list + read-only summary + cross-link to Environment Manager
 |   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel()
 |   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
 |   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
