@@ -60,6 +60,7 @@ fun MainScreenView(
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
+    orchestratorProgress: OrchestratorProgressInfo? = null,
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -108,6 +109,7 @@ fun MainScreenView(
                             workspaceInfo = workspaceInfo,
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
+                            orchestratorProgress = orchestratorProgress,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -142,6 +144,7 @@ fun MainScreenView(
                     workspaceInfo = workspaceInfo,
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
+                    orchestratorProgress = orchestratorProgress,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -177,6 +180,7 @@ private fun ChatContent(
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
+    orchestratorProgress: OrchestratorProgressInfo? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -199,6 +203,7 @@ private fun ChatContent(
             hasMore = hasMore,
             isLoadingMore = isLoadingMore,
             compressionBoundaries = compressionBoundaries,
+            orchestratorProgress = orchestratorProgress,
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
             modifier = Modifier

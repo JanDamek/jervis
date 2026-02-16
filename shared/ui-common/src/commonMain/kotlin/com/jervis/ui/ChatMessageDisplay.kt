@@ -33,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,11 +42,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ui.ChatMessage
@@ -61,17 +64,24 @@ internal fun ChatArea(
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
     compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
+    orchestratorProgress: OrchestratorProgressInfo? = null,
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom when new messages arrive
+    // Instant scroll to bottom — no animation
+    var previousCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            if (previousCount == 0 || messages.size > previousCount) {
+                // Initial load or new message added → instant jump
+                listState.scrollToItem(messages.size - 1)
+            }
+            // When "Load more" prepends older messages, don't scroll
         }
+        previousCount = messages.size
     }
 
     Box(modifier = modifier) {
@@ -134,6 +144,7 @@ internal fun ChatArea(
 
                     ChatMessageItem(
                         message = message,
+                        orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
                         onEditMessage = onEditMessage,
                     )
                 }
@@ -215,6 +226,7 @@ private fun CompressionBoundaryIndicator(
 @Composable
 private fun ChatMessageItem(
     message: ChatMessage,
+    orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -241,21 +253,75 @@ private fun ChatMessageItem(
             )
         }
     } else if (message.messageType == ChatMessage.MessageType.PROGRESS) {
-        Row(
+        Column(
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Main progress row: spinner + text
+            Row(
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // Inline orchestrator progress details
+            if (orchestratorProgress != null) {
+                Row(
+                    modifier = Modifier.padding(start = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Node label
+                    val nodeLabel = nodeLabels[orchestratorProgress.node] ?: orchestratorProgress.node
+                    Text(
+                        text = nodeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    // Goal X/Y
+                    if (orchestratorProgress.totalGoals > 0) {
+                        Text(
+                            text = "Cíl ${orchestratorProgress.goalIndex}/${orchestratorProgress.totalGoals}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+
+                    // Step X/Y
+                    if (orchestratorProgress.totalSteps > 0) {
+                        Text(
+                            text = "Krok ${orchestratorProgress.stepIndex}/${orchestratorProgress.totalSteps}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                }
+
+                // Progress bar
+                if (orchestratorProgress.percent > 0) {
+                    LinearProgressIndicator(
+                        progress = { (orchestratorProgress.percent / 100.0).coerceIn(0.0, 1.0).toFloat() },
+                        modifier = Modifier
+                            .padding(start = 24.dp, end = 48.dp)
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
         }
     } else {
         // standard chat bubble - iMessage/WhatsApp style (width based on content)

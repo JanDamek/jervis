@@ -26,6 +26,7 @@ fun MainScreen(
     val pendingMessageInfo by viewModel.pendingMessageInfo.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.orchestratorHealthy.collectAsState()
+    val orchestratorProgress by viewModel.orchestratorProgress.collectAsState()
 
     // Environment panel state
     val environments by viewModel.environments.collectAsState()
@@ -62,6 +63,7 @@ fun MainScreen(
         workspaceInfo = workspaceInfo,
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
+        orchestratorProgress = orchestratorProgress,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,

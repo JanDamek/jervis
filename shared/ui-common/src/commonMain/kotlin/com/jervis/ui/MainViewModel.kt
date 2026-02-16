@@ -514,6 +514,8 @@ class MainViewModel(
                     totalSteps = event.totalSteps,
                 )
                 updateTaskHistory(event.taskId, event.node)
+                // Update chat PROGRESS message with current orchestrator status
+                replaceChatProgress(event.message, ChatMessage.MessageType.PROGRESS)
             }
 
             is JervisEvent.OrchestratorTaskStatusChange -> {
