@@ -636,6 +636,8 @@ Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_schedul
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 
+**Token streaming**: Finální odpověď (po poslední LLM iteraci bez tool_calls) se streamuje do UI po malých chuncích (12 znaků) přes `kotlin_client.emit_streaming_token()` → Kotlin `/internal/streaming-token` endpoint → `emitToChatStream(STREAMING_TOKEN)` → UI `MainViewModel.handleStreamingToken()` akumuluje po `messageId`. Výsledek: ChatGPT-style postupné vypisování textu. Finální FINAL message pak nahradí streaming buffer.
+
 **Output**: `final_result` — odpověď v češtině
 
 ### 7.4 plan
@@ -2627,7 +2629,7 @@ backend/service-orchestrator/
 │   ├── tools/
 │   │   ├── definitions.py               # Tool schemas (+per-agent tool sets)
 │   │   ├── executor.py                  # NEW: Tool execution engine for agents
-│   │   └── kotlin_client.py             # Push client (progress, status → Kotlin) (+delegation fields)
+│   │   └── kotlin_client.py             # Push client (progress, status, streaming tokens → Kotlin)
 │   ├── monitoring/
 │   │   └── delegation_metrics.py        # NEW: Per-agent delegation metrics
 │   └── whisper/

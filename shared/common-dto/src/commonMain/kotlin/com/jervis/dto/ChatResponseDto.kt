@@ -13,6 +13,7 @@ data class ChatResponseDto(
     val message: String,
     val type: ChatResponseType = ChatResponseType.FINAL,
     val metadata: Map<String, String> = emptyMap(),
+    val messageId: String? = null,
 )
 
 @Serializable

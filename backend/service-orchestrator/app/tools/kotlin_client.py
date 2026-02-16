@@ -169,6 +169,37 @@ class KotlinServerClient:
             logger.warning("Failed to notify agent dispatched for task %s: %s", task_id, e)
             return False
 
+    async def emit_streaming_token(
+        self,
+        task_id: str,
+        client_id: str,
+        project_id: str | None,
+        token: str,
+        message_id: str,
+        is_final: bool = False,
+    ) -> bool:
+        """Push a single streaming token to Kotlin server for real-time UI display.
+
+        Kotlin emits as STREAMING_TOKEN ChatResponseDto to UI via SharedFlow.
+        """
+        try:
+            client = await self._get_client()
+            await client.post(
+                "/internal/streaming-token",
+                json={
+                    "taskId": task_id,
+                    "clientId": client_id,
+                    "projectId": project_id or "",
+                    "token": token,
+                    "messageId": message_id,
+                    "isFinal": is_final,
+                },
+            )
+            return True
+        except Exception as e:
+            logger.debug("Failed to emit streaming token: %s", e)
+            return False
+
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()

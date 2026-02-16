@@ -315,32 +315,6 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: orchestrator streams answer tokens here (typewriter effect)
-                            post("/internal/orchestrator-streaming-token") {
-                                try {
-                                    val body = call.receive<OrchestratorStreamingTokenCallback>()
-                                    launch {
-                                        agentOrchestratorRpcImpl.emitToChatStream(
-                                            clientId = body.clientId,
-                                            projectId = body.projectId,
-                                            response = ChatResponseDto(
-                                                message = body.token,
-                                                type = ChatResponseType.STREAMING_TOKEN,
-                                                metadata = mapOf("taskId" to body.taskId),
-                                            ),
-                                        )
-                                    }
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to process streaming token callback" }
-                                    call.respondText(
-                                        "{\"ok\":false}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
                             // --- Internal endpoints: environment resource inspection (MCP server calls these) ---
 
                             get("/internal/environment/{ns}/resources") {
@@ -642,6 +616,37 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: Python orchestrator streams LLM tokens for real-time UI display
+                            post("/internal/streaming-token") {
+                                try {
+                                    val body = call.receive<StreamingTokenRequest>()
+                                    // isFinal=true is just a signal to stop streaming, don't relay it
+                                    // The actual FINAL message comes later from OrchestratorStatusHandler
+                                    if (!body.isFinal) {
+                                        agentOrchestratorRpcImpl.emitToChatStream(
+                                            clientId = body.clientId,
+                                            projectId = body.projectId.ifBlank { null },
+                                            response = com.jervis.dto.ChatResponseDto(
+                                                message = body.token,
+                                                type = com.jervis.dto.ChatResponseType.STREAMING_TOKEN,
+                                                messageId = body.messageId,
+                                            ),
+                                        )
+                                    }
+                                    call.respondText(
+                                        "{\"ok\":true}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.debug(e) { "Failed to emit streaming token" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -731,14 +736,6 @@ data class OrchestratorStatusCallback(
 )
 
 @kotlinx.serialization.Serializable
-data class OrchestratorStreamingTokenCallback(
-    val taskId: String,
-    val clientId: String,
-    val projectId: String,
-    val token: String,
-)
-
-@kotlinx.serialization.Serializable
 data class GpgKeyResponse(
     val keyId: String,
     val userName: String,
@@ -774,6 +771,16 @@ data class ScaleRequest(
 @kotlinx.serialization.Serializable
 data class AgentDispatchedRequest(
     val jobName: String,
+)
+
+@kotlinx.serialization.Serializable
+data class StreamingTokenRequest(
+    val taskId: String,
+    val clientId: String,
+    val projectId: String = "",
+    val token: String,
+    val messageId: String,
+    val isFinal: Boolean = false,
 )
 
 /**
