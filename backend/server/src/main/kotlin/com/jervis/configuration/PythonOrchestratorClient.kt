@@ -158,11 +158,16 @@ class PythonOrchestratorClient(baseUrl: String) {
      * Python endpoint returns immediately with {"status": "resuming"}.
      * The graph resumes in the background – result polled via GET /status/{thread_id}.
      */
-    suspend fun approve(threadId: String, approved: Boolean, reason: String? = null) {
-        logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved" }
+    suspend fun approve(
+        threadId: String,
+        approved: Boolean,
+        reason: String? = null,
+        chatHistory: ChatHistoryPayloadDto? = null,
+    ) {
+        logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved chatHistory=${chatHistory != null}" }
         val response = client.post("$apiBaseUrl/approve/$threadId") {
             contentType(ContentType.Application.Json)
-            setBody(ApprovalResponseDto(approved = approved, reason = reason))
+            setBody(ApprovalResponseDto(approved = approved, reason = reason, chatHistory = chatHistory))
         }
         logger.info { "PYTHON_ORCHESTRATOR_APPROVE_SENT: threadId=$threadId status=${response.status}" }
     }
@@ -344,6 +349,7 @@ data class ApprovalResponseDto(
     val approved: Boolean,
     val modification: String? = null,
     val reason: String? = null,
+    @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
 )
 
 // --- Chat History DTOs ---

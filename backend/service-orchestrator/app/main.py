@@ -592,8 +592,11 @@ async def approve(thread_id: str, response: ApprovalResponse):
         "modification": response.modification,
     }
 
+    # Convert chat history to dict for graph state update
+    chat_history_dict = response.chat_history.model_dump() if response.chat_history else None
+
     # Fire-and-forget: resume in background, result polled via GET /status
-    task = asyncio.create_task(_resume_in_background(thread_id, resume_value))
+    task = asyncio.create_task(_resume_in_background(thread_id, resume_value, chat_history=chat_history_dict))
     _active_tasks[thread_id] = task
 
     return {"status": "resuming", "thread_id": thread_id}
@@ -658,7 +661,7 @@ async def cancel(thread_id: str):
     return {"status": "cancelled"}
 
 
-async def _resume_in_background(thread_id: str, resume_value: dict):
+async def _resume_in_background(thread_id: str, resume_value: dict, chat_history: dict | None = None):
     """Background task: resume orchestration from interrupt with semaphore.
 
     Uses streaming to push real-time progress to Kotlin (same as _run_and_stream).
@@ -666,6 +669,10 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
 
     CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
     to prevent blocking subsequent requests. Status pushing happens outside lock.
+
+    Args:
+        chat_history: Fresh chat history from Kotlin, merged into graph state before resume
+                      to ensure the LLM sees the latest conversation context.
     """
     # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
     parts = thread_id.split("-")
@@ -686,7 +693,7 @@ async def _resume_in_background(thread_id: str, resume_value: dict):
         # Acquire semaphore ONLY for graph execution — release immediately after
         async with _orchestration_semaphore:
             # Stream events to push progress to Kotlin in real-time
-            async for event in resume_orchestration_streaming(thread_id, resume_value):
+            async for event in resume_orchestration_streaming(thread_id, resume_value, chat_history=chat_history):
                 # Push progress to Kotlin on each node transition
                 if event.get("type") == "node_start":
                     node = event.get("node", "")

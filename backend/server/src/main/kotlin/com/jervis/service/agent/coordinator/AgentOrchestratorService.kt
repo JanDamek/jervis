@@ -358,6 +358,14 @@ class AgentOrchestratorService(
             return false
         }
 
+        // Load fresh chat history (includes the user's latest response saved by sendToAgent)
+        val chatHistory = try {
+            chatHistoryService.prepareChatHistoryPayload(task.id)
+        } catch (e: Exception) {
+            logger.warn { "Failed to load chat history for resume task ${task.id}: ${e.message}" }
+            null
+        }
+
         // Clarification questions don't have "Schválení:" prefix
         val wasClarification = task.pendingUserQuestion?.startsWith("Schválení:") != true
 
@@ -369,6 +377,7 @@ class AgentOrchestratorService(
                 threadId = threadId,
                 approved = true,
                 reason = userInput,
+                chatHistory = chatHistory,
             )
         } else {
             // Approval: parse yes/no intent
@@ -382,6 +391,7 @@ class AgentOrchestratorService(
                 threadId = threadId,
                 approved = approved,
                 reason = userInput,
+                chatHistory = chatHistory,
             )
         }
 
