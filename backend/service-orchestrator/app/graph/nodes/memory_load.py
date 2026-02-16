@@ -1,7 +1,6 @@
 """Memory load node — initialize Memory Agent and detect context switches.
 
-Runs between intake and evidence_pack when use_memory_agent is enabled.
-Feature-gated: returns empty dict when disabled.
+Runs between intake and evidence_pack.
 
 Responsibilities:
 1. Create or restore MemoryAgent from state
@@ -15,7 +14,6 @@ from __future__ import annotations
 
 import logging
 
-from app.config import settings
 from app.memory.agent import MemoryAgent
 from app.memory.models import ContextSwitchType
 
@@ -30,9 +28,6 @@ async def memory_load(state: dict) -> dict:
         memory_context: composed affair context string
         context_switch_type: detected switch type string
     """
-    if not settings.use_memory_agent:
-        return {}
-
     try:
         task = state.get("task", {})
         client_id = task.get("client_id", "")

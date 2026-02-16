@@ -80,7 +80,7 @@ from app.graph.nodes import (
     plan_delegations,
     execute_delegation,
     synthesize,
-    # Memory Agent nodes (opt-in via use_memory_agent)
+    # Memory Agent nodes
     memory_load,
     memory_flush,
 )
@@ -151,7 +151,7 @@ class OrchestratorState(TypedDict, total=False):
     domain: str | None
     session_memory: list
 
-    # --- Memory Agent (opt-in via use_memory_agent) ---
+    # --- Memory Agent ---
     memory_agent: dict | None
     memory_context: str | None
     context_switch_type: str | None
@@ -221,20 +221,16 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("plan_epic", plan_epic)
     graph.add_node("design", design)
 
-    # --- Memory Agent nodes (conditional) ---
-    if settings.use_memory_agent:
-        graph.add_node("memory_load", memory_load)
-        graph.add_node("memory_flush", memory_flush)
+    # --- Memory Agent nodes ---
+    graph.add_node("memory_load", memory_load)
+    graph.add_node("memory_flush", memory_flush)
 
     # --- Entry point ---
     graph.set_entry_point("intake")
 
-    # intake → [memory_load →] evidence_pack
-    if settings.use_memory_agent:
-        graph.add_edge("intake", "memory_load")
-        graph.add_edge("memory_load", "evidence_pack")
-    else:
-        graph.add_edge("intake", "evidence_pack")
+    # intake → memory_load → evidence_pack
+    graph.add_edge("intake", "memory_load")
+    graph.add_edge("memory_load", "evidence_pack")
 
     # --- Route by category ---
     graph.add_conditional_edges(
@@ -248,12 +244,9 @@ def build_orchestrator_graph() -> StateGraph:
         },
     )
 
-    # --- ADVICE path: respond → [memory_flush →] finalize → END ---
-    if settings.use_memory_agent:
-        graph.add_edge("respond", "memory_flush")
-        graph.add_edge("memory_flush", "finalize")
-    else:
-        graph.add_edge("respond", "finalize")
+    # --- ADVICE path: respond → memory_flush → finalize → END ---
+    graph.add_edge("respond", "memory_flush")
+    graph.add_edge("memory_flush", "finalize")
 
     # --- SINGLE_TASK path: plan → route ---
     graph.add_conditional_edges(
@@ -447,31 +440,24 @@ def build_delegation_graph() -> StateGraph:
     graph.add_node("execute_delegation", execute_delegation)
     graph.add_node("synthesize", synthesize)
 
-    # --- Memory Agent nodes (conditional) ---
-    if settings.use_memory_agent:
-        graph.add_node("memory_load", memory_load)
-        graph.add_node("memory_flush", memory_flush)
+    # --- Memory Agent nodes ---
+    graph.add_node("memory_load", memory_load)
+    graph.add_node("memory_flush", memory_flush)
 
     # --- Entry point ---
     graph.set_entry_point("intake")
 
-    # intake → [memory_load →] evidence_pack → ...
-    if settings.use_memory_agent:
-        graph.add_edge("intake", "memory_load")
-        graph.add_edge("memory_load", "evidence_pack")
-    else:
-        graph.add_edge("intake", "evidence_pack")
+    # intake → memory_load → evidence_pack → ...
+    graph.add_edge("intake", "memory_load")
+    graph.add_edge("memory_load", "evidence_pack")
 
     graph.add_edge("evidence_pack", "plan_delegations")
     graph.add_edge("plan_delegations", "execute_delegation")
     graph.add_edge("execute_delegation", "synthesize")
 
-    # synthesize → [memory_flush →] finalize → END
-    if settings.use_memory_agent:
-        graph.add_edge("synthesize", "memory_flush")
-        graph.add_edge("memory_flush", "finalize")
-    else:
-        graph.add_edge("synthesize", "finalize")
+    # synthesize → memory_flush → finalize → END
+    graph.add_edge("synthesize", "memory_flush")
+    graph.add_edge("memory_flush", "finalize")
 
     graph.add_edge("finalize", END)
 
@@ -561,7 +547,7 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "response_language": "en",
         "domain": None,
         "session_memory": [],
-        # Memory Agent (populated when use_memory_agent is True)
+        # Memory Agent
         "memory_agent": None,
         "memory_context": None,
         "context_switch_type": None,

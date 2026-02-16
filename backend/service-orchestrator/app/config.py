@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     use_specialist_agents: bool = False
     use_dag_execution: bool = False
     use_procedural_memory: bool = False
-    use_memory_agent: bool = False  # Memory Agent with affairs + LQM
+    # use_memory_agent removed — Memory Agent is always active
 
     # Delegation settings
     max_delegation_depth: int = 4
@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     session_memory_ttl_days: int = 7
     session_memory_max_entries: int = 50
 
-    # Memory Agent settings (requires use_memory_agent=True)
+    # Memory Agent settings
     lqm_max_warm_entries: int = 1000
     lqm_warm_ttl_seconds: float = 300.0
     lqm_write_buffer_max: int = 500
