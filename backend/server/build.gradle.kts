@@ -132,6 +132,9 @@ dependencies {
     // Firebase Admin SDK for FCM push notifications
     implementation(libs.firebase.admin)
 
+    // APNs push notifications via HTTP/2
+    implementation(libs.pushy)
+
     // Bucket4j for rate limiting
     implementation("com.bucket4j:bucket4j-core:8.10.1")
 

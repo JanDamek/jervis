@@ -394,7 +394,7 @@ class MainViewModel(
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
                     subscribeToQueueStatus(clientId)
-                    // Register FCM push token (Android only, no-op on other platforms)
+                    // Register push token (FCM on Android, APNs on iOS, no-op on desktop)
                     scope.launch {
                         PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
                     }

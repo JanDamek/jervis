@@ -1304,7 +1304,8 @@ Hybrid push/local notification architecture for real-time user alerts.
 | Channel | When Used | Capabilities |
 |---------|-----------|-------------|
 | **kRPC WebSocket** | App running (foreground/background) | Immediate delivery, all event types |
-| **FCM Data Messages** | App killed or not connected | Remote push, Android + iOS |
+| **FCM Data Messages** | App killed or not connected (Android) | Remote push via Firebase |
+| **APNs HTTP/2** | App killed or not connected (iOS) | Native Apple push via Pushy library |
 | **Desktop OS** | macOS/Windows/Linux, app running | osascript / SystemTray / notify-send |
 | **In-app Dialog** | Approval events, any platform | Approve/Deny buttons with reason input |
 
@@ -1338,7 +1339,8 @@ Python Orchestrator → completion/error/interrupt
 Python Orchestrator → interrupt (approval required)
   → OrchestratorStatusHandler → UserTaskService.failAndEscalateToUserTask()
     → NotificationRpcImpl.emitUserTaskCreated() [kRPC stream]
-    → FcmPushService.sendPushNotification() [FCM data message]
+    → FcmPushService.sendPushNotification() [FCM → Android]
+    → ApnsPushService.sendPushNotification() [APNs HTTP/2 → iOS]
   → MainViewModel.handleGlobalEvent()
     → PlatformNotificationManager.showNotification()
     → ApprovalNotificationDialog (if isApproval)
@@ -1351,6 +1353,11 @@ expect class PlatformNotificationManager
 ├── jvmMain:    macOS osascript, Windows SystemTray, Linux notify-send
 ├── androidMain: NotificationCompat + BroadcastReceiver + action buttons
 └── iosMain:    UNUserNotificationCenter + UNNotificationAction
+
+expect object PushTokenRegistrar
+├── androidMain: FCM token → registerToken(platform="android")
+├── iosMain:    IosTokenHolder.apnsToken → registerToken(platform="ios")
+└── jvmMain:    no-op (desktop uses kRPC streams)
 
 NotificationActionChannel (MutableSharedFlow)
 ├── Android: NotificationActionReceiver → emits
@@ -1366,9 +1373,12 @@ NotificationActionChannel (MutableSharedFlow)
 | `shared/ui-common/.../notification/PlatformNotificationManager.kt` | expect class |
 | `shared/ui-common/.../notification/NotificationActionChannel.kt` | Cross-platform action callback |
 | `shared/ui-common/.../notification/ApprovalNotificationDialog.kt` | In-app approve/deny dialog |
-| `backend/server/.../service/notification/FcmPushService.kt` | Firebase Cloud Messaging sender |
-| `backend/server/.../entity/DeviceTokenDocument.kt` | FCM token storage |
+| `backend/server/.../service/notification/FcmPushService.kt` | Firebase Cloud Messaging sender (Android) |
+| `backend/server/.../service/notification/ApnsPushService.kt` | APNs HTTP/2 push sender (iOS, Pushy) |
+| `backend/server/.../entity/DeviceTokenDocument.kt` | Device token storage (platform: android/ios) |
 | `shared/common-api/.../IDeviceTokenService.kt` | Token registration RPC |
+| `shared/ui-common/.../notification/IosTokenHolder.kt` | APNs token holder (Swift → Kotlin bridge) |
+| `shared/ui-common/.../notification/PushTokenRegistrar.kt` | expect/actual token registration |
 
 ---
 

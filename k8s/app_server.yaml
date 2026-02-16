@@ -180,6 +180,21 @@ spec:
                   key: ATLASSIAN_CLIENT_SECRET
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /etc/firebase/firebase-sa.json
+            # APNs push notifications (iOS)
+            - name: APNS_KEY_PATH
+              value: /etc/apns/AuthKey.p8
+            - name: APNS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: apns-auth-key
+                  key: APNS_KEY_ID
+            - name: APNS_TEAM_ID
+              valueFrom:
+                secretKeyRef:
+                  name: apns-auth-key
+                  key: APNS_TEAM_ID
+            - name: APNS_BUNDLE_ID
+              value: com.jervis.mobile
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data
@@ -188,6 +203,9 @@ spec:
               readOnly: true
             - name: firebase-sa
               mountPath: /etc/firebase
+              readOnly: true
+            - name: apns-key
+              mountPath: /etc/apns
               readOnly: true
           livenessProbe:
             httpGet:
@@ -221,6 +239,12 @@ spec:
         - name: firebase-sa
           secret:
             secretName: firebase-sa
+        - name: apns-key
+          secret:
+            secretName: apns-auth-key
+            items:
+              - key: AuthKey.p8
+                path: AuthKey.p8
 ---
 apiVersion: v1
 kind: Service

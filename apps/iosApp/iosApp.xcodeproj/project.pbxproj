@@ -20,6 +20,9 @@
 		A1000007000000000000001 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000008000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000018000000000000001 /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
+		EB6333CC2F43830E00326387 /* APNS_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = APNS_SETUP.md; sourceTree = "<group>"; };
+		EB6333CD2F43832000326387 /* deploy-apns-secret.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "deploy-apns-secret.sh"; sourceTree = "<group>"; };
+		EB6333CE2F43835500326387 /* BACKEND_APNS_INTEGRATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BACKEND_APNS_INTEGRATION.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,6 +41,9 @@
 			children = (
 				A100000B000000000000001 /* iosApp */,
 				A100000C000000000000001 /* Products */,
+				EB6333CC2F43830E00326387 /* APNS_SETUP.md */,
+				EB6333CD2F43832000326387 /* deploy-apns-secret.sh */,
+				EB6333CE2F43835500326387 /* BACKEND_APNS_INTEGRATION.md */,
 			);
 			sourceTree = "<group>";
 		};

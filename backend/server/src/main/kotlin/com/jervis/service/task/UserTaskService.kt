@@ -5,6 +5,7 @@ import com.jervis.common.types.TaskId
 import com.jervis.entity.TaskDocument
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.service.notification.ApnsPushService
 import com.jervis.service.notification.FcmPushService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.reactive.awaitSingle
@@ -20,6 +21,7 @@ class UserTaskService(
     private val userTaskRepository: TaskRepository,
     private val notificationRpc: NotificationRpcImpl,
     private val fcmPushService: FcmPushService,
+    private val apnsPushService: ApnsPushService,
     private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -80,23 +82,39 @@ class UserTaskService(
             projectId = task.projectId?.toString(),
         )
 
-        // Always send FCM push (broadcast to all devices — first responder wins)
+        // Send push notifications to all platforms (broadcast — first responder wins)
+        val activeCount = countActiveTasksByClient(task.clientId)
+        val pushTitle = if (isApproval) "Schválení vyžadováno" else "Nová úloha"
+        val pushData = buildMap {
+            put("taskId", task.id.toString())
+            put("type", if (isApproval) "approval" else "user_task")
+            interruptAction?.let { put("interruptAction", it) }
+            put("isApproval", isApproval.toString())
+            put("badgeCount", activeCount.toString())
+        }
+
+        // FCM → Android
         try {
-            val activeCount = countActiveTasksByClient(task.clientId)
             fcmPushService.sendPushNotification(
                 clientId = task.clientId.toString(),
-                title = if (isApproval) "Schválení vyžadováno" else "Nová úloha",
+                title = pushTitle,
                 body = title,
-                data = buildMap {
-                    put("taskId", task.id.toString())
-                    put("type", if (isApproval) "approval" else "user_task")
-                    interruptAction?.let { put("interruptAction", it) }
-                    put("isApproval", isApproval.toString())
-                    put("badgeCount", activeCount.toString())
-                },
+                data = pushData,
             )
         } catch (e: Exception) {
             logger.warn { "FCM push failed for task ${task.id}: ${e.message}" }
+        }
+
+        // APNs → iOS
+        try {
+            apnsPushService.sendPushNotification(
+                clientId = task.clientId.toString(),
+                title = pushTitle,
+                body = title,
+                data = pushData,
+            )
+        } catch (e: Exception) {
+            logger.warn { "APNs push failed for task ${task.id}: ${e.message}" }
         }
 
         logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }

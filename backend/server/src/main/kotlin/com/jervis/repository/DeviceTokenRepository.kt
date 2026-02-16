@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository
 interface DeviceTokenRepository : CoroutineCrudRepository<DeviceTokenDocument, ObjectId> {
     fun findByClientId(clientId: String): Flow<DeviceTokenDocument>
 
+    fun findByClientIdAndPlatform(clientId: String, platform: String): Flow<DeviceTokenDocument>
+
     suspend fun findByDeviceId(deviceId: String): DeviceTokenDocument?
 
     suspend fun deleteByDeviceId(deviceId: String)

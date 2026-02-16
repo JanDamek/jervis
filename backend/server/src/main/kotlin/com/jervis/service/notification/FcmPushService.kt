@@ -57,7 +57,7 @@ class FcmPushService(
             return
         }
 
-        val tokens = deviceTokenRepository.findByClientId(clientId).toList()
+        val tokens = deviceTokenRepository.findByClientIdAndPlatform(clientId, "android").toList()
         if (tokens.isEmpty()) {
             logger.debug { "No registered devices for client=$clientId, skipping push" }
             return

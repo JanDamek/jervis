@@ -29,6 +29,7 @@ badass-runtime = "2.0.1"
 firebase-admin = "9.4.2"
 google-services = "4.4.2"
 firebase-bom = "33.7.0"
+pushy = "0.15.4"
 
 [libraries]
 # Kotlin
@@ -116,6 +117,7 @@ jtokkit = { module = "com.knuddels:jtokkit", version.ref = "jtokkit" }
 firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = "firebase-admin" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
+pushy = { module = "com.eatthepath:pushy", version.ref = "pushy" }
 fabric8-kubernetes-client = { module = "io.fabric8:kubernetes-client", version.ref = "fabric8" }
 
 # Testing
