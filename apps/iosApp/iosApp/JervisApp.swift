@@ -68,11 +68,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         let hexToken = deviceToken.map { String(format: "%02x", $0) }.joined()
         let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
 
-        print("=== APNs DEVICE TOKEN ===")
-        print("Token: \(hexToken)")
-        print("Device ID: \(deviceId)")
-        print("=========================")
-
+        print("APNs token: \(hexToken.prefix(8))... device: \(deviceId)")
 
         // Pass token to KMP via IosTokenHolder
         IosTokenHolder.shared.setToken(hexToken: hexToken, deviceId: deviceId)

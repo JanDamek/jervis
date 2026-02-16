@@ -20,6 +20,7 @@
 		A1000007000000000000001 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000008000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000018000000000000001 /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
+		A1000020000000000000001 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
 		EB6333CC2F43830E00326387 /* APNS_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = APNS_SETUP.md; sourceTree = "<group>"; };
 		EB6333CD2F43832000326387 /* deploy-apns-secret.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "deploy-apns-secret.sh"; sourceTree = "<group>"; };
 		EB6333CE2F43835500326387 /* BACKEND_APNS_INTEGRATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BACKEND_APNS_INTEGRATION.md; sourceTree = "<group>"; };
@@ -50,6 +51,7 @@
 		A100000B000000000000001 /* iosApp */ = {
 			isa = PBXGroup;
 			children = (
+				A1000020000000000000001 /* iosApp.entitlements */,
 				A1000002000000000000001 /* JervisApp.swift */,
 				A1000004000000000000001 /* ContentView.swift */,
 				A1000018000000000000001 /* NotificationDelegate.swift */,
@@ -290,6 +292,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				CODE_SIGN_STYLE = Manual;
@@ -327,7 +330,7 @@
 					"-framework",
 					JervisMobile,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.iosApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Jervis-profile";
@@ -346,6 +349,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				CODE_SIGN_STYLE = Manual;
@@ -378,7 +382,7 @@
 					"-framework",
 					JervisMobile,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.iosApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Jervis-profile";
