@@ -5,6 +5,10 @@ build/
 .kotlin/
 jervis backup/
 
+# Xcode user data
+*.xcuserstate
+xcuserdata/
+
 # Python
 __pycache__/
 *.pyc
