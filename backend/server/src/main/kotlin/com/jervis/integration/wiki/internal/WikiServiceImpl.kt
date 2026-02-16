@@ -1,8 +1,10 @@
 package com.jervis.integration.wiki.internal
 
 import com.jervis.common.client.IWikiClient
+import com.jervis.common.dto.wiki.WikiCreatePageRpcRequest
 import com.jervis.common.dto.wiki.WikiPageRequest
 import com.jervis.common.dto.wiki.WikiSearchRequest
+import com.jervis.common.dto.wiki.WikiUpdatePageRpcRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
@@ -123,13 +125,85 @@ class WikiServiceImpl(
     override suspend fun createPage(
         clientId: ClientId,
         request: CreatePageRequest,
-    ): WikiPage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): WikiPage {
+        val connection = findWikiConnection(clientId)
+            ?: throw IllegalStateException("No Wiki connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "WikiCreatePage",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            wikiClient.createPage(
+                WikiCreatePageRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = com.jervis.common.dto.AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    spaceKey = request.spaceKey,
+                    title = request.title,
+                    content = request.content,
+                    parentPageId = request.parentId,
+                ),
+            )
+        }.page
+
+        return WikiPage(
+            id = response.id,
+            title = response.title,
+            content = response.content ?: request.content,
+            spaceKey = response.spaceKey ?: request.spaceKey,
+            created = response.created,
+            updated = response.updated,
+            version = 1,
+            parentId = response.parentId ?: request.parentId,
+        )
+    }
 
     override suspend fun updatePage(
         clientId: ClientId,
         pageId: String,
         request: UpdatePageRequest,
-    ): WikiPage = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): WikiPage {
+        val connection = findWikiConnection(clientId)
+            ?: throw IllegalStateException("No Wiki connection found for client $clientId")
+
+        // We need the current page to get title if not provided
+        val currentTitle = request.title ?: getPage(clientId, pageId).title
+        val currentContent = request.content ?: getPage(clientId, pageId).content
+
+        val response = withRpcRetry(
+            name = "WikiUpdatePage",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            wikiClient.updatePage(
+                WikiUpdatePageRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = com.jervis.common.dto.AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    pageId = pageId,
+                    title = currentTitle,
+                    content = currentContent,
+                    version = request.version,
+                ),
+            )
+        }.page
+
+        return WikiPage(
+            id = response.id,
+            title = response.title,
+            content = response.content ?: currentContent,
+            spaceKey = response.spaceKey ?: "",
+            created = response.created,
+            updated = response.updated,
+            version = request.version,
+            parentId = response.parentId,
+        )
+    }
 
     private suspend fun findWikiConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId)

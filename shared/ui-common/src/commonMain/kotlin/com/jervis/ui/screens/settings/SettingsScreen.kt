@@ -13,16 +13,24 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.SystemConfigDto
+import com.jervis.dto.UpdateSystemConfigRequest
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ConnectionResponseDto
+import com.jervis.dto.connection.ConnectionStateEnum
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.navigation.Screen
 import com.jervis.ui.screens.settings.sections.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -69,27 +77,169 @@ enum class SettingsCategory(
 
 @Composable
 private fun GeneralSettings(repository: JervisRepository) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        JSection(title = "Vzhled") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.height(JervisSpacing.touchTarget),
-            ) {
-                Text("Téma aplikace")
-                Spacer(modifier = Modifier.weight(1f))
-                Text("Systémové", style = MaterialTheme.typography.bodySmall)
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // System config state
+    var isLoading by remember { mutableStateOf(true) }
+    var config by remember { mutableStateOf(SystemConfigDto()) }
+    var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
+
+    // Editable brain config state
+    var selectedBugtrackerConnectionId by remember { mutableStateOf<String?>(null) }
+    var brainProjectKey by remember { mutableStateOf("") }
+    var selectedWikiConnectionId by remember { mutableStateOf<String?>(null) }
+    var brainSpaceKey by remember { mutableStateOf("") }
+    var brainRootPageId by remember { mutableStateOf("") }
+
+    fun applyConfig(dto: SystemConfigDto) {
+        config = dto
+        selectedBugtrackerConnectionId = dto.brainBugtrackerConnectionId
+        brainProjectKey = dto.brainBugtrackerProjectKey ?: ""
+        selectedWikiConnectionId = dto.brainWikiConnectionId
+        brainSpaceKey = dto.brainWikiSpaceKey ?: ""
+        brainRootPageId = dto.brainWikiRootPageId ?: ""
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            val allConnections = repository.connections.getAllConnections()
+            connections = allConnections
+            val systemConfig = repository.systemConfig.getSystemConfig()
+            applyConfig(systemConfig)
+        } catch (e: Exception) {
+            snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // Filter Atlassian connections with valid state
+    val atlassianConnections = remember(connections) {
+        connections.filter {
+            it.provider == ProviderEnum.ATLASSIAN && it.state == ConnectionStateEnum.VALID
+        }
+    }
+    val bugtrackerConnections = remember(atlassianConnections) {
+        atlassianConnections.filter { ConnectionCapability.BUGTRACKER in it.capabilities }
+    }
+    val wikiConnections = remember(atlassianConnections) {
+        atlassianConnections.filter { ConnectionCapability.WIKI in it.capabilities }
+    }
+
+    Box {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            JSection(title = "Vzhled") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.height(JervisSpacing.touchTarget),
+                ) {
+                    Text("Téma aplikace")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text("Systémové", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            JSection(title = "Lokalizace") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.height(JervisSpacing.touchTarget),
+                ) {
+                    Text("Jazyk")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text("Čeština", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            if (isLoading) {
+                JCenteredLoading()
+            } else {
+                JSection(title = "Mozek Jervise") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Centrální Jira a Confluence pro orchestrátor. " +
+                                "Slouží k plánování práce, sledování úkolů a ukládání dokumentace.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        // Bugtracker connection dropdown
+                        JDropdown(
+                            items = bugtrackerConnections,
+                            selectedItem = bugtrackerConnections.find { it.id == selectedBugtrackerConnectionId },
+                            onItemSelected = { selectedBugtrackerConnectionId = it.id },
+                            label = "Bugtracker (Jira)",
+                            itemLabel = { it.name },
+                            placeholder = "Vyberte Atlassian připojení",
+                        )
+
+                        // Jira project key
+                        JTextField(
+                            value = brainProjectKey,
+                            onValueChange = { brainProjectKey = it },
+                            label = "Jira Project Key",
+                            placeholder = "Např. JERVIS",
+                            enabled = selectedBugtrackerConnectionId != null,
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Wiki connection dropdown
+                        JDropdown(
+                            items = wikiConnections,
+                            selectedItem = wikiConnections.find { it.id == selectedWikiConnectionId },
+                            onItemSelected = { selectedWikiConnectionId = it.id },
+                            label = "Wiki (Confluence)",
+                            itemLabel = { it.name },
+                            placeholder = "Vyberte Atlassian připojení",
+                        )
+
+                        // Confluence space key
+                        JTextField(
+                            value = brainSpaceKey,
+                            onValueChange = { brainSpaceKey = it },
+                            label = "Confluence Space Key",
+                            placeholder = "Např. JERVIS",
+                            enabled = selectedWikiConnectionId != null,
+                        )
+
+                        // Root page ID (optional)
+                        JTextField(
+                            value = brainRootPageId,
+                            onValueChange = { brainRootPageId = it },
+                            label = "Kořenová stránka (ID)",
+                            placeholder = "Volitelné – ID nadřazené stránky",
+                            enabled = selectedWikiConnectionId != null,
+                        )
+
+                        // Save button
+                        JPrimaryButton(
+                            text = "Uložit",
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val updated = repository.systemConfig.updateSystemConfig(
+                                            UpdateSystemConfigRequest(
+                                                brainBugtrackerConnectionId = selectedBugtrackerConnectionId,
+                                                brainBugtrackerProjectKey = brainProjectKey.ifBlank { null },
+                                                brainWikiConnectionId = selectedWikiConnectionId,
+                                                brainWikiSpaceKey = brainSpaceKey.ifBlank { null },
+                                                brainWikiRootPageId = brainRootPageId.ifBlank { null },
+                                            ),
+                                        )
+                                        applyConfig(updated)
+                                        snackbarHostState.showSnackbar("Konfigurace mozku uložena")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba ukládání: ${e.message}")
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
-        JSection(title = "Lokalizace") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.height(JervisSpacing.touchTarget),
-            ) {
-                Text("Jazyk")
-                Spacer(modifier = Modifier.weight(1f))
-                Text("Čeština", style = MaterialTheme.typography.bodySmall)
-            }
-        }
+
+        JSnackbarHost(snackbarHostState)
     }
 }
 

@@ -254,6 +254,58 @@ async def execute_tool(
             result = await _execute_list_affairs(
                 client_id=client_id,
             )
+        # ---- Brain tools ----
+        elif tool_name == "brain_create_issue":
+            result = await _execute_brain_create_issue(
+                summary=arguments.get("summary", ""),
+                description=arguments.get("description"),
+                issue_type=arguments.get("issue_type", "Task"),
+                priority=arguments.get("priority"),
+                labels=arguments.get("labels"),
+                epic_key=arguments.get("epic_key"),
+            )
+        elif tool_name == "brain_update_issue":
+            result = await _execute_brain_update_issue(
+                issue_key=arguments.get("issue_key", ""),
+                summary=arguments.get("summary"),
+                description=arguments.get("description"),
+                assignee=arguments.get("assignee"),
+                priority=arguments.get("priority"),
+                labels=arguments.get("labels"),
+            )
+        elif tool_name == "brain_add_comment":
+            result = await _execute_brain_add_comment(
+                issue_key=arguments.get("issue_key", ""),
+                body=arguments.get("body", ""),
+            )
+        elif tool_name == "brain_transition_issue":
+            result = await _execute_brain_transition_issue(
+                issue_key=arguments.get("issue_key", ""),
+                transition_name=arguments.get("transition_name", ""),
+            )
+        elif tool_name == "brain_search_issues":
+            result = await _execute_brain_search_issues(
+                jql=arguments.get("jql", ""),
+                max_results=arguments.get("max_results", 20),
+            )
+        elif tool_name == "brain_create_page":
+            result = await _execute_brain_create_page(
+                title=arguments.get("title", ""),
+                content=arguments.get("content", ""),
+                parent_page_id=arguments.get("parent_page_id"),
+            )
+        elif tool_name == "brain_update_page":
+            result = await _execute_brain_update_page(
+                page_id=arguments.get("page_id", ""),
+                title=arguments.get("title", ""),
+                content=arguments.get("content", ""),
+                version=arguments.get("version", 1),
+            )
+        elif tool_name == "brain_search_pages":
+            result = await _execute_brain_search_pages(
+                query=arguments.get("query", ""),
+                max_results=arguments.get("max_results", 20),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -1879,3 +1931,257 @@ async def _execute_command(
         return f"Error: Command timed out after {timeout}s"
     except Exception as e:
         return f"Error: Failed to execute command: {str(e)[:200]}"
+
+
+# ========== Brain Tools ==========
+
+
+async def _execute_brain_create_issue(
+    summary: str,
+    description: str | None = None,
+    issue_type: str = "Task",
+    priority: str | None = None,
+    labels: list[str] | None = None,
+    epic_key: str | None = None,
+) -> str:
+    """Create a Jira issue in the brain project."""
+    if not summary.strip():
+        return "Error: Issue summary cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        issue = await brain_client.create_issue(
+            summary=summary,
+            description=description,
+            issue_type=issue_type,
+            priority=priority,
+            labels=labels,
+            epic_key=epic_key,
+        )
+
+        key = issue.get("key", "?")
+        title = issue.get("summary", summary)
+        status = issue.get("status", "?")
+        return (
+            f"✓ Brain issue created: {key}\n"
+            f"Summary: {title}\n"
+            f"Type: {issue_type}\n"
+            f"Status: {status}\n"
+            f"Priority: {priority or 'default'}"
+        )
+    except Exception as e:
+        logger.warning("brain_create_issue failed: %s", e)
+        return f"Error creating brain issue: {str(e)[:300]}"
+
+
+async def _execute_brain_update_issue(
+    issue_key: str,
+    summary: str | None = None,
+    description: str | None = None,
+    assignee: str | None = None,
+    priority: str | None = None,
+    labels: list[str] | None = None,
+) -> str:
+    """Update a Jira issue in the brain project."""
+    if not issue_key.strip():
+        return "Error: Issue key cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        issue = await brain_client.update_issue(
+            issue_key=issue_key,
+            summary=summary,
+            description=description,
+            assignee=assignee,
+            priority=priority,
+            labels=labels,
+        )
+
+        return (
+            f"✓ Brain issue updated: {issue.get('key', issue_key)}\n"
+            f"Summary: {issue.get('summary', '?')}\n"
+            f"Status: {issue.get('status', '?')}"
+        )
+    except Exception as e:
+        logger.warning("brain_update_issue failed: %s", e)
+        return f"Error updating brain issue {issue_key}: {str(e)[:300]}"
+
+
+async def _execute_brain_add_comment(
+    issue_key: str,
+    body: str,
+) -> str:
+    """Add a comment to a brain Jira issue."""
+    if not issue_key.strip():
+        return "Error: Issue key cannot be empty."
+    if not body.strip():
+        return "Error: Comment body cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        comment = await brain_client.add_comment(issue_key=issue_key, body=body)
+
+        return (
+            f"✓ Comment added to {issue_key}\n"
+            f"Comment ID: {comment.get('id', '?')}\n"
+            f"Preview: {body[:200]}"
+        )
+    except Exception as e:
+        logger.warning("brain_add_comment failed: %s", e)
+        return f"Error adding comment to {issue_key}: {str(e)[:300]}"
+
+
+async def _execute_brain_transition_issue(
+    issue_key: str,
+    transition_name: str,
+) -> str:
+    """Transition a brain issue to a new status."""
+    if not issue_key.strip():
+        return "Error: Issue key cannot be empty."
+    if not transition_name.strip():
+        return "Error: Transition name cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        await brain_client.transition_issue(
+            issue_key=issue_key,
+            transition_name=transition_name,
+        )
+
+        return f"✓ Issue {issue_key} transitioned to '{transition_name}'"
+    except Exception as e:
+        logger.warning("brain_transition_issue failed: %s", e)
+        return f"Error transitioning {issue_key}: {str(e)[:300]}"
+
+
+async def _execute_brain_search_issues(
+    jql: str,
+    max_results: int = 20,
+) -> str:
+    """Search brain Jira issues using JQL."""
+    if not jql.strip():
+        return "Error: JQL query cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        issues = await brain_client.search_issues(jql=jql, max_results=max_results)
+
+        if not issues:
+            return f"No brain issues found for JQL: {jql}"
+
+        lines = [f"## Brain Issues ({len(issues)} results)\n"]
+        for issue in issues:
+            key = issue.get("key", "?")
+            summary = issue.get("summary", "?")
+            status = issue.get("status", "?")
+            priority = issue.get("priority", "")
+            assignee = issue.get("assignee", "")
+            lines.append(f"- **{key}** [{status}] {summary}")
+            if priority:
+                lines.append(f"  Priority: {priority}")
+            if assignee:
+                lines.append(f"  Assignee: {assignee}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("brain_search_issues failed: %s", e)
+        return f"Error searching brain issues: {str(e)[:300]}"
+
+
+async def _execute_brain_create_page(
+    title: str,
+    content: str,
+    parent_page_id: str | None = None,
+) -> str:
+    """Create a Confluence page in the brain wiki space."""
+    if not title.strip():
+        return "Error: Page title cannot be empty."
+    if not content.strip():
+        return "Error: Page content cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        page = await brain_client.create_page(
+            title=title,
+            content=content,
+            parent_page_id=parent_page_id,
+        )
+
+        return (
+            f"✓ Brain page created\n"
+            f"ID: {page.get('id', '?')}\n"
+            f"Title: {page.get('title', title)}\n"
+            f"Space: {page.get('spaceKey', '?')}"
+        )
+    except Exception as e:
+        logger.warning("brain_create_page failed: %s", e)
+        return f"Error creating brain page: {str(e)[:300]}"
+
+
+async def _execute_brain_update_page(
+    page_id: str,
+    title: str,
+    content: str,
+    version: int,
+) -> str:
+    """Update a Confluence page in the brain wiki space."""
+    if not page_id.strip():
+        return "Error: Page ID cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        page = await brain_client.update_page(
+            page_id=page_id,
+            title=title,
+            content=content,
+            version=version,
+        )
+
+        return (
+            f"✓ Brain page updated\n"
+            f"ID: {page.get('id', page_id)}\n"
+            f"Title: {page.get('title', title)}\n"
+            f"Version: {version}"
+        )
+    except Exception as e:
+        logger.warning("brain_update_page failed: %s", e)
+        return f"Error updating brain page {page_id}: {str(e)[:300]}"
+
+
+async def _execute_brain_search_pages(
+    query: str,
+    max_results: int = 20,
+) -> str:
+    """Search Confluence pages in the brain wiki space."""
+    if not query.strip():
+        return "Error: Search query cannot be empty."
+
+    try:
+        from app.tools.brain_client import brain_client
+
+        pages = await brain_client.search_pages(query=query, max_results=max_results)
+
+        if not pages:
+            return f"No brain wiki pages found for: {query}"
+
+        lines = [f"## Brain Wiki Pages ({len(pages)} results)\n"]
+        for page in pages:
+            page_id = page.get("id", "?")
+            title = page.get("title", "?")
+            space = page.get("spaceKey", "")
+            content_preview = page.get("content", "")[:200]
+            lines.append(f"- **{title}** (ID: {page_id})")
+            if content_preview:
+                lines.append(f"  {content_preview}...")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning("brain_search_pages failed: %s", e)
+        return f"Error searching brain pages: {str(e)[:300]}"

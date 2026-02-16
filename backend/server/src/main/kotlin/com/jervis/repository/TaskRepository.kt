@@ -165,6 +165,15 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * Find a single task by type matching any of the given states.
+     * Used by BackgroundEngine idle review loop to check for existing IDLE_REVIEW tasks.
+     */
+    suspend fun findFirstByTypeAndStateIn(
+        type: TaskTypeEnum,
+        states: Collection<TaskStateEnum>,
+    ): TaskDocument?
+
+    /**
      * Find all scheduled tasks due for dispatch (scheduledAt <= threshold).
      * Used by BackgroundEngine scheduler loop.
      */

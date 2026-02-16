@@ -1413,3 +1413,131 @@ build_*.sh:
 | `build_mcp.sh` | jervis-mcp | Docker + K8s |
 | `build_service.sh` | Generic (provider services) | Gradle + Docker + K8s |
 | `build_image.sh` | Generic (Job-only images) | Docker only (no K8s Deployment) |
+
+---
+
+## Brain (Internal Jira + Confluence)
+
+### Overview
+
+Jervis has its own internal "brain" — a dedicated Jira project + Confluence space used by the
+orchestrator to plan work, track progress across ALL clients/projects, and store documentation.
+
+**Purpose:**
+- **Central work tracking**: Orchestrator creates/updates issues for cross-project findings
+- **Proactive review**: Idle review loop periodically checks status of all tracked work
+- **Cross-project aggregation**: Qualifier writes actionable findings to brain Jira during ingestion
+- **Documentation**: Orchestrator stores architectural decisions and status summaries in Confluence
+
+### System Configuration
+
+Brain connections are configured system-wide via `SystemConfigDocument` (MongoDB singleton):
+
+```kotlin
+data class SystemConfigDocument(
+    @Id val id: String = "singleton",
+    val brainBugtrackerConnectionId: ObjectId?,    // Atlassian connection for Jira
+    val brainBugtrackerProjectKey: String?,         // Jira project key
+    val brainWikiConnectionId: ObjectId?,           // Atlassian connection for Confluence
+    val brainWikiSpaceKey: String?,                 // Confluence space key
+)
+```
+
+**UI:** Settings → General → "Mozek Jervise" section with dropdowns for connection and project/space selection.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          Brain Architecture                          │
+│                                                                      │
+│  ┌──────────────────┐    ┌──────────────────────────────────────┐   │
+│  │  Settings UI     │    │  SystemConfigDocument (MongoDB)      │   │
+│  │  "Mozek Jervise" │───►│  brainBugtrackerConnectionId        │   │
+│  │                  │    │  brainBugtrackerProjectKey           │   │
+│  └──────────────────┘    │  brainWikiConnectionId               │   │
+│                          │  brainWikiSpaceKey                    │   │
+│                          └──────────────┬───────────────────────┘   │
+│                                         │                            │
+│  ┌──────────────────────────────────────▼───────────────────────┐   │
+│  │  BrainWriteService (Kotlin)                                  │   │
+│  │  • Resolves connection credentials from SystemConfig         │   │
+│  │  • Delegates to BugTrackerService / WikiService              │   │
+│  │  • No approval flow — unrestricted access                    │   │
+│  └──────────┬──────────────────────────────┬────────────────────┘   │
+│             │                              │                         │
+│  ┌──────────▼──────────┐     ┌─────────────▼──────────────────┐    │
+│  │ Internal REST       │     │  Cross-Project Aggregation     │    │
+│  │ /internal/brain/*   │     │  (SimpleQualifierAgent)        │    │
+│  │ (for Python orchest)│     │  • Writes findings on ingest   │    │
+│  └──────────┬──────────┘     │  • Deduplicates by corrId      │    │
+│             │                └────────────────────────────────┘    │
+│  ┌──────────▼──────────┐                                           │
+│  │ Python Orchestrator │                                           │
+│  │ brain_* tools (8)   │                                           │
+│  │ • create/update/     │                                          │
+│  │   search issues      │                                          │
+│  │ • create/update/     │                                          │
+│  │   search pages       │                                          │
+│  └─────────────────────┘                                           │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Brain Tools (Orchestrator)
+
+8 tools available to the Python orchestrator via `/internal/brain/*` REST endpoints:
+
+| Tool | Description |
+|------|-------------|
+| `brain_create_issue` | Create Jira issue in brain project |
+| `brain_update_issue` | Update existing brain issue |
+| `brain_add_comment` | Add comment to brain issue |
+| `brain_transition_issue` | Change issue status (To Do → In Progress → Done) |
+| `brain_search_issues` | Search brain Jira via JQL |
+| `brain_create_page` | Create Confluence page in brain wiki |
+| `brain_update_page` | Update Confluence page |
+| `brain_search_pages` | Search Confluence pages |
+
+### Idle Review Loop
+
+`BackgroundEngine` runs a periodic idle review loop (default: every 30 minutes):
+
+1. Checks: `idleReviewEnabled` is true
+2. Checks: Brain is configured (SystemConfig has connections)
+3. Checks: No active tasks (QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING)
+4. Checks: No existing IDLE_REVIEW task pending/running
+5. Creates synthetic `IDLE_REVIEW` task → state `READY_FOR_GPU` (skips qualification)
+6. Orchestrator uses brain tools to review open issues, check deadlines, update summaries
+
+**Configuration** (`BackgroundProperties`):
+- `idleReviewInterval`: Duration (default 30 min)
+- `idleReviewEnabled`: Boolean (default true)
+
+### Cross-Project Aggregation
+
+`SimpleQualifierAgent` writes actionable findings to brain Jira during KB ingestion:
+
+1. After successful KB ingest with `hasActionableContent = true`
+2. Checks if brain is configured
+3. Deduplicates by `corr:{correlationId}` label (JQL search)
+4. Creates issue with summary, source type, urgency, suggested actions
+5. Labels: `auto-ingest`, source type (e.g., `email`, `jira`), `corr:{correlationId}`
+6. **Non-critical**: Failure does not block qualification
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../entity/SystemConfigDocument.kt` | MongoDB singleton config |
+| `backend/server/.../repository/SystemConfigRepository.kt` | Spring Data repo |
+| `backend/server/.../service/SystemConfigService.kt` | CRUD service |
+| `backend/server/.../service/brain/BrainWriteService.kt` | Brain interface |
+| `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Brain implementation |
+| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints + Brain DTOs |
+| `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client |
+| `backend/service-orchestrator/app/tools/definitions.py` | BRAIN_TOOLS definitions |
+| `backend/service-orchestrator/app/tools/executor.py` | Brain tool executors |
+| `backend/server/.../qualifier/SimpleQualifierAgent.kt` | Cross-project brain write |
+| `backend/server/.../service/background/BackgroundEngine.kt` | Idle review loop |
+| `shared/common-dto/.../dto/SystemConfigDto.kt` | System config DTO |
+| `shared/common-api/.../service/ISystemConfigService.kt` | RPC interface |

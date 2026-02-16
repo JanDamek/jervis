@@ -22,6 +22,7 @@ import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
+import com.jervis.service.ISystemConfigService
 import com.jervis.service.IWhisperSettingsService
 
 /**
@@ -56,4 +57,5 @@ class JervisRepository(
     val deviceTokens: IDeviceTokenService get() = servicesProvider().deviceTokenService
     val indexingQueue: IIndexingQueueService get() = servicesProvider().indexingQueueService
     val environmentResources: IEnvironmentResourceService get() = servicesProvider().environmentResourceService
+    val systemConfig: ISystemConfigService get() = servicesProvider().systemConfigService
 }

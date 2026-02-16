@@ -14,9 +14,14 @@ import com.jervis.common.dto.atlassian.JiraIssueRequest
 import com.jervis.common.dto.atlassian.JiraIssueResponse
 import com.jervis.common.dto.atlassian.JiraSearchRequest
 import com.jervis.common.dto.atlassian.JiraSearchResponse
+import com.jervis.common.dto.bugtracker.BugTrackerCommentResponse
+import com.jervis.common.dto.bugtracker.BugTrackerIssueDto
+import com.jervis.common.dto.bugtracker.BugTrackerIssueResponse
 import com.jervis.common.dto.bugtracker.BugTrackerProjectDto
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsRequest
 import com.jervis.common.dto.bugtracker.BugTrackerProjectsResponse
+import com.jervis.common.dto.wiki.WikiPageDto
+import com.jervis.common.dto.wiki.WikiPageResponse
 import com.jervis.common.dto.wiki.WikiSpaceDto
 import com.jervis.common.dto.wiki.WikiSpacesRequest
 import com.jervis.common.dto.wiki.WikiSpacesResponse
@@ -44,6 +49,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import mu.KotlinLogging
 import java.nio.charset.StandardCharsets
 
@@ -1253,6 +1264,599 @@ class AtlassianApiClient(
                 )
             } ?: emptyList(),
         )
+    }
+
+    // ==================== WRITE OPERATIONS ====================
+
+    suspend fun createJiraIssue(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        projectKey: String,
+        summary: String,
+        description: String?,
+        issueType: String,
+        priority: String?,
+        assignee: String?,
+        labels: List<String>,
+        epicKey: String?,
+    ): BugTrackerIssueResponse {
+        logger.info { "Creating Jira issue in project $projectKey: $summary" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+        val apiVersion = if (isCloud) "3" else "2"
+        val url = "$jiraBase/rest/api/$apiVersion/issue"
+
+        // Build ADF description for v3, plain text for v2
+        val descriptionBody = if (description != null) {
+            if (isCloud) {
+                buildJsonObject {
+                    put("type", "doc")
+                    put("version", 1)
+                    putJsonArray("content") {
+                        addJsonObject {
+                            put("type", "paragraph")
+                            putJsonArray("content") {
+                                addJsonObject {
+                                    put("type", "text")
+                                    put("text", description)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                kotlinx.serialization.json.JsonPrimitive(description)
+            }
+        } else null
+
+        val body = buildJsonObject {
+            putJsonObject("fields") {
+                putJsonObject("project") { put("key", projectKey) }
+                put("summary", summary)
+                putJsonObject("issuetype") { put("name", issueType) }
+                if (descriptionBody != null) put("description", descriptionBody)
+                if (priority != null) putJsonObject("priority") { put("name", priority) }
+                if (assignee != null) putJsonObject("assignee") { put("id" , assignee) }
+                if (labels.isNotEmpty()) putJsonArray("labels") { labels.forEach { add(it) } }
+                if (epicKey != null) {
+                    // Epic link via parent for next-gen, or customfield for classic
+                    putJsonObject("parent") { put("key", epicKey) }
+                }
+            }
+        }
+
+        val response = rateLimitedRequest(url) { client, _ ->
+            client.request(url) {
+                method = HttpMethod.Post
+                contentType(ContentType.Application.Json)
+                applyAuth(conn)
+                setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.error { "Create Jira issue failed: status=${response.status.value}, body=$responseBody" }
+            throw IllegalStateException("Jira create issue failed with ${response.status.value}: $responseBody")
+        }
+
+        @Serializable
+        data class CreateIssueResult(val id: String, val key: String, val self: String)
+
+        val result = response.body<String>().let { json.decodeFromString(CreateIssueResult.serializer(), it) }
+        logger.info { "Created Jira issue: ${result.key}" }
+
+        // Fetch the created issue to return full details
+        return getJiraIssue(JiraIssueRequest(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId, result.key))
+            .let { issueResponse ->
+                BugTrackerIssueResponse(
+                    issue = BugTrackerIssueDto(
+                        id = issueResponse.id,
+                        key = issueResponse.key,
+                        title = issueResponse.fields.summary ?: "",
+                        description = issueResponse.renderedDescription ?: issueResponse.fields.description?.toString(),
+                        status = issueResponse.fields.status?.name ?: "",
+                        priority = issueResponse.fields.priority?.name,
+                        assignee = issueResponse.fields.assignee?.displayName,
+                        reporter = issueResponse.fields.reporter?.displayName,
+                        created = issueResponse.fields.created ?: "",
+                        updated = issueResponse.fields.updated ?: "",
+                        url = "${baseUrl.trimEnd('/')}/browse/${issueResponse.key}",
+                        projectKey = issueResponse.fields.project?.key,
+                    ),
+                )
+            }
+    }
+
+    suspend fun updateJiraIssue(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        issueKey: String,
+        summary: String?,
+        description: String?,
+        assignee: String?,
+        priority: String?,
+        labels: List<String>?,
+    ): BugTrackerIssueResponse {
+        logger.info { "Updating Jira issue: $issueKey" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+        val apiVersion = if (isCloud) "3" else "2"
+        val url = "$jiraBase/rest/api/$apiVersion/issue/$issueKey"
+
+        val body = buildJsonObject {
+            putJsonObject("fields") {
+                if (summary != null) put("summary", summary)
+                if (description != null) {
+                    if (isCloud) {
+                        putJsonObject("description") {
+                            put("type", "doc")
+                            put("version", 1)
+                            putJsonArray("content") {
+                                addJsonObject {
+                                    put("type", "paragraph")
+                                    putJsonArray("content") {
+                                        addJsonObject {
+                                            put("type", "text")
+                                            put("text", description)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        put("description", description)
+                    }
+                }
+                if (assignee != null) putJsonObject("assignee") { put("id", assignee) }
+                if (priority != null) putJsonObject("priority") { put("name", priority) }
+                if (labels != null) putJsonArray("labels") { labels.forEach { add(it) } }
+            }
+        }
+
+        val response = rateLimitedRequest(url) { client, _ ->
+            client.request(url) {
+                method = HttpMethod.Put
+                contentType(ContentType.Application.Json)
+                applyAuth(conn)
+                setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.error { "Update Jira issue failed: status=${response.status.value}, body=$responseBody" }
+            throw IllegalStateException("Jira update issue failed with ${response.status.value}: $responseBody")
+        }
+
+        // Fetch updated issue to return full details
+        return getJiraIssue(JiraIssueRequest(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId, issueKey))
+            .let { issueResponse ->
+                BugTrackerIssueResponse(
+                    issue = BugTrackerIssueDto(
+                        id = issueResponse.id,
+                        key = issueResponse.key,
+                        title = issueResponse.fields.summary ?: "",
+                        description = issueResponse.renderedDescription ?: issueResponse.fields.description?.toString(),
+                        status = issueResponse.fields.status?.name ?: "",
+                        priority = issueResponse.fields.priority?.name,
+                        assignee = issueResponse.fields.assignee?.displayName,
+                        reporter = issueResponse.fields.reporter?.displayName,
+                        created = issueResponse.fields.created ?: "",
+                        updated = issueResponse.fields.updated ?: "",
+                        url = "${baseUrl.trimEnd('/')}/browse/${issueResponse.key}",
+                        projectKey = issueResponse.fields.project?.key,
+                    ),
+                )
+            }
+    }
+
+    suspend fun addJiraComment(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        issueKey: String,
+        commentBody: String,
+    ): BugTrackerCommentResponse {
+        logger.info { "Adding comment to Jira issue: $issueKey" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+        val apiVersion = if (isCloud) "3" else "2"
+        val url = "$jiraBase/rest/api/$apiVersion/issue/$issueKey/comment"
+
+        val body = if (isCloud) {
+            // ADF format for v3
+            buildJsonObject {
+                putJsonObject("body") {
+                    put("type", "doc")
+                    put("version", 1)
+                    putJsonArray("content") {
+                        addJsonObject {
+                            put("type", "paragraph")
+                            putJsonArray("content") {
+                                addJsonObject {
+                                    put("type", "text")
+                                    put("text", commentBody)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            buildJsonObject {
+                put("body", commentBody)
+            }
+        }
+
+        val response = rateLimitedRequest(url) { client, _ ->
+            client.request(url) {
+                method = HttpMethod.Post
+                contentType(ContentType.Application.Json)
+                applyAuth(conn)
+                setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.error { "Add Jira comment failed: status=${response.status.value}, body=$responseBody" }
+            throw IllegalStateException("Jira add comment failed with ${response.status.value}: $responseBody")
+        }
+
+        @Serializable
+        data class CommentResult(
+            val id: String,
+            val author: kotlinx.serialization.json.JsonObject? = null,
+            val body: kotlinx.serialization.json.JsonElement? = null,
+            val created: String? = null,
+        )
+
+        val result = response.body<String>().let { json.decodeFromString(CommentResult.serializer(), it) }
+        val authorName = result.author?.get("displayName")?.let {
+            json.decodeFromJsonElement(String.serializer(), it)
+        }
+
+        return BugTrackerCommentResponse(
+            id = result.id,
+            author = authorName,
+            body = commentBody,
+            created = result.created ?: "",
+        )
+    }
+
+    suspend fun transitionJiraIssue(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        issueKey: String,
+        transitionName: String,
+    ) {
+        logger.info { "Transitioning Jira issue $issueKey to: $transitionName" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val jiraBase = getJiraBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+        val apiVersion = if (isCloud) "3" else "2"
+
+        // First, get available transitions
+        val transitionsUrl = "$jiraBase/rest/api/$apiVersion/issue/$issueKey/transitions"
+        val transitionsResponse = rateLimitedRequest(transitionsUrl) { client, _ ->
+            client.request(transitionsUrl) {
+                method = HttpMethod.Get
+                applyAuth(conn)
+            }
+        }
+
+        if (transitionsResponse.status.value !in 200..299) {
+            val body = runCatching { transitionsResponse.body<String>() }.getOrNull() ?: ""
+            throw IllegalStateException("Failed to get transitions for $issueKey: $body")
+        }
+
+        @Serializable
+        data class TransitionDto(val id: String, val name: String)
+        @Serializable
+        data class TransitionsResult(val transitions: List<TransitionDto>)
+
+        val transitions = transitionsResponse.body<String>().let {
+            json.decodeFromString(TransitionsResult.serializer(), it)
+        }
+
+        val transition = transitions.transitions.find { it.name.equals(transitionName, ignoreCase = true) }
+            ?: throw IllegalStateException("Transition '$transitionName' not found for $issueKey. Available: ${transitions.transitions.map { it.name }}")
+
+        // Execute the transition
+        val body = buildJsonObject {
+            putJsonObject("transition") { put("id", transition.id) }
+        }
+
+        val response = rateLimitedRequest(transitionsUrl) { client, _ ->
+            client.request(transitionsUrl) {
+                method = HttpMethod.Post
+                contentType(ContentType.Application.Json)
+                applyAuth(conn)
+                setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+            logger.error { "Transition Jira issue failed: status=${response.status.value}, body=$responseBody" }
+            throw IllegalStateException("Jira transition failed with ${response.status.value}: $responseBody")
+        }
+
+        logger.info { "Transitioned Jira issue $issueKey to $transitionName" }
+    }
+
+    suspend fun createConfluencePage(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        spaceKey: String,
+        title: String,
+        content: String,
+        parentPageId: String?,
+    ): WikiPageResponse {
+        logger.info { "Creating Confluence page in space $spaceKey: $title" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val confluenceBase = getConfluenceBaseUrl(conn)
+
+        // Use Confluence v2 API for cloud, v1 for server
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+
+        if (isCloud) {
+            // V2 API: POST /api/v2/pages
+            val url = "$confluenceBase/api/v2/pages"
+            val body = buildJsonObject {
+                put("spaceId", getSpaceId(conn, confluenceBase, spaceKey))
+                put("status", "current")
+                put("title", title)
+                putJsonObject("body") {
+                    put("representation", "storage")
+                    put("value", content)
+                }
+                if (parentPageId != null) {
+                    put("parentId", parentPageId)
+                }
+            }
+
+            val response = rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Post
+                    contentType(ContentType.Application.Json)
+                    applyAuth(conn)
+                    setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+                }
+            }
+
+            if (response.status.value !in 200..299) {
+                val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+                logger.error { "Create Confluence page (v2) failed: status=${response.status.value}, body=$responseBody" }
+                throw IllegalStateException("Confluence create page failed with ${response.status.value}: $responseBody")
+            }
+
+            @Serializable
+            data class V2PageResult(
+                val id: String,
+                val title: String,
+                val spaceId: String? = null,
+                val parentId: String? = null,
+                val status: String? = null,
+            )
+
+            val result = response.body<String>().let { json.decodeFromString(V2PageResult.serializer(), it) }
+            return WikiPageResponse(
+                page = WikiPageDto(
+                    id = result.id,
+                    title = result.title,
+                    content = content,
+                    spaceKey = spaceKey,
+                    url = "${baseUrl.trimEnd('/')}/wiki/spaces/$spaceKey/pages/${result.id}",
+                    created = "",
+                    updated = "",
+                    parentId = result.parentId,
+                ),
+            )
+        } else {
+            // V1 API: POST /rest/api/content
+            val url = "$confluenceBase/rest/api/content"
+            val body = buildJsonObject {
+                put("type", "page")
+                put("title", title)
+                putJsonObject("space") { put("key", spaceKey) }
+                putJsonObject("body") {
+                    putJsonObject("storage") {
+                        put("value", content)
+                        put("representation", "storage")
+                    }
+                }
+                if (parentPageId != null) {
+                    putJsonArray("ancestors") {
+                        addJsonObject { put("id", parentPageId) }
+                    }
+                }
+            }
+
+            val response = rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Post
+                    contentType(ContentType.Application.Json)
+                    applyAuth(conn)
+                    setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+                }
+            }
+
+            if (response.status.value !in 200..299) {
+                val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+                logger.error { "Create Confluence page (v1) failed: status=${response.status.value}, body=$responseBody" }
+                throw IllegalStateException("Confluence create page failed with ${response.status.value}: $responseBody")
+            }
+
+            @Serializable
+            data class V1PageResult(val id: String, val title: String)
+
+            val result = response.body<String>().let { json.decodeFromString(V1PageResult.serializer(), it) }
+            return WikiPageResponse(
+                page = WikiPageDto(
+                    id = result.id,
+                    title = result.title,
+                    content = content,
+                    spaceKey = spaceKey,
+                    url = "${baseUrl.trimEnd('/')}/wiki/spaces/$spaceKey/pages/${result.id}",
+                    created = "",
+                    updated = "",
+                    parentId = parentPageId,
+                ),
+            )
+        }
+    }
+
+    suspend fun updateConfluencePage(
+        baseUrl: String,
+        authType: com.jervis.common.dto.AuthType,
+        basicUsername: String?,
+        basicPassword: String?,
+        bearerToken: String?,
+        cloudId: String?,
+        pageId: String,
+        title: String,
+        content: String,
+        version: Int,
+    ): WikiPageResponse {
+        logger.info { "Updating Confluence page: $pageId (version $version)" }
+        val conn = resolveConnection(baseUrl, authType, basicUsername, basicPassword, bearerToken, cloudId)
+        val confluenceBase = getConfluenceBaseUrl(conn)
+        val isCloud = baseUrl.contains("atlassian.net") || conn.cloudId != null
+
+        if (isCloud) {
+            // V2 API: PUT /api/v2/pages/{id}
+            val url = "$confluenceBase/api/v2/pages/$pageId"
+            val body = buildJsonObject {
+                put("id", pageId)
+                put("status", "current")
+                put("title", title)
+                putJsonObject("body") {
+                    put("representation", "storage")
+                    put("value", content)
+                }
+                putJsonObject("version") {
+                    put("number", version)
+                    put("message", "Updated by Jervis")
+                }
+            }
+
+            val response = rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Put
+                    contentType(ContentType.Application.Json)
+                    applyAuth(conn)
+                    setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+                }
+            }
+
+            if (response.status.value !in 200..299) {
+                val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+                logger.error { "Update Confluence page (v2) failed: status=${response.status.value}, body=$responseBody" }
+                throw IllegalStateException("Confluence update page failed with ${response.status.value}: $responseBody")
+            }
+
+            return WikiPageResponse(
+                page = WikiPageDto(
+                    id = pageId,
+                    title = title,
+                    content = content,
+                    url = "${baseUrl.trimEnd('/')}/wiki/pages/$pageId",
+                    created = "",
+                    updated = "",
+                ),
+            )
+        } else {
+            // V1 API: PUT /rest/api/content/{id}
+            val url = "$confluenceBase/rest/api/content/$pageId"
+            val body = buildJsonObject {
+                put("type", "page")
+                put("title", title)
+                putJsonObject("body") {
+                    putJsonObject("storage") {
+                        put("value", content)
+                        put("representation", "storage")
+                    }
+                }
+                putJsonObject("version") { put("number", version) }
+            }
+
+            val response = rateLimitedRequest(url) { client, _ ->
+                client.request(url) {
+                    method = HttpMethod.Put
+                    contentType(ContentType.Application.Json)
+                    applyAuth(conn)
+                    setBody(json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), body))
+                }
+            }
+
+            if (response.status.value !in 200..299) {
+                val responseBody = runCatching { response.body<String>() }.getOrNull() ?: ""
+                logger.error { "Update Confluence page (v1) failed: status=${response.status.value}, body=$responseBody" }
+                throw IllegalStateException("Confluence update page failed with ${response.status.value}: $responseBody")
+            }
+
+            return WikiPageResponse(
+                page = WikiPageDto(
+                    id = pageId,
+                    title = title,
+                    content = content,
+                    url = "${baseUrl.trimEnd('/')}/wiki/pages/$pageId",
+                    created = "",
+                    updated = "",
+                ),
+            )
+        }
+    }
+
+    /**
+     * Helper to resolve Confluence space key to space ID (needed for v2 API).
+     */
+    private suspend fun getSpaceId(conn: AtlassianConnection, confluenceBase: String, spaceKey: String): String {
+        val url = "$confluenceBase/api/v2/spaces"
+        val response = rateLimitedRequest(url) { client, _ ->
+            client.request(url) {
+                method = HttpMethod.Get
+                applyAuth(conn)
+                url { parameters.append("keys", spaceKey) }
+            }
+        }
+
+        if (response.status.value !in 200..299) {
+            throw IllegalStateException("Failed to resolve space ID for key '$spaceKey'")
+        }
+
+        @Serializable
+        data class SpaceResult(val id: String, val key: String)
+        @Serializable
+        data class SpacesResult(val results: List<SpaceResult>)
+
+        val spaces = response.body<String>().let { json.decodeFromString(SpacesResult.serializer(), it) }
+        return spaces.results.firstOrNull()?.id
+            ?: throw IllegalStateException("Space with key '$spaceKey' not found")
     }
 
     private suspend fun listSpacesV1(conn: AtlassianConnection, confluenceBase: String, originalBaseUrl: String): WikiSpacesResponse {

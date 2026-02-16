@@ -2,8 +2,12 @@ package com.jervis.integration.bugtracker.internal
 
 import com.jervis.common.client.IBugTrackerClient
 import com.jervis.common.dto.AuthType
+import com.jervis.common.dto.bugtracker.BugTrackerAddCommentRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerCreateIssueRpcRequest
 import com.jervis.common.dto.bugtracker.BugTrackerIssueRequest
 import com.jervis.common.dto.bugtracker.BugTrackerSearchRequest
+import com.jervis.common.dto.bugtracker.BugTrackerTransitionRpcRequest
+import com.jervis.common.dto.bugtracker.BugTrackerUpdateIssueRpcRequest
 import com.jervis.common.rpc.withRpcRetry
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
@@ -129,19 +133,126 @@ class BugTrackerServiceImpl(
     override suspend fun createIssue(
         clientId: ClientId,
         request: CreateBugTrackerIssueRequest,
-    ): BugTrackerIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): BugTrackerIssue {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerCreateIssue",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.createIssue(
+                BugTrackerCreateIssueRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    projectKey = request.projectKey,
+                    summary = request.summary,
+                    description = request.description,
+                    issueType = request.issueType,
+                    priority = request.priority,
+                    assignee = request.assignee,
+                    labels = request.labels,
+                ),
+            )
+        }.issue
+
+        return BugTrackerIssue(
+            key = response.key,
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Jervis",
+            created = response.created,
+            updated = response.updated,
+            issueType = request.issueType,
+            priority = response.priority,
+            labels = request.labels,
+        )
+    }
 
     override suspend fun updateIssue(
         clientId: ClientId,
         issueKey: String,
         request: UpdateBugTrackerIssueRequest,
-    ): BugTrackerIssue = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): BugTrackerIssue {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerUpdateIssue",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.updateIssue(
+                BugTrackerUpdateIssueRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                    summary = request.summary,
+                    description = request.description,
+                    assignee = request.assignee,
+                    priority = request.priority,
+                    labels = request.labels,
+                ),
+            )
+        }.issue
+
+        return BugTrackerIssue(
+            key = response.key,
+            summary = response.title,
+            description = response.description,
+            status = response.status,
+            assignee = response.assignee,
+            reporter = response.reporter ?: "Unknown",
+            created = response.created,
+            updated = response.updated,
+            issueType = "Task",
+            priority = response.priority,
+            labels = request.labels ?: emptyList(),
+        )
+    }
 
     override suspend fun addComment(
         clientId: ClientId,
         issueKey: String,
         comment: String,
-    ): BugTrackerComment = throw UnsupportedOperationException("Write operations are not allowed yet (Read-only mode)")
+    ): BugTrackerComment {
+        val connection = findBugTrackerConnection(clientId)
+            ?: throw IllegalStateException("No BugTracker connection found for client $clientId")
+
+        val response = withRpcRetry(
+            name = "BugTrackerAddComment",
+            reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
+        ) {
+            bugTrackerClient.addComment(
+                BugTrackerAddCommentRpcRequest(
+                    baseUrl = connection.baseUrl,
+                    authType = AuthType.valueOf(connection.authType.name),
+                    basicUsername = connection.username,
+                    basicPassword = connection.password,
+                    bearerToken = connection.bearerToken,
+                    cloudId = connection.cloudId,
+                    issueKey = issueKey,
+                    body = comment,
+                ),
+            )
+        }
+
+        return BugTrackerComment(
+            id = response.id,
+            author = response.author ?: "Jervis",
+            body = response.body,
+            created = response.created,
+        )
+    }
 
     private suspend fun findBugTrackerConnection(clientId: ClientId): ConnectionDocument? {
         val client = clientService.getClientById(clientId)

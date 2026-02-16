@@ -76,6 +76,7 @@ class BackgroundEngine(
     private val taskNotifier: TaskNotifier,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val projectRepository: com.jervis.repository.ProjectRepository,
+    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -86,6 +87,7 @@ class BackgroundEngine(
     private var schedulerJob: Job? = null
     private var orchestratorResultJob: Job? = null
     private var workspaceRetryJob: Job? = null
+    private var idleReviewJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
     private val schedulerAdvance = Duration.ofMinutes(10)
@@ -182,6 +184,16 @@ class BackgroundEngine(
                 }
             }
 
+        idleReviewJob =
+            scope.launch {
+                try {
+                    logger.info { "Idle review loop STARTED (interval: ${backgroundProperties.idleReviewInterval.toMinutes()}min, enabled: ${backgroundProperties.idleReviewEnabled})" }
+                    runIdleReviewLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Idle review loop FAILED to start!" }
+                }
+            }
+
         logger.info { "BackgroundEngine initialization complete - all loops launched with singleton guarantee" }
     }
 
@@ -194,6 +206,7 @@ class BackgroundEngine(
         schedulerJob?.cancel()
         orchestratorResultJob?.cancel()
         workspaceRetryJob?.cancel()
+        idleReviewJob?.cancel()
         supervisor.cancel(CancellationException("Application shutdown"))
 
         try {
@@ -996,6 +1009,135 @@ class BackgroundEngine(
      * CLONE_FAILED_AUTH and CLONE_FAILED_NOT_FOUND require user action — no auto-retry.
      * Runs every 60s, complementing the startup-only check.
      */
+
+    /**
+     * Idle review loop — when no active tasks are running and brain is configured,
+     * creates a synthetic IDLE_REVIEW task so the orchestrator can proactively review
+     * project statuses, check deadlines, and organize work in the brain Jira/Confluence.
+     *
+     * Runs every [BackgroundProperties.idleReviewInterval] (default 30 min).
+     * Skips if:
+     * - idleReviewEnabled is false
+     * - Brain is not configured (no Jira/Confluence connection)
+     * - There are active tasks (QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING)
+     * - An existing IDLE_REVIEW task is already pending/running
+     */
+    private suspend fun runIdleReviewLoop() {
+        // Wait for startup + extra buffer to let system stabilize
+        delay(backgroundProperties.waitOnStartup)
+        delay(60_000) // Extra 1 minute after startup
+
+        while (scope.isActive) {
+            try {
+                delay(backgroundProperties.idleReviewInterval)
+
+                if (!backgroundProperties.idleReviewEnabled) {
+                    continue
+                }
+
+                // Check if brain is configured
+                if (!brainWriteService.isConfigured()) {
+                    logger.debug { "IDLE_REVIEW: Brain not configured, skipping" }
+                    continue
+                }
+
+                // Check if there are active tasks (system is busy)
+                val activeStates = listOf(
+                    TaskStateEnum.QUALIFYING,
+                    TaskStateEnum.READY_FOR_GPU,
+                    TaskStateEnum.PYTHON_ORCHESTRATING,
+                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                )
+                val totalActive = activeStates.sumOf { state ->
+                    taskRepository.countByState(state)
+                }
+                if (totalActive > 0) {
+                    logger.debug { "IDLE_REVIEW: System busy ($totalActive active tasks), skipping" }
+                    continue
+                }
+
+                // Check if there's already a pending/running IDLE_REVIEW task
+                val existingIdleReview = taskRepository.findFirstByTypeAndStateIn(
+                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+                    states = listOf(
+                        TaskStateEnum.NEW,
+                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.QUALIFYING,
+                        TaskStateEnum.READY_FOR_GPU,
+                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                    ),
+                )
+                if (existingIdleReview != null) {
+                    logger.debug { "IDLE_REVIEW: Already exists (${existingIdleReview.id}), skipping" }
+                    continue
+                }
+
+                // Use a system-level client ID — the JERVIS Internal project's client
+                val defaultClientId = try {
+                    val projects = projectRepository.findAll().toList()
+                    val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
+                        ?: projects.firstOrNull()
+                    jervisProject?.clientId
+                } catch (_: Exception) {
+                    null
+                }
+
+                if (defaultClientId == null) {
+                    logger.debug { "IDLE_REVIEW: No client found, skipping" }
+                    continue
+                }
+
+                // Create idle review task
+                val idleReviewTask = TaskDocument(
+                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+                    taskName = "Idle Review",
+                    content = buildIdleReviewPrompt(),
+                    clientId = defaultClientId,
+                    state = TaskStateEnum.READY_FOR_GPU, // Skip qualification, go directly to orchestrator
+                    processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
+                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-review"),
+                )
+                taskRepository.save(idleReviewTask)
+                taskNotifier.notifyNewTask()
+
+                logger.info { "IDLE_REVIEW: Created idle review task ${idleReviewTask.id} for client $defaultClientId" }
+            } catch (e: CancellationException) {
+                logger.info { "Idle review loop cancelled" }
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "Error in idle review loop" }
+                delay(backgroundProperties.idleReviewInterval)
+            }
+        }
+    }
+
+    /**
+     * Build the prompt for the idle review orchestrator task.
+     * The orchestrator will use brain tools to check project statuses.
+     */
+    private fun buildIdleReviewPrompt(): String = """
+        |You are performing a proactive idle review of all projects managed by Jervis.
+        |
+        |Using the brain tools, perform the following review:
+        |
+        |1. **Check open issues**: Use brain_search_issues to find all open issues.
+        |   Review their status, check for overdue items, and update priorities if needed.
+        |
+        |2. **Review recent activity**: Check for issues that haven't been updated recently.
+        |   Add comments or transition stale issues as needed.
+        |
+        |3. **Check KB for new information**: Use kb_search to check if there's new
+        |   information that should be reflected in brain issues or wiki pages.
+        |
+        |4. **Summarize findings**: Create or update a summary page in Confluence
+        |   with the current status of all tracked work.
+        |
+        |5. **Create issues for any gaps**: If you find projects without proper tracking,
+        |   create new issues to ensure nothing falls through the cracks.
+        |
+        |Be concise and actionable. Focus on what needs attention.
+    """.trimMargin()
+
     private suspend fun runWorkspaceRetryLoop() {
         while (scope.isActive) {
             delay(60_000) // Check every 60 seconds

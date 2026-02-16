@@ -25,6 +25,7 @@ import com.jervis.service.IProjectService
 import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
+import com.jervis.service.ISystemConfigService
 import com.jervis.service.IWhisperSettingsService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -150,6 +151,7 @@ object NetworkModule {
             deviceTokenService = rpcClient.withService<IDeviceTokenService>(),
             indexingQueueService = rpcClient.withService<IIndexingQueueService>(),
             environmentResourceService = rpcClient.withService<IEnvironmentResourceService>(),
+            systemConfigService = rpcClient.withService<ISystemConfigService>(),
         )
 
     /**
@@ -182,5 +184,6 @@ object NetworkModule {
         val deviceTokenService: IDeviceTokenService,
         val indexingQueueService: IIndexingQueueService,
         val environmentResourceService: IEnvironmentResourceService,
+        val systemConfigService: ISystemConfigService,
     )
 }

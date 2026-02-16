@@ -200,6 +200,7 @@ For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-bas
 - `SCHEDULED_TASK` – Cron-scheduled tasks
 - `LINK_PROCESSING` – URLs extracted from other documents
 - `MEETING_PROCESSING` – Transcribed meeting recordings (from MeetingContinuousIndexer)
+- `IDLE_REVIEW` – System-generated proactive review task (from BackgroundEngine idle loop)
 
 #### 1.1 Link Handling Flow - SEPARATE PENDING TASKS
 
@@ -511,6 +512,9 @@ NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10
     ├── one-shot: NEW → READY_FOR_QUALIFICATION (scheduledAt cleared)
     └── recurring (cron): original stays NEW (scheduledAt = next cron run),
                           execution copy → READY_FOR_QUALIFICATION
+
+Idle review:
+(no active tasks + brain configured) → IDLE_REVIEW task → READY_FOR_GPU → PYTHON_ORCHESTRATING → DONE
 ```
 
 ### K8s Resilience
@@ -530,6 +534,25 @@ whose backoff has elapsed:
 - **Fields:** `ProjectDocument.workspaceRetryCount`, `nextWorkspaceRetryAt`, `lastWorkspaceError`
 - **Manual retry:** UI "Zkusit znovu" button calls `IProjectService.retryWorkspace()` → resets all retry fields
 - **UI banner:** `WorkspaceBanner` composable shows CLONING (info) or CLONE_FAILED (error + retry button)
+
+### Idle Review Loop (Brain)
+
+- **Interval:** Configurable via `BackgroundProperties.idleReviewInterval` (default 30 min)
+- **Enabled:** `BackgroundProperties.idleReviewEnabled` (default true)
+- **Preconditions:** Brain configured (SystemConfig), no active tasks, no existing IDLE_REVIEW task
+- **Creates:** `IDLE_REVIEW` task with state `READY_FOR_GPU` (skips qualification)
+- **Orchestrator prompt:** Review open issues, check deadlines, update Confluence summaries
+- **Task type:** `TaskTypeEnum.IDLE_REVIEW`
+- **Client resolution:** Uses JERVIS Internal project's client ID
+
+### Cross-Project Aggregation (Qualifier → Brain)
+
+After successful KB ingest with `hasActionableContent = true`, `SimpleQualifierAgent` writes findings to brain Jira:
+
+- **Deduplication:** JQL search for `labels = "corr:{correlationId}"` before creating
+- **Labels:** `auto-ingest`, source type, `corr:{correlationId}`
+- **Non-critical:** Failure logged but does not block qualification or routing
+- **Brain service:** Uses `BrainWriteService.createIssue()` (reads SystemConfig for connection)
 
 ### Orchestrator Dispatch Backoff
 
@@ -938,5 +961,5 @@ All default to `False` (opt-in):
 
 ---
 
-**Document Version:** 7.0
-**Last Updated:** 2026-02-14
+**Document Version:** 8.0
+**Last Updated:** 2026-02-16

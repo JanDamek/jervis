@@ -944,7 +944,7 @@ KB service exposes Prometheus metrics at `/metrics` endpoint (both read and writ
 
 K8s `ServiceMonitor` (`k8s/kb-servicemonitor.yaml`) scrapes both read and write services every 30s.
 
-### Key Files
+### Key Files (Metrics)
 
 | File | Purpose |
 |------|---------|
@@ -953,3 +953,32 @@ K8s `ServiceMonitor` (`k8s/kb-servicemonitor.yaml`) scrapes both read and write 
 | `app/services/knowledge_service.py` | RAG/Graph operation instrumentation |
 | `app/services/llm_extraction_worker.py` | Extraction queue instrumentation |
 | `k8s/kb-servicemonitor.yaml` | Prometheus ServiceMonitor |
+
+---
+
+## Brain Jira (Cross-Project Aggregation)
+
+The KB is complemented by an internal Jira+Confluence instance ("Brain") configured via `SystemConfigDocument`. This serves as a **cross-project aggregation layer** where actionable findings from all clients/projects are centralized.
+
+### How It Connects to KB
+
+1. **Qualifier writes to both:** When `SimpleQualifierAgent` processes a task and KB returns `hasActionableContent=true`, the qualifier writes:
+   - To **KB** (RAG + graph) — for semantic search and knowledge retrieval
+   - To **Brain Jira** — for task tracking, planning, and orchestrator review
+
+2. **Deduplication:** Brain issues are deduplicated by `corr:{correlationId}` label to prevent duplicates when the same content is re-qualified.
+
+3. **Orchestrator reads both:** During task execution, the orchestrator has access to:
+   - `kb_search` tool — semantic search across KB
+   - `brain_search_issues` / `brain_search_pages` tools — structured search in Brain Jira/Confluence
+
+4. **Idle Review:** When no tasks are pending, the orchestrator creates `IDLE_REVIEW` tasks that query both KB and Brain Jira to find stale items, missed deadlines, or conflicting information.
+
+### Key Files (Brain)
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../service/brain/BrainWriteService.kt` | High-level brain write API |
+| `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Implementation (resolves SystemConfig, delegates to BugTrackerService/WikiService) |
+| `backend/server/.../qualifier/SimpleQualifierAgent.kt` | Cross-project write in `writeToBrain()` |
+| `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client for brain endpoints |
