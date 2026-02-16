@@ -24,15 +24,54 @@ import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JTextField
 
 /**
- * In-app approval dialog displayed when an orchestrator interrupt arrives.
+ * In-app user task dialog — handles both approval and clarification tasks.
  *
- * Shows the interrupt action and description with Approve/Deny buttons.
- * On deny, expands a text field for the user to provide an alternative instruction.
+ * **Approval mode** (event.isApproval == true):
+ *   Shows interrupt action/description with Approve/Deny buttons.
+ *   On deny, expands a text field for alternative instructions.
+ *
+ * **Clarification mode** (event.isApproval == false):
+ *   Shows task title/description with a text field for the user's reply.
+ *   Send button submits the reply, Dismiss closes without action.
  *
  * Works on all platforms (commonMain Compose).
  */
 @Composable
+fun UserTaskNotificationDialog(
+    event: JervisEvent.UserTaskCreated,
+    onApprove: (taskId: String) -> Unit,
+    onDeny: (taskId: String, reason: String) -> Unit,
+    onReply: (taskId: String, reply: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (event.isApproval) {
+        ApprovalContent(event = event, onApprove = onApprove, onDeny = onDeny, onDismiss = onDismiss)
+    } else {
+        ClarificationContent(event = event, onReply = onReply, onDismiss = onDismiss)
+    }
+}
+
+/**
+ * Legacy wrapper — kept for backward compatibility.
+ */
+@Composable
 fun ApprovalNotificationDialog(
+    event: JervisEvent.UserTaskCreated,
+    onApprove: (taskId: String) -> Unit,
+    onDeny: (taskId: String, reason: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    UserTaskNotificationDialog(
+        event = event,
+        onApprove = onApprove,
+        onDeny = onDeny,
+        onReply = { _, _ -> },
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun ApprovalContent(
     event: JervisEvent.UserTaskCreated,
     onApprove: (taskId: String) -> Unit,
     onDeny: (taskId: String, reason: String) -> Unit,
@@ -114,6 +153,62 @@ fun ApprovalNotificationDialog(
                     }) {
                         Text("Povolit")
                     }
+                }
+            }
+        },
+        dismissButton = null,
+    )
+}
+
+@Composable
+private fun ClarificationContent(
+    event: JervisEvent.UserTaskCreated,
+    onReply: (taskId: String, reply: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var replyText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Úloha vyžaduje odpověď",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = event.interruptDescription ?: event.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                JTextField(
+                    value = replyText,
+                    onValueChange = { replyText = it },
+                    label = "Vaše odpověď",
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 5,
+                    singleLine = false,
+                    placeholder = "Napište odpověď pro agenta...",
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                JSecondaryButton(onClick = onDismiss) {
+                    Text("Zavřít")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                JPrimaryButton(
+                    onClick = { onReply(event.taskId, replyText) },
+                    enabled = replyText.isNotBlank(),
+                ) {
+                    Text("Odeslat")
                 }
             }
         },

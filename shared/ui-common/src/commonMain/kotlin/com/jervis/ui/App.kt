@@ -29,7 +29,7 @@ import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JervisTheme
 import com.jervis.ui.navigation.AppNavigator
 import com.jervis.ui.navigation.Screen
-import com.jervis.ui.notification.ApprovalNotificationDialog
+import com.jervis.ui.notification.UserTaskNotificationDialog
 import com.jervis.ui.screens.*
 
 /**
@@ -106,6 +106,9 @@ fun App(
         // Environment
         val environments by viewModel.environments.collectAsState()
 
+        // User task count for badge
+        val userTaskCount by viewModel.userTaskCount.collectAsState()
+
         Column(modifier = Modifier.fillMaxSize()) {
         // Persistent top bar — always visible
         PersistentTopBar(
@@ -138,6 +141,7 @@ fun App(
             onAgentStatusClick = { appNavigator.navigateTo(Screen.AgentWorkload) },
             hasEnvironment = environments.isNotEmpty(),
             onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,
+            userTaskCount = userTaskCount,
         )
 
         // Global recording bar — full controls when recording
@@ -250,14 +254,23 @@ fun App(
 
         SnackbarHost(hostState = snackbarHostState)
 
-        // Approval notification dialog — shown when orchestrator needs approval
-        val approvalEvent by viewModel.approvalDialogEvent.collectAsState()
-        approvalEvent?.let { event ->
-            ApprovalNotificationDialog(
+        // User task notification dialog — shown for all user tasks (approval + clarification)
+        val userTaskEvent by viewModel.userTaskDialogEvent.collectAsState()
+        userTaskEvent?.let { event ->
+            UserTaskNotificationDialog(
                 event = event,
                 onApprove = { taskId -> viewModel.approveTask(taskId) },
                 onDeny = { taskId, reason -> viewModel.denyTask(taskId, reason) },
-                onDismiss = { viewModel.dismissApprovalDialog() },
+                onReply = { taskId, reply ->
+                    viewModel.replyToTask(taskId, reply)
+                    // Navigate to the relevant project if projectId is available
+                    event.projectId?.let { projectId ->
+                        viewModel.selectClient(event.clientId)
+                        viewModel.selectProject(projectId)
+                        appNavigator.navigateAndClearHistory(Screen.Main)
+                    }
+                },
+                onDismiss = { viewModel.dismissUserTaskDialog() },
             )
         }
 

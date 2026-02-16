@@ -16,6 +16,7 @@ sealed class JervisEvent {
         val interruptAction: String? = null,
         val interruptDescription: String? = null,
         val isApproval: Boolean = false,
+        val projectId: String? = null,
     ) : JervisEvent()
 
     @Serializable
