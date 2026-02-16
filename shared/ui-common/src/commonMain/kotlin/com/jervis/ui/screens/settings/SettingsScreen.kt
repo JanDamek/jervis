@@ -213,7 +213,6 @@ private fun GeneralSettings(repository: JervisRepository) {
 
                         // Save button
                         JPrimaryButton(
-                            text = "Uložit",
                             onClick = {
                                 scope.launch {
                                     try {
@@ -233,7 +232,9 @@ private fun GeneralSettings(repository: JervisRepository) {
                                     }
                                 }
                             },
-                        )
+                        ) {
+                            Text("Uložit")
+                        }
                     }
                 }
             }

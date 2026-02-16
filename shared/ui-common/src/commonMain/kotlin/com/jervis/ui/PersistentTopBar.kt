@@ -441,7 +441,7 @@ private fun RecordingIndicator(
 private fun formatDuration(seconds: Long): String {
     val m = seconds / 60
     val s = seconds % 60
-    return "%d:%02d".format(m, s)
+    return "${m}:${s.toString().padStart(2, '0')}"
 }
 
 /**
