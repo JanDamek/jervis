@@ -1322,7 +1322,7 @@ class AtlassianApiClient(
                 if (descriptionBody != null) put("description", descriptionBody)
                 if (priority != null) putJsonObject("priority") { put("name", priority) }
                 if (assignee != null) putJsonObject("assignee") { put("id" , assignee) }
-                if (labels.isNotEmpty()) putJsonArray("labels") { labels.forEach { add(it) } }
+                if (labels.isNotEmpty()) putJsonArray("labels") { labels.forEach { add(JsonPrimitive(it)) } }
                 if (epicKey != null) {
                     // Epic link via parent for next-gen, or customfield for classic
                     putJsonObject("parent") { put("key", epicKey) }
@@ -1420,7 +1420,7 @@ class AtlassianApiClient(
                 }
                 if (assignee != null) putJsonObject("assignee") { put("id", assignee) }
                 if (priority != null) putJsonObject("priority") { put("name", priority) }
-                if (labels != null) putJsonArray("labels") { labels.forEach { add(it) } }
+                if (labels != null) putJsonArray("labels") { labels.forEach { add(JsonPrimitive(it)) } }
             }
         }
 
