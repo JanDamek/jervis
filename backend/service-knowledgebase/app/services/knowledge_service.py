@@ -110,7 +110,7 @@ class KnowledgeService:
 
         await asyncio.to_thread(_mark)
 
-    async def ingest(self, request: IngestRequest, embedding_priority: int | None = None) -> IngestResult:
+    async def ingest(self, request: IngestRequest, embedding_priority: int | None = None, content_hash: str = "") -> IngestResult:
         """
         Ingest content with async LLM extraction.
 
@@ -131,7 +131,7 @@ class KnowledgeService:
 
         # 1. RAG Ingest - get chunk IDs (fast)
         rag_start = time.time()
-        chunks_count, chunk_ids = await self.rag_service.ingest(request, embedding_priority=embedding_priority)
+        chunks_count, chunk_ids = await self.rag_service.ingest(request, embedding_priority=embedding_priority, content_hash=content_hash)
         rag_ingest_duration.observe(time.time() - rag_start)
         rag_ingest_total.labels(status="success").inc()
         rag_ingest_chunks.observe(chunks_count)
@@ -519,17 +519,27 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             observedAt=request.observedAt
         )
 
-        # Ingest to RAG + Graph — skip if chunks already exist (idempotent re-qualification)
+        # Ingest to RAG — idempotent: skip if content unchanged, purge+re-ingest if changed
+        import hashlib
+        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:16]
+
         existing_chunks = await self.rag_service.count_by_source(request.sourceUrn)
         if existing_chunks > 0:
-            logger.info("Full ingest: sourceUrn=%s already has %d chunks, skipping RAG ingest",
-                        request.sourceUrn, existing_chunks)
-            ingest_result = IngestResult(
-                status="success", chunks_count=existing_chunks,
-                nodes_created=0, edges_created=0,
-            )
+            existing_hash = await self.rag_service.get_content_hash(request.sourceUrn)
+            if existing_hash == content_hash:
+                logger.info("Full ingest: sourceUrn=%s unchanged (hash=%s, %d chunks), skipping RAG",
+                            request.sourceUrn, content_hash, existing_chunks)
+                ingest_result = IngestResult(
+                    status="success", chunks_count=existing_chunks,
+                    nodes_created=0, edges_created=0,
+                )
+            else:
+                logger.info("Full ingest: sourceUrn=%s content changed (old_hash=%s new_hash=%s), purge+re-ingest",
+                            request.sourceUrn, existing_hash, content_hash)
+                await self.rag_service.purge_by_source(request.sourceUrn)
+                ingest_result = await self.ingest(ingest_req, content_hash=content_hash)
         else:
-            ingest_result = await self.ingest(ingest_req)
+            ingest_result = await self.ingest(ingest_req, content_hash=content_hash)
 
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")

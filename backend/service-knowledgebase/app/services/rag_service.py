@@ -44,8 +44,20 @@ class RagService:
                     # Bidirectional linking: list of graph node keys referenced in this chunk
                     wvc.Property(name="groupId", data_type=wvc.DataType.TEXT),
                     wvc.Property(name="graphRefs", data_type=wvc.DataType.TEXT_ARRAY),
+                    # Content hash for idempotent re-ingest detection
+                    wvc.Property(name="contentHash", data_type=wvc.DataType.TEXT),
                 ]
             )
+        else:
+            # Migration: add contentHash property if missing
+            try:
+                collection = self.client.collections.get("KnowledgeChunk")
+                collection.config.add_property(
+                    wvc.Property(name="contentHash", data_type=wvc.DataType.TEXT)
+                )
+                logger.info("Added contentHash property to KnowledgeChunk schema")
+            except Exception:
+                pass  # Already exists
 
     async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
         """Embed text with priority header for router.
@@ -83,7 +95,8 @@ class RagService:
         self,
         request: IngestRequest,
         graph_refs: list[str] = None,
-        embedding_priority: int | None = None
+        embedding_priority: int | None = None,
+        content_hash: str = "",
     ) -> tuple[int, list[str]]:
         """
         Ingest content into RAG store.
@@ -127,6 +140,7 @@ class RagService:
                             "groupId": request.groupId or "",
                             "kind": request.kind or "",
                             "graphRefs": graph_refs or [],
+                            "contentHash": content_hash,
                         },
                         vector=vectors[i]
                     )
@@ -203,6 +217,21 @@ class RagService:
             return response.total_count or 0
 
         return await asyncio.to_thread(_count)
+
+    async def get_content_hash(self, source_urn: str) -> str | None:
+        """Get contentHash from first chunk for a sourceUrn (idempotent re-ingest check)."""
+        def _get_hash():
+            collection = self.client.collections.get("KnowledgeChunk")
+            response = collection.query.fetch_objects(
+                filters=wvq.Filter.by_property("sourceUrn").equal(source_urn),
+                limit=1,
+                return_properties=["contentHash"],
+            )
+            if response.objects:
+                return response.objects[0].properties.get("contentHash") or None
+            return None
+
+        return await asyncio.to_thread(_get_hash)
 
     async def purge_by_source(self, source_urn: str) -> tuple[int, list[str]]:
         """
