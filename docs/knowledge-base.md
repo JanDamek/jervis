@@ -1,6 +1,6 @@
 # Knowledge Base - Implementation and Architecture
 
-**Status:** Production Documentation (2026-02-16)
+**Status:** Production Documentation (2026-02-17)
 **Purpose:** Knowledge base implementation, graph design, and architecture
 
 ---
@@ -72,7 +72,11 @@ IngestRequest
    - buildGraphPayload()    // Parse relationships, expand short-hand refs
    - persistGraph()         // Upsert nodes + edges with evidence
    ↓
-IngestResult (success, summary, ingestedNodes[])
+6. Summary Generation (synchronous LLM call)
+   - _generate_summary()    // Extracts: hasActionableContent, isAssignedToMe, hasFutureDeadline,
+                           //           suggestedDeadline, urgency, actionType
+   ↓
+IngestResult (success, summary, ingestedNodes[], hasActionableContent, actionType, ...)
 ```
 
 ---

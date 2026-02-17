@@ -378,47 +378,64 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 
 **Preemption guarantees:** User requests ALWAYS have priority over background tasks
 
-#### Three-Way Task Routing (SimpleQualifierAgent)
+#### Intelligent Task Routing (SimpleQualifierAgent)
 
 The qualifier delegates heavy lifting to the KB microservice (`POST /ingest/full`),
 which returns routing hints: `hasActionableContent`, `isAssignedToMe`, `hasFutureDeadline`,
-`suggestedDeadline`, `urgency`.
+`suggestedDeadline`, `urgency`, `actionType`.
 
 **Decision tree:**
 
 ```
 KB ingest result →
-  ├─ hasActionableContent=false
+  │
+  ├─ Step 0: Age filter (older than 7 days)
+  │    → DISPATCHED_GPU (just index, too old to act on)
+  │
+  ├─ Step 1: hasActionableContent=false
   │    → DISPATCHED_GPU (info_only — indexed, no action needed)
   │
-  ├─ isAssignedToMe=true AND hasActionableContent=true
+  ├─ Step 2: Simple actions (actionType in SIMPLE_ACTIONS)
+  │    → handleSimpleAction():
+  │       ├─ reply_email → creates USER_TASK ("Odpovědět na email: {subject}")
+  │       ├─ answer_question → creates USER_TASK with question context
+  │       ├─ schedule_meeting → creates scheduled reminder
+  │       ├─ acknowledge → creates USER_TASK for acknowledgment
+  │       └─ forward_info → creates USER_TASK for forwarding
+  │    → DISPATCHED_GPU (indexed + task created)
+  │
+  ├─ Step 3: isAssignedToMe=true AND hasActionableContent=true
   │    → READY_FOR_GPU (immediate, high priority)
   │
-  ├─ hasFutureDeadline=true AND hasActionableContent=true
+  ├─ Step 4: hasFutureDeadline=true AND hasActionableContent=true
   │    ├─ deadline < scheduleLeadDays away → READY_FOR_GPU (too close, do now)
   │    └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
   │         scheduledAt = deadline - scheduleLeadDays
   │         original task → DISPATCHED_GPU (indexed, done)
   │
-  └─ hasActionableContent=true (no assignment, no deadline)
-       → READY_FOR_GPU (execute when available)
+  └─ Step 5: Complex actions (actionType in COMPLEX_ACTIONS)
+       → READY_FOR_GPU (needs orchestrator: decompose_issue, analyze_code,
+                        create_application, review_code, design_architecture)
 ```
 
-**Schedule lead time**: `SCHEDULE_LEAD_DAYS = 2` (configurable per client).
-Tasks with deadlines further than this are scheduled, not executed immediately.
+**Constants:**
+- `MAX_ACTIONABLE_AGE = 7 days` — older tasks are indexed only (Step 0)
+- `SCHEDULE_LEAD_DAYS = 2` (configurable per client) — deadline scheduling threshold
+- `SIMPLE_ACTIONS` = {reply_email, answer_question, schedule_meeting, acknowledge, forward_info}
+- `COMPLEX_ACTIONS` = {decompose_issue, analyze_code, create_application, review_code, design_architecture}
 
-**DISPATCHED_GPU (info_only):**
+**DISPATCHED_GPU (info_only or simple action handled):**
 - Document indexed and structured (Graph + RAG)
-- No action items or decisions
+- No action items OR simple action handled by qualifier itself
 - Simple informational content
 - Routine updates (status change, minor commit)
+- Tasks older than 7 days
 
-**READY_FOR_GPU (immediate):**
+**READY_FOR_GPU (immediate orchestrator execution):**
 - Assigned to the team/organization
 - Deadline too close (within schedule lead days)
-- Requires user action (reply, update, review)
-- Code changes or architectural decisions
-- Complex analysis or investigation
+- Complex actions requiring orchestrator (coding, architecture, decomposition)
+- Requires user action that can't be handled by simple agent
 
 **SCHEDULED_TASK (deferred):**
 - Has actionable content with a future deadline
@@ -589,6 +606,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  │  • Priority routing (CRITICAL / NORMAL)                          │   │
 │  │  • Model set swapping (orchestrator ↔ background)               │   │
 │  │  • Preemption (background → CPU on orchestrator request)        │   │
+│  │  • Cross-set swap prevention (NORMAL with model mismatch → CPU) │   │
 │  │  • Multi-GPU pool (scalable to N GPU backends)                  │   │
 │  │  • Auto-reservation (60s idle timeout, no announce/release API) │   │
 │  └──────┬───────────────────────────────────┬──────────────────────┘   │
@@ -663,6 +681,35 @@ CPU:  fallback for overflow
 - All GPUs reserved → NORMAL to CPU
 
 Adding a GPU = config change only (`GPU_BACKENDS` env var), no code change.
+
+### Routing Algorithm with Cross-Set Swap Prevention
+
+The router's `_do_route()` function makes intelligent routing decisions to prevent thrashing:
+
+**Step 1-4:** Check CRITICAL priority, find available GPUs, validate model exists, check concurrency limits (standard routing).
+
+**Step 5: Cross-set swap prevention (NORMAL requests only)**
+
+```python
+if priority == Priority.NORMAL:
+    # If GPU has a different model set loaded, don't swap → use CPU instead
+    if gpu_loaded_set != required_set:
+        return CPU_BACKEND  # Prevents 30B ↔ 14B swap between orchestrator calls
+```
+
+**Why this matters:**
+
+Without Step 5, background tasks requesting `qwen2.5:14b` (Set B) would unload `qwen3-coder-tool:30b` (Set A) from GPU mid-orchestration, causing:
+- Orchestrator's next LLM call waits for model reload (~30s)
+- Background task finishes
+- Orchestrator's subsequent call reloads :30b again (~30s)
+- Total thrashing overhead: 60s+ per swap cycle
+
+**With Step 5:** NORMAL requests that need a different model set get CPU fallback immediately, preserving GPU state for CRITICAL workloads.
+
+**Exception:** CRITICAL requests ALWAYS get GPU (can preempt and swap model sets), because user is waiting.
+
+**Implementation:** `backend/service-ollama-router/app/gpu_state.py:_do_route()`, `backend/service-ollama-router/app/models.py:ModelSetId`
 
 ### Key Configuration
 
@@ -941,5 +988,5 @@ All default to `False` (opt-in):
 
 ---
 
-**Document Version:** 8.0
-**Last Updated:** 2026-02-16
+**Document Version:** 8.1
+**Last Updated:** 2026-02-17
