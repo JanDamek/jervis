@@ -52,7 +52,6 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 
 from app.config import settings
-from app.llm.gpu_router import announce_gpu, release_gpu
 from app.graph.nodes import (
     # Legacy graph nodes
     intake,
@@ -564,62 +563,53 @@ async def run_orchestration(
     thread_id: str = "default",
 ) -> dict:
     """Execute the full orchestration workflow (blocking)."""
-    # Use task_id for stable session_id (thread_id has random suffix that changes)
-    session_id = f"orch-{request.task_id}"
-    is_foreground = request.processing_mode == "FOREGROUND"
     logger.info(
-        "GPU reservation: mode=%s is_foreground=%s session=%s",
-        request.processing_mode, is_foreground, session_id,
+        "Orchestration mode=%s task=%s",
+        request.processing_mode, request.task_id,
     )
-    if is_foreground:
-        await announce_gpu(session_id)
-    try:
-        graph = get_orchestrator_graph()
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+    graph = get_orchestrator_graph()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-        # Check if checkpoint exists for this thread
-        existing_state = await get_graph_state(thread_id)
+    # Check if checkpoint exists for this thread
+    existing_state = await get_graph_state(thread_id)
 
-        if existing_state and existing_state.values and existing_state.next:
-            # Checkpoint exists AND graph is NOT finished → resume
+    if existing_state and existing_state.values and existing_state.next:
+        # Checkpoint exists AND graph is NOT finished → resume
+        logger.info(
+            "Resuming from checkpoint: task=%s thread=%s (checkpoint at node: %s)",
+            request.task_id,
+            thread_id,
+            existing_state.next,
+        )
+        # Only update chat_history and task query, preserve everything else
+        state_update = {
+            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "task": {
+                **existing_state.values.get("task", {}),
+                "query": request.query,  # Update query with new user message
+            },
+        }
+        final_state = await graph.ainvoke(state_update, config=config)
+    else:
+        # No checkpoint OR graph finished → fresh start with full initial state
+        if existing_state and existing_state.values:
             logger.info(
-                "Resuming from checkpoint: task=%s thread=%s (checkpoint at node: %s)",
+                "Previous execution completed, starting new: task=%s thread=%s",
                 request.task_id,
                 thread_id,
-                existing_state.next,
             )
-            # Only update chat_history and task query, preserve everything else
-            state_update = {
-                "chat_history": request.chat_history.model_dump() if request.chat_history else None,
-                "task": {
-                    **existing_state.values.get("task", {}),
-                    "query": request.query,  # Update query with new user message
-                },
-            }
-            final_state = await graph.ainvoke(state_update, config=config)
         else:
-            # No checkpoint OR graph finished → fresh start with full initial state
-            if existing_state and existing_state.values:
-                logger.info(
-                    "Previous execution completed, starting new: task=%s thread=%s",
-                    request.task_id,
-                    thread_id,
-                )
-            else:
-                logger.info("Starting fresh orchestration: task=%s thread=%s", request.task_id, thread_id)
-            initial_state = _build_initial_state(request)
-            final_state = await graph.ainvoke(initial_state, config=config)
+            logger.info("Starting fresh orchestration: task=%s thread=%s", request.task_id, thread_id)
+        initial_state = _build_initial_state(request)
+        final_state = await graph.ainvoke(initial_state, config=config)
 
-        logger.info(
-            "Orchestration complete: task=%s result=%s",
-            request.task_id,
-            final_state.get("final_result"),
-        )
+    logger.info(
+        "Orchestration complete: task=%s result=%s",
+        request.task_id,
+        final_state.get("final_result"),
+    )
 
-        return final_state
-    finally:
-        if is_foreground:
-            await release_gpu(session_id)
+    return final_state
 
 
 async def run_orchestration_streaming(
@@ -627,151 +617,126 @@ async def run_orchestration_streaming(
     thread_id: str = "default",
 ) -> AsyncIterator[dict]:
     """Execute orchestration with streaming node events."""
-    # Use task_id for stable session_id (thread_id has random suffix that changes)
-    session_id = f"orch-stream-{request.task_id}"
-    is_foreground = request.processing_mode == "FOREGROUND"
     logger.info(
-        "GPU reservation: mode=%s is_foreground=%s session=%s",
-        request.processing_mode, is_foreground, session_id,
+        "Orchestration streaming mode=%s task=%s",
+        request.processing_mode, request.task_id,
     )
-    if is_foreground:
-        await announce_gpu(session_id)
-    try:
-        graph = get_orchestrator_graph()
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+    graph = get_orchestrator_graph()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-        # Check if checkpoint exists for this thread
-        existing_state = await get_graph_state(thread_id)
+    # Check if checkpoint exists for this thread
+    existing_state = await get_graph_state(thread_id)
 
-        if existing_state and existing_state.values and existing_state.next:
-            # Checkpoint exists AND graph is NOT finished → resume
+    if existing_state and existing_state.values and existing_state.next:
+        # Checkpoint exists AND graph is NOT finished → resume
+        logger.info(
+            "Resuming from checkpoint (streaming): task=%s thread=%s (checkpoint at node: %s)",
+            request.task_id,
+            thread_id,
+            existing_state.next,
+        )
+        # Only update chat_history and task query, preserve everything else
+        state_to_use = {
+            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "task": {
+                **existing_state.values.get("task", {}),
+                "query": request.query,  # Update query with new user message
+            },
+        }
+    else:
+        # No checkpoint OR graph finished → fresh start with full initial state
+        if existing_state and existing_state.values:
             logger.info(
-                "Resuming from checkpoint (streaming): task=%s thread=%s (checkpoint at node: %s)",
+                "Previous execution completed, starting new (streaming): task=%s thread=%s",
                 request.task_id,
                 thread_id,
-                existing_state.next,
             )
-            # Only update chat_history and task query, preserve everything else
-            state_to_use = {
-                "chat_history": request.chat_history.model_dump() if request.chat_history else None,
-                "task": {
-                    **existing_state.values.get("task", {}),
-                    "query": request.query,  # Update query with new user message
-                },
-            }
         else:
-            # No checkpoint OR graph finished → fresh start with full initial state
-            if existing_state and existing_state.values:
-                logger.info(
-                    "Previous execution completed, starting new (streaming): task=%s thread=%s",
-                    request.task_id,
-                    thread_id,
-                )
-            else:
-                logger.info("Starting fresh streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
-            state_to_use = _build_initial_state(request)
+            logger.info("Starting fresh streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
+        state_to_use = _build_initial_state(request)
 
-        # Track state for progress info
-        tracked = {
-            "total_goals": 0,
-            "current_goal_index": 0,
-            "total_steps": 0,
-            "current_step_index": 0,
-        }
+    # Track state for progress info
+    tracked = {
+        "total_goals": 0,
+        "current_goal_index": 0,
+        "total_steps": 0,
+        "current_step_index": 0,
+    }
 
-        _KNOWN_NODES = {
-            # Legacy graph nodes
-            "intake", "evidence_pack", "respond", "plan",
-            "select_goal", "plan_steps", "execute_step", "evaluate",
-            "advance_step", "advance_goal", "git_operations", "finalize",
-            "plan_epic", "design",
-            "plan_delegations", "execute_delegation", "synthesize",
-            # Memory Agent nodes
-            "memory_load", "memory_flush",
-        }
+    _KNOWN_NODES = {
+        # Legacy graph nodes
+        "intake", "evidence_pack", "respond", "plan",
+        "select_goal", "plan_steps", "execute_step", "evaluate",
+        "advance_step", "advance_goal", "git_operations", "finalize",
+        "plan_epic", "design",
+        "plan_delegations", "execute_delegation", "synthesize",
+        # Memory Agent nodes
+        "memory_load", "memory_flush",
+    }
 
-        async for event in graph.astream_events(state_to_use, config=config, version="v2"):
-            kind = event.get("event", "")
-            name = event.get("name", "")
+    async for event in graph.astream_events(state_to_use, config=config, version="v2"):
+        kind = event.get("event", "")
+        name = event.get("name", "")
 
-            if kind == "on_chain_start" and name in _KNOWN_NODES:
-                yield {
-                    "type": "node_start",
-                    "node": name,
-                    "thread_id": thread_id,
-                    "task_id": request.task_id,
-                    "client_id": request.client_id,
-                    **tracked,
-                }
+        if kind == "on_chain_start" and name in _KNOWN_NODES:
+            yield {
+                "type": "node_start",
+                "node": name,
+                "thread_id": thread_id,
+                "task_id": request.task_id,
+                "client_id": request.client_id,
+                **tracked,
+            }
 
-            elif kind == "on_chain_end" and name in _KNOWN_NODES:
-                output = event.get("data", {}).get("output", {})
+        elif kind == "on_chain_end" and name in _KNOWN_NODES:
+            output = event.get("data", {}).get("output", {})
 
-                # Update tracked state from node output
-                if isinstance(output, dict):
-                    if "goals" in output:
-                        tracked["total_goals"] = len(output["goals"])
-                    if "current_goal_index" in output:
-                        tracked["current_goal_index"] = output["current_goal_index"]
-                    if "steps" in output:
-                        tracked["total_steps"] = len(output["steps"])
-                    if "current_step_index" in output:
-                        tracked["current_step_index"] = output["current_step_index"]
+            # Update tracked state from node output
+            if isinstance(output, dict):
+                if "goals" in output:
+                    tracked["total_goals"] = len(output["goals"])
+                if "current_goal_index" in output:
+                    tracked["current_goal_index"] = output["current_goal_index"]
+                if "steps" in output:
+                    tracked["total_steps"] = len(output["steps"])
+                if "current_step_index" in output:
+                    tracked["current_step_index"] = output["current_step_index"]
 
-                yield {
-                    "type": "node_end",
-                    "node": name,
-                    "result": _safe_serialize(output),
-                    "thread_id": thread_id,
-                    "task_id": request.task_id,
-                    "client_id": request.client_id,
-                    **tracked,
-                }
-    finally:
-        if is_foreground:
-            await release_gpu(session_id)
+            yield {
+                "type": "node_end",
+                "node": name,
+                "result": _safe_serialize(output),
+                "thread_id": thread_id,
+                "task_id": request.task_id,
+                "client_id": request.client_id,
+                **tracked,
+            }
 
 
 async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_history: dict | None = None) -> dict:
     """Resume a paused orchestration from its checkpoint (blocking)."""
-    # Get task_id and processing_mode from existing state
-    existing_state = await get_graph_state(thread_id)
-    task_id = existing_state.values.get("task", {}).get("id", thread_id) if existing_state and existing_state.values else thread_id
-    processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
-    is_foreground = processing_mode == "FOREGROUND"
-    session_id = f"orch-resume-{task_id}"
-    logger.info(
-        "GPU reservation (resume): mode=%s is_foreground=%s session=%s",
-        processing_mode, is_foreground, session_id,
+    graph = get_orchestrator_graph()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+
+    # Update graph state with fresh chat history before resuming
+    if chat_history:
+        logger.info("Updating graph state with fresh chat history: thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
+        await graph.aupdate_state(config, {"chat_history": chat_history})
+
+    logger.info("Resuming orchestration: thread=%s resume_value=%s", thread_id, resume_value)
+
+    final_state = await graph.ainvoke(
+        Command(resume=resume_value),
+        config=config,
     )
-    if is_foreground:
-        await announce_gpu(session_id)
-    try:
-        graph = get_orchestrator_graph()
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-        # Update graph state with fresh chat history before resuming
-        if chat_history:
-            logger.info("Updating graph state with fresh chat history: thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
-            await graph.aupdate_state(config, {"chat_history": chat_history})
+    logger.info(
+        "Resumed orchestration complete: thread=%s result=%s",
+        thread_id,
+        final_state.get("final_result"),
+    )
 
-        logger.info("Resuming orchestration: thread=%s resume_value=%s", thread_id, resume_value)
-
-        final_state = await graph.ainvoke(
-            Command(resume=resume_value),
-            config=config,
-        )
-
-        logger.info(
-            "Resumed orchestration complete: thread=%s result=%s",
-            thread_id,
-            final_state.get("final_result"),
-        )
-
-        return final_state
-    finally:
-        if is_foreground:
-            await release_gpu(session_id)
+    return final_state
 
 
 async def resume_orchestration_streaming(
@@ -780,79 +745,65 @@ async def resume_orchestration_streaming(
     chat_history: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Resume orchestration with streaming node events (for progress reporting)."""
-    existing_state = await get_graph_state(thread_id)
-    processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
-    is_foreground = processing_mode == "FOREGROUND"
-    session_id = f"orch-resume-stream-{thread_id}"
-    logger.info(
-        "GPU reservation (resume-stream): mode=%s is_foreground=%s session=%s",
-        processing_mode, is_foreground, session_id,
-    )
-    if is_foreground:
-        await announce_gpu(session_id)
-    try:
-        graph = get_orchestrator_graph()
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+    graph = get_orchestrator_graph()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
-        # Update graph state with fresh chat history before resuming
-        if chat_history:
-            logger.info("Updating graph state with fresh chat history (streaming): thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
-            await graph.aupdate_state(config, {"chat_history": chat_history})
+    # Update graph state with fresh chat history before resuming
+    if chat_history:
+        logger.info("Updating graph state with fresh chat history (streaming): thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
+        await graph.aupdate_state(config, {"chat_history": chat_history})
 
-        logger.info("Resuming streaming orchestration: thread=%s", thread_id)
+    logger.info("Resuming streaming orchestration: thread=%s", thread_id)
 
-        _KNOWN_NODES = {
-            # Legacy graph nodes
-            "intake", "evidence_pack", "respond", "plan",
-            "select_goal", "plan_steps", "execute_step", "evaluate",
-            "advance_step", "advance_goal", "git_operations", "finalize",
-            "plan_epic", "design",
-            "plan_delegations", "execute_delegation", "synthesize",
-            # Memory Agent nodes
-            "memory_load", "memory_flush",
-        }
+    _KNOWN_NODES = {
+        # Legacy graph nodes
+        "intake", "evidence_pack", "respond", "plan",
+        "select_goal", "plan_steps", "execute_step", "evaluate",
+        "advance_step", "advance_goal", "git_operations", "finalize",
+        "plan_epic", "design",
+        "plan_delegations", "execute_delegation", "synthesize",
+        # Memory Agent nodes
+        "memory_load", "memory_flush",
+    }
 
-        tracked = {
-            "total_goals": 0, "current_goal_index": 0,
-            "total_steps": 0, "current_step_index": 0,
-        }
+    tracked = {
+        "total_goals": 0, "current_goal_index": 0,
+        "total_steps": 0, "current_step_index": 0,
+    }
 
-        async for event in graph.astream_events(
-            Command(resume=resume_value), config=config, version="v2"
-        ):
-            kind = event.get("event", "")
-            name = event.get("name", "")
+    async for event in graph.astream_events(
+        Command(resume=resume_value), config=config, version="v2"
+    ):
+        kind = event.get("event", "")
+        name = event.get("name", "")
 
-            if kind == "on_chain_start" and name in _KNOWN_NODES:
-                yield {
-                    "type": "node_start",
-                    "node": name,
-                    "thread_id": thread_id,
-                    **tracked,
-                }
+        if kind == "on_chain_start" and name in _KNOWN_NODES:
+            yield {
+                "type": "node_start",
+                "node": name,
+                "thread_id": thread_id,
+                **tracked,
+            }
 
-            elif kind == "on_chain_end" and name in _KNOWN_NODES:
-                output = event.get("data", {}).get("output", {})
+        elif kind == "on_chain_end" and name in _KNOWN_NODES:
+            output = event.get("data", {}).get("output", {})
 
-                if isinstance(output, dict):
-                    if "goals" in output:
-                        tracked["total_goals"] = len(output["goals"])
-                    if "current_goal_index" in output:
-                        tracked["current_goal_index"] = output["current_goal_index"]
-                    if "steps" in output:
-                        tracked["total_steps"] = len(output["steps"])
-                    if "current_step_index" in output:
-                        tracked["current_step_index"] = output["current_step_index"]
+            if isinstance(output, dict):
+                if "goals" in output:
+                    tracked["total_goals"] = len(output["goals"])
+                if "current_goal_index" in output:
+                    tracked["current_goal_index"] = output["current_goal_index"]
+                if "steps" in output:
+                    tracked["total_steps"] = len(output["steps"])
+                if "current_step_index" in output:
+                    tracked["current_step_index"] = output["current_step_index"]
 
-                yield {
-                    "type": "node_end",
-                    "node": name,
-                    "thread_id": thread_id,
-                    **tracked,
-                }
-    finally:
-        if is_foreground:
-            await release_gpu(session_id)
+            yield {
+                "type": "node_end",
+                "node": name,
+                "thread_id": thread_id,
+                **tracked,
+            }
 
 
 async def get_graph_state(thread_id: str):

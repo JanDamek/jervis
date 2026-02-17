@@ -16,12 +16,8 @@ from starlette.responses import Response
 from .config import settings
 from .gpu_state import GpuPool
 from .models import (
-    AnnounceRequest,
-    AnnounceResponse,
     HealthResponse,
     Priority,
-    ReleaseRequest,
-    ReleaseResponse,
     StatusResponse,
 )
 from .proxy import proxy_passthrough_get, proxy_passthrough_head
@@ -303,18 +299,6 @@ async def root_get():
 
 
 # ── Router-specific endpoints ───────────────────────────────────────────
-
-@app.post("/router/announce")
-async def router_announce(req: AnnounceRequest) -> AnnounceResponse:
-    """Orchestrator pre-announces GPU need."""
-    return await router.announce(req)
-
-
-@app.post("/router/release")
-async def router_release(req: ReleaseRequest) -> ReleaseResponse:
-    """Orchestrator releases GPU."""
-    return await router.release(req)
-
 
 @app.get("/router/health")
 async def router_health():

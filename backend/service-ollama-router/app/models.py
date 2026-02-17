@@ -95,29 +95,6 @@ class TrackedRequest:
 
 # ── API schemas ─────────────────────────────────────────────────────────
 
-class AnnounceRequest(BaseModel):
-    model: str = "qwen3-coder-tool:30b"
-    session_id: str
-    estimated_duration_s: int = 300
-
-
-class AnnounceResponse(BaseModel):
-    status: str              # "ready" | "loading" | "error" | "degraded"
-    model_loaded: bool
-    gpu_available: bool
-    gpu_name: str | None = None
-    estimated_wait_s: float = 0.0
-
-
-class ReleaseRequest(BaseModel):
-    session_id: str
-
-
-class ReleaseResponse(BaseModel):
-    status: str              # "released"
-    background_loading: bool
-
-
 class HealthResponse(BaseModel):
     status: str              # "healthy" | "degraded" | "unhealthy"
     gpu_backends: list[dict[str, Any]]

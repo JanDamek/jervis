@@ -1,10 +1,10 @@
-"""OllamaRouter – multi-GPU routing logic, preemption, announce/release.
+"""OllamaRouter – multi-GPU routing logic, preemption, auto-reservation.
 
 Two priority levels: CRITICAL (0) and NORMAL (1).
-Supports multiple GPU backends with per-GPU reservations:
-- CRITICAL requests spread across GPUs (2 CRITICALs → 2 GPUs)
+GPU reservations are fully automatic — no announce/release API needed:
+- CRITICAL request arrives → auto-reserves GPU, resets 60s inactivity timer
+- 60s without CRITICAL activity → watchdog auto-releases reservation
 - NORMAL requests use unreserved GPUs or CPU fallback
-- Reservations track per-GPU with independent idle/absolute timeouts
 """
 
 from __future__ import annotations
@@ -24,11 +24,7 @@ from .models import (
     EMBEDDING_PATHS,
     MODEL_TO_PRIORITY,
     MODEL_TO_SET,
-    AnnounceRequest,
-    AnnounceResponse,
     Priority,
-    ReleaseRequest,
-    ReleaseResponse,
     RequestState,
     TrackedRequest,
 )
@@ -394,119 +390,6 @@ class OllamaRouter:
             )
             # Give a brief grace period for streams to close
             await asyncio.sleep(settings.preempt_grace_s)
-
-    # ── Orchestrator announce/release ───────────────────────────────────
-
-    async def announce(self, req: AnnounceRequest) -> AnnounceResponse:
-        """Reserve a GPU for critical work. Supports multiple concurrent reservations."""
-        async with self._reservation_lock:
-            # Find best GPU: prefer unreserved, exclude already-reserved
-            gpu = self.gpu_pool.find_for_reservation(exclude_gpus=set(self._reservations.keys()))
-            if not gpu:
-                return AnnounceResponse(
-                    status="degraded",
-                    model_loaded=False,
-                    gpu_available=False,
-                )
-
-            # Cancel background model loading on this GPU
-            bg_task = self._bg_load_tasks.get(gpu.name)
-            if bg_task and not bg_task.done():
-                bg_task.cancel()
-
-            # Reserve this GPU
-            self._reservations[gpu.name] = req.session_id
-            self._reservation_times[gpu.name] = time.monotonic()
-            self._last_critical_activity[gpu.name] = time.monotonic()
-            gpu.reserved_by = req.session_id
-            gpu.reserved_at = time.monotonic()
-
-            logger.info(
-                "GPU %s reserved for CRITICAL work (session=%s, model=%s, total_reservations=%d)",
-                gpu.name, req.session_id, req.model, len(self._reservations),
-            )
-
-            # Immediately preempt non-CRITICAL active requests
-            if gpu.active_request_count() > 0:
-                logger.warning(
-                    "GPU %s has %d active request(s), preempting for reservation",
-                    gpu.name, gpu.active_request_count(),
-                )
-                await self._preempt_all(gpu)
-
-            # CRITICAL: Orchestrator reservation = ONLY :30b, nothing else!
-            if ":30b" not in req.model:
-                logger.error("Orchestrator reservation requires :30b model, got: %s", req.model)
-                return AnnounceResponse(
-                    status="error",
-                    model_loaded=False,
-                    gpu_available=True,
-                )
-
-            # Unload ALL models (orchestrator :30b fills entire GPU)
-            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-
-            # Load orchestrator model
-            model_loaded = await self.gpu_pool.load_model(
-                gpu, req.model, self._mgmt_client,
-                keep_alive=settings.default_keep_alive,
-            )
-
-            # If load failed, retry with aggressive cleanup from ALL GPUs
-            if not model_loaded:
-                logger.error("CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup", req.model, gpu.name)
-                for backend in self.gpu_pool.all_backends:
-                    if backend.name != gpu.name:
-                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
-                model_loaded = await self.gpu_pool.load_model(
-                    gpu, req.model, self._mgmt_client,
-                    keep_alive=settings.default_keep_alive,
-                )
-                if not model_loaded:
-                    logger.error("CRITICAL: Failed to load %s even after aggressive cleanup", req.model)
-
-            return AnnounceResponse(
-                status="ready" if model_loaded else "error",
-                model_loaded=model_loaded,
-                gpu_available=True,
-                gpu_name=gpu.name,
-            )
-
-    async def release(self, req: ReleaseRequest) -> ReleaseResponse:
-        """Release GPU reservation. Finds GPU by session_id, or releases all if not found."""
-        async with self._reservation_lock:
-            if not self._reservations:
-                logger.info("Release called but no reservations active")
-                return ReleaseResponse(status="released", background_loading=False)
-
-            # Find GPU reserved by this session_id
-            gpu_to_release = None
-            for gpu_name, session_id in self._reservations.items():
-                if session_id == req.session_id:
-                    gpu_to_release = gpu_name
-                    break
-
-            if gpu_to_release:
-                # Release specific GPU
-                self._clear_reservation(gpu_to_release)
-                self._schedule_bg_load(gpu_to_release)
-                logger.info("GPU %s reservation released (session=%s)", gpu_to_release, req.session_id)
-                return ReleaseResponse(status="released", background_loading=True)
-
-            # Session not found — release all "critical" auto-reservations
-            released = []
-            for gpu_name, session_id in list(self._reservations.items()):
-                if session_id == "critical":
-                    released.append(gpu_name)
-                    self._clear_reservation(gpu_name)
-                    self._schedule_bg_load(gpu_name)
-
-            if released:
-                logger.info("Released %d auto-reservation(s): %s", len(released), released)
-                return ReleaseResponse(status="released", background_loading=True)
-
-            logger.info("Release called but no matching reservation for session=%s", req.session_id)
-            return ReleaseResponse(status="released", background_loading=False)
 
     def _clear_reservation(self, gpu_name: str) -> None:
         """Clear reservation for a specific GPU."""

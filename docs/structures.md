@@ -618,25 +618,26 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 
 > Priority is set via `X-Ollama-Priority: 0` header for CRITICAL. No header = NORMAL (router default). Model name no longer determines priority.
 >
-> **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND tasks send no header (NORMAL). GPU reservation (`announce/release`) only happens for FOREGROUND.
+> **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND tasks send no header (NORMAL).
 
 ### Model Sets (alternating on GPU)
 
 | Set | Models | VRAM | Active when |
 |-----|--------|------|-------------|
-| A – Orchestrator | qwen3-coder-tool:30b | ~20GB | Orchestrator/chat active |
-| B – Background | qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b | ~20GB | Orchestrator idle |
+| A – Orchestrator | qwen3-coder-tool:30b | ~20GB | CRITICAL requests active |
+| B – Background | qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b | ~20GB | No CRITICAL for 60s |
 
-### Orchestrator Pre-announcement Protocol
+### Auto-Reservation Protocol (no announce/release API)
+
+GPU reservation is fully automatic — the router self-manages based on CRITICAL request activity:
 
 ```
-Orchestrator ──POST /router/announce──► Router: preempt bg → unload → load orch model
-                                        ◄── {status: "ready"}
-Orchestrator ──POST /api/chat──────────► Router: proxy to GPU (model ready)
-Orchestrator ──POST /router/release───► Router: load background models on GPU
+CRITICAL request arrives → Router auto-reserves GPU, loads :30b, resets 60s timer
+More CRITICAL requests  → Router routes to reserved GPU, resets 60s timer each time
+60s without CRITICAL    → Watchdog auto-releases reservation, loads background set
 ```
 
-Auto-release: if orchestrator is idle for 5 min → router auto-releases GPU and loads background set.
+No orchestrator announce/release calls needed. The router tracks `last_critical_activity` per GPU and the watchdog runs every 30s to check for idle reservations (60s timeout, 10min absolute max).
 
 ### Multi-GPU Routing (Per-GPU Reservations)
 
@@ -701,7 +702,7 @@ OLLAMA_KEEP_ALIVE=1h
 ### Source Code
 
 - Router service: `backend/service-ollama-router/`
-- GPU announce/release: `backend/service-orchestrator/app/llm/gpu_router.py`
+- Priority headers: `backend/service-orchestrator/app/graph/nodes/_helpers.py` (`priority_headers()`)
 - K8s deployment: `k8s/app_ollama_router.yaml`
 - ConfigMap: `k8s/configmap.yaml` → `jervis-ollama-router-config`
 
