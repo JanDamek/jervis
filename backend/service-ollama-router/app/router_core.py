@@ -173,17 +173,27 @@ class OllamaRouter:
         """Route a CRITICAL request: auto-reserve GPU for :30b, or send non-:30b to reserved GPU/CPU."""
         model = request.model
 
-        # Non-:30b CRITICAL (e.g. embeddings): send to reserved GPU if available, else CPU
+        # Non-:30b CRITICAL (e.g. embeddings): load onto reserved GPU alongside :30b
         if ":30b" not in model:
-            # Update activity timer if reservation exists
+            # Update activity timer for all reservations
             for gpu_name in self._reservations:
                 self._last_critical_activity[gpu_name] = time.monotonic()
-            # Try reserved GPU that has the model
+            # Try reserved GPU — load model if not present (embedding fits alongside :30b)
             for gpu_name in self._reservations:
                 gpu = self.gpu_pool.backends.get(gpu_name)
-                if gpu and gpu.has_model(model):
+                if not gpu:
+                    continue
+                if gpu.has_model(model):
                     return await self._send_to_gpu(gpu, request)
-            # Fallback to CPU for non-:30b CRITICAL
+                # Load embedding model alongside :30b (both fit in VRAM)
+                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                if loaded:
+                    logger.info("Loaded %s alongside :30b on GPU %s for CRITICAL", model, gpu.name)
+                    return await self._send_to_gpu(gpu, request)
+            # No reservation yet — use any GPU or CPU
+            for gpu in self.gpu_pool.healthy_backends:
+                if gpu.has_model(model):
+                    return await self._send_to_gpu(gpu, request)
             return await self._send_to_cpu(request)
 
         target_gpu = None
