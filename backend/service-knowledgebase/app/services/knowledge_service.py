@@ -522,33 +522,45 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         # Ingest to RAG + Graph (async - returns immediately, LLM extraction queued)
         ingest_result = await self.ingest(ingest_req)
 
-        # Summary generation is NOT blocking - return immediately with placeholder values
-        # Real routing hints will be available after background LLM extraction completes
-        # TODO: Add summary generation to extraction queue or use simple heuristics
-
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
 
-        logger.info("Full ingest complete (RAG only) source=%s chunks=%d "
-                     "attachments_ok=%d attachments_fail=%d (LLM extraction + summary queued)",
+        # Generate summary with routing hints (synchronous — 14B model, ~2-5s on CPU)
+        summary_data = await self._generate_summary(
+            content=combined_content,
+            source_type=request.sourceType or "unknown",
+            subject=request.subject,
+        )
+
+        # Check assignment against client/project identity
+        is_assigned = self._check_assignment(
+            assigned_to=summary_data.get("assignedTo"),
+            client_id=request.clientId or "",
+            metadata=request.metadata or {},
+        )
+
+        logger.info("Full ingest complete source=%s chunks=%d "
+                     "attachments_ok=%d attachments_fail=%d actionable=%s urgency=%s",
                      request.sourceUrn, ingest_result.chunks_count,
-                     attachments_processed, attachments_failed)
+                     attachments_processed, attachments_failed,
+                     summary_data.get("hasActionableContent", False),
+                     summary_data.get("urgency", "normal"))
 
         return FullIngestResult(
             status="success",
             chunks_count=ingest_result.chunks_count,
-            nodes_created=0,  # Will be updated by background worker
-            edges_created=0,  # Will be updated by background worker
+            nodes_created=0,
+            edges_created=0,
             attachments_processed=attachments_processed,
             attachments_failed=attachments_failed,
-            summary=request.subject or "Processing...",
-            entities=[],
-            hasActionableContent=False,  # Conservative default - better to process later than block
-            suggestedActions=[],
-            hasFutureDeadline=False,
-            suggestedDeadline=None,
-            isAssignedToMe=False,
-            urgency="normal",
+            summary=summary_data.get("summary", request.subject or "Processing..."),
+            entities=summary_data.get("entities", []),
+            hasActionableContent=summary_data.get("hasActionableContent", False),
+            suggestedActions=summary_data.get("suggestedActions", []),
+            hasFutureDeadline=summary_data.get("hasFutureDeadline", False),
+            suggestedDeadline=summary_data.get("suggestedDeadline"),
+            isAssignedToMe=is_assigned,
+            urgency=summary_data.get("urgency", "normal"),
         )
 
     async def _generate_summary(

@@ -158,8 +158,19 @@ class OllamaRouter:
                 return await self._send_to_gpu(gpu, request)
 
         # ── 5. Idle unreserved GPU (unload + load) or CPU ───────────────
+        # Only swap models within the same set — never cross-set swap for NORMAL
+        # requests. This prevents 30B↔14B swapping between orchestrator LLM calls.
         gpu = self.gpu_pool.find_unreserved_least_busy()
         if gpu and gpu.active_request_count() == 0:
+            requested_set = MODEL_TO_SET.get(model)
+            current_set = gpu.current_set
+            if current_set and requested_set and current_set != requested_set:
+                logger.info(
+                    "CROSS_SET_SKIP: GPU %s has '%s' set, request needs '%s' → CPU fallback",
+                    gpu.name, current_set, requested_set,
+                )
+                return await self._send_to_cpu(request)
+
             await self.gpu_pool.unload_all(gpu, self._mgmt_client)
             loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
             if loaded:

@@ -59,6 +59,15 @@ class SimpleQualifierAgent(
          *  this many days in the future will be scheduled, not executed immediately.
          *  TODO: Make configurable per client (e.g., ClientDocument.scheduleLeadDays) */
         const val SCHEDULE_LEAD_DAYS = 2L
+
+        /** Tasks older than this are just indexed — no orchestrator action needed. */
+        val MAX_ACTIONABLE_AGE: Duration = Duration.ofDays(7)
+
+        /** Actions that require full orchestrator (30B model, complex reasoning). */
+        val COMPLEX_ACTIONS = setOf(
+            "decompose_issue", "analyze_code", "create_application",
+            "review_code", "design_architecture",
+        )
     }
 
     suspend fun run(
@@ -148,20 +157,33 @@ class SimpleQualifierAgent(
     )
 
     /**
-     * Three-way task routing based on KB ingest analysis.
+     * Task routing based on KB ingest analysis.
      *
      * Decision tree:
-     * 1. Assigned to me + actionable → immediate (READY_FOR_GPU)
-     * 2. Future deadline + actionable → schedule or immediate (depends on lead time)
-     * 3. Actionable (no assignment/deadline) → immediate (READY_FOR_GPU)
-     * 4. Not actionable → indexed only (DISPATCHED_GPU)
+     * 0. Old content (>7 days) → indexed only (DISPATCHED_GPU)
+     * 1. Not actionable → indexed only (DISPATCHED_GPU)
+     * 2. Actionable + only simple actions → handle locally (DISPATCHED_GPU)
+     * 3. Actionable + complex + assigned to me → immediate (READY_FOR_GPU)
+     * 4. Actionable + complex + future deadline → schedule or immediate
+     * 5. Actionable + complex → immediate (READY_FOR_GPU)
      */
     private suspend fun routeTask(
         task: TaskDocument,
         result: FullIngestResult,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): RoutingDecision {
-        // Case D: Not actionable → indexed only
+        // Step 0: Old content → just index, no orchestrator
+        val taskAge = Duration.between(task.createdAt, Instant.now())
+        if (taskAge > MAX_ACTIONABLE_AGE) {
+            logger.info {
+                "SIMPLE_QUALIFIER_ROUTE_OLD | taskId=${task.id} | age=${taskAge.toDays()}d | " +
+                    "maxAge=${MAX_ACTIONABLE_AGE.toDays()}d"
+            }
+            onProgress("Starší obsah - zaindexováno", mapOf("step" to "old_indexed", "agent" to "simple_qualifier"))
+            return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "old_content")
+        }
+
+        // Step 1: Not actionable → indexed only
         if (!result.hasActionableContent) {
             logger.info {
                 "SIMPLE_QUALIFIER_ROUTE_DISPATCHED | taskId=${task.id} | " +
@@ -171,7 +193,18 @@ class SimpleQualifierAgent(
             return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "info_only")
         }
 
-        // Case A: Assigned to me → immediate
+        // Step 2: Simple actions → handle locally without orchestrator
+        val hasComplex = result.suggestedActions.any { it in COMPLEX_ACTIONS }
+        if (!hasComplex) {
+            handleSimpleAction(task, result, onProgress)
+            logger.info {
+                "SIMPLE_QUALIFIER_ROUTE_SIMPLE | taskId=${task.id} | " +
+                    "actions=${result.suggestedActions} | summary=${result.summary.take(100)}"
+            }
+            return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "simple_action_handled")
+        }
+
+        // Step 3: Complex + assigned to me → immediate
         if (result.isAssignedToMe) {
             logger.info {
                 "SIMPLE_QUALIFIER_ROUTE_IMMEDIATE | taskId=${task.id} | " +
@@ -184,7 +217,7 @@ class SimpleQualifierAgent(
             return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "assigned_to_me")
         }
 
-        // Case B: Future deadline → schedule or immediate
+        // Step 4: Complex + future deadline → schedule or immediate
         val suggestedDeadline = result.suggestedDeadline
         if (result.hasFutureDeadline && suggestedDeadline != null) {
             val deadline = parseDeadline(suggestedDeadline)
@@ -223,17 +256,57 @@ class SimpleQualifierAgent(
             }
         }
 
-        // Case C: Actionable but no assignment or deadline → execute when available
+        // Step 5: Complex actionable → execute when available
         logger.info {
             "SIMPLE_QUALIFIER_ROUTE_GPU | taskId=${task.id} | " +
-                "reason=hasActionableContent | urgency=${result.urgency} | " +
+                "reason=complexActionableContent | urgency=${result.urgency} | " +
                 "actions=${result.suggestedActions} | summary=${result.summary.take(100)}"
         }
         onProgress(
-            "Obsah vyžaduje akci - přesouvám do fronty...",
+            "Složitý obsah vyžaduje MOZEK - přesouvám do fronty...",
             mapOf("step" to "route_gpu", "agent" to "simple_qualifier"),
         )
-        return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "actionable")
+        return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "complex_actionable")
+    }
+
+    /**
+     * Handle simple actions locally without involving the orchestrator (30B model).
+     * Creates USER_TASKs, reminders, or just marks as done.
+     */
+    private suspend fun handleSimpleAction(
+        task: TaskDocument,
+        result: FullIngestResult,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
+    ) {
+        when {
+            // Reply/answer needed → create USER_TASK for user to decide
+            result.suggestedActions.any { it in listOf("reply_email", "answer_question") } -> {
+                taskService.createTask(
+                    taskType = TaskTypeEnum.USER_TASK,
+                    content = "Odpovědět na: ${result.summary}",
+                    clientId = ClientId(task.clientId.value),
+                    projectId = task.projectId?.let { ProjectId(it.value) },
+                    correlationId = "action:${task.correlationId}",
+                    sourceUrn = task.sourceUrn,
+                    taskName = "Odpovědět: ${extractSubject(task)?.take(80) ?: "email"}",
+                )
+                onProgress("Vytvořen úkol pro odpověď", mapOf("step" to "user_task", "agent" to "simple_qualifier"))
+            }
+            // Meeting scheduling → create reminder if deadline available
+            "schedule_meeting" in result.suggestedActions -> {
+                val deadline = result.suggestedDeadline?.let { parseDeadline(it) }
+                if (deadline != null) {
+                    createScheduledCopy(task, result, deadline.minus(Duration.ofDays(1)))
+                    onProgress("Vytvořen reminder pro schůzku", mapOf("step" to "scheduled", "agent" to "simple_qualifier"))
+                } else {
+                    onProgress("Zaindexováno", mapOf("step" to "done", "agent" to "simple_qualifier"))
+                }
+            }
+            // Acknowledge, forward_info, etc. → done, just indexed
+            else -> {
+                onProgress("Zpracováno - jednoduchá akce", mapOf("step" to "done", "agent" to "simple_qualifier"))
+            }
+        }
     }
 
     /**
