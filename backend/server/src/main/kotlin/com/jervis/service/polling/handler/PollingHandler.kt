@@ -60,6 +60,7 @@ data class PollingContext(
 
     /**
      * Determine which resources should be indexed for a client.
+     * Excludes resources that are already assigned to projects (those are handled by project-level polling).
      *
      * @param clientId The client ID
      * @param capability The capability type (BUGTRACKER, WIKI, EMAIL, etc.)
@@ -70,17 +71,31 @@ data class PollingContext(
         capability: ConnectionCapability,
     ): ResourceFilter? {
         val config = getClientCapabilityConfig(clientId, capability)
-        // No config = index all (default behavior)
-        if (config == null) return ResourceFilter.IndexAll
 
-        // Capability disabled
-        if (!config.enabled) return null
+        // Capability explicitly disabled
+        if (config != null && !config.enabled) return null
 
-        // Check indexing mode
+        // Collect resources already assigned to projects for this connection+capability
+        val connId = connectionId ?: return ResourceFilter.IndexAll
+        val projectClaimedResources = projects
+            .filter { it.clientId == clientId }
+            .flatMap { it.resources }
+            .filter { it.connectionId == connId.value && it.capability == capability }
+            .map { it.resourceIdentifier }
+            .toSet()
+
+        // If projects claim resources, skip client-level polling entirely.
+        // Project resources define what to index — client-level would create orphan items.
+        if (projectClaimedResources.isNotEmpty()) return null
+
+        // No projects claim resources — use client config if explicit
+        if (config == null) return null // No config = don't index (must be explicitly configured)
         return if (config.indexAllResources) {
             ResourceFilter.IndexAll
-        } else {
+        } else if (config.selectedResources.isNotEmpty()) {
             ResourceFilter.IndexSelected(config.selectedResources)
+        } else {
+            null // Capability enabled but no resources selected = skip
         }
     }
 
@@ -98,21 +113,30 @@ data class PollingContext(
         clientId: ClientId,
         capability: ConnectionCapability,
     ): ResourceFilter? {
+        val connId = connectionId ?: return null
+        val project = projects.find { it.id == projectId } ?: return null
+
         val projectConfig = getProjectCapabilityConfig(projectId, capability)
 
-        // Project has explicit config - use it
+        // Project has explicit connectionCapabilities config - use it
         if (projectConfig != null) {
             if (!projectConfig.enabled) return null
-            return if (projectConfig.selectedResources.isNotEmpty()) {
-                ResourceFilter.IndexSelected(projectConfig.selectedResources)
-            } else {
-                // Project enabled but no specific resources = use client config
-                getResourceFilter(clientId, capability)
+            if (projectConfig.selectedResources.isNotEmpty()) {
+                return ResourceFilter.IndexSelected(projectConfig.selectedResources)
             }
+            // Fall through to resource-based filter
         }
 
-        // No project config - fall back to client config
-        return getResourceFilter(clientId, capability)
+        // Use project's resources to determine which repos/resources to index
+        val projectResources = project.resources.filter {
+            it.connectionId == connId.value && it.capability == capability
+        }
+        if (projectResources.isNotEmpty()) {
+            return ResourceFilter.IndexSelected(projectResources.map { it.resourceIdentifier })
+        }
+
+        // No project config and no matching resources - skip (must be explicitly configured)
+        return null
     }
 }
 

@@ -104,11 +104,13 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
             }
         }
 
-        for (client in context.clients) {
-            pollClientIssuesAsync(client, null)
-        }
+        // Projects first — they claim specific resources via project.resources
         for (project in context.projects) {
             pollClientIssuesAsync(clientService.getClientById(project.clientId), project)
+        }
+        // Client-level second — skipped if projects claim resources for this capability
+        for (client in context.clients) {
+            pollClientIssuesAsync(client, null)
         }
 
         logger.info {
