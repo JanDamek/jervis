@@ -62,6 +62,7 @@ class RpcConnectionManager(private val baseUrl: String) {
     private var httpClient: HttpClient? = null
     private var rpcClient: KtorRpcClient? = null
     private var currentServices: NetworkModule.Services? = null
+    private var heartbeatJob: kotlinx.coroutines.Job? = null
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val reconnectMutex = Mutex()
@@ -176,7 +177,9 @@ class RpcConnectionManager(private val baseUrl: String) {
      * Tests connection every 30s to detect silent failures.
      */
     private fun monitorConnection(services: NetworkModule.Services) {
-        scope.launch {
+        // Cancel previous heartbeat job to prevent accumulation
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
             while (true) {
                 delay(30_000) // 30s heartbeat
 
@@ -192,17 +195,35 @@ class RpcConnectionManager(private val baseUrl: String) {
                     throw e
                 } catch (e: Exception) {
                     println("RpcConnectionManager: Heartbeat failed: ${e.message}")
-                    _state.value = RpcConnectionState.Disconnected
-                    delay(5000) // 5s cooldown before reconnect to prevent flickering
-                    _generation.value++
-                    reconnect()
+                    triggerReconnect("heartbeat failure")
                     break
                 }
             }
         }
     }
 
+    /**
+     * Centralized reconnect trigger — prevents cascading reconnects from multiple
+     * dead subscriptions or heartbeat failures firing simultaneously.
+     * Only the first caller actually triggers reconnect; subsequent calls are no-ops
+     * because state is already Disconnected and reconnect() mutex handles the rest.
+     */
+    private fun triggerReconnect(reason: String) {
+        val wasConnected = _state.value is RpcConnectionState.Connected
+        _state.value = RpcConnectionState.Disconnected
+        if (wasConnected) {
+            println("RpcConnectionManager: Triggering reconnect ($reason)")
+            heartbeatJob?.cancel()
+            scope.launch {
+                delay(5000) // 5s cooldown before reconnect
+                _generation.value++
+                reconnect()
+            }
+        }
+    }
+
     private fun closeCurrentConnection() {
+        heartbeatJob?.cancel()
         try { rpcClient?.close() } catch (_: Exception) {}
         try { httpClient?.close() } catch (_: Exception) {}
         rpcClient = null
@@ -243,24 +264,11 @@ class RpcConnectionManager(private val baseUrl: String) {
                         // This happens after server restart — treat as disconnect and reconnect
                         if (e is IllegalStateException && e.message?.contains("cancelled") == true) {
                             println("RpcConnectionManager: RPC client cancelled (gen=$gen), triggering reconnect")
-                            _state.value = RpcConnectionState.Disconnected
-                            scope.launch {
-                                delay(5000)
-                                _generation.value++
-                                reconnect()
-                            }
+                            triggerReconnect("stream cancelled")
                             return@catch
                         }
                         println("RpcConnectionManager: Stream error (gen=$gen): ${e::class.simpleName}: ${e.message}")
-                        e.printStackTrace()
-                        // Mark disconnected and trigger reconnect after cooldown
-                        // to prevent rapid flickering during server restart
-                        _state.value = RpcConnectionState.Disconnected
-                        scope.launch {
-                            delay(5000) // 5s cooldown before reconnect attempt
-                            _generation.value++
-                            reconnect()
-                        }
+                        triggerReconnect("stream error")
                     },
                 )
             }

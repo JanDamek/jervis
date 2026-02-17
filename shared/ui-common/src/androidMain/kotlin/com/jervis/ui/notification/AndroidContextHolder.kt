@@ -1,6 +1,7 @@
 package com.jervis.ui.notification
 
 import android.content.Context
+import com.jervis.ui.storage.AudioChunkQueue
 import com.jervis.ui.storage.PendingMessageStorage
 import com.jervis.ui.storage.RecordingStateStorage
 
@@ -16,6 +17,7 @@ object AndroidContextHolder {
 
     fun initialize(context: Context) {
         applicationContext = context.applicationContext
+        AudioChunkQueue.init(applicationContext)
         PendingMessageStorage.init(applicationContext)
         RecordingStateStorage.init(applicationContext)
     }
