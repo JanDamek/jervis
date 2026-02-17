@@ -527,9 +527,11 @@ fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
 
 | JSection title | Fields | Notes |
 |---|---|---|
-| "Nastavení aplikace" | Theme dropdown (Light/Dark/System) | Basic app preferences |
-| "Notifikace" | Enable notifications toggle | Notification settings |
-| "Mozek Jervise" | Bugtracker connection dropdown, Jira project key dropdown, Wiki connection dropdown, Confluence space key dropdown | Selects the internal Jira+Confluence used as Jervis's central brain. Connections filtered by capability (BUGTRACKER/WIKI). Project/space dropdowns load dynamically after connection selection. Saved via `SystemConfigService`. |
+| "Vzhled" | Téma aplikace (Systémové) | Basic app preferences |
+| "Lokalizace" | Jazyk (Čeština) | Language settings |
+| "Mozek Jervise" | Bugtracker connection dropdown → Jira project dropdown, Wiki connection dropdown → Confluence space dropdown, Root page ID text field | Central Jira+Confluence for orchestrator brain. Connections filtered by capability (BUGTRACKER/WIKI). **Project/space dropdowns load dynamically** via `listAvailableResources()` after connection selection. Brain-reserved resources are **filtered out server-side** from all other resource lists in the app. Saved via `SystemConfigService`. |
+
+**Internal project filtering:** `ProjectDto.isJervisInternal` flag + `filterVisible()` extension hides the orchestrator's internal project from all UI lists (top bar, settings, scheduler, meetings, RAG search). The flag is managed via `SystemConfig.jervisInternalProjectId` and synced when changed.
 
 ### 5.1.1) App Layout with PersistentTopBar
 

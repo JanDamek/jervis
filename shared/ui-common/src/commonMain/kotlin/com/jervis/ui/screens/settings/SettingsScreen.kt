@@ -85,14 +85,13 @@ private fun GeneralSettings(repository: JervisRepository) {
     var isLoading by remember { mutableStateOf(true) }
     var config by remember { mutableStateOf(SystemConfigDto()) }
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
-    // Editable brain config state
-    var selectedBugtrackerConnectionId by remember { mutableStateOf<String?>(null) }
+    // Editable brain config state — single connection for both Jira and Confluence
+    var selectedConnectionId by remember { mutableStateOf<String?>(null) }
     var brainProjectKey by remember { mutableStateOf("") }
-    var selectedWikiConnectionId by remember { mutableStateOf<String?>(null) }
     var brainSpaceKey by remember { mutableStateOf("") }
     var brainRootPageId by remember { mutableStateOf("") }
 
-    // Available resources from selected Atlassian connections
+    // Available resources from selected Atlassian connection
     var bugtrackerResources by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
     var wikiResources by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
     var loadingBugtrackerResources by remember { mutableStateOf(false) }
@@ -100,9 +99,9 @@ private fun GeneralSettings(repository: JervisRepository) {
 
     fun applyConfig(dto: SystemConfigDto) {
         config = dto
-        selectedBugtrackerConnectionId = dto.brainBugtrackerConnectionId
+        // Both use the same connection — prefer bugtracker, fallback to wiki
+        selectedConnectionId = dto.brainBugtrackerConnectionId ?: dto.brainWikiConnectionId
         brainProjectKey = dto.brainBugtrackerProjectKey ?: ""
-        selectedWikiConnectionId = dto.brainWikiConnectionId
         brainSpaceKey = dto.brainWikiSpaceKey ?: ""
         brainRootPageId = dto.brainWikiRootPageId ?: ""
     }
@@ -120,23 +119,19 @@ private fun GeneralSettings(repository: JervisRepository) {
         }
     }
 
-    // Filter Atlassian connections with valid state
+    // Filter Atlassian connections with both Jira and Confluence capabilities
     val atlassianConnections = remember(connections) {
         connections.filter {
-            it.provider == ProviderEnum.ATLASSIAN && it.state == ConnectionStateEnum.VALID
+            it.provider == ProviderEnum.ATLASSIAN && it.state == ConnectionStateEnum.VALID &&
+                ConnectionCapability.BUGTRACKER in it.capabilities && ConnectionCapability.WIKI in it.capabilities
         }
     }
-    val bugtrackerConnections = remember(atlassianConnections) {
-        atlassianConnections.filter { ConnectionCapability.BUGTRACKER in it.capabilities }
-    }
-    val wikiConnections = remember(atlassianConnections) {
-        atlassianConnections.filter { ConnectionCapability.WIKI in it.capabilities }
-    }
 
-    // Load Jira projects when bugtracker connection changes
-    LaunchedEffect(selectedBugtrackerConnectionId) {
-        val connId = selectedBugtrackerConnectionId ?: return@LaunchedEffect
+    // Load Jira projects and Confluence spaces when connection changes
+    LaunchedEffect(selectedConnectionId) {
+        val connId = selectedConnectionId ?: return@LaunchedEffect
         loadingBugtrackerResources = true
+        loadingWikiResources = true
         try {
             bugtrackerResources = repository.connections.listAvailableResources(connId, ConnectionCapability.BUGTRACKER)
         } catch (_: Exception) {
@@ -144,12 +139,6 @@ private fun GeneralSettings(repository: JervisRepository) {
         } finally {
             loadingBugtrackerResources = false
         }
-    }
-
-    // Load Confluence spaces when wiki connection changes
-    LaunchedEffect(selectedWikiConnectionId) {
-        val connId = selectedWikiConnectionId ?: return@LaunchedEffect
-        loadingWikiResources = true
         try {
             wikiResources = repository.connections.listAvailableResources(connId, ConnectionCapability.WIKI)
         } catch (_: Exception) {
@@ -194,12 +183,12 @@ private fun GeneralSettings(repository: JervisRepository) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
-                        // Bugtracker connection dropdown
+                        // Atlassian connection dropdown
                         JDropdown(
-                            items = bugtrackerConnections,
-                            selectedItem = bugtrackerConnections.find { it.id == selectedBugtrackerConnectionId },
-                            onItemSelected = { selectedBugtrackerConnectionId = it.id },
-                            label = "Bugtracker (Jira)",
+                            items = atlassianConnections,
+                            selectedItem = atlassianConnections.find { it.id == selectedConnectionId },
+                            onItemSelected = { selectedConnectionId = it.id },
+                            label = "Atlassian připojení",
                             itemLabel = { it.name },
                             placeholder = "Vyberte Atlassian připojení",
                         )
@@ -214,21 +203,9 @@ private fun GeneralSettings(repository: JervisRepository) {
                                 onItemSelected = { brainProjectKey = it.id },
                                 label = "Jira projekt",
                                 itemLabel = { "${it.id} — ${it.name}" },
-                                placeholder = if (selectedBugtrackerConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Jira projekt",
+                                placeholder = if (selectedConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Jira projekt",
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Wiki connection dropdown
-                        JDropdown(
-                            items = wikiConnections,
-                            selectedItem = wikiConnections.find { it.id == selectedWikiConnectionId },
-                            onItemSelected = { selectedWikiConnectionId = it.id },
-                            label = "Wiki (Confluence)",
-                            itemLabel = { it.name },
-                            placeholder = "Vyberte Atlassian připojení",
-                        )
 
                         // Confluence space selection
                         if (loadingWikiResources) {
@@ -240,7 +217,7 @@ private fun GeneralSettings(repository: JervisRepository) {
                                 onItemSelected = { brainSpaceKey = it.id },
                                 label = "Confluence space",
                                 itemLabel = { "${it.id} — ${it.name}" },
-                                placeholder = if (selectedWikiConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Confluence space",
+                                placeholder = if (selectedConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Confluence space",
                             )
                         }
 
@@ -250,7 +227,7 @@ private fun GeneralSettings(repository: JervisRepository) {
                             onValueChange = { brainRootPageId = it },
                             label = "Kořenová stránka (ID)",
                             placeholder = "Volitelné – ID nadřazené stránky",
-                            enabled = selectedWikiConnectionId != null,
+                            enabled = selectedConnectionId != null,
                         )
 
                         // Save button
@@ -260,9 +237,9 @@ private fun GeneralSettings(repository: JervisRepository) {
                                     try {
                                         val updated = repository.systemConfig.updateSystemConfig(
                                             UpdateSystemConfigRequest(
-                                                brainBugtrackerConnectionId = selectedBugtrackerConnectionId,
+                                                brainBugtrackerConnectionId = selectedConnectionId,
                                                 brainBugtrackerProjectKey = brainProjectKey.ifBlank { null },
-                                                brainWikiConnectionId = selectedWikiConnectionId,
+                                                brainWikiConnectionId = selectedConnectionId,
                                                 brainWikiSpaceKey = brainSpaceKey.ifBlank { null },
                                                 brainWikiRootPageId = brainRootPageId.ifBlank { null },
                                             ),

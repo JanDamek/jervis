@@ -518,7 +518,7 @@ The orchestrator has been redesigned with a KB-first architecture:
 - `agent_result_parser.py` — Normalize variable agent responses
 - `distributed_lock.py` — MongoDB distributed lock for multi-pod concurrency
 
-**JERVIS Internal Project**: Each client gets max 1 `isJervisInternal=true` project (auto-created on first orchestration) for orchestrator tracker/wiki operations. `ProjectDocument.isJervisInternal` field, `ProjectRepository.findByClientIdAndIsJervisInternal()`, `ProjectService.getOrCreateJervisProject()`.
+**JERVIS Internal Project**: Each client gets max 1 `isJervisInternal=true` project (auto-created on first orchestration) for orchestrator tracker/wiki operations. `ProjectDocument.isJervisInternal` field, `ProjectRepository.findByClientIdAndIsJervisInternal()`, `ProjectService.getOrCreateJervisProject()`. The internal project ID can be pre-configured via `SystemConfig.jervisInternalProjectId` (Settings → General). `ProjectDto.filterVisible()` extension hides internal projects from all UI lists.
 
 ### State Persistence Design Decision
 

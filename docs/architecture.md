@@ -284,6 +284,17 @@ The Jervis system uses Kotlin RPC (kRPC) for type-safe, cross-platform communica
    - Document doesn't exist (new ticket/email)
    - Document exists but `updatedAt` is newer (status change, new comment)
 
+#### Resource Filtering (Project-level)
+
+Polling uses `project.resources` to determine which external resources belong to each project:
+
+- **Project with resources:** Only polls resources matching `connectionId + capability + resourceIdentifier`
+- **Project without resources:** Skips polling (does NOT index everything)
+- **Client-level:** Skips if any project already claims resources for that connection+capability
+- **Processing order:** Projects first, then clients (prevents duplicate indexing)
+
+This ensures e.g. `JanDamek/jervis` issues are indexed under the correct project, not under a different client's project that shares the same GitHub connection.
+
 ### Initial Sync s Pagination
 
 ---
@@ -1446,14 +1457,18 @@ Brain connections are configured system-wide via `SystemConfigDocument` (MongoDB
 ```kotlin
 data class SystemConfigDocument(
     @Id val id: String = "singleton",
+    val jervisInternalProjectId: ObjectId?,         // Project for orchestrator planning (hidden from UI)
     val brainBugtrackerConnectionId: ObjectId?,    // Atlassian connection for Jira
-    val brainBugtrackerProjectKey: String?,         // Jira project key
+    val brainBugtrackerProjectKey: String?,         // Jira project key (selected via dropdown)
     val brainWikiConnectionId: ObjectId?,           // Atlassian connection for Confluence
-    val brainWikiSpaceKey: String?,                 // Confluence space key
+    val brainWikiSpaceKey: String?,                 // Confluence space key (selected via dropdown)
+    val brainWikiRootPageId: String?,               // Optional root page ID for Confluence
 )
 ```
 
-**UI:** Settings → General → "Mozek Jervise" section with dropdowns for connection and project/space selection.
+**UI:** Settings → General → "Mozek Jervise" section with dropdowns for connection and project/space selection. Project/space lists loaded dynamically via `listAvailableResources()`.
+
+**Brain resource isolation:** `ConnectionRpcImpl.listAvailableResources()` automatically filters out brain-reserved Jira project and Confluence space from resource lists when the requesting connection matches the brain connection. This prevents users from accidentally assigning brain resources to client projects.
 
 ### Architecture
 
