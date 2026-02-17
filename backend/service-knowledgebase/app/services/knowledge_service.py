@@ -519,8 +519,17 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             observedAt=request.observedAt
         )
 
-        # Ingest to RAG + Graph (async - returns immediately, LLM extraction queued)
-        ingest_result = await self.ingest(ingest_req)
+        # Ingest to RAG + Graph — skip if chunks already exist (idempotent re-qualification)
+        existing_chunks = await self.rag_service.count_by_source(request.sourceUrn)
+        if existing_chunks > 0:
+            logger.info("Full ingest: sourceUrn=%s already has %d chunks, skipping RAG ingest",
+                        request.sourceUrn, existing_chunks)
+            ingest_result = IngestResult(
+                status="success", chunks_count=existing_chunks,
+                nodes_created=0, edges_created=0,
+            )
+        else:
+            ingest_result = await self.ingest(ingest_req)
 
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")

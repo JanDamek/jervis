@@ -192,6 +192,18 @@ class RagService:
 
         return await asyncio.to_thread(_fetch)
 
+    async def count_by_source(self, source_urn: str) -> int:
+        """Count existing RAG chunks for a sourceUrn (fast existence check)."""
+        def _count():
+            collection = self.client.collections.get("KnowledgeChunk")
+            response = collection.aggregate.over_all(
+                filters=wvq.Filter.by_property("sourceUrn").equal(source_urn),
+                total_count=True,
+            )
+            return response.total_count or 0
+
+        return await asyncio.to_thread(_count)
+
     async def purge_by_source(self, source_urn: str) -> tuple[int, list[str]]:
         """
         Delete all RAG chunks matching a sourceUrn.

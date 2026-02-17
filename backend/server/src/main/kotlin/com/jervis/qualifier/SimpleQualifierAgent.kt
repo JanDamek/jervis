@@ -60,9 +60,6 @@ class SimpleQualifierAgent(
          *  TODO: Make configurable per client (e.g., ClientDocument.scheduleLeadDays) */
         const val SCHEDULE_LEAD_DAYS = 2L
 
-        /** Tasks older than this are just indexed — no orchestrator action needed. */
-        val MAX_ACTIONABLE_AGE: Duration = Duration.ofDays(7)
-
         /** Actions that require full orchestrator (30B model, complex reasoning). */
         val COMPLEX_ACTIONS = setOf(
             "decompose_issue", "analyze_code", "create_application",
@@ -160,29 +157,20 @@ class SimpleQualifierAgent(
      * Task routing based on KB ingest analysis.
      *
      * Decision tree:
-     * 0. Old content (>7 days) → indexed only (DISPATCHED_GPU)
      * 1. Not actionable → indexed only (DISPATCHED_GPU)
      * 2. Actionable + only simple actions → handle locally (DISPATCHED_GPU)
      * 3. Actionable + complex + assigned to me → immediate (READY_FOR_GPU)
      * 4. Actionable + complex + future deadline → schedule or immediate
      * 5. Actionable + complex → immediate (READY_FOR_GPU)
+     *
+     * Note: No age-based filter — LLM (_generate_summary) decides actionability
+     * even for old content (forgotten tasks, open issues, etc.)
      */
     private suspend fun routeTask(
         task: TaskDocument,
         result: FullIngestResult,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): RoutingDecision {
-        // Step 0: Old content → just index, no orchestrator
-        val taskAge = Duration.between(task.createdAt, Instant.now())
-        if (taskAge > MAX_ACTIONABLE_AGE) {
-            logger.info {
-                "SIMPLE_QUALIFIER_ROUTE_OLD | taskId=${task.id} | age=${taskAge.toDays()}d | " +
-                    "maxAge=${MAX_ACTIONABLE_AGE.toDays()}d"
-            }
-            onProgress("Starší obsah - zaindexováno", mapOf("step" to "old_indexed", "agent" to "simple_qualifier"))
-            return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "old_content")
-        }
-
         // Step 1: Not actionable → indexed only
         if (!result.hasActionableContent) {
             logger.info {
