@@ -238,9 +238,13 @@ class MainViewModel(
     private val _orchestratorProgress = MutableStateFlow<OrchestratorProgressInfo?>(null)
     val orchestratorProgress: StateFlow<OrchestratorProgressInfo?> = _orchestratorProgress.asStateFlow()
 
-    // Task history — COMPLETED tasks only (not shown while running)
+    // Task history — COMPLETED tasks, loaded from server with pagination
     private val _taskHistory = MutableStateFlow<List<TaskHistoryEntry>>(emptyList())
     val taskHistory: StateFlow<List<TaskHistoryEntry>> = _taskHistory.asStateFlow()
+    private var taskHistoryTotalCount: Long = 0
+    private var taskHistoryLoading = false
+    private val _taskHistoryHasMore = MutableStateFlow(false)
+    val taskHistoryHasMore: StateFlow<Boolean> = _taskHistoryHasMore.asStateFlow()
 
     // Running task nodes — visible in Agent section, moved to _taskHistory on finalize
     private val _runningTaskNodes = MutableStateFlow<List<NodeEntry>>(emptyList())
@@ -733,12 +737,18 @@ class MainViewModel(
         )
 
         val history = _taskHistory.value.toMutableList()
-        history.add(0, entry) // newest first
+        history.add(0, entry) // newest first (optimistic)
         _taskHistory.value = history
 
         // Reset accumulator
         _runningTaskNodes.value = emptyList()
         runningTaskStartTime = null
+
+        // Reload from server after short delay to get authoritative data
+        scope.launch {
+            delay(1000)
+            loadTaskHistory()
+        }
     }
 
     private fun subscribeToQueueStatus(clientId: String) {
@@ -1562,6 +1572,8 @@ class MainViewModel(
         scope.launch {
             try {
                 val pending = repository.agentOrchestrator.getPendingTasks(clientId)
+                // Also refresh task history from server
+                loadTaskHistory()
                 _foregroundQueue.value = pending.foreground.map { dto ->
                     PendingQueueItem(
                         taskId = dto.taskId,
@@ -1588,6 +1600,73 @@ class MainViewModel(
                 println("Error refreshing queues: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Load task history from server. Replaces in-memory history.
+     */
+    fun loadTaskHistory() {
+        if (taskHistoryLoading) return
+        taskHistoryLoading = true
+        scope.launch {
+            try {
+                val page = repository.agentOrchestrator.getTaskHistory(limit = 20, offset = 0)
+                _taskHistory.value = page.items.map { it.toUiEntry() }
+                taskHistoryTotalCount = page.totalCount
+                _taskHistoryHasMore.value = page.hasMore
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error loading task history: ${e.message}")
+            } finally {
+                taskHistoryLoading = false
+            }
+        }
+    }
+
+    /**
+     * Load more task history items (pagination).
+     */
+    fun loadMoreTaskHistory() {
+        if (taskHistoryLoading) return
+        if (!_taskHistoryHasMore.value) return
+        taskHistoryLoading = true
+        val currentSize = _taskHistory.value.size
+        scope.launch {
+            try {
+                val page = repository.agentOrchestrator.getTaskHistory(limit = 20, offset = currentSize)
+                val current = _taskHistory.value.toMutableList()
+                current.addAll(page.items.map { it.toUiEntry() })
+                _taskHistory.value = current
+                _taskHistoryHasMore.value = page.hasMore
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error loading more task history: ${e.message}")
+            } finally {
+                taskHistoryLoading = false
+            }
+        }
+    }
+
+    private fun com.jervis.dto.TaskHistoryEntryDto.toUiEntry(): TaskHistoryEntry {
+        return TaskHistoryEntry(
+            taskId = taskId,
+            taskPreview = taskPreview,
+            projectName = projectName,
+            startTime = formatIsoTime(startedAt),
+            endTime = formatIsoTime(completedAt),
+            status = status,
+            nodes = nodes.map { NodeEntry(node = it.node, label = it.label, status = NodeStatus.DONE) },
+        )
+    }
+
+    /** Extract HH:MM:SS from ISO 8601 timestamp string. */
+    private fun formatIsoTime(isoTimestamp: String?): String {
+        if (isoTimestamp == null) return ""
+        // ISO format: 2026-02-17T12:34:56.789Z — extract time part
+        val tIndex = isoTimestamp.indexOf('T')
+        if (tIndex < 0) return isoTimestamp
+        val timePart = isoTimestamp.substring(tIndex + 1).substringBefore('Z').substringBefore('+')
+        return timePart.substringBefore('.').take(8) // HH:MM:SS
     }
 
     /**

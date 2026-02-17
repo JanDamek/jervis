@@ -3,11 +3,15 @@ package com.jervis.service.agent.coordinator
 import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
+import com.jervis.entity.TaskHistoryDocument
 import com.jervis.repository.ChatMessageRepository
+import com.jervis.repository.ClientRepository
+import com.jervis.repository.TaskHistoryRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.AgentOrchestratorRpcImpl
 import com.jervis.service.background.TaskService
 import com.jervis.service.chat.ChatHistoryService
+import com.jervis.service.project.ProjectService
 import com.jervis.service.task.UserTaskService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,12 +35,15 @@ import org.springframework.stereotype.Service
 @Service
 class OrchestratorStatusHandler(
     private val taskRepository: TaskRepository,
+    private val taskHistoryRepository: TaskHistoryRepository,
     private val taskService: TaskService,
     private val userTaskService: UserTaskService,
     private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: ChatMessageRepository,
     private val chatHistoryService: ChatHistoryService,
     private val workflowTracker: OrchestratorWorkflowTracker,
+    private val projectService: ProjectService,
+    private val clientRepository: ClientRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -272,6 +279,9 @@ class OrchestratorStatusHandler(
             }
         }
 
+        // Save to task history for UI display
+        saveTaskHistory(task, "done")
+
         logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages" }
     }
 
@@ -317,6 +327,9 @@ class OrchestratorStatusHandler(
         )
         taskService.updateState(task, TaskStateEnum.ERROR)
 
+        // Save to task history for UI display
+        saveTaskHistory(task, "error")
+
         // Emit idle queue status — orchestration errored out
         emitQueueIdle(task)
     }
@@ -331,6 +344,42 @@ class OrchestratorStatusHandler(
             agentOrchestratorRpc.emitGlobalQueueStatus()
         } catch (e: Exception) {
             logger.warn(e) { "Failed to emit idle queue status for task ${task.id}" }
+        }
+    }
+
+    /**
+     * Save a completed task to the task_history collection for UI display.
+     */
+    private suspend fun saveTaskHistory(task: TaskDocument, status: String) {
+        try {
+            val projectName = task.projectId?.let { pid ->
+                try { projectService.getProjectById(pid).name } catch (_: Exception) { null }
+            }
+            val clientName = try {
+                clientRepository.getById(task.clientId)?.name
+            } catch (_: Exception) { null }
+
+            val workflowStepsJson = workflowTracker.getStepsAsJson(task.id.value.toString())
+
+            val preview = task.content.take(100).let {
+                if (task.content.length > 100) "$it..." else it
+            }
+
+            taskHistoryRepository.save(
+                TaskHistoryDocument(
+                    taskId = task.id.value.toString(),
+                    taskPreview = preview,
+                    projectName = projectName,
+                    clientName = clientName,
+                    startedAt = task.orchestrationStartedAt,
+                    status = status,
+                    processingMode = task.processingMode.name,
+                    workflowStepsJson = workflowStepsJson,
+                ),
+            )
+            logger.info { "TASK_HISTORY_SAVED | taskId=${task.id} | status=$status" }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to save task history for task ${task.id}" }
         }
     }
 }

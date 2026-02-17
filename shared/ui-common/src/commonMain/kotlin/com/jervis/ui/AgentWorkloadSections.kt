@@ -2,6 +2,7 @@ package com.jervis.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -303,7 +304,11 @@ private fun CompactQueueItemRow(item: PendingQueueItem) {
 }
 
 @Composable
-internal fun HistorySectionContent(entries: List<TaskHistoryEntry>) {
+internal fun HistorySectionContent(
+    entries: List<TaskHistoryEntry>,
+    hasMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+) {
     if (entries.isEmpty()) {
         JEmptyState(
             message = "Zatím žádná aktivita",
@@ -320,6 +325,12 @@ internal fun HistorySectionContent(entries: List<TaskHistoryEntry>) {
         // (e.g., interrupted → resumed → completed)
         items(entries.size, key = { index -> "${entries[index].taskId}_$index" }) { index ->
             TaskHistoryItem(entries[index])
+            // Trigger load more when reaching last 3 items
+            if (hasMore && index >= entries.size - 3) {
+                LaunchedEffect(entries.size) {
+                    onLoadMore()
+                }
+            }
         }
     }
 }

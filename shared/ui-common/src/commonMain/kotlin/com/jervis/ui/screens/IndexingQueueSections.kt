@@ -747,7 +747,7 @@ internal fun formatNextCheck(nextCheckAt: String?): String {
 /**
  * Format ISO timestamp as relative time: "Před 5 min", "Před 2 h".
  */
-private fun formatRelativeTime(isoTimestamp: String): String {
+internal fun formatRelativeTime(isoTimestamp: String): String {
     return try {
         val ts = Instant.parse(isoTimestamp)
         val now = Clock.System.now()

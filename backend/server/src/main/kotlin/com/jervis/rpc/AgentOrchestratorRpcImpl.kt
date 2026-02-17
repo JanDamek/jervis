@@ -13,6 +13,7 @@ import com.jervis.mapper.toDto
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.repository.ChatMessageRepository
 import com.jervis.repository.ChatSummaryRepository
+import com.jervis.repository.TaskHistoryRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.service.IAgentOrchestratorService
 import kotlinx.coroutines.CoroutineScope
@@ -23,8 +24,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 import java.nio.file.Files
 import java.nio.file.Path
@@ -37,6 +40,7 @@ class AgentOrchestratorRpcImpl(
     private val chatMessageRepository: ChatMessageRepository,
     private val chatSummaryRepository: ChatSummaryRepository,
     private val taskRepository: TaskRepository,
+    private val taskHistoryRepository: TaskHistoryRepository,
     private val taskService: com.jervis.service.background.TaskService,
     private val projectService: com.jervis.service.project.ProjectService,
     private val taskNotifier: com.jervis.service.background.TaskNotifier,
@@ -642,6 +646,47 @@ class AgentOrchestratorRpcImpl(
             ?: throw IllegalStateException("Task has no orchestrator thread: $taskId")
         pythonOrchestratorClient.cancelOrchestration(threadId)
         logger.info { "ORCHESTRATION_CANCELLED: taskId=$taskId threadId=$threadId" }
+    }
+
+    // --- Task History ---
+
+    override suspend fun getTaskHistory(limit: Int, offset: Int): com.jervis.dto.TaskHistoryPageDto {
+        val totalCount = taskHistoryRepository.countAllBy()
+        val items = taskHistoryRepository
+            .findAllByOrderByCompletedAtDesc(PageRequest.of(offset / limit.coerceAtLeast(1), limit.coerceAtLeast(1)))
+            .toList()
+            .map { doc ->
+                val nodes = doc.workflowStepsJson?.let { json ->
+                    try {
+                        Json.decodeFromString<List<com.jervis.dto.ui.ChatMessage.WorkflowStep>>(json)
+                            .map { step ->
+                                com.jervis.dto.TaskHistoryNodeDto(
+                                    node = step.node,
+                                    label = step.label,
+                                )
+                            }
+                    } catch (_: Exception) { emptyList() }
+                } ?: emptyList()
+
+                com.jervis.dto.TaskHistoryEntryDto(
+                    id = doc.id.toString(),
+                    taskId = doc.taskId,
+                    taskPreview = doc.taskPreview,
+                    projectName = doc.projectName,
+                    clientName = doc.clientName,
+                    startedAt = doc.startedAt?.toString(),
+                    completedAt = doc.completedAt.toString(),
+                    status = doc.status,
+                    processingMode = doc.processingMode,
+                    nodes = nodes,
+                )
+            }
+
+        return com.jervis.dto.TaskHistoryPageDto(
+            items = items,
+            totalCount = totalCount,
+            hasMore = (offset + limit) < totalCount,
+        )
     }
 
     // --- Internal Helpers ---

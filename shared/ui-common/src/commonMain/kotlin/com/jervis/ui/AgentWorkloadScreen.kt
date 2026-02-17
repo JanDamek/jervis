@@ -63,6 +63,7 @@ fun AgentWorkloadScreen(
     val orchestratorProgress by viewModel.orchestratorProgress.collectAsState()
     val runningNodes by viewModel.runningTaskNodes.collectAsState()
     val taskHistory by viewModel.taskHistory.collectAsState()
+    val taskHistoryHasMore by viewModel.taskHistoryHasMore.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
 
@@ -113,6 +114,8 @@ fun AgentWorkloadScreen(
                 )
                 AccordionSection.HISTORY -> HistorySectionContent(
                     entries = taskHistory,
+                    hasMore = taskHistoryHasMore,
+                    onLoadMore = { viewModel.loadMoreTaskHistory() },
                 )
             }
         }

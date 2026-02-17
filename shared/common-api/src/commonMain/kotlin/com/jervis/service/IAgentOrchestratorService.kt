@@ -4,6 +4,7 @@ import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.PendingTasksDto
+import com.jervis.dto.TaskHistoryPageDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
@@ -59,4 +60,12 @@ interface IAgentOrchestratorService {
      * Cancel a running orchestration for a given task.
      */
     suspend fun cancelOrchestration(taskId: String)
+
+    // --- Task History ---
+
+    /**
+     * Get paginated task history (completed orchestrator tasks).
+     * Ordered by completedAt DESC (newest first).
+     */
+    suspend fun getTaskHistory(limit: Int = 20, offset: Int = 0): TaskHistoryPageDto
 }
