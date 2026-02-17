@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.filterVisible
 import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
@@ -127,7 +128,7 @@ fun NewEnvironmentDialog(
             try {
                 val allGroups = repository.projectGroups.getAllGroups()
                 groups = allGroups.filter { it.clientId == clientId }
-                val allProjects = repository.projects.listProjectsForClient(clientId)
+                val allProjects = repository.projects.listProjectsForClient(clientId).filterVisible()
                 projects = allProjects
             } catch (_: Exception) {
             }

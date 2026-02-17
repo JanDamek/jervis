@@ -1,5 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
+import com.jervis.dto.filterVisible
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,7 +59,7 @@ fun ClientsSettings(repository: JervisRepository) {
         isLoading = true
         try {
             clients = repository.clients.getAllClients()
-            allProjects = repository.projects.getAllProjects()
+            allProjects = repository.projects.getAllProjects().filterVisible()
         } catch (e: Exception) {
             snackbarHostState.showSnackbar("Chyba načítání: ${e.message}")
         } finally {

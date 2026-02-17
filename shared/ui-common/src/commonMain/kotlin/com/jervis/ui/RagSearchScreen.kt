@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.filterVisible
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.rag.RagSearchItemDto
 import com.jervis.dto.rag.RagSearchRequestDto
@@ -49,7 +50,7 @@ fun RagSearchScreen(
         isLoadingData = true
         try {
             clients = repository.clients.getAllClients()
-            projects = repository.projects.getAllProjects()
+            projects = repository.projects.getAllProjects().filterVisible()
             if (clients.isNotEmpty()) {
                 selectedClient = clients[0]
             }

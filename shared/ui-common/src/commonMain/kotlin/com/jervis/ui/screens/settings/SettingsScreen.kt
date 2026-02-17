@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.ClientDto
+import com.jervis.dto.ProjectDto
 import com.jervis.dto.SystemConfigDto
 import com.jervis.dto.UpdateSystemConfigRequest
 import com.jervis.dto.connection.ConnectionCapability
@@ -84,6 +86,11 @@ private fun GeneralSettings(repository: JervisRepository) {
     var isLoading by remember { mutableStateOf(true) }
     var config by remember { mutableStateOf(SystemConfigDto()) }
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
+    var allProjects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
+    var allClients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
+
+    // Editable state — internal project
+    var selectedInternalProjectId by remember { mutableStateOf<String?>(null) }
 
     // Editable brain config state
     var selectedBugtrackerConnectionId by remember { mutableStateOf<String?>(null) }
@@ -94,6 +101,7 @@ private fun GeneralSettings(repository: JervisRepository) {
 
     fun applyConfig(dto: SystemConfigDto) {
         config = dto
+        selectedInternalProjectId = dto.jervisInternalProjectId
         selectedBugtrackerConnectionId = dto.brainBugtrackerConnectionId
         brainProjectKey = dto.brainBugtrackerProjectKey ?: ""
         selectedWikiConnectionId = dto.brainWikiConnectionId
@@ -101,10 +109,17 @@ private fun GeneralSettings(repository: JervisRepository) {
         brainRootPageId = dto.brainWikiRootPageId ?: ""
     }
 
+    // Build client name map for dropdown labels
+    val clientNameMap = remember(allClients) {
+        allClients.associate { it.id to it.name }
+    }
+
     LaunchedEffect(Unit) {
         try {
             val allConnections = repository.connections.getAllConnections()
             connections = allConnections
+            allClients = repository.clients.getAllClients()
+            allProjects = repository.projects.getAllProjects()
             val systemConfig = repository.systemConfig.getSystemConfig()
             applyConfig(systemConfig)
         } catch (e: Exception) {
@@ -153,6 +168,51 @@ private fun GeneralSettings(repository: JervisRepository) {
             if (isLoading) {
                 JCenteredLoading()
             } else {
+                JSection(title = "Interní projekt") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Projekt pro orchestrátor — plánování práce a interní dokumentace. " +
+                                "Tento projekt nebude zobrazen v přehledech.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        JDropdown(
+                            items = allProjects,
+                            selectedItem = allProjects.find { it.id == selectedInternalProjectId },
+                            onItemSelected = { selectedInternalProjectId = it.id },
+                            label = "Projekt",
+                            itemLabel = { project ->
+                                val clientName = clientNameMap[project.clientId] ?: "?"
+                                "$clientName / ${project.name}"
+                            },
+                            placeholder = "Vyberte interní projekt",
+                        )
+
+                        JPrimaryButton(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val updated = repository.systemConfig.updateSystemConfig(
+                                            UpdateSystemConfigRequest(
+                                                jervisInternalProjectId = selectedInternalProjectId,
+                                            ),
+                                        )
+                                        applyConfig(updated)
+                                        // Reload projects to reflect isJervisInternal flag change
+                                        allProjects = repository.projects.getAllProjects()
+                                        snackbarHostState.showSnackbar("Interní projekt uložen")
+                                    } catch (e: Exception) {
+                                        snackbarHostState.showSnackbar("Chyba ukládání: ${e.message}")
+                                    }
+                                }
+                            },
+                        ) {
+                            Text("Uložit")
+                        }
+                    }
+                }
+
                 JSection(title = "Mozek Jervise") {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(

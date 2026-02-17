@@ -1,6 +1,7 @@
 package com.jervis.ui.meeting
 
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.filterVisible
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingCreateDto
@@ -158,7 +159,7 @@ class MeetingViewModel(
     fun loadProjects(clientId: String) {
         scope.launch {
             try {
-                _projects.value = repository.projects.listProjectsForClient(clientId)
+                _projects.value = repository.projects.listProjectsForClient(clientId).filterVisible()
             } catch (_: Exception) {
                 _projects.value = emptyList()
             }

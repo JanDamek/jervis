@@ -25,7 +25,6 @@ from app.db.arango import get_arango_db
 from app.metrics import (
     rag_ingest_total, rag_ingest_duration, rag_ingest_chunks,
     rag_query_total, rag_query_duration,
-    graph_write_total, graph_write_duration,
     graph_query_total, graph_query_duration,
     extraction_queue_depth,
 )
@@ -116,14 +115,13 @@ class KnowledgeService:
         Ingest content with async LLM extraction.
 
         Flow:
-        1. RAG Ingest → get chunk IDs (fast, returns immediately)
+        1. RAG Ingest → embedding + Weaviate insert (fast, returns immediately)
         2. Enqueue LLM extraction task → background worker processes later
         3. Return immediately without waiting for LLM
 
-        LLM extraction happens asynchronously:
-        - Background worker polls queue from PVC
-        - Calls graph_service.ingest() with LLM extraction
-        - Updates RAG chunks with entity keys after completion
+        Queue has two priority levels (FIFO within each):
+        - CRITICAL (priority 0): processed first, embedding runs on GPU
+        - NORMAL (priority 4+): processed after all CRITICAL tasks
         """
         logger.info(
             "KB_WRITE: INGEST_START sourceUrn=%s kind=%s clientId=%s projectId=%s groupId=%s content_len=%d priority=%s",
@@ -142,45 +140,10 @@ class KnowledgeService:
             request.sourceUrn, chunks_count, chunk_ids[:3] if len(chunk_ids) > 3 else chunk_ids
         )
 
-        # 2. Enqueue LLM extraction task (always async, priority queue handles ordering)
+        # 2. Always enqueue LLM extraction (priority queue handles ordering: CRITICAL first, then NORMAL, FIFO within each)
         effective_priority = embedding_priority if embedding_priority is not None else 4
 
-        if effective_priority <= 2 and chunk_ids:
-            # Priority requests (MCP, orchestrator): extract graph SYNCHRONOUSLY
-            # so the caller gets real node counts immediately
-            logger.info(
-                "KB_WRITE: SYNC_EXTRACTION sourceUrn=%s priority=%d",
-                request.sourceUrn, effective_priority
-            )
-            graph_start = time.time()
-            try:
-                nodes_created, edges_created, entity_keys = await self.graph_service.ingest(
-                    request, chunk_ids=chunk_ids, embedding_priority=effective_priority
-                )
-                graph_write_total.labels(operation="ingest", status="success").inc()
-                graph_write_duration.labels(operation="ingest").observe(time.time() - graph_start)
-                # Update RAG chunks with discovered entity keys
-                if entity_keys:
-                    for chunk_id in chunk_ids:
-                        try:
-                            await self.rag_service.update_chunk_graph_refs(chunk_id, entity_keys)
-                        except Exception as ue:
-                            logger.warning("Failed to update chunk %s with entity keys: %s", chunk_id, ue)
-                logger.info(
-                    "KB_WRITE: SYNC_EXTRACTION_DONE sourceUrn=%s nodes=%d edges=%d entities=%d",
-                    request.sourceUrn, nodes_created, edges_created, len(entity_keys)
-                )
-            except Exception as e:
-                graph_write_total.labels(operation="ingest", status="error").inc()
-                graph_write_duration.labels(operation="ingest").observe(time.time() - graph_start)
-                logger.error(
-                    "KB_WRITE: SYNC_EXTRACTION_FAILED sourceUrn=%s error=%s — falling back to queue",
-                    request.sourceUrn, e
-                )
-                # Fall back to async queue on failure
-                await self._enqueue_extraction(request, chunk_ids, effective_priority)
-        elif self.extraction_queue and chunk_ids:
-            # Bulk indexing (priority > 2): queue for background processing
+        if self.extraction_queue and chunk_ids:
             await self._enqueue_extraction(request, chunk_ids, effective_priority)
         elif chunk_ids:
             logger.warning(

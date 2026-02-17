@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.filterVisible
 import com.jervis.repository.JervisRepository
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +43,7 @@ class MainViewModel(
 
             try {
                  val clients = repository.clients.getAllClients()
-                val projects = repository.projects.getAllProjects()
+                val projects = repository.projects.getAllProjects().filterVisible()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

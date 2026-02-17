@@ -7,7 +7,9 @@ import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.entity.ProjectDocument
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
+import com.jervis.entity.SystemConfigDocument
 import com.jervis.repository.ProjectRepository
+import com.jervis.repository.SystemConfigRepository
 import com.jervis.service.indexing.git.GitRepositoryService
 import com.jervis.service.storage.DirectoryStructureService
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service
 @Service
 class ProjectService(
     private val projectRepository: ProjectRepository,
+    private val systemConfigRepository: SystemConfigRepository,
     private val gitRepositoryService: GitRepositoryService,
     private val directoryStructureService: DirectoryStructureService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
@@ -120,10 +123,17 @@ class ProjectService(
         projectRepository.getById(projectId)
 
     /**
-     * Get or create the JERVIS internal project for a client.
-     * Max 1 internal project per client. Auto-created on first orchestration.
+     * Get the JERVIS internal project. Prefers SystemConfig setting, falls back to per-client auto-create.
      */
     suspend fun getOrCreateJervisProject(clientId: ClientId): ProjectDocument {
+        // 1. Try SystemConfig (explicit selection from Settings UI)
+        val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID)
+        if (config?.jervisInternalProjectId != null) {
+            val configured = projectRepository.getById(ProjectId(config.jervisInternalProjectId))
+            if (configured != null) return configured
+        }
+
+        // 2. Fallback: find or create per-client internal project
         val existing = projectRepository.findByClientIdAndIsJervisInternal(clientId, true)
         if (existing != null) return existing
 

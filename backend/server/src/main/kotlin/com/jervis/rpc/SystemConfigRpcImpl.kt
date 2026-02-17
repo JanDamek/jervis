@@ -1,8 +1,10 @@
 package com.jervis.rpc
 
+import com.jervis.common.types.ProjectId
 import com.jervis.dto.SystemConfigDto
 import com.jervis.dto.UpdateSystemConfigRequest
 import com.jervis.entity.SystemConfigDocument
+import com.jervis.repository.ProjectRepository
 import com.jervis.repository.SystemConfigRepository
 import com.jervis.service.ISystemConfigService
 import mu.KotlinLogging
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component
 @Component
 class SystemConfigRpcImpl(
     private val repository: SystemConfigRepository,
+    private val projectRepository: ProjectRepository,
 ) : ISystemConfigService {
     private val logger = KotlinLogging.logger {}
 
@@ -25,7 +28,28 @@ class SystemConfigRpcImpl(
         val existing = repository.findById(SystemConfigDocument.SINGLETON_ID)
             ?: SystemConfigDocument()
 
+        // Handle JERVIS Internal project assignment
+        if (request.jervisInternalProjectId != null) {
+            val newProjectId = ProjectId(ObjectId(request.jervisInternalProjectId))
+            val oldProjectId = existing.jervisInternalProjectId?.let { ProjectId(it) }
+
+            // Clear flag on old project if different
+            if (oldProjectId != null && oldProjectId != newProjectId) {
+                projectRepository.getById(oldProjectId)?.let {
+                    projectRepository.save(it.copy(isJervisInternal = false))
+                }
+            }
+            // Set flag on new project
+            if (oldProjectId != newProjectId) {
+                projectRepository.getById(newProjectId)?.let {
+                    projectRepository.save(it.copy(isJervisInternal = true))
+                }
+            }
+        }
+
         val updated = existing.copy(
+            jervisInternalProjectId = request.jervisInternalProjectId
+                ?.let { ObjectId(it) } ?: existing.jervisInternalProjectId,
             brainBugtrackerConnectionId = request.brainBugtrackerConnectionId
                 ?.let { ObjectId(it) } ?: existing.brainBugtrackerConnectionId,
             brainBugtrackerProjectKey = request.brainBugtrackerProjectKey
@@ -39,7 +63,7 @@ class SystemConfigRpcImpl(
         )
 
         repository.save(updated)
-        logger.info { "System config updated: bugtracker=${updated.brainBugtrackerConnectionId}, wiki=${updated.brainWikiConnectionId}" }
+        logger.info { "System config updated: internalProject=${updated.jervisInternalProjectId}, bugtracker=${updated.brainBugtrackerConnectionId}, wiki=${updated.brainWikiConnectionId}" }
         return updated.toDto()
     }
 
@@ -53,6 +77,7 @@ class SystemConfigRpcImpl(
 
     private fun SystemConfigDocument.toDto(): SystemConfigDto =
         SystemConfigDto(
+            jervisInternalProjectId = jervisInternalProjectId?.toHexString(),
             brainBugtrackerConnectionId = brainBugtrackerConnectionId?.toHexString(),
             brainBugtrackerProjectKey = brainBugtrackerProjectKey,
             brainWikiConnectionId = brainWikiConnectionId?.toHexString(),

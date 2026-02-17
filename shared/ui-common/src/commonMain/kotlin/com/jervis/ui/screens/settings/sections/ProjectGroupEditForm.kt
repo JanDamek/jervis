@@ -1,5 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
+import com.jervis.dto.filterVisible
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,7 +85,7 @@ internal fun ProjectGroupEditForm(
                 client.connectionIds.contains(conn.id)
             }
             // Load projects
-            allProjects = repository.projects.listProjectsForClient(group.clientId)
+            allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
             projectsInGroup = allProjects.filter { it.groupId == group.id }
         } catch (_: Exception) {
         }
@@ -216,7 +217,7 @@ internal fun ProjectGroupEditForm(
                                                         project.copy(groupId = null),
                                                     )
                                                     projectsInGroup = projectsInGroup.filter { it.id != project.id }
-                                                    allProjects = repository.projects.listProjectsForClient(group.clientId)
+                                                    allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
                                                 } catch (_: Exception) {
                                                 }
                                             }
@@ -339,7 +340,7 @@ internal fun ProjectGroupEditForm(
                 projectsInGroup = (projectsInGroup + addedProject).sortedBy { it.name }
                 scope.launch {
                     try {
-                        allProjects = repository.projects.listProjectsForClient(group.clientId)
+                        allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
                     } catch (_: Exception) {
                     }
                 }

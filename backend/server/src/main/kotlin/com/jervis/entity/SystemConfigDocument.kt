@@ -12,6 +12,8 @@ import org.springframework.data.mongodb.core.mapping.Document
 data class SystemConfigDocument(
     @Id
     val id: String = SINGLETON_ID,
+    /** Project selected as JERVIS Internal (for orchestrator planning). */
+    val jervisInternalProjectId: ObjectId? = null,
     /** Connection ID for Jervis's own bugtracker (Jira). */
     val brainBugtrackerConnectionId: ObjectId? = null,
     /** Jira project key for the brain project (e.g. "JERVIS"). */

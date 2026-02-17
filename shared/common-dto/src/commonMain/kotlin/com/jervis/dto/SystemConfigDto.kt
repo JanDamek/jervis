@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SystemConfigDto(
+    val jervisInternalProjectId: String? = null,
     val brainBugtrackerConnectionId: String? = null,
     val brainBugtrackerProjectKey: String? = null,
     val brainWikiConnectionId: String? = null,
@@ -21,6 +22,7 @@ data class SystemConfigDto(
  */
 @Serializable
 data class UpdateSystemConfigRequest(
+    val jervisInternalProjectId: String? = null,
     val brainBugtrackerConnectionId: String? = null,
     val brainBugtrackerProjectKey: String? = null,
     val brainWikiConnectionId: String? = null,

@@ -37,12 +37,17 @@ data class ProjectDto(
     val workspaceError: String? = null,        // Last error message if CLONE_FAILED_*
     val workspaceRetryCount: Int = 0,
     val nextWorkspaceRetryAt: String? = null,  // ISO timestamp of next retry
+    // Internal project flag (hidden from UI lists)
+    val isJervisInternal: Boolean = false,
 )
 
 /**
  * Connection capability configuration at project level.
  * Overrides client-level defaults when specified.
  */
+/** Filter out internal projects from user-facing lists. */
+fun List<ProjectDto>.filterVisible() = filter { !it.isJervisInternal }
+
 @Serializable
 data class ProjectConnectionCapabilityDto(
     /** The connection providing this capability */

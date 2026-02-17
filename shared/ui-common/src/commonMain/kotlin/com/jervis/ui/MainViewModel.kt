@@ -7,6 +7,7 @@ import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
+import com.jervis.dto.filterVisible
 import com.jervis.dto.events.JervisEvent
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.ui.ChatMessage
@@ -1253,7 +1254,7 @@ class MainViewModel(
             _isLoading.value = true
             try {
                 // Load projects and groups for this client
-                val projectList = repository.projects.listProjectsForClient(clientId)
+                val projectList = repository.projects.listProjectsForClient(clientId).filterVisible()
                 _projects.value = projectList
 
                 val allGroups = repository.projectGroups.getAllGroups()

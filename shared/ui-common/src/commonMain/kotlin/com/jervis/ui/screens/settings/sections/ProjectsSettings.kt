@@ -1,5 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
+import com.jervis.dto.filterVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,7 +39,7 @@ fun ProjectsSettings(repository: JervisRepository) {
         scope.launch {
             isLoading = true
             try {
-                projects = repository.projects.getAllProjects()
+                projects = repository.projects.getAllProjects().filterVisible()
             } catch (_: Exception) {
             } finally {
                 isLoading = false

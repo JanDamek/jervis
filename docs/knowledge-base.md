@@ -280,33 +280,45 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 7.  **Deep Code Analysis**: `POST /ingest/cpg` — Joern CPG export adds semantic edges (calls, extends, uses_type).
 8.  **Git Commit Ingest**: `POST /ingest/git-commits` — structured commit nodes with graph edges to branches/files + diff as RAG chunks.
 
-### Priority Write Queue (Dual Semaphore)
+### Async Write Queue with Priority
 
-KB write service uses dual semaphore to ensure MCP/orchestrator writes are never blocked by bulk indexing:
+All writes (CRITICAL and NORMAL) are **fully asynchronous**. The ingest endpoint returns immediately after RAG embedding + Weaviate insert. LLM graph extraction is always queued for background processing.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│              WRITE SERVICE (main.py)                      │
-├──────────────────────────┬───────────────────────────────┤
-│  Priority Semaphore (5)  │  Normal Semaphore (5)         │
-│  X-Ollama-Priority ≤ 2   │  X-Ollama-Priority > 2        │
-│  MCP, orchestrator       │  Bulk indexing, git commits   │
-├──────────────────────────┴───────────────────────────────┤
-│  Priority routing: acquire_write_slot_with_priority()    │
-│  Reads X-Ollama-Priority header → selects semaphore      │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    INGEST ENDPOINT                               │
+│  1. RAG Ingest (embedding + Weaviate) — synchronous, fast       │
+│  2. Enqueue LLM extraction → return immediately                 │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────────┐
+│              SQLite PRIORITY QUEUE                               │
+│  ORDER BY priority ASC, created_at ASC (FIFO within priority)   │
+│                                                                  │
+│  CRITICAL (0) — MCP, orchestrator FOREGROUND → processed first  │
+│  NORMAL   (4) — bulk indexing, git commits   → processed after  │
+├──────────────────────────────────────────────────────────────────┤
+│  Background worker polls queue → graph_service.ingest()          │
+│  Priority header propagated to Ollama Router for GPU routing     │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+**HTTP concurrency control (dual semaphore):**
+- Priority semaphore (5 slots) — `X-Ollama-Priority: 0` (CRITICAL)
+- Normal semaphore (5 slots) — no header or `X-Ollama-Priority > 0` (NORMAL)
+- CRITICAL requests never wait behind NORMAL ones at HTTP level
 
 **Priority propagation through full stack:**
 1. **HTTP level** — `acquire_write_slot_with_priority()` routes to priority or normal semaphore
-2. **LLM Extraction Queue** — SQLite `priority` column, dequeue `ORDER BY priority ASC, created_at ASC`
-3. **Graph LLM calls** — Direct httpx POST to Ollama Router `/api/generate` with `X-Ollama-Priority` header (replaced LangChain ChatOllama)
-4. **Embeddings** — Direct httpx POST to Ollama Router `/api/embeddings` with `X-Ollama-Priority` header
+2. **RAG embedding** — CRITICAL embeddings run on GPU (`X-Ollama-Priority: 0`), NORMAL can fall back to CPU
+3. **LLM Extraction Queue** — SQLite `priority` column, dequeue `ORDER BY priority ASC, created_at ASC`
+4. **Graph LLM calls** — Worker passes priority to graph service → Ollama Router `X-Ollama-Priority` header
 
-**Effect:** `kb_store` (MCP, priority 1) completes in seconds even during heavy bulk indexing (priority 4).
+**Effect:** Ingest endpoint returns in milliseconds (after embedding). CRITICAL extraction tasks are processed before NORMAL ones in the background queue.
 
 **Key files:**
 - `app/main.py` — dual semaphore, `acquire_write_slot_with_priority()`
+- `app/services/knowledge_service.py` — always enqueues, never synchronous extraction
 - `app/services/graph_service.py` — `_llm_call(prompt, priority)` with httpx
 - `app/services/llm_extraction_queue.py` — priority column, priority-aware dequeue
 - `app/services/llm_extraction_worker.py` — passes priority to graph service

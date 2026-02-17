@@ -1,5 +1,6 @@
 package com.jervis.ui.screens.settings.sections
 
+import com.jervis.dto.filterVisible
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -101,7 +102,7 @@ internal fun ClientEditForm(
     fun loadProjects() {
         scope.launch {
             try {
-                projects = repository.projects.listProjectsForClient(client.id)
+                projects = repository.projects.listProjectsForClient(client.id).filterVisible()
             } catch (_: Exception) {
             }
         }
