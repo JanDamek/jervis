@@ -233,6 +233,7 @@ fun App(
             Screen.IndexingQueue -> {
                 IndexingQueueScreen(
                     repository = repository,
+                    qualificationProgress = viewModel.qualificationProgress,
                     onBack = { appNavigator.goBack() },
                 )
             }

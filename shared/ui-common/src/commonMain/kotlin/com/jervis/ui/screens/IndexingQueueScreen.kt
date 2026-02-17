@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,11 +39,13 @@ import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.indexing.IndexingDashboardDto
 import com.jervis.dto.indexing.PollingIntervalUpdateDto
 import com.jervis.repository.JervisRepository
+import com.jervis.ui.QualificationProgressInfo
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 private data class IntervalDialogState(
@@ -61,6 +64,7 @@ private enum class IndexingSection(val title: String) {
 @Composable
 fun IndexingQueueScreen(
     repository: JervisRepository,
+    qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>,
     onBack: () -> Unit,
 ) {
     var dashboard by remember { mutableStateOf<IndexingDashboardDto?>(null) }
@@ -127,10 +131,13 @@ fun IndexingQueueScreen(
                             },
                             onRefresh = { loadDashboard() },
                         )
-                        IndexingSection.KB_PROCESSING -> PipelineSectionContent(
-                            items = data.kbProcessing,
-                            emptyMessage = "Nic se nezpracovává",
-                        )
+                        IndexingSection.KB_PROCESSING -> {
+                            val progress by qualificationProgress.collectAsState()
+                            KbProcessingSectionContent(
+                                items = data.kbProcessing,
+                                activeProgress = progress,
+                            )
+                        }
                         IndexingSection.KB_WAITING -> KbWaitingSectionContent(
                             data = data,
                             repository = repository,
@@ -315,6 +322,136 @@ private fun PipelineSectionContent(
             PipelineItemCompactRow(items[index])
         }
     }
+}
+
+@Composable
+private fun KbProcessingSectionContent(
+    items: List<com.jervis.dto.indexing.PipelineItemDto>,
+    activeProgress: Map<String, QualificationProgressInfo>,
+) {
+    if (items.isEmpty() && activeProgress.isEmpty()) {
+        JEmptyState("Nic se nezpracovává", icon = "📋")
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = JervisSpacing.outerPadding, vertical = 8.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+    ) {
+        items(items.size, key = { items[it].id }) { index ->
+            val item = items[index]
+            val progress = activeProgress[item.id]
+            PipelineItemWithProgress(item, progress)
+        }
+    }
+}
+
+/** Pipeline item row with optional live progress message. */
+@Composable
+private fun PipelineItemWithProgress(
+    item: com.jervis.dto.indexing.PipelineItemDto,
+    progress: QualificationProgressInfo?,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = JervisSpacing.touchTarget)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = item.type.icon(),
+            contentDescription = item.type.label(),
+            modifier = Modifier.size(20.dp),
+            tint = if (progress != null) MaterialTheme.colorScheme.tertiary
+                   else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.width(JervisSpacing.itemGap))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = item.connectionName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = item.clientName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Live progress message
+            if (progress != null) {
+                Text(
+                    text = progress.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+            if (item.retryCount > 0) {
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Pokus ${item.retryCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    item.nextRetryAt?.let { nextRetry ->
+                        Text(
+                            text = "· další ${formatNextCheck(nextRetry)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item.errorMessage?.let { errorMessage ->
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = if (progress != null) stepLabel(progress.step) else pipelineStateLabel(item.pipelineState),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (progress != null) MaterialTheme.colorScheme.tertiary else pipelineStateColor(item.pipelineState),
+        )
+
+        item.createdAt?.let { ts ->
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = formatRelativeTime(ts),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun stepLabel(step: String): String = when (step) {
+    "ingest" -> "Indexuje"
+    "summary" -> "Analyzuje"
+    "routing" -> "Rozhoduje"
+    "user_task" -> "Úkol"
+    "scheduled" -> "Naplánováno"
+    else -> "Zpracovává"
 }
 
 @Composable

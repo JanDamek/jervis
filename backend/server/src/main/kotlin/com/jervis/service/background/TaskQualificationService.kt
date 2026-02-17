@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service
 class TaskQualificationService(
     private val taskService: TaskService,
     private val simpleQualifierAgent: SimpleQualifierAgent,
+    private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -84,7 +85,14 @@ class TaskQualificationService(
                 return
             }
 
-        val summary = simpleQualifierAgent.run(task)
+        val summary = simpleQualifierAgent.run(task) { message, metadata ->
+            notificationRpc.emitQualificationProgress(
+                taskId = task.id.toString(),
+                clientId = task.clientId.toString(),
+                message = message,
+                step = metadata["step"] ?: "unknown",
+            )
+        }
 
         logger.info {
             "QUALIFICATION_RESULT: id=${task.id} type=${task.type} summary=${summary.take(100)}"

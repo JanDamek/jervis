@@ -345,8 +345,14 @@ class IndexingQueueRpcImpl(
             pipelineState = null, // will use actual state
         )
 
-        // Indexed: Collect from polled items (git commits, emails, bugtracker, wiki) that are INDEXED
-        val kbIndexedAll = collectIndexedPolledItems(clientMap, connectionMap)
+        // Indexed: TaskDocuments with DISPATCHED_GPU state (successfully qualified + indexed)
+        val kbIndexedAll = collectTasksByStates(
+            states = listOf(TaskStateEnum.DISPATCHED_GPU),
+            types = indexingTaskTypes,
+            clientMap = clientMap,
+            connectionMap = connectionMap,
+            pipelineState = "INDEXED",
+        )
 
         // Apply search and client/project filters
         val filteredKbWaiting = filterPipelineItems(kbWaitingAll, query, clientFilterQuery, projectFilterQuery)
@@ -472,116 +478,6 @@ class IndexingQueueRpcImpl(
             "git" -> "Git"
             else -> prefix
         }
-    }
-
-    /**
-     * Collect indexed items from polled collections (git commits, emails, bugtracker, wiki).
-     * These are items that have been successfully indexed into KB.
-     */
-    private suspend fun collectIndexedPolledItems(
-        clientMap: Map<ClientId, ClientDocument>,
-        connectionMap: Map<ConnectionId, ConnectionDocument>,
-    ): List<PipelineItemDto> {
-        val items = mutableListOf<PipelineItemDto>()
-
-        // Git commits with INDEXED state
-        val gitQuery = Query(Criteria.where("state").`in`(listOf(GitCommitState.INDEXED.name)))
-            .with(Sort.by(Sort.Direction.DESC, "commitDate"))
-            .limit(100)
-        val gitDocs = mongoTemplate.find(gitQuery, GitCommitDocument::class.java, "git_commits")
-            .collectList().awaitSingle()
-
-        for (doc in gitDocs) {
-            val clientName = clientMap.values.find { it.id.value == doc.clientId }?.name ?: doc.clientId.toHexString()
-            items += PipelineItemDto(
-                id = doc.id.toHexString(),
-                type = IndexingItemType.GIT_COMMIT,
-                title = doc.message?.take(120) ?: doc.commitHash.take(8),
-                connectionName = "Git",
-                clientName = clientName,
-                sourceUrn = doc.projectId?.let { SourceUrn.git(ProjectId(it), doc.commitHash).value },
-                createdAt = doc.commitDate?.formatIso(),
-                pipelineState = "INDEXED",
-                taskId = null,
-                queuePosition = null,
-            )
-        }
-
-        // Email messages with INDEXED state
-        val emailQuery = Query(Criteria.where("state").`in`(listOf(PollingStatusEnum.INDEXED.name)))
-            .with(Sort.by(Sort.Direction.DESC, "receivedDate"))
-            .limit(100)
-        val emailDocs = mongoTemplate.find(emailQuery, EmailMessageIndexDocument::class.java, "email_message_index")
-            .collectList().awaitSingle()
-
-        for (doc in emailDocs) {
-            val connName = connectionMap[doc.connectionId]?.name ?: "Email"
-            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
-            items += PipelineItemDto(
-                id = doc.id.toHexString(),
-                type = IndexingItemType.EMAIL,
-                title = doc.subject ?: "(bez předmětu)",
-                connectionName = connName,
-                clientName = clientName,
-                sourceUrn = doc.messageId?.let { SourceUrn.email(doc.connectionId, it, doc.subject ?: "").value },
-                createdAt = doc.receivedDate.formatIso(),
-                pipelineState = "INDEXED",
-                taskId = null,
-                queuePosition = null,
-            )
-        }
-
-        // Bugtracker issues with INDEXED state
-        val btQuery = Query(Criteria.where("status").`in`(listOf(PollingStatusEnum.INDEXED.name)))
-            .with(Sort.by(Sort.Direction.DESC, "bugtrackerUpdatedAt"))
-            .limit(100)
-        val btDocs = mongoTemplate.find(btQuery, BugTrackerIssueIndexDocument::class.java, "bugtracker_issues")
-            .collectList().awaitSingle()
-
-        for (doc in btDocs) {
-            val conn = connectionMap[doc.connectionId]
-            val connName = conn?.name ?: "Bugtracker"
-            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
-            val sourceUrn = buildBugTrackerSourceUrn(conn?.provider, doc.connectionId.value, doc.issueKey)
-            items += PipelineItemDto(
-                id = doc.id.toHexString(),
-                type = IndexingItemType.BUGTRACKER_ISSUE,
-                title = listOfNotNull(doc.issueKey, doc.summary).joinToString(" – "),
-                connectionName = connName,
-                clientName = clientName,
-                sourceUrn = sourceUrn,
-                createdAt = doc.bugtrackerUpdatedAt.formatIso(),
-                pipelineState = "INDEXED",
-                taskId = null,
-                queuePosition = null,
-            )
-        }
-
-        // Wiki pages with INDEXED state
-        val wikiQuery = Query(Criteria.where("status").`in`(listOf(PollingStatusEnum.INDEXED.name)))
-            .with(Sort.by(Sort.Direction.DESC, "wikiUpdatedAt"))
-            .limit(100)
-        val wikiDocs = mongoTemplate.find(wikiQuery, WikiPageIndexDocument::class.java, "wiki_pages")
-            .collectList().awaitSingle()
-
-        for (doc in wikiDocs) {
-            val connName = connectionMap[doc.connectionDocumentId]?.name ?: "Wiki"
-            val clientName = clientMap[doc.clientId]?.name ?: doc.clientId.value.toHexString()
-            items += PipelineItemDto(
-                id = doc.id.toHexString(),
-                type = IndexingItemType.WIKI_PAGE,
-                title = doc.title,
-                connectionName = connName,
-                clientName = clientName,
-                sourceUrn = SourceUrn.confluence(doc.connectionDocumentId.value, doc.pageId).value,
-                createdAt = doc.wikiUpdatedAt.formatIso(),
-                pipelineState = "INDEXED",
-                taskId = null,
-                queuePosition = null,
-            )
-        }
-
-        return items
     }
 
     private fun filterPipelineItems(

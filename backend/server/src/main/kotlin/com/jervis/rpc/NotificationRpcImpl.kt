@@ -167,6 +167,24 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    suspend fun emitQualificationProgress(
+        taskId: String,
+        clientId: String,
+        message: String,
+        step: String,
+    ) {
+        val event = JervisEvent.QualificationProgress(
+            taskId = taskId,
+            clientId = clientId,
+            message = message,
+            step = step,
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
     suspend fun emitOrchestratorTaskProgress(
         taskId: String,
         clientId: String,

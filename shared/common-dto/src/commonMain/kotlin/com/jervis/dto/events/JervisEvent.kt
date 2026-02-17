@@ -78,6 +78,15 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     @Serializable
+    data class QualificationProgress(
+        val taskId: String,
+        val clientId: String,
+        val message: String,
+        val step: String,
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    @Serializable
     data class OrchestratorTaskProgress(
         val taskId: String,
         val clientId: String,

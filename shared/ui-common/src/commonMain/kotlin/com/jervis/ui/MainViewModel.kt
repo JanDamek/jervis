@@ -239,6 +239,10 @@ class MainViewModel(
     private val _orchestratorProgress = MutableStateFlow<OrchestratorProgressInfo?>(null)
     val orchestratorProgress: StateFlow<OrchestratorProgressInfo?> = _orchestratorProgress.asStateFlow()
 
+    // Qualification progress — live messages from KB processing (Map: taskId → progress)
+    private val _qualificationProgress = MutableStateFlow<Map<String, QualificationProgressInfo>>(emptyMap())
+    val qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>> = _qualificationProgress.asStateFlow()
+
     // Task history — COMPLETED tasks, loaded from server with pagination
     private val _taskHistory = MutableStateFlow<List<TaskHistoryEntry>>(emptyList())
     val taskHistory: StateFlow<List<TaskHistoryEntry>> = _taskHistory.asStateFlow()
@@ -554,8 +558,23 @@ class MainViewModel(
                 }
             }
 
-            else -> {
-                // Ignore others or handle as needed
+            is JervisEvent.QualificationProgress -> {
+                if (event.step == "done" || event.step == "old_indexed" || event.step == "simple_action_handled") {
+                    // Remove from active progress
+                    _qualificationProgress.value = _qualificationProgress.value - event.taskId
+                } else {
+                    _qualificationProgress.value = _qualificationProgress.value + (
+                        event.taskId to QualificationProgressInfo(
+                            taskId = event.taskId,
+                            message = event.message,
+                            step = event.step,
+                        )
+                    )
+                }
+            }
+
+            is JervisEvent.PendingTaskCreated -> {
+                // Handled elsewhere if needed
             }
         }
     }
@@ -1857,4 +1876,13 @@ data class OrchestratorProgressInfo(
     val totalGoals: Int = 0,
     val stepIndex: Int = 0,
     val totalSteps: Int = 0,
+)
+
+/**
+ * Live qualification progress info for a single task.
+ */
+data class QualificationProgressInfo(
+    val taskId: String,
+    val message: String,
+    val step: String,
 )
