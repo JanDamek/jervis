@@ -567,6 +567,10 @@ async def run_orchestration(
     # Use task_id for stable session_id (thread_id has random suffix that changes)
     session_id = f"orch-{request.task_id}"
     is_foreground = request.processing_mode == "FOREGROUND"
+    logger.info(
+        "GPU reservation: mode=%s is_foreground=%s session=%s",
+        request.processing_mode, is_foreground, session_id,
+    )
     if is_foreground:
         await announce_gpu(session_id)
     try:
@@ -626,6 +630,10 @@ async def run_orchestration_streaming(
     # Use task_id for stable session_id (thread_id has random suffix that changes)
     session_id = f"orch-stream-{request.task_id}"
     is_foreground = request.processing_mode == "FOREGROUND"
+    logger.info(
+        "GPU reservation: mode=%s is_foreground=%s session=%s",
+        request.processing_mode, is_foreground, session_id,
+    )
     if is_foreground:
         await announce_gpu(session_id)
     try:
@@ -732,6 +740,10 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_hi
     processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
     is_foreground = processing_mode == "FOREGROUND"
     session_id = f"orch-resume-{task_id}"
+    logger.info(
+        "GPU reservation (resume): mode=%s is_foreground=%s session=%s",
+        processing_mode, is_foreground, session_id,
+    )
     if is_foreground:
         await announce_gpu(session_id)
     try:
@@ -772,6 +784,10 @@ async def resume_orchestration_streaming(
     processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
     is_foreground = processing_mode == "FOREGROUND"
     session_id = f"orch-resume-stream-{thread_id}"
+    logger.info(
+        "GPU reservation (resume-stream): mode=%s is_foreground=%s session=%s",
+        processing_mode, is_foreground, session_id,
+    )
     if is_foreground:
         await announce_gpu(session_id)
     try:
