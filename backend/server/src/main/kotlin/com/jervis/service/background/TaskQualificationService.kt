@@ -12,15 +12,15 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Qualification service - sends tasks to KB microservice for indexing.
+ * Qualification service - sends tasks to KB microservice for indexing + summary generation.
  *
  * Retry strategy (DB-based exponential backoff):
  * - Operational errors (timeout, connection refused): retry with backoff 1s→2s→4s→...→5min, then 5min forever
  * - Actual indexing errors: mark as ERROR permanently (no retry)
  * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
  *
- * Concurrency: 10 parallel KB requests matching CPU Ollama instance (OLLAMA_NUM_PARALLEL=10).
- * CPU instance runs on dedicated 18 cores with qwen2.5 7B/14B models.
+ * Concurrency: 2 parallel — each qualification calls _generate_summary() (14B LLM on CPU, ~5s/task).
+ * Higher concurrency overloads CPU Ollama. RAG embedding is skipped on re-qualification (content hash match).
  */
 @Service
 class TaskQualificationService(
@@ -43,7 +43,7 @@ class TaskQualificationService(
         try {
             logger.debug { "QUALIFICATION_CYCLE_START" }
 
-            val effectiveConcurrency = 10
+            val effectiveConcurrency = 2
 
             taskService
                 .findTasksForQualification()
