@@ -154,8 +154,9 @@ class MainViewModel(
     /** Reconnect attempt counter — delegated to RpcConnectionManager */
     val reconnectAttemptDisplay: StateFlow<Int> = connectionManager.reconnectAttempt
 
-    /** Job for debouncing overlay hide on reconnect */
+    /** Job for debouncing overlay show/hide on connect/disconnect */
     private var overlayDebounceJob: Job? = null
+    private var overlayShowJob: Job? = null
 
     private val _notifications = MutableStateFlow<List<com.jervis.dto.events.JervisEvent>>(emptyList())
     val notifications: StateFlow<List<com.jervis.dto.events.JervisEvent>> = _notifications.asStateFlow()
@@ -328,16 +329,15 @@ class MainViewModel(
                 when (rpcState) {
                     is RpcConnectionState.Connected -> {
                         _connectionState.value = ConnectionState.CONNECTED
+                        overlayShowJob?.cancel() // cancel pending show
 
-                        // Debounce overlay hiding on reconnect — wait 2s to confirm
-                        // connection stability before hiding the overlay.
-                        // If disconnected again within 2s, the overlay stays visible.
+                        // Wait 500ms to confirm stability before hiding overlay
                         if (gen > 1 && _isOverlayVisible.value) {
                             overlayDebounceJob?.cancel()
                             overlayDebounceJob = scope.launch {
-                                delay(2000)
+                                delay(500)
                                 if (_connectionState.value == ConnectionState.CONNECTED) {
-                                    println("MainViewModel: Hiding overlay after 2s stability check")
+                                    println("MainViewModel: Hiding overlay after 500ms stability check")
                                     _isOverlayVisible.value = false
                                 }
                             }
@@ -349,21 +349,28 @@ class MainViewModel(
                         if (_clients.value.isEmpty()) {
                             loadClients()
                         }
+
+                        // Subscribe to global queue status on every (re)connect
+                        subscribeToQueueStatus("_global")
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
                         overlayDebounceJob?.cancel()
-                        if (gen > 1) {
-                            println("MainViewModel: Showing overlay (reconnecting, gen=$gen)")
-                            _isOverlayVisible.value = true
-                        }
+                        // Don't show overlay immediately on Connecting — wait for Disconnected
                     }
                     is RpcConnectionState.Disconnected -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
                         overlayDebounceJob?.cancel()
+                        // Show overlay after 500ms — brief disconnects won't blink
                         if (gen > 0) {
-                            println("MainViewModel: Showing overlay (disconnected, gen=$gen)")
-                            _isOverlayVisible.value = true
+                            overlayShowJob?.cancel()
+                            overlayShowJob = scope.launch {
+                                delay(500)
+                                if (_connectionState.value != ConnectionState.CONNECTED) {
+                                    println("MainViewModel: Showing overlay (disconnected, gen=$gen)")
+                                    _isOverlayVisible.value = true
+                                }
+                            }
                         }
                     }
                 }
@@ -393,14 +400,12 @@ class MainViewModel(
                 println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
-                    subscribeToQueueStatus(clientId)
-                    // Register push token (FCM on Android, APNs on iOS, no-op on desktop)
+                    // Register push token (FCM on Android, APNs on iOS, desktop)
                     scope.launch {
                         PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
                     }
                 } else {
                     eventJob?.cancel()
-                    queueStatusJob?.cancel()
                 }
             }
         }
