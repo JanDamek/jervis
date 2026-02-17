@@ -38,7 +38,7 @@ OUTPUT_BUDGET = 8192
 # GPU VRAM cap — models above this spill to CPU RAM and become slow
 GPU_CTX_CAP = 49152
 # Streaming heartbeat: no token for this long = dead
-HEARTBEAT_DEAD_SECONDS = 300  # 5 min
+HEARTBEAT_DEAD_SECONDS = 3600  # 1 hour — CPU Ollama has model permanently loaded, just slow
 # How often to emit progress during streaming
 PROGRESS_EMIT_INTERVAL = 10  # seconds
 
