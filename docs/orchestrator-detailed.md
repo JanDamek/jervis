@@ -2587,7 +2587,7 @@ backend/service-orchestrator/
 │   │       └── synthesize.py            # NEW: Merge agent results + RAG cross-check
 │   ├── llm/
 │   │   ├── provider.py                  # LLM abstraction (litellm), streaming, heartbeat
-│   │   └── gpu_router.py               # GPU routing (announce/release)
+│   │   └── (gpu_router.py removed — auto-reservation handled by router)
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── base.py                      # NEW: BaseAgent abstract class, agentic loop

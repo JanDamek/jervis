@@ -183,64 +183,64 @@ if (workspace != WorkspaceStatus.READY) {
     └─────────────────┘         └─────────────────┘
 ```
 
-### Priority Levels
+### Priority Levels (2 levels)
 
-1. **ORCHESTRATOR (priority=100)** - Reserved GPU slot for orchestrator LLM calls
-   - Automatically reserves GPU on first request
-   - Holds reservation for 30min or until 5min idle
-   - Cannot be preempted
+| Priority | Value | Header | Source | Behavior |
+|----------|-------|--------|--------|----------|
+| CRITICAL | 0 | `X-Ollama-Priority: 0` | Orchestrator FOREGROUND, jervis_mcp | Always GPU, auto-reserves, preempts NORMAL |
+| NORMAL | 1 | No header (default) | Correction, KB ingest, background tasks | GPU when free, CPU fallback |
 
-2. **BACKGROUND (priority=50)** - Background model set (embeddings, small models)
-   - Loaded when GPU is idle
-   - Can be preempted by orchestrator
+- Priority set via `X-Ollama-Priority` header. No header = NORMAL.
+- Orchestrator `processing_mode`: FOREGROUND sends `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND sends no header.
 
-3. **AUTO (no priority header)** - Standard routing
-   - Routes to GPU if available
-   - Falls back to CPU if GPU busy
+### Auto-Reservation Protocol
+
+GPU reservation is fully automatic — no announce/release API:
+
+```
+CRITICAL request arrives → Router auto-reserves GPU, loads :30b, resets 60s timer
+More CRITICAL requests  → Routes to reserved GPU, resets 60s timer each time
+60s without CRITICAL    → Watchdog auto-releases, loads background model set
+Next CRITICAL request   → Re-reserves GPU automatically
+```
+
+Watchdog runs every 15s, checks `last_critical_activity` per GPU. Limits: 60s idle timeout, 10min absolute max.
 
 ### Request Flow
 
 ```python
-# 1. Orchestrator calls Ollama Router
-OLLAMA_API_BASE = "http://192.168.100.117:11430"
+# All services call Ollama Router at :11430
+OLLAMA_API_BASE = "http://jervis-ollama-router:11430"
 
-# 2. Router checks priority header
-X-Ollama-Priority: 100  # Orchestrator requests
+# CRITICAL: header present → GPU (auto-reserve)
+headers = {"X-Ollama-Priority": "0"}  # FOREGROUND tasks
 
-# 3. Router selects backend:
-if priority == 100 and gpu_available:
-    route_to_gpu()  # Reserve GPU
-elif gpu_idle:
-    route_to_gpu()  # Use if available
-else:
-    route_to_cpu()  # Fallback
+# NORMAL: no header → GPU if free, else CPU
+headers = {}  # BACKGROUND tasks, correction, KB ingest
 ```
 
 ### Configuration
 
-All services configured to use Ollama Router (port 11430):
+All services use Ollama Router (K8s service `jervis-ollama-router:11430`):
 
-- **Orchestrator**: `OLLAMA_API_BASE=http://192.168.100.117:11430`
-- **KB (read)**:
-  - `OLLAMA_BASE_URL=http://192.168.100.117:11430` (RAG, chat)
-  - `OLLAMA_EMBEDDING_BASE_URL=http://192.168.100.117:11430` (embeddings)
-  - `OLLAMA_INGEST_BASE_URL=http://192.168.100.117:11430` (graph preparation)
-- **KB (write)**: Same as KB read
+- **Orchestrator**: `OLLAMA_API_BASE=http://jervis-ollama-router:11430`
+- **KB (read/write)**: `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_BASE_URL`, `OLLAMA_INGEST_BASE_URL` all → `http://jervis-ollama-router:11430`
+- **Correction**: `OLLAMA_BASE_URL=http://jervis-ollama-router:11430`
 
 ### Key Features
 
-- **Transparent proxy** - No code changes needed in services
-- **Priority-based** - Orchestrator gets guaranteed GPU access
-- **Automatic fallback** - CPU backend for overflow
-- **Model management** - Auto-loads/unloads models based on priority
-- **Metrics** - Prometheus metrics for GPU utilization
+- **Transparent proxy** - Services call router like standard Ollama
+- **2-level priority** - CRITICAL gets guaranteed GPU, NORMAL falls back to CPU
+- **Auto-reservation** - GPU reserved/released automatically based on CRITICAL activity
+- **Model management** - Auto-loads/unloads model sets (orchestrator ↔ background)
+- **Embedding coexistence** - CRITICAL embeddings load alongside :30b on GPU (both fit in VRAM)
 
 ### Deployment
 
 - K8s deployment: `k8s/app_ollama_router.yaml`
 - ConfigMap: `k8s/configmap.yaml` (jervis-ollama-router-config)
 - Build script: `k8s/build_ollama_router.sh`
-- Service runs with `hostNetwork: true` to access GPU Ollama on localhost
+- ClusterIP service (no hostNetwork, no hostPort)
 
 ---
 

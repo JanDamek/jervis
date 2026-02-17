@@ -440,23 +440,19 @@ async def compose_context(self, max_tokens: int = 8000) -> str:
 
 ## 4. KB Priority System
 
-### 4.1 Současné priority (Ollama Router)
+### 4.1 Současné priority (Ollama Router — 2 úrovně)
 
-| Priority | Název | Použití |
-|----------|-------|---------|
-| 1 | CRITICAL / ORCHESTRATOR_EMBEDDING | Orchestrátor query embedding |
-| 2 | HIGH | — |
-| 3 | NORMAL | Standardní požadavky |
-| 4 | BACKGROUND | KB ingest embedding |
+| Priority | Hodnota | Header | Použití |
+|----------|---------|--------|---------|
+| CRITICAL | 0 | `X-Ollama-Priority: 0` | Orchestrátor FOREGROUND (vč. embeddings), jervis_mcp |
+| NORMAL | 1 | žádný header | KB ingest, correction, background tasks |
 
 ### 4.2 Nové priority pro Memory Agent
 
 | Priority | Název | Použití | SLA |
 |----------|-------|---------|-----|
-| 1 | CRITICAL | Orchestrátor live query | <2s |
-| 1 | MEMORY_WRITE_CRITICAL | Affair parking/switching (musí být okamžitě indexováno) | <3s |
-| 2 | MEMORY_WRITE_HIGH | Session flush, affair updates | <10s |
-| 3 | NORMAL | Standardní KB operace | <30s |
+| CRITICAL | Orchestrátor live query | Memory read/write za FOREGROUND orchestrace | <2s |
+| NORMAL | Background operace | Session flush, KB ingest | best-effort |
 | 4 | BACKGROUND | Bulk ingest, re-indexing | best-effort |
 
 ### 4.3 Implementace v KB

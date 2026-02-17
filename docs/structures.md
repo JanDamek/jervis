@@ -80,9 +80,9 @@ response = await llm_provider.completion(
 # With header: X-Ollama-Priority: 0 (CRITICAL, FOREGROUND only)
 
 # 2. Ollama Router receives request
-#    → Checks priority header (100 = Orchestrator)
-#    → Reserves GPU slot (30min reservation)
-#    → Routes to GPU backend (http://127.0.0.1:11434)
+#    → Checks priority header (0 = CRITICAL)
+#    → Auto-reserves GPU, loads :30b model
+#    → Routes to GPU backend
 
 # 3. KB makes embedding request
 embedding = await ollama.embed(
@@ -590,7 +590,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  │  • Model set swapping (orchestrator ↔ background)               │   │
 │  │  • Preemption (background → CPU on orchestrator request)        │   │
 │  │  • Multi-GPU pool (scalable to N GPU backends)                  │   │
-│  │  • Announce/release protocol for orchestrator                   │   │
+│  │  • Auto-reservation (60s idle timeout, no announce/release API) │   │
 │  └──────┬───────────────────────────────────┬──────────────────────┘   │
 │         │                                   │                          │
 │  ┌──────▼──────────────────────┐  ┌────────▼─────────────────────────┐ │
@@ -637,7 +637,7 @@ More CRITICAL requests  → Router routes to reserved GPU, resets 60s timer each
 60s without CRITICAL    → Watchdog auto-releases reservation, loads background set
 ```
 
-No orchestrator announce/release calls needed. The router tracks `last_critical_activity` per GPU and the watchdog runs every 30s to check for idle reservations (60s timeout, 10min absolute max).
+No orchestrator announce/release calls needed. The router tracks `last_critical_activity` per GPU and the watchdog runs every 15s to check for idle reservations (60s timeout, 10min absolute max).
 
 ### Multi-GPU Routing (Per-GPU Reservations)
 
