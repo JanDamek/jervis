@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-16
+**Last updated:** 2026-02-17
 **Status:** Production Documentation
 
 This document is the **single source of truth** for UI guidelines, design patterns, and shared components.
@@ -1207,90 +1207,99 @@ Shows filterable list of pending tasks with delete capability. Uses **Pattern D*
 
 ### 5.9) Indexing Queue Screen
 
-Dashboard showing the full indexing pipeline with hierarchical connection view and 4 pipeline stage sections.
-Single search field filters across ALL sections (connection groups + pipeline stages). Pipeline sections collapsible.
+Dashboard showing the full indexing pipeline with 4 accordion sections. One section expanded at a time, collapsed sections show as headers with badge counts at the bottom.
 
 ```
 +---------------------------------------------------------------+
 | JTopBar: "Fronta indexace"                        [<- Zpet]   |
 +---------------------------------------------------------------+
-| [Refresh]                                                     |
-| [Hledat ___________________________] [Search]                 |
+| [v] Zdroje (35)                       ← expanded section      |
 +---------------------------------------------------------------+
-| JCard: GitHub (12)                                   [v]      |
+| ConnectionGroupCard: GitHub (12)                               |
 |   ├─ BUGTRACKER (5)  Za 8m  [Clock] [▶ Spustit]              |
 |   │   ├─ Commerzbank (3)                             [v]      |
 |   │   │   ├─ [Bug] GH-123 summary  |  GitHub  NEW            |
 |   │   │   └─ [Bug] GH-456 login bug  |  GitHub  NEW          |
 |   │   └─ ClientX (2)                                 [>]      |
 |   └─ REPOSITORY (7)  Za 3m  [Clock] [▶ Spustit]              |
-|       ├─ Commerzbank (5)                             [v]      |
-|       │   ├─ [Code] fix: auth  |  git  NEW                   |
-|       │   └─ ...a dalsich 3                                   |
+|       ├─ Commerzbank (5)                             [>]      |
 |       └─ ClientY (2)                                 [>]      |
+| ConnectionGroupCard: IMAP Mail (5)                    [>]      |
 +---------------------------------------------------------------+
-| JCard: IMAP Mail (5)                                 [>]      |
+| [>] KB zpracování (3)                 ← collapsed             |
 +---------------------------------------------------------------+
-|                                                               |
-| ── Pipeline ──                                                |
-|                                                               |
-| JCard: Zpracovává KB (3)                             [v]      |
-|   ├─ [Bug] GH-100 · GitHub · Commerzbank  | Indexuje          |
-|   └─ [Mail] Subject · Email · Klient2  | Indexuje             |
+| [>] KB fronta (150)                   ← collapsed             |
 +---------------------------------------------------------------+
-| JCard: Čeká na KB (150)                              [v]      |
-|   ├─ [▲][▼][⇑] [Bug] GH-200 · Commerzbank  | Čeká  #1       |
-|   ├─ [▲][▼][⇑] [Mail] Re: Q1 · Klient2  | Opakuje (3x) 2m  |
-|   └─ [< 1/8 >]  pagination controls                          |
-+---------------------------------------------------------------+
-| JCard: Čeká na orchestrátor (8)                      [>]      |
-+---------------------------------------------------------------+
-| JCard: Zpracovává orchestrátor (2)                   [>]      |
+| [>] Hotovo (2500)                     ← collapsed             |
 +---------------------------------------------------------------+
 ```
 
-**Hierarchy: Connection → Capability → Client**
+**When "KB zpracování" is expanded:**
+```
++---------------------------------------------------------------+
+| [v] KB zpracování (3)                                          |
++---------------------------------------------------------------+
+| [Bug] GH-100 · GitHub · Commerzbank                 Indexuje   |
+|       Indexuji do knowledge base...    ← live progress (tertiary) |
+| [Mail] Subject · Email · Klient2                    Analyzuje  |
+|       Analyzuji obsah...               ← live progress          |
+| [Code] fix: auth · Git · ClientX                    Zpracovává |
++---------------------------------------------------------------+
+```
+
+**Accordion sections (4):**
+1. **Zdroje** — hierarchical connection view (Connection → Capability → Client)
+2. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **live progress messages** from `QualificationProgress` events
+3. **KB fronta** (READY_FOR_QUALIFICATION) — waiting + retrying items, with pagination + reorder controls
+4. **Hotovo** (DISPATCHED_GPU) — completed tasks from `TaskDocument` collection
+
+**Live Qualification Progress:**
+- `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
+- `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
+- Progress steps: start → ingest → summary → routing → done
+- `stepLabel()` translates: ingest="Indexuje", summary="Analyzuje", routing="Rozhoduje"
+- Item icon turns tertiary color when actively processing
+- Progress message shown as tertiary bodySmall below item metadata
+
+**Hierarchy: Connection → Capability → Client** (in Sources section)
 
 Three-level expandable tree inside each connection card:
 1. **ConnectionGroupCard** -- connection name, provider icon, total item count
 2. **CapabilityGroupSection** -- capability label+icon, item count, next check time (clickable → `PollingIntervalDialog`), "Spustit teď" button (triggers source polling)
 3. **ClientGroupSection** -- client name, item count, expandable list of `QueueItemRow`
 
-**Pipeline sections (4 stages):**
-1. **Zpracovává KB** (QUALIFYING) -- items currently being indexed by Ollama
-2. **Čeká na KB** (READY_FOR_QUALIFICATION) -- waiting + retrying items, with pagination + reorder controls (up/down arrows, prioritize button)
-3. **Čeká na orchestrátor** (READY_FOR_GPU) -- qualified, waiting for Python execution
-4. **Zpracovává orchestrátor** (DISPATCHED_GPU / PYTHON_ORCHESTRATING) -- currently executing
-
 **Key components:**
+- `IndexingSectionHeader` -- accordion header with arrow icon, title, badge count
 - `ConnectionGroupCard` -- expandable `JCard` with 3-level hierarchy (connection → capability → client)
 - `CapabilityGroupSection` -- capability header with next-check time, PlayArrow "Spustit teď" button
 - `ClientGroupSection` -- client name header with expandable item list
 - `QueueItemRow` -- row with type icon, title, sourceUrn badge, state
-- `PipelineSection` -- collapsible section for pipeline stage with optional pagination and reorder controls
-- `PipelineItemRow` -- row with state badge (Czech labels), reorder arrows, prioritize button, retry info display
+- `KbProcessingSectionContent` -- items with live progress overlay from `QualificationProgressInfo`
+- `PipelineItemWithProgress` -- row with optional live progress message (tertiary color)
+- `PipelineSectionContent` -- simple list of `PipelineItemCompactRow` (used for Hotovo)
+- `PipelineSection` -- section with optional pagination and reorder controls (used for KB fronta)
 - `PollingIntervalDialog` -- `JFormDialog` to change polling interval per capability
 - `IndexingItemType` enum with `.icon()` / `.label()` helpers
 
-**Reorder controls** (on "Čeká na KB" items):
+**Reorder controls** (on "KB fronta" items):
 - Up/Down arrows (KeyboardArrowUp/Down) for position adjustment
 - Prioritize button (VerticalAlignTop) moves item to position 1
-- Calls `reorderKbQueueItem(taskId, newPosition)` or `prioritizeKbQueueItem(taskId)` RPC
+- Process Now button (PlayArrow) triggers immediate processing
+- Calls `reorderKbQueueItem(taskId, newPosition)` or `prioritizeKbQueueItem(taskId)` or `processKbItemNow(taskId)` RPC
 
 **Pipeline state labels (Czech):**
-- WAITING → "Čeká", QUALIFYING → "Indexuje", RETRYING → "Opakuje (Nx) Za Ym"
-- READY_FOR_GPU → "Připraven", DISPATCHED_GPU → "Odesláno", PYTHON_ORCHESTRATING → "Orchestrátor"
+- WAITING → "Ceka", QUALIFYING → "Indexuje", RETRYING → "Opakuje"
+- Step labels (live): ingest → "Indexuje", summary → "Analyzuje", routing → "Rozhoduje", user_task → "Úkol", scheduled → "Naplánováno"
 
 **Data:**
-- `IndexingDashboardDto` with `connectionGroups`, `kbWaiting`, `kbProcessing`, `executionWaiting`, `executionRunning` (each with counts), `kbPage`, `kbPageSize`
+- `IndexingDashboardDto` with `connectionGroups`, `kbWaiting`, `kbProcessing`, `kbIndexed` (each with counts + totals), `kbPage`, `kbPageSize`
 - `ConnectionIndexingGroupDto` with `connectionId`, `connectionName`, `provider`, `lastPolledAt?`, `capabilityGroups: List<CapabilityGroupDto>`, `totalItemCount`
 - `CapabilityGroupDto` with `capability`, `nextCheckAt?`, `intervalMinutes`, `clients: List<ClientItemGroupDto>`, `totalItemCount`
 - `ClientItemGroupDto` with `clientId`, `clientName`, `items: List<IndexingQueueItemDto>`, `totalItemCount`
-- `PipelineItemDto` with `id`, `type`, `title`, `connectionName`, `clientName`, `sourceUrn?`, `pipelineState`, `retryCount`, `nextRetryAt?`, `taskId?`, `queuePosition?`
+- `PipelineItemDto` with `id`, `type`, `title`, `connectionName`, `clientName`, `sourceUrn?`, `pipelineState`, `retryCount`, `nextRetryAt?`, `errorMessage?`, `createdAt?`, `taskId?`, `queuePosition?`
 
 **RPC:** `IIndexingQueueService.getIndexingDashboard(search, kbPage, kbPageSize)` -- single call returns hierarchy + all pipeline stages
-Additional RPCs: `triggerIndexNow(connectionId, capability)`, `reorderKbQueueItem(taskId, newPosition)`, `prioritizeKbQueueItem(taskId)`
-Legacy: `getPendingItems()` / `getIndexedItems()` kept for backward compat
+Additional RPCs: `triggerIndexNow(connectionId, capability)`, `reorderKbQueueItem(taskId, newPosition)`, `prioritizeKbQueueItem(taskId)`, `processKbItemNow(taskId)`
 
 ---
 
@@ -1629,7 +1638,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
 |   |   +-- K8sResourcesTab.kt          <- K8s resources tab: pods, deployments, services (migrated from EnvironmentViewerScreen)
 |   |   +-- LogsEventsTab.kt            <- Logs & Events tab: pod log viewer + K8s namespace events
-|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (hierarchy + 4 pipeline stages)
+|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (4 accordion sections + live qualification progress)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
 +-- MainScreen.kt                      <- Chat content (no selectors — moved to PersistentTopBar)

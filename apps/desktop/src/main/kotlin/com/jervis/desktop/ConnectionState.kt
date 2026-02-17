@@ -134,6 +134,7 @@ class ConnectionManager(
             is com.jervis.dto.events.JervisEvent.MeetingCorrectionProgress -> { /* handled by MeetingViewModel */ }
             is com.jervis.dto.events.JervisEvent.OrchestratorTaskProgress -> { /* handled by MainViewModel */ }
             is com.jervis.dto.events.JervisEvent.OrchestratorTaskStatusChange -> { /* handled by MainViewModel */ }
+            is com.jervis.dto.events.JervisEvent.QualificationProgress -> { /* handled by MainViewModel */ }
         }
     }
 

@@ -284,6 +284,39 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 7.  **Deep Code Analysis**: `POST /ingest/cpg` — Joern CPG export adds semantic edges (calls, extends, uses_type).
 8.  **Git Commit Ingest**: `POST /ingest/git-commits` — structured commit nodes with graph edges to branches/files + diff as RAG chunks.
 
+### Full Ingest Endpoint (`POST /ingest/full`)
+
+Called by `SimpleQualifierAgent` for each task. Combines RAG embedding, graph extraction, and summary generation in one call.
+
+**Flow:**
+1. Content hashing (SHA256[:16]) for idempotent re-ingest
+2. Check existing chunks by `sourceUrn`:
+   - Same content hash → skip RAG embedding (use existing chunks)
+   - Different content hash → purge old chunks, re-ingest
+   - No existing chunks → fresh ingest
+3. RAG ingest (embedding + Weaviate) with `contentHash` property on each chunk
+4. `_generate_summary()` — synchronous LLM call (14B model, `ingest_llm_complex`, CPU via Ollama Router)
+5. Returns `FullIngestResult` with routing hints for `SimpleQualifierAgent`
+
+**Content Hash Deduplication:**
+- SHA256 of combined content, truncated to 16 chars
+- Stored as `contentHash` property on Weaviate `KnowledgeChunk` objects
+- On re-ingest: compare hash → same = skip, different = purge + re-ingest
+- Weaviate schema auto-migrates to add `contentHash` property if missing
+
+**`_generate_summary()` output fields:**
+- `hasActionableContent: bool` — LLM decides if content requires action
+- `suggestedActions: List[str]` — e.g., "reply_email", "decompose_issue"
+- `isAssignedToMe: bool` — assignment detection
+- `hasFutureDeadline: bool`, `suggestedDeadline: str` — deadline extraction
+- `urgency: str` — "normal", "high", "critical"
+- `summary: str` — one-line summary
+- `entities: List[str]` — extracted entity references
+
+**Key files:**
+- `app/services/knowledge_service.py` — `ingest_full()`, `_generate_summary()`
+- `app/services/rag_service.py` — `ingest()`, `count_by_source()`, `get_content_hash()`, `purge_by_source()`
+
 ### Async Write Queue with Priority
 
 All writes (CRITICAL and NORMAL) are **fully asynchronous**. The ingest endpoint returns immediately after RAG embedding + Weaviate insert. LLM graph extraction is always queued for background processing.

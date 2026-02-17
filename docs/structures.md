@@ -1,6 +1,6 @@
 # Data Processing Pipeline & Routing
 
-**Status:** Production Documentation (2026-02-07)
+**Status:** Production Documentation (2026-02-17)
 **Purpose:** Two-stage data processing architecture (CPU qualification → GPU execution)
 
 > **Related docs:**
@@ -110,13 +110,30 @@ embedding = await ollama.embed(
 
 **Key point:** All services transparently use Ollama Router. No code changes needed – just updated environment variables.
 
+### Cross-Set Swap Prevention (Step 5)
+
+When GPU is idle and a NORMAL request arrives for a different model set (e.g., GPU has orchestrator 30B loaded, request needs background 14B), the router **does NOT swap** — it falls back to CPU instead. This prevents costly model swap cycles (30B↔14B ~60s each) between orchestrator LLM calls.
+
+```python
+# router_core.py step 5:
+if gpu.active_request_count() == 0:
+    requested_set = MODEL_TO_SET.get(model)
+    current_set = gpu.current_set
+    if current_set and requested_set and current_set != requested_set:
+        # Different model set → CPU fallback (prevents 30B↔14B swapping)
+        return await self._send_to_cpu(request)
+```
+
+CRITICAL requests (step 3) bypass this check — they always get GPU.
+
 ### Benefits
 
 1. **Guaranteed GPU for Orchestrator** - User-facing requests never wait
 2. **Automatic fallback** - Background tasks use CPU when GPU busy
 3. **Model management** - Router auto-loads/unloads models by priority
-4. **Transparent** - Services don't know about routing logic
-5. **Metrics** - Prometheus metrics for monitoring GPU utilization
+4. **No cross-set swapping** - NORMAL requests don't cause costly model unload/load cycles
+5. **Transparent** - Services don't know about routing logic
+6. **Metrics** - Prometheus metrics for monitoring GPU utilization
 
 ---
 
@@ -387,22 +404,17 @@ which returns routing hints: `hasActionableContent`, `isAssignedToMe`, `hasFutur
 **Decision tree:**
 
 ```
-KB ingest result →
-  │
-  ├─ Step 0: Age filter (older than 7 days)
-  │    → DISPATCHED_GPU (just index, too old to act on)
+KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, ...)
   │
   ├─ Step 1: hasActionableContent=false
   │    → DISPATCHED_GPU (info_only — indexed, no action needed)
   │
-  ├─ Step 2: Simple actions (actionType in SIMPLE_ACTIONS)
+  ├─ Step 2: No COMPLEX_ACTIONS in suggestedActions
   │    → handleSimpleAction():
-  │       ├─ reply_email → creates USER_TASK ("Odpovědět na email: {subject}")
-  │       ├─ answer_question → creates USER_TASK with question context
-  │       ├─ schedule_meeting → creates scheduled reminder
-  │       ├─ acknowledge → creates USER_TASK for acknowledgment
-  │       └─ forward_info → creates USER_TASK for forwarding
-  │    → DISPATCHED_GPU (indexed + task created)
+  │       ├─ reply_email / answer_question → creates USER_TASK
+  │       ├─ schedule_meeting → creates scheduled reminder (if deadline available)
+  │       └─ acknowledge / forward_info → done (indexed only)
+  │    → DISPATCHED_GPU (indexed + action handled locally)
   │
   ├─ Step 3: isAssignedToMe=true AND hasActionableContent=true
   │    → READY_FOR_GPU (immediate, high priority)
@@ -413,15 +425,15 @@ KB ingest result →
   │         scheduledAt = deadline - scheduleLeadDays
   │         original task → DISPATCHED_GPU (indexed, done)
   │
-  └─ Step 5: Complex actions (actionType in COMPLEX_ACTIONS)
+  └─ Step 5: Complex actions (suggestedActions ∩ COMPLEX_ACTIONS ≠ ∅)
        → READY_FOR_GPU (needs orchestrator: decompose_issue, analyze_code,
                         create_application, review_code, design_architecture)
 ```
 
+**Note:** No age-based filter — the LLM (`_generate_summary()`) decides actionability even for old content (forgotten tasks, open issues, etc.)
+
 **Constants:**
-- `MAX_ACTIONABLE_AGE = 7 days` — older tasks are indexed only (Step 0)
 - `SCHEDULE_LEAD_DAYS = 2` (configurable per client) — deadline scheduling threshold
-- `SIMPLE_ACTIONS` = {reply_email, answer_question, schedule_meeting, acknowledge, forward_info}
 - `COMPLEX_ACTIONS` = {decompose_issue, analyze_code, create_application, review_code, design_architecture}
 
 **DISPATCHED_GPU (info_only or simple action handled):**
@@ -429,7 +441,6 @@ KB ingest result →
 - No action items OR simple action handled by qualifier itself
 - Simple informational content
 - Routine updates (status change, minor commit)
-- Tasks older than 7 days
 
 **READY_FOR_GPU (immediate orchestrator execution):**
 - Assigned to the team/organization
@@ -461,9 +472,11 @@ KB ingest result →
 - **Process:** Reads READY_FOR_QUALIFICATION tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Agents:** SimpleQualifierAgent with CPU model (OLLAMA_QUALIFIER)
 - **Max iterations:** 10 (for chunking loops)
-- **Concurrency:** 10 parallel KB requests (matching CPU Ollama `OLLAMA_NUM_PARALLEL=10`)
+- **Concurrency:** 2 parallel (each qualification calls `_generate_summary()` — 14B LLM on CPU, ~5s/task; higher concurrency overloads CPU Ollama)
 - **Retry:** Operational errors (Ollama busy, timeout, 429, 503) → infinite exponential backoff 5s→10s→20s→...→5min cap. Items stay READY_FOR_QUALIFICATION with future `nextQualificationRetryAt`. Non-retriable errors → permanent ERROR state.
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
+- **Live progress:** `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients)
+- **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section
 
 ### Scheduler Loop (Task Dispatch)
 
