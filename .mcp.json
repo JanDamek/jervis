@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jervis-mcp": {
+      "type": "http",
+      "url": "https://jervis-mcp.damek-soft.eu/mcp",
+      "headers": {
+        "Authorization": "Bearer 72f78904b9974741fd4d2d6eef3055418b90f4a190096b631cf0266df34c5304"
+      }
+    }
+  }
+}
