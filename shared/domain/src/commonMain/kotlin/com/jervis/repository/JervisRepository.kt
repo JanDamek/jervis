@@ -2,7 +2,6 @@ package com.jervis.repository
 
 import com.jervis.di.NetworkModule
 import com.jervis.service.IAgentOrchestratorService
-import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IGpgCertificateService
@@ -47,7 +46,6 @@ class JervisRepository(
     val pendingTasks: IPendingTaskService get() = servicesProvider().pendingTaskService
     val connections: IConnectionService get() = servicesProvider().connectionService
     val notifications: INotificationService get() = servicesProvider().notificationService
-    val bugTrackerSetup: IBugTrackerSetupService get() = servicesProvider().bugTrackerSetupService
     val codingAgents: ICodingAgentSettingsService get() = servicesProvider().codingAgentSettingsService
     val gpgCertificates: IGpgCertificateService get() = servicesProvider().gpgCertificateService
     val whisperSettings: IWhisperSettingsService get() = servicesProvider().whisperSettingsService

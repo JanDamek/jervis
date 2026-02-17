@@ -2,7 +2,6 @@ package com.jervis.di
 
 import com.jervis.api.SecurityConstants
 import com.jervis.service.IAgentOrchestratorService
-import com.jervis.service.IBugTrackerSetupService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
 import com.jervis.service.ICodingAgentSettingsService
@@ -14,7 +13,6 @@ import com.jervis.service.IEnvironmentResourceService
 import com.jervis.service.IErrorLogService
 import com.jervis.service.IGitConfigurationService
 import com.jervis.service.IGpgCertificateService
-import com.jervis.service.IIntegrationSettingsService
 import com.jervis.service.IMeetingService
 import com.jervis.service.ITranscriptCorrectionService
 import com.jervis.service.INotificationService
@@ -138,8 +136,6 @@ object NetworkModule {
             pendingTaskService = rpcClient.withService<IPendingTaskService>(),
             connectionService = rpcClient.withService<IConnectionService>(),
             notificationService = rpcClient.withService<INotificationService>(),
-            bugTrackerSetupService = rpcClient.withService<IBugTrackerSetupService>(),
-            integrationSettingsService = rpcClient.withService<IIntegrationSettingsService>(),
             codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>(),
             gpgCertificateService = rpcClient.withService<IGpgCertificateService>(),
             whisperSettingsService = rpcClient.withService<IWhisperSettingsService>(),
@@ -171,8 +167,6 @@ object NetworkModule {
         val pendingTaskService: IPendingTaskService,
         val connectionService: IConnectionService,
         val notificationService: INotificationService,
-        val bugTrackerSetupService: IBugTrackerSetupService,
-        val integrationSettingsService: IIntegrationSettingsService,
         val codingAgentSettingsService: ICodingAgentSettingsService,
         val gpgCertificateService: IGpgCertificateService,
         val whisperSettingsService: IWhisperSettingsService,
