@@ -20,11 +20,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.ClientDto
-import com.jervis.dto.ProjectDto
 import com.jervis.dto.SystemConfigDto
 import com.jervis.dto.UpdateSystemConfigRequest
 import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ProviderEnum
@@ -86,12 +85,6 @@ private fun GeneralSettings(repository: JervisRepository) {
     var isLoading by remember { mutableStateOf(true) }
     var config by remember { mutableStateOf(SystemConfigDto()) }
     var connections by remember { mutableStateOf<List<ConnectionResponseDto>>(emptyList()) }
-    var allProjects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
-    var allClients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
-
-    // Editable state — internal project
-    var selectedInternalProjectId by remember { mutableStateOf<String?>(null) }
-
     // Editable brain config state
     var selectedBugtrackerConnectionId by remember { mutableStateOf<String?>(null) }
     var brainProjectKey by remember { mutableStateOf("") }
@@ -99,9 +92,14 @@ private fun GeneralSettings(repository: JervisRepository) {
     var brainSpaceKey by remember { mutableStateOf("") }
     var brainRootPageId by remember { mutableStateOf("") }
 
+    // Available resources from selected Atlassian connections
+    var bugtrackerResources by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
+    var wikiResources by remember { mutableStateOf<List<ConnectionResourceDto>>(emptyList()) }
+    var loadingBugtrackerResources by remember { mutableStateOf(false) }
+    var loadingWikiResources by remember { mutableStateOf(false) }
+
     fun applyConfig(dto: SystemConfigDto) {
         config = dto
-        selectedInternalProjectId = dto.jervisInternalProjectId
         selectedBugtrackerConnectionId = dto.brainBugtrackerConnectionId
         brainProjectKey = dto.brainBugtrackerProjectKey ?: ""
         selectedWikiConnectionId = dto.brainWikiConnectionId
@@ -109,17 +107,10 @@ private fun GeneralSettings(repository: JervisRepository) {
         brainRootPageId = dto.brainWikiRootPageId ?: ""
     }
 
-    // Build client name map for dropdown labels
-    val clientNameMap = remember(allClients) {
-        allClients.associate { it.id to it.name }
-    }
-
     LaunchedEffect(Unit) {
         try {
             val allConnections = repository.connections.getAllConnections()
             connections = allConnections
-            allClients = repository.clients.getAllClients()
-            allProjects = repository.projects.getAllProjects()
             val systemConfig = repository.systemConfig.getSystemConfig()
             applyConfig(systemConfig)
         } catch (e: Exception) {
@@ -140,6 +131,32 @@ private fun GeneralSettings(repository: JervisRepository) {
     }
     val wikiConnections = remember(atlassianConnections) {
         atlassianConnections.filter { ConnectionCapability.WIKI in it.capabilities }
+    }
+
+    // Load Jira projects when bugtracker connection changes
+    LaunchedEffect(selectedBugtrackerConnectionId) {
+        val connId = selectedBugtrackerConnectionId ?: return@LaunchedEffect
+        loadingBugtrackerResources = true
+        try {
+            bugtrackerResources = repository.connections.listAvailableResources(connId, ConnectionCapability.BUGTRACKER)
+        } catch (_: Exception) {
+            bugtrackerResources = emptyList()
+        } finally {
+            loadingBugtrackerResources = false
+        }
+    }
+
+    // Load Confluence spaces when wiki connection changes
+    LaunchedEffect(selectedWikiConnectionId) {
+        val connId = selectedWikiConnectionId ?: return@LaunchedEffect
+        loadingWikiResources = true
+        try {
+            wikiResources = repository.connections.listAvailableResources(connId, ConnectionCapability.WIKI)
+        } catch (_: Exception) {
+            wikiResources = emptyList()
+        } finally {
+            loadingWikiResources = false
+        }
     }
 
     Box {
@@ -168,51 +185,6 @@ private fun GeneralSettings(repository: JervisRepository) {
             if (isLoading) {
                 JCenteredLoading()
             } else {
-                JSection(title = "Interní projekt") {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(
-                            "Projekt pro orchestrátor — plánování práce a interní dokumentace. " +
-                                "Tento projekt nebude zobrazen v přehledech.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-
-                        JDropdown(
-                            items = allProjects,
-                            selectedItem = allProjects.find { it.id == selectedInternalProjectId },
-                            onItemSelected = { selectedInternalProjectId = it.id },
-                            label = "Projekt",
-                            itemLabel = { project ->
-                                val clientName = clientNameMap[project.clientId] ?: "?"
-                                "$clientName / ${project.name}"
-                            },
-                            placeholder = "Vyberte interní projekt",
-                        )
-
-                        JPrimaryButton(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        val updated = repository.systemConfig.updateSystemConfig(
-                                            UpdateSystemConfigRequest(
-                                                jervisInternalProjectId = selectedInternalProjectId,
-                                            ),
-                                        )
-                                        applyConfig(updated)
-                                        // Reload projects to reflect isJervisInternal flag change
-                                        allProjects = repository.projects.getAllProjects()
-                                        snackbarHostState.showSnackbar("Interní projekt uložen")
-                                    } catch (e: Exception) {
-                                        snackbarHostState.showSnackbar("Chyba ukládání: ${e.message}")
-                                    }
-                                }
-                            },
-                        ) {
-                            Text("Uložit")
-                        }
-                    }
-                }
-
                 JSection(title = "Mozek Jervise") {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
@@ -232,14 +204,19 @@ private fun GeneralSettings(repository: JervisRepository) {
                             placeholder = "Vyberte Atlassian připojení",
                         )
 
-                        // Jira project key
-                        JTextField(
-                            value = brainProjectKey,
-                            onValueChange = { brainProjectKey = it },
-                            label = "Jira Project Key",
-                            placeholder = "Např. JERVIS",
-                            enabled = selectedBugtrackerConnectionId != null,
-                        )
+                        // Jira project selection
+                        if (loadingBugtrackerResources) {
+                            JCenteredLoading()
+                        } else {
+                            JDropdown(
+                                items = bugtrackerResources,
+                                selectedItem = bugtrackerResources.find { it.id == brainProjectKey },
+                                onItemSelected = { brainProjectKey = it.id },
+                                label = "Jira projekt",
+                                itemLabel = { "${it.id} — ${it.name}" },
+                                placeholder = if (selectedBugtrackerConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Jira projekt",
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(4.dp))
 
@@ -253,14 +230,19 @@ private fun GeneralSettings(repository: JervisRepository) {
                             placeholder = "Vyberte Atlassian připojení",
                         )
 
-                        // Confluence space key
-                        JTextField(
-                            value = brainSpaceKey,
-                            onValueChange = { brainSpaceKey = it },
-                            label = "Confluence Space Key",
-                            placeholder = "Např. JERVIS",
-                            enabled = selectedWikiConnectionId != null,
-                        )
+                        // Confluence space selection
+                        if (loadingWikiResources) {
+                            JCenteredLoading()
+                        } else {
+                            JDropdown(
+                                items = wikiResources,
+                                selectedItem = wikiResources.find { it.id == brainSpaceKey },
+                                onItemSelected = { brainSpaceKey = it.id },
+                                label = "Confluence space",
+                                itemLabel = { "${it.id} — ${it.name}" },
+                                placeholder = if (selectedWikiConnectionId == null) "Nejdřív vyberte připojení" else "Vyberte Confluence space",
+                            )
+                        }
 
                         // Root page ID (optional)
                         JTextField(

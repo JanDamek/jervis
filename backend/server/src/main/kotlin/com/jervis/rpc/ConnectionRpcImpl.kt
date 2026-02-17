@@ -15,7 +15,9 @@ import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.connection.RateLimitConfigDto
+import com.jervis.entity.SystemConfigDocument
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.repository.SystemConfigRepository
 import com.jervis.service.IConnectionService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.oauth2.OAuth2Service
@@ -31,6 +33,7 @@ class ConnectionRpcImpl(
     private val connectionService: ConnectionService,
     private val providerRegistry: ProviderRegistry,
     private val oauth2Service: OAuth2Service,
+    private val systemConfigRepository: SystemConfigRepository,
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -210,7 +213,29 @@ class ConnectionRpcImpl(
         val refreshedConnection = refreshTokenIfNeeded(connection)
 
         return try {
-            providerRegistry.withClient(refreshedConnection.provider) { it.listResources(refreshedConnection.toListResourcesRequest(capability)) }
+            val resources = providerRegistry.withClient(refreshedConnection.provider) {
+                it.listResources(refreshedConnection.toListResourcesRequest(capability))
+            }
+            // Filter out brain-reserved resources (Jira project / Confluence space used by orchestrator)
+            val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID)
+            if (config != null && refreshedConnection.id.toString() == (
+                    when (capability) {
+                        ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
+                        ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
+                        else -> null
+                    }
+                )
+            ) {
+                val excludeKey = when (capability) {
+                    ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
+                    ConnectionCapability.WIKI -> config.brainWikiSpaceKey
+                    else -> null
+                }
+                if (excludeKey != null) {
+                    return resources.filter { it.id != excludeKey }
+                }
+            }
+            resources
         } catch (e: Exception) {
             logger.error(e) { "Failed to list resources for connection ${refreshedConnection.id}" }
             emptyList()
