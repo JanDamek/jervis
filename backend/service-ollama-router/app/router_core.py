@@ -142,10 +142,8 @@ class OllamaRouter:
             elif not gpu.reserved_by:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 3. CRITICAL :30b: auto-reserve GPU, ensure model loaded ─────
-        #      Non-:30b CRITICAL (embeddings, small models) fall through
-        #      to steps 4/5/CPU — reservation only for :30b LLM work.
-        if priority <= Priority.CRITICAL and ":30b" in model:
+        # ── 3. CRITICAL: auto-reserve GPU, ensure model loaded ──────────
+        if priority <= Priority.CRITICAL:
             return await self._route_critical(request)
 
         # ── 4. Find unreserved GPU with model or free VRAM ──────────────
@@ -172,8 +170,22 @@ class OllamaRouter:
     # ── CRITICAL routing (step 3) ────────────────────────────────────────
 
     async def _route_critical(self, request: TrackedRequest) -> Response:
-        """Route a CRITICAL :30b request: auto-reserve GPU, spread across GPUs."""
+        """Route a CRITICAL request: auto-reserve GPU for :30b, or send non-:30b to reserved GPU/CPU."""
         model = request.model
+
+        # Non-:30b CRITICAL (e.g. embeddings): send to reserved GPU if available, else CPU
+        if ":30b" not in model:
+            # Update activity timer if reservation exists
+            for gpu_name in self._reservations:
+                self._last_critical_activity[gpu_name] = time.monotonic()
+            # Try reserved GPU that has the model
+            for gpu_name in self._reservations:
+                gpu = self.gpu_pool.backends.get(gpu_name)
+                if gpu and gpu.has_model(model):
+                    return await self._send_to_gpu(gpu, request)
+            # Fallback to CPU for non-:30b CRITICAL
+            return await self._send_to_cpu(request)
+
         target_gpu = None
         async with self._reservation_lock:
             target_gpu = self._find_best_gpu_for_critical(model)
@@ -432,6 +444,7 @@ class OllamaRouter:
         Runs every 15s. Releases reservation if no CRITICAL request
         arrived within ``orchestrator_idle_timeout_s`` (default 60s).
         """
+        logger.info("Watchdog started (check every 15s, idle limit=%ds)", settings.orchestrator_idle_timeout_s)
         while True:
             try:
                 await asyncio.sleep(15)
@@ -446,8 +459,8 @@ class OllamaRouter:
                         idle_s = int(now - last_activity) if last_activity else 0
                         age_s = int(now - reserved_at) if reserved_at else 0
 
-                        logger.debug(
-                            "Watchdog: GPU %s reserved for %ds, idle %ds (limit=%ds)",
+                        logger.info(
+                            "Watchdog tick: GPU %s reserved %ds, idle %ds (limit=%ds)",
                             gpu_name, age_s, idle_s, settings.orchestrator_idle_timeout_s,
                         )
 
