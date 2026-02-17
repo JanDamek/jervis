@@ -318,6 +318,7 @@ class MainViewModel(
 
     private var chatJob: Job? = null
     private var eventJob: Job? = null
+    private var globalEventJob: Job? = null
     private var queueStatusJob: Job? = null
 
     init {
@@ -361,6 +362,10 @@ class MainViewModel(
 
                         // Subscribe to global queue status on every (re)connect
                         subscribeToQueueStatus("_global")
+
+                        // Subscribe to global events (qualification progress, orchestrator)
+                        // independent of selected client — these are broadcast to all streams
+                        subscribeToGlobalEventStream()
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
@@ -449,6 +454,22 @@ class MainViewModel(
                         // Navigate to user tasks — handled by UI layer
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Global event stream — subscribes with "__global__" clientId.
+     * Receives broadcasts (QualificationProgress, OrchestratorTaskProgress, etc.)
+     * independent of selected client. Always active when connected.
+     */
+    private fun subscribeToGlobalEventStream() {
+        globalEventJob?.cancel()
+        globalEventJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.notificationService.subscribeToEvents("__global__")
+            }.collect { event ->
+                handleGlobalEvent(event)
             }
         }
     }

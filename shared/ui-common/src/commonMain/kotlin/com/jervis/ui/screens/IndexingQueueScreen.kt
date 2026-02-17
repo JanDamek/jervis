@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,9 +75,15 @@ fun IndexingQueueScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var intervalDialog by remember { mutableStateOf<IntervalDialogState?>(null) }
 
-    // KB pagination
+    // KB waiting pagination
     var kbPage by remember { mutableStateOf(0) }
     val kbPageSize = 20
+
+    // Hotovo: accumulated items for "load more" pattern
+    var indexedItems by remember { mutableStateOf<List<com.jervis.dto.indexing.PipelineItemDto>>(emptyList()) }
+    var indexedTotalCount by remember { mutableStateOf(0L) }
+    var indexedPage by remember { mutableStateOf(0) }
+    var isLoadingMore by remember { mutableStateOf(false) }
 
     var expandedSection by remember { mutableStateOf(IndexingSection.SOURCES) }
 
@@ -90,10 +99,42 @@ fun IndexingQueueScreen(
                     kbPage = kbPage,
                     kbPageSize = kbPageSize,
                 )
+                // Reset Hotovo items on fresh load
+                dashboard?.let {
+                    indexedItems = it.kbIndexed
+                    indexedTotalCount = it.kbIndexedTotalCount
+                    indexedPage = 0
+                }
             } catch (e: Exception) {
+                // Log but don't crash — show error inline
                 error = "Chyba: ${e.message}"
+                println("IndexingQueueScreen loadDashboard error: ${e.message}")
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    fun loadMoreIndexed() {
+        if (isLoadingMore) return
+        if (indexedItems.size.toLong() >= indexedTotalCount) return
+        scope.launch {
+            isLoadingMore = true
+            try {
+                val nextPage = indexedPage + 1
+                val more = repository.indexingQueue.getIndexingDashboard(
+                    search = "",
+                    kbPage = nextPage,
+                    kbPageSize = kbPageSize,
+                )
+                indexedItems = indexedItems + more.kbIndexed
+                indexedTotalCount = more.kbIndexedTotalCount
+                indexedPage = nextPage
+            } catch (e: Exception) {
+                println("IndexingQueueScreen loadMoreIndexed error: ${e.message}")
+                // Don't crash — just stop loading more
+            } finally {
+                isLoadingMore = false
             }
         }
     }
@@ -148,9 +189,11 @@ fun IndexingQueueScreen(
                             },
                             onRefresh = { loadDashboard() },
                         )
-                        IndexingSection.KB_INDEXED -> PipelineSectionContent(
-                            items = data.kbIndexed,
-                            emptyMessage = "Zatím nic neindexováno",
+                        IndexingSection.KB_INDEXED -> IndexedSectionContent(
+                            items = indexedItems,
+                            totalCount = indexedTotalCount,
+                            isLoadingMore = isLoadingMore,
+                            onLoadMore = { loadMoreIndexed() },
                         )
                     }
                 }
@@ -452,6 +495,67 @@ private fun stepLabel(step: String): String = when (step) {
     "user_task" -> "Úkol"
     "scheduled" -> "Naplánováno"
     else -> "Zpracovává"
+}
+
+/** Hotovo section with "load more" pagination. */
+@Composable
+private fun IndexedSectionContent(
+    items: List<com.jervis.dto.indexing.PipelineItemDto>,
+    totalCount: Long,
+    isLoadingMore: Boolean,
+    onLoadMore: () -> Unit,
+) {
+    if (items.isEmpty()) {
+        JEmptyState("Zatím nic neindexováno", icon = "📋")
+        return
+    }
+
+    val listState = rememberLazyListState()
+
+    // Trigger load more when near the end
+    val shouldLoadMore = remember(listState) {
+        snapshotFlow {
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisibleIndex >= items.size - 5
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        shouldLoadMore.collect { nearEnd ->
+            if (nearEnd && items.size.toLong() < totalCount) {
+                onLoadMore()
+            }
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().padding(horizontal = JervisSpacing.outerPadding, vertical = 8.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+    ) {
+        items(items.size, key = { items[it].id }) { index ->
+            PipelineItemCompactRow(items[index])
+        }
+        if (isLoadingMore) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+        }
+        if (items.size.toLong() < totalCount && !isLoadingMore) {
+            item {
+                Text(
+                    text = "... a dalších ${totalCount - items.size} úloh",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable

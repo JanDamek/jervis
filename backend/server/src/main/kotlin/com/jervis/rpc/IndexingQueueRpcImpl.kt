@@ -345,21 +345,11 @@ class IndexingQueueRpcImpl(
             pipelineState = null, // will use actual state
         )
 
-        // Indexed: TaskDocuments with DISPATCHED_GPU state (successfully qualified + indexed)
-        val kbIndexedAll = collectTasksByStates(
-            states = listOf(TaskStateEnum.DISPATCHED_GPU),
-            types = indexingTaskTypes,
-            clientMap = clientMap,
-            connectionMap = connectionMap,
-            pipelineState = "INDEXED",
-        )
-
         // Apply search and client/project filters
         val filteredKbWaiting = filterPipelineItems(kbWaitingAll, query, clientFilterQuery, projectFilterQuery)
         val filteredKbProcessing = filterPipelineItems(kbProcessingAll, query, clientFilterQuery, projectFilterQuery)
         val filteredExecWaiting = filterPipelineItems(executionWaitingAll, query, clientFilterQuery, projectFilterQuery)
         val filteredExecRunning = filterPipelineItems(executionRunningAll, query, clientFilterQuery, projectFilterQuery)
-        val filteredKbIndexed = filterPipelineItems(kbIndexedAll, query, clientFilterQuery, projectFilterQuery)
 
         // Pagination for KB waiting
         val safeKbPage = kbPage.coerceAtLeast(0)
@@ -375,9 +365,14 @@ class IndexingQueueRpcImpl(
             sortedKbWaiting.subList(kbWaitingStart, (kbWaitingStart + safeKbPageSize).coerceAtMost(sortedKbWaiting.size))
         }
 
-        // Pagination for indexed items (last 50 most recent)
-        val sortedKbIndexed = filteredKbIndexed.sortedByDescending { it.createdAt ?: "" }
-        val pagedKbIndexed = sortedKbIndexed.take(50)
+        // Indexed: DB-level pagination (don't load all DISPATCHED_GPU into RAM)
+        val (pagedKbIndexed, kbIndexedTotalCount) = collectIndexedTasksPaginated(
+            types = indexingTaskTypes,
+            clientMap = clientMap,
+            connectionMap = connectionMap,
+            page = kbPage,
+            pageSize = safeKbPageSize,
+        )
 
         return PipelineResult(
             kbWaiting = pagedKbWaiting,
@@ -389,7 +384,7 @@ class IndexingQueueRpcImpl(
             executionRunning = filteredExecRunning,
             executionRunningCount = filteredExecRunning.size.toLong(),
             kbIndexed = pagedKbIndexed,
-            kbIndexedTotalCount = filteredKbIndexed.size.toLong(),
+            kbIndexedTotalCount = kbIndexedTotalCount,
         )
     }
 
@@ -436,6 +431,55 @@ class IndexingQueueRpcImpl(
                 queuePosition = task.queuePosition,
             )
         }
+    }
+
+    /**
+     * DB-level paginated query for DISPATCHED_GPU tasks (Hotovo section).
+     * Uses MongoDB skip/limit instead of loading all tasks into RAM.
+     */
+    private suspend fun collectIndexedTasksPaginated(
+        types: List<TaskTypeEnum>,
+        clientMap: Map<ClientId, ClientDocument>,
+        connectionMap: Map<ConnectionId, ConnectionDocument>,
+        page: Int,
+        pageSize: Int,
+    ): Pair<List<PipelineItemDto>, Long> {
+        val criteria = Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
+            .and("type").`in`(types.map { it.name })
+
+        // Count total (lightweight)
+        val totalCount = mongoTemplate.count(Query(criteria), "tasks").awaitSingle()
+
+        // Paginated fetch (newest first)
+        val pagedQuery = Query(criteria)
+            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .skip((page * pageSize).toLong())
+            .limit(pageSize)
+
+        val tasks = mongoTemplate.find(pagedQuery, TaskDocument::class.java, "tasks")
+            .collectList().awaitSingle()
+
+        val items = tasks.map { task ->
+            val clientName = clientMap[task.clientId]?.name ?: task.clientId.value.toHexString()
+            val connName = extractConnectionName(task.sourceUrn.value, connectionMap)
+            PipelineItemDto(
+                id = task.id.value.toHexString(),
+                type = taskTypeToItemType(task.type),
+                title = extractTaskTitle(task),
+                connectionName = connName,
+                clientName = clientName,
+                sourceUrn = task.sourceUrn.value,
+                createdAt = task.createdAt.formatIso(),
+                pipelineState = "INDEXED",
+                retryCount = 0,
+                nextRetryAt = null,
+                errorMessage = null,
+                taskId = task.id.value.toHexString(),
+                queuePosition = null,
+            )
+        }
+
+        return items to totalCount
     }
 
     private fun taskTypeToItemType(type: TaskTypeEnum): IndexingItemType = when (type) {
