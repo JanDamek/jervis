@@ -156,6 +156,9 @@ class OrchestratorState(TypedDict, total=False):
     memory_context: str | None
     context_switch_type: str | None
 
+    # --- Processing mode (GPU reservation) ---
+    processing_mode: str | None  # "FOREGROUND" or "BACKGROUND"
+
 
 # MongoDB checkpointer – initialized in main.py lifespan
 _checkpointer: MongoDBSaver | None = None
@@ -551,6 +554,8 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "memory_agent": None,
         "memory_context": None,
         "context_switch_type": None,
+        # Processing mode
+        "processing_mode": request.processing_mode,
     }
 
 
@@ -561,7 +566,9 @@ async def run_orchestration(
     """Execute the full orchestration workflow (blocking)."""
     # Use task_id for stable session_id (thread_id has random suffix that changes)
     session_id = f"orch-{request.task_id}"
-    await announce_gpu(session_id)
+    is_foreground = request.processing_mode == "FOREGROUND"
+    if is_foreground:
+        await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
@@ -607,7 +614,8 @@ async def run_orchestration(
 
         return final_state
     finally:
-        await release_gpu(session_id)
+        if is_foreground:
+            await release_gpu(session_id)
 
 
 async def run_orchestration_streaming(
@@ -617,7 +625,9 @@ async def run_orchestration_streaming(
     """Execute orchestration with streaming node events."""
     # Use task_id for stable session_id (thread_id has random suffix that changes)
     session_id = f"orch-stream-{request.task_id}"
-    await announce_gpu(session_id)
+    is_foreground = request.processing_mode == "FOREGROUND"
+    if is_foreground:
+        await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
@@ -710,16 +720,20 @@ async def run_orchestration_streaming(
                     **tracked,
                 }
     finally:
-        await release_gpu(session_id)
+        if is_foreground:
+            await release_gpu(session_id)
 
 
 async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_history: dict | None = None) -> dict:
     """Resume a paused orchestration from its checkpoint (blocking)."""
-    # Get task_id from existing state for stable session_id
+    # Get task_id and processing_mode from existing state
     existing_state = await get_graph_state(thread_id)
     task_id = existing_state.values.get("task", {}).get("id", thread_id) if existing_state and existing_state.values else thread_id
+    processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
+    is_foreground = processing_mode == "FOREGROUND"
     session_id = f"orch-resume-{task_id}"
-    await announce_gpu(session_id)
+    if is_foreground:
+        await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
@@ -744,7 +758,8 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_hi
 
         return final_state
     finally:
-        await release_gpu(session_id)
+        if is_foreground:
+            await release_gpu(session_id)
 
 
 async def resume_orchestration_streaming(
@@ -753,8 +768,12 @@ async def resume_orchestration_streaming(
     chat_history: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Resume orchestration with streaming node events (for progress reporting)."""
+    existing_state = await get_graph_state(thread_id)
+    processing_mode = existing_state.values.get("processing_mode", "FOREGROUND") if existing_state and existing_state.values else "FOREGROUND"
+    is_foreground = processing_mode == "FOREGROUND"
     session_id = f"orch-resume-stream-{thread_id}"
-    await announce_gpu(session_id)
+    if is_foreground:
+        await announce_gpu(session_id)
     try:
         graph = get_orchestrator_graph()
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
@@ -816,7 +835,8 @@ async def resume_orchestration_streaming(
                     **tracked,
                 }
     finally:
-        await release_gpu(session_id)
+        if is_foreground:
+            await release_gpu(session_id)
 
 
 async def get_graph_state(thread_id: str):

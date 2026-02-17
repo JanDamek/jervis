@@ -21,6 +21,20 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 
+# --- Priority headers for Ollama Router ---
+
+
+def priority_headers(state: dict) -> dict[str, str]:
+    """Return X-Ollama-Priority headers based on processing_mode in state.
+
+    FOREGROUND → CRITICAL (header "0") — user is waiting
+    BACKGROUND → no header (router defaults to NORMAL)
+    """
+    if state.get("processing_mode") == "FOREGROUND":
+        return {"X-Ollama-Priority": "0"}
+    return {}
+
+
 # --- Chat history filtering ---
 
 

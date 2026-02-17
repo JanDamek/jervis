@@ -76,11 +76,19 @@ class MemoryAgent:
     One instance per orchestration run; shares process-global LQM.
     """
 
-    def __init__(self, client_id: str, project_id: str | None) -> None:
+    def __init__(self, client_id: str, project_id: str | None, processing_mode: str = "FOREGROUND") -> None:
         self.client_id = client_id
         self.project_id = project_id
+        self.processing_mode = processing_mode
         self.lqm = _get_or_create_lqm()
         self.session = SessionContext()
+
+    @property
+    def _kb_headers(self) -> dict[str, str]:
+        """Priority headers for KB calls based on processing_mode."""
+        if self.processing_mode == "FOREGROUND":
+            return {"X-Ollama-Priority": "0"}
+        return {}
 
     # ----- Lifecycle -----
 
@@ -116,6 +124,7 @@ class MemoryAgent:
                     self.client_id,
                     self.project_id,
                     settings.knowledgebase_url,
+                    self.processing_mode,
                 )
                 for affair in kb_affairs:
                     self.lqm.store_affair(affair)
@@ -178,6 +187,7 @@ class MemoryAgent:
             affair = await resume_affair(
                 result.target_affair_id, self.lqm,
                 settings.knowledgebase_url, self.client_id,
+                self.processing_mode,
             )
             if affair:
                 self.session.active_affair = affair
@@ -263,7 +273,7 @@ class MemoryAgent:
                             "clientId": self.client_id,
                             "maxResults": 5,
                         },
-                        headers={"X-Ollama-Priority": "1"},
+                        headers=self._kb_headers,
                     )
                     if resp.status_code == 200:
                         kb_results = resp.json().get("chunks", [])
@@ -367,8 +377,6 @@ class MemoryAgent:
                 else:
                     endpoint = f"{kb_write_url}/api/v1/ingest"
 
-                priority_header = "1" if write.priority == WritePriority.CRITICAL else "2"
-
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
                         endpoint,
@@ -379,7 +387,7 @@ class MemoryAgent:
                             "kind": write.kind,
                             "metadata": write.metadata,
                         },
-                        headers={"X-Ollama-Priority": priority_header},
+                        headers=self._kb_headers,
                     )
 
                     if resp.status_code == 404 and write.priority == WritePriority.CRITICAL:
@@ -393,7 +401,7 @@ class MemoryAgent:
                                 "kind": write.kind,
                                 "metadata": write.metadata,
                             },
-                            headers={"X-Ollama-Priority": "1"},
+                            headers=self._kb_headers,
                         )
 
                     if resp.status_code in (200, 201, 202):
@@ -419,13 +427,14 @@ class MemoryAgent:
         return {
             "client_id": self.client_id,
             "project_id": self.project_id,
+            "processing_mode": self.processing_mode,
             "session": self.session.model_dump(),
         }
 
     @classmethod
     def from_state_dict(cls, data: dict) -> MemoryAgent:
         """Restore from state dict. Reconnects to process-global LQM."""
-        agent = cls(data["client_id"], data.get("project_id"))
+        agent = cls(data["client_id"], data.get("project_id"), data.get("processing_mode", "FOREGROUND"))
         session_data = data.get("session", {})
         if session_data:
             agent.session = SessionContext(**session_data)

@@ -274,6 +274,7 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
                 arguments=arguments,
                 client_id=client_id,
                 project_id=project_id,
+                processing_mode=state.get("processing_mode", "FOREGROUND"),
             )
 
             messages.append({

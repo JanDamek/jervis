@@ -310,6 +310,7 @@ class AgentOrchestratorService(
             environment = environmentJson,
             jervisProjectId = jervisProjectId,
             chatHistory = chatHistory,
+            processingMode = task.processingMode.name,
         )
 
         val streamResponse = pythonOrchestratorClient.orchestrateStream(request)

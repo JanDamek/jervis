@@ -15,12 +15,9 @@ from pydantic import BaseModel
 # ── Priority ────────────────────────────────────────────────────────────
 
 class Priority(IntEnum):
-    """Lower number = higher priority."""
-    CRITICAL = 0              # Orchestrator LLM (30B model, preempts everything)
-    ORCHESTRATOR_EMBEDDING = 1  # Orchestrator-driven embedding (co-located with CRITICAL on GPU)
-    CODING = 2                # OpenHands/Aider (GPU preferred, can wait)
-    VLM = 3                   # Image description (GPU-only)
-    BACKGROUND = 4            # KB ingest, qualifier, non-orchestrator embedding (CPU fallback)
+    """Lower number = higher priority. Only 2 effective levels."""
+    CRITICAL = 0   # User waiting (jervis_mcp, orchestrator FOREGROUND)
+    NORMAL = 1     # System work (background, correction, KB ingest)
 
 
 # ── Model sets ──────────────────────────────────────────────────────────
@@ -49,13 +46,13 @@ for _set_name, _set_def in MODEL_SETS.items():
     for _model in _set_def["models"]:
         MODEL_TO_SET[_model] = _set_name
 
-# model → default priority lookup
+# model → default priority lookup (CRITICAL is set via header, not model)
 MODEL_TO_PRIORITY: dict[str, Priority] = {
-    "qwen3-coder-tool:30b": Priority.CRITICAL,
-    "qwen2.5:7b": Priority.BACKGROUND,
-    "qwen2.5:14b": Priority.BACKGROUND,
-    "qwen3-embedding:8b": Priority.BACKGROUND,
-    "qwen3-vl:latest": Priority.VLM,
+    "qwen3-coder-tool:30b": Priority.NORMAL,
+    "qwen2.5:7b": Priority.NORMAL,
+    "qwen2.5:14b": Priority.NORMAL,
+    "qwen3-embedding:8b": Priority.NORMAL,
+    "qwen3-vl:latest": Priority.NORMAL,
 }
 
 # Embedding models (fast single-pass, don't preempt)

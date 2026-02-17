@@ -63,22 +63,21 @@
 
 ### Priority Levels
 
-| Priority | Source | GPU Behavior | Preemption |
-|----------|--------|--------------|------------|
-| **100** | Orchestrator (via `X-Ollama-Priority: 100`) | Reserved slot for 30min | Cannot be preempted |
-| **50** | Background tasks | Uses GPU when idle | Preempted by priority 100 |
-| **Auto** | Standard requests (no header) | Routes to GPU if free | Fallback to CPU |
+| Priority | Value | Source | GPU Behavior | Preemption |
+|----------|-------|--------|--------------|------------|
+| **CRITICAL** | 0 | Orchestrator FOREGROUND (via `X-Ollama-Priority: 0`) | Reserved GPU, always GPU | Cannot be preempted |
+| **NORMAL** | 1 | Everything else (no header) | GPU when free, CPU fallback | Preempted by CRITICAL |
 
 ### Request Flow Example
 
 ```python
-# 1. Orchestrator makes LLM request
+# 1. Orchestrator makes LLM request (FOREGROUND)
 response = await llm_provider.completion(
     messages=[...],
     tier=ModelTier.LOCAL_STANDARD,
 )
 # Internally calls: http://192.168.100.117:11430/api/generate
-# With header: X-Ollama-Priority: 100
+# With header: X-Ollama-Priority: 0 (CRITICAL, FOREGROUND only)
 
 # 2. Ollama Router receives request
 #    → Checks priority header (100 = Orchestrator)
@@ -587,7 +586,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  Ollama Router (:11430)   Python FastAPI                        │   │
-│  │  • Priority routing (P0 critical → P3 background)               │   │
+│  │  • Priority routing (CRITICAL / NORMAL)                          │   │
 │  │  • Model set swapping (orchestrator ↔ background)               │   │
 │  │  • Preemption (background → CPU on orchestrator request)        │   │
 │  │  • Multi-GPU pool (scalable to N GPU backends)                  │   │
@@ -610,17 +609,16 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Priority Levels
+### Priority Levels (2 levels)
 
 | Priority | Value | Source | Behavior |
 |----------|-------|--------|----------|
-| CRITICAL | 0 | Orchestrator LLM (:30b) | Preempts non-critical, always GPU, auto-reserves |
-| ORCHESTRATOR_EMBEDDING | 1 | Orchestrator KB search | GPU preferred (unreserved GPU > co-locate > CPU) |
-| CODING | 2 | OpenHands/Aider | GPU preferred, waits for current request |
-| VLM | 3 | Image description (KB) | GPU-only capability, queued |
-| BACKGROUND | 4 | KB ingest, qualifier | GPU when free, CPU fallback |
+| CRITICAL | 0 | Orchestrator FOREGROUND, jervis_mcp | Preempts non-critical, always GPU, auto-reserves |
+| NORMAL | 1 | Everything else (correction, KB ingest, background tasks) | GPU when free, CPU fallback |
 
-> Priority is set via `X-Ollama-Priority` header or auto-detected from model name: `qwen3-coder-tool:30b` → CRITICAL, `qwen2.5:*` / `qwen3-embedding:*` → BACKGROUND.
+> Priority is set via `X-Ollama-Priority: 0` header for CRITICAL. No header = NORMAL (router default). Model name no longer determines priority.
+>
+> **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND tasks send no header (NORMAL). GPU reservation (`announce/release`) only happens for FOREGROUND.
 
 ### Model Sets (alternating on GPU)
 
@@ -646,43 +644,24 @@ Router manages a pool of GPU backends (`GPU_BACKENDS` JSON env var). Reservation
 
 **1 GPU scenario:**
 ```
-GPU1: :30b (CRITICAL) + embedding co-located
-CPU:  background models (fallback)
+GPU1: :30b (reserved for CRITICAL)
+CPU:  all other models (NORMAL fallback)
 ```
 - CRITICAL → GPU1 (auto-reserves)
-- ORCHESTRATOR_EMBEDDING → GPU1 (co-locates with :30b, loaded as second model)
-- BACKGROUND → CPU
+- NORMAL → CPU (all GPUs reserved)
 
 **2 GPU scenario:**
 ```
-GPU1: :30b (CRITICAL LLM only)
-GPU2: embedding + background models (qwen2.5:7b, qwen2.5:14b, qwen3-embedding:8b)
-CPU:  fallback for slow/overflow work
+GPU1: :30b (reserved for CRITICAL)
+GPU2: background models (unreserved)
+CPU:  fallback for overflow
 ```
 - CRITICAL → GPU1 (reserved for :30b)
-- ORCHESTRATOR_EMBEDDING → GPU2 (unreserved GPU preferred over co-locate)
-- BACKGROUND → GPU2 (when no ORCHESTRATOR_EMBEDDING active), else CPU
+- NORMAL → GPU2 (unreserved), else CPU
 - Two concurrent CRITICALs → GPU1 + GPU2 (spread across GPUs)
-- All GPUs reserved → BACKGROUND to CPU
+- All GPUs reserved → NORMAL to CPU
 
 Adding a GPU = config change only (`GPU_BACKENDS` env var), no code change.
-
-### Embedding Priority Rules
-
-ORCHESTRATOR_EMBEDDING (priority 1) has GPU priority over BACKGROUND embedding (priority 4):
-
-| Event | ORCHESTRATOR_EMBEDDING | BACKGROUND embedding |
-|-------|----------------------|---------------------|
-| No CRITICAL active | CPU (no reservation) | GPU (unreserved) |
-| CRITICAL active, 1 GPU | GPU (co-locate with :30b) | CPU |
-| CRITICAL active, 2 GPUs | GPU2 (unreserved) | GPU2 (if no ORCH_EMBED active) |
-| ORCH_EMBED running on GPU2 | GPU2 | CPU (yields to ORCH_EMBED) |
-| ORCH_EMBED done | — | GPU2 (back to normal) |
-
-Key rules:
-- BACKGROUND embedding already running on **CPU is never stopped** — let it finish
-- BACKGROUND embedding **yields GPU** to ORCHESTRATOR_EMBEDDING (next request goes to CPU)
-- After ORCHESTRATOR_EMBEDDING finishes, BACKGROUND embedding returns to GPU
 
 ### Key Configuration
 

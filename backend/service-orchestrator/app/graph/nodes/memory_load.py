@@ -44,7 +44,7 @@ async def memory_load(state: dict) -> dict:
             agent = MemoryAgent.from_state_dict(existing)
             logger.info("memory_load: restored MemoryAgent from state")
         else:
-            agent = MemoryAgent(client_id=client_id, project_id=project_id)
+            agent = MemoryAgent(client_id=client_id, project_id=project_id, processing_mode=state.get("processing_mode", "FOREGROUND"))
             logger.info("memory_load: created new MemoryAgent")
 
         # Load session (LQM hot or KB cold start)

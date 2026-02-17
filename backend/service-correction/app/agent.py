@@ -562,14 +562,13 @@ class CorrectionAgent:
         last_progress_emit = time.monotonic()
 
         # Correction does NOT reserve GPU - only orchestrator agent has that privilege
-        # Correction requests route to CPU if GPU is reserved, or to GPU if available
-        # Priority 4 (BACKGROUND) = will use CPU if GPU is reserved by orchestrator
+        # Correction requests use NORMAL priority (no header = router default NORMAL)
+        # Will use CPU if GPU is reserved by orchestrator, or GPU if available
         async with httpx.AsyncClient(timeout=None) as http_client:
             async with http_client.stream(
                 "POST",
                 f"{self.ollama_url}/api/chat",
                 json=payload,
-                headers={"x-ollama-priority": "4"},  # BACKGROUND priority (4=BACKGROUND, NOT 3=VLM)
             ) as response:
                 response.raise_for_status()
 

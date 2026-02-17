@@ -40,6 +40,7 @@ async def evidence_pack(state: dict) -> dict:
             client_id=task.client_id,
             project_id=task.project_id,
             search_queries=search_queries,
+            processing_mode=state.get("processing_mode", "FOREGROUND"),
         )
         if kb_context:
             kb_results.append({
@@ -57,6 +58,7 @@ async def evidence_pack(state: dict) -> dict:
                 task_description=f"Issue/page: {ref}",
                 client_id=task.client_id,
                 project_id=task.project_id,
+                processing_mode=state.get("processing_mode", "FOREGROUND"),
             )
             if ref_context:
                 tracker_artifacts.append({

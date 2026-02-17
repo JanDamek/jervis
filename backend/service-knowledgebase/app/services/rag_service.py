@@ -20,10 +20,8 @@ class RagService:
             base_url=settings.OLLAMA_EMBEDDING_BASE_URL,
             model=settings.EMBEDDING_MODEL
         )
-        # Determine priority based on KB_MODE
-        # "read" = orchestrator queries (ORCHESTRATOR_EMBEDDING = 1)
-        # "write" = indexing (BACKGROUND = 4)
-        self.embedding_priority = 1 if settings.KB_MODE == "read" else 4
+        # Default: no priority header (NORMAL). Callers pass explicit priority via header.
+        self.embedding_priority = None
         self.http_client = httpx.AsyncClient(timeout=3600.0)  # 1 hour — CPU embedding is slow, queues behind other work
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -52,14 +50,13 @@ class RagService:
     async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
         """Embed text with priority header for router.
 
-        Priority can be passed explicitly or falls back to KB_MODE-based default:
-        - KB_MODE="read" → Priority 1 (ORCHESTRATOR_EMBEDDING, co-located with CRITICAL on GPU)
-        - KB_MODE="write" → Priority 4 (BACKGROUND, CPU fallback)
+        Priority passed explicitly by callers (from X-Ollama-Priority header passthrough).
+        If None, no header is sent (router defaults to NORMAL).
         """
         is_batch = isinstance(text, list)
         prompt = text if is_batch else [text]
 
-        # Use explicit priority if provided, otherwise fall back to KB_MODE default
+        # Use explicit priority if provided, otherwise fall back to default
         effective_priority = priority if priority is not None else self.embedding_priority
 
         url = f"{settings.OLLAMA_EMBEDDING_BASE_URL}/api/embed"
@@ -67,9 +64,9 @@ class RagService:
             "model": settings.EMBEDDING_MODEL,
             "input": prompt,
         }
-        headers = {"X-Ollama-Priority": str(effective_priority)}
+        headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
 
-        logger.info("RAG: EMBEDDING model=%s priority=%d (explicit=%s default=%d)",
+        logger.info("RAG: EMBEDDING model=%s priority=%s (explicit=%s default=%s)",
                     settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority)
 
         try:

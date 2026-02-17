@@ -41,8 +41,8 @@ class GraphService:
         full control over the X-Ollama-Priority header, which ChatOllama doesn't expose.
         """
         url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
-        effective_priority = priority if priority is not None else 4  # default: BACKGROUND
-        headers = {"X-Ollama-Priority": str(effective_priority)}
+        effective_priority = priority if priority is not None else None  # default: no header (NORMAL)
+        headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
         payload = {
             "model": settings.LLM_MODEL,
             "prompt": prompt,

@@ -101,13 +101,13 @@ async def acquire_read_slot() -> AsyncGenerator[None, None]:
 async def acquire_write_slot_with_priority(request: Request) -> AsyncGenerator[None, None]:
     """Dependency: acquire write concurrency slot based on X-Ollama-Priority header.
 
-    Priority writes (X-Ollama-Priority <= 2) use a separate semaphore from
-    normal/background writes, so MCP/orchestrator writes never queue behind bulk indexing.
+    CRITICAL writes (X-Ollama-Priority = 0) use a separate semaphore from
+    normal writes, so MCP/orchestrator FOREGROUND writes never queue behind bulk indexing.
     """
     priority_header = request.headers.get("X-Ollama-Priority")
     priority = int(priority_header) if priority_header and priority_header.isdigit() else 99
 
-    if priority <= 2:
+    if priority <= 0:  # CRITICAL only
         async with _priority_write_semaphore:
             yield
     else:

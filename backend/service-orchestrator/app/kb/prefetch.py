@@ -36,6 +36,7 @@ async def prefetch_kb_context(
     project_id: str | None,
     files: list[str] | None = None,
     search_queries: list[str] | None = None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Query KB and return context relevant for the coding task.
 
@@ -54,8 +55,8 @@ async def prefetch_kb_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
-    headers = {"X-Ollama-Priority": "1"}
+    # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
 
     # KB operations can take long due to embeddings and graph traversal
     async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
@@ -184,6 +185,7 @@ async def fetch_project_context(
     task_description: str,
     target_branch: str | None = None,
     search_queries: list[str] | None = None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Query KB for project-level overview — structure, architecture, conventions.
 
@@ -212,8 +214,8 @@ async def fetch_project_context(
     kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
 
-    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
-    headers = {"X-Ollama-Priority": "1"}
+    # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
 
     # KB operations can take long due to embeddings and graph traversal
     async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:

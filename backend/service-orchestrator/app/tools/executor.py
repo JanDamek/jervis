@@ -40,6 +40,7 @@ async def execute_tool(
     arguments: dict,
     client_id: str,
     project_id: str | None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Execute a tool call and return the result as a string.
 
@@ -79,6 +80,7 @@ async def execute_tool(
                 max_results=arguments.get("max_results", 5),
                 client_id=client_id,
                 project_id=project_id,
+                processing_mode=processing_mode,
             )
         elif tool_name == "store_knowledge":
             result = await _execute_store_knowledge(
@@ -87,6 +89,7 @@ async def execute_tool(
                 category=arguments.get("category", "general"),
                 client_id=client_id,
                 project_id=project_id,
+                processing_mode=processing_mode,
             )
         elif tool_name == "create_scheduled_task":
             result = await _execute_create_scheduled_task(
@@ -249,6 +252,7 @@ async def execute_tool(
                 scope=arguments.get("scope", "all"),
                 client_id=client_id,
                 project_id=project_id,
+                processing_mode=processing_mode,
             )
         elif tool_name == "list_affairs":
             result = await _execute_list_affairs(
@@ -390,6 +394,7 @@ async def _execute_kb_search(
     max_results: int = 5,
     client_id: str = "",
     project_id: str | None = None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Search the Knowledge Base via POST /api/v1/retrieve.
 
@@ -408,8 +413,7 @@ async def _execute_kb_search(
         "expandGraph": True,
     }
 
-    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
-    headers = {"X-Ollama-Priority": "1"}
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
@@ -448,6 +452,7 @@ async def _execute_store_knowledge(
     category: str = "general",
     client_id: str = "",
     project_id: str | None = None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Store new knowledge into the Knowledge Base via POST /api/v1/ingest.
 
@@ -481,8 +486,7 @@ async def _execute_store_knowledge(
         },
     }
 
-    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
-    headers = {"X-Ollama-Priority": "1"}
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1698,6 +1702,7 @@ async def _execute_memory_recall(
     scope: str = "all",
     client_id: str = "",
     project_id: str | None = None,
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Search Memory Agent's LQM + KB for relevant information."""
     if not query.strip():
@@ -1758,7 +1763,7 @@ async def _execute_memory_recall(
                                 "clientId": client_id,
                                 "maxResults": 3,
                             },
-                            headers={"X-Ollama-Priority": "1"},
+                            headers={"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {},
                         )
                         if resp.status_code == 200:
                             kb_items = resp.json().get("items", [])

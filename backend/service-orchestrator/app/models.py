@@ -257,6 +257,7 @@ class OrchestrateRequest(BaseModel):
     environment: dict | None = None  # Resolved environment context from server
     jervis_project_id: str | None = None  # JERVIS internal project for planning
     chat_history: ChatHistoryPayload | None = None  # Conversation context
+    processing_mode: str = "FOREGROUND"  # FOREGROUND = reserve GPU, BACKGROUND = no GPU reservation
 
 
 class OrchestrateResponse(BaseModel):

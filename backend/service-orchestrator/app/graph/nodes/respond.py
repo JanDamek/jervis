@@ -290,6 +290,7 @@ async def respond(state: dict) -> dict:
                     arguments=arguments,
                     client_id=client_id,
                     project_id=project_id,
+                    processing_mode=state.get("processing_mode", "FOREGROUND"),
                 )
             except AskUserInterrupt as e:
                 # Agent needs user input — interrupt graph execution

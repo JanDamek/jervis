@@ -1,8 +1,9 @@
 """OllamaRouter – multi-GPU routing logic, preemption, announce/release.
 
+Two priority levels: CRITICAL (0) and NORMAL (1).
 Supports multiple GPU backends with per-GPU reservations:
 - CRITICAL requests spread across GPUs (2 CRITICALs → 2 GPUs)
-- BACKGROUND requests use unreserved GPUs (not blanket-CPU)
+- NORMAL requests use unreserved GPUs or CPU fallback
 - Reservations track per-GPU with independent idle/absolute timeouts
 """
 
@@ -130,72 +131,24 @@ class OllamaRouter:
         model = request.model
         priority = request.priority
 
-        # ── 1. BACKGROUND with reservations → use unreserved GPU or CPU ──
-        if priority >= Priority.BACKGROUND and self._reservations:
-            # If ALL GPUs are reserved, go to CPU immediately
+        # ── 1. NORMAL with reservations → use unreserved GPU or CPU ──
+        if priority >= Priority.NORMAL and self._reservations:
             if not self.gpu_pool.find_unreserved():
                 return await self._send_to_cpu(request)
-            # Otherwise fall through — steps below use reservation-aware methods
-
-        # ── 1.5. BACKGROUND embedding yields GPU to ORCHESTRATOR_EMBEDDING ──
-        if priority >= Priority.BACKGROUND and model in EMBEDDING_MODELS:
-            for b in self.gpu_pool.healthy_backends:
-                if not b.reserved_by and b.has_active_orchestrator_embedding():
-                    logger.info("BACKGROUND embedding → CPU (ORCHESTRATOR_EMBEDDING active on GPU %s)", b.name)
-                    return await self._send_to_cpu(request)
 
         # ── 2. Find GPU that already has this model loaded ──────────────
         gpu = self.gpu_pool.find_with_model(model)
         if gpu:
             if priority <= Priority.CRITICAL:
-                # CRITICAL: prefer spreading across GPUs
-                # If this GPU already has active CRITICAL, try another in step 3
                 if not gpu.has_active_critical():
-                    # Ensure reservation exists (e.g. after router restart, model still loaded)
                     await self._ensure_critical_reservation(gpu)
                     return await self._send_to_gpu(gpu, request)
-                # Fall through to step 3 for load-balancing
             elif not gpu.reserved_by:
-                # Non-CRITICAL: use only unreserved GPUs
                 return await self._send_to_gpu(gpu, request)
 
         # ── 3. CRITICAL: auto-reserve GPU, ensure model loaded ──────────
         if priority <= Priority.CRITICAL:
             return await self._route_critical(request)
-
-        # ── 3.5. ORCHESTRATOR_EMBEDDING: prefer unreserved GPU, fallback co-locate ──
-        if priority == Priority.ORCHESTRATOR_EMBEDDING:
-            # 1. Prefer unreserved GPU with embedding model (2-GPU: uses GPU2)
-            gpu = self.gpu_pool.find_unreserved_with_model(model)
-            if gpu:
-                logger.info("ORCHESTRATOR_EMBEDDING: Using unreserved GPU %s", gpu.name)
-                return await self._send_to_gpu(gpu, request)
-
-            # 2. Try any unreserved GPU (load model there)
-            gpu = self.gpu_pool.find_unreserved_with_free_vram(model)
-            if gpu:
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    logger.info("ORCHESTRATOR_EMBEDDING: Loaded %s on unreserved GPU %s", model, gpu.name)
-                    return await self._send_to_gpu(gpu, request)
-
-            # 3. Co-locate with CRITICAL on reserved GPU (1-GPU fallback)
-            for gpu_name in self._reservations:
-                gpu = self.gpu_pool.backends.get(gpu_name)
-                if not gpu:
-                    continue
-                logger.info("ORCHESTRATOR_EMBEDDING: Co-locating on CRITICAL GPU %s (1-GPU fallback)", gpu.name)
-                if not gpu.has_model(model):
-                    loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                    if not loaded:
-                        logger.warning("ORCHESTRATOR_EMBEDDING: Failed to load %s on GPU %s", model, gpu.name)
-                        continue
-                    logger.info("ORCHESTRATOR_EMBEDDING: Loaded %s on GPU %s", model, gpu.name)
-                return await self._send_to_gpu(gpu, request)
-
-            # 4. CPU fallback
-            logger.info("ORCHESTRATOR_EMBEDDING: No GPU available, using CPU")
-            return await self._send_to_cpu(request)
 
         # ── 4. Find unreserved GPU with model or free VRAM ──────────────
         gpu = self.gpu_pool.find_unreserved_with_model(model)
@@ -208,19 +161,14 @@ class OllamaRouter:
             if loaded:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 5. BACKGROUND: idle unreserved GPU or CPU ───────────────────
-        if priority >= Priority.BACKGROUND:
-            gpu = self.gpu_pool.find_unreserved_least_busy()
-            if gpu and gpu.active_request_count() == 0:
-                # GPU is IDLE - unload old models and load requested model
-                await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    return await self._send_to_gpu(gpu, request)
-            # No idle unreserved GPU → CPU
-            return await self._send_to_cpu(request)
+        # ── 5. Idle unreserved GPU (unload + load) or CPU ───────────────
+        gpu = self.gpu_pool.find_unreserved_least_busy()
+        if gpu and gpu.active_request_count() == 0:
+            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+            loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+            if loaded:
+                return await self._send_to_gpu(gpu, request)
 
-        # ── 6. Last resort – CPU ────────────────────────────────────────
         return await self._send_to_cpu(request)
 
     # ── CRITICAL routing (step 3) ────────────────────────────────────────
@@ -311,7 +259,7 @@ class OllamaRouter:
 
         Needed when router restarts but model is still loaded on GPU — step 2
         routes CRITICAL there directly, but the reservation dict is empty.
-        Without this, ORCHESTRATOR_EMBEDDING won't find a reservation to co-locate with.
+        Without this, subsequent CRITICAL requests won't find the reservation.
         """
         if gpu.name in self._reservations:
             self._last_critical_activity[gpu.name] = time.monotonic()
@@ -405,7 +353,7 @@ class OllamaRouter:
         """Preempt all background requests running on a GPU backend."""
         preempted = []
         for req_id, req in list(gpu.active_requests.items()):
-            if req.priority >= Priority.BACKGROUND:
+            if req.priority >= Priority.NORMAL:
                 # Don't preempt short embedding requests
                 if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
                     continue
@@ -663,7 +611,7 @@ class OllamaRouter:
                 return Priority(priority_header)
             except ValueError:
                 pass
-        return MODEL_TO_PRIORITY.get(model, Priority.BACKGROUND)
+        return MODEL_TO_PRIORITY.get(model, Priority.NORMAL)
 
     def _is_reserved_by_other(self, gpu: GpuBackend) -> bool:
         """Check if GPU is reserved."""

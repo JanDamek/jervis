@@ -294,6 +294,7 @@ data class OrchestrateRequestDto(
     val environment: kotlinx.serialization.json.JsonObject? = null,
     @SerialName("jervis_project_id") val jervisProjectId: String? = null,
     @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
+    @SerialName("processing_mode") val processingMode: String = "FOREGROUND",
 )
 
 @Serializable

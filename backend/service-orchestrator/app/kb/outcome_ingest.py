@@ -276,12 +276,10 @@ async def ingest_outcome_to_kb(
         },
     }
 
-    # Priority 4 = background, non-urgent embedding
-    headers = {"X-Ollama-Priority": "4"}
-
+    # No priority header = NORMAL (background, non-urgent embedding)
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
 

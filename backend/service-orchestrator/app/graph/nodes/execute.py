@@ -151,6 +151,7 @@ async def _execute_code_step(
             client_id=task.client_id,
             project_id=task.project_id,
             files=step.files,
+            processing_mode=state.get("processing_mode", "FOREGROUND"),
         )
     except Exception as e:
         logger.warning(
@@ -295,6 +296,7 @@ async def _prefetch_kb_context(
     client_id: str,
     project_id: str | None,
     files: list[str],
+    processing_mode: str = "FOREGROUND",
 ) -> str:
     """Pre-fetch KB context. Raises if KB is unavailable."""
     from app.kb.prefetch import prefetch_kb_context
@@ -303,4 +305,5 @@ async def _prefetch_kb_context(
         client_id=client_id,
         project_id=project_id,
         files=files,
+        processing_mode=processing_mode,
     )

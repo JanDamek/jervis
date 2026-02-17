@@ -223,6 +223,7 @@ class BaseAgent(ABC):
                 arguments=arguments,
                 client_id=client_id,
                 project_id=project_id,
+                processing_mode=state.get("processing_mode", "FOREGROUND"),
             )
             return result if isinstance(result, str) else json.dumps(result, default=str)
         except Exception as exc:

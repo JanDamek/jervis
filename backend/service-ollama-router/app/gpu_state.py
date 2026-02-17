@@ -53,7 +53,7 @@ class GpuBackend:
     def has_active_background(self) -> bool:
         from .models import Priority
         return any(
-            r.priority >= Priority.BACKGROUND
+            r.priority >= Priority.NORMAL
             for r in self.active_requests.values()
         )
 
@@ -61,13 +61,6 @@ class GpuBackend:
         from .models import Priority
         return any(
             r.priority <= Priority.CRITICAL
-            for r in self.active_requests.values()
-        )
-
-    def has_active_orchestrator_embedding(self) -> bool:
-        from .models import Priority
-        return any(
-            r.priority == Priority.ORCHESTRATOR_EMBEDDING
             for r in self.active_requests.values()
         )
 

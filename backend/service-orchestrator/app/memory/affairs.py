@@ -111,6 +111,7 @@ async def resume_affair(
     lqm: LocalQuickMemory,
     kb_url: str,
     client_id: str,
+    processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
     """Resume a parked affair.
 
@@ -129,7 +130,7 @@ async def resume_affair(
 
     # Fallback: load from KB
     try:
-        affair = await _load_affair_from_kb(affair_id, kb_url, client_id)
+        affair = await _load_affair_from_kb(affair_id, kb_url, client_id, processing_mode)
         if affair:
             affair.status = AffairStatus.ACTIVE
             affair.updated_at = datetime.now(timezone.utc).isoformat()
@@ -181,6 +182,7 @@ async def load_affairs_from_kb(
     client_id: str,
     project_id: str | None,
     kb_url: str,
+    processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Cold start: load ACTIVE+PARKED affairs from KB.
 
@@ -196,7 +198,7 @@ async def load_affairs_from_kb(
 
     # Fallback: semantic search with kind=affair
     try:
-        return await _load_affairs_via_search(client_id, kb_url)
+        return await _load_affairs_via_search(client_id, kb_url, processing_mode)
     except Exception as e:
         logger.warning("Failed to load affairs from KB: %s", e)
         return []
@@ -271,8 +273,10 @@ async def _load_affair_from_kb(
     affair_id: str,
     kb_url: str,
     client_id: str,
+    processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
     """Load a single affair from KB by its source_urn."""
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",
@@ -282,7 +286,7 @@ async def _load_affair_from_kb(
                 "kinds": ["affair"],
                 "maxResults": 1,
             },
-            headers={"X-Ollama-Priority": "1"},
+            headers=headers,
         )
         if resp.status_code != 200:
             return None
@@ -318,8 +322,10 @@ async def _load_affairs_via_endpoint(
 async def _load_affairs_via_search(
     client_id: str,
     kb_url: str,
+    processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Fallback: load affairs via semantic search with kind=affair."""
+    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",
@@ -329,7 +335,7 @@ async def _load_affairs_via_search(
                 "kinds": ["affair"],
                 "maxResults": 20,
             },
-            headers={"X-Ollama-Priority": "1"},
+            headers=headers,
         )
         if resp.status_code != 200:
             return []

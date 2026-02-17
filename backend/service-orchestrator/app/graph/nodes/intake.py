@@ -178,6 +178,7 @@ async def intake(state: dict) -> dict:
 
     project_context = await fetch_project_context(
         client_id, project_id, query, target_branch=target_branch, search_queries=search_queries,
+        processing_mode=state.get("processing_mode", "FOREGROUND"),
     )
 
     # Fetch user-learned knowledge (preferences, domain, tech stack, etc.)
