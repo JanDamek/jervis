@@ -254,3 +254,29 @@ data:
   MODEL_LOAD_TIMEOUT_S: "120"
   BACKGROUND_LOAD_DELAY_S: "5"
   DEFAULT_KEEP_ALIVE: "10m"
+
+---
+# =============================================================================
+# MCP Server – Production Configuration (K8s ConfigMap)
+# Injected as env vars via envFrom in k8s/app_mcp.yaml.
+# Exposes Jervis platform as MCP tools for Claude Desktop / Claude Code.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jervis-mcp-config
+  namespace: jervis
+data:
+  MCP_HOST: "0.0.0.0"
+  MCP_PORT: "8100"
+  MCP_MONGODB_HOST: "192.168.100.117"
+  MCP_MONGODB_PORT: "27017"
+  MCP_MONGODB_USER: "root"
+  MCP_MONGODB_DATABASE: "jervis"
+  # -- Microservice endpoints (K8s service names) --
+  MCP_KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
+  MCP_KNOWLEDGEBASE_WRITE_URL: "http://jervis-knowledgebase-write:8080"
+  MCP_KOTLIN_SERVER_URL: "http://jervis-server:5500"
+  # -- Default tenant (override per tool call) --
+  MCP_DEFAULT_CLIENT_ID: ""
+  MCP_DEFAULT_PROJECT_ID: ""

@@ -1,0 +1,140 @@
+# =============================================================================
+# Jervis MCP Server – K8s Deployment
+#
+# Exposes Jervis platform as MCP tools for Claude Desktop / Claude Code.
+# Priority: CRITICAL (high-priority class) – KB queries must not wait.
+# Public ingress: jervis-mcp.damek-soft.eu (Bearer token auth)
+# =============================================================================
+
+# ===== Critical Priority Class =====
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical-priority
+value: 2000
+globalDefault: false
+description: "Critical priority for MCP and orchestrator services"
+---
+# ===== Deployment =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jervis-mcp
+  namespace: jervis
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jervis-mcp
+  template:
+    metadata:
+      labels:
+        app: jervis-mcp
+    spec:
+      priorityClassName: critical-priority
+      containers:
+        - name: mcp
+          image: registry.damek-soft.eu/jandamek/jervis-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8100
+          envFrom:
+            - configMapRef:
+                name: jervis-mcp-config
+          env:
+            - name: MCP_MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: MONGODB_PASSWORD
+            - name: MCP_MCP_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: MCP_API_TOKENS
+                  optional: false
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8100
+            failureThreshold: 10
+            periodSeconds: 3
+---
+# ===== Service =====
+apiVersion: v1
+kind: Service
+metadata:
+  name: jervis-mcp
+  namespace: jervis
+spec:
+  selector:
+    app: jervis-mcp
+  ports:
+    - name: http
+      port: 8100
+      targetPort: 8100
+---
+# ===== Ingress (public) =====
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jervis-mcp-ingress
+  namespace: jervis
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Longer timeouts for streaming MCP connections
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # SSE support
+    nginx.ingress.kubernetes.io/server-snippets: |
+      location /mcp {
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        chunked_transfer_encoding off;
+        proxy_buffering off;
+        proxy_cache off;
+      }
+spec:
+  tls:
+    - hosts:
+        - jervis-mcp.damek-soft.eu
+      secretName: jervis-mcp-tls-cert
+  rules:
+    - host: jervis-mcp.damek-soft.eu
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-mcp
+                port:
+                  number: 8100
