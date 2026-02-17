@@ -1,7 +1,7 @@
 # =============================================================================
 # Jervis Server – Local Development Configuration
 # Production values are in k8s/configmap.yaml (jervis-server-config).
-# Ollama endpoints and model routing are in models-config.yaml.
+# LLM calls are handled by Python microservices (orchestrator, KB, correction).
 # =============================================================================
 
 # -- Logging ------------------------------------------------------------------
@@ -54,30 +54,6 @@ weaviate:
   auto-migrate:
     countdown-seconds: 10          # Delay before schema migration on startup
 
-# -- Ktor HTTP Client (LLM provider communication) ----------------------------
-# Bound to KtorClientProperties.kt. Used by KtorClientFactory for all providers.
-ktor:
-  connection-pool:
-    max-connections: 500           # Global max open connections
-    max-connections-per-route: 100 # Per-host connection limit
-    keep-alive-time-millis: 300000 # 5min keep-alive
-  timeouts:
-    connect-timeout-millis: 60000  # 1min connect timeout
-    request-timeout-millis: 660000 # 11min request timeout (LLM generation can be slow)
-    socket-timeout-millis: 0       # 0 = no socket timeout (streaming)
-  api-versions:
-    anthropic-version: "2023-06-01"
-  logging:
-    enabled: false
-    level: INFO
-
-# -- Retry (Ktor HTTP client retry on 5xx) ------------------------------------
-retry:
-  ktor:
-    max-attempts: 5
-    initial-backoff-millis: 1000
-    max-backoff-millis: 30000
-
 # -- Data directory -----------------------------------------------------------
 data:
   root-dir: /Users/damekjan/git/jervis/data
@@ -128,25 +104,6 @@ link:
   indexing:
     skip-if-indexed-within: 30d    # Don't re-index URLs crawled within this period
 
-# -- Ollama preload & concurrency ---------------------------------------------
-# Controls model keep-alive and concurrency limits for Ollama instances.
-# See docs/structures.md § "Ollama Instance Architecture" for full details.
-preload:
-  ollama:
-    gpu:
-      concurrency: 2              # GPU instance (:11434) – max concurrent requests
-    cpu:
-      # CPU instance (:11435) – ingest + embedding + qualifier
-      # OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18, OLLAMA_MAX_LOADED_MODELS=3
-      concurrency: 10
-    llm:
-      keep-alive: 1h              # Keep LLM models loaded in memory for 1h after last use
-      refresh-safety-factor: 0.9  # Refresh model before keep-alive expires (at 90% of TTL)
-    embed:
-      concurrency: 6              # Embedding preload concurrency (model warm-up)
-      keep-alive: 1h
-      refresh-safety-factor: 0.9
-
 # -- Coding tools (Aider, OpenHands, Junie) ------------------------------------
 # Each tool has default (local Ollama) and paid (cloud API) provider+model pairs.
 coding-tools:
@@ -174,7 +131,6 @@ coding-tools:
 
 # -- Microservice endpoints (local dev) ----------------------------------------
 # In production, these are K8s service names (see k8s/configmap.yaml).
-# Ollama endpoints are configured separately in models-config.yaml.
 endpoints:
   searxng:
     baseUrl: http://localhost:30053/      # Web search (SearXNG)

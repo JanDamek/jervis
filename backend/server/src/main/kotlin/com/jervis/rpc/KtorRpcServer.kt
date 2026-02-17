@@ -3,7 +3,6 @@ package com.jervis.rpc
 import com.jervis.common.types.ConnectionId
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
-import com.jervis.configuration.properties.KtorClientProperties
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
@@ -64,7 +63,6 @@ class KtorRpcServer(
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
-    private val properties: KtorClientProperties,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null

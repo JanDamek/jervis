@@ -69,28 +69,6 @@ data:
       auto-migrate:
         countdown-seconds: 10
 
-    # -- Ktor HTTP Client (LLM provider communication) --------------------------
-    ktor:
-      connection-pool:
-        max-connections: 500
-        max-connections-per-route: 100
-        keep-alive-time-millis: 300000
-      timeouts:
-        connect-timeout-millis: 60000    # 1min connect
-        request-timeout-millis: 1800000  # 30min request (production: higher than local 11min)
-        socket-timeout-millis: 1800000   # 30min socket (production: non-zero, unlike local)
-      api-versions:
-        anthropic-version: "2023-06-01"
-      logging:
-        enabled: false
-        level: INFO
-
-    retry:
-      ktor:
-        max-attempts: 5
-        initial-backoff-millis: 1000
-        max-backoff-millis: 30000
-
     data:
       root-dir: /opt/jervis/data     # Mounted PVC (jervis-data-pvc)
 
@@ -120,21 +98,6 @@ data:
     link:
       indexing:
         skip-if-indexed-within: 30d
-
-    preload:
-      ollama:
-        gpu:
-          concurrency: 2
-        cpu:
-          # CPU ingest instance: OLLAMA_NUM_PARALLEL=10, OLLAMA_NUM_THREADS=18
-          concurrency: 10
-        llm:
-          keep-alive: 1h
-          refresh-safety-factor: 0.9
-        embed:
-          concurrency: 6
-          keep-alive: 1h
-          refresh-safety-factor: 0.9
 
     # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
     coding-tools:

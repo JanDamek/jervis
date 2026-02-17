@@ -1,24 +1,18 @@
 package com.jervis
 
-import com.jervis.configuration.YamlPropertySourceFactory
-import com.jervis.configuration.prompts.ProviderCapabilitiesService
 import com.jervis.configuration.properties.ArangoProperties
 import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.configuration.properties.CodingToolsProperties
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.configuration.properties.EndpointProperties
 import com.jervis.configuration.properties.QualifierProperties
-import com.jervis.configuration.properties.KtorClientProperties
 import com.jervis.configuration.properties.LinkIndexingProperties
-import com.jervis.configuration.properties.ModelsProperties
 import com.jervis.configuration.properties.PollingProperties
-import com.jervis.configuration.properties.RetryProperties
 import com.jervis.configuration.properties.SecurityProperties
 import com.jervis.configuration.properties.WeaviateProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
-import org.springframework.context.annotation.PropertySource
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories
 
 @SpringBootApplication
@@ -27,21 +21,13 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     DataRootProperties::class,
     LinkIndexingProperties::class,
     EndpointProperties::class,
-    ModelsProperties::class,
-    ProviderCapabilitiesService::class,
     WeaviateProperties::class,
-    RetryProperties::class,
     BackgroundProperties::class,
     SecurityProperties::class,
     ArangoProperties::class,
-    KtorClientProperties::class,
     QualifierProperties::class,
     CodingToolsProperties::class,
     PollingProperties::class,
-)
-@PropertySource(
-    value = ["classpath:models-config.yaml"],
-    factory = YamlPropertySourceFactory::class,
 )
 class JervisApplication
 
