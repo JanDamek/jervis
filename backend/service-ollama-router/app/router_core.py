@@ -142,8 +142,10 @@ class OllamaRouter:
             elif not gpu.reserved_by:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 3. CRITICAL: auto-reserve GPU, ensure model loaded ──────────
-        if priority <= Priority.CRITICAL:
+        # ── 3. CRITICAL :30b: auto-reserve GPU, ensure model loaded ─────
+        #      Non-:30b CRITICAL (embeddings, small models) fall through
+        #      to steps 4/5/CPU — reservation only for :30b LLM work.
+        if priority <= Priority.CRITICAL and ":30b" in model:
             return await self._route_critical(request)
 
         # ── 4. Find unreserved GPU with model or free VRAM ──────────────
@@ -170,16 +172,8 @@ class OllamaRouter:
     # ── CRITICAL routing (step 3) ────────────────────────────────────────
 
     async def _route_critical(self, request: TrackedRequest) -> Response:
-        """Route a CRITICAL request: auto-reserve GPU, spread across GPUs."""
+        """Route a CRITICAL :30b request: auto-reserve GPU, spread across GPUs."""
         model = request.model
-
-        if ":30b" not in model:
-            logger.error("CRITICAL priority requires :30b model, got: %s", model)
-            return JSONResponse(
-                status_code=503,
-                content={"error": "invalid_critical_model", "message": f"CRITICAL requires :30b model, got {model}"},
-            )
-
         target_gpu = None
         async with self._reservation_lock:
             target_gpu = self._find_best_gpu_for_critical(model)
@@ -433,22 +427,32 @@ class OllamaRouter:
     # ── Reservation watchdog ────────────────────────────────────────────
 
     async def _reservation_watchdog(self) -> None:
-        """Auto-release GPU reservations on timeout (per-GPU)."""
+        """Auto-release GPU reservations on idle timeout (per-GPU).
+
+        Runs every 15s. Releases reservation if no CRITICAL request
+        arrived within ``orchestrator_idle_timeout_s`` (default 60s).
+        """
         while True:
             try:
-                await asyncio.sleep(30)
+                await asyncio.sleep(15)
+                if not self._reservations:
+                    continue
+
+                now = time.monotonic()
                 async with self._reservation_lock:
-                    if not self._reservations:
-                        continue
-
-                    now = time.monotonic()
-
                     for gpu_name in list(self._reservations.keys()):
                         reserved_at = self._reservation_times.get(gpu_name)
                         last_activity = self._last_critical_activity.get(gpu_name)
+                        idle_s = int(now - last_activity) if last_activity else 0
+                        age_s = int(now - reserved_at) if reserved_at else 0
 
-                        # Absolute timeout
-                        if reserved_at and (now - reserved_at) > settings.orchestrator_reservation_timeout_s:
+                        logger.debug(
+                            "Watchdog: GPU %s reserved for %ds, idle %ds (limit=%ds)",
+                            gpu_name, age_s, idle_s, settings.orchestrator_idle_timeout_s,
+                        )
+
+                        # Absolute timeout (safety net)
+                        if reserved_at and age_s > settings.orchestrator_reservation_timeout_s:
                             logger.warning(
                                 "GPU %s reservation exceeded %ds absolute timeout, auto-releasing",
                                 gpu_name, settings.orchestrator_reservation_timeout_s,
@@ -458,10 +462,10 @@ class OllamaRouter:
                             continue
 
                         # Idle timeout
-                        if last_activity and (now - last_activity) > settings.orchestrator_idle_timeout_s:
-                            logger.warning(
-                                "GPU %s reservation idle for %ds, auto-releasing",
-                                gpu_name, settings.orchestrator_idle_timeout_s,
+                        if last_activity and idle_s > settings.orchestrator_idle_timeout_s:
+                            logger.info(
+                                "GPU %s reservation idle for %ds (limit=%ds), auto-releasing",
+                                gpu_name, idle_s, settings.orchestrator_idle_timeout_s,
                             )
                             self._clear_reservation(gpu_name)
                             self._schedule_bg_load(gpu_name)
