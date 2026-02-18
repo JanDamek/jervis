@@ -48,7 +48,7 @@ class RpcClientsConfig(
     private val logger = LoggerFactory.getLogger(RpcClientsConfig::class.java)
 
     private var _tikaClient: ITikaClient? = null
-    private var _knowledgeService: KnowledgeService? = null
+    private var _knowledgeService: KnowledgeServiceRestClient? = null
     private var _pythonOrchestratorClient: PythonOrchestratorClient? = null
     private var _correctionClient: CorrectionClient? = null
 
@@ -68,6 +68,10 @@ class RpcClientsConfig(
     fun correctionClient(): CorrectionClient =
         _correctionClient
             ?: CorrectionClient(endpoints.correction.baseUrl).also { _correctionClient = it }
+
+    /** Concrete REST client — used by SimpleQualifierAgent for streaming progress. */
+    @Bean
+    fun knowledgeServiceClient(): KnowledgeServiceRestClient = getKnowledgeService()
 
     @Bean
     fun knowledgeService(): KnowledgeService =
@@ -208,7 +212,7 @@ class RpcClientsConfig(
             _tikaClient ?: createRpcClient<ITikaClient>(endpoints.tika.baseUrl).also { _tikaClient = it }
         }
 
-    private fun getKnowledgeService(): KnowledgeService =
+    private fun getKnowledgeService(): KnowledgeServiceRestClient =
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
                 ?: KnowledgeServiceRestClient(kbWriteUrl()).also { _knowledgeService = it }

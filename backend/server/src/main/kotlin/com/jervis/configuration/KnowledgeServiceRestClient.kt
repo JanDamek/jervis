@@ -23,6 +23,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.accept
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.post
@@ -33,9 +34,11 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -164,6 +167,120 @@ class KnowledgeServiceRestClient(
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to ingestFull to knowledgebase: ${e.message}" }
+            FullIngestResult(
+                success = false,
+                chunksCount = 0,
+                nodesCreated = 0,
+                edgesCreated = 0,
+                attachmentsProcessed = 0,
+                attachmentsFailed = 0,
+                summary = "Ingestion failed",
+                error = e.message,
+            )
+        }
+    }
+
+    /**
+     * Streaming version of ingestFull that reads NDJSON progress events
+     * from the KB service and calls onProgress for each one.
+     */
+    suspend fun ingestFullWithProgress(
+        request: FullIngestRequest,
+        onProgress: suspend (message: String, step: String, metadata: Map<String, String>) -> Unit,
+    ): FullIngestResult {
+        logger.debug { "Calling knowledgebase ingestFull (streaming): sourceUrn=${request.sourceUrn}" }
+
+        return try {
+            val httpResponse = client.submitFormWithBinaryData(
+                url = "$apiBaseUrl/ingest/full",
+                formData = formData {
+                    append("clientId", request.clientId.toString())
+                    append("sourceUrn", request.sourceUrn)
+                    append("sourceType", request.sourceType)
+                    request.subject?.let { append("subject", it) }
+                    append("content", request.content)
+                    request.projectId?.let { append("projectId", it.toString()) }
+                    append("metadata", Json.encodeToString(request.metadata))
+
+                    request.attachments.forEach { attachment ->
+                        append(
+                            "attachments",
+                            attachment.data,
+                            Headers.build {
+                                append(HttpHeaders.ContentDisposition, "filename=\"${attachment.filename}\"")
+                                attachment.contentType?.let {
+                                    append(HttpHeaders.ContentType, it)
+                                }
+                            },
+                        )
+                    }
+                },
+            ) {
+                accept(ContentType("application", "x-ndjson"))
+            }
+
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = httpResponse.bodyAsText()
+                throw RuntimeException("KB ingest/full streaming returned ${httpResponse.status}: $errorBody")
+            }
+
+            val channel = httpResponse.bodyAsChannel()
+            var result: FullIngestResult? = null
+
+            while (!channel.isClosedForRead) {
+                val line = channel.readUTF8Line() ?: break
+                if (line.isBlank()) continue
+
+                try {
+                    val jsonElement = Json.parseToJsonElement(line)
+                    val obj = jsonElement as? kotlinx.serialization.json.JsonObject ?: continue
+                    val type = obj["type"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+
+                    when (type) {
+                        "progress" -> {
+                            val step = obj["step"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: "unknown"
+                            val message = obj["message"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: ""
+                            val metadata = obj["metadata"]?.let { el ->
+                                (el as? kotlinx.serialization.json.JsonObject)?.entries?.associate { (k, v) ->
+                                    k to ((v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: "")
+                                }
+                            } ?: emptyMap()
+
+                            onProgress(message, step, metadata)
+                        }
+
+                        "result" -> {
+                            val data = obj["data"] ?: continue
+                            val parsed: PythonFullIngestResult = Json.decodeFromJsonElement(
+                                PythonFullIngestResult.serializer(),
+                                data,
+                            )
+                            result = FullIngestResult(
+                                success = parsed.status == "success",
+                                chunksCount = parsed.chunksCount,
+                                nodesCreated = parsed.nodesCreated,
+                                edgesCreated = parsed.edgesCreated,
+                                attachmentsProcessed = parsed.attachmentsProcessed,
+                                attachmentsFailed = parsed.attachmentsFailed,
+                                summary = parsed.summary,
+                                entities = parsed.entities,
+                                hasActionableContent = parsed.hasActionableContent,
+                                suggestedActions = parsed.suggestedActions,
+                                hasFutureDeadline = parsed.hasFutureDeadline,
+                                suggestedDeadline = parsed.suggestedDeadline,
+                                isAssignedToMe = parsed.isAssignedToMe,
+                                urgency = parsed.urgency,
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn { "Failed to parse NDJSON line: $line — ${e.message}" }
+                }
+            }
+
+            result ?: throw RuntimeException("No result received from KB ingest/full streaming")
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to ingestFull (streaming) to knowledgebase: ${e.message}" }
             FullIngestResult(
                 success = false,
                 chunksCount = 0,

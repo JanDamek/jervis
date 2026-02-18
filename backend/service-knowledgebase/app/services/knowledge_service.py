@@ -582,6 +582,187 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             urgency=summary_data.get("urgency", "normal"),
         )
 
+    async def ingest_full_streaming(
+        self,
+        request: FullIngestRequest,
+        attachments: list[tuple[bytes, str]]
+    ):
+        """
+        Streaming version of ingest_full that yields NDJSON progress events.
+
+        Same logic as ingest_full but with:
+        - Progress events at each major step
+        - Parallel RAG + Summary via asyncio.gather()
+        """
+        import hashlib, time as _time
+
+        all_content_parts = []
+        attachment_results = []
+        t0 = _time.monotonic()
+
+        logger.info("Full ingest (streaming) started source=%s type=%s attachments=%d",
+                     request.sourceUrn, request.sourceType or "?", len(attachments))
+
+        yield {"type": "progress", "step": "start", "message": "Zpracovávám obsah...", "metadata": {}}
+
+        # ── 1. Process attachments ──
+        if request.content:
+            all_content_parts.append(f"=== MAIN CONTENT ===\n{request.content}")
+
+        for file_bytes, filename in attachments:
+            try:
+                is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
+                if is_image:
+                    ocr_text = await self.tika_client.process_file(file_bytes, filename)
+                    if ocr_text and len(ocr_text.strip()) > settings.OCR_TEXT_THRESHOLD:
+                        text, content_type = ocr_text, "image_ocr"
+                    else:
+                        try:
+                            text = await self.image_service.describe_image(file_bytes)
+                            content_type = "image"
+                        except Exception:
+                            text, content_type = ocr_text, "image_ocr"
+                else:
+                    text = await self.tika_client.process_file(file_bytes, filename)
+                    content_type = "document"
+
+                all_content_parts.append(f"=== ATTACHMENT: {filename} ===\n{text}")
+                attachment_results.append(AttachmentResult(
+                    filename=filename, status="success", contentType=content_type,
+                    extractedText=text[:500] if text else None,
+                ))
+            except Exception as e:
+                logger.warning("Attachment processing failed file=%s: %s", filename, e)
+                attachment_results.append(AttachmentResult(
+                    filename=filename, status="failed", contentType="unknown", error=str(e),
+                ))
+
+        attachments_processed = sum(1 for r in attachment_results if r.status == "success")
+        attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
+
+        if attachments:
+            yield {
+                "type": "progress", "step": "attachments",
+                "message": f"Zpracováno {attachments_processed}/{len(attachments)} příloh",
+                "metadata": {"processed": str(attachments_processed), "failed": str(attachments_failed)},
+            }
+
+        # ── 2. Combine + hash ──
+        combined_content = "\n\n".join(all_content_parts)
+        content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:16]
+        content_len = len(combined_content)
+
+        yield {
+            "type": "progress", "step": "content_ready",
+            "message": f"Obsah připraven ({content_len:,} znaků)",
+            "metadata": {"content_length": str(content_len), "hash": content_hash},
+        }
+
+        # ── 3. Idempotency check ──
+        existing_chunks = await self.rag_service.count_by_source(request.sourceUrn)
+        skip_rag = False
+        rag_chunks_count = 0
+
+        if existing_chunks > 0:
+            existing_hash = await self.rag_service.get_content_hash(request.sourceUrn)
+            if existing_hash == content_hash:
+                skip_rag = True
+                rag_chunks_count = existing_chunks
+                yield {
+                    "type": "progress", "step": "hash_match",
+                    "message": f"Obsah nezměněn ({existing_chunks} chunks), přeskakuji RAG",
+                    "metadata": {"chunks": str(existing_chunks), "hash": content_hash},
+                }
+
+        ingest_req = IngestRequest(
+            clientId=request.clientId,
+            projectId=request.projectId,
+            sourceUrn=request.sourceUrn,
+            kind=request.sourceType,
+            content=combined_content,
+            metadata={
+                **request.metadata,
+                "subject": request.subject,
+                "sourceType": request.sourceType,
+                "attachmentCount": len(attachments),
+            },
+            observedAt=request.observedAt,
+        )
+
+        if skip_rag:
+            # Only run summary
+            yield {"type": "progress", "step": "summary_start", "message": "Generuji analýzu (14B model)...", "metadata": {}}
+            summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject)
+        else:
+            if existing_chunks > 0:
+                yield {"type": "progress", "step": "purge", "message": "Obsah změněn, mažu staré chunks...", "metadata": {}}
+                await self.rag_service.purge_by_source(request.sourceUrn)
+
+            # ── 4. Parallel RAG + Summary ──
+            yield {
+                "type": "progress", "step": "parallel_start",
+                "message": "Ukládám do RAG a generuji analýzu paralelně...",
+                "metadata": {},
+            }
+
+            ingest_result, summary_data = await asyncio.gather(
+                self.ingest(ingest_req, content_hash=content_hash),
+                self._generate_summary(combined_content, request.sourceType or "unknown", request.subject),
+            )
+            rag_chunks_count = ingest_result.chunks_count
+
+            yield {
+                "type": "progress", "step": "rag_done",
+                "message": f"RAG uloženo: {rag_chunks_count} chunks",
+                "metadata": {"chunks": str(rag_chunks_count)},
+            }
+
+        # ── 5. Summary result ──
+        yield {
+            "type": "progress", "step": "summary_done",
+            "message": f"Analýza: {summary_data.get('summary', '')[:100]}",
+            "metadata": {
+                "summary": summary_data.get("summary", "")[:200],
+                "entities": ", ".join(summary_data.get("entities", [])),
+                "actionable": str(summary_data.get("hasActionableContent", False)),
+                "urgency": summary_data.get("urgency", "normal"),
+                "suggestedActions": ", ".join(summary_data.get("suggestedActions", [])),
+                "hasFutureDeadline": str(summary_data.get("hasFutureDeadline", False)),
+                "suggestedDeadline": summary_data.get("suggestedDeadline") or "",
+                "assignedTo": summary_data.get("assignedTo") or "",
+            },
+        }
+
+        # ── 6. Assignment check ──
+        is_assigned = self._check_assignment(
+            assigned_to=summary_data.get("assignedTo"),
+            client_id=request.clientId or "",
+            metadata=request.metadata or {},
+        )
+
+        elapsed = _time.monotonic() - t0
+        logger.info("Full ingest (streaming) complete source=%s chunks=%d elapsed=%.1fs",
+                     request.sourceUrn, rag_chunks_count, elapsed)
+
+        # ── 7. Final result ──
+        result = FullIngestResult(
+            status="success",
+            chunks_count=rag_chunks_count,
+            nodes_created=0,
+            edges_created=0,
+            attachments_processed=attachments_processed,
+            attachments_failed=attachments_failed,
+            summary=summary_data.get("summary", request.subject or "Processing..."),
+            entities=summary_data.get("entities", []),
+            hasActionableContent=summary_data.get("hasActionableContent", False),
+            suggestedActions=summary_data.get("suggestedActions", []),
+            hasFutureDeadline=summary_data.get("hasFutureDeadline", False),
+            suggestedDeadline=summary_data.get("suggestedDeadline"),
+            isAssignedToMe=is_assigned,
+            urgency=summary_data.get("urgency", "normal"),
+        )
+        yield {"type": "result", "data": result.model_dump()}
+
     async def _generate_summary(
         self,
         content: str,

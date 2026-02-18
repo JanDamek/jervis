@@ -4,7 +4,6 @@ import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
-import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.Attachment
 import com.jervis.knowledgebase.model.FullIngestRequest
 import com.jervis.knowledgebase.model.FullIngestResult
@@ -46,7 +45,7 @@ import java.time.Instant
  */
 @Service
 class SimpleQualifierAgent(
-    private val knowledgeService: KnowledgeService,
+    private val knowledgeClient: com.jervis.configuration.KnowledgeServiceRestClient,
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val directoryStructureService: DirectoryStructureService,
@@ -73,8 +72,6 @@ class SimpleQualifierAgent(
     ): String {
         logger.info { "SIMPLE_QUALIFIER_START | taskId=${task.id} | type=${task.type} | correlationId=${task.correlationId}" }
 
-        onProgress("Zpracovávám obsah...", mapOf("step" to "start", "agent" to "simple_qualifier"))
-
         try {
             // 1. Extract clean text from content
             val cleanedContent = tikaTextExtractionService.extractPlainText(
@@ -99,37 +96,15 @@ class SimpleQualifierAgent(
                 attachments = attachments,
             )
 
-            onProgress("Indexuji do knowledge base...", mapOf("step" to "ingest", "agent" to "simple_qualifier"))
-
-            // 4. Call KB's ingestFull endpoint
-            val result: FullIngestResult = knowledgeService.ingestFull(request)
+            // 4. Call KB's ingestFull endpoint with streaming progress
+            val result: FullIngestResult = knowledgeClient.ingestFullWithProgress(request) { message, step, metadata ->
+                onProgress(message, metadata + ("step" to step) + ("agent" to "simple_qualifier"))
+            }
 
             logger.info {
                 "SIMPLE_QUALIFIER_KB_RESULT | taskId=${task.id} | success=${result.success} | " +
                     "chunks=${result.chunksCount} | hasActionable=${result.hasActionableContent} | " +
                     "suggestedActions=${result.suggestedActions}"
-            }
-
-            // Emit detailed analysis progress with full metadata for UI audit trail
-            if (result.success) {
-                onProgress(
-                    "Analýza: ${result.chunksCount} chunks, ${result.entities.size} entit, " +
-                        "actionable=${result.hasActionableContent}, urgency=${result.urgency}",
-                    mapOf(
-                        "step" to "analysis",
-                        "agent" to "simple_qualifier",
-                        "chunksCount" to result.chunksCount.toString(),
-                        "nodesCreated" to result.nodesCreated.toString(),
-                        "entities" to result.entities.joinToString(", "),
-                        "actionable" to result.hasActionableContent.toString(),
-                        "urgency" to result.urgency,
-                        "suggestedActions" to result.suggestedActions.joinToString(", "),
-                        "isAssignedToMe" to result.isAssignedToMe.toString(),
-                        "hasFutureDeadline" to result.hasFutureDeadline.toString(),
-                        "suggestedDeadline" to (result.suggestedDeadline ?: ""),
-                        "summary" to result.summary.take(200),
-                    ),
-                )
             }
 
             if (!result.success) {

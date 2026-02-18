@@ -6,6 +6,7 @@ The legacy `router` includes both for backward compatibility (KB_MODE=all).
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from starlette.responses import StreamingResponse
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
@@ -310,8 +311,9 @@ async def ingest_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@write_router.post("/ingest/full", response_model=FullIngestResult)
+@write_router.post("/ingest/full")
 async def ingest_full(
+    http_request: Request,
     clientId: str = Form(...),
     sourceUrn: str = Form(...),
     sourceType: str = Form(""),
@@ -329,7 +331,8 @@ async def ingest_full(
     - Document metadata (clientId, sourceUrn, sourceType, subject, content)
     - Multiple file attachments (images processed with vision, docs with Tika)
 
-    Returns summary and routing hints for qualification.
+    If Accept: application/x-ndjson → streams progress events as NDJSON lines.
+    Otherwise → returns single JSON response (backward compatible).
     """
     try:
         meta = json.loads(metadata)
@@ -351,7 +354,16 @@ async def ingest_full(
             file_bytes = await attachment.read()
             attachment_list.append((file_bytes, attachment.filename))
 
-        return await service.ingest_full(request, attachment_list)
+        # Check if client wants streaming NDJSON
+        accept = http_request.headers.get("accept", "")
+        if "ndjson" in accept:
+            async def _stream():
+                async for event in service.ingest_full_streaming(request, attachment_list):
+                    yield json.dumps(event) + "\n"
+
+            return StreamingResponse(_stream(), media_type="application/x-ndjson")
+        else:
+            return await service.ingest_full(request, attachment_list)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
