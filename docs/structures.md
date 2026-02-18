@@ -112,38 +112,32 @@ embedding = await ollama.embed(
 
 ### VRAM Priority Routing (Step 5)
 
-All models co-locate on GPU — Ollama handles CPU offload for layers that don't fit in VRAM. When a **bigger** model is requested (e.g., 30B arrives while 14B is loaded), the router:
+Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). Non-embedding models (14b) fall back to CPU when :30b is loaded.
+
+When a **bigger** model is requested (e.g., 30B arrives while 14B is loaded):
 
 1. Marks GPU as `loading_in_progress` (other requests → CPU during swap)
 2. Waits for active requests to complete
 3. Unloads all models
 4. Loads the bigger model first (VRAM priority)
-5. Reloads previous models alongside (biggest first)
+5. Reloads only **embedding** models alongside (not 14b — too much CPU offload)
 6. Clears `loading_in_progress` flag
 
-When a **smaller** model is requested, it loads alongside existing models without unloading.
+When an **embedding** model is requested, it loads alongside existing models. Non-embedding smaller models (14b) with :30b loaded → CPU fallback.
 
-```python
-# router_core.py step 5:
-if requested_vram > current_max_vram:
-    # Bigger model → unload all → load big → reload previous
-    gpu.loading_in_progress = True
-    await gpu_pool.unload_all(gpu)
-    await gpu_pool.load_model(gpu, model)  # big model first
-    for prev in sorted(previous, key=size, reverse=True):
-        await gpu_pool.load_model(gpu, prev)  # reload alongside
-    gpu.loading_in_progress = False
-else:
-    # Smaller — load alongside (Ollama CPU offload)
-    await gpu_pool.load_model(gpu, model)
+```
+GPU state when 30b active:
+  qwen3-coder-tool:30b  (~25GB)  → GPU (VRAM priority)
+  qwen3-embedding:8b    (~5GB)   → GPU (alongside)
+  qwen2.5:14b                    → CPU fallback (would cause timeouts)
 ```
 
 ### Benefits
 
 1. **VRAM priority for big models** - 30B always gets GPU, loaded first
-2. **Model co-location** - All models stay on GPU (Ollama CPU offload for overflow)
-3. **Automatic fallback** - Other requests use CPU during model swap
-4. **No model thrashing** - Smaller models load alongside, no unload needed
+2. **Selective co-location** - Only embedding alongside 30b (14b → CPU)
+3. **Automatic fallback** - Non-embedding requests use CPU when 30b loaded
+4. **No model thrashing** - `loading_in_progress` prevents concurrent routing during swap
 5. **Transparent** - Services don't know about routing logic
 
 ---
@@ -672,14 +666,14 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  │  GPU Instance (:11434)      │  │  CPU Instance (:11435)           │ │
 │  │  P40 24GB VRAM              │  │  Fallback for preempted work     │ │
 │  │                             │  │                                   │ │
-│  │  All models co-located:     │  │  OLLAMA_NUM_PARALLEL=10          │ │
+│  │  30b + embedding only:       │  │  OLLAMA_NUM_PARALLEL=10          │ │
 │  │    qwen3-coder-tool:30b     │  │  OLLAMA_NUM_THREADS=18           │ │
-│  │    qwen2.5:14b              │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
-│  │    qwen3-embedding:8b       │  │  qwen2.5:7b + 14b + embed:8b     │ │
-│  │    (~40GB, CPU offload)     │  │                                   │ │
-│  │                             │  │  Always loaded, always available  │ │
-│  │  Ollama offloads overflow   │  │  as fallback when GPU busy        │ │
-│  │  layers to CPU RAM          │  │                                   │ │
+│  │    qwen3-embedding:8b       │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
+│  │    (~30GB, some CPU offload) │  │  qwen2.5:7b + 14b + embed:8b    │ │
+│  │                             │  │                                   │ │
+│  │  14b → CPU (too much       │  │  Always loaded, always available  │ │
+│  │  offload with 30b)         │  │  as fallback when GPU busy        │ │
+│  │                             │  │                                   │ │
 │  └──────────────────────────────┘  └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -697,14 +691,14 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 
 ### Model Co-location on GPU
 
-All models co-locate on GPU simultaneously. Ollama handles CPU offload for layers that don't fit in VRAM.
+Only embedding models co-locate alongside :30b. Non-embedding models (14b) fall back to CPU when :30b is loaded — too much CPU offload causes timeouts.
 
-| Model | VRAM Est. | Purpose |
-|-------|-----------|---------|
-| qwen3-coder-tool:30b | ~25GB | Orchestrator (biggest → VRAM priority) |
-| qwen2.5:14b | ~10GB | Background qualification |
-| qwen3-embedding:8b | ~5GB | KB embeddings |
-| **Total** | **~40GB** | Exceeds 24GB → Ollama offloads to CPU RAM |
+| Model | VRAM Est. | Location | Purpose |
+|-------|-----------|----------|---------|
+| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | Orchestrator |
+| qwen3-embedding:8b | ~5GB | GPU (alongside 30b) | KB embeddings |
+| qwen2.5:14b | ~10GB | CPU (when 30b loaded) | Background qualification |
+| **GPU Total** | **~30GB** | Some CPU offload | Acceptable performance |
 
 ### Auto-Reservation Protocol (no announce/release API)
 
