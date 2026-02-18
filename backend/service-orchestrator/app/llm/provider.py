@@ -177,6 +177,7 @@ class LLMProvider:
         tools: list[dict] | None = None,
         temperature: float = 0.1,
         max_tokens: int = 8192,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict:
         """Call LLM with streaming + heartbeat liveness detection.
 
@@ -189,11 +190,11 @@ class LLMProvider:
         # Tool calls can't be reliably streamed — use blocking call
         if tools:
             return await self._blocking_completion(
-                config, messages, tools, temperature, max_tokens,
+                config, messages, tools, temperature, max_tokens, extra_headers,
             )
 
         return await self._streaming_completion(
-            config, messages, temperature, max_tokens,
+            config, messages, temperature, max_tokens, extra_headers,
         )
 
     async def _streaming_completion(
@@ -202,6 +203,7 @@ class LLMProvider:
         messages: list[dict],
         temperature: float,
         max_tokens: int,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict:
         """Stream LLM response with heartbeat timeout."""
         kwargs: dict = {
@@ -216,8 +218,10 @@ class LLMProvider:
             kwargs["api_base"] = config["api_base"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
 
-        logger.info("LLM streaming call: model=%s", config["model"])
+        logger.info("LLM streaming call: model=%s headers=%s", config["model"], extra_headers or {})
 
         response = await litellm.acompletion(**kwargs)
 
@@ -247,6 +251,7 @@ class LLMProvider:
         tools: list[dict] | None,
         temperature: float,
         max_tokens: int,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict:
         """Blocking LLM call (for tool calls)."""
         kwargs: dict = {
@@ -262,8 +267,10 @@ class LLMProvider:
             kwargs["num_ctx"] = config["num_ctx"]
         if tools:
             kwargs["tools"] = tools
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
 
-        logger.info("LLM blocking call (tools): model=%s api_base=%s", config["model"], config.get("api_base"))
+        logger.info("LLM blocking call (tools): model=%s api_base=%s headers=%s", config["model"], config.get("api_base"), extra_headers or {})
         # DEBUG: Log request being sent to Ollama
         logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
@@ -324,6 +331,7 @@ class LLMProvider:
         tier: ModelTier = ModelTier.LOCAL_STANDARD,
         temperature: float = 0.1,
         max_tokens: int = 8192,
+        extra_headers: dict[str, str] | None = None,
     ) -> AsyncIterator:
         """Stream LLM response (raw chunks for caller to process)."""
         config = TIER_CONFIG[tier]
@@ -340,6 +348,8 @@ class LLMProvider:
             kwargs["api_base"] = config["api_base"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
+        if extra_headers:
+            kwargs["extra_headers"] = extra_headers
 
         response = await litellm.acompletion(**kwargs)
         return response

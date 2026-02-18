@@ -128,13 +128,17 @@ async def llm_with_cloud_fallback(
             "Cloud modely nejsou povoleny v projektu."
         )
 
+    # Priority headers for Ollama Router (FOREGROUND → CRITICAL)
+    headers = priority_headers(state)
+
     # Try local first (qwen3 supports up to 256k context)
     local_tier = escalation.select_local_tier(context_tokens)
-    logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s", local_tier.value, bool(tools))
+    logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s, headers=%s", local_tier.value, bool(tools), headers)
     try:
         response = await llm_provider.completion(
             messages=messages, tier=local_tier,
             max_tokens=max_tokens, temperature=temperature, tools=tools,
+            extra_headers=headers,
         )
         message = response.choices[0].message
         content = message.content
