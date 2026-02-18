@@ -34,7 +34,6 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -224,11 +223,10 @@ class KnowledgeServiceRestClient(
                 throw RuntimeException("KB ingest/full streaming returned ${httpResponse.status}: $errorBody")
             }
 
-            val channel = httpResponse.bodyAsChannel()
+            val responseText = httpResponse.bodyAsText()
             var result: FullIngestResult? = null
 
-            while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
+            for (line in responseText.lineSequence()) {
                 if (line.isBlank()) continue
 
                 try {
