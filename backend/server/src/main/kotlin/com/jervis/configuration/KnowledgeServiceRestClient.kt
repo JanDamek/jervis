@@ -19,6 +19,7 @@ import com.jervis.knowledgebase.service.graphdb.model.GraphNode
 import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -34,6 +35,7 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -223,10 +225,12 @@ class KnowledgeServiceRestClient(
                 throw RuntimeException("KB ingest/full streaming returned ${httpResponse.status}: $errorBody")
             }
 
-            val responseText = httpResponse.bodyAsText()
+            // Stream NDJSON lines as they arrive (like WhisperRestClient SSE pattern)
+            val channel = httpResponse.bodyAsChannel()
             var result: FullIngestResult? = null
 
-            for (line in responseText.lineSequence()) {
+            while (true) {
+                val line = channel.readUTF8Line() ?: break
                 if (line.isBlank()) continue
 
                 try {
