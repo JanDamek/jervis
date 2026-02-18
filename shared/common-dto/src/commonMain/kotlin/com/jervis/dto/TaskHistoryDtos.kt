@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 data class TaskHistoryNodeDto(
     val node: String,
     val label: String,
+    val durationMs: Long? = null,
 )
 
 /**

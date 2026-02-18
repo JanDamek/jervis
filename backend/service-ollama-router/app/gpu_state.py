@@ -28,6 +28,7 @@ class GpuBackend:
     reserved_at: float | None = None
     last_activity: float = field(default_factory=time.monotonic)
     healthy: bool = True
+    loading_in_progress: bool = False    # True during model swap sequences (unload+load)
 
     @property
     def used_vram_gb(self) -> float:
@@ -122,8 +123,8 @@ class GpuPool:
         return max(candidates, key=lambda b: b.free_vram_gb)
 
     def find_unreserved(self) -> GpuBackend | None:
-        """Find a healthy GPU backend not reserved by orchestrator."""
-        candidates = [b for b in self.healthy_backends if b.reserved_by is None]
+        """Find a healthy GPU backend not reserved and not loading."""
+        candidates = [b for b in self.healthy_backends if b.reserved_by is None and not b.loading_in_progress]
         if not candidates:
             return None
         # Prefer least busy
@@ -137,23 +138,24 @@ class GpuPool:
         return min(backends, key=lambda b: b.active_request_count())
 
     def find_unreserved_with_model(self, model: str) -> GpuBackend | None:
-        """Find a healthy unreserved GPU that already has this model loaded."""
+        """Find a healthy unreserved GPU (not loading) that already has this model."""
         for b in self.healthy_backends:
-            if b.has_model(model) and b.reserved_by is None:
+            if b.has_model(model) and b.reserved_by is None and not b.loading_in_progress:
                 return b
         return None
 
     def find_unreserved_with_free_vram(self, model: str) -> GpuBackend | None:
-        """Find a healthy unreserved GPU with enough free VRAM for the model."""
+        """Find a healthy unreserved GPU (not loading) with enough free VRAM."""
         needed = estimate_vram(model)
-        candidates = [b for b in self.healthy_backends if b.free_vram_gb >= needed and b.reserved_by is None]
+        candidates = [b for b in self.healthy_backends
+                      if b.free_vram_gb >= needed and b.reserved_by is None and not b.loading_in_progress]
         if not candidates:
             return None
         return max(candidates, key=lambda b: b.free_vram_gb)
 
     def find_unreserved_least_busy(self) -> GpuBackend | None:
-        """Find the least busy healthy unreserved GPU."""
-        candidates = [b for b in self.healthy_backends if b.reserved_by is None]
+        """Find the least busy healthy unreserved GPU (not loading)."""
+        candidates = [b for b in self.healthy_backends if b.reserved_by is None and not b.loading_in_progress]
         if not candidates:
             return None
         return min(candidates, key=lambda b: b.active_request_count())
@@ -226,13 +228,8 @@ class GpuPool:
         from .config import settings
         from .models import EMBEDDING_MODELS
 
-        # When loading :30b - unload other models to maximize VRAM for the large model
-        if ":30b" in model:
-            if backend.loaded_models:
-                logger.warning("Loading :30b model - unloading all other models to maximize VRAM")
-                await self.unload_all(backend, http_client)
-        # When loading smaller models alongside :30b - allow co-location
-        # Ollama will use CPU offload if needed (slower but works)
+        # All models co-locate on GPU — Ollama handles CPU offload for layers
+        # that don't fit in VRAM. Unloading is handled by the router, not here.
 
         if keep_alive is None:
             keep_alive = settings.default_keep_alive

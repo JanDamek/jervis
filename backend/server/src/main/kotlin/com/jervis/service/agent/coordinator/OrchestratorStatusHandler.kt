@@ -349,6 +349,7 @@ class OrchestratorStatusHandler(
 
     /**
      * Save a completed task to the task_history collection for UI display.
+     * Includes orchestrator step durations computed from persisted orchestratorSteps.
      */
     private suspend fun saveTaskHistory(task: TaskDocument, status: String) {
         try {
@@ -360,6 +361,30 @@ class OrchestratorStatusHandler(
             } catch (_: Exception) { null }
 
             val workflowStepsJson = workflowTracker.getStepsAsJson(task.id.value.toString())
+
+            // Reload task to get latest orchestratorSteps (they were $push'd during processing)
+            val freshTask = taskRepository.getById(task.id) ?: task
+            val orchestratorStepsJson = if (freshTask.orchestratorSteps.isNotEmpty()) {
+                try {
+                    val now = java.time.Instant.now()
+                    val steps = freshTask.orchestratorSteps
+                    val jsonArray = kotlinx.serialization.json.buildJsonArray {
+                        steps.forEachIndexed { index, step ->
+                            val nextTimestamp = if (index < steps.lastIndex) steps[index + 1].timestamp else now
+                            val durationMs = java.time.Duration.between(step.timestamp, nextTimestamp).toMillis()
+                            add(kotlinx.serialization.json.buildJsonObject {
+                                put("node", kotlinx.serialization.json.JsonPrimitive(step.node))
+                                put("label", kotlinx.serialization.json.JsonPrimitive(nodeLabels[step.node] ?: step.node))
+                                put("durationMs", kotlinx.serialization.json.JsonPrimitive(durationMs))
+                            })
+                        }
+                    }
+                    jsonArray.toString()
+                } catch (e: Exception) {
+                    logger.debug(e) { "Failed to serialize orchestrator steps for history" }
+                    null
+                }
+            } else null
 
             val preview = task.content.take(100).let {
                 if (task.content.length > 100) "$it..." else it
@@ -375,11 +400,33 @@ class OrchestratorStatusHandler(
                     status = status,
                     processingMode = task.processingMode.name,
                     workflowStepsJson = workflowStepsJson,
+                    orchestratorStepsJson = orchestratorStepsJson,
                 ),
             )
-            logger.info { "TASK_HISTORY_SAVED | taskId=${task.id} | status=$status" }
+            logger.info { "TASK_HISTORY_SAVED | taskId=${task.id} | status=$status | orchestratorSteps=${freshTask.orchestratorSteps.size}" }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to save task history for task ${task.id}" }
         }
     }
+
+    /** Node name → Czech label (shared with UI). */
+    private val nodeLabels = mapOf(
+        "intake" to "Analýza úlohy",
+        "evidence" to "Shromažďování kontextu",
+        "evidence_pack" to "Shromažďování kontextu",
+        "plan" to "Plánování",
+        "plan_steps" to "Plánování kroků",
+        "execute" to "Provádění",
+        "execute_step" to "Provádění kroku",
+        "evaluate" to "Vyhodnocení",
+        "finalize" to "Dokončení",
+        "respond" to "Generování odpovědi",
+        "clarify" to "Upřesnění",
+        "decompose" to "Dekompozice na cíle",
+        "select_goal" to "Výběr cíle",
+        "advance_step" to "Další krok",
+        "advance_goal" to "Další cíl",
+        "git_operations" to "Git operace",
+        "report" to "Generování reportu",
+    )
 }

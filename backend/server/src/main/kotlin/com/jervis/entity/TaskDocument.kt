@@ -152,6 +152,8 @@ data class TaskDocument(
     val qualificationStartedAt: Instant? = null,
     /** Accumulated qualification progress steps — persisted for history display. */
     val qualificationSteps: List<QualificationStepRecord> = emptyList(),
+    /** Accumulated orchestrator progress steps — persisted for history display. */
+    val orchestratorSteps: List<OrchestratorStepRecord> = emptyList(),
 )
 
 /**
@@ -182,4 +184,17 @@ data class QualificationStepRecord(
     val step: String,
     val message: String,
     val metadata: Map<String, String> = emptyMap(),
+)
+
+/**
+ * A single orchestrator progress step, stored in TaskDocument for history.
+ */
+data class OrchestratorStepRecord(
+    val timestamp: Instant,
+    val node: String,
+    val message: String,
+    val goalIndex: Int = 0,
+    val totalGoals: Int = 0,
+    val stepIndex: Int = 0,
+    val totalSteps: Int = 0,
 )

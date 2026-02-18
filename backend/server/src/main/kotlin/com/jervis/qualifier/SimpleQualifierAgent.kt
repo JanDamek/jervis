@@ -35,13 +35,13 @@ import java.time.Instant
  *       ├─ deadline < scheduleLeadDays away → READY_FOR_GPU (too close, do now)
  *       └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
  *            scheduledAt = deadline - scheduleLeadDays
- *            original task → DISPATCHED_GPU (indexed, done)
+ *            original task → DONE (indexed, done)
  *
  *    C) hasActionableContent=true (no assignment, no deadline)
  *       → READY_FOR_GPU (execute when available)
  *
  *    D) hasActionableContent=false
- *       → DISPATCHED_GPU (indexed only, no action needed)
+ *       → DONE (indexed only, no action needed)
  */
 @Service
 class SimpleQualifierAgent(
@@ -166,8 +166,8 @@ class SimpleQualifierAgent(
      * Task routing based on KB ingest analysis.
      *
      * Decision tree:
-     * 1. Not actionable → indexed only (DISPATCHED_GPU)
-     * 2. Actionable + only simple actions → handle locally (DISPATCHED_GPU)
+     * 1. Not actionable → indexed only (DONE)
+     * 2. Actionable + only simple actions → handle locally (DONE)
      * 3. Actionable + complex + assigned to me → immediate (READY_FOR_GPU)
      * 4. Actionable + complex + future deadline → schedule or immediate
      * 5. Actionable + complex → immediate (READY_FOR_GPU)
@@ -191,7 +191,7 @@ class SimpleQualifierAgent(
                 mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Informační obsah", "result" to "Zaindexováno"),
             )
             onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier"))
-            return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "info_only")
+            return RoutingDecision(TaskStateEnum.DONE, "info_only")
         }
 
         // Step 2: Simple actions → handle locally without orchestrator
@@ -202,7 +202,7 @@ class SimpleQualifierAgent(
                 "SIMPLE_QUALIFIER_ROUTE_SIMPLE | taskId=${task.id} | " +
                     "actions=${result.suggestedActions} | summary=${result.summary.take(100)}"
             }
-            return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "simple_action_handled")
+            return RoutingDecision(TaskStateEnum.DONE, "simple_action_handled")
         }
 
         // Step 3: Complex + assigned to me → immediate
@@ -252,8 +252,8 @@ class SimpleQualifierAgent(
                     "Naplánováno na ${scheduledAt} (termín: ${result.suggestedDeadline})",
                     mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Naplánováno", "result" to "Zaindexováno + naplánováno"),
                 )
-                // Original task is dispatched (indexed), scheduled copy will fire later
-                return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "scheduled", scheduledCopyCreated = true)
+                // Original task is done (indexed), scheduled copy will fire later
+                return RoutingDecision(TaskStateEnum.DONE, "scheduled", scheduledCopyCreated = true)
             }
         }
 
@@ -315,7 +315,7 @@ class SimpleQualifierAgent(
     /**
      * Create a scheduled copy of the task for future execution.
      *
-     * The original task is marked as DISPATCHED_GPU (indexed only).
+     * The original task is marked as DONE (indexed only).
      * The copy is created as a new SCHEDULED_TASK with scheduledAt set,
      * which the BackgroundEngine scheduler loop will pick up automatically.
      */

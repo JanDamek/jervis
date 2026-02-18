@@ -112,8 +112,7 @@ class BackgroundEngine(
         // Recover tasks stuck in transient states from previous pod crash
         scope.launch {
             try {
-                val staleThreshold = java.time.Instant.now().minus(Duration.ofMinutes(10))
-                val resetCount = taskService.resetStaleTasks(staleThreshold)
+                val resetCount = taskService.resetStaleTasks()
                 if (resetCount > 0) {
                     logger.info { "Recovered $resetCount stale tasks after pod restart" }
                 } else {

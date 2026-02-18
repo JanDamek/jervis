@@ -445,8 +445,9 @@ class IndexingQueueRpcImpl(
     }
 
     /**
-     * DB-level paginated query for DISPATCHED_GPU tasks (Hotovo section).
+     * DB-level paginated query for DONE/DISPATCHED_GPU tasks (Hotovo section).
      * Uses MongoDB skip/limit instead of loading all tasks into RAM.
+     * Includes both DONE (info_only/simple_action) and DISPATCHED_GPU (legacy/orchestrated).
      */
     private suspend fun collectIndexedTasksPaginated(
         types: List<TaskTypeEnum>,
@@ -455,7 +456,7 @@ class IndexingQueueRpcImpl(
         page: Int,
         pageSize: Int,
     ): Pair<List<PipelineItemDto>, Long> {
-        val criteria = Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
+        val criteria = Criteria.where("state").`in`(listOf(TaskStateEnum.DONE.name, TaskStateEnum.DISPATCHED_GPU.name))
             .and("type").`in`(types.map { it.name })
 
         // Count total (lightweight)

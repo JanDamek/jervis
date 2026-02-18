@@ -157,24 +157,43 @@ class OllamaRouter:
             if loaded:
                 return await self._send_to_gpu(gpu, request)
 
-        # ── 5. Idle unreserved GPU (unload + load) or CPU ───────────────
-        # Only swap models within the same set — never cross-set swap for NORMAL
-        # requests. This prevents 30B↔14B swapping between orchestrator LLM calls.
+        # ── 5. Unreserved GPU (swap models) or CPU ────────────────────────
+        # Bigger model = higher VRAM priority.  When a larger model is requested,
+        # unload current models, load the big one first, then reload previous
+        # models alongside it (Ollama handles CPU offload for layers that don't fit).
+        # unload_all() waits for active requests to complete before unloading.
         gpu = self.gpu_pool.find_unreserved_least_busy()
-        if gpu and gpu.active_request_count() == 0:
-            requested_set = MODEL_TO_SET.get(model)
-            current_set = gpu.current_set
-            if current_set and requested_set and current_set != requested_set:
-                logger.info(
-                    "CROSS_SET_SKIP: GPU %s has '%s' set, request needs '%s' → CPU fallback",
-                    gpu.name, current_set, requested_set,
-                )
-                return await self._send_to_cpu(request)
+        if gpu:
+            from .gpu_state import estimate_vram
+            requested_vram = estimate_vram(model)
+            current_max_vram = max(gpu.loaded_models.values()) if gpu.loaded_models else 0
 
-            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-            loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-            if loaded:
-                return await self._send_to_gpu(gpu, request)
+            if requested_vram > current_max_vram:
+                # Bigger model arriving — save previous models, unload, load big first, reload others
+                previous_models = list(gpu.loaded_models.keys())
+                logger.info(
+                    "VRAM_PRIORITY: GPU %s — bigger model %s (%.0fGB) > current max %.0fGB, "
+                    "unloading %s → load %s first → then reload previous",
+                    gpu.name, model, requested_vram, current_max_vram,
+                    previous_models, model,
+                )
+                gpu.loading_in_progress = True
+                try:
+                    await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+                    loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                    if loaded:
+                        # Reload previous models alongside (biggest first for VRAM priority)
+                        for prev_model in sorted(previous_models, key=lambda m: estimate_vram(m), reverse=True):
+                            if prev_model != model:
+                                await self.gpu_pool.load_model(gpu, prev_model, self._mgmt_client)
+                        return await self._send_to_gpu(gpu, request)
+                finally:
+                    gpu.loading_in_progress = False
+            else:
+                # Same size or smaller — load alongside existing (Ollama handles CPU offload)
+                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                if loaded:
+                    return await self._send_to_gpu(gpu, request)
 
         return await self._send_to_cpu(request)
 
@@ -436,7 +455,10 @@ class OllamaRouter:
             self._bg_load_tasks[gpu_name] = task
 
     async def _delayed_background_load(self, gpu: GpuBackend) -> None:
-        """After a delay, load background model set onto GPU."""
+        """After a delay, load background model set onto GPU alongside existing models.
+
+        All models co-locate — Ollama handles CPU offload for layers that don't fit VRAM.
+        """
         try:
             await asyncio.sleep(settings.background_load_delay_s)
 
@@ -444,13 +466,10 @@ class OllamaRouter:
             if gpu.name in self._reservations:
                 return
 
-            # CRITICAL: If :30b model still loaded, don't load background set (won't fit)
-            if any(":30b" in m for m in gpu.loaded_models):
-                logger.warning("GPU %s has :30b model, skipping background load (won't fit)", gpu.name)
-                return
-
-            logger.info("Loading background model set on GPU %s", gpu.name)
-            await self.gpu_pool.unload_all(gpu, self._mgmt_client)
+            logger.info(
+                "Loading background model set on GPU %s (alongside existing: %s)",
+                gpu.name, list(gpu.loaded_models.keys()),
+            )
             await self.gpu_pool.load_model_set(gpu, "background", self._mgmt_client)
         except asyncio.CancelledError:
             logger.info("Background model loading cancelled for GPU %s", gpu.name)

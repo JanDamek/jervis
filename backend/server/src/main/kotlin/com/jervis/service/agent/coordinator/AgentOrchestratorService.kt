@@ -323,6 +323,7 @@ class AgentOrchestratorService(
             state = TaskStateEnum.PYTHON_ORCHESTRATING,
             orchestratorThreadId = streamResponse.threadId,
             orchestrationStartedAt = java.time.Instant.now(),
+            orchestratorSteps = emptyList(), // Clear previous steps on new dispatch
         )
         taskRepository.save(updatedTask)
 

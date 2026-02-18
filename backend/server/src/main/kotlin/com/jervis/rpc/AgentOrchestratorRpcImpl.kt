@@ -672,7 +672,19 @@ class AgentOrchestratorRpcImpl(
             .findAllByOrderByCompletedAtDesc(PageRequest.of(offset / limit.coerceAtLeast(1), limit.coerceAtLeast(1)))
             .toList()
             .map { doc ->
-                val nodes = doc.workflowStepsJson?.let { json ->
+                // Prefer orchestratorSteps (has durations) over workflowSteps
+                val nodes = doc.orchestratorStepsJson?.let { json ->
+                    try {
+                        val elements = Json.decodeFromString<List<kotlinx.serialization.json.JsonObject>>(json)
+                        elements.map { obj ->
+                            com.jervis.dto.TaskHistoryNodeDto(
+                                node = obj["node"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: "",
+                                label = obj["label"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: "",
+                                durationMs = obj["durationMs"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() },
+                            )
+                        }
+                    } catch (_: Exception) { null }
+                } ?: doc.workflowStepsJson?.let { json ->
                     try {
                         Json.decodeFromString<List<com.jervis.dto.ui.ChatMessage.WorkflowStep>>(json)
                             .map { step ->
@@ -818,7 +830,7 @@ class AgentOrchestratorRpcImpl(
                 else -> runningTask.type.toString()
             }
             mapOf(
-                "runningProjectId" to (runningTask.projectId?.toString() ?: "none"),
+                "runningProjectId" to (runningTask.projectId?.toString() ?: "__background__"),
                 "runningProjectName" to projectName,
                 "runningTaskPreview" to taskPreview,
                 "runningTaskType" to taskTypeLabel,

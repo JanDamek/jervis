@@ -23,4 +23,6 @@ data class TaskHistoryDocument(
     val processingMode: String, // "FOREGROUND", "BACKGROUND"
     /** JSON-serialized workflow steps (same format as OrchestratorWorkflowTracker) */
     val workflowStepsJson: String? = null,
+    /** JSON-serialized orchestrator steps with durations [{node, label, durationMs}] */
+    val orchestratorStepsJson: String? = null,
 )

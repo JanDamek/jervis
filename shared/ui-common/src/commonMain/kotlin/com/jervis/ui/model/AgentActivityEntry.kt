@@ -102,6 +102,7 @@ data class NodeEntry(
     val node: String,
     val label: String,
     val status: NodeStatus = NodeStatus.PENDING,
+    val durationMs: Long? = null,
 )
 
 /**

@@ -43,6 +43,7 @@ import com.jervis.ui.design.JIconButton
 import com.jervis.ui.model.NodeStatus
 import com.jervis.ui.model.PendingQueueItem
 import com.jervis.ui.model.TaskHistoryEntry
+import kotlin.time.Clock
 
 /** Node name to Czech label for orchestrator pipeline steps. */
 internal val nodeLabels = mapOf(
@@ -199,8 +200,71 @@ internal fun AgentSectionContent(
             }
         }
 
-        // Pipeline step list — all nodes with ✓/⟳/○ status
-        if (runningNodes.isNotEmpty()) {
+        // Pipeline step timeline — nodes with timestamps and durations
+        val steps = orchestratorProgress?.steps ?: emptyList()
+        if (steps.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Elapsed time since start
+            val nowMs = remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(1000)
+                    nowMs.value = Clock.System.now().toEpochMilliseconds()
+                }
+            }
+            val elapsed = formatDurationMs(nowMs.value - (orchestratorProgress?.startedAtMs ?: nowMs.value))
+            Text(
+                text = "Celkový čas: $elapsed",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                steps.forEachIndexed { index, step ->
+                    val isLast = index == steps.lastIndex
+                    val isRunning = isLast // last step is always the current one
+                    val (icon, color) = if (isRunning) {
+                        "⟳" to MaterialTheme.colorScheme.primary
+                    } else {
+                        "✓" to MaterialTheme.colorScheme.tertiary
+                    }
+                    // Duration: for completed steps, diff to next; for running, diff to now
+                    val durationMs = if (isRunning) {
+                        nowMs.value - step.timestampMs
+                    } else {
+                        steps[index + 1].timestampMs - step.timestampMs
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp),
+                    ) {
+                        Text(
+                            text = icon,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = color,
+                            modifier = Modifier.width(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${step.node} — ${step.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isRunning) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = formatDurationMs(durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        } else if (runningNodes.isNotEmpty()) {
+            // Fallback: simple node list without timestamps (pre-existing behavior)
             Spacer(modifier = Modifier.height(4.dp))
             Column(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -467,7 +531,7 @@ private fun TaskHistoryItem(entry: TaskHistoryEntry) {
             )
         }
 
-        // Expandable node list
+        // Expandable node list with durations
         AnimatedVisibility(visible = expanded) {
             Column(
                 modifier = Modifier.padding(start = 8.dp, top = 4.dp),
@@ -481,8 +545,7 @@ private fun TaskHistoryItem(entry: TaskHistoryEntry) {
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.heightIn(min = 24.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp),
                     ) {
                         Text(
                             text = icon,
@@ -490,11 +553,20 @@ private fun TaskHistoryItem(entry: TaskHistoryEntry) {
                             color = color,
                             modifier = Modifier.width(16.dp),
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${node.node} — ${node.label}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
                         )
+                        if (node.durationMs != null && node.durationMs > 0) {
+                            Text(
+                                text = formatDurationMs(node.durationMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -502,5 +574,17 @@ private fun TaskHistoryItem(entry: TaskHistoryEntry) {
 
         Spacer(modifier = Modifier.height(4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+/** Format milliseconds to human-readable duration (e.g. "45s", "2m 15s", "1h 3m"). */
+internal fun formatDurationMs(ms: Long): String {
+    val seconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes % 60}m"
+        minutes > 0 -> "${minutes}m ${seconds % 60}s"
+        else -> "${seconds}s"
     }
 }

@@ -544,6 +544,27 @@ class MainViewModel(
             }
 
             is JervisEvent.OrchestratorTaskProgress -> {
+                val nowMs = Clock.System.now().toEpochMilliseconds()
+                val existing = _orchestratorProgress.value
+                val existingSteps = if (existing?.taskId == event.taskId) existing.steps else emptyList()
+                val startedAt = if (existing?.taskId == event.taskId && existing.startedAtMs > 0) existing.startedAtMs else nowMs
+
+                // Add new step if node changed (avoid duplicates for same node updates)
+                val newSteps = if (existingSteps.isEmpty() || existingSteps.last().node != event.node) {
+                    val label = nodeLabels[event.node] ?: event.node
+                    existingSteps + OrchestratorProgressStep(
+                        timestampMs = nowMs,
+                        node = event.node,
+                        label = label,
+                        message = event.message,
+                    )
+                } else {
+                    // Update message on last step (same node)
+                    existingSteps.toMutableList().also {
+                        it[it.lastIndex] = it.last().copy(message = event.message)
+                    }
+                }
+
                 _orchestratorProgress.value = OrchestratorProgressInfo(
                     taskId = event.taskId,
                     node = event.node,
@@ -553,6 +574,8 @@ class MainViewModel(
                     totalGoals = event.totalGoals,
                     stepIndex = event.stepIndex,
                     totalSteps = event.totalSteps,
+                    startedAtMs = startedAt,
+                    steps = newSteps,
                 )
                 updateTaskHistory(event.taskId, event.node)
                 // Update chat PROGRESS message with current orchestrator status
@@ -918,6 +941,7 @@ class MainViewModel(
                         } else null
                     }
                     _backgroundQueue.value = backgroundItems
+                    _backgroundTotalCount.value = backgroundItems.size.toLong()
 
                     // Orchestrator health
                     val healthy = response.metadata["orchestratorHealthy"]?.toBooleanStrictOrNull() ?: true
@@ -1751,7 +1775,7 @@ class MainViewModel(
             startTime = formatIsoTime(startedAt),
             endTime = formatIsoTime(completedAt),
             status = status,
-            nodes = nodes.map { NodeEntry(node = it.node, label = it.label, status = NodeStatus.DONE) },
+            nodes = nodes.map { NodeEntry(node = it.node, label = it.label, status = NodeStatus.DONE, durationMs = it.durationMs) },
         )
     }
 
@@ -1940,6 +1964,16 @@ class MainViewModel(
 }
 
 /**
+ * A single orchestrator progress step with timestamp (for timeline display).
+ */
+data class OrchestratorProgressStep(
+    val timestampMs: Long,
+    val node: String,
+    val label: String,
+    val message: String,
+)
+
+/**
  * Orchestrator task progress info pushed from Python via Kotlin.
  * Displayed in UI to show real-time orchestration progress.
  */
@@ -1952,6 +1986,8 @@ data class OrchestratorProgressInfo(
     val totalGoals: Int = 0,
     val stepIndex: Int = 0,
     val totalSteps: Int = 0,
+    val startedAtMs: Long = 0,
+    val steps: List<OrchestratorProgressStep> = emptyList(),
 )
 
 /**

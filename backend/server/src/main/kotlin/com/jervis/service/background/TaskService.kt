@@ -463,6 +463,16 @@ class TaskService(
     }
 
     /**
+     * Append an orchestrator progress step to the task's history.
+     * Uses MongoDB $push for atomic append without race conditions.
+     */
+    suspend fun appendOrchestratorStep(taskId: TaskId, step: com.jervis.entity.OrchestratorStepRecord) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().push("orchestratorSteps", step)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
      * Atomically claim a task for GPU execution using MongoDB findAndModify.
      * Returns null if the task was already claimed by another instance.
      */
@@ -517,7 +527,7 @@ class TaskService(
      * NOTE: FOREGROUND tasks in DISPATCHED_GPU are completed chat tasks, NOT stuck tasks.
      * They must remain in DISPATCHED_GPU to prevent re-execution after restart.
      */
-    suspend fun resetStaleTasks(staleThreshold: Instant): Int {
+    suspend fun resetStaleTasks(): Int {
         var resetCount = 0
 
         // Migration: set processingMode on old tasks that don't have the field
@@ -528,14 +538,31 @@ class TaskService(
             logger.warn { "MIGRATION: Set processingMode=BACKGROUND on ${fixResult.modifiedCount} tasks missing the field" }
         }
 
-        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND tasks only)
+        // Migration: BACKGROUND + DISPATCHED_GPU + no orchestratorThreadId → DONE
+        // These are old info_only/simple_action tasks that were terminal but used DISPATCHED_GPU before DONE existed
+        val migrateDoneQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
+                .and("processingMode").`is`(ProcessingMode.BACKGROUND.name)
+                .and("orchestratorThreadId").exists(false),
+        )
+        val migrateDoneUpdate = Update().set("state", TaskStateEnum.DONE.name)
+        val migrateDoneResult = mongoTemplate.updateMulti(migrateDoneQuery, migrateDoneUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        if (migrateDoneResult.modifiedCount > 0) {
+            logger.warn { "MIGRATION: Migrated ${migrateDoneResult.modifiedCount} BACKGROUND DISPATCHED_GPU tasks (no orchestratorThreadId) → DONE" }
+        }
+
+        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND tasks only, with orchestratorThreadId = truly dispatched)
         // FOREGROUND tasks stay DISPATCHED_GPU - they're completed, not stuck
+        // DONE tasks are terminal — never reset
         val dispatchedQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
-                .and("createdAt").lt(staleThreshold)
                 .and("processingMode").`is`(ProcessingMode.BACKGROUND.name),
         )
-        val dispatchedUpdate = Update().set("state", TaskStateEnum.READY_FOR_GPU.name)
+        val dispatchedUpdate = Update()
+            .set("state", TaskStateEnum.READY_FOR_GPU.name)
+            .unset("nextDispatchRetryAt")
+            .set("dispatchRetryCount", 0)
         val dispatchedResult = mongoTemplate.updateMulti(dispatchedQuery, dispatchedUpdate, TaskDocument::class.java)
             .awaitSingle()
         val dispatchedCount = dispatchedResult.modifiedCount.toInt()
@@ -547,8 +574,7 @@ class TaskService(
 
         // Reset QUALIFYING → READY_FOR_QUALIFICATION
         val qualifyingQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
-                .and("createdAt").lt(staleThreshold),
+            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name),
         )
         val qualifyingUpdate = Update().set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
         val qualifyingResult = mongoTemplate.updateMulti(qualifyingQuery, qualifyingUpdate, TaskDocument::class.java)
@@ -560,15 +586,18 @@ class TaskService(
             logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → READY_FOR_QUALIFICATION" }
         }
 
-        // Reset PYTHON_ORCHESTRATING → READY_FOR_GPU (stuck after pod restart)
+        // Reset ALL PYTHON_ORCHESTRATING → READY_FOR_GPU on pod restart.
+        // After restart we lose in-memory heartbeat tracking, so we can't verify liveness.
+        // If Python orchestrator IS still running, it will get ignored callback and task re-dispatches.
         val orchestratingQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.PYTHON_ORCHESTRATING.name)
-                .and("createdAt").lt(staleThreshold),
+            Criteria.where("state").`is`(TaskStateEnum.PYTHON_ORCHESTRATING.name),
         )
         val orchestratingUpdate = Update()
             .set("state", TaskStateEnum.READY_FOR_GPU.name)
             .unset("orchestratorThreadId")
             .unset("orchestrationStartedAt")
+            .unset("nextDispatchRetryAt")
+            .set("dispatchRetryCount", 0)
         val orchestratingResult = mongoTemplate.updateMulti(orchestratingQuery, orchestratingUpdate, TaskDocument::class.java)
             .awaitSingle()
         val orchestratingCount = orchestratingResult.modifiedCount.toInt()

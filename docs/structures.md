@@ -1,6 +1,6 @@
 # Data Processing Pipeline & Routing
 
-**Status:** Production Documentation (2026-02-17)
+**Status:** Production Documentation (2026-02-18)
 **Purpose:** Two-stage data processing architecture (CPU qualification → GPU execution)
 
 > **Related docs:**
@@ -110,30 +110,41 @@ embedding = await ollama.embed(
 
 **Key point:** All services transparently use Ollama Router. No code changes needed – just updated environment variables.
 
-### Cross-Set Swap Prevention (Step 5)
+### VRAM Priority Routing (Step 5)
 
-When GPU is idle and a NORMAL request arrives for a different model set (e.g., GPU has orchestrator 30B loaded, request needs background 14B), the router **does NOT swap** — it falls back to CPU instead. This prevents costly model swap cycles (30B↔14B ~60s each) between orchestrator LLM calls.
+All models co-locate on GPU — Ollama handles CPU offload for layers that don't fit in VRAM. When a **bigger** model is requested (e.g., 30B arrives while 14B is loaded), the router:
+
+1. Marks GPU as `loading_in_progress` (other requests → CPU during swap)
+2. Waits for active requests to complete
+3. Unloads all models
+4. Loads the bigger model first (VRAM priority)
+5. Reloads previous models alongside (biggest first)
+6. Clears `loading_in_progress` flag
+
+When a **smaller** model is requested, it loads alongside existing models without unloading.
 
 ```python
 # router_core.py step 5:
-if gpu.active_request_count() == 0:
-    requested_set = MODEL_TO_SET.get(model)
-    current_set = gpu.current_set
-    if current_set and requested_set and current_set != requested_set:
-        # Different model set → CPU fallback (prevents 30B↔14B swapping)
-        return await self._send_to_cpu(request)
+if requested_vram > current_max_vram:
+    # Bigger model → unload all → load big → reload previous
+    gpu.loading_in_progress = True
+    await gpu_pool.unload_all(gpu)
+    await gpu_pool.load_model(gpu, model)  # big model first
+    for prev in sorted(previous, key=size, reverse=True):
+        await gpu_pool.load_model(gpu, prev)  # reload alongside
+    gpu.loading_in_progress = False
+else:
+    # Smaller — load alongside (Ollama CPU offload)
+    await gpu_pool.load_model(gpu, model)
 ```
-
-CRITICAL requests (step 3) bypass this check — they always get GPU.
 
 ### Benefits
 
-1. **Guaranteed GPU for Orchestrator** - User-facing requests never wait
-2. **Automatic fallback** - Background tasks use CPU when GPU busy
-3. **Model management** - Router auto-loads/unloads models by priority
-4. **No cross-set swapping** - NORMAL requests don't cause costly model unload/load cycles
+1. **VRAM priority for big models** - 30B always gets GPU, loaded first
+2. **Model co-location** - All models stay on GPU (Ollama CPU offload for overflow)
+3. **Automatic fallback** - Other requests use CPU during model swap
+4. **No model thrashing** - Smaller models load alongside, no unload needed
 5. **Transparent** - Services don't know about routing logic
-6. **Metrics** - Prometheus metrics for monitoring GPU utilization
 
 ---
 
@@ -435,14 +446,14 @@ uses these server-side timestamps for step timing display instead of client-side
 KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, ...)
   │
   ├─ Step 1: hasActionableContent=false
-  │    → DISPATCHED_GPU (info_only — indexed, no action needed)
+  │    → DONE (info_only — indexed, no action needed, terminal)
   │
   ├─ Step 2: No COMPLEX_ACTIONS in suggestedActions
   │    → handleSimpleAction():
   │       ├─ reply_email / answer_question → creates USER_TASK
   │       ├─ schedule_meeting → creates scheduled reminder (if deadline available)
   │       └─ acknowledge / forward_info → done (indexed only)
-  │    → DISPATCHED_GPU (indexed + action handled locally)
+  │    → DONE (indexed + action handled locally, terminal)
   │
   ├─ Step 3: isAssignedToMe=true AND hasActionableContent=true
   │    → READY_FOR_GPU (immediate, high priority)
@@ -451,7 +462,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
   │    ├─ deadline < scheduleLeadDays away → READY_FOR_GPU (too close, do now)
   │    └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
   │         scheduledAt = deadline - scheduleLeadDays
-  │         original task → DISPATCHED_GPU (indexed, done)
+  │         original task → DONE (indexed, terminal)
   │
   └─ Step 5: Complex actions (suggestedActions ∩ COMPLEX_ACTIONS ≠ ∅)
        → READY_FOR_GPU (needs orchestrator: decompose_issue, analyze_code,
@@ -464,11 +475,12 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - `SCHEDULE_LEAD_DAYS = 2` (configurable per client) — deadline scheduling threshold
 - `COMPLEX_ACTIONS` = {decompose_issue, analyze_code, create_application, review_code, design_architecture}
 
-**DISPATCHED_GPU (info_only or simple action handled):**
+**DONE (info_only or simple action handled — TERMINAL):**
 - Document indexed and structured (Graph + RAG)
 - No action items OR simple action handled by qualifier itself
 - Simple informational content
 - Routine updates (status change, minor commit)
+- Never reset on restart — terminal state, unlike DISPATCHED_GPU
 
 **READY_FOR_GPU (immediate orchestrator execution):**
 - Assigned to the team/organization
@@ -526,7 +538,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Preemption:** Immediately interrupted by user requests
 - **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
 - **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
-- **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck)
+- **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset. Migration: old BACKGROUND DISPATCHED_GPU tasks without orchestratorThreadId are migrated to DONE.
 
 ### Auto-Requeue on Inline Messages
 
@@ -649,9 +661,9 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  Ollama Router (:11430)   Python FastAPI                        │   │
 │  │  • Priority routing (CRITICAL / NORMAL)                          │   │
-│  │  • Model set swapping (orchestrator ↔ background)               │   │
+│  │  • VRAM priority (bigger model = higher VRAM priority)           │   │
+│  │  • Model co-location (all models on GPU, Ollama CPU offload)    │   │
 │  │  • Preemption (background → CPU on orchestrator request)        │   │
-│  │  • Cross-set swap prevention (NORMAL with model mismatch → CPU) │   │
 │  │  • Multi-GPU pool (scalable to N GPU backends)                  │   │
 │  │  • Auto-reservation (60s idle timeout, no announce/release API) │   │
 │  └──────┬───────────────────────────────────┬──────────────────────┘   │
@@ -660,14 +672,14 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  │  GPU Instance (:11434)      │  │  CPU Instance (:11435)           │ │
 │  │  P40 24GB VRAM              │  │  Fallback for preempted work     │ │
 │  │                             │  │                                   │ │
-│  │  Set A (orchestrator):      │  │  OLLAMA_NUM_PARALLEL=10          │ │
+│  │  All models co-located:     │  │  OLLAMA_NUM_PARALLEL=10          │ │
 │  │    qwen3-coder-tool:30b     │  │  OLLAMA_NUM_THREADS=18           │ │
-│  │    (~20GB, NUM_PARALLEL=2)  │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
-│  │                             │  │  qwen2.5:7b + 14b + embed:8b     │ │
-│  │  Set B (background):       │  │                                   │ │
-│  │    qwen2.5:7b + 14b +      │  │  Always loaded, always available  │ │
-│  │    qwen3-embedding:8b       │  │  as fallback when GPU busy        │ │
-│  │    (~20GB, coexists)        │  │                                   │ │
+│  │    qwen2.5:14b              │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
+│  │    qwen3-embedding:8b       │  │  qwen2.5:7b + 14b + embed:8b     │ │
+│  │    (~40GB, CPU offload)     │  │                                   │ │
+│  │                             │  │  Always loaded, always available  │ │
+│  │  Ollama offloads overflow   │  │  as fallback when GPU busy        │ │
+│  │  layers to CPU RAM          │  │                                   │ │
 │  └──────────────────────────────┘  └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -683,12 +695,16 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 >
 > **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND tasks send no header (NORMAL).
 
-### Model Sets (alternating on GPU)
+### Model Co-location on GPU
 
-| Set | Models | VRAM | Active when |
-|-----|--------|------|-------------|
-| A – Orchestrator | qwen3-coder-tool:30b | ~20GB | CRITICAL requests active |
-| B – Background | qwen2.5:7b + qwen2.5:14b + qwen3-embedding:8b | ~20GB | No CRITICAL for 60s |
+All models co-locate on GPU simultaneously. Ollama handles CPU offload for layers that don't fit in VRAM.
+
+| Model | VRAM Est. | Purpose |
+|-------|-----------|---------|
+| qwen3-coder-tool:30b | ~25GB | Orchestrator (biggest → VRAM priority) |
+| qwen2.5:14b | ~10GB | Background qualification |
+| qwen3-embedding:8b | ~5GB | KB embeddings |
+| **Total** | **~40GB** | Exceeds 24GB → Ollama offloads to CPU RAM |
 
 ### Auto-Reservation Protocol (no announce/release API)
 
@@ -727,34 +743,35 @@ CPU:  fallback for overflow
 
 Adding a GPU = config change only (`GPU_BACKENDS` env var), no code change.
 
-### Routing Algorithm with Cross-Set Swap Prevention
+### Routing Algorithm with VRAM Priority
 
-The router's `_do_route()` function makes intelligent routing decisions to prevent thrashing:
+The router's `_do_route()` function routes requests based on model size priority:
 
-**Step 1-4:** Check CRITICAL priority, find available GPUs, validate model exists, check concurrency limits (standard routing).
+**Step 1-4:** Check CRITICAL priority, find GPU with model, check free VRAM (standard routing).
 
-**Step 5: Cross-set swap prevention (NORMAL requests only)**
+**Step 5: VRAM priority model management**
 
 ```python
-if priority == Priority.NORMAL:
-    # If GPU has a different model set loaded, don't swap → use CPU instead
-    if gpu_loaded_set != required_set:
-        return CPU_BACKEND  # Prevents 30B ↔ 14B swap between orchestrator calls
+if requested_vram > current_max_vram:
+    # Bigger model arriving → VRAM priority
+    gpu.loading_in_progress = True  # block other requests during swap
+    unload_all(gpu)                 # waits for active requests first
+    load_model(gpu, big_model)      # load biggest first
+    for prev in previous_models:    # reload previous alongside
+        load_model(gpu, prev)       # (sorted by size desc)
+    gpu.loading_in_progress = False
+else:
+    # Smaller model → load alongside existing (Ollama CPU offload)
+    load_model(gpu, model)
 ```
 
-**Why this matters:**
+**Key behaviors:**
+- `loading_in_progress` flag: during model swap, all find methods skip this GPU → other requests go to CPU
+- `unload_all()` waits up to 60s for active requests to complete before unloading
+- After swap, all models co-locate on GPU (Ollama handles CPU offload for overflow layers)
+- No model thrashing: smaller models never unload bigger ones
 
-Without Step 5, background tasks requesting `qwen2.5:14b` (Set B) would unload `qwen3-coder-tool:30b` (Set A) from GPU mid-orchestration, causing:
-- Orchestrator's next LLM call waits for model reload (~30s)
-- Background task finishes
-- Orchestrator's subsequent call reloads :30b again (~30s)
-- Total thrashing overhead: 60s+ per swap cycle
-
-**With Step 5:** NORMAL requests that need a different model set get CPU fallback immediately, preserving GPU state for CRITICAL workloads.
-
-**Exception:** CRITICAL requests ALWAYS get GPU (can preempt and swap model sets), because user is waiting.
-
-**Implementation:** `backend/service-ollama-router/app/gpu_state.py:_do_route()`, `backend/service-ollama-router/app/models.py:ModelSetId`
+**Implementation:** `backend/service-ollama-router/app/router_core.py:_do_route()`, `backend/service-ollama-router/app/gpu_state.py`
 
 ### Key Configuration
 

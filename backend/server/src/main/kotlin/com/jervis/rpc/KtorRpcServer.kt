@@ -211,6 +211,25 @@ class KtorRpcServer(
                                         tools = emptyList(), // Tools extraction not yet implemented
                                     )
                                     launch {
+                                        // 1. Persist step to DB for history
+                                        try {
+                                            val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
+                                            taskService.appendOrchestratorStep(
+                                                taskId,
+                                                com.jervis.entity.OrchestratorStepRecord(
+                                                    timestamp = java.time.Instant.now(),
+                                                    node = body.node,
+                                                    message = body.message,
+                                                    goalIndex = body.goalIndex,
+                                                    totalGoals = body.totalGoals,
+                                                    stepIndex = body.stepIndex,
+                                                    totalSteps = body.totalSteps,
+                                                ),
+                                            )
+                                        } catch (e: Exception) {
+                                            logger.debug(e) { "Failed to persist orchestrator step for task ${body.taskId}" }
+                                        }
+                                        // 2. Emit to live event stream for real-time UI
                                         notificationRpcImpl.emitOrchestratorTaskProgress(
                                             taskId = body.taskId,
                                             clientId = body.clientId,
