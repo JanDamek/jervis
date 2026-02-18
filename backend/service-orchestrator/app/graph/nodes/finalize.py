@@ -29,8 +29,12 @@ async def finalize(state: dict) -> dict:
 
     # --- Phase 1: Generate summary ---
 
+    # BACKGROUND tasks: no user to read the summary — skip LLM
     # ADVICE / respond: final_result already set by respond node
-    if state.get("final_result"):
+    if state.get("processing_mode") == "BACKGROUND":
+        logger.info("BACKGROUND task — skipping summary generation (no audience)")
+        result = {"final_result": state.get("final_result", "Background task completed.")}
+    elif state.get("final_result"):
         result = {}
     else:
         result = await _generate_summary_async(state, task_category)

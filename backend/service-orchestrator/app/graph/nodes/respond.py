@@ -31,6 +31,11 @@ async def respond(state: dict) -> dict:
     - ADVICE tasks (meeting summaries, knowledge queries, planning advice)
     - SINGLE_TASK with action=respond (analysis, recommendations)
     """
+    # BACKGROUND tasks: no user to read the response — skip LLM entirely
+    if state.get("processing_mode") == "BACKGROUND":
+        logger.info("BACKGROUND task — skipping respond node (no audience)")
+        return {"final_result": "Background task completed."}
+
     task = CodingTask(**state["task"])
     project_context = state.get("project_context", "")
     clarification = state.get("clarification_response")
