@@ -1246,31 +1246,60 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 +---------------------------------------------------------------+
 | [v] KB zpracování (3)                                          |
 +---------------------------------------------------------------+
-| [Bug] GH-100 · GitHub · Commerzbank                 Indexuje   |
-|       Indexuji do knowledge base...    ← live progress (tertiary) |
-| [Mail] Subject · Email · Klient2                    Analyzuje  |
-|       Analyzuji obsah...               ← live progress          |
-| [Code] fix: auth · Git · ClientX                    Zpracovává |
+| [Bug] GH-100 · GitHub · Commerzbank                    1m 23s |
+|   ● Rozhodnutí: obsah informační...      <1s  ← routing step  |
+|     Rozhodnutí: → info_only · DISPATCHED_GPU                   |
+|   · Analýza: entity detected...          21s   ← step duration |
+|     Entity: X, Y · Actionable · Urgence: high                  |
+|   · RAG uloženo: 5 chunks                3s                    |
+|   · Ukládám do RAG...                    1s                    |
+|   · Obsah připraven (3,200 znaků)        <1s                   |
+|   · Zpracovávám obsah...                 2s   ← oldest step    |
+|   · Odesílám do KB služby...             <1s                   |
+|   · Text extrahován (3850 znaků)         1s                    |
+|   · Zahajuji kvalifikaci...              <1s                   |
++---------------------------------------------------------------+
+```
+
+**When "Hotovo" item is expanded (clickable if has history):**
+```
++---------------------------------------------------------------+
+| [Mail] Subject · Email · Klient     12s  Hotovo  Před 5 min ▼ |
+|   ┌────────────────────────────────────────────────────────────┐|
+|   │ Kvalifikace: 12s                                           |
+|   │ · Zahajuji kvalifikaci...                                  |
+|   │ · Text extrahován (1295 znaků)                     <1s     |
+|   │ · Odesílám do KB služby...                          1s     |
+|   │ · Zpracovávám obsah...                              2s     |
+|   │ · Obsah připraven (1,316 znaků)    1316 znaků      <1s    |
+|   │ · RAG uloženo: 2 chunks           2 chunks          3s    |
+|   │ · Analýza: ...    Entity: X · Actionable            21s   |
+|   │ ● Rozhodnutí: obsah informační...  → info_only             |
+|   └────────────────────────────────────────────────────────────┘|
 +---------------------------------------------------------------+
 ```
 
 **Accordion sections (3):**
-1. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **live progress messages** + **audit trail metadata** from `QualificationProgress` events
+1. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **elapsed time** (from `qualificationStartedAt`, not queue time), **live progress timeline** (current step on top, completed below), **step durations** (how long each step took), structured metadata. Merge: stored DB steps (base) + live steps newer than 1s after last stored (dedup by step name via `distinctBy`). Routing decision always visible (explicit routing step before "done", terminal events delayed 5s before removal from live map).
 2. **KB fronta** (READY_FOR_QUALIFICATION) — waiting + retrying items, with pagination + reorder controls. Items show type label (Email/Issue/Wiki/Git) instead of "Čeká"
-3. **Hotovo** (DISPATCHED_GPU) — completed tasks from `TaskDocument` collection
+3. **Hotovo** (DISPATCHED_GPU) — completed tasks with **expandable qualification history**. Click to expand stored `qualificationSteps`. Shows qualification duration and full step log with metadata + per-step durations. Auto-refreshed every 10s (page 0 always updated so new items appear immediately).
 
 **Live Qualification Progress with Audit Trail:**
 - `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
 - `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
 - Events carry `metadata: Map<String, String>` with structured data for UI display
-- **Granular progress steps from KB service (NDJSON streaming):** start → attachments → content_ready → hash_match/purge → parallel_start → rag_done → summary_done → routing/simple_action → done (not just 2 coarse steps from the agent — each KB processing phase emits its own event)
-- **Analysis step metadata**: chunksCount, nodesCreated, entities, actionable, urgency, suggestedActions, isAssignedToMe, hasFutureDeadline, suggestedDeadline, summary
+- **Persistent history:** Steps also saved to `TaskDocument.qualificationSteps` via `$push` for viewing in Hotovo
+- **Granular progress steps from KB service (NDJSON streaming):** start → attachments → content_ready → hash_match/purge → parallel_start → rag_done → summary_done → routing/simple_action → done
+- **summary_done step metadata**: entities, actionable, urgency, suggestedActions, assignedTo, suggestedDeadline, summary
 - **Routing step metadata**: route, targetState
 - **Simple action step metadata**: actionType
-- `ProgressStepRow` displays metadata as compact key-value rows (`MetadataRow` composable)
+- `ProgressStepRow` displays metadata as compact key-value rows (`MetadataRow` composable), **step duration** (how long the step took, not "how long ago")
 - Item icon turns tertiary color when actively processing
 - **Server timestamps:** Each step's `QualificationProgressStep.timestamp` uses server-side `epochMs` from event metadata (set by `NotificationRpcImpl` from `Instant.now().toEpochMilli()`), falling back to client `Clock.System` only if missing. This ensures consistent step timing even with client-server clock skew.
-- **15s ticker for relative timestamps:** `KbProcessingSectionContent` uses a `LaunchedEffect` ticker (`delay(15_000)`) that updates `nowMs` to force recomposition of relative time labels (e.g., "pred 5s" → "pred 20s") without new events arriving
+- **1s ticker for step durations:** `KbProcessingSectionContent` uses a `LaunchedEffect` ticker (`delay(1_000)`) that updates `nowMs` for the active step's running duration
+- **Deduplication:** `distinctBy { it.step }` after merging stored + live steps; live steps must be ≥1s newer than last stored to prevent near-simultaneous DB/emit duplicates
+- **Terminal event delay:** "done"/"simple_action_handled" events are added to steps first, then removed from live map after 5s delay (via `scope.launch { delay(5_000); remove }`) so routing decision is briefly visible
+- **Routing step for all paths:** Non-actionable items now emit explicit `step=routing` before `step=done` so the agent's decision is always visible
 
 **Hierarchy: Connection → Capability → Client** (in Sources section)
 

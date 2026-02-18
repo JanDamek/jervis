@@ -73,17 +73,24 @@ class SimpleQualifierAgent(
         logger.info { "SIMPLE_QUALIFIER_START | taskId=${task.id} | type=${task.type} | correlationId=${task.correlationId}" }
 
         try {
+            onProgress("Zahajuji kvalifikaci...", mapOf("step" to "agent_start", "agent" to "simple_qualifier"))
+
             // 1. Extract clean text from content
             val cleanedContent = tikaTextExtractionService.extractPlainText(
                 content = task.content,
                 fileName = "task-${task.correlationId}.txt",
             )
+            onProgress("Text extrahován (${cleanedContent.length} znaků)", mapOf("step" to "text_extracted", "agent" to "simple_qualifier", "chars" to cleanedContent.length.toString()))
 
             // 2. Load attachments from storage
             val attachments = loadAttachments(task)
             logger.info { "SIMPLE_QUALIFIER_ATTACHMENTS | taskId=${task.id} | count=${attachments.size}" }
+            if (attachments.isNotEmpty()) {
+                onProgress("Načteno ${attachments.size} příloh", mapOf("step" to "attachments_loaded", "agent" to "simple_qualifier", "count" to attachments.size.toString()))
+            }
 
             // 3. Build request for KB
+            onProgress("Odesílám do KB služby...", mapOf("step" to "kb_call_start", "agent" to "simple_qualifier"))
             val request = FullIngestRequest(
                 clientId = task.clientId,
                 projectId = task.projectId,
@@ -174,7 +181,11 @@ class SimpleQualifierAgent(
                 "SIMPLE_QUALIFIER_ROUTE_DISPATCHED | taskId=${task.id} | " +
                     "reason=noActionRequired | summary=${result.summary.take(100)}"
             }
-            onProgress("Hotovo - obsah zaindexován", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "info_only", "targetState" to "DISPATCHED_GPU"))
+            onProgress(
+                "Rozhodnutí: obsah informační, nevyžaduje akci",
+                mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "info_only", "targetState" to "DISPATCHED_GPU"),
+            )
+            onProgress("Hotovo – obsah zaindexován", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "info_only", "targetState" to "DISPATCHED_GPU"))
             return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "info_only")
         }
 

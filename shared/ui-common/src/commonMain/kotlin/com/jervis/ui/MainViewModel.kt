@@ -586,26 +586,31 @@ class MainViewModel(
             }
 
             is JervisEvent.QualificationProgress -> {
-                if (event.step == "done" || event.step == "old_indexed" || event.step == "simple_action_handled") {
-                    // Remove from active progress
-                    _qualificationProgress.value = _qualificationProgress.value - event.taskId
-                } else {
-                    val existing = _qualificationProgress.value[event.taskId]
-                    val newStep = QualificationProgressStep(
-                        timestamp = event.metadata["epochMs"]?.toLongOrNull()
-                            ?: Clock.System.now().toEpochMilliseconds(),
+                // Always accumulate the step first (including terminal ones)
+                val existing = _qualificationProgress.value[event.taskId]
+                val newStep = QualificationProgressStep(
+                    timestamp = event.metadata["epochMs"]?.toLongOrNull()
+                        ?: Clock.System.now().toEpochMilliseconds(),
+                    message = event.message,
+                    step = event.step,
+                    metadata = event.metadata,
+                )
+                _qualificationProgress.value = _qualificationProgress.value + (
+                    event.taskId to QualificationProgressInfo(
+                        taskId = event.taskId,
                         message = event.message,
                         step = event.step,
-                        metadata = event.metadata,
+                        steps = (existing?.steps ?: emptyList()) + newStep,
                     )
-                    _qualificationProgress.value = _qualificationProgress.value + (
-                        event.taskId to QualificationProgressInfo(
-                            taskId = event.taskId,
-                            message = event.message,
-                            step = event.step,
-                            steps = (existing?.steps ?: emptyList()) + newStep,
-                        )
-                    )
+                )
+
+                // For terminal steps, schedule delayed removal (5s) so user sees the final state
+                if (event.step == "done" || event.step == "old_indexed" || event.step == "simple_action_handled") {
+                    val taskIdToRemove = event.taskId
+                    scope.launch {
+                        delay(5_000)
+                        _qualificationProgress.value = _qualificationProgress.value - taskIdToRemove
+                    }
                 }
             }
 
