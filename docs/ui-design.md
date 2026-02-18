@@ -1,6 +1,6 @@
 # Jervis – UI Design System (Compose Multiplatform) – SSOT
 
-**Last updated:** 2026-02-17
+**Last updated:** 2026-02-18
 **Status:** Production Documentation
 
 This document is the **single source of truth** for UI guidelines, design patterns, and shared components.
@@ -1263,12 +1263,14 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 - `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
 - `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
 - Events carry `metadata: Map<String, String>` with structured data for UI display
-- Progress steps: start → ingest → analysis → routing/simple_action → done
+- **Granular progress steps from KB service (NDJSON streaming):** start → attachments → content_ready → hash_match/purge → parallel_start → rag_done → summary_done → routing/simple_action → done (not just 2 coarse steps from the agent — each KB processing phase emits its own event)
 - **Analysis step metadata**: chunksCount, nodesCreated, entities, actionable, urgency, suggestedActions, isAssignedToMe, hasFutureDeadline, suggestedDeadline, summary
 - **Routing step metadata**: route, targetState
 - **Simple action step metadata**: actionType
 - `ProgressStepRow` displays metadata as compact key-value rows (`MetadataRow` composable)
 - Item icon turns tertiary color when actively processing
+- **Server timestamps:** Each step's `QualificationProgressStep.timestamp` uses server-side `epochMs` from event metadata (set by `NotificationRpcImpl` from `Instant.now().toEpochMilli()`), falling back to client `Clock.System` only if missing. This ensures consistent step timing even with client-server clock skew.
+- **15s ticker for relative timestamps:** `KbProcessingSectionContent` uses a `LaunchedEffect` ticker (`delay(15_000)`) that updates `nowMs` to force recomposition of relative time labels (e.g., "pred 5s" → "pred 20s") without new events arriving
 
 **Hierarchy: Connection → Capability → Client** (in Sources section)
 

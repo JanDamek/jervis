@@ -401,6 +401,34 @@ The qualifier delegates heavy lifting to the KB microservice (`POST /ingest/full
 which returns routing hints: `hasActionableContent`, `isAssignedToMe`, `hasFutureDeadline`,
 `suggestedDeadline`, `urgency`, `actionType`.
 
+**NDJSON Streaming Progress:**
+The Kotlin server calls `/ingest/full` with `Accept: application/x-ndjson`. The KB service
+responds with newline-delimited JSON events (`ingest_full_streaming()`), each with
+`type: "progress"|"result"`, `step`, `message`, and `metadata`. The Kotlin client
+(`KnowledgeServiceRestClient.ingestFullWithProgress`) parses each line and invokes the
+`onProgress` callback, which emits `QualificationProgress` events to all connected UIs.
+
+**Progress steps (in order):**
+1. `start` — processing begins
+2. `attachments` — attachment files processed (count metadata)
+3. `content_ready` — combined content hashed (content_length, hash)
+4. `hash_match` — content unchanged, RAG skipped (idempotent re-ingest)
+   OR `purge` — content changed, old chunks deleted
+5. `parallel_start` — RAG ingest + summary generation launched via `asyncio.gather()`
+   (if hash_match, only `summary_start` is emitted instead)
+6. `rag_done` — RAG chunks stored (chunks count)
+7. `summary_done` — LLM analysis complete (summary, entities, actionability, urgency)
+8. `result` — final `FullIngestResult` with routing hints
+
+**Parallel RAG + Summary:** When content is new or changed, RAG embedding and
+`_generate_summary()` (14B LLM) run concurrently via `asyncio.gather()`, reducing
+wall-clock time vs sequential execution.
+
+**Server timestamps:** Each progress event includes `epochMs` in metadata
+(set by `NotificationRpcImpl` from server `Instant.now().toEpochMilli()`). The UI
+uses these server-side timestamps for step timing display instead of client-side
+`Clock.System`.
+
 **Decision tree:**
 
 ```
@@ -475,7 +503,7 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Concurrency:** 1 (each qualification calls `_generate_summary()` — 14B LLM on CPU, ~5s/task; higher concurrency overloads CPU Ollama)
 - **Retry:** Operational errors (Ollama busy, timeout, 429, 503) → infinite exponential backoff 5s→10s→20s→...→5min cap. Items stay READY_FOR_QUALIFICATION with future `nextQualificationRetryAt`. Non-retriable errors → permanent ERROR state.
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
-- **Live progress with audit trail:** `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients). Events carry `metadata: Map<String, String>` with structured data (chunks, entities, actionability, routing decisions)
+- **Live progress with audit trail:** KB service streams NDJSON progress events → `KnowledgeServiceRestClient.ingestFullWithProgress` parses lines → `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients). Events carry `metadata: Map<String, String>` with structured data (chunks, entities, actionability, routing decisions) and server `epochMs` timestamps
 - **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section with structured metadata display
 - **Backend pagination:** `getPendingBackgroundTasksPaginated(limit, offset)` with DB skip/limit. Initial load 20 items via `getPendingTasks()`, more via `getBackgroundTasksPage()` RPC
 
@@ -1002,5 +1030,5 @@ All default to `False` (opt-in):
 
 ---
 
-**Document Version:** 8.1
-**Last Updated:** 2026-02-17
+**Document Version:** 8.2
+**Last Updated:** 2026-02-18
