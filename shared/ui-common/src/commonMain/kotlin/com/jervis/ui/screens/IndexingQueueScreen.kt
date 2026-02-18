@@ -51,6 +51,7 @@ import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JTopBar
 import com.jervis.ui.design.JervisSpacing
+import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -331,6 +332,15 @@ private fun KbProcessingSectionContent(
         return
     }
 
+    // Ticker for relative timestamp updates — forces recomposition every 15s
+    var nowMs by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            nowMs = Clock.System.now().toEpochMilliseconds()
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = JervisSpacing.outerPadding, vertical = 8.dp),
     ) {
@@ -400,6 +410,7 @@ private fun KbProcessingSectionContent(
                         ProgressStepRow(
                             step = step,
                             isLatest = step == progress.steps.last(),
+                            nowMs = nowMs,
                         )
                     }
                 }
@@ -450,6 +461,7 @@ private fun KbProcessingSectionContent(
 private fun ProgressStepRow(
     step: QualificationProgressStep,
     isLatest: Boolean,
+    nowMs: Long,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -483,7 +495,7 @@ private fun ProgressStepRow(
             // Relative timestamp
             Spacer(Modifier.width(8.dp))
             Text(
-                text = formatStepTimestamp(step.timestamp),
+                text = formatStepTimestamp(step.timestamp, nowMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
@@ -852,9 +864,8 @@ private fun pipelineStateColor(state: String): androidx.compose.ui.graphics.Colo
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-private fun formatStepTimestamp(epochMs: Long): String {
-    val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-    val diff = now - epochMs
+private fun formatStepTimestamp(epochMs: Long, nowMs: Long): String {
+    val diff = nowMs - epochMs
     return when {
         diff < 1_000L -> "teď"
         diff < 60_000L -> "${diff / 1_000L}s"
