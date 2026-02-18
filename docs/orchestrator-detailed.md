@@ -2,7 +2,7 @@
 
 > Kompletní referenční dokument pro Python orchestrátor a jeho integraci s Kotlin serverem.
 > Základ pro analýzu, rozšiřování a debugging celé orchestrační vrstvy.
-> **Automaticky aktualizováno:** 2026-02-16
+> **Automaticky aktualizováno:** 2026-02-18
 
 ---
 
@@ -619,7 +619,9 @@ class OrchestratorState(TypedDict, total=False):
 **Soubor**: `app/graph/nodes/respond.py`
 **Účel**: Přímá odpověď na ADVICE a SINGLE_TASK/respond dotazy
 
-**Používá se pro**: Meeting summaries, knowledge queries, planning advice, analýzy
+**BACKGROUND skip**: Pro `processing_mode == "BACKGROUND"` se celý respond node přeskočí (okamžitý return `{"final_result": "Background task completed."}`). BACKGROUND tasky nemají příjemce odpovědi — task se po dokončení smaže.
+
+**Používá se pro** (FOREGROUND only): Meeting summaries, knowledge queries, planning advice, analýzy
 
 **Context building**:
 1. Task identity (client/project names)
@@ -762,11 +764,14 @@ Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_schedul
 **Soubor**: `app/graph/nodes/finalize.py`
 **Účel**: Generování finálního reportu
 
+**BACKGROUND skip**: Pro `processing_mode == "BACKGROUND"` se summary generation přeskočí (žádný LLM call). KB outcome ingestion a Memory Agent flush stále běží.
+
 **Logika**:
-1. Pokud `final_result` už nastaveno (respond node) → skip
-2. Sestaví kontext: client/project, branch, artifacts, **conversation stats z chat_history**, **key decisions**
-3. LLM generuje český souhrn (max 3-5 vět)
-4. Fallback: strukturovaný souhrn bez LLM
+1. **BACKGROUND** → skip summary, keep `final_result` from respond (or default)
+2. Pokud `final_result` už nastaveno (respond node) → skip
+3. Sestaví kontext: client/project, branch, artifacts, **conversation stats z chat_history**, **key decisions**
+4. LLM generuje český souhrn (max 3-5 vět)
+5. Fallback: strukturovaný souhrn bez LLM
 
 ---
 
