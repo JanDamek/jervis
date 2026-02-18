@@ -73,73 +73,13 @@ internal fun AgentSectionContent(
     runningTaskType: String?,
     orchestratorProgress: OrchestratorProgressInfo?,
     runningNodes: List<com.jervis.ui.model.NodeEntry>,
-    qualificationProgress: Map<String, QualificationProgressInfo>,
     onStop: () -> Unit,
 ) {
-    if (!isRunning && qualificationProgress.isEmpty()) {
+    if (!isRunning) {
         JEmptyState(
             message = "Agent je nečinný",
             icon = Icons.Default.HourglassEmpty,
         )
-        return
-    }
-
-    // Show KB qualification activity when orchestrator is not running
-    if (!isRunning && qualificationProgress.isNotEmpty()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "Kvalifikace KB",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            qualificationProgress.values.forEach { info ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                ) {
-                    Text(
-                        text = info.message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (info.steps.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        info.steps.forEach { step ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                val isLatest = step == info.steps.last()
-                                Text(
-                                    text = if (isLatest) "⟳" else "✓",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isLatest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
-                                )
-                                Text(
-                                    text = step.message,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isLatest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 4.dp))
-                }
-            }
-        }
         return
     }
 

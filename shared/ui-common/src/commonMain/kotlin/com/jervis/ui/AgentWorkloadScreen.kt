@@ -64,7 +64,6 @@ fun AgentWorkloadScreen(
     val runningNodes by viewModel.runningTaskNodes.collectAsState()
     val taskHistory by viewModel.taskHistory.collectAsState()
     val taskHistoryHasMore by viewModel.taskHistoryHasMore.collectAsState()
-    val qualificationProgress by viewModel.qualificationProgress.collectAsState()
     val backgroundTotalCount by viewModel.backgroundTotalCount.collectAsState()
     val isLoadingMoreBackground by viewModel.isLoadingMoreBackground.collectAsState()
 
@@ -82,14 +81,12 @@ fun AgentWorkloadScreen(
             title = "Aktivita agenta",
         )
 
-        val hasAgentActivity = isRunning || qualificationProgress.isNotEmpty()
-
         // Expanded header
         AccordionSectionHeader(
             section = expandedSection,
             isExpanded = true,
-            badge = badgeCount(expandedSection, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning, qualificationProgress),
-            isAgentRunning = hasAgentActivity,
+            badge = badgeCount(expandedSection, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning),
+            isAgentRunning = isRunning,
             onClick = {},
         )
 
@@ -103,7 +100,6 @@ fun AgentWorkloadScreen(
                     runningTaskType = runningTaskType,
                     orchestratorProgress = orchestratorProgress,
                     runningNodes = runningNodes,
-                    qualificationProgress = qualificationProgress,
                     onStop = {
                         orchestratorProgress?.let { viewModel.cancelOrchestration(it.taskId) }
                     },
@@ -133,8 +129,8 @@ fun AgentWorkloadScreen(
                 AccordionSectionHeader(
                     section = section,
                     isExpanded = false,
-                    badge = badgeCount(section, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning, qualificationProgress),
-                    isAgentRunning = hasAgentActivity,
+                    badge = badgeCount(section, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning),
+                    isAgentRunning = isRunning,
                     onClick = { expandedSection = section },
                 )
                 HorizontalDivider()
@@ -151,9 +147,8 @@ private fun badgeCount(
     backgroundTotalCount: Long,
     taskHistory: List<com.jervis.ui.model.TaskHistoryEntry>,
     isRunning: Boolean,
-    qualificationProgress: Map<String, QualificationProgressInfo>,
 ): Int = when (section) {
-    AccordionSection.AGENT -> if (isRunning) 0 else qualificationProgress.size
+    AccordionSection.AGENT -> 0 // Agent shows spinner/dot instead
     AccordionSection.FRONTEND -> foregroundQueue.size
     AccordionSection.BACKEND -> backgroundTotalCount.toInt()
     AccordionSection.HISTORY -> taskHistory.size

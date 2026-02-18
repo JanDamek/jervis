@@ -872,10 +872,8 @@ State: Frontend expanded
 - Project name, task type, task preview
 - Orchestrator progress: goal/step counters, node spinner, status message, progress bar
 - Stop button (`cancelOrchestration`)
-- When KB qualifying (not running orchestrator): shows "Kvalifikace KB" with live progress timeline per task
-- When idle (no orchestrator, no KB qualification): `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
-- Badge: shows qualification task count when not running orchestrator
-- Collapsed header: spinner if running OR qualifying, dot if idle
+- When idle: `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
+- Note: KB qualification progress is shown in IndexingQueueScreen, NOT here
 
 **QueueSectionContent** (Frontend):
 - `LazyColumn` with client-side windowing (20 initial, load more on scroll)

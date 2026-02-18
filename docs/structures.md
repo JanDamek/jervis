@@ -477,7 +477,6 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
 - **Live progress with audit trail:** `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients). Events carry `metadata: Map<String, String>` with structured data (chunks, entities, actionability, routing decisions)
 - **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section with structured metadata display
-- **Agent section:** `AgentWorkloadScreen` shows KB qualification progress when orchestrator is not running (instead of "Agent je nečinný")
 - **Backend pagination:** `getPendingBackgroundTasksPaginated(limit, offset)` with DB skip/limit. Initial load 20 items via `getPendingTasks()`, more via `getBackgroundTasksPage()` RPC
 
 ### Scheduler Loop (Task Dispatch)
