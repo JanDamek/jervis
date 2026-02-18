@@ -592,7 +592,7 @@ class MainViewModel(
                 } else {
                     val existing = _qualificationProgress.value[event.taskId]
                     val newStep = QualificationProgressStep(
-                        timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds(),
+                        timestamp = Clock.System.now().toEpochMilliseconds(),
                         message = event.message,
                         step = event.step,
                         metadata = event.metadata,

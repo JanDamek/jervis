@@ -853,7 +853,7 @@ private fun pipelineStateColor(state: String): androidx.compose.ui.graphics.Colo
 }
 
 private fun formatStepTimestamp(epochMs: Long): String {
-    val now = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+    val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
     val diff = now - epochMs
     return when {
         diff < 1_000L -> "teď"
