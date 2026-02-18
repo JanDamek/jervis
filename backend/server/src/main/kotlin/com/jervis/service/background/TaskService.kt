@@ -15,6 +15,7 @@ import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -396,7 +397,7 @@ class TaskService(
                     Instant.now(),
                 ),
             )
-        }
+        }.filter { it.type != TaskTypeEnum.USER_TASK }
 
     /**
      * Atomically claim a task for qualification using MongoDB findAndModify.

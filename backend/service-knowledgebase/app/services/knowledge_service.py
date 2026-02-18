@@ -800,13 +800,20 @@ Respond with JSON:
     "urgency": "urgent/normal/low"
 }}
 
-hasActionableContent is TRUE if:
-- This is an email/message requiring a reply
-- This is a task/issue assigned to someone
-- This is a code review request
-- This contains a question needing an answer
-- This is a meeting action item
-- This requires some follow-up action
+hasActionableContent is TRUE ONLY if:
+- This is a PERSONAL email/message that explicitly asks ME to do something or reply
+- This is a task/issue assigned to a specific person
+- This is a code review request directed at me
+- This contains a direct question needing MY answer
+- This is a meeting action item assigned to someone
+
+hasActionableContent is FALSE for:
+- Newsletters, announcements, marketing emails, event notifications
+- Automated system notifications (JIRA transitions, CI/CD, monitoring)
+- FYI/informational emails not requiring any response
+- Bulk/mass emails, mailing lists, promotional content
+- Holiday announcements, "World Day of X", company-wide announcements
+- Automated receipts, confirmations, shipping notifications
 
 hasFutureDeadline is TRUE if:
 - Content mentions a specific future deadline or due date

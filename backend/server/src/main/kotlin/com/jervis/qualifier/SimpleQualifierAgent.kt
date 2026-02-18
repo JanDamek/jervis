@@ -274,6 +274,7 @@ class SimpleQualifierAgent(
                     correlationId = "action:${task.correlationId}",
                     sourceUrn = task.sourceUrn,
                     taskName = "Odpovědět: ${extractSubject(task)?.take(80) ?: "email"}",
+                    state = TaskStateEnum.NEW,
                 )
                 onProgress("Vytvořen úkol pro odpověď", mapOf("step" to "simple_action", "agent" to "simple_qualifier", "actionType" to "reply_email"))
                 onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "simple_action_handled", "targetState" to "DISPATCHED_GPU"))

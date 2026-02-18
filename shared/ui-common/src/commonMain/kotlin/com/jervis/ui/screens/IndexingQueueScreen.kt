@@ -184,13 +184,19 @@ fun IndexingQueueScreen(
         }
     }
 
-    // Event-driven refresh: watch for task completion events
+    // Event-driven refresh: watch for qualification progress changes
     val progress by qualificationProgress.collectAsState()
-    LaunchedEffect(progress.size) {
-        // When a task finishes (disappears from active progress), refresh dashboard
-        if (dashboard != null && progress.isEmpty()) {
-            delay(500) // Small debounce
-            loadDashboard(resetAccumulated = true)
+    var lastProgressKeys by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(progress.keys.toSet()) {
+        val currentKeys = progress.keys.toSet()
+        val newTasks = currentKeys - lastProgressKeys
+        val finishedTasks = lastProgressKeys - currentKeys
+        lastProgressKeys = currentKeys
+
+        // Refresh dashboard when a task starts or finishes qualifying
+        if (dashboard != null && (newTasks.isNotEmpty() || finishedTasks.isNotEmpty())) {
+            delay(300)
+            loadDashboard(resetAccumulated = false)
         }
     }
 
@@ -347,7 +353,9 @@ private fun KbProcessingSectionContent(
         // Primary task = first item with most progress detail
         val primary = items.firstOrNull()
         if (primary != null) {
-            val progress = activeProgress[primary.taskId ?: primary.id]
+            val lookupKey = primary.taskId ?: primary.id
+            // Try exact match first, then fallback to any active progress (concurrency=1)
+            val progress = activeProgress[lookupKey] ?: activeProgress.values.firstOrNull()
 
             // Task header
             Row(
