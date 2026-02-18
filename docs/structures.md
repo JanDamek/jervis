@@ -472,11 +472,13 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Process:** Reads READY_FOR_QUALIFICATION tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Agents:** SimpleQualifierAgent with CPU model (OLLAMA_QUALIFIER)
 - **Max iterations:** 10 (for chunking loops)
-- **Concurrency:** 2 parallel (each qualification calls `_generate_summary()` — 14B LLM on CPU, ~5s/task; higher concurrency overloads CPU Ollama)
+- **Concurrency:** 1 (each qualification calls `_generate_summary()` — 14B LLM on CPU, ~5s/task; higher concurrency overloads CPU Ollama)
 - **Retry:** Operational errors (Ollama busy, timeout, 429, 503) → infinite exponential backoff 5s→10s→20s→...→5min cap. Items stay READY_FOR_QUALIFICATION with future `nextQualificationRetryAt`. Non-retriable errors → permanent ERROR state.
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
-- **Live progress:** `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients)
-- **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section
+- **Live progress with audit trail:** `SimpleQualifierAgent.onProgress` callback → `NotificationRpcImpl.emitQualificationProgress()` → `JervisEvent.QualificationProgress` (broadcast to all connected clients). Events carry `metadata: Map<String, String>` with structured data (chunks, entities, actionability, routing decisions)
+- **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section with structured metadata display
+- **Agent section:** `AgentWorkloadScreen` shows KB qualification progress when orchestrator is not running (instead of "Agent je nečinný")
+- **Backend pagination:** `getPendingBackgroundTasksPaginated(limit, offset)` with DB skip/limit. Initial load 20 items via `getPendingTasks()`, more via `getBackgroundTasksPage()` RPC
 
 ### Scheduler Loop (Task Dispatch)
 

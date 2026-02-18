@@ -172,6 +172,7 @@ class NotificationRpcImpl : INotificationService {
         clientId: String,
         message: String,
         step: String,
+        metadata: Map<String, String> = emptyMap(),
     ) {
         val event = JervisEvent.QualificationProgress(
             taskId = taskId,
@@ -179,6 +180,7 @@ class NotificationRpcImpl : INotificationService {
             message = message,
             step = step,
             timestamp = Instant.now().toString(),
+            metadata = metadata,
         )
         eventStreams.keys().asSequence().forEach { id ->
             emitEvent(id, event)

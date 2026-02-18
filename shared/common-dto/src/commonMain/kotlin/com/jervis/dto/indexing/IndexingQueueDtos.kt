@@ -125,6 +125,8 @@ data class PipelineItemDto(
     val taskId: String? = null,
     /** Queue position (null = FIFO by createdAt). */
     val queuePosition: Int? = null,
+    /** Processing mode: FOREGROUND (user chat, critical) or BACKGROUND (autonomous). */
+    val processingMode: String? = null,
 )
 
 /**

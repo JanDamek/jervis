@@ -872,13 +872,22 @@ State: Frontend expanded
 - Project name, task type, task preview
 - Orchestrator progress: goal/step counters, node spinner, status message, progress bar
 - Stop button (`cancelOrchestration`)
-- When idle: `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
+- When KB qualifying (not running orchestrator): shows "Kvalifikace KB" with live progress timeline per task
+- When idle (no orchestrator, no KB qualification): `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
+- Badge: shows qualification task count when not running orchestrator
+- Collapsed header: spinner if running OR qualifying, dot if idle
 
-**QueueSectionContent** (Frontend / Backend):
-- `LazyColumn` with max 5 items via `items.take(5)`
+**QueueSectionContent** (Frontend):
+- `LazyColumn` with client-side windowing (20 initial, load more on scroll)
 - `CompactQueueItemRow`: type+project (labelSmall), preview (bodySmall, 1 line, ellipsis)
-- If > 5 items: "... a dalsich N uloh" text below
+- If more items: "... a dalsich N uloh" text below
 - If empty: `JEmptyState`
+
+**BackendQueueSectionContent** (Backend) — DB-level paginated:
+- First 20 items from `getPendingTasks()`, more via `getBackgroundTasksPage(limit, offset)`
+- Badge shows `backgroundTotalCount` (total from DB)
+- Infinite scroll with `snapshotFlow` trigger
+- Loading indicator during page fetch
 
 **HistorySectionContent** — grouped by tasks:
 - `LazyColumn` with `TaskHistoryItem` composables
@@ -1247,19 +1256,21 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 +---------------------------------------------------------------+
 ```
 
-**Accordion sections (4):**
-1. **Zdroje** — hierarchical connection view (Connection → Capability → Client)
-2. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **live progress messages** from `QualificationProgress` events
-3. **KB fronta** (READY_FOR_QUALIFICATION) — waiting + retrying items, with pagination + reorder controls
-4. **Hotovo** (DISPATCHED_GPU) — completed tasks from `TaskDocument` collection
+**Accordion sections (3):**
+1. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **live progress messages** + **audit trail metadata** from `QualificationProgress` events
+2. **KB fronta** (READY_FOR_QUALIFICATION) — waiting + retrying items, with pagination + reorder controls. Items show type label (Email/Issue/Wiki/Git) instead of "Čeká"
+3. **Hotovo** (DISPATCHED_GPU) — completed tasks from `TaskDocument` collection
 
-**Live Qualification Progress:**
+**Live Qualification Progress with Audit Trail:**
 - `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
 - `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
-- Progress steps: start → ingest → summary → routing → done
-- `stepLabel()` translates: ingest="Indexuje", summary="Analyzuje", routing="Rozhoduje"
+- Events carry `metadata: Map<String, String>` with structured data for UI display
+- Progress steps: start → ingest → analysis → routing/simple_action → done
+- **Analysis step metadata**: chunksCount, nodesCreated, entities, actionable, urgency, suggestedActions, isAssignedToMe, hasFutureDeadline, suggestedDeadline, summary
+- **Routing step metadata**: route, targetState
+- **Simple action step metadata**: actionType
+- `ProgressStepRow` displays metadata as compact key-value rows (`MetadataRow` composable)
 - Item icon turns tertiary color when actively processing
-- Progress message shown as tertiary bodySmall below item metadata
 
 **Hierarchy: Connection → Capability → Client** (in Sources section)
 

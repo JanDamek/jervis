@@ -12,14 +12,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -69,13 +73,73 @@ internal fun AgentSectionContent(
     runningTaskType: String?,
     orchestratorProgress: OrchestratorProgressInfo?,
     runningNodes: List<com.jervis.ui.model.NodeEntry>,
+    qualificationProgress: Map<String, QualificationProgressInfo>,
     onStop: () -> Unit,
 ) {
-    if (!isRunning) {
+    if (!isRunning && qualificationProgress.isEmpty()) {
         JEmptyState(
             message = "Agent je nečinný",
             icon = Icons.Default.HourglassEmpty,
         )
+        return
+    }
+
+    // Show KB qualification activity when orchestrator is not running
+    if (!isRunning && qualificationProgress.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Kvalifikace KB",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            qualificationProgress.values.forEach { info ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                ) {
+                    Text(
+                        text = info.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (info.steps.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        info.steps.forEach { step ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                val isLatest = step == info.steps.last()
+                                Text(
+                                    text = if (isLatest) "⟳" else "✓",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isLatest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                                )
+                                Text(
+                                    text = step.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isLatest) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        }
         return
     }
 
@@ -234,7 +298,7 @@ internal fun AgentSectionContent(
 internal fun QueueSectionContent(
     items: List<PendingQueueItem>,
     emptyMessage: String,
-    maxItems: Int,
+    initialVisible: Int = 20,
 ) {
     if (items.isEmpty()) {
         JEmptyState(
@@ -244,10 +308,26 @@ internal fun QueueSectionContent(
         return
     }
 
-    val visibleItems = items.take(maxItems)
+    var visibleCount by remember { mutableStateOf(initialVisible) }
+    val listState = rememberLazyListState()
+
+    // Load more when scrolled near end
+    LaunchedEffect(listState, visibleCount) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= visibleCount - 5
+        }.collect { nearEnd ->
+            if (nearEnd && visibleCount < items.size) {
+                visibleCount = minOf(visibleCount + 20, items.size)
+            }
+        }
+    }
+
+    val visibleItems = items.take(visibleCount)
     val remainingCount = items.size - visibleItems.size
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -258,6 +338,73 @@ internal fun QueueSectionContent(
             item {
                 Text(
                     text = "... a dalších $remainingCount úloh",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Backend queue section with DB-level pagination (infinite scroll).
+ * Shows first 20 items from server, loads more pages on scroll.
+ */
+@Composable
+internal fun BackendQueueSectionContent(
+    items: List<PendingQueueItem>,
+    totalCount: Long,
+    isLoadingMore: Boolean,
+    onLoadMore: () -> Unit,
+) {
+    if (items.isEmpty() && totalCount == 0L) {
+        JEmptyState(
+            message = "Žádné úlohy na pozadí",
+            icon = "📭",
+        )
+        return
+    }
+
+    val listState = rememberLazyListState()
+
+    // Infinite scroll: load more when near end
+    LaunchedEffect(listState, items.size) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= items.size - 5
+        }.collect { nearEnd ->
+            if (nearEnd && items.size.toLong() < totalCount) {
+                onLoadMore()
+            }
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        items(items, key = { it.taskId.ifEmpty { it.preview } }) { item ->
+            CompactQueueItemRow(item)
+        }
+        if (isLoadingMore) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+        }
+        if (items.size.toLong() < totalCount && !isLoadingMore) {
+            item {
+                Text(
+                    text = "... a dalších ${totalCount - items.size} úloh",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),

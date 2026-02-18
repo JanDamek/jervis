@@ -110,6 +110,28 @@ class SimpleQualifierAgent(
                     "suggestedActions=${result.suggestedActions}"
             }
 
+            // Emit detailed analysis progress with full metadata for UI audit trail
+            if (result.success) {
+                onProgress(
+                    "Analýza: ${result.chunksCount} chunks, ${result.entities.size} entit, " +
+                        "actionable=${result.hasActionableContent}, urgency=${result.urgency}",
+                    mapOf(
+                        "step" to "analysis",
+                        "agent" to "simple_qualifier",
+                        "chunksCount" to result.chunksCount.toString(),
+                        "nodesCreated" to result.nodesCreated.toString(),
+                        "entities" to result.entities.joinToString(", "),
+                        "actionable" to result.hasActionableContent.toString(),
+                        "urgency" to result.urgency,
+                        "suggestedActions" to result.suggestedActions.joinToString(", "),
+                        "isAssignedToMe" to result.isAssignedToMe.toString(),
+                        "hasFutureDeadline" to result.hasFutureDeadline.toString(),
+                        "suggestedDeadline" to (result.suggestedDeadline ?: ""),
+                        "summary" to result.summary.take(200),
+                    ),
+                )
+            }
+
             if (!result.success) {
                 val errorMsg = result.error ?: "KB ingest failed"
                 logger.error { "SIMPLE_QUALIFIER_KB_FAILED | taskId=${task.id} | error=$errorMsg" }
@@ -177,7 +199,7 @@ class SimpleQualifierAgent(
                 "SIMPLE_QUALIFIER_ROUTE_DISPATCHED | taskId=${task.id} | " +
                     "reason=noActionRequired | summary=${result.summary.take(100)}"
             }
-            onProgress("Hotovo - obsah zaindexován", mapOf("step" to "done", "agent" to "simple_qualifier"))
+            onProgress("Hotovo - obsah zaindexován", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "info_only", "targetState" to "DISPATCHED_GPU"))
             return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "info_only")
         }
 
@@ -200,7 +222,7 @@ class SimpleQualifierAgent(
             }
             onProgress(
                 "Úkol je přiřazen - přesouvám do fronty pro okamžité zpracování...",
-                mapOf("step" to "route_gpu_assigned", "agent" to "simple_qualifier"),
+                mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "assigned_to_me", "targetState" to "READY_FOR_GPU"),
             )
             return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "assigned_to_me")
         }
@@ -223,7 +245,7 @@ class SimpleQualifierAgent(
                     }
                     onProgress(
                         "Blízký termín - přesouvám do fronty pro okamžité zpracování...",
-                        mapOf("step" to "route_gpu_deadline", "agent" to "simple_qualifier"),
+                        mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "deadline_too_close", "targetState" to "READY_FOR_GPU"),
                     )
                     return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "deadline_too_close")
                 }
@@ -237,7 +259,7 @@ class SimpleQualifierAgent(
                 }
                 onProgress(
                     "Naplánováno na ${scheduledAt} (termín: ${result.suggestedDeadline})",
-                    mapOf("step" to "route_scheduled", "agent" to "simple_qualifier"),
+                    mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "scheduled", "targetState" to "DISPATCHED_GPU"),
                 )
                 // Original task is dispatched (indexed), scheduled copy will fire later
                 return RoutingDecision(TaskStateEnum.DISPATCHED_GPU, "scheduled", scheduledCopyCreated = true)
@@ -252,7 +274,7 @@ class SimpleQualifierAgent(
         }
         onProgress(
             "Složitý obsah vyžaduje MOZEK - přesouvám do fronty...",
-            mapOf("step" to "route_gpu", "agent" to "simple_qualifier"),
+            mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "complex_actionable", "targetState" to "READY_FOR_GPU"),
         )
         return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "complex_actionable")
     }
@@ -278,21 +300,22 @@ class SimpleQualifierAgent(
                     sourceUrn = task.sourceUrn,
                     taskName = "Odpovědět: ${extractSubject(task)?.take(80) ?: "email"}",
                 )
-                onProgress("Vytvořen úkol pro odpověď", mapOf("step" to "user_task", "agent" to "simple_qualifier"))
+                onProgress("Vytvořen úkol pro odpověď", mapOf("step" to "simple_action", "agent" to "simple_qualifier", "actionType" to "reply_email"))
+                onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "simple_action_handled", "targetState" to "DISPATCHED_GPU"))
             }
             // Meeting scheduling → create reminder if deadline available
             "schedule_meeting" in result.suggestedActions -> {
                 val deadline = result.suggestedDeadline?.let { parseDeadline(it) }
                 if (deadline != null) {
                     createScheduledCopy(task, result, deadline.minus(Duration.ofDays(1)))
-                    onProgress("Vytvořen reminder pro schůzku", mapOf("step" to "scheduled", "agent" to "simple_qualifier"))
-                } else {
-                    onProgress("Zaindexováno", mapOf("step" to "done", "agent" to "simple_qualifier"))
+                    onProgress("Vytvořen reminder pro schůzku", mapOf("step" to "simple_action", "agent" to "simple_qualifier", "actionType" to "schedule_meeting"))
                 }
+                onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "simple_action_handled", "targetState" to "DISPATCHED_GPU"))
             }
             // Acknowledge, forward_info, etc. → done, just indexed
             else -> {
-                onProgress("Zpracováno - jednoduchá akce", mapOf("step" to "done", "agent" to "simple_qualifier"))
+                onProgress("Zpracováno - jednoduchá akce", mapOf("step" to "simple_action", "agent" to "simple_qualifier", "actionType" to "acknowledge"))
+                onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier", "route" to "simple_action_handled", "targetState" to "DISPATCHED_GPU"))
             }
         }
     }

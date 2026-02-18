@@ -84,6 +84,7 @@ sealed class JervisEvent {
         val message: String,
         val step: String,
         override val timestamp: String,
+        val metadata: Map<String, String> = emptyMap(),
     ) : JervisEvent()
 
     @Serializable

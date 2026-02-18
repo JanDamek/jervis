@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service
  * - Actual indexing errors: mark as ERROR permanently (no retry)
  * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
  *
- * Concurrency: 2 parallel — each qualification calls _generate_summary() (14B LLM on CPU, ~5s/task).
+ * Concurrency: 1 — each qualification calls _generate_summary() (14B LLM on CPU, ~5s/task).
  * Higher concurrency overloads CPU Ollama. RAG embedding is skipped on re-qualification (content hash match).
  */
 @Service
@@ -44,7 +44,7 @@ class TaskQualificationService(
         try {
             logger.debug { "QUALIFICATION_CYCLE_START" }
 
-            val effectiveConcurrency = 2
+            val effectiveConcurrency = 1
 
             taskService
                 .findTasksForQualification()
@@ -91,6 +91,7 @@ class TaskQualificationService(
                 clientId = task.clientId.toString(),
                 message = message,
                 step = metadata["step"] ?: "unknown",
+                metadata = metadata,
             )
         }
 

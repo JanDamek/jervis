@@ -216,6 +216,33 @@ class TaskService(
     }
 
     /**
+     * Get paginated BACKGROUND tasks for infinite scroll (DB skip/limit).
+     * Returns (tasks, totalCount) where totalCount is the total number of background tasks.
+     */
+    suspend fun getPendingBackgroundTasksPaginated(limit: Int, offset: Int): Pair<List<TaskDocument>, Long> {
+        val running = currentRunningTask
+        val criteria = Criteria.where("processingMode").`is`(ProcessingMode.BACKGROUND.name)
+            .and("state").`is`(TaskStateEnum.READY_FOR_GPU.name)
+
+        val totalCount = mongoTemplate.count(Query(criteria), TaskDocument::class.java).awaitSingle()
+
+        val query = Query(criteria)
+            .with(org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Order.asc("queuePosition"),
+                org.springframework.data.domain.Sort.Order.asc("createdAt"),
+            ))
+            .skip(offset.toLong())
+            .limit(limit)
+
+        val tasks = mongoTemplate.find(query, TaskDocument::class.java)
+            .collectList()
+            .awaitSingle()
+            .filter { it.id != running?.id }
+
+        return tasks to totalCount
+    }
+
+    /**
      * Reorder a task within its queue by setting a new position.
      * Recalculates positions for all tasks in the same queue to maintain contiguous ordering.
      */
@@ -461,6 +488,14 @@ class TaskService(
      */
     suspend fun resetStaleTasks(staleThreshold: Instant): Int {
         var resetCount = 0
+
+        // Migration: set processingMode on old tasks that don't have the field
+        val fixModeQuery = Query(Criteria.where("processingMode").exists(false))
+        val fixModeUpdate = Update().set("processingMode", ProcessingMode.BACKGROUND.name)
+        val fixResult = mongoTemplate.updateMulti(fixModeQuery, fixModeUpdate, TaskDocument::class.java).awaitSingle()
+        if (fixResult.modifiedCount > 0) {
+            logger.warn { "MIGRATION: Set processingMode=BACKGROUND on ${fixResult.modifiedCount} tasks missing the field" }
+        }
 
         // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND tasks only)
         // FOREGROUND tasks stay DISPATCHED_GPU - they're completed, not stuck

@@ -429,6 +429,7 @@ class IndexingQueueRpcImpl(
                 errorMessage = task.errorMessage,
                 taskId = task.id.value.toHexString(),
                 queuePosition = task.queuePosition,
+                processingMode = task.processingMode.name,
             )
         }
     }

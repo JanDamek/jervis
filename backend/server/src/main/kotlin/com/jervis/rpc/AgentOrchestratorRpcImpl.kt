@@ -561,7 +561,7 @@ class AgentOrchestratorRpcImpl(
         val running = taskService.getCurrentRunningTask()
 
         val foregroundTasks = taskService.getPendingForegroundTasks()
-        val backgroundTasks = taskService.getPendingBackgroundTasks()
+        val (backgroundTasks, backgroundTotal) = taskService.getPendingBackgroundTasksPaginated(limit = 20, offset = 0)
 
         val foregroundItems = foregroundTasks.map { task -> task.toPendingTaskItemDto() }
         val backgroundItems = backgroundTasks.map { task -> task.toPendingTaskItemDto() }
@@ -569,13 +569,29 @@ class AgentOrchestratorRpcImpl(
         val runningItem = running?.toPendingTaskItemDto()
 
         logger.info {
-            "PENDING_TASKS_RESULT | clientId=$clientId | foreground=${foregroundItems.size} | background=${backgroundItems.size} | hasRunning=${runningItem != null}"
+            "PENDING_TASKS_RESULT | clientId=$clientId | foreground=${foregroundItems.size} | background=${backgroundItems.size} | backgroundTotal=$backgroundTotal | hasRunning=${runningItem != null}"
         }
 
         return com.jervis.dto.PendingTasksDto(
             foreground = foregroundItems,
             background = backgroundItems,
             runningTask = runningItem,
+            backgroundTotalCount = backgroundTotal,
+        )
+    }
+
+    override suspend fun getBackgroundTasksPage(limit: Int, offset: Int): com.jervis.dto.PendingTasksPageDto {
+        logger.info { "GET_BACKGROUND_TASKS_PAGE | limit=$limit | offset=$offset" }
+
+        val (tasks, totalCount) = taskService.getPendingBackgroundTasksPaginated(limit, offset)
+        val items = tasks.map { task -> task.toPendingTaskItemDto() }
+
+        logger.info { "BACKGROUND_TASKS_PAGE_RESULT | items=${items.size} | totalCount=$totalCount | offset=$offset" }
+
+        return com.jervis.dto.PendingTasksPageDto(
+            items = items,
+            totalCount = totalCount,
+            hasMore = (offset + limit) < totalCount,
         )
     }
 

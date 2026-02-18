@@ -4,6 +4,7 @@ import com.jervis.dto.ChatHistoryDto
 import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.PendingTasksDto
+import com.jervis.dto.PendingTasksPageDto
 import com.jervis.dto.TaskHistoryPageDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
@@ -42,6 +43,11 @@ interface IAgentOrchestratorService {
      * Returns structured data with queue items and running task info.
      */
     suspend fun getPendingTasks(clientId: String): PendingTasksDto
+
+    /**
+     * Get paginated background tasks for infinite scroll.
+     */
+    suspend fun getBackgroundTasksPage(limit: Int, offset: Int): PendingTasksPageDto
 
     /**
      * Reorder a task within its queue by setting a new position.

@@ -64,6 +64,9 @@ fun AgentWorkloadScreen(
     val runningNodes by viewModel.runningTaskNodes.collectAsState()
     val taskHistory by viewModel.taskHistory.collectAsState()
     val taskHistoryHasMore by viewModel.taskHistoryHasMore.collectAsState()
+    val qualificationProgress by viewModel.qualificationProgress.collectAsState()
+    val backgroundTotalCount by viewModel.backgroundTotalCount.collectAsState()
+    val isLoadingMoreBackground by viewModel.isLoadingMoreBackground.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
 
@@ -79,12 +82,14 @@ fun AgentWorkloadScreen(
             title = "Aktivita agenta",
         )
 
+        val hasAgentActivity = isRunning || qualificationProgress.isNotEmpty()
+
         // Expanded header
         AccordionSectionHeader(
             section = expandedSection,
             isExpanded = true,
-            badge = badgeCount(expandedSection, foregroundQueue, backgroundQueue, taskHistory, isRunning),
-            isAgentRunning = isRunning,
+            badge = badgeCount(expandedSection, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning, qualificationProgress),
+            isAgentRunning = hasAgentActivity,
             onClick = {},
         )
 
@@ -98,6 +103,7 @@ fun AgentWorkloadScreen(
                     runningTaskType = runningTaskType,
                     orchestratorProgress = orchestratorProgress,
                     runningNodes = runningNodes,
+                    qualificationProgress = qualificationProgress,
                     onStop = {
                         orchestratorProgress?.let { viewModel.cancelOrchestration(it.taskId) }
                     },
@@ -105,12 +111,12 @@ fun AgentWorkloadScreen(
                 AccordionSection.FRONTEND -> QueueSectionContent(
                     items = foregroundQueue,
                     emptyMessage = "Žádná úloha ve frontě",
-                    maxItems = 5,
                 )
-                AccordionSection.BACKEND -> QueueSectionContent(
+                AccordionSection.BACKEND -> BackendQueueSectionContent(
                     items = backgroundQueue,
-                    emptyMessage = "Žádné úlohy na pozadí",
-                    maxItems = 5,
+                    totalCount = backgroundTotalCount,
+                    isLoadingMore = isLoadingMoreBackground,
+                    onLoadMore = { viewModel.loadMoreBackgroundTasks() },
                 )
                 AccordionSection.HISTORY -> HistorySectionContent(
                     entries = taskHistory,
@@ -127,8 +133,8 @@ fun AgentWorkloadScreen(
                 AccordionSectionHeader(
                     section = section,
                     isExpanded = false,
-                    badge = badgeCount(section, foregroundQueue, backgroundQueue, taskHistory, isRunning),
-                    isAgentRunning = isRunning,
+                    badge = badgeCount(section, foregroundQueue, backgroundQueue, backgroundTotalCount, taskHistory, isRunning, qualificationProgress),
+                    isAgentRunning = hasAgentActivity,
                     onClick = { expandedSection = section },
                 )
                 HorizontalDivider()
@@ -142,12 +148,14 @@ private fun badgeCount(
     section: AccordionSection,
     foregroundQueue: List<com.jervis.ui.model.PendingQueueItem>,
     backgroundQueue: List<com.jervis.ui.model.PendingQueueItem>,
+    backgroundTotalCount: Long,
     taskHistory: List<com.jervis.ui.model.TaskHistoryEntry>,
     isRunning: Boolean,
+    qualificationProgress: Map<String, QualificationProgressInfo>,
 ): Int = when (section) {
-    AccordionSection.AGENT -> 0 // Agent shows spinner/dot instead
+    AccordionSection.AGENT -> if (isRunning) 0 else qualificationProgress.size
     AccordionSection.FRONTEND -> foregroundQueue.size
-    AccordionSection.BACKEND -> backgroundQueue.size
+    AccordionSection.BACKEND -> backgroundTotalCount.toInt()
     AccordionSection.HISTORY -> taskHistory.size
 }
 

@@ -203,6 +203,12 @@ class MainViewModel(
     private val _backgroundQueue = MutableStateFlow<List<PendingQueueItem>>(emptyList())
     val backgroundQueue: StateFlow<List<PendingQueueItem>> = _backgroundQueue.asStateFlow()
 
+    private val _backgroundTotalCount = MutableStateFlow(0L)
+    val backgroundTotalCount: StateFlow<Long> = _backgroundTotalCount.asStateFlow()
+
+    private val _isLoadingMoreBackground = MutableStateFlow(false)
+    val isLoadingMoreBackground: StateFlow<Boolean> = _isLoadingMoreBackground.asStateFlow()
+
     // In-memory agent activity log (since app start, max 200 entries, no persistence)
     val activityLog = AgentActivityLog()
     private val _activityEntries = MutableStateFlow<List<AgentActivityEntry>>(emptyList())
@@ -584,11 +590,19 @@ class MainViewModel(
                     // Remove from active progress
                     _qualificationProgress.value = _qualificationProgress.value - event.taskId
                 } else {
+                    val existing = _qualificationProgress.value[event.taskId]
+                    val newStep = QualificationProgressStep(
+                        timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds(),
+                        message = event.message,
+                        step = event.step,
+                        metadata = event.metadata,
+                    )
                     _qualificationProgress.value = _qualificationProgress.value + (
                         event.taskId to QualificationProgressInfo(
                             taskId = event.taskId,
                             message = event.message,
                             step = event.step,
+                            steps = (existing?.steps ?: emptyList()) + newStep,
                         )
                     )
                 }
@@ -1635,10 +1649,45 @@ class MainViewModel(
                         queuePosition = dto.queuePosition,
                     )
                 }
+                _backgroundTotalCount.value = pending.backgroundTotalCount
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (e is IllegalStateException && e.message?.contains("cancelled") == true) return@launch
                 println("Error refreshing queues: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Load more background tasks (infinite scroll pagination).
+     */
+    fun loadMoreBackgroundTasks() {
+        if (_isLoadingMoreBackground.value) return
+        val currentItems = _backgroundQueue.value
+        if (currentItems.size.toLong() >= _backgroundTotalCount.value) return
+        _isLoadingMoreBackground.value = true
+        scope.launch {
+            try {
+                val page = repository.agentOrchestrator.getBackgroundTasksPage(
+                    limit = 20,
+                    offset = currentItems.size,
+                )
+                _backgroundQueue.value = currentItems + page.items.map { dto ->
+                    PendingQueueItem(
+                        taskId = dto.taskId,
+                        preview = dto.preview,
+                        projectName = dto.projectName,
+                        taskType = dto.taskType,
+                        processingMode = dto.processingMode,
+                        queuePosition = dto.queuePosition,
+                    )
+                }
+                _backgroundTotalCount.value = page.totalCount
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error loading more background tasks: ${e.message}")
+            } finally {
+                _isLoadingMoreBackground.value = false
             }
         }
     }
@@ -1900,10 +1949,21 @@ data class OrchestratorProgressInfo(
 )
 
 /**
- * Live qualification progress info for a single task.
+ * Single step in qualification progress timeline.
+ */
+data class QualificationProgressStep(
+    val timestamp: Long,
+    val message: String,
+    val step: String,
+    val metadata: Map<String, String> = emptyMap(),
+)
+
+/**
+ * Live qualification progress info for a single task with accumulated step history.
  */
 data class QualificationProgressInfo(
     val taskId: String,
     val message: String,
     val step: String,
+    val steps: List<QualificationProgressStep> = emptyList(),
 )

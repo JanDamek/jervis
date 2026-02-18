@@ -11,6 +11,17 @@ data class PendingTasksDto(
     val foreground: List<PendingTaskItemDto> = emptyList(),
     val background: List<PendingTaskItemDto> = emptyList(),
     val runningTask: PendingTaskItemDto? = null,
+    val backgroundTotalCount: Long = 0,
+)
+
+/**
+ * Paginated response for background tasks (infinite scroll in UI).
+ */
+@Serializable
+data class PendingTasksPageDto(
+    val items: List<PendingTaskItemDto>,
+    val totalCount: Long,
+    val hasMore: Boolean,
 )
 
 /**
