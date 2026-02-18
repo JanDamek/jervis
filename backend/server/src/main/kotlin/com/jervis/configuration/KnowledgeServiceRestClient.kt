@@ -36,6 +36,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -226,11 +227,13 @@ class KnowledgeServiceRestClient(
             }
 
             // Stream NDJSON lines as they arrive (like WhisperRestClient SSE pattern)
+            // Timeout per line: 5 minutes — if KB hangs mid-stream, don't block forever
             val channel = httpResponse.bodyAsChannel()
             var result: FullIngestResult? = null
+            val lineTimeoutMs = 5 * 60 * 1000L // 5 minutes per line
 
             while (true) {
-                val line = channel.readUTF8Line() ?: break
+                val line = withTimeout(lineTimeoutMs) { channel.readUTF8Line() } ?: break
                 if (line.isBlank()) continue
 
                 try {
