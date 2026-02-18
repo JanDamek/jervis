@@ -322,6 +322,8 @@ async def ingest_full(
     projectId: str = Form(None),
     groupId: str = Form(None),
     metadata: str = Form("{}"),
+    callbackUrl: str = Form(""),
+    taskId: str = Form(""),
     attachments: List[UploadFile] = File(default=[])
 ):
     """
@@ -330,6 +332,7 @@ async def ingest_full(
     Accepts multipart form with:
     - Document metadata (clientId, sourceUrn, sourceType, subject, content)
     - Multiple file attachments (images processed with vision, docs with Tika)
+    - Optional callbackUrl + taskId for push-based progress notifications
 
     If Accept: application/x-ndjson → streams progress events as NDJSON lines.
     Otherwise → returns single JSON response (backward compatible).
@@ -358,7 +361,12 @@ async def ingest_full(
         accept = http_request.headers.get("accept", "")
         if "ndjson" in accept:
             async def _stream():
-                async for event in service.ingest_full_streaming(request, attachment_list):
+                async for event in service.ingest_full_streaming(
+                    request, attachment_list,
+                    callback_url=callbackUrl,
+                    task_id=taskId,
+                    client_id=clientId,
+                ):
                     yield json.dumps(event) + "\n"
 
             return StreamingResponse(_stream(), media_type="application/x-ndjson")

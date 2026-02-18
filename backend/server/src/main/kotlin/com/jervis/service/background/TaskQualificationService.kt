@@ -86,11 +86,25 @@ class TaskQualificationService(
             }
 
         val summary = simpleQualifierAgent.run(task) { message, metadata ->
+            val step = metadata["step"] ?: "unknown"
+
+            // Persist step to DB for history (viewable in "Hotovo" section)
+            taskService.appendQualificationStep(
+                task.id,
+                com.jervis.entity.QualificationStepRecord(
+                    timestamp = java.time.Instant.now(),
+                    step = step,
+                    message = message,
+                    metadata = metadata,
+                ),
+            )
+
+            // Emit to live event stream for real-time UI updates
             notificationRpc.emitQualificationProgress(
                 taskId = task.id.toString(),
                 clientId = task.clientId.toString(),
                 message = message,
-                step = metadata["step"] ?: "unknown",
+                step = step,
                 metadata = metadata,
             )
         }

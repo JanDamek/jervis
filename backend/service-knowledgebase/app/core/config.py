@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # -- Microservice endpoints -------------------------------------------------
     TIKA_URL: str = "http://192.168.100.117:8081"           # Apache Tika (document extraction)
+    KOTLIN_SERVER_URL: str = ""                              # Kotlin server for progress callbacks (e.g. http://jervis-server:5500)
 
     # -- Model configuration ----------------------------------------------------
     EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (CPU instance)

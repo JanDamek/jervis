@@ -46,6 +46,10 @@ class KnowledgeService:
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
         # LLM for ingest tasks (simple relevance check, complex summary)
+        # Persistent HTTP client for progress callbacks to Kotlin server
+        import httpx
+        self._callback_http = httpx.AsyncClient(timeout=5.0) if settings.KOTLIN_SERVER_URL else None
+        # LLM for ingest tasks (simple relevance check, complex summary)
         self.ingest_llm_simple = ChatOllama(
             base_url=settings.OLLAMA_INGEST_BASE_URL,
             model=settings.INGEST_MODEL_SIMPLE,
@@ -582,10 +586,37 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             urgency=summary_data.get("urgency", "normal"),
         )
 
+    async def _post_progress_callback(
+        self,
+        callback_url: str,
+        task_id: str,
+        client_id: str,
+        step: str,
+        message: str,
+        metadata: dict,
+    ):
+        """POST progress event to Kotlin server callback (fire-and-forget, non-blocking).
+        Uses persistent HTTP client (_callback_http) for connection reuse."""
+        if not self._callback_http:
+            return
+        try:
+            await self._callback_http.post(callback_url, json={
+                "taskId": task_id,
+                "clientId": client_id,
+                "step": step,
+                "message": message,
+                "metadata": metadata,
+            })
+        except Exception as e:
+            logger.debug("KB progress callback failed: %s", e)
+
     async def ingest_full_streaming(
         self,
         request: FullIngestRequest,
-        attachments: list[tuple[bytes, str]]
+        attachments: list[tuple[bytes, str]],
+        callback_url: str = "",
+        task_id: str = "",
+        client_id: str = "",
     ):
         """
         Streaming version of ingest_full that yields NDJSON progress events.
@@ -593,6 +624,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         Same logic as ingest_full but with:
         - Progress events at each major step
         - Parallel RAG + Summary via asyncio.gather()
+        - Push-based progress callbacks via POST to Kotlin server (if callback_url provided)
         """
         import hashlib, time as _time
 
@@ -600,10 +632,18 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         attachment_results = []
         t0 = _time.monotonic()
 
-        logger.info("Full ingest (streaming) started source=%s type=%s attachments=%d",
-                     request.sourceUrn, request.sourceType or "?", len(attachments))
+        logger.info("Full ingest (streaming) started source=%s type=%s attachments=%d callback=%s",
+                     request.sourceUrn, request.sourceType or "?", len(attachments), bool(callback_url))
 
-        yield {"type": "progress", "step": "start", "message": "Zpracovávám obsah...", "metadata": {}}
+        async def _emit(step, message, metadata=None):
+            """Yield NDJSON event AND push to callback URL if configured."""
+            if metadata is None:
+                metadata = {}
+            if callback_url and task_id:
+                await self._post_progress_callback(callback_url, task_id, client_id, step, message, metadata)
+            return {"type": "progress", "step": step, "message": message, "metadata": metadata}
+
+        yield await _emit("start", "Zpracovávám obsah...")
 
         # ── 1. Process attachments ──
         if request.content:
@@ -641,22 +681,18 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
 
         if attachments:
-            yield {
-                "type": "progress", "step": "attachments",
-                "message": f"Zpracováno {attachments_processed}/{len(attachments)} příloh",
-                "metadata": {"processed": str(attachments_processed), "failed": str(attachments_failed)},
-            }
+            yield await _emit("attachments",
+                f"Zpracováno {attachments_processed}/{len(attachments)} příloh",
+                {"processed": str(attachments_processed), "failed": str(attachments_failed)})
 
         # ── 2. Combine + hash ──
         combined_content = "\n\n".join(all_content_parts)
         content_hash = hashlib.sha256(combined_content.encode()).hexdigest()[:16]
         content_len = len(combined_content)
 
-        yield {
-            "type": "progress", "step": "content_ready",
-            "message": f"Obsah připraven ({content_len:,} znaků)",
-            "metadata": {"content_length": str(content_len), "hash": content_hash},
-        }
+        yield await _emit("content_ready",
+            f"Obsah připraven ({content_len:,} znaků)",
+            {"content_length": str(content_len), "hash": content_hash})
 
         # ── 3. Idempotency check ──
         existing_chunks = await self.rag_service.count_by_source(request.sourceUrn)
@@ -668,11 +704,9 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             if existing_hash == content_hash:
                 skip_rag = True
                 rag_chunks_count = existing_chunks
-                yield {
-                    "type": "progress", "step": "hash_match",
-                    "message": f"Obsah nezměněn ({existing_chunks} chunks), přeskakuji RAG",
-                    "metadata": {"chunks": str(existing_chunks), "hash": content_hash},
-                }
+                yield await _emit("hash_match",
+                    f"Obsah nezměněn ({existing_chunks} chunks), přeskakuji RAG",
+                    {"chunks": str(existing_chunks), "hash": content_hash})
 
         ingest_req = IngestRequest(
             clientId=request.clientId,
@@ -691,37 +725,46 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
         if skip_rag:
             # Only run summary
-            yield {"type": "progress", "step": "summary_start", "message": "Generuji analýzu (14B model)...", "metadata": {}}
+            yield await _emit("llm_start", "LLM analýza obsahu (14B model)...")
             summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject)
         else:
             if existing_chunks > 0:
-                yield {"type": "progress", "step": "purge", "message": "Obsah změněn, mažu staré chunks...", "metadata": {}}
+                yield await _emit("purge", "Obsah změněn, mažu staré chunks...")
                 await self.rag_service.purge_by_source(request.sourceUrn)
 
             # ── 4. Parallel RAG + Summary ──
-            yield {
-                "type": "progress", "step": "parallel_start",
-                "message": "Ukládám do RAG a generuji analýzu paralelně...",
-                "metadata": {},
-            }
+            yield await _emit("rag_start", "Ukládám chunks do vektorové DB...")
+            yield await _emit("llm_start", "LLM analýza obsahu (14B model)...")
 
-            ingest_result, summary_data = await asyncio.gather(
-                self.ingest(ingest_req, content_hash=content_hash),
-                self._generate_summary(combined_content, request.sourceType or "unknown", request.subject),
-            )
-            rag_chunks_count = ingest_result.chunks_count
+            rag_task = asyncio.create_task(self.ingest(ingest_req, content_hash=content_hash))
+            summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject))
 
-            yield {
-                "type": "progress", "step": "rag_done",
-                "message": f"RAG uloženo: {rag_chunks_count} chunks",
-                "metadata": {"chunks": str(rag_chunks_count)},
-            }
+            # Report each parallel task as it completes (real-time)
+            ingest_result = None
+            summary_data = None
+            pending = {rag_task, summary_task}
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    if task is rag_task:
+                        ingest_result = task.result()
+                        rag_chunks_count = ingest_result.chunks_count
+                        yield await _emit("rag_done",
+                            f"RAG uloženo: {rag_chunks_count} chunks, graf extrakce zařazena do fronty",
+                            {"chunks": str(rag_chunks_count)})
+                    elif task is summary_task:
+                        summary_data = task.result()
+                        yield await _emit("llm_done",
+                            f"LLM hotovo: {summary_data.get('summary', '')[:80]}",
+                            {
+                                "entities": ", ".join(summary_data.get("entities", [])),
+                                "actionable": str(summary_data.get("hasActionableContent", False)),
+                            })
 
-        # ── 5. Summary result ──
-        yield {
-            "type": "progress", "step": "summary_done",
-            "message": f"Analýza: {summary_data.get('summary', '')[:100]}",
-            "metadata": {
+        # ── 5. Summary result (full metadata) ──
+        yield await _emit("summary_done",
+            f"Analýza: {summary_data.get('summary', '')[:100]}",
+            {
                 "summary": summary_data.get("summary", "")[:200],
                 "entities": ", ".join(summary_data.get("entities", [])),
                 "actionable": str(summary_data.get("hasActionableContent", False)),
@@ -730,8 +773,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
                 "hasFutureDeadline": str(summary_data.get("hasFutureDeadline", False)),
                 "suggestedDeadline": summary_data.get("suggestedDeadline") or "",
                 "assignedTo": summary_data.get("assignedTo") or "",
-            },
-        }
+            })
 
         # ── 6. Assignment check ──
         is_assigned = self._check_assignment(

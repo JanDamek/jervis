@@ -45,6 +45,8 @@ import kotlin.time.Duration.Companion.seconds
 class RpcClientsConfig(
     private val endpoints: EndpointProperties,
 ) {
+    @org.springframework.beans.factory.annotation.Value("\${jervis.kb-callback-base-url:}")
+    private var kbCallbackBaseUrl: String = ""
     private val logger = LoggerFactory.getLogger(RpcClientsConfig::class.java)
 
     private var _tikaClient: ITikaClient? = null
@@ -203,7 +205,7 @@ class RpcClientsConfig(
                 _tikaClient = createRpcClient(endpoints.tika.baseUrl)
             }
             override suspend fun reconnectKnowledgebase() {
-                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl)
+                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl, kbCallbackBaseUrl)
             }
         }
 
@@ -215,7 +217,7 @@ class RpcClientsConfig(
     private fun getKnowledgeService(): KnowledgeServiceRestClient =
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
-                ?: KnowledgeServiceRestClient(kbWriteUrl()).also { _knowledgeService = it }
+                ?: KnowledgeServiceRestClient(kbWriteUrl(), kbCallbackBaseUrl).also { _knowledgeService = it }
         }
 
     /** KB write URL (falls back to read URL if write endpoint not configured). */

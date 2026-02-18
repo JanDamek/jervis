@@ -553,7 +553,7 @@ private fun ProgressStepRow(
         }
 
         // Structured metadata display for key steps
-        val metadataSteps = listOf("summary_done", "rag_done", "content_ready", "hash_match", "routing", "simple_action")
+        val metadataSteps = listOf("summary_done", "rag_done", "llm_done", "content_ready", "hash_match", "routing", "simple_action")
         if (step.metadata.isNotEmpty() && step.step in metadataSteps) {
             Column(
                 modifier = Modifier.padding(start = 14.dp, top = 4.dp, bottom = 2.dp),
@@ -566,20 +566,24 @@ private fun ProgressStepRow(
                     "rag_done" -> {
                         MetadataRow("Chunks", step.metadata["chunks"])
                     }
+                    "llm_done" -> {
+                        MetadataRow("Entity", step.metadata["entities"])
+                        MetadataRow("Akční", step.metadata["actionable"]?.let { if (it == "true") "Ano" else "Ne" })
+                    }
                     "hash_match" -> {
                         MetadataRow("Chunks", step.metadata["chunks"]?.let { "$it (nezměněno)" })
                     }
                     "summary_done" -> {
                         MetadataRow("Entity", step.metadata["entities"])
-                        MetadataRow("Actionable", step.metadata["actionable"]?.let { if (it == "true") "Ano" else "Ne" })
+                        MetadataRow("Akční", step.metadata["actionable"]?.let { if (it == "true") "Ano" else "Ne" })
                         MetadataRow("Urgence", step.metadata["urgency"])
                         MetadataRow("Akce", step.metadata["suggestedActions"])
                         MetadataRow("Přiřazeno", step.metadata["assignedTo"]?.takeIf { it.isNotBlank() })
                         step.metadata["suggestedDeadline"]?.takeIf { it.isNotBlank() }?.let { MetadataRow("Deadline", it) }
                     }
                     "routing" -> {
-                        MetadataRow("Rozhodnutí", step.metadata["route"])
-                        MetadataRow("Cílový stav", step.metadata["targetState"])
+                        MetadataRow("Důvod", step.metadata["route"])
+                        MetadataRow("Výsledek", step.metadata["result"])
                     }
                     "simple_action" -> {
                         MetadataRow("Typ akce", step.metadata["actionType"])
@@ -1067,7 +1071,7 @@ private fun buildHistoryMetadata(step: QualificationStepDto): String {
         ).joinToString(" · ")
         "routing" -> listOfNotNull(
             meta["route"]?.let { "→ $it" },
-            meta["targetState"],
+            meta["result"],
         ).joinToString(" · ")
         "simple_action" -> listOfNotNull(
             meta["actionType"],

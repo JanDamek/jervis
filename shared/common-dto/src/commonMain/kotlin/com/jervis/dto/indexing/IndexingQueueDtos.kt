@@ -96,6 +96,23 @@ data class ConnectionIndexingGroupDto(
     val totalItemCount: Int,
 )
 
+// ── Qualification step DTO (persisted progress history) ──
+
+/**
+ * A single qualification progress step, transferred from backend to UI.
+ */
+@Serializable
+data class QualificationStepDto(
+    /** ISO 8601 timestamp of the step. */
+    val timestamp: String,
+    /** Step identifier (start, content_ready, rag_done, summary_done, routing, done, etc.) */
+    val step: String,
+    /** Human-readable message. */
+    val message: String,
+    /** Structured metadata (counts, decisions, etc.) */
+    val metadata: Map<String, String> = emptyMap(),
+)
+
 // ── Pipeline item DTO (used for KB queue + execution pipeline) ──
 
 /**
@@ -127,6 +144,10 @@ data class PipelineItemDto(
     val queuePosition: Int? = null,
     /** Processing mode: FOREGROUND (user chat, critical) or BACKGROUND (autonomous). */
     val processingMode: String? = null,
+    /** ISO 8601 – when qualification actually started (not queue creation time). */
+    val qualificationStartedAt: String? = null,
+    /** Persisted qualification progress steps (for history display in Hotovo). */
+    val qualificationSteps: List<QualificationStepDto> = emptyList(),
 )
 
 /**

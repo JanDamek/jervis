@@ -36,7 +36,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -58,6 +57,7 @@ private val logger = KotlinLogging.logger {}
  */
 class KnowledgeServiceRestClient(
     private val baseUrl: String,
+    private val callbackBaseUrl: String = "",
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -72,7 +72,7 @@ class KnowledgeServiceRestClient(
         install(HttpTimeout) {
             requestTimeoutMillis = Long.MAX_VALUE
             connectTimeoutMillis = 30_000   // 30s connect timeout only
-            socketTimeoutMillis = Long.MAX_VALUE
+            socketTimeoutMillis = 5 * 60 * 1000L  // 5 min — prevents stuck readUTF8Line on half-open TCP
         }
     }
 
@@ -185,12 +185,23 @@ class KnowledgeServiceRestClient(
     /**
      * Streaming version of ingestFull that reads NDJSON progress events
      * from the KB service and calls onProgress for each one.
+     *
+     * When callbackBaseUrl is configured, passes callback URL + taskId + clientId
+     * to the KB service. KB then POSTs progress events directly to the Kotlin server
+     * (/internal/kb-progress) for real-time push to UI via WebSocket flow.
+     * NDJSON progress events are still read but only for the final result.
      */
     suspend fun ingestFullWithProgress(
         request: FullIngestRequest,
+        taskId: String = "",
+        clientId: String = "",
         onProgress: suspend (message: String, step: String, metadata: Map<String, String>) -> Unit,
     ): FullIngestResult {
         logger.debug { "Calling knowledgebase ingestFull (streaming): sourceUrn=${request.sourceUrn}" }
+
+        val callbackUrl = if (callbackBaseUrl.isNotBlank() && taskId.isNotBlank()) {
+            "${callbackBaseUrl.trimEnd('/')}/internal/kb-progress"
+        } else ""
 
         return try {
             val httpResponse = client.submitFormWithBinaryData(
@@ -203,6 +214,12 @@ class KnowledgeServiceRestClient(
                     append("content", request.content)
                     request.projectId?.let { append("projectId", it.toString()) }
                     append("metadata", Json.encodeToString(request.metadata))
+
+                    // Push-based progress callback params
+                    if (callbackUrl.isNotBlank()) {
+                        append("callbackUrl", callbackUrl)
+                        append("taskId", taskId)
+                    }
 
                     request.attachments.forEach { attachment ->
                         append(
@@ -227,13 +244,12 @@ class KnowledgeServiceRestClient(
             }
 
             // Stream NDJSON lines as they arrive (like WhisperRestClient SSE pattern)
-            // Timeout per line: 5 minutes — if KB hangs mid-stream, don't block forever
+            // Socket timeout (5 min) prevents stuck readUTF8Line on half-open TCP
             val channel = httpResponse.bodyAsChannel()
             var result: FullIngestResult? = null
-            val lineTimeoutMs = 5 * 60 * 1000L // 5 minutes per line
 
             while (true) {
-                val line = withTimeout(lineTimeoutMs) { channel.readUTF8Line() } ?: break
+                val line = channel.readUTF8Line() ?: break
                 if (line.isBlank()) continue
 
                 try {
@@ -243,15 +259,20 @@ class KnowledgeServiceRestClient(
 
                     when (type) {
                         "progress" -> {
-                            val step = obj["step"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: "unknown"
-                            val message = obj["message"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: ""
-                            val metadata = obj["metadata"]?.let { el ->
-                                (el as? kotlinx.serialization.json.JsonObject)?.entries?.associate { (k, v) ->
-                                    k to ((v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: "")
-                                }
-                            } ?: emptyMap()
+                            // When callback URL is configured, KB events are pushed via POST
+                            // to /internal/kb-progress (real-time). NDJSON events arrive
+                            // buffered at the end, so skip them to avoid duplicates.
+                            if (callbackUrl.isBlank()) {
+                                val step = obj["step"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: "unknown"
+                                val message = obj["message"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: ""
+                                val metadata = obj["metadata"]?.let { el ->
+                                    (el as? kotlinx.serialization.json.JsonObject)?.entries?.associate { (k, v) ->
+                                        k to ((v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: "")
+                                    }
+                                } ?: emptyMap()
 
-                            onProgress(message, step, metadata)
+                                onProgress(message, step, metadata)
+                            }
                         }
 
                         "result" -> {

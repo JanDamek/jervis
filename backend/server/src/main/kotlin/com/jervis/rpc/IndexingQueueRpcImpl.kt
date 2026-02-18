@@ -17,6 +17,7 @@ import com.jervis.dto.indexing.IndexingItemType
 import com.jervis.dto.indexing.IndexingQueueItemDto
 import com.jervis.dto.indexing.IndexingQueuePageDto
 import com.jervis.dto.indexing.PipelineItemDto
+import com.jervis.dto.indexing.QualificationStepDto
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.TaskDocument
@@ -430,6 +431,15 @@ class IndexingQueueRpcImpl(
                 taskId = task.id.value.toHexString(),
                 queuePosition = task.queuePosition,
                 processingMode = task.processingMode.name,
+                qualificationStartedAt = task.qualificationStartedAt?.formatIso(),
+                qualificationSteps = task.qualificationSteps.map { step ->
+                    QualificationStepDto(
+                        timestamp = step.timestamp.formatIso(),
+                        step = step.step,
+                        message = step.message,
+                        metadata = step.metadata,
+                    )
+                },
             )
         }
     }
@@ -477,6 +487,15 @@ class IndexingQueueRpcImpl(
                 errorMessage = null,
                 taskId = task.id.value.toHexString(),
                 queuePosition = null,
+                qualificationStartedAt = task.qualificationStartedAt?.formatIso(),
+                qualificationSteps = task.qualificationSteps.map { step ->
+                    QualificationStepDto(
+                        timestamp = step.timestamp.formatIso(),
+                        step = step.step,
+                        message = step.message,
+                        metadata = step.metadata,
+                    )
+                },
             )
         }
 

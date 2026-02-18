@@ -147,6 +147,11 @@ data class TaskDocument(
     val agentJobState: String? = null,
     /** When the agent job was dispatched. */
     val agentJobStartedAt: Instant? = null,
+    // Qualification progress history (persisted for viewing in "Hotovo" section)
+    /** Timestamp when qualification actually started (not queue creation time). */
+    val qualificationStartedAt: Instant? = null,
+    /** Accumulated qualification progress steps — persisted for history display. */
+    val qualificationSteps: List<QualificationStepRecord> = emptyList(),
 )
 
 /**
@@ -168,3 +173,13 @@ enum class ProcessingMode {
     FOREGROUND,
     BACKGROUND,
 }
+
+/**
+ * A single qualification progress step, stored in TaskDocument for history.
+ */
+data class QualificationStepRecord(
+    val timestamp: Instant,
+    val step: String,
+    val message: String,
+    val metadata: Map<String, String> = emptyMap(),
+)

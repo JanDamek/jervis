@@ -94,6 +94,7 @@ data:
         wait-on-startup: 10s         # Delay before BackgroundEngine starts
         wait-on-error: 1m           # Delay after error before retrying
         wait-interval: 30s           # Qualification loop sleep between cycles
+      kb-callback-base-url: "http://jervis-server:5500"  # KB progress push callback URL
 
     link:
       indexing:
@@ -172,6 +173,7 @@ data:
   ARANGO_USER: "root"
   # -- Microservice endpoints -------------------------------------------------
   TIKA_URL: "http://192.168.100.117:8081"                      # Apache Tika
+  KOTLIN_SERVER_URL: "http://jervis-server:5500"               # Kotlin server for progress callbacks
 
 ---
 # =============================================================================

@@ -62,6 +62,7 @@ class KtorRpcServer(
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.repository.TaskRepository,
+    private val taskService: com.jervis.service.background.TaskService,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -855,6 +856,42 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: KB microservice pushes progress events here (real-time)
+                            post("/internal/kb-progress") {
+                                try {
+                                    val body = call.receive<KbProgressCallback>()
+                                    launch {
+                                        // 1. Persist step to DB for history
+                                        val taskId = com.jervis.common.types.TaskId(org.bson.types.ObjectId(body.taskId))
+                                        taskService.appendQualificationStep(
+                                            taskId,
+                                            com.jervis.entity.QualificationStepRecord(
+                                                timestamp = java.time.Instant.now(),
+                                                step = body.step,
+                                                message = body.message,
+                                                metadata = (body.metadata ?: emptyMap()) + ("agent" to "simple_qualifier"),
+                                            ),
+                                        )
+                                        // 2. Emit to live event stream for real-time UI
+                                        notificationRpcImpl.emitQualificationProgress(
+                                            taskId = body.taskId,
+                                            clientId = body.clientId,
+                                            message = body.message,
+                                            step = body.step,
+                                            metadata = (body.metadata ?: emptyMap()) + ("agent" to "simple_qualifier"),
+                                        )
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process KB progress callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -940,6 +977,15 @@ data class OrchestratorStatusCallback(
     val interruptDescription: String? = null,
     val branch: String? = null,
     val artifacts: List<String> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class KbProgressCallback(
+    val taskId: String,
+    val clientId: String,
+    val step: String,
+    val message: String,
+    val metadata: Map<String, String>? = null,
 )
 
 @kotlinx.serialization.Serializable

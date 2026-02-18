@@ -98,6 +98,7 @@ jervis:
     wait-on-startup: 10s           # Delay before BackgroundEngine starts processing
     wait-on-error: 1m             # Delay after error before retrying
     wait-interval: 30s             # Qualification loop sleep between cycles
+  kb-callback-base-url: ""         # KB progress push callback (empty = disabled, K8s: http://jervis-server:5500)
 
 # -- Link indexing -------------------------------------------------------------
 link:

@@ -306,8 +306,13 @@ class TaskService(
         next: TaskStateEnum,
     ): TaskDocument {
         val fromState = task.state
-        val updated = task.copy(state = next)
-        val saved = taskRepository.save(updated)
+        // Use targeted $set instead of full document save to preserve fields
+        // modified via $push (e.g. qualificationSteps) during processing
+        val query = Query(Criteria.where("_id").`is`(task.id.value))
+        val update = Update().set("state", next.name)
+        val options = FindAndModifyOptions.options().returnNew(true)
+        val saved = mongoTemplate.findAndModify(query, update, options, TaskDocument::class.java)
+            .awaitSingleOrNull() ?: task.copy(state = next)
         logger.info {
             "TASK_STATE_TRANSITION: id=${task.id} correlationId=${saved.correlationId} from=$fromState to=$next type=${task.type}"
         }
@@ -324,8 +329,14 @@ class TaskService(
         errorMessage: String,
     ): TaskDocument {
         val previousState = task.state
-        val updated = task.copy(state = TaskStateEnum.ERROR, errorMessage = errorMessage)
-        val saved = taskRepository.save(updated)
+        // Use targeted $set to preserve fields modified via $push (e.g. qualificationSteps)
+        val query = Query(Criteria.where("_id").`is`(task.id.value))
+        val update = Update()
+            .set("state", TaskStateEnum.ERROR.name)
+            .set("errorMessage", errorMessage)
+        val options = FindAndModifyOptions.options().returnNew(true)
+        val saved = mongoTemplate.findAndModify(query, update, options, TaskDocument::class.java)
+            .awaitSingleOrNull() ?: task.copy(state = TaskStateEnum.ERROR, errorMessage = errorMessage)
         logger.error {
             "TASK_MARKED_AS_ERROR: id=${task.id} correlationId=${saved.correlationId} previousState=$previousState error='${
                 errorMessage.take(
@@ -412,11 +423,20 @@ class TaskService(
      * Returns: Updated task with QUALIFYING state if successfully claimed, null if already claimed
      */
     suspend fun setToQualifying(task: TaskDocument): TaskDocument? {
-        val result = atomicStateTransition(
-            taskId = task.id,
-            expectedState = TaskStateEnum.READY_FOR_QUALIFICATION,
-            newState = TaskStateEnum.QUALIFYING,
+        // Custom findAndModify that also sets qualificationStartedAt and clears old steps
+        val query = Query(
+            Criteria.where("_id").`is`(task.id.value)
+                .and("state").`is`(TaskStateEnum.READY_FOR_QUALIFICATION.name),
         )
+        val now = Instant.now()
+        val update = Update()
+            .set("state", TaskStateEnum.QUALIFYING.name)
+            .set("qualificationStartedAt", now)
+            .set("qualificationSteps", emptyList<Any>())
+        val options = FindAndModifyOptions.options().returnNew(true)
+
+        val result = mongoTemplate.findAndModify(query, update, options, TaskDocument::class.java)
+            .awaitSingleOrNull()
 
         if (result != null) {
             logger.info {
@@ -430,6 +450,16 @@ class TaskService(
         }
 
         return result
+    }
+
+    /**
+     * Append a qualification progress step to the task's history.
+     * Uses MongoDB $push for atomic append without race conditions.
+     */
+    suspend fun appendQualificationStep(taskId: TaskId, step: com.jervis.entity.QualificationStepRecord) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().push("qualificationSteps", step)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
     }
 
     /**
