@@ -169,28 +169,33 @@ class OllamaRouter:
             current_max_vram = max(gpu.loaded_models.values()) if gpu.loaded_models else 0
 
             if requested_vram > current_max_vram:
-                # Bigger model arriving — save previous models, unload, load big first, reload others
-                previous_models = list(gpu.loaded_models.keys())
+                # Bigger model arriving — unload, load big, reload ONLY embeddings alongside
+                # (non-embedding models like 14b cause too much CPU offload → 30b timeouts)
+                previous_embeddings = [m for m in gpu.loaded_models if m in EMBEDDING_MODELS]
                 logger.info(
                     "VRAM_PRIORITY: GPU %s — bigger model %s (%.0fGB) > current max %.0fGB, "
-                    "unloading %s → load %s first → then reload previous",
+                    "unloading all → load %s → reload embeddings %s",
                     gpu.name, model, requested_vram, current_max_vram,
-                    previous_models, model,
+                    model, previous_embeddings,
                 )
                 gpu.loading_in_progress = True
                 try:
                     await self.gpu_pool.unload_all(gpu, self._mgmt_client)
                     loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                     if loaded:
-                        # Reload previous models alongside (biggest first for VRAM priority)
-                        for prev_model in sorted(previous_models, key=lambda m: estimate_vram(m), reverse=True):
-                            if prev_model != model:
-                                await self.gpu_pool.load_model(gpu, prev_model, self._mgmt_client)
+                        # Only reload embedding models alongside (small, won't hurt perf)
+                        for emb_model in previous_embeddings:
+                            await self.gpu_pool.load_model(gpu, emb_model, self._mgmt_client)
                         return await self._send_to_gpu(gpu, request)
                 finally:
                     gpu.loading_in_progress = False
-            else:
-                # Same size or smaller — load alongside existing (Ollama handles CPU offload)
+            elif model in EMBEDDING_MODELS:
+                # Embedding model — always safe to co-locate (small)
+                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                if loaded:
+                    return await self._send_to_gpu(gpu, request)
+            elif current_max_vram <= requested_vram:
+                # Same-size or smaller non-embedding — load alongside if no big model present
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                 if loaded:
                     return await self._send_to_gpu(gpu, request)
@@ -455,9 +460,10 @@ class OllamaRouter:
             self._bg_load_tasks[gpu_name] = task
 
     async def _delayed_background_load(self, gpu: GpuBackend) -> None:
-        """After a delay, load background model set onto GPU alongside existing models.
+        """After a delay, load background models onto GPU.
 
-        All models co-locate — Ollama handles CPU offload for layers that don't fit VRAM.
+        When :30b is loaded: only load embedding models (14b on CPU — too much offload).
+        When no :30b: load full background set (14b + embedding).
         """
         try:
             await asyncio.sleep(settings.background_load_delay_s)
@@ -466,11 +472,22 @@ class OllamaRouter:
             if gpu.name in self._reservations:
                 return
 
-            logger.info(
-                "Loading background model set on GPU %s (alongside existing: %s)",
-                gpu.name, list(gpu.loaded_models.keys()),
-            )
-            await self.gpu_pool.load_model_set(gpu, "background", self._mgmt_client)
+            has_big_model = any(":30b" in m for m in gpu.loaded_models)
+            if has_big_model:
+                # Only load embedding alongside :30b (14b would cause too much CPU offload)
+                logger.info(
+                    "GPU %s has :30b — loading only embedding models alongside",
+                    gpu.name,
+                )
+                for emb_model in EMBEDDING_MODELS:
+                    if not gpu.has_model(emb_model):
+                        await self.gpu_pool.load_model(gpu, emb_model, self._mgmt_client)
+            else:
+                logger.info(
+                    "Loading background model set on GPU %s (existing: %s)",
+                    gpu.name, list(gpu.loaded_models.keys()),
+                )
+                await self.gpu_pool.load_model_set(gpu, "background", self._mgmt_client)
         except asyncio.CancelledError:
             logger.info("Background model loading cancelled for GPU %s", gpu.name)
         except Exception as e:
