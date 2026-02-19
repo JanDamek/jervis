@@ -10,6 +10,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.ProcessingMode
 import com.jervis.entity.TaskDocument
 import com.jervis.configuration.properties.QualifierProperties
+import com.jervis.repository.ClientRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.text.TikaTextExtractionService
@@ -35,6 +36,7 @@ import java.time.Instant
 @Service
 class TaskService(
     private val taskRepository: TaskRepository,
+    private val clientRepository: ClientRepository,
     private val tikaTextExtractionService: TikaTextExtractionService,
     private val qualifierProperties: QualifierProperties,
     @Lazy private val notificationRpc: NotificationRpcImpl,
@@ -45,6 +47,35 @@ class TaskService(
     // Track current running task for queue status
     @Volatile
     private var currentRunningTask: TaskDocument? = null
+
+    /**
+     * Bulk-mark all pipeline tasks for archived clients as DONE.
+     * Targets: READY_FOR_QUALIFICATION, QUALIFYING, READY_FOR_GPU.
+     * Scheduled tasks (NEW) are left untouched — they resume when client is unarchived.
+     * Called on startup and periodically (every 5 min) from BackgroundEngine.
+     */
+    suspend fun markArchivedClientTasksAsDone(): Int {
+        val archivedIds = clientRepository.findByArchivedTrue().toList().map { it.id.value }
+        if (archivedIds.isEmpty()) return 0
+
+        val pipelineStates = listOf(
+            TaskStateEnum.READY_FOR_QUALIFICATION.name,
+            TaskStateEnum.QUALIFYING.name,
+            TaskStateEnum.READY_FOR_GPU.name,
+        )
+        val query = Query(
+            Criteria.where("clientId").`in`(archivedIds)
+                .and("state").`in`(pipelineStates),
+        )
+        val update = Update()
+            .set("state", TaskStateEnum.DONE.name)
+            .set("errorMessage", "skipped: client archived")
+        val result = mongoTemplate.updateMulti(query, update, TaskDocument::class.java).awaitSingle()
+        if (result.modifiedCount > 0) {
+            logger.info { "ARCHIVED_CLEANUP: Marked ${result.modifiedCount} task(s) as DONE for ${archivedIds.size} archived client(s)" }
+        }
+        return result.modifiedCount.toInt()
+    }
 
     suspend fun createTask(
         taskType: TaskTypeEnum,

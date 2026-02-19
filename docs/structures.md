@@ -150,6 +150,18 @@ GPU state when 30b active:
 
 **Solution:** Two-stage architecture with CPU-based qualification (structuring) and GPU-based execution (analysis/actions).
 
+### Archived Client = No Activity
+
+When `ClientDocument.archived = true`, the entire pipeline is blocked for that client:
+
+| Stage | Mechanism |
+|-------|-----------|
+| **CentralPoller** | `findByArchivedFalseAndConnectionIdsContaining()` — archived clients excluded from polling, no new tasks created |
+| **Pipeline tasks** | `TaskService.markArchivedClientTasksAsDone()` — bulk DB update marks READY_FOR_QUALIFICATION/QUALIFYING/READY_FOR_GPU as DONE (runs on startup + every 5 min) |
+| **Scheduler** | `clientRepository.getById()` check before dispatch — archived client's scheduled tasks stay in NEW, resume when unarchived |
+| **Idle review** | Client archived check before creating IDLE_REVIEW task |
+| **Running tasks** | PYTHON_ORCHESTRATING tasks finish normally — no new tasks follow |
+
 ```
 ┌─────────────────┐
 │ CentralPoller   │ downloads data from API → MongoDB (state=NEW)

@@ -185,8 +185,8 @@ class CentralPoller(
                 return
             }
 
-            // Find all clients/projects using this connectionDocument
-            val clients = clientRepository.findByConnectionIdsContaining(connectionDocument.id).toList()
+            // Find non-archived clients using this connectionDocument
+            val clients = clientRepository.findByArchivedFalseAndConnectionIdsContaining(connectionDocument.id).toList()
 
             // Find projects that reference this connection in their resources
             val projects = projectRepository.findByResourcesConnectionId(connectionDocument.id.value).toList()

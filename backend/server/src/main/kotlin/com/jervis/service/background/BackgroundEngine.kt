@@ -69,6 +69,7 @@ class BackgroundEngine(
     private val agentOrchestratorRpc: com.jervis.rpc.AgentOrchestratorRpcImpl,
     private val projectService: com.jervis.service.project.ProjectService,
     private val taskRepository: com.jervis.repository.TaskRepository,
+    private val clientRepository: com.jervis.repository.ClientRepository,
     private val pythonOrchestratorClient: PythonOrchestratorClient,
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
@@ -182,6 +183,19 @@ class BackgroundEngine(
                     logger.error(e) { "Workspace retry loop FAILED to start!" }
                 }
             }
+
+        // Periodic cleanup: mark pipeline tasks for archived clients as DONE
+        scope.launch {
+            delay(backgroundProperties.waitOnStartup)
+            while (isActive) {
+                try {
+                    taskService.markArchivedClientTasksAsDone()
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to clean up archived client tasks" }
+                }
+                delay(300_000) // Every 5 min
+            }
+        }
 
         idleReviewJob =
             scope.launch {
@@ -666,6 +680,11 @@ class BackgroundEngine(
                 var dispatched = 0
                 dueTasks.collect { task ->
                     try {
+                        val client = clientRepository.getById(task.clientId)
+                        if (client?.archived == true) {
+                            logger.info { "SCHEDULER_SKIP_ARCHIVED: task ${task.id} (${task.taskName}) — client ${task.clientId} archived" }
+                            return@collect
+                        }
                         dispatchScheduledTask(task)
                         dispatched++
                     } catch (e: Exception) {
@@ -964,6 +983,12 @@ class BackgroundEngine(
 
                 if (defaultClientId == null) {
                     logger.debug { "IDLE_REVIEW: No client found, skipping" }
+                    continue
+                }
+
+                val defaultClient = clientRepository.getById(defaultClientId)
+                if (defaultClient == null || defaultClient.archived) {
+                    logger.debug { "IDLE_REVIEW: Client $defaultClientId not found or archived, skipping" }
                     continue
                 }
 

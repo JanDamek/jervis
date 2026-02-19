@@ -20,6 +20,37 @@
 
 ## Core Development Principles
 
+### Database Query Principles
+
+**Always filter in DB, never in application code.**
+
+Every condition that can be expressed as a DB query MUST be a DB query. Fetching records only to filter them in Kotlin wastes DB time, network, and application RAM.
+
+**❌ DON'T:**
+```kotlin
+// WRONG: fetches ALL clients, filters in Kotlin
+clientRepository.findAll().toList().filter { it.archived }
+// WRONG: fetches all, then filters
+repository.findByState(READY).toList().filter { it.clientId !in excludedIds }
+```
+
+**✅ DO:**
+```kotlin
+// CORRECT: DB does the filtering
+clientRepository.findByArchivedTrue()
+// CORRECT: proper query method
+repository.findByStateAndClientIdNotIn(READY, excludedIds)
+```
+
+**Rules:**
+1. **Spring Data derived queries first** — use method name conventions (`findByArchivedTrue`, `findByStateAndClientIdNotIn`)
+2. **@Query only when Spring Data cannot express it** — complex aggregations, joins, text search
+3. **Never use MongoTemplate/ReactiveMongoTemplate** when Spring Data derived query can do the job
+4. **If a query is slow, add an index** — don't work around it with application-level caching of filtered results
+5. **Prefer `Flow` over `List`** — don't `.toList()` unless you actually need all items in memory
+
+**Index strategy:** If a new query pattern is needed and might be slow, add a MongoDB index annotation on the repository or document. A proper index is always better than fetching extra data.
+
 ### FAIL-FAST Philosophy
 
 Errors must not be hidden. An exception is better than masking an error.

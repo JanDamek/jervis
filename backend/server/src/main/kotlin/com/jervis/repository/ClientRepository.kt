@@ -26,4 +26,14 @@ interface ClientRepository : CoroutineCrudRepository<ClientDocument, ClientId> {
      * Find all clients that use the specified connection as Flow.
      */
     fun findByConnectionIdsContaining(connectionId: ConnectionId): Flow<ClientDocument>
+
+    /**
+     * Find non-archived clients that use the specified connection.
+     */
+    fun findByArchivedFalseAndConnectionIdsContaining(connectionId: ConnectionId): Flow<ClientDocument>
+
+    /**
+     * Find all archived client IDs (for filtering tasks in pipeline).
+     */
+    fun findByArchivedTrue(): Flow<ClientDocument>
 }
