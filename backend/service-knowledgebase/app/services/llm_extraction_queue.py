@@ -411,6 +411,29 @@ class LLMExtractionQueue:
         finally:
             conn.close()
 
+    async def list_queue(self, limit: int = 100) -> list[dict]:
+        """Return all PENDING + IN_PROGRESS tasks ordered by priority ASC, created_at ASC.
+
+        Used by UI to display the real KB extraction queue.
+        Does NOT include content (large) — only metadata fields.
+        """
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("""
+                SELECT task_id, source_urn, client_id, project_id, kind,
+                       created_at, status, attempts, priority, error,
+                       last_attempt_at, worker_id
+                FROM tasks
+                WHERE status IN ('pending', 'in_progress')
+                ORDER BY
+                    CASE status WHEN 'in_progress' THEN 0 ELSE 1 END,
+                    priority ASC, created_at ASC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
     async def recover_stale_tasks(self, stale_threshold_minutes: int = 30) -> int:
         """Reset stale IN_PROGRESS tasks to PENDING (crash recovery).
 

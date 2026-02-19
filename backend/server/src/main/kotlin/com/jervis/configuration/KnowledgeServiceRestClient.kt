@@ -27,6 +27,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.accept
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -560,6 +561,15 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    suspend fun getExtractionQueue(limit: Int = 200): KbExtractionQueueResponse {
+        return try {
+            client.get("$apiBaseUrl/queue?limit=$limit").body()
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch KB extraction queue: ${e.message}" }
+            KbExtractionQueueResponse(items = emptyList(), stats = KbQueueStats())
+        }
+    }
+
     fun close() {
         client.close()
     }
@@ -805,4 +815,36 @@ private data class PythonCpgIngestResult(
     val callsEdges: Int = 0,
     @SerialName("uses_type_edges")
     val usesTypeEdges: Int = 0,
+)
+
+// KB extraction queue DTOs (used by IndexingQueueRpcImpl)
+
+@Serializable
+data class KbExtractionQueueResponse(
+    val items: List<KbQueueItem>,
+    val stats: KbQueueStats,
+)
+
+@Serializable
+data class KbQueueItem(
+    @SerialName("task_id") val taskId: String,
+    @SerialName("source_urn") val sourceUrn: String,
+    @SerialName("client_id") val clientId: String,
+    @SerialName("project_id") val projectId: String? = null,
+    val kind: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    val status: String,
+    val attempts: Int = 0,
+    val priority: Int = 4,
+    val error: String? = null,
+    @SerialName("last_attempt_at") val lastAttemptAt: String? = null,
+    @SerialName("worker_id") val workerId: String? = null,
+)
+
+@Serializable
+data class KbQueueStats(
+    val total: Int = 0,
+    val pending: Int = 0,
+    @SerialName("in_progress") val inProgress: Int = 0,
+    val failed: Int = 0,
 )

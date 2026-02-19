@@ -151,6 +151,17 @@ data class PipelineItemDto(
 )
 
 /**
+ * KB extraction queue stats (from SQLite in KB write service).
+ */
+@Serializable
+data class KbQueueStatsDto(
+    val total: Int = 0,
+    val pending: Int = 0,
+    val inProgress: Int = 0,
+    val failed: Int = 0,
+)
+
+/**
  * Combined dashboard response: indexing queue + full processing pipeline.
  */
 @Serializable
@@ -159,10 +170,10 @@ data class IndexingDashboardDto(
     val connectionGroups: List<ConnectionIndexingGroupDto>,
 
     // ── KB qualification stage ──
-    /** Items waiting for KB qualification (READY_FOR_QUALIFICATION). */
+    /** Items waiting for KB qualification (from KB SQLite queue PENDING). */
     val kbWaiting: List<PipelineItemDto>,
     val kbWaitingTotalCount: Long,
-    /** Items currently being qualified by KB/Ollama (QUALIFYING). */
+    /** Items currently being qualified by KB/Ollama (from KB SQLite queue IN_PROGRESS). */
     val kbProcessing: List<PipelineItemDto>,
     val kbProcessingCount: Long,
 
@@ -182,4 +193,7 @@ data class IndexingDashboardDto(
     // ── Pagination (for kbWaiting section) ──
     val kbPage: Int = 0,
     val kbPageSize: Int = 20,
+
+    /** KB extraction queue stats (from SQLite). */
+    val kbQueueStats: KbQueueStatsDto? = null,
 )

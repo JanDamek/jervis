@@ -18,6 +18,9 @@ import com.jervis.dto.indexing.IndexingQueueItemDto
 import com.jervis.dto.indexing.IndexingQueuePageDto
 import com.jervis.dto.indexing.PipelineItemDto
 import com.jervis.dto.indexing.QualificationStepDto
+import com.jervis.configuration.KbQueueItem
+import com.jervis.configuration.KnowledgeServiceRestClient
+import com.jervis.dto.indexing.KbQueueStatsDto
 import com.jervis.entity.ClientDocument
 import com.jervis.entity.ProjectDocument
 import com.jervis.entity.TaskDocument
@@ -57,6 +60,7 @@ class IndexingQueueRpcImpl(
     private val pollingIntervalRpc: PollingIntervalRpcImpl,
     private val taskRepository: TaskRepository,
     private val taskService: TaskService,
+    private val kbClient: KnowledgeServiceRestClient,
 ) : IIndexingQueueService {
 
     private val logger = KotlinLogging.logger {}
@@ -145,6 +149,7 @@ class IndexingQueueRpcImpl(
             kbIndexedTotalCount = pipelineResult.kbIndexedTotalCount,
             kbPage = kbPage,
             kbPageSize = kbPageSize,
+            kbQueueStats = pipelineResult.kbQueueStats,
         )
     }
 
@@ -288,6 +293,7 @@ class IndexingQueueRpcImpl(
         val executionRunningCount: Long,
         val kbIndexed: List<PipelineItemDto>,
         val kbIndexedTotalCount: Long,
+        val kbQueueStats: KbQueueStatsDto? = null,
     )
 
     private suspend fun collectPipelineTasks(
@@ -300,7 +306,6 @@ class IndexingQueueRpcImpl(
         clientFilterQuery: String,
         projectFilterQuery: String,
     ): PipelineResult {
-        // Only include indexing task types (exclude USER_INPUT_PROCESSING, USER_TASK, SCHEDULED_TASK)
         val indexingTaskTypes = listOf(
             TaskTypeEnum.EMAIL_PROCESSING,
             TaskTypeEnum.BUGTRACKER_PROCESSING,
@@ -310,25 +315,41 @@ class IndexingQueueRpcImpl(
             TaskTypeEnum.LINK_PROCESSING,
         )
 
-        // KB Waiting: READY_FOR_QUALIFICATION
-        val kbWaitingAll = collectTasksByStates(
-            states = listOf(TaskStateEnum.READY_FOR_QUALIFICATION),
-            types = indexingTaskTypes,
-            clientMap = clientMap,
-            connectionMap = connectionMap,
-            pipelineState = null, // will be computed per-task
+        // ── KB queue from SQLite (the real processing queue) ──
+        val kbQueueResponse = kbClient.getExtractionQueue(limit = 200)
+        val kbStats = KbQueueStatsDto(
+            total = kbQueueResponse.stats.total,
+            pending = kbQueueResponse.stats.pending,
+            inProgress = kbQueueResponse.stats.inProgress,
+            failed = kbQueueResponse.stats.failed,
         )
 
-        // KB Processing: QUALIFYING
-        val kbProcessingAll = collectTasksByStates(
-            states = listOf(TaskStateEnum.QUALIFYING),
-            types = indexingTaskTypes,
-            clientMap = clientMap,
-            connectionMap = connectionMap,
-            pipelineState = "QUALIFYING",
+        // Pre-load active indexing tasks by sourceUrn for enrichment
+        val indexingActiveStates = listOf(
+            TaskStateEnum.READY_FOR_QUALIFICATION,
+            TaskStateEnum.QUALIFYING,
         )
+        val activeServerTasks = mongoTemplate.find(
+            Query(
+                Criteria.where("state").`in`(indexingActiveStates.map { it.name })
+                    .and("type").`in`(indexingTaskTypes.map { it.name }),
+            ),
+            TaskDocument::class.java, "tasks",
+        ).collectList().awaitSingle().associateBy { it.sourceUrn.value }
 
-        // Execution Waiting: READY_FOR_GPU
+        // Split KB items into in_progress and pending
+        val kbInProgress = kbQueueResponse.items.filter { it.status == "in_progress" }
+        val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
+
+        // Enrich KB items → PipelineItemDto
+        val kbProcessingAll = kbInProgress.mapIndexed { index, item ->
+            enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
+        }
+        val kbWaitingAll = kbPending.mapIndexed { index, item ->
+            enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
+        }
+
+        // Execution Waiting: READY_FOR_GPU (from MongoDB — these are post-KB tasks)
         val executionWaitingAll = collectTasksByStates(
             states = listOf(TaskStateEnum.READY_FOR_GPU),
             types = indexingTaskTypes,
@@ -343,7 +364,7 @@ class IndexingQueueRpcImpl(
             types = indexingTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
-            pipelineState = null, // will use actual state
+            pipelineState = null,
         )
 
         // Apply search and client/project filters
@@ -355,18 +376,14 @@ class IndexingQueueRpcImpl(
         // Pagination for KB waiting
         val safeKbPage = kbPage.coerceAtLeast(0)
         val safeKbPageSize = kbPageSize.coerceIn(1, 100)
-        val sortedKbWaiting = filteredKbWaiting.sortedWith(
-            compareBy<PipelineItemDto> { it.queuePosition ?: Int.MAX_VALUE }
-                .thenBy { it.createdAt ?: "" },
-        )
         val kbWaitingStart = safeKbPage * safeKbPageSize
-        val pagedKbWaiting = if (kbWaitingStart >= sortedKbWaiting.size) {
+        val pagedKbWaiting = if (kbWaitingStart >= filteredKbWaiting.size) {
             emptyList()
         } else {
-            sortedKbWaiting.subList(kbWaitingStart, (kbWaitingStart + safeKbPageSize).coerceAtMost(sortedKbWaiting.size))
+            filteredKbWaiting.subList(kbWaitingStart, (kbWaitingStart + safeKbPageSize).coerceAtMost(filteredKbWaiting.size))
         }
 
-        // Indexed: DB-level pagination (don't load all DISPATCHED_GPU into RAM)
+        // Indexed: DB-level pagination
         val (pagedKbIndexed, kbIndexedTotalCount) = collectIndexedTasksPaginated(
             types = indexingTaskTypes,
             clientMap = clientMap,
@@ -386,7 +403,69 @@ class IndexingQueueRpcImpl(
             executionRunningCount = filteredExecRunning.size.toLong(),
             kbIndexed = pagedKbIndexed,
             kbIndexedTotalCount = kbIndexedTotalCount,
+            kbQueueStats = kbStats,
         )
+    }
+
+    /**
+     * Enrich a KB SQLite queue item with server task info (if available).
+     * Items from indexing pipeline have a matching server task with connection/client/type info.
+     * Items from MCP/orchestrator (CRITICAL writes) may not have a server task.
+     */
+    private fun enrichKbItem(
+        kbItem: KbQueueItem,
+        position: Int,
+        activeServerTasks: Map<String, TaskDocument>,
+        clientMap: Map<ClientId, ClientDocument>,
+        connectionMap: Map<ConnectionId, ConnectionDocument>,
+    ): PipelineItemDto {
+        val serverTask = activeServerTasks[kbItem.sourceUrn]
+        val clientName = if (serverTask != null) {
+            clientMap[serverTask.clientId]?.name ?: serverTask.clientId.value.toHexString()
+        } else {
+            // Try to resolve clientId from KB item
+            try {
+                val clientId = ClientId(ObjectId(kbItem.clientId))
+                clientMap[clientId]?.name ?: kbItem.clientId
+            } catch (_: Exception) {
+                kbItem.clientId
+            }
+        }
+        val connName = extractConnectionName(kbItem.sourceUrn, connectionMap)
+        val itemType = if (serverTask != null) taskTypeToItemType(serverTask.type) else kindToItemType(kbItem.kind)
+
+        val pipelineState = if (kbItem.status == "in_progress") "QUALIFYING" else "WAITING"
+
+        val title = if (serverTask != null) {
+            extractTaskTitle(serverTask)
+        } else {
+            // Extract meaningful part from sourceUrn
+            kbItem.sourceUrn.substringAfter("::").take(100)
+        }
+
+        return PipelineItemDto(
+            id = kbItem.taskId,
+            type = itemType,
+            title = title,
+            connectionName = connName,
+            clientName = clientName,
+            sourceUrn = kbItem.sourceUrn,
+            createdAt = kbItem.createdAt,
+            pipelineState = pipelineState,
+            retryCount = kbItem.attempts,
+            errorMessage = kbItem.error,
+            taskId = serverTask?.id?.value?.toHexString(),
+            queuePosition = position + 1,
+            processingMode = if (kbItem.priority == 0) "FOREGROUND" else "BACKGROUND",
+        )
+    }
+
+    private fun kindToItemType(kind: String?): IndexingItemType = when (kind) {
+        "email" -> IndexingItemType.EMAIL
+        "jira", "github-issue", "gitlab-issue" -> IndexingItemType.BUGTRACKER_ISSUE
+        "confluence", "wiki" -> IndexingItemType.WIKI_PAGE
+        "git_commit" -> IndexingItemType.GIT_COMMIT
+        else -> IndexingItemType.WIKI_PAGE
     }
 
     private suspend fun collectTasksByStates(

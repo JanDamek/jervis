@@ -235,8 +235,7 @@ fun IndexingQueueScreen(
                             totalCount = kbWaitingTotalCount,
                             isLoadingMore = isLoadingMoreKb,
                             onLoadMore = { loadMoreKbWaiting() },
-                            repository = repository,
-                            onRefresh = { loadDashboard() },
+                            failedCount = data.kbQueueStats?.failed ?: 0,
                         )
                         IndexingSection.KB_INDEXED -> IndexedSectionContent(
                             items = indexedItems,
@@ -267,7 +266,7 @@ fun IndexingQueueScreen(
 
 private fun sectionBadge(section: IndexingSection, data: IndexingDashboardDto): Int = when (section) {
     IndexingSection.KB_PROCESSING -> data.kbProcessingCount.toInt()
-    IndexingSection.KB_WAITING -> data.kbWaitingTotalCount.toInt()
+    IndexingSection.KB_WAITING -> data.kbWaitingTotalCount.toInt() + (data.kbQueueStats?.failed ?: 0)
     IndexingSection.KB_INDEXED -> data.kbIndexedTotalCount.toInt()
 }
 
@@ -616,7 +615,7 @@ private fun MetadataRow(label: String, value: String?) {
     }
 }
 
-// ── KB Fronta: infinite scroll with reorder controls ──
+// ── KB Fronta: infinite scroll (items from KB SQLite queue) ──
 
 @Composable
 private fun KbWaitingSectionContent(
@@ -624,15 +623,13 @@ private fun KbWaitingSectionContent(
     totalCount: Long,
     isLoadingMore: Boolean,
     onLoadMore: () -> Unit,
-    repository: JervisRepository,
-    onRefresh: () -> Unit,
+    failedCount: Int = 0,
 ) {
-    if (items.isEmpty() && totalCount == 0L) {
+    if (items.isEmpty() && totalCount == 0L && failedCount == 0) {
         JEmptyState("Fronta je prázdná", icon = "✓")
         return
     }
 
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
     // Infinite scroll: load more when near end
@@ -652,31 +649,21 @@ private fun KbWaitingSectionContent(
         modifier = Modifier.fillMaxSize().padding(horizontal = JervisSpacing.outerPadding, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        // Failed items warning
+        if (failedCount > 0) {
+            item {
+                Text(
+                    text = "$failedCount selhalo (max. pokusy vyčerpány)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+
         items(items.size, key = { items[it].id }) { index ->
             val item = items[index]
-            KbWaitingItemRow(
-                item = item,
-                onPrioritize = {
-                    item.taskId?.let { taskId ->
-                        scope.launch {
-                            try {
-                                repository.indexingQueue.prioritizeKbQueueItem(taskId)
-                                onRefresh()
-                            } catch (_: Exception) {}
-                        }
-                    }
-                },
-                onProcessNow = {
-                    item.taskId?.let { taskId ->
-                        scope.launch {
-                            try {
-                                repository.indexingQueue.processKbItemNow(taskId)
-                                onRefresh()
-                            } catch (_: Exception) {}
-                        }
-                    }
-                },
-            )
+            KbWaitingItemRow(item = item)
         }
 
         if (isLoadingMore) {
@@ -702,8 +689,6 @@ private fun KbWaitingSectionContent(
 @Composable
 private fun KbWaitingItemRow(
     item: PipelineItemDto,
-    onPrioritize: () -> Unit,
-    onProcessNow: () -> Unit,
 ) {
     Row(
         modifier = Modifier
