@@ -490,6 +490,14 @@ class IndexingQueueRpcImpl(
             kbItem.sourceUrn.substringAfter("::").take(100)
         }
 
+        // For EXTRACTING items, use lastAttemptAt (when worker claimed the task) as start time.
+        // For WAITING items, qualificationStartedAt from server task is irrelevant.
+        val startedAt = if (pipelineState == "EXTRACTING") {
+            kbItem.lastAttemptAt  // ISO 8601 from SQLite — when extraction actually started
+        } else {
+            serverTask?.qualificationStartedAt?.formatIso()
+        }
+
         return PipelineItemDto(
             id = kbItem.taskId,
             type = itemType,
@@ -504,7 +512,7 @@ class IndexingQueueRpcImpl(
             taskId = serverTask?.id?.value?.toHexString(),
             queuePosition = position + 1,
             processingMode = if (kbItem.priority == 0) "FOREGROUND" else "BACKGROUND",
-            qualificationStartedAt = serverTask?.qualificationStartedAt?.formatIso(),
+            qualificationStartedAt = startedAt,
             qualificationSteps = serverTask?.qualificationSteps?.map { step ->
                 QualificationStepDto(
                     timestamp = step.timestamp.formatIso(),

@@ -43,10 +43,12 @@ class LLMExtractionWorker:
             logger.warning("Worker already running")
             return
 
-        # Recover stale tasks from previous crashes
-        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
+        # On startup: reset ALL IN_PROGRESS tasks from dead workers (previous pod).
+        # Since we run a single worker pod, any IN_PROGRESS task with a different
+        # worker_id is guaranteed stale — reset immediately, no time threshold needed.
+        recovered = await self.queue.recover_foreign_worker_tasks(self.worker_id)
         if recovered > 0:
-            logger.info("Worker %s recovered %d stale tasks on startup", self.worker_id, recovered)
+            logger.info("Worker %s recovered %d tasks from dead workers on startup", self.worker_id, recovered)
 
         self.running = True
         self._task = asyncio.create_task(self._worker_loop())

@@ -458,7 +458,7 @@ class LLMExtractionQueue:
     async def recover_stale_tasks(self, stale_threshold_minutes: int = 30) -> int:
         """Reset stale IN_PROGRESS tasks to PENDING (crash recovery).
 
-        Called on worker startup. Any task IN_PROGRESS for > threshold is considered stale
+        Called periodically. Any task IN_PROGRESS for > threshold is considered stale
         (worker crashed) and reset to PENDING for retry.
 
         Returns: number of tasks recovered.
@@ -502,6 +502,53 @@ class LLMExtractionQueue:
                 )
 
             logger.info("Recovered %d stale IN_PROGRESS tasks to PENDING", recovered)
+            return recovered
+        finally:
+            conn.close()
+
+    async def recover_foreign_worker_tasks(self, current_worker_id: str) -> int:
+        """Reset ALL IN_PROGRESS tasks from workers other than the current one.
+
+        Called on worker startup. Since we run a single worker pod, any IN_PROGRESS
+        task from a different worker_id means the old pod died. Reset immediately
+        regardless of time threshold.
+
+        Returns: number of tasks recovered.
+        """
+        conn = self._get_conn()
+        try:
+            # Find tasks from other workers (or with NULL worker_id)
+            stale_rows = conn.execute("""
+                SELECT task_id, worker_id, last_attempt_at
+                FROM tasks
+                WHERE status = ? AND (worker_id IS NULL OR worker_id != ?)
+            """, (TaskStatus.IN_PROGRESS, current_worker_id)).fetchall()
+
+            if not stale_rows:
+                return 0
+
+            # Reset to PENDING
+            conn.execute("""
+                UPDATE tasks
+                SET status = ?, worker_id = NULL
+                WHERE status = ? AND (worker_id IS NULL OR worker_id != ?)
+            """, (TaskStatus.PENDING, TaskStatus.IN_PROGRESS, current_worker_id))
+
+            conn.commit()
+
+            recovered = len(stale_rows)
+            for row in stale_rows:
+                logger.warning(
+                    "Recovered foreign-worker task %s (worker %s, last attempt: %s)",
+                    row["task_id"],
+                    row["worker_id"] or "?",
+                    row["last_attempt_at"] or "never",
+                )
+
+            logger.info(
+                "Recovered %d IN_PROGRESS tasks from dead workers (current: %s)",
+                recovered, current_worker_id,
+            )
             return recovered
         finally:
             conn.close()
