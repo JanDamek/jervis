@@ -608,9 +608,9 @@ class TaskService(
             logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PYTHON_ORCHESTRATING tasks → READY_FOR_GPU" }
         }
 
-        // Reset ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry)
-        // These are EMAIL/BUGTRACKER/GIT/WIKI tasks that failed during KB ingest (e.g. 500 from KB service).
-        // They should be retried through the qualification pipeline, not sent to GPU.
+        // Reset ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry, max 2 recoveries)
+        // Uses errorRecoveryCount field to prevent infinite ERROR→retry loops.
+        // After 2 recoveries the task stays in ERROR for manual review.
         val indexingTypes = listOf(
             TaskTypeEnum.EMAIL_PROCESSING.name,
             TaskTypeEnum.BUGTRACKER_PROCESSING.name,
@@ -621,12 +621,16 @@ class TaskService(
         )
         val errorIndexingQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
-                .and("type").`in`(indexingTypes),
+                .and("type").`in`(indexingTypes)
+                .orOperator(
+                    Criteria.where("errorRecoveryCount").exists(false),
+                    Criteria.where("errorRecoveryCount").lt(2),
+                ),
         )
         val errorIndexingUpdate = Update()
             .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
             .unset("errorMessage")
-            .set("qualificationRetries", 0)
+            .inc("errorRecoveryCount", 1)
         val errorIndexingResult = mongoTemplate.updateMulti(errorIndexingQuery, errorIndexingUpdate, TaskDocument::class.java)
             .awaitSingle()
         val errorIndexingCount = errorIndexingResult.modifiedCount.toInt()
@@ -644,13 +648,13 @@ class TaskService(
      * Called by TaskQualificationService after a cycle finds no work.
      *
      * Recovers:
-     * 1. ERROR indexing tasks → READY_FOR_QUALIFICATION (retry)
+     * 1. ERROR indexing tasks → READY_FOR_QUALIFICATION (max 2 recoveries, then stays ERROR)
      * 2. QUALIFYING tasks stuck >10 min → READY_FOR_QUALIFICATION (error handler failure)
      */
     suspend fun recoverStuckIndexingTasks(): Int {
         var count = 0
 
-        // 1. ERROR indexing tasks → retry
+        // 1. ERROR indexing tasks → retry (max 2 recoveries to prevent infinite loops)
         val indexingTypes = listOf(
             TaskTypeEnum.EMAIL_PROCESSING.name,
             TaskTypeEnum.BUGTRACKER_PROCESSING.name,
@@ -661,12 +665,16 @@ class TaskService(
         )
         val errorQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
-                .and("type").`in`(indexingTypes),
+                .and("type").`in`(indexingTypes)
+                .orOperator(
+                    Criteria.where("errorRecoveryCount").exists(false),
+                    Criteria.where("errorRecoveryCount").lt(2),
+                ),
         )
         val errorUpdate = Update()
             .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
             .unset("errorMessage")
-            .set("qualificationRetries", 0)
+            .inc("errorRecoveryCount", 1)
         val errorResult = mongoTemplate.updateMulti(errorQuery, errorUpdate, TaskDocument::class.java).awaitSingle()
         val errorCount = errorResult.modifiedCount.toInt()
         count += errorCount
