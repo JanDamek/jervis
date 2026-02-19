@@ -148,6 +148,10 @@ data class PipelineItemDto(
     val qualificationStartedAt: String? = null,
     /** Persisted qualification progress steps (for history display in Hotovo). */
     val qualificationSteps: List<QualificationStepDto> = emptyList(),
+    /** LLM extraction progress: current chunk being processed. */
+    val extractionProgressCurrent: Int = 0,
+    /** LLM extraction progress: total chunks to process. */
+    val extractionProgressTotal: Int = 0,
 )
 
 /**

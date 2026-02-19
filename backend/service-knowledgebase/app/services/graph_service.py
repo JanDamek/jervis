@@ -59,6 +59,7 @@ class GraphService:
         request: IngestRequest,
         chunk_ids: list[str] = None,
         embedding_priority: int | None = None,
+        on_progress: callable = None,
     ) -> tuple[int, int, list[str]]:
         """
         Ingest content into graph store with bidirectional linking.
@@ -92,6 +93,11 @@ class GraphService:
         # Process chunks sequentially (for LLM rate limiting)
         for i, chunk in enumerate(chunks, 1):
             logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", i, len(chunks), request.sourceUrn)
+            if on_progress:
+                try:
+                    await on_progress(i, len(chunks))
+                except Exception:
+                    pass  # Non-critical
             n, e, keys = await self._process_chunk(chunk, request, chunk_ids, embedding_priority=embedding_priority)
             nodes_created += n
             edges_created += e

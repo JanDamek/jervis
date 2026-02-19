@@ -513,6 +513,8 @@ class IndexingQueueRpcImpl(
                     metadata = step.metadata,
                 )
             } ?: emptyList(),
+            extractionProgressCurrent = kbItem.progressCurrent,
+            extractionProgressTotal = kbItem.progressTotal,
         )
     }
 

@@ -152,6 +152,14 @@ class LLMExtractionQueue:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add progress columns for extraction tracking
+            for col, default in [("progress_current", "0"), ("progress_total", "0")]:
+                try:
+                    conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} INTEGER NOT NULL DEFAULT {default}")
+                    logger.info("Added %s column to tasks table", col)
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
             # Indexes for fast dequeue and stats
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_status_priority_created
@@ -411,6 +419,18 @@ class LLMExtractionQueue:
         finally:
             conn.close()
 
+    async def update_progress(self, task_id: str, current: int, total: int) -> None:
+        """Update extraction progress (chunk current/total) for an IN_PROGRESS task."""
+        conn = self._get_conn()
+        try:
+            conn.execute("""
+                UPDATE tasks SET progress_current = ?, progress_total = ?
+                WHERE task_id = ? AND status = 'in_progress'
+            """, (current, total, task_id))
+            conn.commit()
+        finally:
+            conn.close()
+
     async def list_queue(self, limit: int = 100) -> list[dict]:
         """Return all PENDING + IN_PROGRESS tasks ordered by priority ASC, created_at ASC.
 
@@ -422,7 +442,8 @@ class LLMExtractionQueue:
             rows = conn.execute("""
                 SELECT task_id, source_urn, client_id, project_id, kind,
                        created_at, status, attempts, priority, error,
-                       last_attempt_at, worker_id
+                       last_attempt_at, worker_id,
+                       progress_current, progress_total
                 FROM tasks
                 WHERE status IN ('pending', 'in_progress')
                 ORDER BY

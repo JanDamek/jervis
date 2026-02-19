@@ -460,7 +460,7 @@ private fun KbProcessingItemCard(
                     )
                 }
             } else {
-                // No steps — show pipeline state as fallback
+                // No steps — show pipeline state + extraction progress as fallback
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -469,14 +469,23 @@ private fun KbProcessingItemCard(
                         modifier = Modifier
                             .size(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(MaterialTheme.colorScheme.tertiary),
+                            .background(pipelineStateColor(item.pipelineState)),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = pipelineStateLabel(item.pipelineState),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = pipelineStateColor(item.pipelineState),
                     )
+                    // Extraction chunk progress
+                    if (item.extractionProgressTotal > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "chunk ${item.extractionProgressCurrent}/${item.extractionProgressTotal}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }

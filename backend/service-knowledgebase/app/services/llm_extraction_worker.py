@@ -173,12 +173,17 @@ class LLMExtractionWorker:
             projectId=task.project_id,
         )
 
+        # Progress callback — updates SQLite so UI can show chunk X/Y
+        async def on_progress(current: int, total: int):
+            await self.queue.update_progress(task.task_id, current, total)
+
         # Call graph service to do LLM extraction
         # This will take minutes, but we're async so it doesn't block
         nodes, edges, entity_keys = await self.graph_service.ingest(
             request=request,
             chunk_ids=task.chunk_ids,
             embedding_priority=task.priority,
+            on_progress=on_progress,
         )
 
         logger.info(

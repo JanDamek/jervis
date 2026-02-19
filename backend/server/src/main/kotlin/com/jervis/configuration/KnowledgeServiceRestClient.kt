@@ -839,6 +839,8 @@ data class KbQueueItem(
     val error: String? = null,
     @SerialName("last_attempt_at") val lastAttemptAt: String? = null,
     @SerialName("worker_id") val workerId: String? = null,
+    @SerialName("progress_current") val progressCurrent: Int = 0,
+    @SerialName("progress_total") val progressTotal: Int = 0,
 )
 
 @Serializable
