@@ -112,7 +112,7 @@ embedding = await ollama.embed(
 
 ### VRAM Priority Routing (Step 5)
 
-Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). Non-embedding models (14b) fall back to CPU when :30b is loaded.
+Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). KB extraction now uses :30b (same model as orchestrator) — CRITICAL extraction shares GPU with orchestrator (no model swap needed).
 
 When a **bigger** model is requested (e.g., 30B arrives while 14B is loaded):
 
@@ -127,9 +127,9 @@ When an **embedding** model is requested, it loads alongside existing models. No
 
 ```
 GPU state when 30b active:
-  qwen3-coder-tool:30b  (~25GB)  → GPU (VRAM priority)
+  qwen3-coder-tool:30b  (~25GB)  → GPU (VRAM priority, orchestrator + KB extraction)
   qwen3-embedding:8b    (~5GB)   → GPU (alongside)
-  qwen2.5:14b                    → CPU fallback (would cause timeouts)
+  qwen2.5:7b                     → CPU (simple classification only)
 ```
 
 ### Benefits
@@ -670,10 +670,10 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  │  30b + embedding only:       │  │  OLLAMA_NUM_PARALLEL=10          │ │
 │  │    qwen3-coder-tool:30b     │  │  OLLAMA_NUM_THREADS=18           │ │
 │  │    qwen3-embedding:8b       │  │  OLLAMA_MAX_LOADED_MODELS=3      │ │
-│  │    (~30GB, some CPU offload) │  │  qwen2.5:7b + 14b + embed:8b    │ │
+│  │    (~30GB, some CPU offload) │  │  qwen2.5:7b + embed:8b           │ │
 │  │                             │  │                                   │ │
-│  │  14b → CPU (too much       │  │  Always loaded, always available  │ │
-│  │  offload with 30b)         │  │  as fallback when GPU busy        │ │
+│  │  KB extraction uses same    │  │  Always loaded, always available  │ │
+│  │  30b model (no swap)        │  │  as fallback when GPU busy        │ │
 │  │                             │  │                                   │ │
 │  └──────────────────────────────┘  └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -684,7 +684,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 | Priority | Value | Source | Behavior |
 |----------|-------|--------|----------|
 | CRITICAL | 0 | Orchestrator FOREGROUND, jervis_mcp | Preempts non-critical, always GPU, auto-reserves |
-| NORMAL | 1 | Everything else (correction, KB ingest, background tasks) | GPU when free, CPU fallback |
+| NORMAL | 1 | Everything else (correction, KB simple ingest, background tasks) | GPU when free, CPU fallback |
 
 > Priority is set via `X-Ollama-Priority: 0` header for CRITICAL. No header = NORMAL (router default). Model name no longer determines priority.
 >
@@ -692,13 +692,13 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 
 ### Model Co-location on GPU
 
-Only embedding models co-locate alongside :30b. Non-embedding models (14b) fall back to CPU when :30b is loaded — too much CPU offload causes timeouts.
+KB extraction uses :30b (same model as orchestrator). CRITICAL extraction shares the GPU model — no swap needed. NORMAL extraction also uses :30b but routes to CPU when GPU is reserved.
 
 | Model | VRAM Est. | Location | Purpose |
 |-------|-----------|----------|---------|
-| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | Orchestrator |
+| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | Orchestrator + KB extraction (LLM_MODEL, INGEST_MODEL_COMPLEX) |
 | qwen3-embedding:8b | ~5GB | GPU (alongside 30b) | KB embeddings |
-| qwen2.5:14b | ~10GB | CPU (when 30b loaded) | Background qualification |
+| qwen2.5:7b | ~5GB | CPU | KB simple classification (INGEST_MODEL_SIMPLE) |
 | **GPU Total** | **~30GB** | Some CPU offload | Acceptable performance |
 
 ### Auto-Reservation Protocol (no announce/release API)

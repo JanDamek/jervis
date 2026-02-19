@@ -33,14 +33,14 @@ class Settings(BaseSettings):
 
     # -- Model configuration ----------------------------------------------------
     EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (CPU instance)
-    LLM_MODEL: str = "qwen2.5:14b"                          # Default LLM for general KB tasks
+    LLM_MODEL: str = "qwen3-coder-tool:30b"                  # Default LLM for general KB tasks (30b = same as orchestrator, shares GPU)
     VISION_MODEL: str = "qwen3-vl:latest"                   # VLM for image description
 
-    # Ingest model routing (CPU instance, see docs/structures.md § "Model Routing"):
-    # - Simple: binary classification tasks (link relevance) → fast 7B model
-    # - Complex: structured JSON output (summary + entity extraction) → accurate 14B model
+    # Ingest model routing (see docs/structures.md § "Model Routing"):
+    # - Simple: binary classification tasks (link relevance) → fast 7B model (CPU)
+    # - Complex: structured JSON output (summary + entity extraction) → 30B model (GPU when CRITICAL)
     INGEST_MODEL_SIMPLE: str = "qwen2.5:7b"
-    INGEST_MODEL_COMPLEX: str = "qwen2.5:14b"
+    INGEST_MODEL_COMPLEX: str = "qwen3-coder-tool:30b"
 
     # -- Image processing -------------------------------------------------------
     # OCR-first strategy: try Tika OCR, fall back to VLM if OCR output is poor.

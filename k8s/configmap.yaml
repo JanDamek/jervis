@@ -162,9 +162,10 @@ data:
   OLLAMA_BASE_URL: "http://jervis-ollama-router:11430"             # Via router → GPU/CPU
   OLLAMA_EMBEDDING_BASE_URL: "http://jervis-ollama-router:11430"   # Via router → GPU/CPU
   OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"      # Via router → GPU/CPU
-  # -- Ingest model routing (see docs/structures.md § "Model Routing") --------
-  INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check
-  INGEST_MODEL_COMPLEX: "qwen2.5:14b"                         # Accurate: summary + entity extraction
+  # -- Model routing (see docs/structures.md § "Model Routing") ---------------
+  LLM_MODEL: "qwen3-coder-tool:30b"                           # General KB LLM (same as orchestrator → shares GPU)
+  INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check (CPU)
+  INGEST_MODEL_COMPLEX: "qwen3-coder-tool:30b"                # Accurate: summary + entity extraction (GPU when CRITICAL)
   # -- Storage backends -------------------------------------------------------
   WEAVIATE_URL: "http://192.168.100.117:8080"                  # Vector store (RAG)
   WEAVIATE_GRPC_URL: "192.168.100.117:50051"                   # Weaviate gRPC
