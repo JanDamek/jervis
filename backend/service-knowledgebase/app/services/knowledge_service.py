@@ -548,7 +548,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         attachments_processed = sum(1 for r in attachment_results if r.status == "success")
         attachments_failed = sum(1 for r in attachment_results if r.status == "failed")
 
-        # Generate summary with routing hints (synchronous — 14B model, ~2-5s on CPU)
+        # Generate summary with routing hints (30B model via router)
         summary_data = await self._generate_summary(
             content=combined_content,
             source_type=request.sourceType or "unknown",
@@ -725,7 +725,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
         if skip_rag:
             # Only run summary
-            yield await _emit("llm_start", "LLM analýza obsahu (14B model)...")
+            yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
             summary_data = await self._generate_summary(combined_content, request.sourceType or "unknown", request.subject)
         else:
             if existing_chunks > 0:
@@ -734,7 +734,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
 
             # ── 4. Parallel RAG + Summary ──
             yield await _emit("rag_start", "Ukládám chunks do vektorové DB...")
-            yield await _emit("llm_start", "LLM analýza obsahu (14B model)...")
+            yield await _emit("llm_start", f"LLM analýza obsahu ({settings.INGEST_MODEL_COMPLEX})...")
 
             rag_task = asyncio.create_task(self.ingest(ingest_req, content_hash=content_hash))
             summary_task = asyncio.create_task(self._generate_summary(combined_content, request.sourceType or "unknown", request.subject))
@@ -817,7 +817,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         """
         import json
 
-        # Use CPU ingest instance with complex (14B) model for accurate entity extraction
+        # Use complex model for accurate entity extraction (30B via router)
         llm = self.ingest_llm_complex
 
         # Truncate content for summary (first 8000 chars)

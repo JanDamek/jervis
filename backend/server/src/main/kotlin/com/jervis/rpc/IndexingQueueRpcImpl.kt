@@ -324,10 +324,13 @@ class IndexingQueueRpcImpl(
             failed = kbQueueResponse.stats.failed,
         )
 
-        // Pre-load active indexing tasks by sourceUrn for enrichment
+        // Pre-load indexing tasks by correlationId for enrichment.
+        // KB receives task.correlationId as sourceUrn (e.g. "email:698f..."),
+        // NOT task.sourceUrn (e.g. "email::conn:xxx,msgId:yyy").
         val indexingActiveStates = listOf(
             TaskStateEnum.READY_FOR_QUALIFICATION,
             TaskStateEnum.QUALIFYING,
+            TaskStateEnum.DONE,
         )
         val activeServerTasks = mongoTemplate.find(
             Query(
@@ -335,7 +338,7 @@ class IndexingQueueRpcImpl(
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
             ),
             TaskDocument::class.java, "tasks",
-        ).collectList().awaitSingle().associateBy { it.sourceUrn.value }
+        ).collectList().awaitSingle().associateBy { it.correlationId }
 
         // Split KB items into in_progress and pending
         val kbInProgress = kbQueueResponse.items.filter { it.status == "in_progress" }
@@ -457,6 +460,15 @@ class IndexingQueueRpcImpl(
             taskId = serverTask?.id?.value?.toHexString(),
             queuePosition = position + 1,
             processingMode = if (kbItem.priority == 0) "FOREGROUND" else "BACKGROUND",
+            qualificationStartedAt = serverTask?.qualificationStartedAt?.formatIso(),
+            qualificationSteps = serverTask?.qualificationSteps?.map { step ->
+                QualificationStepDto(
+                    timestamp = step.timestamp.formatIso(),
+                    step = step.step,
+                    message = step.message,
+                    metadata = step.metadata,
+                )
+            } ?: emptyList(),
         )
     }
 

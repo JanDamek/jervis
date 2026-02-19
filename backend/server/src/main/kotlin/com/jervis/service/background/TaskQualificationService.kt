@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service
  * - Actual indexing errors: mark as ERROR permanently (no retry)
  * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
  *
- * Concurrency: 1 — each qualification calls _generate_summary() (14B LLM on CPU, ~5s/task).
+ * Concurrency: 1 — each qualification calls _generate_summary() (30B LLM via router).
  * Higher concurrency overloads CPU Ollama. RAG embedding is skipped on re-qualification (content hash match).
  */
 @Service
