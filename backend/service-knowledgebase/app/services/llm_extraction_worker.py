@@ -84,22 +84,21 @@ class LLMExtractionWorker:
 
         while self.running:
             try:
+                # Periodic stale recovery — runs always, not just when idle
+                now = asyncio.get_event_loop().time()
+                if now - last_stale_check > 300:  # every 5 minutes
+                    recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
+                    if recovered > 0:
+                        logger.info("Periodic recovery: %d stale tasks reset to PENDING", recovered)
+                    last_stale_check = now
+
                 # Claim next PENDING task (marks as IN_PROGRESS)
                 task = await self.queue.dequeue(worker_id=self.worker_id, max_attempts=3)
 
                 if task is None:
                     # No PENDING tasks, wait before checking again
-                    now = asyncio.get_event_loop().time()
-
-                    # Periodic stale recovery (every 5 min, 10 min threshold)
-                    if now - last_stale_check > 300:
-                        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
-                        if recovered > 0:
-                            logger.info("Periodic recovery: %d stale tasks reset to PENDING", recovered)
-                        last_stale_check = now
-
                     # Log stats every 5 minutes when idle
-                    if now - last_stats_log > 300:  # 5 minutes
+                    if now - last_stats_log > 300:
                         stats = await self.queue.stats()
                         metrics.extraction_queue_depth.set(stats.get("pending", 0))
                         if stats["total"] > 0:

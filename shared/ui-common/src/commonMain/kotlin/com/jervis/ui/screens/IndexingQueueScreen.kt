@@ -329,7 +329,7 @@ private fun IndexingSectionHeader(
     }
 }
 
-// ── KB zpracování: 1 primary task with detailed progress timeline ──
+// ── KB zpracování: all in-progress tasks with progress timeline ──
 
 @Composable
 private fun KbProcessingSectionContent(
@@ -352,156 +352,152 @@ private fun KbProcessingSectionContent(
 
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = JervisSpacing.outerPadding, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Primary task = first item with most progress detail
-        val primary = items.firstOrNull()
-        if (primary != null) {
-            val lookupKey = primary.taskId ?: primary.id
-            // Try exact match first, then fallback to any active progress (concurrency=1)
-            val progress = activeProgress[lookupKey] ?: activeProgress.values.firstOrNull()
-            // Task header
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = primary.type.icon(),
-                    contentDescription = primary.type.label(),
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.tertiary,
+        items.forEach { item ->
+            KbProcessingItemCard(item, activeProgress, nowMs)
+        }
+    }
+}
+
+@Composable
+private fun KbProcessingItemCard(
+    item: PipelineItemDto,
+    activeProgress: Map<String, QualificationProgressInfo>,
+    nowMs: Long,
+) {
+    val lookupKey = item.taskId ?: item.id
+    val progress = activeProgress[lookupKey]
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Task header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = item.type.icon(),
+                contentDescription = item.type.label(),
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.tertiary,
+            )
+            Spacer(Modifier.width(JervisSpacing.itemGap))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(JervisSpacing.itemGap))
-                Column(modifier = Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = primary.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        text = item.connectionName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = primary.connectionName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = primary.clientName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                // CRITICAL badge
-                if (primary.processingMode == "FOREGROUND") {
-                    CriticalBadge()
-                    Spacer(Modifier.width(4.dp))
-                }
-                // Elapsed time since active processing started (not queue time)
-                val startMs = primary.qualificationStartedAt?.let {
-                    try { kotlinx.datetime.Instant.parse(it).toEpochMilliseconds() } catch (_: Exception) { null }
-                } ?: progress?.steps?.firstOrNull()?.timestamp
-                if (startMs != null) {
+                    Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        text = formatElapsedTime(startMs, nowMs),
-                        style = MaterialTheme.typography.labelSmall,
+                        text = item.clientName,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Progress timeline — merge stored DB steps + live events, deduplicate
-            val liveSteps = progress?.steps ?: emptyList()
-            val storedSteps = primary.qualificationSteps.map { dto ->
-                QualificationProgressStep(
-                    timestamp = try { kotlinx.datetime.Instant.parse(dto.timestamp).toEpochMilliseconds() } catch (_: Exception) { 0L },
-                    message = dto.message,
-                    step = dto.step,
-                    metadata = dto.metadata,
-                )
+            // CRITICAL badge
+            if (item.processingMode == "FOREGROUND") {
+                CriticalBadge()
+                Spacer(Modifier.width(4.dp))
             }
-            val lastStoredTs = storedSteps.lastOrNull()?.timestamp ?: 0L
-            // Only include live steps at least 1s newer (prevents duplicates from near-simultaneous DB save + emit)
-            val newerLiveSteps = liveSteps.filter { it.timestamp > lastStoredTs + 1000 }
-            val displaySteps = (storedSteps + newerLiveSteps).distinctBy { it.step }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (displaySteps.isNotEmpty()) {
-                    // Current step on top, completed steps below (newest first)
-                    val reversed = displaySteps.reversed()
-                    reversed.forEachIndexed { index, step ->
-                        // Duration: latest step = still running, others = time until next step
-                        val durationMs = if (index == 0) {
-                            nowMs - step.timestamp
-                        } else {
-                            reversed[index - 1].timestamp - step.timestamp
-                        }
-                        ProgressStepRow(
-                            step = step,
-                            isLatest = index == 0,
-                            durationMs = durationMs.coerceAtLeast(0),
-                        )
-                    }
-                } else {
-                    // No steps at all — show pipeline state as fallback
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.tertiary),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = pipelineStateLabel(primary.pipelineState),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary,
-                        )
-                    }
-                }
-            }
-
-            // Error/retry info
-            if (primary.retryCount > 0) {
+            // Elapsed time since active processing started (not queue time)
+            val startMs = item.qualificationStartedAt?.let {
+                try { kotlinx.datetime.Instant.parse(it).toEpochMilliseconds() } catch (_: Exception) { null }
+            } ?: progress?.steps?.firstOrNull()?.timestamp
+            if (startMs != null) {
                 Text(
-                    text = "Pokus ${primary.retryCount}" + (primary.nextRetryAt?.let { " · další ${formatNextCheck(it)}" } ?: ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 28.dp, top = 4.dp),
-                )
-            }
-            primary.errorMessage?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 28.dp, top = 2.dp),
+                    text = formatElapsedTime(startMs, nowMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
-        // Other processing tasks indicator
-        if (items.size > 1) {
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
+
+        // Progress timeline — merge stored DB steps + live events, deduplicate
+        val liveSteps = progress?.steps ?: emptyList()
+        val storedSteps = item.qualificationSteps.map { dto ->
+            QualificationProgressStep(
+                timestamp = try { kotlinx.datetime.Instant.parse(dto.timestamp).toEpochMilliseconds() } catch (_: Exception) { 0L },
+                message = dto.message,
+                step = dto.step,
+                metadata = dto.metadata,
+            )
+        }
+        val lastStoredTs = storedSteps.lastOrNull()?.timestamp ?: 0L
+        val newerLiveSteps = liveSteps.filter { it.timestamp > lastStoredTs + 1000 }
+        val displaySteps = (storedSteps + newerLiveSteps).distinctBy { it.step }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (displaySteps.isNotEmpty()) {
+                val reversed = displaySteps.reversed()
+                reversed.forEachIndexed { index, step ->
+                    val durationMs = if (index == 0) {
+                        nowMs - step.timestamp
+                    } else {
+                        reversed[index - 1].timestamp - step.timestamp
+                    }
+                    ProgressStepRow(
+                        step = step,
+                        isLatest = index == 0,
+                        durationMs = durationMs.coerceAtLeast(0),
+                    )
+                }
+            } else {
+                // No steps — show pipeline state as fallback
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.tertiary),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = pipelineStateLabel(item.pipelineState),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+        }
+
+        // Error/retry info
+        if (item.retryCount > 0) {
             Text(
-                text = "+${items.size - 1} další zpracovává",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 28.dp),
+                text = "Pokus ${item.retryCount}" + (item.nextRetryAt?.let { " · další ${formatNextCheck(it)}" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 28.dp, top = 4.dp),
+            )
+        }
+        item.errorMessage?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 28.dp, top = 2.dp),
             )
         }
     }
