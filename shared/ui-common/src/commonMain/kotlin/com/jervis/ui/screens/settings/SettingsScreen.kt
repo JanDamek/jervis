@@ -88,6 +88,7 @@ private fun GeneralSettings(repository: JervisRepository) {
     // Editable brain config state — single connection for both Jira and Confluence
     var selectedConnectionId by remember { mutableStateOf<String?>(null) }
     var brainProjectKey by remember { mutableStateOf("") }
+    var brainIssueType by remember { mutableStateOf("") }
     var brainSpaceKey by remember { mutableStateOf("") }
     var brainRootPageId by remember { mutableStateOf("") }
 
@@ -102,6 +103,7 @@ private fun GeneralSettings(repository: JervisRepository) {
         // Both use the same connection — prefer bugtracker, fallback to wiki
         selectedConnectionId = dto.brainBugtrackerConnectionId ?: dto.brainWikiConnectionId
         brainProjectKey = dto.brainBugtrackerProjectKey ?: ""
+        brainIssueType = dto.brainBugtrackerIssueType ?: ""
         brainSpaceKey = dto.brainWikiSpaceKey ?: ""
         brainRootPageId = dto.brainWikiRootPageId ?: ""
     }
@@ -207,6 +209,15 @@ private fun GeneralSettings(repository: JervisRepository) {
                             )
                         }
 
+                        // Jira issue type for brain-created issues
+                        JTextField(
+                            value = brainIssueType,
+                            onValueChange = { brainIssueType = it },
+                            label = "Typ požadavku (Issue Type)",
+                            placeholder = "Např. Task, Úkol, Story...",
+                            enabled = selectedConnectionId != null,
+                        )
+
                         // Confluence space selection
                         if (loadingWikiResources) {
                             JCenteredLoading()
@@ -239,6 +250,7 @@ private fun GeneralSettings(repository: JervisRepository) {
                                             UpdateSystemConfigRequest(
                                                 brainBugtrackerConnectionId = selectedConnectionId,
                                                 brainBugtrackerProjectKey = brainProjectKey.ifBlank { null },
+                                                brainBugtrackerIssueType = brainIssueType.ifBlank { null },
                                                 brainWikiConnectionId = selectedConnectionId,
                                                 brainWikiSpaceKey = brainSpaceKey.ifBlank { null },
                                                 brainWikiRootPageId = brainRootPageId.ifBlank { null },

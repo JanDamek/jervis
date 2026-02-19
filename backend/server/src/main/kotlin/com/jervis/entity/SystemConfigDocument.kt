@@ -18,6 +18,8 @@ data class SystemConfigDocument(
     val brainBugtrackerConnectionId: ObjectId? = null,
     /** Jira project key for the brain project (e.g. "JERVIS"). */
     val brainBugtrackerProjectKey: String? = null,
+    /** Jira issue type name for brain-created issues (e.g. "Task", "Úkol"). */
+    val brainBugtrackerIssueType: String? = null,
     /** Connection ID for Jervis's own wiki (Confluence). */
     val brainWikiConnectionId: ObjectId? = null,
     /** Confluence space key for the brain wiki. */

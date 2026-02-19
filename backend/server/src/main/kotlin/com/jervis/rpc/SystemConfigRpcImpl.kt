@@ -54,6 +54,8 @@ class SystemConfigRpcImpl(
                 ?.let { ObjectId(it) } ?: existing.brainBugtrackerConnectionId,
             brainBugtrackerProjectKey = request.brainBugtrackerProjectKey
                 ?: existing.brainBugtrackerProjectKey,
+            brainBugtrackerIssueType = request.brainBugtrackerIssueType
+                ?: existing.brainBugtrackerIssueType,
             brainWikiConnectionId = request.brainWikiConnectionId
                 ?.let { ObjectId(it) } ?: existing.brainWikiConnectionId,
             brainWikiSpaceKey = request.brainWikiSpaceKey
@@ -80,6 +82,7 @@ class SystemConfigRpcImpl(
             jervisInternalProjectId = jervisInternalProjectId?.toHexString(),
             brainBugtrackerConnectionId = brainBugtrackerConnectionId?.toHexString(),
             brainBugtrackerProjectKey = brainBugtrackerProjectKey,
+            brainBugtrackerIssueType = brainBugtrackerIssueType,
             brainWikiConnectionId = brainWikiConnectionId?.toHexString(),
             brainWikiSpaceKey = brainWikiSpaceKey,
             brainWikiRootPageId = brainWikiRootPageId,

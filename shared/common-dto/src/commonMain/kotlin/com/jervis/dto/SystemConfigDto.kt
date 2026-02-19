@@ -11,6 +11,8 @@ data class SystemConfigDto(
     val jervisInternalProjectId: String? = null,
     val brainBugtrackerConnectionId: String? = null,
     val brainBugtrackerProjectKey: String? = null,
+    /** Jira issue type name for brain-created issues (e.g. "Task", "Úkol"). */
+    val brainBugtrackerIssueType: String? = null,
     val brainWikiConnectionId: String? = null,
     val brainWikiSpaceKey: String? = null,
     val brainWikiRootPageId: String? = null,
@@ -25,6 +27,7 @@ data class UpdateSystemConfigRequest(
     val jervisInternalProjectId: String? = null,
     val brainBugtrackerConnectionId: String? = null,
     val brainBugtrackerProjectKey: String? = null,
+    val brainBugtrackerIssueType: String? = null,
     val brainWikiConnectionId: String? = null,
     val brainWikiSpaceKey: String? = null,
     val brainWikiRootPageId: String? = null,

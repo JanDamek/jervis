@@ -47,6 +47,9 @@ class BrainWriteServiceImpl(
         val projectKey = config.brainBugtrackerProjectKey
             ?: throw IllegalStateException("Brain bugtracker project key not configured")
 
+        // Use configured issue type if available, otherwise fall back to parameter default
+        val effectiveIssueType = config.brainBugtrackerIssueType ?: issueType
+
         val response = withRpcRetry(
             name = "BrainCreateIssue",
             reconnect = { providerRegistry.reconnect(ProviderEnum.ATLASSIAN) },
@@ -62,7 +65,7 @@ class BrainWriteServiceImpl(
                     projectKey = projectKey,
                     summary = summary,
                     description = description,
-                    issueType = issueType,
+                    issueType = effectiveIssueType,
                     priority = priority,
                     labels = labels,
                     epicKey = epicKey,
