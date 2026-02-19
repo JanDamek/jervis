@@ -412,9 +412,13 @@ private fun KbProcessingItemCard(
             val startMs = item.qualificationStartedAt?.let {
                 try { kotlinx.datetime.Instant.parse(it).toEpochMilliseconds() } catch (_: Exception) { null }
             } ?: progress?.steps?.firstOrNull()?.timestamp
+            // For items with completed qualification steps, use last step time instead of ticking now
+            val endMs = item.qualificationSteps.lastOrNull()?.let { step ->
+                try { kotlinx.datetime.Instant.parse(step.timestamp).toEpochMilliseconds() } catch (_: Exception) { null }
+            } ?: nowMs
             if (startMs != null) {
                 Text(
-                    text = formatElapsedTime(startMs, nowMs),
+                    text = formatElapsedTime(startMs, endMs),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

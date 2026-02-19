@@ -36,11 +36,14 @@ class ClientService(
             existing.copy(
                 name = client.name,
                 description = client.description,
+                archived = client.archived,
                 defaultLanguageEnum = client.defaultLanguageEnum,
                 lastSelectedProjectId = client.lastSelectedProjectId,
                 connectionIds = client.connectionIds,
                 connectionCapabilities = client.connectionCapabilities,
                 gitCommitConfig = client.gitCommitConfig,
+                gitTopCommitters = client.gitTopCommitters,
+                cloudModelPolicy = client.cloudModelPolicy,
             )
 
         val updated = clientRepository.save(merged)
