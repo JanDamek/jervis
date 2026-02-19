@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -45,6 +46,7 @@ class TaskQualificationService(
             logger.debug { "QUALIFICATION_CYCLE_START" }
 
             val effectiveConcurrency = 1
+            var processedCount = 0
 
             taskService
                 .findTasksForQualification()
@@ -53,26 +55,40 @@ class TaskQualificationService(
                     flow {
                         runCatching { processOne(task) }
                             .onFailure { e ->
-                                val isRetriable = isRetriableError(e)
-                                logger.error(e) {
-                                    "QUALIFICATION_ERROR: task=${task.id} type=${task.type} retriable=$isRetriable msg=${e.message}"
-                                }
+                                try {
+                                    val isRetriable = isRetriableError(e)
+                                    logger.error(e) {
+                                        "QUALIFICATION_ERROR: task=${task.id} type=${task.type} retriable=$isRetriable msg=${e.message}"
+                                    }
 
-                                if (isRetriable) {
-                                    // Operational error → return to queue with exponential backoff (never marks ERROR)
-                                    taskService.returnToQueue(task)
-                                } else {
-                                    // Actual indexing error → permanent ERROR
-                                    taskService.markAsError(task, e.message ?: "Unknown error")
+                                    if (isRetriable) {
+                                        // Operational error → return to queue with exponential backoff (never marks ERROR)
+                                        taskService.returnToQueue(task)
+                                    } else {
+                                        // Actual indexing error → permanent ERROR
+                                        taskService.markAsError(task, e.message ?: "Unknown error")
+                                    }
+                                } catch (inner: Exception) {
+                                    // Error handler itself failed (e.g. MongoDB down) — task stays QUALIFYING
+                                    // Will be recovered by resetStaleTasks on next restart
+                                    logger.error(inner) {
+                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until restart"
+                                    }
                                 }
                             }
                         emit(Unit)
                     }
-                }.catch { e ->
+                }.onEach { processedCount++ }
+                .catch { e ->
                     logger.error(e) { "Qualification stream failure: ${e.message}" }
                 }.collect()
 
-            logger.info { "QUALIFICATION_CYCLE_COMPLETE" }
+            // When queue is empty, recover stuck/error tasks for retry
+            if (processedCount == 0) {
+                taskService.recoverStuckIndexingTasks()
+            }
+
+            logger.info { "QUALIFICATION_CYCLE_COMPLETE: processed=$processedCount" }
         } finally {
             isQualificationRunning.set(false)
         }
@@ -127,8 +143,13 @@ class TaskQualificationService(
             message.contains("queue full", ignoreCase = true) ||
             message.contains("too many requests", ignoreCase = true) ||
             message.contains("429", ignoreCase = true) ||
+            // HTTP server errors from KB service (temporary crashes, restarts)
+            message.contains("500", ignoreCase = true) ||
+            message.contains("502", ignoreCase = true) ||
             message.contains("503", ignoreCase = true) ||
+            message.contains("504", ignoreCase = true) ||
             message.contains("service unavailable", ignoreCase = true) ||
+            message.contains("internal server error", ignoreCase = true) ||
             e is java.net.SocketTimeoutException ||
             e is java.net.SocketException
     }

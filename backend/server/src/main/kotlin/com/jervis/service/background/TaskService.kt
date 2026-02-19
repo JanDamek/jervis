@@ -29,6 +29,7 @@ import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.Instant
 
 @Service
@@ -607,7 +608,89 @@ class TaskService(
             logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PYTHON_ORCHESTRATING tasks → READY_FOR_GPU" }
         }
 
+        // Reset ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry)
+        // These are EMAIL/BUGTRACKER/GIT/WIKI tasks that failed during KB ingest (e.g. 500 from KB service).
+        // They should be retried through the qualification pipeline, not sent to GPU.
+        val indexingTypes = listOf(
+            TaskTypeEnum.EMAIL_PROCESSING.name,
+            TaskTypeEnum.BUGTRACKER_PROCESSING.name,
+            TaskTypeEnum.GIT_PROCESSING.name,
+            TaskTypeEnum.WIKI_PROCESSING.name,
+            TaskTypeEnum.LINK_PROCESSING.name,
+            TaskTypeEnum.MEETING_PROCESSING.name,
+        )
+        val errorIndexingQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
+                .and("type").`in`(indexingTypes),
+        )
+        val errorIndexingUpdate = Update()
+            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .unset("errorMessage")
+            .set("qualificationRetries", 0)
+        val errorIndexingResult = mongoTemplate.updateMulti(errorIndexingQuery, errorIndexingUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        val errorIndexingCount = errorIndexingResult.modifiedCount.toInt()
+        resetCount += errorIndexingCount
+
+        if (errorIndexingCount > 0) {
+            logger.warn { "STALE_RECOVERY: Reset $errorIndexingCount ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry)" }
+        }
+
         return resetCount
+    }
+
+    /**
+     * Recover stuck tasks when the KB qualification queue is empty.
+     * Called by TaskQualificationService after a cycle finds no work.
+     *
+     * Recovers:
+     * 1. ERROR indexing tasks → READY_FOR_QUALIFICATION (retry)
+     * 2. QUALIFYING tasks stuck >10 min → READY_FOR_QUALIFICATION (error handler failure)
+     */
+    suspend fun recoverStuckIndexingTasks(): Int {
+        var count = 0
+
+        // 1. ERROR indexing tasks → retry
+        val indexingTypes = listOf(
+            TaskTypeEnum.EMAIL_PROCESSING.name,
+            TaskTypeEnum.BUGTRACKER_PROCESSING.name,
+            TaskTypeEnum.GIT_PROCESSING.name,
+            TaskTypeEnum.WIKI_PROCESSING.name,
+            TaskTypeEnum.LINK_PROCESSING.name,
+            TaskTypeEnum.MEETING_PROCESSING.name,
+        )
+        val errorQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.ERROR.name)
+                .and("type").`in`(indexingTypes),
+        )
+        val errorUpdate = Update()
+            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .unset("errorMessage")
+            .set("qualificationRetries", 0)
+        val errorResult = mongoTemplate.updateMulti(errorQuery, errorUpdate, TaskDocument::class.java).awaitSingle()
+        val errorCount = errorResult.modifiedCount.toInt()
+        count += errorCount
+        if (errorCount > 0) {
+            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $errorCount ERROR indexing tasks → READY_FOR_QUALIFICATION" }
+        }
+
+        // 2. QUALIFYING tasks stuck >10 min (error handler failed, task left in QUALIFYING)
+        val stuckThreshold = Instant.now().minus(Duration.ofMinutes(10))
+        val stuckQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
+                .and("qualificationStartedAt").lt(stuckThreshold),
+        )
+        val stuckUpdate = Update()
+            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .unset("qualificationStartedAt")
+        val stuckResult = mongoTemplate.updateMulti(stuckQuery, stuckUpdate, TaskDocument::class.java).awaitSingle()
+        val stuckCount = stuckResult.modifiedCount.toInt()
+        count += stuckCount
+        if (stuckCount > 0) {
+            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $stuckCount stuck QUALIFYING tasks (>10min) → READY_FOR_QUALIFICATION" }
+        }
+
+        return count
     }
 
     /**

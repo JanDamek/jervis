@@ -159,6 +159,21 @@ async def respond(state: dict) -> dict:
                 "• NIKDY neopakuj již provedené akce (např. store_knowledge dvakrát)\n"
                 "• Finální odpověď = shrnutí všech provedených akcí, BEZ dalších tool_calls\n"
                 "• Pokud jsi uložil do KB a vytvořil task → hotovo, odpověz co jsi udělal\n\n"
+                "ABSOLUTNÍ ZÁKAZY:\n"
+                "• NIKDY neříkej že jsi provedl akci, pokud jsi ji NEPROVEDL přes nástroj s potvrzeným výsledkem\n"
+                "• NIKDY netvrd že jsi změnil kód, přejmenoval branch, nasadil build — nemáš takové nástroje\n"
+                "• Pokud nemáš nástroj pro požadovanou akci → ŘEKNI to uživateli a navrhni alternativu\n\n"
+                "KOREKCE vs. PŘÍKAZY:\n"
+                "• Korekce = uživatel opravuje tvé předchozí tvrzení: 'ne X, ale Y', 'X bude Y', 'X je špatně'\n"
+                "  → Zapamatuj si opravu (store_knowledge), poděkuj, NEPROVÁDĚJ žádnou akci\n"
+                "• Příkaz = uživatel chce aby jsi něco udělal: 'udělej X', 'přepni Y', 'vytvoř Z'\n"
+                "  → Pokud máš odpovídající nástroj → proveď. Pokud ne → řekni to.\n\n"
+                "TVÉ SCHOPNOSTI:\n"
+                "• UMÍŠ: hledat v KB, hledat na webu, číst soubory, ukládat znalosti, vytvářet Jira issues,\n"
+                "  zobrazit git branche/commity/status/diff (READ-ONLY)\n"
+                "• NEUMÍŠ: měnit kód, přepínat/vytvářet/mazat branche, commitovat, deployovat,\n"
+                "  odesílat emaily, spouštět CI/CD\n"
+                "• Pro akce které neumíš → informuj uživatele a doporuč jak to udělat ručně\n\n"
                 "Odpovídej česky. Buď konkrétní a faktický."
             ),
         },
@@ -179,8 +194,10 @@ async def respond(state: dict) -> dict:
     # Tool list (includes memory tools)
     respond_tools = ALL_RESPOND_TOOLS_FULL
 
-    # Agentic tool-use loop (max 25 iterations)
+    # Agentic tool-use loop
     iteration = 0
+    tool_call_history: list[tuple[str, str]] = []  # (name, args_json) for loop detection
+    tool_loop_break = False
     while iteration < _MAX_TOOL_ITERATIONS:
         iteration += 1
         logger.info("Respond: iteration %d/%d", iteration, _MAX_TOOL_ITERATIONS)
@@ -330,10 +347,35 @@ async def respond(state: dict) -> dict:
             }
             messages.append(tool_result_msg)
             logger.debug("Respond: appended tool result message: %s", tool_result_msg)
+
+            # Tool loop detection: track (name, args) and detect repeats
+            call_key = (tool_name, json.dumps(arguments, sort_keys=True))
+            tool_call_history.append(call_key)
+            repeat_count = tool_call_history.count(call_key)
+            if repeat_count >= 2:
+                logger.warning(
+                    "Tool loop detected: %s called %dx with same args, breaking",
+                    tool_name, repeat_count,
+                )
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        f"STOP: Voláš {tool_name} opakovaně se stejnými argumenty. "
+                        f"Tento nástroj ti nedá jiný výsledek. "
+                        f"Odpověz uživateli na základě informací které už máš."
+                    ),
+                })
+                tool_loop_break = True
+                break
+        if tool_loop_break:
+            break
         # Continue loop - will call LLM again with tool results
 
-    # Max iterations reached → return best effort answer
-    logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
+    # Force final answer — either max iterations or tool loop break
+    if tool_loop_break:
+        logger.warning("Respond: tool loop detected at iteration %d, forcing final answer", iteration)
+    else:
+        logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
     final_messages = messages + [{
         "role": "system",
         "content": "Provide your final answer now based on the information gathered. Do not call more tools."

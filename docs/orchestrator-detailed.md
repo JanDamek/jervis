@@ -631,10 +631,15 @@ class OrchestratorState(TypedDict, total=False):
 5. User clarification (pokud proběhla)
 6. Environment context
 
-**LLM system prompt**: "You are Jervis, an AI assistant... Use Czech language."
+**LLM system prompt**: "You are Jervis, an AI assistant... Use Czech language." Obsahuje:
+- Anti-halucinační pravidla (NIKDY netvrd že jsi provedl akci bez potvrzeného výsledku z nástroje)
+- Korekce vs. příkazy (rozlišení uživatelské opravy od příkazu k akci)
+- Explicitní capabilities (co UMÍŠ a NEUMÍŠ — git je READ-ONLY, žádné code changes, branch ops, deploy)
 
 **Agentic tool-use loop** (max 8 iterations): LLM call → tool calls → execute → repeat.
 Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_scheduled_task`, + KB stats, git, filesystem, terminal tools.
+
+**Tool loop detection**: Sleduje historii `(tool_name, args_json)`. Pokud se stejný tool se stejnými argumenty zavolá 2×, loop se přeruší, injektuje se system message "STOP", a vynutí se finální odpověď. Sdílí forced-answer path s max iterations.
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 
