@@ -344,10 +344,54 @@ class IndexingQueueRpcImpl(
         val kbInProgress = kbQueueResponse.items.filter { it.status == "in_progress" }
         val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
 
+        // Server QUALIFYING tasks (RAG ingest + summary — first stage of KB processing)
+        val qualifyingTasks = mongoTemplate.find(
+            Query(
+                Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
+                    .and("type").`in`(indexingTaskTypes.map { it.name }),
+            ).with(Sort.by(Sort.Direction.ASC, "qualificationStartedAt")),
+            TaskDocument::class.java, "tasks",
+        ).collectList().awaitSingle()
+
+        // KB extraction IN_PROGRESS items exclude those that match a QUALIFYING server task
+        // (they represent different stages — qualification = RAG+summary, extraction = graph)
+        val qualifyingCorrelationIds = qualifyingTasks.map { it.correlationId }.toSet()
+        val kbInProgressFiltered = kbInProgress.filter { it.sourceUrn !in qualifyingCorrelationIds }
+
         // Enrich KB items → PipelineItemDto
-        val kbProcessingAll = kbInProgress.mapIndexed { index, item ->
+        val serverQualifyingItems = qualifyingTasks.map { task ->
+            val clientName = clientMap[task.clientId]?.name ?: task.clientId.value.toHexString()
+            val connName = extractConnectionName(task.sourceUrn.value, connectionMap)
+            PipelineItemDto(
+                id = task.id.value.toHexString(),
+                type = taskTypeToItemType(task.type),
+                title = extractTaskTitle(task),
+                connectionName = connName,
+                clientName = clientName,
+                sourceUrn = task.sourceUrn.value,
+                createdAt = task.createdAt.formatIso(),
+                pipelineState = "QUALIFYING",
+                retryCount = task.qualificationRetries,
+                errorMessage = task.errorMessage,
+                taskId = task.id.value.toHexString(),
+                queuePosition = null,
+                processingMode = task.processingMode.name,
+                qualificationStartedAt = task.qualificationStartedAt?.formatIso(),
+                qualificationSteps = task.qualificationSteps.map { step ->
+                    QualificationStepDto(
+                        timestamp = step.timestamp.formatIso(),
+                        step = step.step,
+                        message = step.message,
+                        metadata = step.metadata,
+                    )
+                },
+            )
+        }
+
+        val kbExtractionItems = kbInProgressFiltered.mapIndexed { index, item ->
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }
+        val kbProcessingAll = serverQualifyingItems + kbExtractionItems
         val kbWaitingAll = kbPending.mapIndexed { index, item ->
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }
@@ -437,7 +481,7 @@ class IndexingQueueRpcImpl(
         val connName = extractConnectionName(kbItem.sourceUrn, connectionMap)
         val itemType = if (serverTask != null) taskTypeToItemType(serverTask.type) else kindToItemType(kbItem.kind)
 
-        val pipelineState = if (kbItem.status == "in_progress") "QUALIFYING" else "WAITING"
+        val pipelineState = if (kbItem.status == "in_progress") "EXTRACTING" else "WAITING"
 
         val title = if (serverTask != null) {
             extractTaskTitle(serverTask)
