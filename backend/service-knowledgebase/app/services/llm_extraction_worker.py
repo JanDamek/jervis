@@ -13,6 +13,7 @@ PRODUCTION-GRADE with:
 import asyncio
 import logging
 from pathlib import Path
+import time
 import uuid
 import socket
 
@@ -43,7 +44,7 @@ class LLMExtractionWorker:
             return
 
         # Recover stale tasks from previous crashes
-        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=30)
+        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
         if recovered > 0:
             logger.info("Worker %s recovered %d stale tasks on startup", self.worker_id, recovered)
 
@@ -79,6 +80,7 @@ class LLMExtractionWorker:
             )
 
         last_stats_log = asyncio.get_event_loop().time()
+        last_stale_check = last_stats_log
 
         while self.running:
             try:
@@ -87,8 +89,16 @@ class LLMExtractionWorker:
 
                 if task is None:
                     # No PENDING tasks, wait before checking again
-                    # Log stats every 5 minutes when idle
                     now = asyncio.get_event_loop().time()
+
+                    # Periodic stale recovery (every 5 min, 10 min threshold)
+                    if now - last_stale_check > 300:
+                        recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
+                        if recovered > 0:
+                            logger.info("Periodic recovery: %d stale tasks reset to PENDING", recovered)
+                        last_stale_check = now
+
+                    # Log stats every 5 minutes when idle
                     if now - last_stats_log > 300:  # 5 minutes
                         stats = await self.queue.stats()
                         metrics.extraction_queue_depth.set(stats.get("pending", 0))
@@ -114,7 +124,7 @@ class LLMExtractionWorker:
                 )
 
                 metrics.extraction_workers_active.inc()
-                timer = metrics.extraction_task_duration.time()
+                start_time = time.monotonic()
                 try:
                     await self._process_task(task)
 
@@ -138,7 +148,7 @@ class LLMExtractionWorker:
                     # Mark as FAILED (resets to PENDING if attempts < 3, else marks FAILED)
                     await self.queue.mark_failed(task.task_id, error_msg, max_attempts=3)
                 finally:
-                    timer.observe_duration()
+                    metrics.extraction_task_duration.observe(time.monotonic() - start_time)
                     metrics.extraction_workers_active.dec()
                     # Update queue depth after each task
                     stats = await self.queue.stats()
