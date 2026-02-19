@@ -30,6 +30,7 @@ echo "✓ Docker image pushed"
 
 # Deploy to Kubernetes
 echo "Step 3/3: Deploying to Kubernetes..."
+kubectl apply -f "$SCRIPT_DIR/configmap.yaml" -n "${NAMESPACE}"
 kubectl apply -f "$SCRIPT_DIR/app_knowledgebase.yaml" -n "${NAMESPACE}"
 
 # Validate YAML changes propagated to K8s (both read and write deployments)

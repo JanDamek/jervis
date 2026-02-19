@@ -31,6 +31,7 @@ echo "✓ Docker image pushed"
 # Step 3: Deploy to Kubernetes
 echo "Step 3/3: Deploying to Kubernetes..."
 cd "$PROJECT_ROOT/k8s"
+kubectl apply -f configmap.yaml
 kubectl apply -f app_ollama_router.yaml
 
 # Validate YAML changes propagated to K8s
