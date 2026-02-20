@@ -41,7 +41,7 @@ class TranscriptCorrectionService(
         }
 
         val meetingIdStr = meeting.id.toHexString()
-        val clientIdStr = meeting.clientId.toString()
+        val clientIdStr = meeting.clientId?.toString().orEmpty()
 
         logger.info { "Starting transcript correction for meeting ${meeting.id}" }
 
@@ -82,7 +82,7 @@ class TranscriptCorrectionService(
 
             val result = correctionClient.correctTranscript(
                 CorrectionRequestDto(
-                    clientId = meeting.clientId.toString(),
+                    clientId = meeting.clientId?.toString().orEmpty(),
                     projectId = meeting.projectId?.toString(),
                     meetingId = meetingIdStr,
                     segments = requestSegments,
@@ -199,7 +199,7 @@ class TranscriptCorrectionService(
             }
             correctionClient.answerCorrectionQuestions(
                 CorrectionAnswerRequestDto(
-                    clientId = meeting.clientId.toString(),
+                    clientId = meeting.clientId?.toString().orEmpty(),
                     projectId = meeting.projectId?.toString(),
                     answers = answerItems,
                 ),
@@ -230,7 +230,7 @@ class TranscriptCorrectionService(
                 ),
             )
             notificationRpc.emitMeetingStateChanged(
-                meetingId, meeting.clientId.toString(), MeetingStateEnum.CORRECTED.name, meeting.title,
+                meetingId, meeting.clientId?.toString().orEmpty(), MeetingStateEnum.CORRECTED.name, meeting.title,
             )
             logger.info { "All ${knownAnswers.size} answers applied in-place for meeting $meetingId → CORRECTED" }
             return true
@@ -261,7 +261,7 @@ class TranscriptCorrectionService(
         knownAnswers: List<com.jervis.dto.meeting.CorrectionAnswerDto>,
     ) {
         val meetingIdStr = meeting.id.toHexString()
-        val clientIdStr = meeting.clientId.toString()
+        val clientIdStr = meeting.clientId?.toString().orEmpty()
 
         // Set CORRECTING state
         val correcting = meetingRepository.save(
@@ -443,7 +443,7 @@ class TranscriptCorrectionService(
             ?: throw IllegalStateException("Meeting not found: $meetingId")
 
         val meetingIdStr = meeting.id.toHexString()
-        val clientIdStr = meeting.clientId.toString()
+        val clientIdStr = meeting.clientId?.toString().orEmpty()
 
         val baseSegments = meeting.correctedTranscriptSegments.ifEmpty { meeting.transcriptSegments }
         require(baseSegments.isNotEmpty()) { "Meeting has no transcript segments" }

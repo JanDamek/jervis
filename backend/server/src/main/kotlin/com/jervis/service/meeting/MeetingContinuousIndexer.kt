@@ -181,7 +181,7 @@ class MeetingContinuousIndexer(
                 if (activeJobName != null) {
                     // K8s job still running — re-attach to it instead of restarting
                     logger.info { "Found active Whisper Job $activeJobName for TRANSCRIBING meeting $meetingIdStr, re-attaching" }
-                    val clientIdStr = meeting.clientId.toString()
+                    val clientIdStr = meeting.clientId?.toString().orEmpty()
                     processingMeetingIds.add(meetingIdStr)
                     scope.launch {
                         try {
@@ -226,7 +226,7 @@ class MeetingContinuousIndexer(
                         meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
                     )
                     notificationRpc.emitMeetingStateChanged(
-                        meetingIdStr, meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
+                        meetingIdStr, meeting.clientId?.toString().orEmpty(), MeetingStateEnum.UPLOADED.name, meeting.title,
                     )
                     logger.info { "No active Whisper Job for TRANSCRIBING meeting $meetingIdStr, reset to UPLOADED" }
                 }
@@ -242,7 +242,7 @@ class MeetingContinuousIndexer(
                     meeting.copy(state = MeetingStateEnum.TRANSCRIBED, stateChangedAt = Instant.now(), errorMessage = null),
                 )
                 notificationRpc.emitMeetingStateChanged(
-                    meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.TRANSCRIBED.name, meeting.title,
+                    meeting.id.toHexString(), meeting.clientId?.toString().orEmpty(), MeetingStateEnum.TRANSCRIBED.name, meeting.title,
                 )
                 logger.info { "Recovered stale CORRECTING meeting ${meeting.id} -> TRANSCRIBED (server restart)" }
             } catch (e: Exception) {
@@ -488,12 +488,20 @@ class MeetingContinuousIndexer(
             return
         }
 
+        // Skip KB indexing for unclassified meetings (no clientId) — classify first
+        val clientId = meeting.clientId
+        if (clientId == null) {
+            logger.info { "Skipping KB indexing for unclassified meeting ${meeting.id} (no clientId)" }
+            meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTED))
+            return
+        }
+
         val meetingContent = buildMeetingContent(meeting)
 
         taskService.createTask(
             taskType = TaskTypeEnum.MEETING_PROCESSING,
             content = meetingContent,
-            clientId = meeting.clientId,
+            clientId = clientId,
             correlationId = "meeting:${meeting.id}",
             sourceUrn = SourceUrn.meeting(
                 meetingId = meeting.id.toHexString(),
@@ -505,7 +513,7 @@ class MeetingContinuousIndexer(
 
         meetingRepository.save(meeting.copy(state = MeetingStateEnum.INDEXED))
         notificationRpc.emitMeetingStateChanged(
-            meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
+            meeting.id.toHexString(), clientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
         )
         logger.info { "Created MEETING_PROCESSING task for meeting: ${meeting.title ?: meeting.id}" }
     }
@@ -656,7 +664,7 @@ class MeetingContinuousIndexer(
                                 ),
                             )
                             notificationRpc.emitMeetingStateChanged(
-                                meetingIdStr, meeting.clientId.toString(),
+                                meetingIdStr, meeting.clientId?.toString().orEmpty(),
                                 MeetingStateEnum.UPLOADED.name, meeting.title,
                             )
                         }
@@ -692,7 +700,7 @@ class MeetingContinuousIndexer(
                             ),
                         )
                         notificationRpc.emitMeetingStateChanged(
-                            meetingIdStr, meeting.clientId.toString(),
+                            meetingIdStr, meeting.clientId?.toString().orEmpty(),
                             MeetingStateEnum.TRANSCRIBED.name, meeting.title,
                         )
                     }
@@ -711,7 +719,7 @@ class MeetingContinuousIndexer(
             ),
         )
         notificationRpc.emitMeetingStateChanged(
-            meeting.id.toHexString(), meeting.clientId.toString(), MeetingStateEnum.FAILED.name, meeting.title, error,
+            meeting.id.toHexString(), meeting.clientId?.toString().orEmpty(), MeetingStateEnum.FAILED.name, meeting.title, error,
         )
         logger.warn { "Marked meeting as FAILED: ${meeting.title ?: meeting.id}" }
     }

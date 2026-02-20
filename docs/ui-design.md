@@ -540,7 +540,7 @@ The app uses a global `PersistentTopBar` above all screens. The main screen (cha
 ```
 ALL SCREEN SIZES:
 +----------------------------------------------+
-| [←] [≡] Client / Project ▾  ●REC 🤖idle K8s●|  <-- PersistentTopBar (always visible)
+| [←] [≡] Client / Project ▾ [🎙] ●REC [⏹] 🤖idle K8s●|  <-- PersistentTopBar (always visible)
 |----------------------------------------------|
 | [Recording bar — if recording]               |  <-- RecordingBar (global)
 |----------------------------------------------|
@@ -584,6 +584,10 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 ```
 
 **Implementation:** `PersistentTopBar` in `PersistentTopBar.kt` is rendered in `App.kt` above `RecordingBar` and the screen `when` block. It contains the compact client/project selector, menu, recording indicator, agent status icon, K8s badge, and connection indicator. `MainScreenView` in `MainScreen.kt` only contains chat content (banners, messages, input).
+
+**Ad-hoc recording:** The mic button (🎙) in PersistentTopBar starts an instant recording with `clientId=null, meetingType=AD_HOC`. During recording, a stop button (⏹) replaces the mic button. Unclassified meetings appear in a "Neklasifikované nahrávky" section in MeetingsScreen with a "Klasifikovat" button that opens `ClassifyMeetingDialog`.
+
+**Offline mode:** When disconnected, the connection indicator shows an "Offline" chip (CloudOff icon + "Offline" text on `errorContainer` background, clickable for manual reconnect). No blocking overlay — the app is always usable. Chat input is disabled when offline. Meeting recording works offline (chunks saved to disk, auto-synced when connection restored). Cached clients/projects are shown from `OfflineDataCache`.
 
 **Chat message types** (`ChatMessage.MessageType`):
 - `USER_MESSAGE` — user bubble (primaryContainer, right-aligned)
@@ -1009,6 +1013,8 @@ Compact (<600dp):
 - `RecordingIndicator` -- Animated red dot + elapsed time + stop button (shown during recording)
 
 **State icons:** RECORDING, UPLOADING, UPLOADED/TRANSCRIBING/CORRECTING, TRANSCRIBED/CORRECTED/INDEXED, FAILED
+
+**Offline recording:** When server is unavailable, `MeetingViewModel.startRecording()` falls back to offline mode — generates a local UUID (prefix `offline_`), saves audio chunks to disk via `AudioChunkQueue`. On stop, metadata is saved via `OfflineMeetingStorage`. `OfflineMeetingSyncService` (created in `App.kt`) watches connection state and uploads offline meetings when connected. Offline meetings appear in a special "Offline nahrávky" section at the top of the list with sync state (PENDING/SYNCING/FAILED) and retry button.
 
 **MeetingDetailView** uses a split layout with transcript on top and agent chat on bottom:
 

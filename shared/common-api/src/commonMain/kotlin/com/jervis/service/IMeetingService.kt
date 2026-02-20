@@ -2,6 +2,7 @@ package com.jervis.service
 
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
+import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
@@ -61,4 +62,8 @@ interface IMeetingService {
     suspend fun stopTranscription(meetingId: String): Boolean
 
     suspend fun getUploadState(meetingId: String): MeetingUploadStateDto
+
+    suspend fun classifyMeeting(request: MeetingClassifyDto): MeetingDto
+
+    suspend fun listUnclassifiedMeetings(): List<MeetingDto>
 }

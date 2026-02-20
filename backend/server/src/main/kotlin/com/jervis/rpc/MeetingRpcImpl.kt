@@ -5,6 +5,7 @@ import com.jervis.common.types.ProjectId
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.CorrectionQuestionDto
+import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
@@ -48,14 +49,14 @@ class MeetingRpcImpl(
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
-        val clientId = ClientId.fromString(request.clientId)
+        val clientId = request.clientId?.let { ClientId.fromString(it) }
         val projectId = request.projectId?.let { ProjectId.fromString(it) }
 
         // Resolve storage directory
-        val meetingsDir = if (projectId != null) {
-            directoryStructureService.projectMeetingsDir(clientId, projectId)
-        } else {
-            directoryStructureService.clientAudioDir(clientId)
+        val meetingsDir = when {
+            projectId != null && clientId != null -> directoryStructureService.projectMeetingsDir(clientId, projectId)
+            clientId != null -> directoryStructureService.clientAudioDir(clientId)
+            else -> unclassifiedMeetingsDir()
         }
 
         val meetingId = ObjectId.get()
@@ -80,7 +81,7 @@ class MeetingRpcImpl(
         )
 
         val saved = meetingRepository.save(document)
-        logger.info { "Started meeting recording: ${saved.id} at $audioFilePath" }
+        logger.info { "Started meeting recording: ${saved.id} at $audioFilePath (clientId=${clientId ?: "unclassified"})" }
         return saved.toDto()
     }
 
@@ -469,7 +470,7 @@ class MeetingRpcImpl(
         try {
             correctionClient.submitCorrection(
                 CorrectionSubmitRequestDto(
-                    clientId = meeting.clientId.toString(),
+                    clientId = meeting.clientId?.toString().orEmpty(),
                     projectId = meeting.projectId?.toString(),
                     original = originalText,
                     corrected = correctedText,
@@ -506,10 +507,56 @@ class MeetingRpcImpl(
         )
 
         notificationRpc.emitMeetingStateChanged(
-            meetingId, meeting.clientId.toString(), MeetingStateEnum.UPLOADED.name, meeting.title,
+            meetingId, meeting.clientId?.toString().orEmpty(), MeetingStateEnum.UPLOADED.name, meeting.title,
         )
         logger.info { "Stopped transcription for meeting $meetingId, reset to UPLOADED" }
         return true
+    }
+
+    override suspend fun classifyMeeting(request: MeetingClassifyDto): MeetingDto {
+        val id = ObjectId(request.meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: ${request.meetingId}")
+
+        val clientId = ClientId.fromString(request.clientId)
+        val projectId = request.projectId?.let { ProjectId.fromString(it) }
+
+        // Move audio file to the correct directory if it exists
+        val newAudioFilePath = meeting.audioFilePath?.let { oldPath ->
+            val targetDir = if (projectId != null) {
+                directoryStructureService.projectMeetingsDir(clientId, projectId)
+            } else {
+                directoryStructureService.clientAudioDir(clientId)
+            }
+            val oldFile = java.nio.file.Paths.get(oldPath)
+            val newFile = targetDir.resolve(oldFile.fileName)
+            withContext(Dispatchers.IO) {
+                if (Files.exists(oldFile)) {
+                    Files.move(oldFile, newFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    newFile.toString()
+                } else {
+                    oldPath // keep original if file already moved/missing
+                }
+            }
+        }
+
+        val updated = meeting.copy(
+            clientId = clientId,
+            projectId = projectId,
+            title = request.title ?: meeting.title,
+            meetingType = request.meetingType ?: meeting.meetingType,
+            audioFilePath = newAudioFilePath ?: meeting.audioFilePath,
+        )
+
+        val saved = meetingRepository.save(updated)
+        logger.info { "Classified meeting ${request.meetingId} to client=${request.clientId} project=${request.projectId}" }
+        return saved.toDto()
+    }
+
+    override suspend fun listUnclassifiedMeetings(): List<MeetingDto> {
+        return meetingRepository.findByClientIdIsNullAndDeletedIsFalseOrderByStartedAtDesc()
+            .toList()
+            .map { it.toDto() }
     }
 
     override suspend fun getUploadState(meetingId: String): MeetingUploadStateDto {
@@ -521,6 +568,14 @@ class MeetingRpcImpl(
             chunkCount = meeting.chunkCount,
             audioSizeBytes = meeting.audioSizeBytes,
         )
+    }
+
+    private fun unclassifiedMeetingsDir(): java.nio.file.Path {
+        val dir = directoryStructureService.workspaceRoot().resolve("unclassified").resolve("meetings")
+        if (!Files.exists(dir)) {
+            Files.createDirectories(dir)
+        }
+        return dir
     }
 
     override suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto {
@@ -558,7 +613,7 @@ class MeetingRpcImpl(
         val result = try {
             correctionClient.correctWithInstruction(
                 CorrectionInstructRequestDto(
-                    clientId = meeting.clientId.toString(),
+                    clientId = meeting.clientId?.toString().orEmpty(),
                     projectId = meeting.projectId?.toString(),
                     segments = requestSegments,
                     instruction = instruction,
@@ -681,7 +736,7 @@ private fun fixWavHeader(file: java.nio.file.Path, fileSize: Long) {
 private fun MeetingDocument.toDto(): MeetingDto =
     MeetingDto(
         id = id.toHexString(),
-        clientId = clientId.toString(),
+        clientId = clientId?.toString(),
         projectId = projectId?.toString(),
         title = title,
         meetingType = meetingType,

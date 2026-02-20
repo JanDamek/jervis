@@ -800,6 +800,47 @@ When orchestrator dispatch fails (busy/error), tasks get DB-persisted backoff:
 - `getNextForegroundTask()`/`getNextBackgroundTask()` skip tasks in backoff
 - Successful dispatch resets retry state to 0
 
+### Offline Mode (Client-Side)
+
+The Compose UI supports offline operation — the app renders immediately without waiting for server connection.
+
+**Key components:**
+- `OfflineException` (`shared/domain/.../di/OfflineException.kt`): thrown when RPC called while offline
+- `OfflineDataCache` (expect/actual, 3 platforms): persists clients + projects for offline display
+- `OfflineMeetingStorage` (expect/actual, 3 platforms): persists offline meeting metadata
+- `OfflineMeetingSyncService` (`shared/ui-common/.../meeting/OfflineMeetingSyncService.kt`): auto-syncs offline meetings when connection restored
+
+**Behavior:**
+- `JervisApp.kt` creates repository eagerly (lambda-based, not blocking on connect)
+- Desktop `ConnectionManager.repository` is non-nullable val
+- No blocking overlay on disconnect — replaced by "Offline" chip in `PersistentTopBar`
+- `MainViewModel.isOffline: StateFlow<Boolean>` derives from connection state
+- Chat input disabled when offline; meeting recording works offline (chunks saved to disk)
+- `OfflineMeetingSyncService` watches connection state and uploads offline meetings on reconnect
+
+### Ad-hoc Recording (Quick Record from Top Bar)
+
+One-tap recording from `PersistentTopBar` — no dialog, no client/project selection.
+
+**Key changes:**
+- `MeetingDocument.clientId` is nullable (`ClientId?`) — null means unclassified
+- `MeetingDto.clientId` and `MeetingCreateDto.clientId` are nullable (`String?`)
+- `MeetingTypeEnum.AD_HOC` — new enum value for quick recordings
+- `PersistentTopBar` has a mic button (🎙) that calls `MeetingViewModel.startQuickRecording()` — records with `clientId=null, meetingType=AD_HOC`
+- Stop button (⏹) replaces mic button during recording
+- Unclassified meetings directory: `{workspaceRoot}/unclassified/meetings/`
+
+**Classification flow:**
+- `IMeetingService.classifyMeeting(MeetingClassifyDto)` — assigns clientId/projectId/title/type, moves audio file to correct directory
+- `IMeetingService.listUnclassifiedMeetings()` — returns meetings with null clientId
+- `MeetingsScreen` shows "Neklasifikované nahrávky" section with "Klasifikovat" button
+- `ClassifyMeetingDialog` — radio buttons for client, project, title field, meeting type chips
+
+**Pipeline behavior with null clientId:**
+- Transcription and correction run normally (don't need clientId)
+- KB indexing (CORRECTED → INDEXED) is **skipped** until classified — meeting stays in CORRECTED state
+- After classification, the indexer picks up the meeting on next cycle
+
 ---
 
 ## Coding Agents
@@ -1466,9 +1507,9 @@ data class SystemConfigDocument(
 )
 ```
 
-**UI:** Settings → General → "Mozek Jervise" section with dropdowns for connection and project/space selection. Project/space lists loaded dynamically via `listAvailableResources()`.
+**UI:** Settings → General → "Mozek Jervise" section with dropdowns for Atlassian connection, Jira project, and Confluence space. Issue type and root page are managed by brain agents (Jira agent, Confluence agent), not exposed in UI. Project/space lists loaded dynamically via `listAvailableResources(includeBrainReserved = true)`.
 
-**Brain resource isolation:** `ConnectionRpcImpl.listAvailableResources()` automatically filters out brain-reserved Jira project and Confluence space from resource lists when the requesting connection matches the brain connection. This prevents users from accidentally assigning brain resources to client projects.
+**Brain resource isolation:** `ConnectionRpcImpl.listAvailableResources()` automatically filters out brain-reserved Jira project and Confluence space from resource lists when the requesting connection matches the brain connection. This prevents users from accidentally assigning brain resources to client projects. The `includeBrainReserved` parameter (default `false`) skips this filtering when `true` — used by the brain config UI itself so the selected project/space remains visible in dropdowns.
 
 ### Architecture
 

@@ -36,4 +36,7 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
 
     // Trash cleanup (older than cutoff)
     fun findByDeletedIsTrueAndDeletedAtBefore(cutoff: java.time.Instant): Flow<MeetingDocument>
+
+    // Unclassified meetings (clientId is null, not deleted)
+    fun findByClientIdIsNullAndDeletedIsFalseOrderByStartedAtDesc(): Flow<MeetingDocument>
 }

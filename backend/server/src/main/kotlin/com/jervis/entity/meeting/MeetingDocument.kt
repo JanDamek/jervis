@@ -33,7 +33,7 @@ import java.time.Instant
 data class MeetingDocument(
     @Id
     val id: ObjectId = ObjectId.get(),
-    val clientId: ClientId,
+    val clientId: ClientId? = null,
     val projectId: ProjectId? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,

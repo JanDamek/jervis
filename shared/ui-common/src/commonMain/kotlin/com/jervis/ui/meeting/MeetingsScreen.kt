@@ -26,7 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
+import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
+import com.jervis.dto.meeting.MeetingDto
+import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.design.JAddButton
@@ -48,6 +51,7 @@ fun MeetingsScreen(
     selectedClientId: String?,
     selectedProjectId: String?,
     onBack: () -> Unit,
+    offlineSyncService: OfflineMeetingSyncService? = null,
 ) {
     val meetings by viewModel.meetings.collectAsState()
     val vmProjects by viewModel.projects.collectAsState()
@@ -68,9 +72,12 @@ fun MeetingsScreen(
     val uploadState by viewModel.uploadState.collectAsState()
 
     val deletedMeetings by viewModel.deletedMeetings.collectAsState()
+    val unclassifiedMeetings by viewModel.unclassifiedMeetings.collectAsState()
+    val offlinePending = offlineSyncService?.pendingMeetings?.collectAsState()?.value ?: emptyList()
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
+    var classifyTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var interruptedRecording by remember { mutableStateOf<RecordingState?>(null) }
@@ -82,6 +89,11 @@ fun MeetingsScreen(
         if (state != null) {
             interruptedRecording = state
         }
+    }
+
+    // Load unclassified meetings once on startup
+    LaunchedEffect(Unit) {
+        viewModel.loadUnclassifiedMeetings()
     }
 
     // Load meetings + projects when global selection changes
@@ -107,10 +119,11 @@ fun MeetingsScreen(
     // Detail view
     val currentDetail = selectedMeeting
     if (currentDetail != null) {
-        if (showCorrections) {
+        val detailClientId = currentDetail.clientId
+        if (showCorrections && detailClientId != null) {
             CorrectionsScreen(
                 correctionService = viewModel.repository.transcriptCorrections,
-                clientId = currentDetail.clientId,
+                clientId = detailClientId,
                 projectId = currentDetail.projectId,
                 onBack = { showCorrections = false },
             )
@@ -276,6 +289,55 @@ fun MeetingsScreen(
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            // Unclassified meetings section
+                            if (unclassifiedMeetings.isNotEmpty()) {
+                                item(key = "unclassified_header") {
+                                    Text(
+                                        text = "Neklasifikované nahrávky",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        modifier = Modifier.padding(bottom = 4.dp),
+                                    )
+                                }
+                                items(unclassifiedMeetings, key = { "unclassified_${it.id}" }) { meeting ->
+                                    UnclassifiedMeetingListItem(
+                                        meeting = meeting,
+                                        isPlaying = playingMeetingId == meeting.id,
+                                        onClassify = { classifyTarget = meeting },
+                                        onClick = { viewModel.selectMeeting(meeting) },
+                                        onPlayToggle = { viewModel.playAudio(meeting.id) },
+                                    )
+                                }
+                                item(key = "unclassified_divider") {
+                                    androidx.compose.material3.HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                    )
+                                }
+                            }
+
+                            // Offline meetings section
+                            if (offlinePending.isNotEmpty()) {
+                                item(key = "offline_header") {
+                                    Text(
+                                        text = "Offline nahrávky — čekají na odeslání",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 4.dp),
+                                    )
+                                }
+                                items(offlinePending, key = { "offline_${it.localId}" }) { offline ->
+                                    OfflineMeetingListItem(
+                                        meeting = offline,
+                                        onRetry = { offlineSyncService?.retryMeeting(offline.localId) },
+                                    )
+                                }
+                                item(key = "offline_divider") {
+                                    androidx.compose.material3.HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                    )
+                                }
+                            }
+
                             items(displayedMeetings, key = { it.id }) { meeting ->
                                 MeetingListItem(
                                     meeting = meeting,
@@ -373,4 +435,286 @@ fun MeetingsScreen(
         isDestructive = false,
         dismissText = "Zahodit",
     )
+
+    // Classify meeting dialog
+    classifyTarget?.let { meeting ->
+        ClassifyMeetingDialog(
+            meeting = meeting,
+            clients = clients,
+            projects = vmProjects,
+            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
+            onClassify = { clientId, projectId, title, meetingType ->
+                viewModel.classifyMeeting(
+                    meetingId = meeting.id,
+                    clientId = clientId,
+                    projectId = projectId,
+                    title = title,
+                    meetingType = meetingType,
+                )
+                classifyTarget = null
+            },
+            onDismiss = { classifyTarget = null },
+        )
+    }
+}
+
+/**
+ * List item for an unclassified meeting (ad-hoc recording without client/project).
+ */
+@Composable
+private fun UnclassifiedMeetingListItem(
+    meeting: MeetingDto,
+    isPlaying: Boolean,
+    onClassify: () -> Unit,
+    onClick: () -> Unit,
+    onPlayToggle: () -> Unit,
+) {
+    val durationText = meeting.durationSeconds?.let { dur ->
+        "${dur / 60}:${(dur % 60).toString().padStart(2, '0')}"
+    } ?: "—"
+
+    val stateText = meeting.state.name.lowercase().replaceFirstChar { it.uppercase() }
+
+    androidx.compose.material3.OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meeting.title ?: "Ad-hoc nahrávka",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = "$stateText · $durationText",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            androidx.compose.material3.TextButton(onClick = onClassify) {
+                Text("Klasifikovat")
+            }
+        }
+    }
+}
+
+/**
+ * Dialog for classifying an ad-hoc meeting — assign client, project, title, type.
+ */
+@Composable
+private fun ClassifyMeetingDialog(
+    meeting: MeetingDto,
+    clients: List<ClientDto>,
+    projects: List<ProjectDto>,
+    onLoadProjects: (String) -> Unit,
+    onClassify: (clientId: String, projectId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedClientId by remember { mutableStateOf<String?>(null) }
+    var selectedProjectId by remember { mutableStateOf<String?>(null) }
+    var title by remember { mutableStateOf(meeting.title ?: "") }
+    var selectedMeetingType by remember { mutableStateOf<MeetingTypeEnum?>(meeting.meetingType) }
+
+    // Load projects when client changes
+    LaunchedEffect(selectedClientId) {
+        selectedClientId?.let { onLoadProjects(it) }
+    }
+
+    val filteredProjects = projects.filter { it.clientId == selectedClientId }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Klasifikovat nahrávku") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                // Client selector
+                Text("Klient", style = MaterialTheme.typography.labelMedium)
+                Column {
+                    clients.forEach { client ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedClientId == client.id,
+                                onClick = {
+                                    selectedClientId = client.id
+                                    selectedProjectId = null
+                                },
+                            )
+                            Text(
+                                text = client.name,
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Project selector (optional)
+                if (filteredProjects.isNotEmpty()) {
+                    Text("Projekt (volitelný)", style = MaterialTheme.typography.labelMedium)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedProjectId == null,
+                                onClick = { selectedProjectId = null },
+                            )
+                            Text("(Žádný)", modifier = Modifier.padding(start = 4.dp))
+                        }
+                        filteredProjects.forEach { project ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.RadioButton(
+                                    selected = selectedProjectId == project.id,
+                                    onClick = { selectedProjectId = project.id },
+                                )
+                                Text(
+                                    text = project.name,
+                                    modifier = Modifier.padding(start = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Title
+                androidx.compose.material3.OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Název (volitelný)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                // Meeting type selector
+                Text("Typ meetingu", style = MaterialTheme.typography.labelMedium)
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MeetingTypeEnum.entries.forEach { type ->
+                        FilterChip(
+                            selected = selectedMeetingType == type,
+                            onClick = { selectedMeetingType = type },
+                            label = { Text(getMeetingTypeLabel(type)) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    val clientId = selectedClientId ?: return@TextButton
+                    onClassify(
+                        clientId,
+                        selectedProjectId,
+                        title.takeIf { it.isNotBlank() },
+                        selectedMeetingType,
+                    )
+                },
+                enabled = selectedClientId != null,
+            ) {
+                Text("Klasifikovat")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Zrušit")
+            }
+        },
+    )
+}
+
+private fun getMeetingTypeLabel(type: MeetingTypeEnum): String = when (type) {
+    MeetingTypeEnum.MEETING -> "Meeting"
+    MeetingTypeEnum.TASK_DISCUSSION -> "Diskuze"
+    MeetingTypeEnum.STANDUP_PROJECT -> "Standup (projekt)"
+    MeetingTypeEnum.STANDUP_TEAM -> "Standup (tým)"
+    MeetingTypeEnum.INTERVIEW -> "Pohovor"
+    MeetingTypeEnum.WORKSHOP -> "Workshop"
+    MeetingTypeEnum.REVIEW -> "Review"
+    MeetingTypeEnum.OTHER -> "Ostatní"
+    MeetingTypeEnum.AD_HOC -> "Ad-hoc"
+}
+
+/**
+ * List item for an offline meeting waiting to be synced.
+ */
+@Composable
+private fun OfflineMeetingListItem(
+    meeting: com.jervis.ui.storage.OfflineMeeting,
+    onRetry: () -> Unit,
+) {
+    val stateText = when (meeting.syncState) {
+        com.jervis.ui.storage.OfflineSyncState.PENDING -> "Čeká na odeslání"
+        com.jervis.ui.storage.OfflineSyncState.SYNCING -> "Odesílání..."
+        com.jervis.ui.storage.OfflineSyncState.SYNCED -> "Odesláno"
+        com.jervis.ui.storage.OfflineSyncState.FAILED -> "Selhalo"
+    }
+    val stateColor = when (meeting.syncState) {
+        com.jervis.ui.storage.OfflineSyncState.FAILED -> MaterialTheme.colorScheme.error
+        com.jervis.ui.storage.OfflineSyncState.SYNCING -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    val duration = meeting.durationSeconds
+    val durationText = if (duration > 0) {
+        "${duration / 60}:${(duration % 60).toString().padStart(2, '0')}"
+    } else "—"
+
+    androidx.compose.material3.OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meeting.title ?: "Offline nahrávka",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = "$stateText · $durationText · ${meeting.chunkCount} chunků",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = stateColor,
+                )
+                if (meeting.syncError != null) {
+                    Text(
+                        text = meeting.syncError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                    )
+                }
+            }
+            if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.FAILED) {
+                androidx.compose.material3.TextButton(onClick = onRetry) {
+                    Text("Zkusit znovu")
+                }
+            }
+            if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.SYNCING) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+    }
 }

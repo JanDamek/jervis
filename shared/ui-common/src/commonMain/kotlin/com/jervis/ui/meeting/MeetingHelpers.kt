@@ -45,6 +45,7 @@ internal fun meetingTypeLabel(type: MeetingTypeEnum): String =
         MeetingTypeEnum.WORKSHOP -> "Workshop"
         MeetingTypeEnum.REVIEW -> "Review"
         MeetingTypeEnum.OTHER -> "Jiné"
+        MeetingTypeEnum.AD_HOC -> "Ad-hoc"
     }
 
 /** Format ISO timestamp to short "HH:MM" for chat bubbles. */

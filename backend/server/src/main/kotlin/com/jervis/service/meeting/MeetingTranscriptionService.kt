@@ -40,7 +40,7 @@ class MeetingTranscriptionService(
         logger.info { "Starting transcription for meeting ${meeting.id} (audio: ${meeting.audioFilePath})" }
 
         val meetingIdStr = meeting.id.toHexString()
-        val clientIdStr = meeting.clientId.toString()
+        val clientIdStr = meeting.clientId?.toString().orEmpty()
 
         // Mark as TRANSCRIBING
         val transcribing = meetingRepository.save(meeting.copy(state = MeetingStateEnum.TRANSCRIBING, stateChangedAt = Instant.now()))

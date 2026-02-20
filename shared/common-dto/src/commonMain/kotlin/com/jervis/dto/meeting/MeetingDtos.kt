@@ -12,6 +12,7 @@ enum class MeetingTypeEnum {
     WORKSHOP,
     REVIEW,
     OTHER,
+    AD_HOC,
 }
 
 @Serializable
@@ -38,7 +39,7 @@ enum class AudioInputType {
 @Serializable
 data class MeetingDto(
     val id: String,
-    val clientId: String,
+    val clientId: String? = null,
     val projectId: String? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
@@ -88,9 +89,18 @@ data class TranscriptSegmentDto(
 
 @Serializable
 data class MeetingCreateDto(
-    val clientId: String,
+    val clientId: String? = null,
     val projectId: String? = null,
     val audioInputType: AudioInputType = AudioInputType.MIXED,
+    val title: String? = null,
+    val meetingType: MeetingTypeEnum? = null,
+)
+
+@Serializable
+data class MeetingClassifyDto(
+    val meetingId: String,
+    val clientId: String,
+    val projectId: String? = null,
     val title: String? = null,
     val meetingType: MeetingTypeEnum? = null,
 )
