@@ -159,6 +159,10 @@ async def lifespan(app: FastAPI):
     # Memory Agent
     logger.info("Memory Agent ready (affairs + LQM)")
 
+    # Initialize ChatContextAssembler (direct MongoDB access for chat history)
+    await chat_context_assembler.init()
+    logger.info("ChatContextAssembler ready (MongoDB: chat_messages, chat_summaries)")
+
     # Start AgentTaskWatcher (monitors async coding agent K8s Jobs)
     from app.agent_task_watcher import agent_task_watcher
     await agent_task_watcher.start()
@@ -167,6 +171,9 @@ async def lifespan(app: FastAPI):
 
     # Stop AgentTaskWatcher
     await agent_task_watcher.stop()
+
+    # Close ChatContextAssembler
+    await chat_context_assembler.close()
 
     # Cleanup
     if settings.use_delegation_graph:
@@ -240,6 +247,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Register chat context router (prepare-chat-context, compress-chat endpoints)
+app.include_router(chat_router)
 
 
 @app.get("/health")
@@ -525,6 +535,12 @@ async def _run_and_stream(
                 branch=values.get("branch"),
                 artifacts=values.get("artifacts", []),
             )
+
+            # Fire-and-forget: compress chat history if needed
+            try:
+                await chat_context_assembler.maybe_compress(request.task_id)
+            except Exception as compress_err:
+                logger.warning("Chat compression failed for task %s: %s", request.task_id, compress_err)
     except Exception as e:
         logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
         logger.exception("Full exception traceback:")
@@ -752,6 +768,13 @@ async def _resume_in_background(thread_id: str, resume_value: dict, chat_history
                     branch=values.get("branch"),
                     artifacts=values.get("artifacts", []),
                 )
+
+                # Fire-and-forget: compress chat history if needed
+                if task_id:
+                    try:
+                        await chat_context_assembler.maybe_compress(task_id)
+                    except Exception as compress_err:
+                        logger.warning("Chat compression failed for task %s: %s", task_id, compress_err)
     except Exception as e:
         logger.exception("Background resume failed for thread %s: %s", thread_id, e)
 
@@ -764,120 +787,6 @@ async def _resume_in_background(thread_id: str, resume_value: dict, chat_history
     finally:
         _active_tasks.pop(thread_id, None)
         logger.info("RESUME_CLEANUP | thread_id=%s | task_removed", thread_id)
-
-
-# --- Chat History Compression ---
-
-
-@app.post("/internal/compress-chat")
-async def compress_chat(request: dict):
-    """Compress a block of chat messages into a summary using LLM.
-
-    Called asynchronously by Kotlin server after orchestration completes.
-    Uses local LLM (fast tier) for compression — short prompt, short output.
-
-    Request: { messages: [...], previous_summary: "...", client_id, task_id }
-    Response: { summary, key_decisions, topics, is_checkpoint, checkpoint_reason }
-    """
-    try:
-        messages_data = request.get("messages", [])
-        previous_summary = request.get("previous_summary")
-        task_id = request.get("task_id", "unknown")
-
-        if not messages_data:
-            return {
-                "summary": "",
-                "key_decisions": [],
-                "topics": [],
-                "is_checkpoint": False,
-                "checkpoint_reason": None,
-            }
-
-        # Format messages for LLM
-        formatted = []
-        for m in messages_data:
-            label = {"user": "Uživatel", "assistant": "Jervis"}.get(m["role"], m["role"])
-            formatted.append(f"[{label}]: {m['content'][:500]}")
-        conversation_text = "\n".join(formatted)
-
-        previous_context = ""
-        if previous_summary:
-            previous_context = f"\n\nPředchozí kontext konverzace:\n{previous_summary}"
-
-        llm_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Jsi analytik konverzací. Tvůj úkol je shrnout blok konverzace do stručného souhrnu.\n\n"
-                    "Pravidla:\n"
-                    "- Piš česky\n"
-                    "- Souhrn: 2-3 věty shrnující hlavní téma a průběh (max 500 znaků)\n"
-                    "- Klíčová rozhodnutí: důležitá rozhodnutí učiněná v konverzaci\n"
-                    "- Témata: hlavní témata diskuze (stručné štítky)\n"
-                    "- Pokud se směr konverzace ZÁSADNĚ změnil oproti předchozímu kontextu, "
-                    "nastav is_checkpoint=true a uveď důvod\n\n"
-                    "Odpověz JSON:\n"
-                    "{\n"
-                    '  "summary": "...",\n'
-                    '  "key_decisions": ["rozhodnutí 1", "rozhodnutí 2"],\n'
-                    '  "topics": ["téma 1", "téma 2"],\n'
-                    '  "is_checkpoint": false,\n'
-                    '  "checkpoint_reason": null\n'
-                    "}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Shrň tento blok konverzace:{previous_context}\n\n"
-                    f"Konverzace k shrnutí:\n{conversation_text}"
-                ),
-            },
-        ]
-
-        response = await llm_provider.completion(
-            messages=llm_messages,
-            tier=ModelTier.LOCAL_FAST,
-            max_tokens=2048,
-            temperature=0.1,
-        )
-        content = response.choices[0].message.content
-
-        # Parse JSON response
-        import re
-        parsed = {}
-        try:
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, TypeError):
-            match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", content, re.DOTALL)
-            if match:
-                try:
-                    parsed = json.loads(match.group(1))
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            if not parsed:
-                brace_start = content.find("{")
-                brace_end = content.rfind("}")
-                if brace_start != -1 and brace_end > brace_start:
-                    try:
-                        parsed = json.loads(content[brace_start:brace_end + 1])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-        if not parsed:
-            logger.warning("COMPRESS_CHAT: failed to parse LLM JSON for task %s", task_id)
-            parsed = {"summary": content[:500]}
-
-        return {
-            "summary": parsed.get("summary", content[:500]),
-            "key_decisions": parsed.get("key_decisions", []),
-            "topics": parsed.get("topics", []),
-            "is_checkpoint": parsed.get("is_checkpoint", False),
-            "checkpoint_reason": parsed.get("checkpoint_reason"),
-        }
-    except Exception as e:
-        logger.exception("Failed to compress chat for task %s", request.get("task_id"))
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Entry point ---

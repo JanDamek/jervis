@@ -162,12 +162,11 @@ class PythonOrchestratorClient(baseUrl: String) {
         threadId: String,
         approved: Boolean,
         reason: String? = null,
-        chatHistory: ChatHistoryPayloadDto? = null,
     ) {
-        logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved chatHistory=${chatHistory != null}" }
+        logger.info { "PYTHON_ORCHESTRATOR_APPROVE: threadId=$threadId approved=$approved" }
         val response = client.post("$apiBaseUrl/approve/$threadId") {
             contentType(ContentType.Application.Json)
-            setBody(ApprovalResponseDto(approved = approved, reason = reason, chatHistory = chatHistory))
+            setBody(ApprovalResponseDto(approved = approved, reason = reason))
         }
         logger.info { "PYTHON_ORCHESTRATOR_APPROVE_SENT: threadId=$threadId status=${response.status}" }
     }
@@ -263,18 +262,6 @@ class PythonOrchestratorClient(baseUrl: String) {
      * SSE stream URL for a given thread.
      */
     fun streamUrl(threadId: String): String = "$apiBaseUrl/stream/$threadId"
-
-    /**
-     * Compress chat history into a summary.
-     * Used by ChatHistoryService for incremental chat compression.
-     */
-    suspend fun compressChat(request: CompressChatRequestDto): CompressChatResponseDto {
-        logger.info { "PYTHON_ORCHESTRATOR_COMPRESS_CHAT: taskId=${request.taskId} messages=${request.messages.size}" }
-        return client.post("$apiBaseUrl/compress-chat") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
-    }
 
 }
 
@@ -380,21 +367,3 @@ data class ChatSummaryBlockDto(
     @SerialName("checkpoint_reason") val checkpointReason: String? = null,
 )
 
-// --- Chat Compression DTOs ---
-
-@Serializable
-data class CompressChatRequestDto(
-    val messages: List<ChatHistoryMessageDto>,
-    @SerialName("previous_summary") val previousSummary: String? = null,
-    @SerialName("client_id") val clientId: String,
-    @SerialName("task_id") val taskId: String,
-)
-
-@Serializable
-data class CompressChatResponseDto(
-    val summary: String,
-    @SerialName("key_decisions") val keyDecisions: List<String> = emptyList(),
-    val topics: List<String> = emptyList(),
-    @SerialName("is_checkpoint") val isCheckpoint: Boolean = false,
-    @SerialName("checkpoint_reason") val checkpointReason: String? = null,
-)

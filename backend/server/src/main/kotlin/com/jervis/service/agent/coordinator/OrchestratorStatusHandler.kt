@@ -10,12 +10,8 @@ import com.jervis.repository.TaskHistoryRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.AgentOrchestratorRpcImpl
 import com.jervis.service.background.TaskService
-import com.jervis.service.chat.ChatHistoryService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.task.UserTaskService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.bson.types.ObjectId
 import org.springframework.stereotype.Service
@@ -40,7 +36,6 @@ class OrchestratorStatusHandler(
     private val userTaskService: UserTaskService,
     private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: ChatMessageRepository,
-    private val chatHistoryService: ChatHistoryService,
     private val workflowTracker: OrchestratorWorkflowTracker,
     private val projectService: ProjectService,
     private val clientRepository: ClientRepository,
@@ -270,14 +265,7 @@ class OrchestratorStatusHandler(
             emitQueueIdle(task)
         }
 
-        // Async: compress chat history if needed (non-blocking)
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                chatHistoryService.compressIfNeeded(task.id, task.clientId.toString())
-            } catch (e: Exception) {
-                logger.warn(e) { "Async chat compression failed for task ${task.id}" }
-            }
-        }
+        // Chat compression: handled by Python orchestrator after completion
 
         // Save to task history for UI display
         saveTaskHistory(task, "done")

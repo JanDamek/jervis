@@ -19,7 +19,6 @@ import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.background.TaskService
 import com.jervis.service.environment.EnvironmentService
-import com.jervis.service.chat.ChatHistoryService
 import com.jervis.service.preferences.PreferenceService
 import com.jervis.service.text.CzechKeyboardNormalizer
 import mu.KotlinLogging
@@ -46,7 +45,6 @@ class AgentOrchestratorService(
     private val environmentService: EnvironmentService,
     private val clientService: ClientService,
     private val projectService: ProjectService,
-    private val chatHistoryService: ChatHistoryService,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
 ) {
@@ -290,13 +288,7 @@ class AgentOrchestratorService(
             } catch (e: Exception) { null }
         }
 
-        // Load chat history for conversation context
-        val chatHistory = try {
-            chatHistoryService.prepareChatHistoryPayload(task.id)
-        } catch (e: Exception) {
-            logger.warn { "Failed to load chat history for task ${task.id}: ${e.message}" }
-            null
-        }
+        // Chat history: Python loads directly from MongoDB (no Kotlin payload)
 
         val request = OrchestrateRequestDto(
             taskId = task.id.toString(),
@@ -309,7 +301,6 @@ class AgentOrchestratorService(
             rules = rules,
             environment = environmentJson,
             jervisProjectId = jervisProjectId,
-            chatHistory = chatHistory,
             processingMode = task.processingMode.name,
         )
 
@@ -360,13 +351,7 @@ class AgentOrchestratorService(
             return false
         }
 
-        // Load fresh chat history (includes the user's latest response saved by sendToAgent)
-        val chatHistory = try {
-            chatHistoryService.prepareChatHistoryPayload(task.id)
-        } catch (e: Exception) {
-            logger.warn { "Failed to load chat history for resume task ${task.id}: ${e.message}" }
-            null
-        }
+        // Chat history: Python loads directly from MongoDB (no Kotlin payload)
 
         // Clarification questions don't have "Schválení:" prefix
         val wasClarification = task.pendingUserQuestion?.startsWith("Schválení:") != true
@@ -379,7 +364,6 @@ class AgentOrchestratorService(
                 threadId = threadId,
                 approved = true,
                 reason = userInput,
-                chatHistory = chatHistory,
             )
         } else {
             // Approval: parse yes/no intent
@@ -393,7 +377,6 @@ class AgentOrchestratorService(
                 threadId = threadId,
                 approved = approved,
                 reason = userInput,
-                chatHistory = chatHistory,
             )
         }
 

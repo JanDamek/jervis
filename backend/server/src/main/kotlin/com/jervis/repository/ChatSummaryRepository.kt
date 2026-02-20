@@ -10,8 +10,8 @@ import org.springframework.stereotype.Repository
 /**
  * ChatSummaryRepository — access to compressed chat summary blocks.
  *
- * Used by ChatHistoryService to load existing summaries for orchestrator context
- * and to store new summaries after compression.
+ * Chat context and compression are handled by Python ChatContextAssembler
+ * (direct MongoDB access). Kotlin uses this for UI display.
  */
 @Repository
 interface ChatSummaryRepository : CoroutineCrudRepository<ChatSummaryDocument, ObjectId> {

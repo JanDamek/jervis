@@ -488,8 +488,26 @@ def get_orchestrator_graph():
     return _compiled_graph
 
 
-def _build_initial_state(request: OrchestrateRequest) -> dict:
-    """Build initial state dict from request."""
+async def _build_initial_state(request: OrchestrateRequest) -> dict:
+    """Build initial state dict from request.
+
+    If chat_history is not provided in the request (new flow), loads it
+    directly from MongoDB via ChatContextAssembler.
+    """
+    # Resolve chat history: prefer request payload (backward compat), fallback to MongoDB
+    if request.chat_history:
+        chat_history_dict = request.chat_history.model_dump()
+    else:
+        try:
+            from app.chat.context import chat_context_assembler
+            chat_history_dict = await chat_context_assembler.prepare_payload_for_kotlin(request.task_id)
+            if chat_history_dict:
+                logger.info("Chat context loaded from MongoDB: task=%s messages=%d",
+                            request.task_id, len(chat_history_dict.get("recent_messages", [])))
+        except Exception as e:
+            logger.warning("Failed to load chat context from MongoDB: task=%s error=%s", request.task_id, e)
+            chat_history_dict = None
+
     return {
         # Core task data
         "task": CodingTask(
@@ -509,7 +527,7 @@ def _build_initial_state(request: OrchestrateRequest) -> dict:
         "client_name": request.client_name,
         "project_name": request.project_name,
         # Chat history — conversation context
-        "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+        "chat_history": chat_history_dict,
         # Intake (populated by intake node)
         "task_category": None,
         "task_action": None,
@@ -582,8 +600,19 @@ async def run_orchestration(
             existing_state.next,
         )
         # Only update chat_history and task query, preserve everything else
+        # Load chat history from request or MongoDB
+        if request.chat_history:
+            chat_history_dict = request.chat_history.model_dump()
+        else:
+            try:
+                from app.chat.context import chat_context_assembler
+                chat_history_dict = await chat_context_assembler.prepare_payload_for_kotlin(request.task_id)
+            except Exception as e:
+                logger.warning("Failed to load chat context for resume: %s", e)
+                chat_history_dict = None
+
         state_update = {
-            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "chat_history": chat_history_dict,
             "task": {
                 **existing_state.values.get("task", {}),
                 "query": request.query,  # Update query with new user message
@@ -600,7 +629,7 @@ async def run_orchestration(
             )
         else:
             logger.info("Starting fresh orchestration: task=%s thread=%s", request.task_id, thread_id)
-        initial_state = _build_initial_state(request)
+        initial_state = await _build_initial_state(request)
         final_state = await graph.ainvoke(initial_state, config=config)
 
     logger.info(
@@ -635,9 +664,19 @@ async def run_orchestration_streaming(
             thread_id,
             existing_state.next,
         )
-        # Only update chat_history and task query, preserve everything else
+        # Load chat history from request or MongoDB
+        if request.chat_history:
+            chat_history_dict = request.chat_history.model_dump()
+        else:
+            try:
+                from app.chat.context import chat_context_assembler
+                chat_history_dict = await chat_context_assembler.prepare_payload_for_kotlin(request.task_id)
+            except Exception as e:
+                logger.warning("Failed to load chat context for streaming resume: %s", e)
+                chat_history_dict = None
+
         state_to_use = {
-            "chat_history": request.chat_history.model_dump() if request.chat_history else None,
+            "chat_history": chat_history_dict,
             "task": {
                 **existing_state.values.get("task", {}),
                 "query": request.query,  # Update query with new user message
@@ -653,7 +692,7 @@ async def run_orchestration_streaming(
             )
         else:
             logger.info("Starting fresh streaming orchestration: task=%s thread=%s", request.task_id, thread_id)
-        state_to_use = _build_initial_state(request)
+        state_to_use = await _build_initial_state(request)
 
     # Track state for progress info
     tracked = {
@@ -718,6 +757,21 @@ async def resume_orchestration(thread_id: str, resume_value: Any = None, chat_hi
     graph = get_orchestrator_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
 
+    # Load chat history from MongoDB if not provided
+    if not chat_history:
+        try:
+            from app.chat.context import chat_context_assembler
+            # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
+            parts = thread_id.split("-")
+            task_id = parts[1] if len(parts) >= 2 else ""
+            if task_id:
+                chat_history = await chat_context_assembler.prepare_payload_for_kotlin(task_id)
+                if chat_history:
+                    logger.info("Chat context loaded from MongoDB for resume: thread=%s messages=%d",
+                                thread_id, len(chat_history.get("recent_messages", [])))
+        except Exception as e:
+            logger.warning("Failed to load chat context for resume: thread=%s error=%s", thread_id, e)
+
     # Update graph state with fresh chat history before resuming
     if chat_history:
         logger.info("Updating graph state with fresh chat history: thread=%s messages=%d", thread_id, len(chat_history.get("recent_messages", [])))
@@ -747,6 +801,20 @@ async def resume_orchestration_streaming(
     """Resume orchestration with streaming node events (for progress reporting)."""
     graph = get_orchestrator_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
+
+    # Load chat history from MongoDB if not provided
+    if not chat_history:
+        try:
+            from app.chat.context import chat_context_assembler
+            parts = thread_id.split("-")
+            task_id = parts[1] if len(parts) >= 2 else ""
+            if task_id:
+                chat_history = await chat_context_assembler.prepare_payload_for_kotlin(task_id)
+                if chat_history:
+                    logger.info("Chat context loaded from MongoDB for streaming resume: thread=%s messages=%d",
+                                thread_id, len(chat_history.get("recent_messages", [])))
+        except Exception as e:
+            logger.warning("Failed to load chat context for streaming resume: thread=%s error=%s", thread_id, e)
 
     # Update graph state with fresh chat history before resuming
     if chat_history:
