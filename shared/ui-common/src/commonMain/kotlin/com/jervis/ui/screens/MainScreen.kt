@@ -11,6 +11,7 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 fun MainScreen(
     viewModel: MainViewModel,
 ) {
+    val isOffline by viewModel.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
@@ -45,6 +46,7 @@ fun MainScreen(
         chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isLoading || isInitialLoading,
+        isOffline = isOffline,
         queueSize = queueSize,
         runningProjectId = runningProjectId,
         hasMore = hasMore,

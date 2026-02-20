@@ -204,6 +204,7 @@ class ConnectionRpcImpl(
     override suspend fun listAvailableResources(
         connectionId: String,
         capability: ConnectionCapability,
+        includeBrainReserved: Boolean,
     ): List<ConnectionResourceDto> {
         val connection =
             connectionService.findById(ConnectionId.fromString(connectionId))
@@ -217,22 +218,25 @@ class ConnectionRpcImpl(
                 it.listResources(refreshedConnection.toListResourcesRequest(capability))
             }
             // Filter out brain-reserved resources (Jira project / Confluence space used by orchestrator)
-            val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID)
-            if (config != null && refreshedConnection.id.toString() == (
-                    when (capability) {
-                        ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
-                        ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
+            // Skip filtering when includeBrainReserved = true (used by GeneralSettings brain config UI)
+            if (!includeBrainReserved) {
+                val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID)
+                if (config != null && refreshedConnection.id.toString() == (
+                        when (capability) {
+                            ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
+                            ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
+                            else -> null
+                        }
+                    )
+                ) {
+                    val excludeKey = when (capability) {
+                        ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
+                        ConnectionCapability.WIKI -> config.brainWikiSpaceKey
                         else -> null
                     }
-                )
-            ) {
-                val excludeKey = when (capability) {
-                    ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
-                    ConnectionCapability.WIKI -> config.brainWikiSpaceKey
-                    else -> null
-                }
-                if (excludeKey != null) {
-                    return resources.filter { it.id != excludeKey }
+                    if (excludeKey != null) {
+                        return resources.filter { it.id != excludeKey }
+                    }
                 }
             }
             resources

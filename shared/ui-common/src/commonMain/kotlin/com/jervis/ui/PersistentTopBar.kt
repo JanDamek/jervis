@@ -22,10 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -125,6 +127,8 @@ fun PersistentTopBar(
     isRecording: Boolean,
     recordingDuration: Long,
     onNavigateToMeetings: () -> Unit,
+    onQuickRecord: () -> Unit,
+    onStopRecording: () -> Unit,
     // Agent status
     isAgentRunning: Boolean,
     runningTaskType: String?,
@@ -174,11 +178,23 @@ fun PersistentTopBar(
                 modifier = Modifier.weight(1f),
             )
 
-            // Recording indicator
+            // Quick record / stop button
             if (isRecording) {
                 RecordingIndicator(
                     durationSeconds = recordingDuration,
                     onClick = onNavigateToMeetings,
+                )
+                JIconButton(
+                    onClick = onStopRecording,
+                    icon = Icons.Default.Stop,
+                    contentDescription = "Zastavit nahrávání",
+                    tint = Color.Red,
+                )
+            } else {
+                JIconButton(
+                    onClick = onQuickRecord,
+                    icon = Icons.Default.Mic,
+                    contentDescription = "Rychlé nahrávání",
                 )
             }
 
@@ -292,6 +308,8 @@ private fun ClientProjectCompactSelector(
     }
 
     val displayText = when {
+        selectedClientId == "__global__" && projectName != null -> "Global / $projectName"
+        selectedClientId == "__global__" -> "Global"
         clientName != null && projectName != null -> "$clientName / $projectName"
         clientName != null -> "$clientName / (Vše)"
         else -> "Vyberte klienta..."
@@ -331,6 +349,20 @@ private fun ClientProjectCompactSelector(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "Global",
+                        fontWeight = if (selectedClientId == "__global__") {
+                            androidx.compose.ui.text.font.FontWeight.Bold
+                        } else null,
+                    )
+                },
+                onClick = {
+                    onClientSelected("__global__")
+                    // Don't close — let user pick project too
+                },
+            )
             clients.forEach { client ->
                 DropdownMenuItem(
                     text = {
@@ -356,6 +388,22 @@ private fun ClientProjectCompactSelector(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+
+            // "(Vše)" option — reset project selection
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "(Vše)",
+                        fontWeight = if (selectedProjectId == null && selectedGroupId == null) {
+                            androidx.compose.ui.text.font.FontWeight.Bold
+                        } else null,
+                    )
+                },
+                onClick = {
+                    onProjectSelected(null)
+                    expanded = false
+                },
             )
 
             // Ungrouped projects
@@ -498,7 +546,8 @@ private fun AgentStatusIcon(
 }
 
 /**
- * Connection status indicator — colored dot + tiny label.
+ * Connection status indicator — colored dot when connected,
+ * "Offline" chip when disconnected, spinner when connecting.
  */
 @Composable
 private fun ConnectionIndicator(
@@ -517,12 +566,32 @@ private fun ConnectionIndicator(
             )
         }
         MainViewModel.ConnectionState.DISCONNECTED -> {
-            JIconButton(
-                onClick = onReconnect,
-                icon = Icons.Default.Refresh,
-                contentDescription = "Reconnect",
-                tint = MaterialTheme.colorScheme.error,
-            )
+            // "Offline" chip — clickable for manual reconnect
+            Surface(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable(onClick = onReconnect),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        text = "Offline",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
         }
         else -> {
             // CONNECTING / RECONNECTING

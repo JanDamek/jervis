@@ -46,6 +46,7 @@ interface IConnectionService {
     suspend fun listAvailableResources(
         connectionId: String,
         capability: ConnectionCapability,
+        includeBrainReserved: Boolean = false,
     ): List<ConnectionResourceDto>
 
     suspend fun getProviderDescriptors(): List<ProviderDescriptor>

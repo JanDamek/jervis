@@ -619,8 +619,8 @@ private fun PipelineItemRow(
             color = pipelineStateColor(item.pipelineState),
         )
 
-        // Created time
-        item.createdAt?.let { ts ->
+        // Processing time (not queue wait time)
+        item.qualificationStartedAt?.let { ts ->
             Spacer(Modifier.width(4.dp))
             Text(
                 text = formatRelativeTime(ts),

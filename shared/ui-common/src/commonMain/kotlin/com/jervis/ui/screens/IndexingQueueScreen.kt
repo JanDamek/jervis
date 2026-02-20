@@ -266,7 +266,7 @@ fun IndexingQueueScreen(
 
 private fun sectionBadge(section: IndexingSection, data: IndexingDashboardDto): Int = when (section) {
     IndexingSection.KB_PROCESSING -> data.kbProcessingCount.toInt()
-    IndexingSection.KB_WAITING -> data.kbWaitingTotalCount.toInt() + (data.kbQueueStats?.failed ?: 0)
+    IndexingSection.KB_WAITING -> data.kbWaitingTotalCount.toInt()
     IndexingSection.KB_INDEXED -> data.kbIndexedTotalCount.toInt()
 }
 

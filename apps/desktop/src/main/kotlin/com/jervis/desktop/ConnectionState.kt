@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.jervis.di.OfflineException
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.repository.JervisRepository
@@ -40,8 +41,11 @@ class ConnectionManager(
     var status by mutableStateOf<ConnectionStatus>(ConnectionStatus.Connecting)
         private set
 
-    var repository by mutableStateOf<JervisRepository?>(null)
-        private set
+    // Eager non-nullable repository — services lambda is only called on actual RPC invocations,
+    // not at construction time. If offline, throws OfflineException which callers handle.
+    val repository: JervisRepository = JervisRepository {
+        rpcConnectionManager.getServices() ?: throw OfflineException()
+    }
 
     var taskBadgeCount by mutableStateOf(0)
         private set
@@ -58,9 +62,6 @@ class ConnectionManager(
      * Initialize connection via RpcConnectionManager and observe its state.
      */
     suspend fun connect() {
-        // Create repository with delegated getters — always fresh services
-        repository = JervisRepository { rpcConnectionManager.getServices()!! }
-
         // Observe RpcConnectionManager state
         scope.launch {
             rpcConnectionManager.state.collect { rpcState ->
@@ -69,9 +70,8 @@ class ConnectionManager(
                         status = ConnectionStatus.Connected
 
                         // Start event stream for tray badge + notifications
-                        val repo = repository ?: return@collect
                         try {
-                            val clients = repo.clients.getAllClients()
+                            val clients = repository.clients.getAllClients()
                             clients.firstOrNull()?.let { client ->
                                 startEventStream(client.id)
                             }
@@ -143,12 +143,11 @@ class ConnectionManager(
      */
     private suspend fun updateTaskBadge() {
         try {
-            val repo = repository ?: return
-            val clients = repo.clients.getAllClients()
+            val clients = repository.clients.getAllClients()
             var total = 0
             for (client in clients) {
                 runCatching {
-                    val countDto = repo.userTasks.activeCount(client.id)
+                    val countDto = repository.userTasks.activeCount(client.id)
                     total += countDto.activeCount
                 }
             }
@@ -164,7 +163,6 @@ class ConnectionManager(
      */
     fun disconnect() {
         status = ConnectionStatus.Offline
-        repository = null
     }
 }
 

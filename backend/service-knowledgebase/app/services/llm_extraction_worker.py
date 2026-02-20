@@ -92,6 +92,8 @@ class LLMExtractionWorker:
                     recovered = await self.queue.recover_stale_tasks(stale_threshold_minutes=10)
                     if recovered > 0:
                         logger.info("Periodic recovery: %d stale tasks reset to PENDING", recovered)
+                    # Clean up permanently failed tasks
+                    await self.queue.delete_failed()
                     last_stale_check = now
 
                 # Claim next PENDING task (marks as IN_PROGRESS)

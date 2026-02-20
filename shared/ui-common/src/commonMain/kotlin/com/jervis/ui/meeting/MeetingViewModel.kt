@@ -4,6 +4,7 @@ import com.jervis.dto.ProjectDto
 import com.jervis.dto.filterVisible
 import com.jervis.dto.meeting.AudioChunkDto
 import com.jervis.dto.meeting.AudioInputType
+import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
@@ -21,6 +22,9 @@ import com.jervis.ui.audio.AudioRecordingConfig
 import com.jervis.ui.audio.PlatformRecordingService
 import com.jervis.ui.audio.RecordingServiceBridge
 import com.jervis.ui.storage.AudioChunkQueue
+import com.jervis.ui.storage.OfflineMeeting
+import com.jervis.ui.storage.OfflineMeetingStorage
+import com.jervis.ui.storage.OfflineSyncState
 import com.jervis.ui.storage.PendingChunk
 import com.jervis.ui.storage.RecordingStateStorage
 import com.jervis.ui.storage.RecordingState
@@ -36,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /** Upload state visible to the UI for progress/retry feedback. */
 sealed class UploadState {
@@ -112,6 +118,17 @@ class MeetingViewModel(
     private val _deletedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val deletedMeetings: StateFlow<List<MeetingDto>> = _deletedMeetings.asStateFlow()
 
+    private val _unclassifiedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
+    val unclassifiedMeetings: StateFlow<List<MeetingDto>> = _unclassifiedMeetings.asStateFlow()
+
+    /** Whether current recording is offline (no server meeting, chunks saved to disk only). */
+    private val _isOfflineRecording = MutableStateFlow(false)
+    val isOfflineRecording: StateFlow<Boolean> = _isOfflineRecording.asStateFlow()
+
+    /** Offline meetings waiting to be synced to the server. */
+    private val _offlineMeetings = MutableStateFlow<List<OfflineMeeting>>(emptyList())
+    val offlineMeetings: StateFlow<List<OfflineMeeting>> = _offlineMeetings.asStateFlow()
+
     private val platformRecordingService = PlatformRecordingService()
     private var audioRecorder: AudioRecorder? = null
     private var audioPlayer: AudioPlayer? = null
@@ -125,6 +142,7 @@ class MeetingViewModel(
     private var lastProjectId: String? = null
     private var pendingTitle: String? = null
     private var pendingMeetingType: MeetingTypeEnum? = null
+    private var offlineLocalId: String? = null
 
     companion object {
         private const val CHUNK_UPLOAD_INTERVAL_MS = 10_000L // 10 seconds
@@ -133,6 +151,9 @@ class MeetingViewModel(
     }
 
     init {
+        // Load persisted offline meetings
+        _offlineMeetings.value = OfflineMeetingStorage.load()
+
         // Listen for stop requests from platform controls (notification / lock screen)
         scope.launch {
             RecordingServiceBridge.stopRequested.collect {
@@ -234,8 +255,18 @@ class MeetingViewModel(
         )
     }
 
+    fun startQuickRecording() {
+        startRecording(
+            clientId = null,
+            projectId = null,
+            audioInputType = AudioInputType.MIXED,
+            meetingType = MeetingTypeEnum.AD_HOC,
+        )
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
     fun startRecording(
-        clientId: String,
+        clientId: String? = null,
         projectId: String? = null,
         audioInputType: AudioInputType = AudioInputType.MIXED,
         recordingConfig: AudioRecordingConfig = AudioRecordingConfig(),
@@ -247,6 +278,8 @@ class MeetingViewModel(
         pendingTitle = title
         pendingMeetingType = meetingType
         scope.launch {
+            // Try server first, fall back to offline recording
+            var serverMeetingId: String? = null
             try {
                 println("[Meeting] Starting recording for client=$clientId project=$projectId")
                 val meeting = repository.meetings.startRecording(
@@ -258,28 +291,61 @@ class MeetingViewModel(
                         meetingType = meetingType,
                     ),
                 )
-                _currentMeetingId.value = meeting.id
+                serverMeetingId = meeting.id
                 println("[Meeting] Server created meeting: ${meeting.id}")
+            } catch (e: Exception) {
+                println("[Meeting] Server unavailable, starting offline recording: ${e.message}")
+            }
 
-                val recorder = AudioRecorder()
-                val started = recorder.startRecording(recordingConfig)
-                if (!started) {
-                    println("[Meeting] AudioRecorder failed to start")
-                    _error.value = "Nepodařilo se spustit nahrávání zvuku"
-                    repository.meetings.cancelRecording(meeting.id)
-                    _currentMeetingId.value = null
-                    return@launch
+            // Determine meeting ID — server or local
+            val meetingId: String
+            val isOffline: Boolean
+            if (serverMeetingId != null) {
+                meetingId = serverMeetingId
+                isOffline = false
+            } else {
+                meetingId = "offline_${Uuid.random()}"
+                isOffline = true
+            }
+
+            val recorder = AudioRecorder()
+            val started = recorder.startRecording(recordingConfig)
+            if (!started) {
+                println("[Meeting] AudioRecorder failed to start")
+                _error.value = "Nepodařilo se spustit nahrávání zvuku"
+                if (!isOffline) {
+                    try { repository.meetings.cancelRecording(meetingId) } catch (_: Exception) {}
                 }
+                return@launch
+            }
 
-                audioRecorder = recorder
-                _isRecording.value = true
-                chunkIndex = 0
+            audioRecorder = recorder
+            _isRecording.value = true
+            _isOfflineRecording.value = isOffline
+            _currentMeetingId.value = meetingId
+            offlineLocalId = if (isOffline) meetingId else null
+            chunkIndex = 0
 
-                // Persist recording state for crash recovery
+            if (isOffline) {
+                // Save offline meeting metadata
+                val offlineMeeting = OfflineMeeting(
+                    localId = meetingId,
+                    clientId = clientId,
+                    projectId = projectId,
+                    title = title,
+                    meetingType = meetingType?.name,
+                    audioInputType = audioInputType.name,
+                    startedAtMs = Clock.System.now().toEpochMilliseconds(),
+                )
+                val updated = _offlineMeetings.value + offlineMeeting
+                _offlineMeetings.value = updated
+                OfflineMeetingStorage.save(updated)
+            } else {
+                // Persist recording state for crash recovery (online only)
                 RecordingStateStorage.save(
                     RecordingState(
-                        meetingId = meeting.id,
-                        clientId = clientId,
+                        meetingId = meetingId,
+                        clientId = clientId.orEmpty(),
                         projectId = projectId,
                         chunkIndex = 0,
                         title = title,
@@ -287,14 +353,15 @@ class MeetingViewModel(
                         startedAtMs = Clock.System.now().toEpochMilliseconds(),
                     ),
                 )
+            }
 
-                println("[Meeting] Recording started successfully")
-                platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
-                startDurationUpdate()
-                startChunkUploadJob(meeting.id)
-            } catch (e: Exception) {
-                println("[Meeting] Error starting recording: ${e.message}")
-                _error.value = "Chyba při spouštění nahrávání: ${e.message}"
+            println("[Meeting] Recording started successfully (offline=$isOffline)")
+            platformRecordingService.startBackgroundRecording(title ?: "Nahravani")
+            startDurationUpdate()
+            if (isOffline) {
+                startOfflineChunkSaveJob(meetingId)
+            } else {
+                startChunkUploadJob(meetingId)
             }
         }
     }
@@ -309,12 +376,45 @@ class MeetingViewModel(
 
         val recorder = audioRecorder ?: return
         audioRecorder = null // Clear immediately so second call returns at guard
+        val isOffline = _isOfflineRecording.value
+        _isOfflineRecording.value = false
 
         val meetingId = _currentMeetingId.value ?: run {
             recorder.release()
             return
         }
 
+        if (isOffline) {
+            // Offline path: save tail chunk to disk, update metadata, no server calls
+            scope.launch {
+                try {
+                    val tailData = recorder.stopRecording()
+                    if (tailData != null && tailData.isNotEmpty()) {
+                        AudioChunkQueue.enqueue(meetingId, chunkIndex, tailData)
+                        chunkIndex++
+                    }
+                    // Update offline meeting metadata
+                    val duration = _recordingDuration.value
+                    _offlineMeetings.value = _offlineMeetings.value.map { m ->
+                        if (m.localId == meetingId) m.copy(
+                            stoppedAtMs = Clock.System.now().toEpochMilliseconds(),
+                            durationSeconds = duration,
+                            chunkCount = chunkIndex,
+                        ) else m
+                    }
+                    OfflineMeetingStorage.save(_offlineMeetings.value)
+                    _currentMeetingId.value = null
+                    _recordingDuration.value = 0
+                    offlineLocalId = null
+                    println("[Meeting] Offline recording stopped, $chunkIndex chunks saved to disk")
+                } finally {
+                    recorder.release()
+                }
+            }
+            return
+        }
+
+        // Online path: upload tail and finalize
         scope.launch {
             println("[Meeting] Stopping recording for meeting=$meetingId")
             _isSaving.value = true
@@ -659,6 +759,46 @@ class MeetingViewModel(
         }
     }
 
+    // ── Unclassified meetings ─────────────────────────────────────────
+
+    fun loadUnclassifiedMeetings() {
+        scope.launch {
+            try {
+                _unclassifiedMeetings.value = repository.meetings.listUnclassifiedMeetings()
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se načíst neklasifikované nahrávky: ${e.message}"
+            }
+        }
+    }
+
+    fun classifyMeeting(
+        meetingId: String,
+        clientId: String,
+        projectId: String? = null,
+        title: String? = null,
+        meetingType: MeetingTypeEnum? = null,
+    ) {
+        scope.launch {
+            try {
+                repository.meetings.classifyMeeting(
+                    MeetingClassifyDto(
+                        meetingId = meetingId,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    ),
+                )
+                // Remove from unclassified list
+                _unclassifiedMeetings.value = _unclassifiedMeetings.value.filter { it.id != meetingId }
+                // Refresh current meetings list
+                lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se klasifikovat nahrávku: ${e.message}"
+            }
+        }
+    }
+
     // ── Transcription / Correction ──────────────────────────────────────
 
     fun stopTranscription(meetingId: String) {
@@ -796,6 +936,28 @@ class MeetingViewModel(
     }
 
     // ── Chunked upload internals ────────────────────────────────────────
+
+    /** Periodic job that drains recorder buffer and saves chunks to disk only (offline mode). */
+    private fun startOfflineChunkSaveJob(meetingId: String) {
+        chunkUploadJob = scope.launch {
+            delay(CHUNK_UPLOAD_INTERVAL_MS)
+            while (_isRecording.value) {
+                val recorder = audioRecorder ?: break
+                val chunk = recorder.getAndClearBuffer()
+                if (chunk != null && chunk.isNotEmpty()) {
+                    println("[Meeting] Offline chunk save: ${chunk.size} bytes for meeting=$meetingId")
+                    AudioChunkQueue.enqueue(meetingId, chunkIndex, chunk)
+                    chunkIndex++
+                    // Update chunk count in offline metadata
+                    _offlineMeetings.value = _offlineMeetings.value.map { m ->
+                        if (m.localId == meetingId) m.copy(chunkCount = chunkIndex) else m
+                    }
+                    OfflineMeetingStorage.save(_offlineMeetings.value)
+                }
+                delay(CHUNK_UPLOAD_INTERVAL_MS)
+            }
+        }
+    }
 
     /** Periodic job that drains the recorder buffer, persists to disk, and uploads chunks. */
     private fun startChunkUploadJob(meetingId: String) {

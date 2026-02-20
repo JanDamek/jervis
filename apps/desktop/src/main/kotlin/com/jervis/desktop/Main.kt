@@ -1,24 +1,11 @@
 package com.jervis.desktop
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
@@ -62,7 +49,6 @@ fun main() {
 
         // Connection manager with automatic retry
         val connectionManager = rememberConnectionManager(serverBaseUrl)
-        val repository = connectionManager.repository
 
         // Shared navigator for main window navigation
         val navigator =
@@ -158,69 +144,15 @@ fun main() {
                     }
                 }
 
-                // Main chat interface - show connection status if not connected
-                if (repository != null) {
-                    MainContent(
-                        repository = repository,
-                        connectionManager = connectionManager.rpcConnectionManager,
-                        navigator = navigator,
-                        onOpenDebugWindow = { showDebug = true },
-                    )
-                } else {
-                    ConnectionStatusScreen(connectionManager.status, serverBaseUrl)
-                }
+                // Main chat interface — always shown, offline handled gracefully
+                MainContent(
+                    repository = connectionManager.repository,
+                    connectionManager = connectionManager.rpcConnectionManager,
+                    navigator = navigator,
+                    onOpenDebugWindow = { showDebug = true },
+                )
             }
         }
     }
 }
 
-/**
- * Connection status screen shown when not connected
- */
-@Composable
-fun ConnectionStatusScreen(
-    status: ConnectionStatus,
-    serverUrl: String,
-) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            when (status) {
-                is ConnectionStatus.Connecting -> {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Connecting to server...", style = MaterialTheme.typography.headlineSmall)
-                    Text(serverUrl, style = MaterialTheme.typography.bodyMedium)
-                }
-
-                is ConnectionStatus.Disconnected -> {
-                    Text("⚠️", style = MaterialTheme.typography.displayLarge)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Unable to connect to server", style = MaterialTheme.typography.headlineSmall)
-                    Text(serverUrl, style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Error: ${status.error}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Retrying automatically...", style = MaterialTheme.typography.bodySmall)
-                }
-
-                is ConnectionStatus.Connected -> {
-                    Text("Connected", style = MaterialTheme.typography.headlineSmall)
-                }
-
-                is ConnectionStatus.Offline -> {
-                    Text("Offline", style = MaterialTheme.typography.headlineSmall)
-                }
-            }
-        }
-    }
-}

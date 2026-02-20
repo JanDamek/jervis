@@ -24,6 +24,8 @@ import com.jervis.ui.notification.PlatformNotificationManager
 import com.jervis.ui.notification.PushTokenRegistrar
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.model.classifySendError
+import com.jervis.ui.storage.CachedData
+import com.jervis.ui.storage.OfflineDataCache
 import com.jervis.ui.storage.PendingMessageState
 import com.jervis.ui.storage.PendingMessageStorage
 import com.jervis.ui.storage.isExpired
@@ -50,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -146,18 +149,13 @@ class MainViewModel(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val _isOverlayVisible = MutableStateFlow(false)
-    val isOverlayVisible: StateFlow<Boolean> = _isOverlayVisible.asStateFlow()
-
     private val _isInitialLoading = MutableStateFlow(true)
     val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
 
-    /** Reconnect attempt counter — delegated to RpcConnectionManager */
-    val reconnectAttemptDisplay: StateFlow<Int> = connectionManager.reconnectAttempt
-
-    /** Job for debouncing overlay show/hide on connect/disconnect */
-    private var overlayDebounceJob: Job? = null
-    private var overlayShowJob: Job? = null
+    /** Whether the app is currently offline (not connected to server). */
+    val isOffline: StateFlow<Boolean> = _connectionState
+        .map { state -> state != ConnectionState.CONNECTED }
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), true)
 
     private val _notifications = MutableStateFlow<List<com.jervis.dto.events.JervisEvent>>(emptyList())
     val notifications: StateFlow<List<com.jervis.dto.events.JervisEvent>> = _notifications.asStateFlow()
@@ -331,13 +329,19 @@ class MainViewModel(
         // Initialize notifications
         notificationManager.initialize()
 
+        // Load offline cache at startup — show cached data while connecting
+        val cached = OfflineDataCache.load()
+        if (cached != null && _clients.value.isEmpty()) {
+            _clients.value = cached.clients
+        }
+
         // Restore pending message from persistent storage (survives app restart)
         pendingState = PendingMessageStorage.load()?.takeIf { !it.isExpired() }
         if (pendingState != null) {
             updatePendingInfo()
         }
 
-        // Observe RpcConnectionManager state → drive local connection state + overlay
+        // Observe RpcConnectionManager state → drive local connection state
         scope.launch {
             connectionManager.state.collect { rpcState ->
                 val gen = connectionManager.generation.value
@@ -345,21 +349,6 @@ class MainViewModel(
                 when (rpcState) {
                     is RpcConnectionState.Connected -> {
                         _connectionState.value = ConnectionState.CONNECTED
-                        overlayShowJob?.cancel() // cancel pending show
-
-                        // Wait 500ms to confirm stability before hiding overlay
-                        if (gen > 1 && _isOverlayVisible.value) {
-                            overlayDebounceJob?.cancel()
-                            overlayDebounceJob = scope.launch {
-                                delay(500)
-                                if (_connectionState.value == ConnectionState.CONNECTED) {
-                                    println("MainViewModel: Hiding overlay after 500ms stability check")
-                                    _isOverlayVisible.value = false
-                                }
-                            }
-                        } else {
-                            _isOverlayVisible.value = false
-                        }
 
                         // Load clients when connected (fixes initial load before connection ready)
                         if (_clients.value.isEmpty()) {
@@ -375,23 +364,9 @@ class MainViewModel(
                     }
                     is RpcConnectionState.Connecting -> {
                         _connectionState.value = ConnectionState.RECONNECTING
-                        overlayDebounceJob?.cancel()
-                        // Don't show overlay immediately on Connecting — wait for Disconnected
                     }
                     is RpcConnectionState.Disconnected -> {
                         _connectionState.value = ConnectionState.DISCONNECTED
-                        overlayDebounceJob?.cancel()
-                        // Show overlay after 500ms — brief disconnects won't blink
-                        if (gen > 0) {
-                            overlayShowJob?.cancel()
-                            overlayShowJob = scope.launch {
-                                delay(500)
-                                if (_connectionState.value != ConnectionState.CONNECTED) {
-                                    println("MainViewModel: Showing overlay (disconnected, gen=$gen)")
-                                    _isOverlayVisible.value = true
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -402,14 +377,14 @@ class MainViewModel(
             selectClient(clientId)
         }
 
-        // Subscribe to chat stream when both client and project are selected
+        // Subscribe to chat stream when client is selected (project optional)
         scope.launch {
             combine(_selectedClientId, _selectedProjectId) { clientId, projectId ->
                 clientId to projectId
             }.collect { (clientId, projectId) ->
                 println("MainViewModel: combine(client=$clientId, project=$projectId) emitted")
-                if (clientId != null && projectId != null) {
-                    subscribeToChatStream(clientId, projectId)
+                if (clientId != null) {
+                    subscribeToChatStream(clientId, projectId ?: "")
                 }
             }
         }
@@ -1298,12 +1273,38 @@ class MainViewModel(
             try {
                 val clientList = repository.clients.getAllClients()
                 _clients.value = clientList
+                // Persist to offline cache
+                saveClientsToCache(clientList)
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to load clients: ${e.message}"
+                if (e is CancellationException) throw e
+                // If offline and we have cached data, don't show error
+                if (_clients.value.isEmpty()) {
+                    _errorMessage.value = "Failed to load clients: ${e.message}"
+                }
             } finally {
                 _isLoading.value = false
                 _isInitialLoading.value = false
             }
+        }
+    }
+
+    private fun saveClientsToCache(clients: List<ClientDto>) {
+        try {
+            val existing = OfflineDataCache.load() ?: CachedData()
+            OfflineDataCache.save(existing.copy(clients = clients))
+        } catch (_: Exception) {
+            // Non-critical — cache save failure is fine
+        }
+    }
+
+    private fun saveProjectsToCache(clientId: String, projects: List<ProjectDto>) {
+        try {
+            val existing = OfflineDataCache.load() ?: CachedData()
+            OfflineDataCache.save(existing.copy(
+                projectsByClient = existing.projectsByClient + (clientId to projects)
+            ))
+        } catch (_: Exception) {
+            // Non-critical
         }
     }
 
@@ -1331,8 +1332,25 @@ class MainViewModel(
         _environmentStatuses.value = emptyMap()
         closeEnvironmentPanel()
 
-        // Do NOT set _connectionState = DISCONNECTED — the RPC connection is still alive,
-        // only the chat stream is being restarted. The connection observer handles real disconnects.
+        // Global mode — no projects, no environments, just chat
+        if (clientId == "__global__") {
+            return
+        }
+
+        // Load cached projects immediately (shown while server loads)
+        val cached = OfflineDataCache.load()
+        cached?.projectsByClient?.get(clientId)?.let { cachedProjects ->
+            if (_projects.value.isEmpty()) {
+                _projects.value = cachedProjects
+                // Restore last selected project from cache
+                val client = _clients.value.find { it.id == clientId }
+                client?.lastSelectedProjectId?.let { lastProjectId ->
+                    if (cachedProjects.any { it.id == lastProjectId }) {
+                        _selectedProjectId.value = lastProjectId
+                    }
+                }
+            }
+        }
 
         scope.launch {
             _isLoading.value = true
@@ -1340,6 +1358,7 @@ class MainViewModel(
                 // Load projects and groups for this client
                 val projectList = repository.projects.listProjectsForClient(clientId).filterVisible()
                 _projects.value = projectList
+                saveProjectsToCache(clientId, projectList)
 
                 val allGroups = repository.projectGroups.getAllGroups()
                 val clientGroups = allGroups.filter { it.clientId == clientId }
@@ -1366,7 +1385,10 @@ class MainViewModel(
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                _errorMessage.value = "Failed to load projects: ${e.message}"
+                // If offline and we have cached projects, don't show error
+                if (_projects.value.isEmpty()) {
+                    _errorMessage.value = "Failed to load projects: ${e.message}"
+                }
             } finally {
                 _isLoading.value = false
             }

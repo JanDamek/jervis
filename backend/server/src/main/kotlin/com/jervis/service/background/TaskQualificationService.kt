@@ -83,10 +83,8 @@ class TaskQualificationService(
                     logger.error(e) { "Qualification stream failure: ${e.message}" }
                 }.collect()
 
-            // When queue is empty, recover stuck/error tasks for retry
-            if (processedCount == 0) {
-                taskService.recoverStuckIndexingTasks()
-            }
+            // Always recover stuck tasks — even when queue is busy
+            taskService.recoverStuckIndexingTasks()
 
             logger.info { "QUALIFICATION_CYCLE_COMPLETE: processed=$processedCount" }
         } finally {

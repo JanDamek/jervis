@@ -455,6 +455,22 @@ class LLMExtractionQueue:
         finally:
             conn.close()
 
+    async def delete_failed(self) -> int:
+        """Delete all FAILED tasks from the queue."""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM tasks WHERE status = ?",
+                (TaskStatus.FAILED,)
+            )
+            conn.commit()
+            deleted = cursor.rowcount
+            if deleted > 0:
+                logger.info("Deleted %d FAILED tasks from extraction queue", deleted)
+            return deleted
+        finally:
+            conn.close()
+
     async def recover_stale_tasks(self, stale_threshold_minutes: int = 30) -> int:
         """Reset stale IN_PROGRESS tasks to PENDING (crash recovery).
 

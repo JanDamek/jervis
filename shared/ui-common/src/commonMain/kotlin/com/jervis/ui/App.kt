@@ -1,29 +1,19 @@
 package com.jervis.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.jervis.di.RpcConnectionManager
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JervisTheme
@@ -49,6 +39,12 @@ fun App(
     val viewModel = remember(repository) { MainViewModel(repository, connectionManager, defaultClientId, defaultProjectId) }
     val meetingViewModel = remember(repository) {
         com.jervis.ui.meeting.MeetingViewModel(
+            connectionManager = connectionManager,
+            repository = repository,
+        )
+    }
+    val offlineSyncService = remember(repository) {
+        com.jervis.ui.meeting.OfflineMeetingSyncService(
             connectionManager = connectionManager,
             repository = repository,
         )
@@ -89,8 +85,6 @@ fun App(
         val currentScreen by appNavigator.currentScreen.collectAsState()
         val canGoBack by appNavigator.canGoBack.collectAsState()
         val connectionState by viewModel.connectionState.collectAsState()
-        val isOverlayVisible by viewModel.isOverlayVisible.collectAsState()
-        val reconnectAttempt by viewModel.reconnectAttemptDisplay.collectAsState()
         val isInitialLoading by viewModel.isInitialLoading.collectAsState()
 
         // Global recording state
@@ -135,6 +129,8 @@ fun App(
             isRecording = isRecordingGlobal,
             recordingDuration = recordingDurationGlobal,
             onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
+            onQuickRecord = { meetingViewModel.startQuickRecording() },
+            onStopRecording = { meetingViewModel.stopRecording() },
             isAgentRunning = runningProjectId != null && runningProjectId != "none",
             runningTaskType = runningTaskType,
             queueSize = queueSize,
@@ -227,6 +223,7 @@ fun App(
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
                     onBack = { appNavigator.goBack() },
+                    offlineSyncService = offlineSyncService,
                 )
             }
 
@@ -285,48 +282,6 @@ fun App(
             )
         }
 
-        if (isOverlayVisible) {
-            androidx.compose.ui.window.Dialog(
-                onDismissRequest = { /* Nepovolíme zavření kliknutím mimo */ },
-                properties = androidx.compose.ui.window.DialogProperties(
-                    dismissOnBackPress = false,
-                    dismissOnClickOutside = false,
-                    usePlatformDefaultWidth = false
-                )
-            ) {
-                androidx.compose.material3.Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            modifier = Modifier.size(64.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 6.dp
-                        )
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Text(
-                            text = "Spojení ztraceno",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Server je momentálně nedostupný.\nPokouším se o znovupřipojení..." +
-                                   if (reconnectAttempt > 0) "\n(Pokus $reconnectAttempt)" else "",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
       }
     }
 }
