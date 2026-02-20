@@ -55,6 +55,8 @@ from app.monitoring.delegation_metrics import metrics_collector
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.kotlin_client import kotlin_client
+from app.chat.context import chat_context_assembler
+from app.chat.router import router as chat_router
 from app.logging_utils import LocalTimeFormatter
 
 # Configure logging with local timezone
