@@ -434,7 +434,7 @@ async def _execute_kb_search(
     lines = [f"Knowledge Base results for: {query}\n"]
     for i, item in enumerate(items[:max_results], 1):
         source = item.get("sourceUrn", "unknown")
-        content = item.get("content", "")[:500]
+        content = item.get("content", "")  # Full chunk content — already chunked by RAG (1000 chars)
         score = item.get("score", 0)
         kind = item.get("kind", "")
         lines.append(f"## Result {i} (score: {score:.2f}, kind: {kind})")
@@ -1098,7 +1098,7 @@ async def _execute_code_search(
 
     for i, item in enumerate(items[:max_results], 1):
         source = item.get("sourceUrn", "unknown")
-        content = item.get("content", "")[:500]
+        content = item.get("content", "")  # Full chunk content — already chunked by RAG (1000 chars)
         score = item.get("score", 0)
         kind = item.get("kind", "")
         lines.append(f"### Result {i} (score: {score:.2f}, kind: {kind})")
@@ -1719,7 +1719,7 @@ async def _execute_memory_recall(
             buffer_hits = lqm.search_write_buffer(query)
             for hit in buffer_hits[:3]:
                 results.append(
-                    f"[Memory Buffer] {hit.get('source_urn', '?')}\n{hit.get('content', '')[:500]}"
+                    f"[Memory Buffer] {hit.get('source_urn', '?')}\n{hit.get('content', '')}"
                 )
 
         # Search active affair key_facts
@@ -1749,7 +1749,7 @@ async def _execute_memory_recall(
             cached = lqm.get_cached_search(query)
             if cached is not None:
                 for item in cached[:3]:
-                    content = item.get("content", "")[:500]
+                    content = item.get("content", "")
                     source = item.get("sourceUrn", "?")
                     results.append(f"[KB Cache] {source}\n{content}")
             else:
@@ -1769,7 +1769,7 @@ async def _execute_memory_recall(
                             kb_items = resp.json().get("items", [])
                             lqm.cache_search(query, kb_items)
                             for item in kb_items[:3]:
-                                content = item.get("content", "")[:500]
+                                content = item.get("content", "")
                                 source = item.get("sourceUrn", "?")
                                 results.append(f"[KB] {source}\n{content}")
                 except Exception as kb_err:

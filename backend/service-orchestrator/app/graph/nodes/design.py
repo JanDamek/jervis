@@ -63,7 +63,7 @@ async def design(state: dict) -> dict:
         kb_results = evidence.get("kb_results", [])
         if kb_results:
             kb_context = "\n".join(
-                r.get("content", "")[:500] for r in kb_results[:5]
+                r.get("content", "") for r in kb_results[:5]
             )
 
     messages = [

@@ -100,56 +100,56 @@ class EmailContinuousIndexer(
         try {
             // Get email body and clean it through Tika (removes HTML/XML formatting)
             val rawEmailBody = doc.textBody ?: doc.htmlBody ?: ""
+            val bodySource = when {
+                doc.textBody != null -> "textBody"
+                doc.htmlBody != null -> "htmlBody"
+                else -> "empty"
+            }
             val emailBody =
                 tikaTextExtractionService.extractPlainText(
                     content = rawEmailBody,
                     fileName = "email-${doc.id}.html",
                 )
+            logger.info {
+                "Email body extraction: subject='${doc.subject}' source=$bodySource " +
+                    "rawLen=${rawEmailBody.length} tikaLen=${emailBody.length} " +
+                    "blank=${emailBody.isBlank()} preview='${emailBody.take(200)}'"
+            }
 
             val emailContent =
                 buildString {
-                    append("# Email: ${doc.subject}\n\n")
-                    append("**From:** ${doc.from}\n")
-                    if (doc.to.isNotEmpty()) {
-                        append("**To:** ${doc.to.joinToString(", ")}\n")
-                    }
-                    if (doc.cc.isNotEmpty()) {
-                        append("**Cc:** ${doc.cc.joinToString(", ")}\n")
-                    }
-                    append("**Date:** ${doc.sentDate ?: doc.receivedDate}\n")
-                    append("**Folder:** ${doc.folder}\n")
-                    append("**Message-ID:** ${doc.messageId}\n")
-                    append("\n---\n\n")
+                    // Body FIRST — RAG chunks body content in early chunks for better retrieval
+                    append("# Email: ${doc.subject}\n")
+                    append("From: ${doc.from} | Date: ${doc.sentDate ?: doc.receivedDate}\n\n")
 
                     if (emailBody.isNotBlank()) {
-                        append("## Email Body\n\n")
                         append(emailBody)
                         append("\n\n")
                     }
 
-                    if (doc.attachments.isNotEmpty()) {
-                        append("## Email Attachments\n\n")
-                        doc.attachments.forEach { att ->
-                            append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
-                        }
-                        append("\n")
-                    }
-
-                    append("## Source Metadata\n")
-                    append("- **Source Type:** Email\n")
-                    append("- **Email ID:** ${doc.id}\n")
-                    append("- **Message-ID:** ${doc.messageId}\n")
-                    append("- **Subject:** ${doc.subject}\n")
+                    // Metadata AFTER body — less important for RAG retrieval
+                    append("---\n\n")
+                    append("## Email Metadata\n")
                     append("- **From:** ${doc.from}\n")
-                    append("- **To:** ${doc.to.joinToString(", ")}\n")
+                    if (doc.to.isNotEmpty()) {
+                        append("- **To:** ${doc.to.joinToString(", ")}\n")
+                    }
                     if (doc.cc.isNotEmpty()) {
                         append("- **Cc:** ${doc.cc.joinToString(", ")}\n")
                     }
-                    append("- **Sent Date:** ${doc.sentDate}\n")
-                    append("- **Received Date:** ${doc.receivedDate}\n")
+                    append("- **Date:** ${doc.sentDate ?: doc.receivedDate}\n")
                     append("- **Folder:** ${doc.folder}\n")
-                    append("- **ConnectionDocument ID:** ${doc.connectionId}\n")
+                    append("- **Message-ID:** ${doc.messageId}\n")
+                    append("- **Email ID:** ${doc.id}\n")
+                    append("- **Connection ID:** ${doc.connectionId}\n")
                     append("- **Client ID:** ${doc.clientId}\n")
+
+                    if (doc.attachments.isNotEmpty()) {
+                        append("\n## Attachments\n")
+                        doc.attachments.forEach { att ->
+                            append("- ${att.filename} (${att.contentType}, ${att.size} bytes)\n")
+                        }
+                    }
                 }
 
             taskService.createTask(

@@ -238,7 +238,7 @@ class MemoryAgent:
         kb_results = await self.search(query, scope="kb_only")
         if kb_results:
             return "\n\n---\n\n".join(
-                r.get("content", "")[:500] for r in kb_results[:3]
+                r.get("content", "") for r in kb_results[:3]
             )
 
         return f"Nenalezeno nic k dotazu: {query}"

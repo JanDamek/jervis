@@ -117,14 +117,20 @@ class LLMExtractionQueue:
 
         logger.info("Initialized SQLite extraction queue at %s", self.db_path)
 
+    def _nfs_safe_connect(self, db_path=None) -> sqlite3.Connection:
+        """Connect to SQLite with unix-none VFS — NFS has broken fcntl() locks.
+        Single-writer pod, so file locking is unnecessary."""
+        path = db_path or self.db_path
+        uri = f"file:{path}?vfs=unix-none"
+        return sqlite3.connect(uri, uri=True, timeout=30.0)
+
     def _init_db(self) -> None:
-        """Initialize SQLite database with WAL mode and schema."""
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        """Initialize SQLite database schema (NFS-safe, no fcntl locking)."""
+        conn = self._nfs_safe_connect()
         try:
-            # Enable WAL mode for crash safety and better concurrency
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")  # Balance safety/performance
-            conn.execute("PRAGMA busy_timeout=30000")  # 30s timeout for locks
+            conn.execute("PRAGMA journal_mode=DELETE")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=30000")
 
             # Create tasks table
             conn.execute("""
@@ -182,8 +188,8 @@ class LLMExtractionQueue:
             conn.close()
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get connection with proper settings."""
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        """Get connection with proper settings (NFS-safe, no fcntl locking)."""
+        conn = self._nfs_safe_connect()
         conn.row_factory = sqlite3.Row
         return conn
 
