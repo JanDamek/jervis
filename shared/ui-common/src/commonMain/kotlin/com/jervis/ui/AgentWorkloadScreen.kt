@@ -54,18 +54,18 @@ fun AgentWorkloadScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit,
 ) {
-    val runningProjectId by viewModel.runningProjectId.collectAsState()
-    val runningProjectName by viewModel.runningProjectName.collectAsState()
-    val runningTaskPreview by viewModel.runningTaskPreview.collectAsState()
-    val runningTaskType by viewModel.runningTaskType.collectAsState()
-    val foregroundQueue by viewModel.foregroundQueue.collectAsState()
-    val backgroundQueue by viewModel.backgroundQueue.collectAsState()
-    val orchestratorProgress by viewModel.orchestratorProgress.collectAsState()
-    val runningNodes by viewModel.runningTaskNodes.collectAsState()
-    val taskHistory by viewModel.taskHistory.collectAsState()
-    val taskHistoryHasMore by viewModel.taskHistoryHasMore.collectAsState()
-    val backgroundTotalCount by viewModel.backgroundTotalCount.collectAsState()
-    val isLoadingMoreBackground by viewModel.isLoadingMoreBackground.collectAsState()
+    val runningProjectId by viewModel.queue.runningProjectId.collectAsState()
+    val runningProjectName by viewModel.queue.runningProjectName.collectAsState()
+    val runningTaskPreview by viewModel.queue.runningTaskPreview.collectAsState()
+    val runningTaskType by viewModel.queue.runningTaskType.collectAsState()
+    val foregroundQueue by viewModel.queue.foregroundQueue.collectAsState()
+    val backgroundQueue by viewModel.queue.backgroundQueue.collectAsState()
+    val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
+    val runningNodes by viewModel.queue.runningTaskNodes.collectAsState()
+    val taskHistory by viewModel.queue.taskHistory.collectAsState()
+    val taskHistoryHasMore by viewModel.queue.taskHistoryHasMore.collectAsState()
+    val backgroundTotalCount by viewModel.queue.backgroundTotalCount.collectAsState()
+    val isLoadingMoreBackground by viewModel.queue.isLoadingMoreBackground.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
 
@@ -73,7 +73,7 @@ fun AgentWorkloadScreen(
 
     // Refresh full queue data when screen opens
     LaunchedEffect(Unit) {
-        viewModel.refreshQueues()
+        viewModel.queue.refreshQueues()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -101,7 +101,7 @@ fun AgentWorkloadScreen(
                     orchestratorProgress = orchestratorProgress,
                     runningNodes = runningNodes,
                     onStop = {
-                        orchestratorProgress?.let { viewModel.cancelOrchestration(it.taskId) }
+                        orchestratorProgress?.let { viewModel.queue.cancelOrchestration(it.taskId) }
                     },
                 )
                 AccordionSection.FRONTEND -> QueueSectionContent(
@@ -112,12 +112,12 @@ fun AgentWorkloadScreen(
                     items = backgroundQueue,
                     totalCount = backgroundTotalCount,
                     isLoadingMore = isLoadingMoreBackground,
-                    onLoadMore = { viewModel.loadMoreBackgroundTasks() },
+                    onLoadMore = { viewModel.queue.loadMoreBackgroundTasks() },
                 )
                 AccordionSection.HISTORY -> HistorySectionContent(
                     entries = taskHistory,
                     hasMore = taskHistoryHasMore,
-                    onLoadMore = { viewModel.loadMoreTaskHistory() },
+                    onLoadMore = { viewModel.queue.loadMoreTaskHistory() },
                 )
             }
         }

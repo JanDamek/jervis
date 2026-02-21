@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import com.jervis.ui.queue.OrchestratorProgressInfo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

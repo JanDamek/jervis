@@ -1,5 +1,6 @@
 package com.jervis.ui
 
+import com.jervis.ui.queue.OrchestratorProgressInfo
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -225,12 +226,12 @@ private fun ChatContent(
 
         HorizontalDivider()
 
-        // Input area
+        // Input area — always enabled, messages queue when offline
         InputArea(
             inputText = inputText,
             onInputChanged = onInputChanged,
             onSendClick = onSendClick,
-            enabled = selectedClientId != null && selectedProjectId != null && !isLoading && !isOffline,
+            enabled = true,
             queueSize = queueSize,
             runningProjectId = runningProjectId,
             currentProjectId = selectedProjectId,

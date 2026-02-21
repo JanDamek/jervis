@@ -45,8 +45,8 @@ import com.jervis.dto.indexing.IndexingDashboardDto
 import com.jervis.dto.indexing.PipelineItemDto
 import com.jervis.dto.indexing.QualificationStepDto
 import com.jervis.repository.JervisRepository
-import com.jervis.ui.QualificationProgressInfo
-import com.jervis.ui.QualificationProgressStep
+import com.jervis.ui.queue.QualificationProgressInfo
+import com.jervis.ui.queue.QualificationProgressStep
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JErrorState

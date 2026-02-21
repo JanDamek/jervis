@@ -79,13 +79,10 @@ fun App(
         val selectedClientId by viewModel.selectedClientId.collectAsState()
         val selectedProjectId by viewModel.selectedProjectId.collectAsState()
         val selectedGroupId by viewModel.selectedGroupId.collectAsState()
-        val chatMessages by viewModel.chatMessages.collectAsState()
-        val inputText by viewModel.inputText.collectAsState()
-        val isLoading by viewModel.isLoading.collectAsState()
         val currentScreen by appNavigator.currentScreen.collectAsState()
         val canGoBack by appNavigator.canGoBack.collectAsState()
-        val connectionState by viewModel.connectionState.collectAsState()
-        val isInitialLoading by viewModel.isInitialLoading.collectAsState()
+        val connectionState by viewModel.connection.state.collectAsState()
+        val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
 
         // Global recording state
         val isRecordingGlobal by meetingViewModel.isRecording.collectAsState()
@@ -93,15 +90,15 @@ fun App(
         val uploadStateGlobal by meetingViewModel.uploadState.collectAsState()
 
         // Agent status
-        val runningProjectId by viewModel.runningProjectId.collectAsState()
-        val runningTaskType by viewModel.runningTaskType.collectAsState()
-        val queueSize by viewModel.queueSize.collectAsState()
+        val runningProjectId by viewModel.queue.runningProjectId.collectAsState()
+        val runningTaskType by viewModel.queue.runningTaskType.collectAsState()
+        val queueSize by viewModel.queue.queueSize.collectAsState()
 
         // Environment
-        val environments by viewModel.environments.collectAsState()
+        val environments by viewModel.environment.environments.collectAsState()
 
         // User task count for badge
-        val userTaskCount by viewModel.userTaskCount.collectAsState()
+        val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
 
         Column(modifier = Modifier.fillMaxSize()) {
         // Persistent top bar — always visible
@@ -125,7 +122,7 @@ fun App(
             onProjectSelected = { id -> viewModel.selectProject(id ?: "") },
             onGroupSelected = viewModel::selectGroup,
             connectionState = connectionState,
-            onReconnect = viewModel::manualReconnect,
+            onReconnect = viewModel.connection::manualReconnect,
             isRecording = isRecordingGlobal,
             recordingDuration = recordingDurationGlobal,
             onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
@@ -136,7 +133,7 @@ fun App(
             queueSize = queueSize,
             onAgentStatusClick = { appNavigator.navigateTo(Screen.AgentWorkload) },
             hasEnvironment = environments.isNotEmpty(),
-            onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,
+            onToggleEnvironmentPanel = viewModel.environment::togglePanel,
             userTaskCount = userTaskCount,
         )
 
@@ -177,7 +174,7 @@ fun App(
                         }
                         appNavigator.navigateAndClearHistory(Screen.Main)
                     },
-                    onRefreshBadge = { viewModel.refreshUserTaskCount() },
+                    onRefreshBadge = { viewModel.notification.refreshUserTaskCount() },
                 )
             }
 
@@ -230,7 +227,7 @@ fun App(
             Screen.IndexingQueue -> {
                 IndexingQueueScreen(
                     repository = repository,
-                    qualificationProgress = viewModel.qualificationProgress,
+                    qualificationProgress = viewModel.queue.qualificationProgress,
                     onBack = { appNavigator.goBack() },
                 )
             }
@@ -263,14 +260,14 @@ fun App(
         SnackbarHost(hostState = snackbarHostState)
 
         // User task notification dialog — shown for all user tasks (approval + clarification)
-        val userTaskEvent by viewModel.userTaskDialogEvent.collectAsState()
+        val userTaskEvent by viewModel.notification.userTaskDialogEvent.collectAsState()
         userTaskEvent?.let { event ->
             UserTaskNotificationDialog(
                 event = event,
-                onApprove = { taskId -> viewModel.approveTask(taskId) },
-                onDeny = { taskId, reason -> viewModel.denyTask(taskId, reason) },
+                onApprove = { taskId -> viewModel.notification.approveTask(taskId, viewModel::reportError) },
+                onDeny = { taskId, reason -> viewModel.notification.denyTask(taskId, reason, viewModel::reportError) },
                 onReply = { taskId, reply ->
-                    viewModel.replyToTask(taskId, reply)
+                    viewModel.notification.replyToTask(taskId, reply, viewModel::reportError)
                     // Navigate to the relevant project if projectId is available
                     event.projectId?.let { projectId ->
                         viewModel.selectClient(event.clientId)
@@ -278,7 +275,7 @@ fun App(
                         appNavigator.navigateAndClearHistory(Screen.Main)
                     }
                 },
-                onDismiss = { viewModel.dismissUserTaskDialog() },
+                onDismiss = { viewModel.notification.dismissUserTaskDialog() },
             )
         }
 

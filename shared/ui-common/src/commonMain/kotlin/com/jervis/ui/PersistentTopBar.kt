@@ -121,7 +121,7 @@ fun PersistentTopBar(
     onProjectSelected: (String?) -> Unit,
     onGroupSelected: (String) -> Unit,
     // Connection
-    connectionState: MainViewModel.ConnectionState,
+    connectionState: ConnectionViewModel.State,
     onReconnect: () -> Unit,
     // Recording
     isRecording: Boolean,
@@ -551,13 +551,13 @@ private fun AgentStatusIcon(
  */
 @Composable
 private fun ConnectionIndicator(
-    connectionState: MainViewModel.ConnectionState,
+    connectionState: ConnectionViewModel.State,
     onReconnect: () -> Unit,
 ) {
     val semanticColors = LocalJervisSemanticColors.current
 
     when (connectionState) {
-        MainViewModel.ConnectionState.CONNECTED -> {
+        ConnectionViewModel.State.CONNECTED -> {
             Box(
                 modifier = Modifier
                     .padding(horizontal = 6.dp)
@@ -565,7 +565,7 @@ private fun ConnectionIndicator(
                     .background(semanticColors.success, CircleShape),
             )
         }
-        MainViewModel.ConnectionState.DISCONNECTED -> {
+        ConnectionViewModel.State.DISCONNECTED -> {
             // "Offline" chip — clickable for manual reconnect
             Surface(
                 modifier = Modifier

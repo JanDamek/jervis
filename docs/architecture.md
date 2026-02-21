@@ -1,6 +1,6 @@
 # Architecture - Complete System Overview
 
-**Status:** Production Documentation (2026-02-05)
+**Status:** Production Documentation (2026-02-20)
 **Purpose:** Comprehensive architecture guide for all major components and frameworks
 
 ---
@@ -22,6 +22,7 @@
 13. [Python Orchestrator](#python-orchestrator)
 14. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
 15. [Notification System](#notification-system)
+16. [Foreground Chat (ChatSession)](#foreground-chat-chatsession)
 
 ---
 
@@ -726,7 +727,7 @@ const val PLATFORM_DESKTOP = "Desktop"
 - **shared/common-dto**: Data transfer objects
 - **shared/common-api**: `@HttpExchange` contracts
 - **shared/domain**: Pure domain types
-- **shared/ui-common**: Compose Multiplatform UI screens
+- **shared/ui-common**: Compose Multiplatform UI screens (ViewModels decomposed by domain — see below)
 - **apps/desktop**: Primary desktop application
 - **apps/mobile**: iOS/Android port from desktop
 
@@ -735,6 +736,24 @@ const val PLATFORM_DESKTOP = "Desktop"
 - **`com.jervis.common.http`**: Typed exception hierarchy (`ProviderApiException`), response validation (`checkProviderResponse()`), pagination helpers (Link header, offset-based)
 - **`com.jervis.common.ratelimit`**: `DomainRateLimiter` (per-domain sliding window), `ProviderRateLimits` (centralized configs for GitHub/GitLab/Atlassian), `UrlUtils`
 - **`com.jervis.common.client`**: kRPC service interfaces (`IBugTrackerClient`, `IRepositoryClient`, `IWikiClient`, `IProviderService`)
+
+### UI ViewModel Architecture (`shared/ui-common`)
+
+`MainViewModel` is a thin coordinator (~450 lines) that owns client/project selection
+and delegates domain logic to specialized sub-ViewModels:
+
+| ViewModel | Package | Responsibility |
+|-----------|---------|---------------|
+| `MainViewModel` | `ui/` | Client/project selection, event routing, workspace status |
+| `ChatViewModel` | `ui/chat/` | Chat messages, streaming, history, attachments, pending retry |
+| `QueueViewModel` | `ui/queue/` | Orchestrator queue, task history, progress tracking |
+| `EnvironmentViewModel` | `ui/environment/` | Environment panel, polling, status |
+| `NotificationViewModel` | `ui/notification/` | User tasks, approve/deny/reply |
+| `ConnectionViewModel` | `ui/` | Connection state, offline detection |
+
+**Wiring:** Sub-ViewModels receive `StateFlow<String?>` for `selectedClientId`/`selectedProjectId`
+(read-only). Cross-cutting concerns use callbacks (`onScopeChange`, `onError`, `onChatProgressUpdate`).
+`MainViewModel.handleGlobalEvent()` routes kRPC events to the appropriate sub-ViewModel.
 
 ### Communication Patterns
 
@@ -814,7 +833,7 @@ The Compose UI supports offline operation — the app renders immediately withou
 - `JervisApp.kt` creates repository eagerly (lambda-based, not blocking on connect)
 - Desktop `ConnectionManager.repository` is non-nullable val
 - No blocking overlay on disconnect — replaced by "Offline" chip in `PersistentTopBar`
-- `MainViewModel.isOffline: StateFlow<Boolean>` derives from connection state
+- `ConnectionViewModel.isOffline: StateFlow<Boolean>` derives from connection state
 - Chat input disabled when offline; meeting recording works offline (chunks saved to disk)
 - `OfflineMeetingSyncService` watches connection state and uploads offline meetings on reconnect
 
@@ -969,39 +988,50 @@ Kotlin Server (BackgroundEngine)
 
 ### Chat Context Persistence
 
-Agent memory across conversations — the orchestrator receives full conversation context with each dispatch.
+Agent memory across conversations. Two paths:
+
+**Foreground chat:** Python `ChatContextAssembler` reads MongoDB directly (motor) to build LLM context.
+Messages keyed by `conversationId` (= `ChatSessionDocument._id`).
+
+**Background orchestration:** Kotlin prepares context payload and sends with dispatch request.
 
 **Three layers:**
-1. **Recent messages** (verbatim): Last 20 `ChatMessageDocument` records sent as-is in `OrchestrateRequestDto.chat_history`
+1. **Recent messages** (verbatim): Last 20 `ChatMessageDocument` records
 2. **Rolling summaries** (compressed): `ChatSummaryDocument` collection — LLM-compressed blocks of 20 messages each
 3. **Search** (Phase 2): MongoDB full-text search for on-demand old context retrieval
 
-**Data flow:**
+**Data flow (background orchestration):**
 ```
-User sends message → Kotlin saves ChatMessageDocument
-    ↓
 AgentOrchestratorService.dispatchToPythonOrchestrator()
-    → ChatHistoryService.prepareChatHistoryPayload(taskId)
+    → ChatHistoryService.prepareChatHistoryPayload(conversationId)
     → OrchestrateRequestDto.chat_history = { recent_messages, summary_blocks, total_message_count }
     ↓
 Python orchestrator uses chat_history in nodes:
-    - intake.py: last 5 messages for classification context ("continuation" vs "new topic")
-    - respond.py: full conversation context (summaries + recent) in LLM prompt
+    - intake.py: last 5 messages for classification context
+    - respond.py: full conversation context in LLM prompt
     - evidence.py: populates EvidencePack.chat_history_summary
-    - plan.py: key decisions from summaries for planning continuity
-    - finalize.py: conversation context in final report
     ↓
 After orchestration completes (handleDone()):
-    → async: ChatHistoryService.compressIfNeeded(taskId)
+    → async: ChatHistoryService.compressIfNeeded(conversationId)
     → if >20 unsummarized messages → POST /internal/compress-chat (Python LLM)
     → Store ChatSummaryDocument in MongoDB
+```
+
+**Data flow (foreground chat):**
+```
+User sends message → Kotlin ChatService saves to chat_messages (conversationId = session._id)
+    → PythonChatClient POST /chat with session_id
+    → Python ChatContextAssembler reads chat_messages + chat_summaries from MongoDB (motor)
+    → Agentic loop with full context
+    → Fire-and-forget compression after response
 ```
 
 **Token budget:** ~4000 tokens total (2000 recent + 1500 summaries + 500 decisions)
 
 **MongoDB collections:**
-- `chat_messages` — individual messages (existing)
-- `chat_summaries` — compressed summary blocks (new, compound index on `taskId + sequenceEnd`)
+- `chat_messages` — individual messages (`conversationId` field, was `taskId`)
+- `chat_summaries` — compressed summary blocks (`conversationId` field, was `taskId`)
+- `chat_sessions` — session lifecycle (new, one active per user)
 
 ### Task State Machine (Python orchestrator path)
 
@@ -1180,7 +1210,7 @@ User sends message while PYTHON_ORCHESTRATING
 | `TaskRepository.kt` | Background queue query |
 | `PendingTasksDto.kt` | Shared DTO for queue items |
 | `AgentActivityEntry.kt` | Enhanced `PendingQueueItem` with `taskId`, `processingMode`, `queuePosition` |
-| `MainViewModel.kt` | Dual-queue state (`foregroundQueue`, `backgroundQueue`), action methods |
+| `QueueViewModel.kt` | Dual-queue state (`foregroundQueue`, `backgroundQueue`), action methods |
 | `AgentWorkloadScreen.kt` | Dual-queue UI with reorder/move controls |
 
 ---
@@ -1380,22 +1410,21 @@ Python Orchestrator → node transition
   → POST /internal/orchestrator-progress
     → KtorRpcServer → OrchestratorHeartbeatTracker.updateHeartbeat()
     → NotificationRpcImpl.emitOrchestratorTaskProgress() [kRPC stream]
-    → MainViewModel.handleGlobalEvent() → OrchestratorProgressInfo state
+    → MainViewModel.handleGlobalEvent() → QueueViewModel.handleOrchestratorProgress()
 
 Python Orchestrator → completion/error/interrupt
   → POST /internal/orchestrator-status
     → KtorRpcServer → OrchestratorStatusHandler.handleStatusChange()
     → NotificationRpcImpl.emitOrchestratorTaskStatusChange() [kRPC stream]
-    → MainViewModel.handleGlobalEvent() → clear progress / show approval
+    → MainViewModel.handleGlobalEvent() → QueueViewModel.handleOrchestratorStatusChange()
 
 Python Orchestrator → interrupt (approval required)
   → OrchestratorStatusHandler → UserTaskService.failAndEscalateToUserTask()
     → NotificationRpcImpl.emitUserTaskCreated() [kRPC stream]
     → FcmPushService.sendPushNotification() [FCM → Android]
     → ApnsPushService.sendPushNotification() [APNs HTTP/2 → iOS]
-  → MainViewModel.handleGlobalEvent()
-    → PlatformNotificationManager.showNotification()
-    → ApprovalNotificationDialog (if isApproval)
+  → MainViewModel.handleGlobalEvent() → NotificationViewModel.handleUserTaskCreated()
+    → UserTaskNotificationDialog (approval/clarification)
 ```
 
 ### Cross-Platform Architecture
@@ -1414,7 +1443,7 @@ expect object PushTokenRegistrar
 NotificationActionChannel (MutableSharedFlow)
 ├── Android: NotificationActionReceiver → emits
 ├── iOS:     NotificationDelegate.swift → NotificationBridge.kt → emits
-└── MainViewModel: collects → sendToAgent(taskId, routingMode, input)
+└── NotificationViewModel: collects → approveTask/denyTask/replyToTask
 ```
 
 ### Key Files
@@ -1607,3 +1636,244 @@ data class SystemConfigDocument(
 | `backend/server/.../service/background/BackgroundEngine.kt` | Idle review loop |
 | `shared/common-dto/.../dto/SystemConfigDto.kt` | System config DTO |
 | `shared/common-api/.../service/ISystemConfigService.kt` | RPC interface |
+
+---
+
+## Foreground Chat (ChatSession)
+
+### Overview
+
+Foreground chat uses a **direct agentic loop** (LLM + tools) instead of the LangGraph StateGraph.
+The user chats with Jervis like iMessage/WhatsApp — one global conversation (not per client/project).
+Jervis acts as a personal assistant with access to tools (KB search, task creation, meeting classification, etc.).
+
+**Key difference from background orchestration:**
+- Background tasks still flow through LangGraph StateGraph (intake → evidence → plan → execute → finalize)
+- Foreground chat is a simple agentic loop: LLM decides → tool call → result → repeat (max 15 iterations)
+
+### Architecture
+
+```
+UI (Compose) ──kRPC──► Kotlin ChatRpcImpl ──HTTP SSE──► Python /chat endpoint
+                           │                                    │
+                    subscribeToChatEvents()              handle_chat(request)
+                    sendMessage()                        ├── register foreground (preempt background)
+                    getChatHistory()                     ├── load context (MongoDB motor)
+                    archiveSession()                     ├── agentic loop (LLM + tools, max 15)
+                           │                             ├── save assistant message
+                    SharedFlow<ChatResponseDto>          ├── fire-and-forget compression
+                    (replay=0, capacity=200)             └── release foreground
+                           │
+                    ┌──────▼──────┐
+                    │ ChatService │ (Spring @Service)
+                    │  - session lifecycle
+                    │  - save user message
+                    │  - forward to PythonChatClient
+                    │  - getHistory (pagination)
+                    └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │ PythonChat  │ (Ktor HTTP SSE)
+                    │  Client     │
+                    │  - POST /chat
+                    │  - manual SSE line parsing
+                    │  - Flow<ChatStreamEvent>
+                    └─────────────┘
+```
+
+### Data Model
+
+**MongoDB Collections:**
+
+| Collection | Document | Purpose |
+|------------|----------|---------|
+| `chat_sessions` | `ChatSessionDocument` | Session lifecycle (one active per user, archivable) |
+| `chat_messages` | `ChatMessageDocument` | Messages with `conversationId` (= session._id) + `sequence` |
+| `chat_summaries` | `ChatSummaryDocument` | LLM-compressed blocks (20 msgs each) |
+
+**ChatSessionDocument:**
+```kotlin
+data class ChatSessionDocument(
+    @Id val id: ObjectId = ObjectId(),
+    val userId: String = "jan",
+    var title: String? = null,
+    var archived: Boolean = false,
+    val createdAt: Instant = Instant.now(),
+    var lastMessageAt: Instant = Instant.now(),
+)
+```
+
+**Note:** `ChatMessageDocument.conversationId` replaces the old `taskId` field.
+Messages are keyed by `(conversationId, sequence)` for pagination.
+
+### SSE Event Types
+
+Python streams these event types to Kotlin via SSE:
+
+| Type | Description | UI Mapping |
+|------|-------------|------------|
+| `token` | Streaming response chunk (~40 chars) | `STREAMING_TOKEN` — accumulated in buffer |
+| `tool_call` | Tool invocation started | `EXECUTING` — progress indicator |
+| `tool_result` | Tool returned result | `EXECUTING` — progress indicator |
+| `thinking` | Progress event before each tool call (Czech description) | `PLANNING` — progress indicator |
+| `done` | Agentic loop completed | `FINAL` — clear progress, show response |
+| `error` | Error occurred (includes partial content from tool_summaries) | `ERROR` — show error message |
+
+**Fake token streaming:** The LLM is called in non-streaming mode (litellm can't reliably stream tool_calls for Ollama). The final response is chunked into ~40-character pieces and emitted as `token` events with small delays for progressive UI rendering.
+
+**Thinking events:** Before each tool call, a `thinking` event is emitted with a Czech human-readable description (e.g., "Hledám v knowledge base: project architecture"). Generated by `_describe_tool_call()` helper.
+
+### LLM Configuration
+
+Chat LLM calls are configured as follows:
+
+- **Priority**: `X-Ollama-Priority: 0` (CRITICAL) — preempts background/qualification tasks in ollama-router queue
+- **Context estimation**: Dynamic — `message_tokens + tools_tokens + output_tokens` (same pattern as orchestrator respond node)
+- **Tools**: 26 tools (~4000 tokens in JSON) → tier typically `LOCAL_STANDARD` (32k context)
+- **Timeout**: `HEARTBEAT_DEAD_SECONDS` (300s) via `asyncio.wait_for()` on blocking LLM call
+- **GPU speed tiers**: ≤48k context = full P40 GPU speed (~30 tok/s); >48k spills to CPU RAM (~7-12 tok/s); handles up to ~250k
+- **Blocking mode**: Tool calls use `litellm.acompletion()` (non-streaming) because litellm can't reliably stream tool_calls for Ollama
+
+### System Prompt & Runtime Context
+
+The system prompt is enriched with live runtime data on each chat request:
+
+**Runtime context** (`RuntimeContext` dataclass, loaded via `_load_runtime_context()`):
+- **Clients & projects**: Full list with IDs and names (cached 5 min TTL)
+- **Pending user tasks**: Count + top N tasks with titles and questions
+- **Unclassified meetings**: Count of ad-hoc recordings awaiting classification
+
+**Scope resolution** (embedded in prompt rules):
+- UI-selected client/project used as default scope
+- User mentions resolved to IDs from the clients list
+- Scope changes announced explicitly ("Přepínám na...")
+- Ambiguous scope triggers clarification question
+
+Data fetched from Kotlin internal API (`/internal/clients-projects`, `/internal/pending-user-tasks/summary`, `/internal/unclassified-meetings/count`).
+
+### Stop & Disconnect Handling
+
+Two mechanisms for stopping an active chat:
+
+1. **Explicit stop** (`POST /chat/stop`): User presses Stop button → Kotlin `PythonChatClient.stopChat(sessionId)` → sets `asyncio.Event` in `_active_chat_stops` dict → handler checks event at start of each iteration → emits partial content + `done` event
+
+2. **SSE disconnect**: Kotlin `PythonChatClient` closes SSE connection → `request.is_disconnected()` detected → same interrupt flow
+
+Both mechanisms save accumulated `tool_summaries` as partial content before stopping.
+
+### Error Recovery
+
+When the LLM call fails mid-loop (timeout, connection error):
+- `tool_summaries` list accumulates human-readable summaries of all completed tool calls
+- On error: partial content is constructed from summaries + error message
+- Partial content saved to MongoDB as assistant message (prevents context loss)
+- `error` SSE event includes the partial content for UI display
+
+### Foreground Preemption
+
+When a foreground chat is active, background task dispatch is paused:
+
+```kotlin
+// BackgroundEngine.kt
+private val activeForegroundChats = AtomicInteger(0)
+
+fun registerForegroundChatStart() { activeForegroundChats.incrementAndGet() }
+fun registerForegroundChatEnd() { activeForegroundChats.decrementAndGet() }
+fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
+```
+
+Python registers foreground via `POST /internal/foreground-start` and `/internal/foreground-end`.
+BackgroundEngine skips `getNextBackgroundTask()` when `isForegroundChatActive()`.
+
+### Python Chat Tools (26 tools)
+
+Available tools in the agentic loop, organized by category:
+
+**Research tools** (direct Python calls):
+
+| Tool | Purpose |
+|------|---------|
+| `kb_search` | Search knowledge base (Weaviate RAG) |
+| `web_search` | Search the internet |
+| `code_search` | Search code patterns, functions, classes |
+| `store_knowledge` | Store new knowledge into KB |
+| `get_kb_stats` | KB statistics (document counts, types) |
+| `get_indexed_items` | List indexed items for client/project |
+
+**Memory tools** (direct Python calls):
+
+| Tool | Purpose |
+|------|---------|
+| `memory_store` | Store fact/decision for later recall |
+| `memory_recall` | Recall previously stored facts |
+
+**Brain tools** (Kotlin `/internal/brain/*`):
+
+| Tool | Purpose |
+|------|---------|
+| `brain_create_issue` | Create Jira issue in brain project |
+| `brain_update_issue` | Update existing brain issue |
+| `brain_add_comment` | Add comment to brain issue |
+| `brain_transition_issue` | Change issue status |
+| `brain_search_issues` | Search brain Jira via JQL |
+| `brain_create_page` | Create Confluence page |
+| `brain_update_page` | Update Confluence page |
+| `brain_search_pages` | Search Confluence pages |
+
+**Chat-specific tools** (Kotlin internal API):
+
+| Tool | Endpoint | Purpose |
+|------|----------|---------|
+| `create_background_task` | `POST /internal/create-background-task` | Create task for background processing |
+| `dispatch_coding_agent` | `POST /internal/dispatch-coding-agent` | Dispatch coding agent |
+| `search_tasks` | `GET /internal/tasks/search` | Search all tasks by text + optional state filter |
+| `get_task_status` | `GET /internal/tasks/{id}/status` | Get task detail (state, content, error) |
+| `list_recent_tasks` | `GET /internal/tasks/recent` | Recent tasks with time/state/client filters |
+| `respond_to_user_task` | `POST /internal/respond-to-user-task` | Respond to approval/clarification |
+| `classify_meeting` | `POST /internal/classify-meeting` | Classify ad-hoc meeting |
+| `list_unclassified_meetings` | `GET /internal/unclassified-meetings` | List unclassified meetings |
+| `list_affairs` | Direct Python | List ongoing affairs/matters |
+
+### Internal API Routing (Ktor Modules)
+
+Chat-specific Kotlin internal endpoints are organized as **Ktor routing modules** (not in KtorRpcServer directly — SOLID/SRP):
+
+| Module | File | Endpoints |
+|--------|------|-----------|
+| `installInternalChatContextApi()` | `rpc/internal/InternalChatContextRouting.kt` | `/internal/clients-projects`, `/internal/pending-user-tasks/summary`, `/internal/unclassified-meetings/count` |
+| `installInternalTaskApi()` | `rpc/internal/InternalTaskApiRouting.kt` | `/internal/tasks/{id}/status`, `/internal/tasks/search`, `/internal/tasks/recent` |
+
+Installed in `KtorRpcServer` routing block via extension functions on `Routing`. Dependencies injected as function parameters (clientService, projectService, taskRepository, userTaskService).
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/server/.../service/chat/ChatService.kt` | Session management + message coordination |
+| `backend/server/.../service/chat/PythonChatClient.kt` | Ktor HTTP SSE client for Python /chat + stopChat() |
+| `backend/server/.../service/chat/ChatStreamEvent.kt` | SSE event data class |
+| `backend/server/.../rpc/ChatRpcImpl.kt` | kRPC bridge: UI ↔ ChatService ↔ Python |
+| `backend/server/.../rpc/internal/InternalChatContextRouting.kt` | Ktor routing: clients-projects, pending tasks, meetings count |
+| `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` | Ktor routing: task status, search, recent tasks |
+| `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession) |
+| `backend/server/.../entity/ChatSessionDocument.kt` | MongoDB session entity |
+| `backend/server/.../repository/ChatSessionRepository.kt` | Spring Data repo |
+| `backend/service-orchestrator/app/chat/handler.py` | Python agentic loop (thinking, streaming, stop, error recovery) |
+| `backend/service-orchestrator/app/chat/models.py` | ChatRequest, ChatStreamEvent models |
+| `backend/service-orchestrator/app/chat/tools.py` | Chat tool definitions (26 tools) |
+| `backend/service-orchestrator/app/chat/context.py` | ChatContextAssembler (MongoDB motor) |
+| `backend/service-orchestrator/app/chat/system_prompt.py` | System prompt builder + RuntimeContext |
+| `backend/service-orchestrator/app/chat/router.py` | Tool routing |
+| `backend/service-orchestrator/app/tools/kotlin_client.py` | Python HTTP client for Kotlin internal API |
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints incl. /chat, /chat/stop |
+
+### Migration from Old Chat Flow
+
+The old foreground chat flow (`IAgentOrchestratorService.subscribeToChat/sendMessage/getChatHistory`) has been removed. Key changes:
+
+- **Removed from `IAgentOrchestratorService`**: `subscribeToChat()`, `sendMessage(ChatRequestDto)`, `getChatHistory(clientId, projectId, ...)`
+- **Removed from `AgentOrchestratorRpcImpl`**: `chatStreams`, `emitToChatStream()`, `emitProgress()`, `saveAndMapAttachment()`, and all old chat method implementations
+- **`BackgroundEngine`**: `onProgress` callback simplified to logging only (no longer emits to dead SharedFlow)
+- **`OrchestratorStatusHandler`**: Removed `emitToChatStream()` calls in handleInterrupted/handleDone/handleError (message persistence kept)
+- **`/internal/streaming-token`**: Now a no-op endpoint (returns ok but doesn't relay tokens)
+- **`IAgentOrchestratorService`** retains: queue management (`subscribeToQueueStatus`, `getPendingTasks`, `reorderTask`, `moveTask`, `cancelOrchestration`) and task history (`getTaskHistory`)

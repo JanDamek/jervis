@@ -903,10 +903,10 @@ State: Frontend expanded
 - `PendingQueueItem`: `taskId`, `preview`, `projectName`, `processingMode` (FOREGROUND/BACKGROUND), `queuePosition`
 - `TaskHistoryEntry`: `taskId`, `taskPreview`, `projectName?`, `startTime`, `endTime?`, `status` (running/done/error), `nodes: List<NodeEntry>`
 - `NodeEntry`: `node` (key), `label` (Czech), `status` (DONE/RUNNING/PENDING)
-- Activity log stored in `AgentActivityLog` ring buffer (max 200), held by `MainViewModel`
-- Task history stored in `MainViewModel.taskHistory: StateFlow<List<TaskHistoryEntry>>`, populated from `OrchestratorTaskProgress` and `OrchestratorTaskStatusChange` events
+- Activity log stored in `AgentActivityLog` ring buffer (max 200), held by `QueueViewModel`
+- Task history stored in `QueueViewModel.taskHistory: StateFlow<List<TaskHistoryEntry>>`, populated from `OrchestratorTaskProgress` and `OrchestratorTaskStatusChange` events
 
-**Dual-queue state** in `MainViewModel`:
+**Dual-queue state** in `QueueViewModel`:
 - `foregroundQueue: StateFlow<List<PendingQueueItem>>` -- user-initiated tasks (FOREGROUND)
 - `backgroundQueue: StateFlow<List<PendingQueueItem>>` -- system/indexing tasks (BACKGROUND)
 - `reorderTask(taskId, newPosition)` -- reorder within current queue
@@ -1291,7 +1291,7 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 3. **Hotovo** (DISPATCHED_GPU) — completed tasks with **expandable qualification history**. Click to expand stored `qualificationSteps`. Shows qualification duration and full step log with metadata + per-step durations. Auto-refreshed every 10s (page 0 always updated so new items appear immediately).
 
 **Live Qualification Progress with Audit Trail:**
-- `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
+- `QueueViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
 - `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
 - Events carry `metadata: Map<String, String>` with structured data for UI display
 - **Persistent history:** Steps also saved to `TaskDocument.qualificationSteps` via `$push` for viewing in Hotovo
@@ -1689,7 +1689,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
 +-- MainScreen.kt                      <- Chat content (no selectors — moved to PersistentTopBar)
 +-- PersistentTopBar.kt               <- Global top bar: back, menu, client/project, recording, agent, K8s, connection
-+-- MainViewModel.kt                   <- Main ViewModel (user actions, state)
++-- MainViewModel.kt                   <- Coordinator: client/project selection, event routing
++-- ConnectionViewModel.kt            <- Connection state, offline detection
 +-- ChatMessageDisplay.kt             <- Chat messages, workflow steps display
 +-- AgentStatusRow.kt                 <- Agent status indicator (legacy, replaced by PersistentTopBar icon)
 +-- ChatInputArea.kt                  <- Message input + send button
@@ -1703,14 +1704,17 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 +-- ErrorLogsScreen.kt                <- Error logs display
 +-- model/
 |   +-- AgentActivityEntry.kt         <- Data models for agent activity
-+-- viewmodels/
-|   +-- MainViewModel.kt              <- ViewModel wiring
++-- chat/
+|   +-- ChatViewModel.kt              <- Chat messages, streaming, history, attachments, pending retry
++-- queue/
+|   +-- QueueViewModel.kt             <- Orchestrator queue, task history, progress tracking
 +-- audio/
 |   +-- AudioPlayer.kt                <- expect class AudioPlayer
 |   +-- AudioRecorder.kt              <- expect class AudioRecorder
 |   +-- PlatformRecordingService.kt   <- Recording service bridge
 |   +-- RecordingServiceBridge.kt
 +-- notification/
+|   +-- NotificationViewModel.kt      <- User tasks: approve/deny/reply, badge count
 |   +-- ApprovalNotificationDialog.kt <- Orchestrator approval dialog
 |   +-- NotificationActionChannel.kt
 |   +-- PlatformNotificationManager.kt

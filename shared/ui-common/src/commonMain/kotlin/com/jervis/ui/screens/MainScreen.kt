@@ -11,41 +11,41 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 fun MainScreen(
     viewModel: MainViewModel,
 ) {
-    val isOffline by viewModel.isOffline.collectAsState()
+    val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val chatMessages by viewModel.chatMessages.collectAsState()
-    val inputText by viewModel.inputText.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
-    val queueSize by viewModel.queueSize.collectAsState()
-    val runningProjectId by viewModel.runningProjectId.collectAsState()
-    val hasMore by viewModel.hasMore.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val compressionBoundaries by viewModel.compressionBoundaries.collectAsState()
-    val attachments by viewModel.attachments.collectAsState()
-    val pendingMessageInfo by viewModel.pendingMessageInfo.collectAsState()
+    val chatMessages by viewModel.chat.chatMessages.collectAsState()
+    val inputText by viewModel.chat.inputText.collectAsState()
+    val isChatLoading by viewModel.chat.isLoading.collectAsState()
+    val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
+    val queueSize by viewModel.queue.queueSize.collectAsState()
+    val runningProjectId by viewModel.queue.runningProjectId.collectAsState()
+    val hasMore by viewModel.chat.hasMore.collectAsState()
+    val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
+    val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
+    val attachments by viewModel.chat.attachments.collectAsState()
+    val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
-    val orchestratorHealthy by viewModel.orchestratorHealthy.collectAsState()
-    val orchestratorProgress by viewModel.orchestratorProgress.collectAsState()
+    val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
+    val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
 
-    // Environment panel state
-    val environments by viewModel.environments.collectAsState()
-    val resolvedEnvId by viewModel.resolvedEnvId.collectAsState()
-    val environmentStatuses by viewModel.environmentStatuses.collectAsState()
-    val environmentPanelVisible by viewModel.environmentPanelVisible.collectAsState()
-    val environmentPanelWidthFraction by viewModel.environmentPanelWidthFraction.collectAsState()
-    val expandedEnvIds by viewModel.expandedEnvIds.collectAsState()
-    val expandedComponentIds by viewModel.expandedComponentIds.collectAsState()
-    val environmentLoading by viewModel.environmentLoading.collectAsState()
-    val environmentError by viewModel.environmentError.collectAsState()
+    // Environment panel state (delegated to EnvironmentViewModel)
+    val environments by viewModel.environment.environments.collectAsState()
+    val resolvedEnvId by viewModel.environment.resolvedEnvId.collectAsState()
+    val environmentStatuses by viewModel.environment.environmentStatuses.collectAsState()
+    val environmentPanelVisible by viewModel.environment.panelVisible.collectAsState()
+    val environmentPanelWidthFraction by viewModel.environment.panelWidthFraction.collectAsState()
+    val expandedEnvIds by viewModel.environment.expandedEnvIds.collectAsState()
+    val expandedComponentIds by viewModel.environment.expandedComponentIds.collectAsState()
+    val environmentLoading by viewModel.environment.loading.collectAsState()
+    val environmentError by viewModel.environment.error.collectAsState()
 
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
         chatMessages = chatMessages,
         inputText = inputText,
-        isLoading = isLoading || isInitialLoading,
+        isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,
         queueSize = queueSize,
         runningProjectId = runningProjectId,
@@ -53,24 +53,24 @@ fun MainScreen(
         isLoadingMore = isLoadingMore,
         compressionBoundaries = compressionBoundaries,
         attachments = attachments,
-        onInputChanged = viewModel::updateInputText,
-        onSendClick = viewModel::sendMessage,
-        onEditMessage = viewModel::editMessage,
-        onLoadMore = viewModel::loadMoreHistory,
-        onAttachFile = viewModel::attachFile,
-        onRemoveAttachment = viewModel::removeAttachment,
+        onInputChanged = viewModel.chat::updateInputText,
+        onSendClick = viewModel.chat::sendMessage,
+        onEditMessage = viewModel.chat::editMessage,
+        onLoadMore = viewModel.chat::loadMoreHistory,
+        onAttachFile = viewModel.chat::attachFile,
+        onRemoveAttachment = viewModel.chat::removeAttachment,
         pendingMessageInfo = pendingMessageInfo,
-        onRetryPending = viewModel::retrySendMessage,
-        onCancelPending = viewModel::cancelRetry,
+        onRetryPending = viewModel.chat::retrySendMessage,
+        onCancelPending = viewModel.chat::cancelRetry,
         workspaceInfo = workspaceInfo,
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
         orchestratorProgress = orchestratorProgress,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
-        onToggleEnvironmentPanel = viewModel::toggleEnvironmentPanel,
+        onToggleEnvironmentPanel = viewModel.environment::togglePanel,
         panelWidthFraction = environmentPanelWidthFraction,
-        onPanelWidthChange = viewModel::updatePanelWidthFraction,
+        onPanelWidthChange = viewModel.environment::updatePanelWidthFraction,
         environmentPanelContent = { isCompact ->
             EnvironmentPanel(
                 environments = environments,
@@ -81,10 +81,10 @@ fun MainScreen(
                 isCompact = isCompact,
                 expandedEnvIds = expandedEnvIds,
                 expandedComponentIds = expandedComponentIds,
-                onToggleEnv = viewModel::toggleEnvExpanded,
-                onToggleComponent = viewModel::toggleComponentExpanded,
-                onClose = viewModel::closeEnvironmentPanel,
-                onRefresh = viewModel::refreshEnvironments,
+                onToggleEnv = viewModel.environment::toggleEnvExpanded,
+                onToggleComponent = viewModel.environment::toggleComponentExpanded,
+                onClose = viewModel.environment::closePanel,
+                onRefresh = viewModel.environment::refreshEnvironments,
             )
         },
     )

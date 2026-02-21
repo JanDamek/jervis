@@ -933,21 +933,22 @@ The `meeting/` package is at root level (`com.jervis.ui.meeting`), not under `sc
 
 #### ViewModel Decomposition
 
-Large ViewModels (>500 lines) should extract logic into focused helper classes:
+`MainViewModel` is a thin coordinator (~450 lines) that delegates to domain-specific sub-ViewModels:
 
 ```kotlin
-class MainViewModel(repository: JervisRepository) : ViewModel() {
-    // Delegates for distinct concerns
-    private val connectionManager = ChatConnectionManager(repository, viewModelScope)
-    private val messageHandler = ChatMessageHandler(repository)
-    private val queueManager = QueueManager(repository, viewModelScope)
-
-    // ViewModel exposes state and user actions, delegates implementation
+class MainViewModel(repository, connectionManager) {
+    val connection = ConnectionViewModel(connectionManager)
+    val chat = ChatViewModel(repository, connectionManager, selectedClientId, selectedProjectId, ...)
+    val queue = QueueViewModel(repository, connectionManager, selectedClientId)
+    val environment = EnvironmentViewModel(repository, selectedClientId, selectedProjectId)
+    val notification = NotificationViewModel(repository, selectedClientId)
 }
 ```
 
-Helper classes are plain Kotlin classes (not ViewModels), receive dependencies via constructor,
-and expose `StateFlow` or suspend functions. They live in the same feature package.
+Sub-ViewModels receive `StateFlow<String?>` for shared state (read-only) and callbacks
+for cross-cutting concerns (`onScopeChange`, `onError`, `onChatProgressUpdate`).
+Each sub-ViewModel owns its own `CoroutineScope` and `StateFlow`s.
+UI collects from sub-ViewModels: `viewModel.chat.chatMessages`, `viewModel.queue.queueSize`, etc.
 
 #### Design System Split
 
