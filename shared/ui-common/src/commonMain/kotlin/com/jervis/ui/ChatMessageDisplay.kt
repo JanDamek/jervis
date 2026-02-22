@@ -77,9 +77,12 @@ internal fun ChatArea(
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             if (previousCount == 0 || messages.size > previousCount) {
-                // Brief delay so rapid stream arrivals settle before final scroll
-                kotlinx.coroutines.delay(50)
+                // Wait for stream batch to settle + layout to complete
+                kotlinx.coroutines.delay(150)
+                // scrollToItem places item at top of viewport;
+                // scrollBy ensures we reach the absolute bottom
                 listState.scrollToItem(messages.size - 1)
+                listState.scrollBy(Float.MAX_VALUE)
             }
         }
         previousCount = messages.size
