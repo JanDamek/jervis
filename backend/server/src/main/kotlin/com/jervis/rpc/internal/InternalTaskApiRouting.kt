@@ -46,7 +46,7 @@ fun Routing.installInternalTaskApi(
             val clientId = ClientId(ObjectId(body.clientId))
             val projectId = body.projectId?.let { ProjectId(ObjectId(it)) }
             val task = taskService.createTask(
-                taskType = TaskTypeEnum.STANDARD,
+                taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
                 content = body.query,
                 clientId = clientId,
                 correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
