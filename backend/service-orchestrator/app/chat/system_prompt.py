@@ -16,6 +16,7 @@ class RuntimeContext:
     clients_projects: list[dict] = field(default_factory=list)
     pending_user_tasks: dict = field(default_factory=lambda: {"count": 0, "tasks": []})
     unclassified_meetings_count: int = 0
+    learned_procedures: list[str] = field(default_factory=list)  # Dynamic: loaded from KB at chat start
 
 
 def build_system_prompt(
@@ -46,6 +47,7 @@ def build_system_prompt(
     clients_section = _build_clients_section(ctx.clients_projects)
     pending_section = _build_pending_tasks_section(ctx.pending_user_tasks)
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
+    learned_section = _build_learned_procedures_section(ctx.learned_procedures)
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
 
@@ -56,7 +58,7 @@ def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 - Hledej: kb_search (interní znalosti) → web_search (internet) → zeptej se
@@ -83,6 +85,11 @@ Jedna zpráva může obsahovat VÍCE intentů. Zpracuj všechny.
 - Většina práce jde na BACKGROUND — default.
 - Foreground jen když user explicitně chce TEĎ a POČKÁ ("fixni to teď", "udělej to hned").
 - Coding agent: default background. Foreground jen při "teď, počkám".
+- **Dlouhé zprávy (report, zápis, soupis úkolů):** Pokud zpráva obsahuje více než ~5 různých
+  požadavků/úkolů, navrhni uživateli: "Zpráva obsahuje X požadavků. Vytvořím background task
+  pro jejich podrobné zpracování — bude to rychlejší a důkladnější." Pak použij create_background_task.
+- **NIKDY se nepokoušej zpracovat stovky úkolů v chatu.** Chat má limit iterací a kontextu.
+  Vytvoř background task s kompletním popisem a nech orchestrátor zpracovat na pozadí.
 
 **Scope (klient/projekt):**
 - Používej scope z UI (pokud je nastaven) jako default.
@@ -116,6 +123,15 @@ Pokud potřebuješ detail z dřívější konverzace který není v souhrnu:
 - Použij **brain_search_issues** pro stav úkolů
 
 NIKDY neříkej "nevím, to bylo dříve". Vždycky se PODÍVEJ přes tools.
+
+## Učení se z konverzací
+
+Neustále se zdokonaluješ. Když se naučíš nový postup nebo konvenci:
+- **Nový postup:** Uživatel ti řekne jak něco dělat ("pro BMS vždycky vytvoř issue v Jiře") → ulož přes `memory_store` s `category: "procedure"`.
+- **Korekce:** Uživatel opraví tvůj postup ("ne, nemáš to hledat, máš to přímo vytvořit") → ulož opravu přes `memory_store` s `category: "procedure"`.
+- **Konvence:** Uživatel specifikuje pravidla ("priority High jen pro produkční bugy") → ulož přes `memory_store` s `category: "procedure"`.
+- Postupy výše v sekci "Naučené postupy a konvence" již znáš — DODRŽUJ JE.
+- Nové postupy se projeví při příštím startu chatu (automatické načtení z KB).
 """
 
 
@@ -160,3 +176,19 @@ def _build_unclassified_meetings_section(count: int) -> str:
     if count == 0:
         return ""
     return f"\n## Neklasifikované nahrávky\n{count} ad-hoc nahrávek čeká na přiřazení (použij classify_meeting).\n"
+
+
+def _build_learned_procedures_section(procedures: list[str]) -> str:
+    """Build learned procedures section for system prompt.
+
+    This section is DYNAMIC — it grows as the chat learns new procedures/conventions
+    from user interactions. Loaded from KB at chat start.
+    """
+    if not procedures:
+        return ""
+
+    lines = ["\n## Naučené postupy a konvence"]
+    for proc in procedures[:20]:  # Cap at 20 to stay within token budget
+        lines.append(f"- {proc}")
+    lines.append("")
+    return "\n".join(lines)

@@ -3364,15 +3364,36 @@ For messages >2000 chars, `classify_intent()` analyzes only first 500 + last 500
 
 `_isLoading` set to `true` synchronously BEFORE `scope.launch`. `sendMessage()` returns immediately if `_isLoading` is already true. Prevents race condition where rapid double-click or UI retry created two parallel SSE connections.
 
-#### J. Token Overflow — No Truncation
+#### J. Long Message Strategy — Summarize then Act
 
-Long messages are NOT truncated. Tier escalation handles it:
-- >32k tokens → LOCAL_LARGE (48k, full GPU speed)
-- >48k tokens → LOCAL_XLARGE (128k, CPU RAM spill, ~7-12 tok/s)
-- >128k tokens → LOCAL_XXLARGE (256k, Qwen3 max)
-- For extreme cases → cloud escalation to Gemini (1M+ context)
+Foreground chat uses a multi-layer strategy for long messages:
 
-Slow but complete. Nothing is discarded.
+```
+Message length?
+  < 8k chars:  pass through unchanged (fits in context easily)
+  8k-16k:      try decompose (multi-topic), else single-pass
+  > 16k:       SUMMARIZE first (LOCAL_FAST ~5s), then agentic loop on summary
+```
+
+**Summarize-then-Act (messages >16k chars):**
+1. LLM summarizer (LOCAL_FAST, CRITICAL priority, 30s timeout) creates structured summary (~2-4k chars)
+2. Summary preserves ALL: requirements, action items, questions, key details (IDs, names, numbers)
+3. Agentic loop works with compact summary instead of raw message
+4. Original message saved verbatim to MongoDB — nothing is lost
+5. If summarizer fails → fallback to pre-trim (75% head + 25% tail)
+
+**Tier Ceiling (VRAM protection):**
+Foreground chat NEVER goes above LOCAL_LARGE (40k context). LOCAL_XLARGE (131k) causes
+catastrophic CPU spill on P40 (6GB overflow, 630s for 387 tokens). Instead of escalating,
+the message is summarized/trimmed to fit in 40k.
+
+**Dynamic MAX_ITERATIONS:**
+- Short messages (<8k): MAX_ITERATIONS=6 (standard)
+- Long messages (>8k): MAX_ITERATIONS_LONG=3 (each iteration costs 3-5 min on GPU)
+
+**Background offload:**
+System prompt instructs model: if message contains >5 distinct tasks, suggest
+`create_background_task` instead of processing everything in foreground chat.
 
 #### K. Long Message Decomposition
 
@@ -3437,9 +3458,28 @@ Blocking calls (tool-call mode) use tier-based timeouts:
 | LOCAL_FAST | 8k | 300s | Pure GPU, ~30 tok/s |
 | LOCAL_STANDARD | 32k | 300s | Pure GPU, ~30 tok/s |
 | LOCAL_LARGE | **40k** | **600s** | Fits in P40 VRAM (30b + 40k KV < 24GB) |
-| LOCAL_XLARGE | 128k | 900s | CPU RAM spill, ~7-12 tok/s |
-| LOCAL_XXLARGE | 256k | 1200s | CPU, slowest |
+| LOCAL_XLARGE | 128k | 900s | CPU RAM spill, ~7-12 tok/s (NOT used in foreground chat) |
+| LOCAL_XXLARGE | 256k | 1200s | CPU, slowest (NOT used in foreground chat) |
 | Cloud tiers | — | 300s | Fast APIs |
+
+#### Q. Enhanced Drift Detection
+
+Four signals for detecting model loops:
+
+1. **Consecutive same** (existing): 2× identical tool+args → stuck
+2. **Same tool 3×** (NEW): same tool name called 3+ times across ANY iterations, even non-consecutive.
+   Catches: `kb_search("X")` in iter 1, `create_task` in iter 2, `kb_search("X")` in iter 4, `kb_search("Y")` in iter 6 — 3× kb_search → drift.
+3. **Domain drift** (existing): 3 iterations with 3+ distinct domains, no common → wandering
+4. **Excessive tools** (existing): 8+ distinct tools after 4+ iterations → unfocused
+
+#### R. Dynamic/Learning System Prompt
+
+System prompt contains a dynamic "Naučené postupy a konvence" section loaded from KB at chat start.
+
+- **Loading**: `_load_learned_procedures()` searches KB for entries with procedure/convention keywords, cached 5 min.
+- **Learning**: When user teaches a new procedure ("pro BMS vždy vytvoř issue"), the model stores it via `memory_store(category="procedure")`.
+- **Persistence**: Stored in KB → survives restarts. Next chat session loads updated procedures.
+- **Instruction**: System prompt tells model to use `memory_store(category="procedure")` for new learnings.
 
 #### Token Impact
 

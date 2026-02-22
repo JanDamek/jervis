@@ -45,9 +45,11 @@ from app.tools.executor import execute_tool
 logger = logging.getLogger(__name__)
 
 # Max agentic iterations (tool calls) per message.
-# 6 is enough with intent filtering + focus reminders + drift detection.
-# Typical: 1 (direct), 2 (search+answer), 3-4 (multi-intent). 6 gives buffer.
+# Dynamic: short messages get 6, long messages (>8k chars) get 3.
+# Long messages have ~40k context = each iteration costs 3-5 min on GPU.
+# Short messages: typical 1 (direct), 2 (search+answer), 3-4 (multi-intent). 6 gives buffer.
 MAX_ITERATIONS = 6
+MAX_ITERATIONS_LONG = 3          # for messages >DECOMPOSE_THRESHOLD — prevent tier escalation
 
 # Chunk size for fake token streaming (chars, ~10 tokens)
 STREAM_CHUNK_SIZE = 40
@@ -56,6 +58,25 @@ STREAM_CHUNK_SIZE = 40
 DECOMPOSE_THRESHOLD = 8000       # chars (~2k tokens) — below this, never decompose
 SUBTOPIC_MAX_ITERATIONS = 3      # each sub-topic mini-loop (vs 6 for main)
 MAX_SUBTOPICS = 5                # safety cap — more than this → fallback to single-pass
+
+# Foreground chat tier ceiling — NEVER go above this in foreground chat.
+# LOCAL_XLARGE (131k) causes catastrophic CPU spill on P40 (6GB overflow, 630s for 387 tokens).
+# Better to trim the message and stay in GPU VRAM than escalate.
+CHAT_MAX_TIER = ModelTier.LOCAL_LARGE
+
+# Tier ordering for comparison (lower index = smaller/faster tier)
+_TIER_ORDER = [
+    ModelTier.LOCAL_FAST, ModelTier.LOCAL_STANDARD, ModelTier.LOCAL_LARGE,
+    ModelTier.LOCAL_XLARGE, ModelTier.LOCAL_XXLARGE,
+    ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING, ModelTier.CLOUD_PREMIUM,
+    ModelTier.CLOUD_LARGE_CONTEXT,
+]
+_TIER_INDEX = {t: i for i, t in enumerate(_TIER_ORDER)}
+
+# Summarization threshold — messages above this get pre-summarized before agentic loop.
+# Raw 126k chars can't fit in 40k context. Instead of losing 75% via trim,
+# we summarize first (LOCAL_FAST, ~5s) and work with a structured summary.
+SUMMARIZE_THRESHOLD = 16000      # chars (~4k tokens) — above this, summarize first
 
 
 async def handle_chat(
@@ -146,10 +167,53 @@ async def handle_chat(
         else:
             yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
 
-        # --- Long message decomposition ---
+        # --- Long message pre-processing strategy ---
+        #
+        # Best practice for ANY long message (reports, meeting minutes, hundreds of tasks):
+        #
+        # 1. Messages < 8k chars:  pass through unchanged (fits in context easily)
+        # 2. Messages 8k-16k chars: try decompose (multi-topic), else single-pass
+        # 3. Messages > 16k chars:  SUMMARIZE first, then agentic loop on summary
+        #    - Raw 126k chars can't fit in 40k context — trim loses 75% of info
+        #    - Summary (~3k chars) preserves ALL key info, fits easily in context
+        #    - Agentic loop works fast (~30s per iter vs 5 min with raw 40k)
+        #    - Original message saved to MongoDB verbatim — nothing is lost
+        #    - If message contains hundreds of tasks → suggest background offload
+        #
         # For messages > DECOMPOSE_THRESHOLD, try to split into sub-topics.
         # Each sub-topic is processed separately on GPU tier (fast), then combined.
         # Fallback: any failure → existing single-pass flow (zero regression).
+
+        # Step 1: For very long messages, summarize BEFORE decompose or agentic loop
+        message_for_llm = request.message  # default: original message
+        is_summarized = False
+
+        if msg_len > SUMMARIZE_THRESHOLD:
+            yield ChatStreamEvent(type="thinking", content="Analyzuji obsah dlouhé zprávy...")
+            summary = await _summarize_long_message(request.message)
+            if summary:
+                is_summarized = True
+                # Replace the user message in messages with a compact version:
+                # summary + pointer to original length
+                summarized_content = (
+                    f"[Uživatel poslal dlouhou zprávu ({msg_len} znaků). "
+                    f"Níže je strukturovaný souhrn zachovávající všechny požadavky.]\n\n"
+                    f"{summary}\n\n"
+                    f"[Poznámka: Originální zpráva je uložena. "
+                    f"Pokud je to příliš rozsáhlé na zpracování v chatu, "
+                    f"navrhni vytvoření background task pro podrobnější zpracování.]"
+                )
+                # Replace the last user message in the messages array
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get("role") == "user":
+                        messages[i] = {"role": "user", "content": summarized_content}
+                        break
+                message_for_llm = summarized_content
+                logger.info(
+                    "Chat: summarized %d chars → %d chars for agentic loop",
+                    msg_len, len(summarized_content),
+                )
+
         if msg_len > DECOMPOSE_THRESHOLD:
             subtopics = await _maybe_decompose(request.message)
 
@@ -251,16 +315,28 @@ async def handle_chat(
             # For long single-topic messages: inject focus reminder into messages
             # to prevent model from dumping the message into KB/memory.
             if msg_len > DECOMPOSE_THRESHOLD:
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "[FOCUS] Toto je dlouhá jednoduchá zpráva — ODPOVĚZ na ni. "
-                        "NEUKLÁDEJ celou zprávu ani její části do KB/memory/knowledge. "
-                        "Pokud chceš něco uložit, shrň to do 1-2 vět."
-                    ),
-                })
+                focus_hint = (
+                    "[FOCUS] Toto je dlouhá zpráva — ODPOVĚZ na ni stručně a věcně. "
+                    "NEUKLÁDEJ celou zprávu ani její části do KB/memory/knowledge. "
+                    "Pokud chceš něco uložit, shrň to do 1-2 vět."
+                )
+                if is_summarized:
+                    focus_hint += (
+                        " Pracuješ se SOUHRNEM originální zprávy. Souhrn zachovává všechny klíčové informace. "
+                        "Pokud zpráva obsahuje příliš mnoho úkolů na zpracování v chatu, "
+                        "navrhni uživateli vytvoření background task pomocí create_background_task."
+                    )
+                messages.append({"role": "system", "content": focus_hint})
 
-        for iteration in range(MAX_ITERATIONS):
+        # Dynamic max iterations based on message length.
+        # Long messages (>8k chars) produce ~40k token context — each iteration costs 3-5 min.
+        # 3 iterations is enough (1 search + 1 action + 1 response). 6 would cause tier escalation.
+        effective_max_iterations = MAX_ITERATIONS_LONG if msg_len > DECOMPOSE_THRESHOLD else MAX_ITERATIONS
+
+        # Track tool call history for repeat detection (across all iterations, not just consecutive)
+        tool_call_history: list[tuple[str, str]] = []  # (tool_name, args_hash) — for repeat detection
+
+        for iteration in range(effective_max_iterations):
             # Check for disconnect/stop between iterations
             if disconnect_event and disconnect_event.is_set():
                 logger.info("Chat: stopped by disconnect/stop after %d iterations", iteration)
@@ -277,7 +353,7 @@ async def handle_chat(
                 yield ChatStreamEvent(type="done", metadata={"interrupted": True})
                 return
 
-            logger.info("Chat: iteration %d/%d", iteration + 1, MAX_ITERATIONS)
+            logger.info("Chat: iteration %d/%d", iteration + 1, effective_max_iterations)
 
             # Estimate context tokens (1 token ≈ 4 chars)
             message_chars = sum(len(str(m)) for m in messages)
@@ -287,10 +363,21 @@ async def handle_chat(
             estimated_tokens = message_tokens + tools_tokens + output_tokens
 
             tier = llm_provider.escalation.select_local_tier(estimated_tokens)
+
+            # CLAMP: foreground chat NEVER goes above LOCAL_LARGE.
+            # LOCAL_XLARGE (131k) causes catastrophic CPU spill on P40 — 630s for 387 tokens.
+            # Instead: stay at LOCAL_LARGE and let pre-trim handle the overflow.
+            if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(CHAT_MAX_TIER, 2):
+                logger.warning(
+                    "Chat: tier %s clamped to %s (estimated_tokens=%d, VRAM protection)",
+                    tier.value, CHAT_MAX_TIER.value, estimated_tokens,
+                )
+                tier = CHAT_MAX_TIER
+
             logger.info("Chat: estimated_tokens=%d (msgs=%d + tools=%d + output=%d) → tier=%s",
                         estimated_tokens, message_tokens, tools_tokens, output_tokens, tier.value)
 
-            # Warn user when context exceeds GPU VRAM (48k) — CPU spill = much slower
+            # Warn user when context exceeds GPU VRAM (40k) — first iteration only
             if iteration == 0 and estimated_tokens > 40_000:
                 yield ChatStreamEvent(
                     type="thinking",
@@ -334,6 +421,7 @@ async def handle_chat(
                         **({"used_tools": ",".join(used_tools)} if used_tools else {}),
                         **({"created_tasks": ",".join(str(t.get("title", "")) for t in created_tasks)} if created_tasks else {}),
                         **({"responded_tasks": ",".join(responded_tasks)} if responded_tasks else {}),
+                        **({"summarized": "true", "original_length": str(msg_len)} if is_summarized else {}),
                     },
                 )
 
@@ -371,12 +459,17 @@ async def handle_chat(
                 distinct_tools_used.add(tc.function.name)
             domain_history.append(iter_domains)
 
+            # Track tool call history for repeat detection across all iterations
+            for tc in tool_calls:
+                tool_call_history.append((tc.function.name, tc.function.arguments))
+
             # Check drift signals
             drift_reason = _detect_drift(
                 consecutive_same=consecutive_same,
                 domain_history=domain_history,
                 distinct_tools_used=distinct_tools_used,
                 iteration=iteration,
+                tool_call_history=tool_call_history,
             )
 
             if drift_reason:
@@ -524,7 +617,7 @@ async def handle_chat(
                 })
 
             # --- Focus reminder after tool results (Component C) ---
-            remaining_iters = MAX_ITERATIONS - iteration - 1
+            remaining_iters = effective_max_iterations - iteration - 1
             messages.append({
                 "role": "system",
                 "content": (
@@ -538,12 +631,15 @@ async def handle_chat(
             yield ChatStreamEvent(type="thinking", content="Analyzuji výsledky...")
 
         # Max iterations reached — force text response without tools
-        logger.warning("Chat: max iterations (%d) reached, forcing response", MAX_ITERATIONS)
+        logger.warning("Chat: max iterations (%d) reached, forcing response", effective_max_iterations)
         messages.append({
             "role": "system",
             "content": "Dosáhl jsi maximálního počtu iterací. Odpověz uživateli s tím co víš. Nevolej žádné tools.",
         })
         try:
+            # Use clamped tier for forced response too
+            if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(CHAT_MAX_TIER, 2):
+                tier = CHAT_MAX_TIER
             final_resp = await llm_provider.completion(
                 messages=messages,
                 tier=tier,
@@ -563,7 +659,7 @@ async def handle_chat(
                 sequence=request.message_sequence + 1,
                 metadata={"max_iterations": "true", "used_tools": ",".join(used_tools)},
             )
-            yield ChatStreamEvent(type="done", metadata={"max_iterations": True, "iterations": MAX_ITERATIONS})
+            yield ChatStreamEvent(type="done", metadata={"max_iterations": True, "iterations": effective_max_iterations})
         except Exception as e:
             logger.error("Chat: failed to generate max-iterations response: %s", e)
             yield ChatStreamEvent(type="error", content="Vyčerpán limit operací.")
@@ -612,6 +708,7 @@ def _detect_drift(
     domain_history: list[set[str]],
     distinct_tools_used: set[str],
     iteration: int,
+    tool_call_history: list[tuple[str, str]] | None = None,
 ) -> str | None:
     """Multi-signal drift detection.
 
@@ -619,14 +716,24 @@ def _detect_drift(
 
     Signals:
     1. Consecutive same: 2× identical tool+args → stuck in loop
-    2. Domain drift: 3 iterations with 3+ distinct domains and no common domain → wandering
-    3. Excessive tools: 8+ distinct tools after 4+ iterations → unfocused
+    2. Same tool repeated: same tool name called 3+ times across ANY iterations
+    3. Domain drift: 3 iterations with 3+ distinct domains and no common domain → wandering
+    4. Excessive tools: 8+ distinct tools after 4+ iterations → unfocused
     """
     # Signal 1: Consecutive same tool+args (existing behavior)
     if consecutive_same >= 2:
         return "opakovaně voláš stejný tool se stejnými argumenty"
 
-    # Signal 2: Domain drift — 3+ iterations, each with different domains, no overlap
+    # Signal 2: Same tool name called 3+ times across all iterations (not just consecutive).
+    # Catches: kb_search called in iter 1, 4, 6 with same/similar args (test #2 bug §3.2).
+    if tool_call_history and len(tool_call_history) >= 3:
+        from collections import Counter
+        tool_name_counts = Counter(name for name, _ in tool_call_history)
+        for tool_name, count in tool_name_counts.items():
+            if count >= 3:
+                return f"tool '{tool_name}' volán {count}× — opakuješ se, odpověz s tím co máš"
+
+    # Signal 3: Domain drift — 3+ iterations, each with different domains, no overlap
     if len(domain_history) >= 3:
         last_three = domain_history[-3:]
         all_domains = set()
@@ -639,7 +746,7 @@ def _detect_drift(
         if not common and len(all_domains) >= 3:
             return f"tool calls přeskakují mezi nesouvisejícími oblastmi ({', '.join(sorted(all_domains))})"
 
-    # Signal 3: Excessive distinct tools after 4+ iterations
+    # Signal 4: Excessive distinct tools after 4+ iterations
     if iteration >= 4 and len(distinct_tools_used) >= 8:
         return f"použito {len(distinct_tools_used)} různých toolů — příliš rozptýlené"
 
@@ -689,11 +796,73 @@ async def _load_runtime_context() -> RuntimeContext:
         logger.warning("Failed to count unclassified meetings: %s", e)
         unclassified = 0
 
+    # Learned procedures — from KB (cached with clients, 5min TTL)
+    learned_procedures: list[str] = []
+    try:
+        learned_procedures = await _load_learned_procedures()
+    except Exception as e:
+        logger.warning("Failed to load learned procedures: %s", e)
+
     return RuntimeContext(
         clients_projects=_clients_cache,
         pending_user_tasks=pending,
         unclassified_meetings_count=unclassified,
+        learned_procedures=learned_procedures,
     )
+
+
+# Cached learned procedures (TTL same as clients cache — 5min)
+_procedures_cache: list[str] = []
+_procedures_cache_at: float = 0
+
+
+async def _load_learned_procedures() -> list[str]:
+    """Load learned procedures/conventions from KB for system prompt enrichment.
+
+    Searches KB for entries stored via memory_store(category="procedure").
+    Cached for 5 minutes to avoid per-message KB search overhead.
+
+    Returns list of procedure strings (max 20).
+    """
+    import time
+
+    global _procedures_cache, _procedures_cache_at
+
+    now = time.monotonic()
+    if now - _procedures_cache_at < _CLIENTS_CACHE_TTL and _procedures_cache:
+        return _procedures_cache
+
+    try:
+        from app.tools.executor import execute_tool
+
+        # Search KB for stored procedures
+        result = await execute_tool(
+            tool_name="kb_search",
+            arguments={"query": "postup konvence pravidlo procedure convention", "max_results": 20},
+            client_id="",
+            project_id=None,
+            processing_mode="FOREGROUND",
+        )
+
+        # Parse results — extract key lines from KB search output
+        procedures: list[str] = []
+        if result and not result.startswith("Error"):
+            for line in result.split("\n"):
+                line = line.strip()
+                # Filter for procedure-like entries (stored by memory_store with category=procedure)
+                if line and len(line) > 10 and len(line) < 500:
+                    if any(kw in line.lower() for kw in ["postup", "konvence", "pravidlo", "procedure", "vždy", "nikdy", "default"]):
+                        procedures.append(line)
+
+        _procedures_cache = procedures[:20]
+        _procedures_cache_at = now
+        if procedures:
+            logger.info("Chat: loaded %d learned procedures for system prompt", len(procedures))
+        return _procedures_cache
+
+    except Exception as e:
+        logger.warning("Failed to load learned procedures from KB: %s", e)
+        return _procedures_cache  # Return stale cache on error
 
 
 def _build_messages(
@@ -1079,6 +1248,21 @@ _CLASSIFIER_SYSTEM = (
     '"char_start": 0, "char_end": 5000}]}'
 )
 
+_SUMMARIZER_SYSTEM = (
+    "Jsi analytik. Zpracuj dlouhou zprávu do strukturovaného souhrnu.\n\n"
+    "Pravidla:\n"
+    "- Zachovej VŠECHNY klíčové informace, požadavky, otázky, rozhodnutí\n"
+    "- Identifikuj VŠECHNY akční položky (co uživatel chce udělat)\n"
+    "- Zachovej konkrétní hodnoty: čísla, jména, ID ticketů, chybové kódy\n"
+    "- Pokud zpráva obsahuje logy/stacktraces, shrň jen klíčová zjištění\n"
+    "- Stručně — max 3000 znaků. Piš česky.\n\n"
+    "Formát odpovědi:\n"
+    "## Souhrn\n[1-3 věty celkový kontext]\n\n"
+    "## Požadavky\n- [konkrétní akce 1]\n- [konkrétní akce 2]\n...\n\n"
+    "## Klíčové detaily\n- [fakta, čísla, ID, jména]\n\n"
+    "## Otázky\n- [explicitní otázky uživatele]"
+)
+
 _COMBINER_SYSTEM = (
     "Spojíš odpovědi na jednotlivá témata do jedné souvislé zprávy pro uživatele.\n\n"
     "Pravidla:\n"
@@ -1087,6 +1271,78 @@ _COMBINER_SYSTEM = (
     "- Piš česky, stručně a věcně\n"
     "- Nepoužívej úvod typu 'Na základě analýzy...' — piš rovnou věcně"
 )
+
+
+async def _summarize_long_message(message: str) -> str | None:
+    """Summarize a very long message into a structured compact form.
+
+    Uses LOCAL_FAST (~5s) to create a ~2-4k char summary that preserves
+    all key information, action items, questions, and details.
+
+    The agentic loop then works with this summary instead of the raw message.
+    Original message is saved to MongoDB verbatim — nothing is lost.
+
+    Returns summary string, or None on failure (fallback to pre-trim).
+    """
+    msg_len = len(message)
+
+    # Build excerpt: head (2000) + 3 evenly-spaced middle segments (500 each) + tail (1000)
+    # Total ~4500 chars — covers the message well for summarization.
+    head = message[:2000]
+    tail = message[-1000:]
+
+    middle_parts = []
+    num_samples = 3
+    for i in range(1, num_samples + 1):
+        frac = i / (num_samples + 1)
+        mid_pos = int(msg_len * frac)
+        start = max(0, mid_pos - 250)
+        end = min(msg_len, mid_pos + 250)
+        middle_parts.append(f"[... pozice ~{mid_pos} ...]\n{message[start:end]}")
+
+    user_content = (
+        f"Zpráva ({msg_len} znaků, níže jsou ukázky):\n\n"
+        f"--- ZAČÁTEK ---\n{head}\n\n"
+        + "\n\n".join(middle_parts) + "\n\n"
+        f"--- KONEC ---\n{tail}\n\n"
+        f"Vytvoř strukturovaný souhrn zachovávající VŠECHNY požadavky a klíčové detaily."
+    )
+
+    try:
+        response = await asyncio.wait_for(
+            llm_provider.completion(
+                messages=[
+                    {"role": "system", "content": _SUMMARIZER_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ],
+                tier=ModelTier.LOCAL_FAST,
+                tools=None,
+                max_tokens=2048,
+                temperature=0.1,
+                extra_headers={"X-Ollama-Priority": "0"},
+            ),
+            timeout=30.0,  # Summarizer can take a bit longer than classifier
+        )
+
+        summary = response.choices[0].message.content or ""
+        summary = summary.strip()
+
+        if len(summary) < 50:
+            logger.warning("Chat summarizer: response too short (%d chars), skipping", len(summary))
+            return None
+
+        logger.info(
+            "Chat summarizer: %d chars → %d chars summary (%.0f%% reduction)",
+            msg_len, len(summary), (1 - len(summary) / msg_len) * 100,
+        )
+        return summary
+
+    except asyncio.TimeoutError:
+        logger.warning("Chat summarizer: timed out (30s), falling back to pre-trim")
+        return None
+    except Exception as e:
+        logger.warning("Chat summarizer: failed (%s), falling back to pre-trim", e)
+        return None
 
 
 async def _maybe_decompose(message: str) -> list[SubTopic] | None:
