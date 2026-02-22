@@ -492,6 +492,14 @@ async def _execute_store_knowledge(
     if not content.strip():
         return "Error: Content cannot be empty when storing knowledge."
 
+    # Anti-dump guard: reject oversized content (model tries to store entire user messages)
+    if len(content) > 2000:
+        return (
+            f"Error: Content too long ({len(content)} chars, max 2000). "
+            "Store only key facts in 1-2 sentences. Do NOT dump the user's entire message. "
+            "Summarize the essential information instead."
+        )
+
     # Use KB write endpoint (separate deployment for write operations)
     kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
     url = f"{kb_write_url}/api/v1/ingest"
@@ -1667,6 +1675,14 @@ async def _execute_memory_store(
         return "Error: Subject cannot be empty."
     if not content.strip():
         return "Error: Content cannot be empty."
+
+    # Anti-dump guard: reject oversized content (model tries to store entire user messages)
+    if len(content) > 2000:
+        return (
+            f"Error: Content too long ({len(content)} chars, max 2000). "
+            "Store only key facts in 1-2 sentences. Do NOT dump the user's entire message. "
+            "Summarize the essential information instead."
+        )
 
     try:
         from app.memory.agent import _get_or_create_lqm

@@ -61,7 +61,7 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.LOCAL_LARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 49152,  # 48k — max for full GPU speed (~30 tok/s)
+        "num_ctx": 40960,  # 40k — fits in P40 VRAM (30b weights ~17GB + 40k KV ~4GB < 24GB)
     },
     ModelTier.LOCAL_XLARGE: {
         "model": f"ollama/{settings.default_local_model}",
@@ -89,13 +89,13 @@ TIER_CONFIG: dict[ModelTier, dict] = {
 
 # Blocking call timeout per tier (seconds).
 # GPU tiers (≤32k, ~30 tok/s): 300s is plenty.
-# GPU-boundary tier (48k): 600s — 30b model + 49k KV spills to CPU on P40 (24GB).
+# GPU-boundary tier (40k): 600s — safety margin if KV cache approaches VRAM limit.
 # CPU-spill tiers (~7-12 tok/s): need longer — large context = slow generation.
 # Cloud tiers: fast APIs, 300s is fine.
 TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
     ModelTier.LOCAL_FAST:           300,   # 8k ctx, GPU
     ModelTier.LOCAL_STANDARD:       300,   # 32k ctx, GPU
-    ModelTier.LOCAL_LARGE:          600,   # 48k ctx, GPU boundary — 30b+49k KV spills on P40
+    ModelTier.LOCAL_LARGE:          600,   # 40k ctx, GPU boundary — safety margin for VRAM limit
     ModelTier.LOCAL_XLARGE:         900,   # 128k ctx, CPU spill (~7-12 tok/s)
     ModelTier.LOCAL_XXLARGE:       1200,   # 256k ctx, CPU, slower
     ModelTier.CLOUD_REASONING:     300,
@@ -194,16 +194,16 @@ class EscalationPolicy:
     def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
         """Always returns a local tier based on context size.
 
-        Qwen3 supports up to 256k context. P40 GPU VRAM fits up to 48k
-        at full speed (~30 tok/s). Above 48k spills to CPU RAM, still works
-        at reduced speed (~7-12 tok/s). Handles up to ~250k context.
+        Qwen3 supports up to 256k context. P40 GPU VRAM fits 40k tokens
+        for 30b model (~17GB weights + ~4GB KV cache < 24GB VRAM).
+        Above 40k spills to CPU RAM, still works at reduced speed (~7-12 tok/s).
         """
         if context_tokens > 128_000:
             return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
-        if context_tokens > 48_000:
-            return ModelTier.LOCAL_XLARGE   # 128k — CPU RAM
+        if context_tokens > 40_000:
+            return ModelTier.LOCAL_XLARGE   # 128k — CPU RAM spill
         if context_tokens > 32_000:
-            return ModelTier.LOCAL_LARGE    # 48k — GPU VRAM limit
+            return ModelTier.LOCAL_LARGE    # 40k — GPU VRAM limit
         if context_tokens > 8_000:
             return ModelTier.LOCAL_STANDARD # 32k
         return ModelTier.LOCAL_FAST         # 8k
@@ -221,7 +221,7 @@ class EscalationPolicy:
         providers = auto_providers or set()
 
         # Large context → Gemini only
-        if context_tokens > 49_000:
+        if context_tokens > 40_000:
             return ModelTier.CLOUD_LARGE_CONTEXT if "gemini" in providers else None
 
         has_anthropic = "anthropic" in providers

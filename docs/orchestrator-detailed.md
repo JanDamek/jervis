@@ -3400,11 +3400,35 @@ Message > 8000 chars?
 
 When a user message exceeds the tier's context window capacity, the LLM provider
 automatically trims it before sending to Ollama (preserving 75% head + 25% tail
-with a truncation marker). This prevents sending 126k chars to a 48k-token model
-where Ollama would internally discard the excess anyway — saves network transfer
-and Ollama tokenization overhead. Non-user messages are never trimmed.
+with a truncation marker). This prevents sending excess data to Ollama where it
+would be internally discarded anyway — saves network transfer and tokenization overhead.
+Non-user messages are never trimmed.
 
-#### M. Tier Timeout Strategy
+#### M. Anti-dump Guards
+
+The model tends to dump entire long messages into KB/memory instead of answering.
+Three-layer defense:
+
+1. **Tool removal**: For messages >8000 chars, `store_knowledge` and `memory_store`
+   are removed from the tool set entirely.
+2. **Content-length guard**: Both tools reject content >2000 chars with an error
+   message instructing the model to summarize.
+3. **Focus injection**: Long single-topic messages get an extra system message
+   before the agentic loop: "ODPOVĚZ na zprávu, NEUKLÁDEJ ji."
+
+#### N. Classifier Timeout
+
+The decompose classifier has a hard 15s timeout (`asyncio.wait_for`).
+If GPU is busy (model swap, semaphore queue), it falls back to single-pass
+rather than adding 2+ minutes overhead.
+
+#### O. Server-side Chat Dedup
+
+If a new POST /chat arrives for a session_id that already has an active SSE stream,
+the previous stream is stopped (disconnect_event.set()) before starting the new one.
+Prevents duplicate concurrent processing from kRPC retries or double-clicks.
+
+#### P. Tier Timeout Strategy
 
 Blocking calls (tool-call mode) use tier-based timeouts:
 
@@ -3412,7 +3436,7 @@ Blocking calls (tool-call mode) use tier-based timeouts:
 |------|---------|---------|-----------|
 | LOCAL_FAST | 8k | 300s | Pure GPU, ~30 tok/s |
 | LOCAL_STANDARD | 32k | 300s | Pure GPU, ~30 tok/s |
-| LOCAL_LARGE | 48k | **600s** | 30b + 49k KV spills to CPU on P40 (24GB) |
+| LOCAL_LARGE | **40k** | **600s** | Fits in P40 VRAM (30b + 40k KV < 24GB) |
 | LOCAL_XLARGE | 128k | 900s | CPU RAM spill, ~7-12 tok/s |
 | LOCAL_XXLARGE | 256k | 1200s | CPU, slowest |
 | Cloud tiers | — | 300s | Fast APIs |

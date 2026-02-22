@@ -281,6 +281,13 @@ async def chat_endpoint(request_body: dict, request: Request):
     chat_request = ChatRequest(**request_body)
     logger.info("CHAT_REQUEST | session=%s | message=%s", chat_request.session_id, chat_request.message[:100])
 
+    # Dedup: if an SSE stream is already running for this session, stop it first.
+    # Prevents duplicate concurrent requests (e.g., kRPC retry, double-click).
+    existing_event = _active_chat_stops.get(chat_request.session_id)
+    if existing_event and not existing_event.is_set():
+        logger.warning("CHAT_DEDUP | session=%s | stopping previous active stream", chat_request.session_id)
+        existing_event.set()
+
     # Create stop event for this session
     disconnect_event = asyncio.Event()
     _active_chat_stops[chat_request.session_id] = disconnect_event

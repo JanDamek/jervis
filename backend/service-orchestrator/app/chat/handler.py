@@ -93,6 +93,16 @@ async def handle_chat(
             has_context_task_id=bool(request.context_task_id),
         )
         selected_tools = select_tools(intent_categories)
+
+        # Anti-dump: remove storage tools for long messages (>8000 chars).
+        # The model tends to dump entire long messages into KB/memory instead of answering.
+        _STORAGE_TOOL_NAMES = {"store_knowledge", "memory_store"}
+        if len(request.message) > DECOMPOSE_THRESHOLD:
+            before_count = len(selected_tools)
+            selected_tools = [t for t in selected_tools if t["function"]["name"] not in _STORAGE_TOOL_NAMES]
+            if len(selected_tools) < before_count:
+                logger.info("Chat: removed storage tools for long message (%d chars)", len(request.message))
+
         logger.info(
             "Chat: intent=%s → %d/%d tools",
             [c.value for c in intent_categories], len(selected_tools), len(CHAT_TOOLS),
@@ -238,6 +248,17 @@ async def handle_chat(
                 })
                 return
             # else: single-topic or classifier failed → fall through to existing flow
+            # For long single-topic messages: inject focus reminder into messages
+            # to prevent model from dumping the message into KB/memory.
+            if msg_len > DECOMPOSE_THRESHOLD:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "[FOCUS] Toto je dlouhá jednoduchá zpráva — ODPOVĚZ na ni. "
+                        "NEUKLÁDEJ celou zprávu ani její části do KB/memory/knowledge. "
+                        "Pokud chceš něco uložit, shrň to do 1-2 vět."
+                    ),
+                })
 
         for iteration in range(MAX_ITERATIONS):
             # Check for disconnect/stop between iterations
@@ -270,7 +291,7 @@ async def handle_chat(
                         estimated_tokens, message_tokens, tools_tokens, output_tokens, tier.value)
 
             # Warn user when context exceeds GPU VRAM (48k) — CPU spill = much slower
-            if iteration == 0 and estimated_tokens > 49_000:
+            if iteration == 0 and estimated_tokens > 40_000:
                 yield ChatStreamEvent(
                     type="thinking",
                     content="Dlouhá zpráva — zpracování potrvá déle...",
@@ -1104,16 +1125,22 @@ async def _maybe_decompose(message: str) -> list[SubTopic] | None:
     user_content = "\n".join(parts)
 
     try:
-        response = await llm_provider.completion(
-            messages=[
-                {"role": "system", "content": _CLASSIFIER_SYSTEM},
-                {"role": "user", "content": user_content},
-            ],
-            tier=ModelTier.LOCAL_FAST,
-            tools=None,
-            max_tokens=512,
-            temperature=0.1,
-            extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
+        # Hard timeout: classifier should finish in ~3-5s on GPU.
+        # If GPU is busy (model swap, queue), fall back to single-pass rather than
+        # adding 2+ minutes overhead for a classification that may say "single-topic" anyway.
+        response = await asyncio.wait_for(
+            llm_provider.completion(
+                messages=[
+                    {"role": "system", "content": _CLASSIFIER_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ],
+                tier=ModelTier.LOCAL_FAST,
+                tools=None,
+                max_tokens=512,
+                temperature=0.1,
+                extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
+            ),
+            timeout=15.0,
         )
 
         content = response.choices[0].message.content or ""
@@ -1174,6 +1201,9 @@ async def _maybe_decompose(message: str) -> list[SubTopic] | None:
                      len(subtopics), [(t.title, t.char_start, t.char_end) for t in subtopics])
         return subtopics
 
+    except asyncio.TimeoutError:
+        logger.warning("Chat decompose: classifier timed out (15s), fallback to single-pass")
+        return None
     except Exception as e:
         logger.warning("Chat decompose: classifier failed (%s), fallback to single-pass", e)
         return None
