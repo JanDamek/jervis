@@ -1,29 +1,110 @@
-"""Chat context API endpoints — FastAPI router.
+"""Chat API endpoints — FastAPI router.
 
-Replaces Kotlin ChatHistoryService with Python-native endpoints:
+Endpoints:
+- POST /chat                          → Foreground chat handler (new v6 flow)
 - POST /internal/prepare-chat-context → replaces Kotlin prepareChatHistoryPayload()
 - POST /internal/compress-chat-async  → replaces Kotlin compressIfNeeded()
-- POST /internal/compress-chat         → backward-compatible (existing endpoint, refactored)
-
-Migration path:
-1. Deploy Python with these endpoints
-2. Kotlin switches from ChatHistoryService to Python calls
-3. Eventually remove Kotlin ChatHistoryService entirely
+- POST /internal/compress-chat        → backward-compatible (existing endpoint, refactored)
+- POST /orchestrate/v2                → Simplified background handler (new v6 flow)
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.chat.context import chat_context_assembler, _parse_json_response
+from app.chat.models import ChatRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Foreground Chat endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/chat")
+async def chat(request: ChatRequest):
+    """Handle foreground chat message — dedicated agentic loop.
+
+    This is the primary foreground chat path (v6 architecture).
+    Replaces the LangGraph respond node for interactive chat.
+
+    Flow: User message → agentic loop → streamed answer → MongoDB save.
+    Streaming happens via kotlin_client push (POST /internal/streaming-token).
+    """
+    from app.chat.handler import handle_chat
+
+    try:
+        result = await handle_chat(request)
+        return {
+            "success": True,
+            "answer": result.get("answer", ""),
+            "tool_calls_count": result.get("tool_calls_count", 0),
+            "iterations": result.get("iterations", 0),
+        }
+    except Exception as e:
+        logger.exception("Chat handler failed for task %s", request.task_id)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Background v2 endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/orchestrate/v2")
+async def orchestrate_v2(request: dict):
+    """Simplified background orchestration (v6 architecture).
+
+    Replaces the old 14-node LangGraph for background tasks.
+    4-phase flow: Intake → Execute → Dispatch → Finalize.
+
+    Fire-and-forget: returns thread_id immediately, pushes status to Kotlin.
+    """
+    from app.background.handler import handle_background
+    from app.models import OrchestrateRequest
+    from app.tools.kotlin_client import kotlin_client
+
+    try:
+        orchestrate_request = OrchestrateRequest(**request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+
+    thread_id = f"v2-{orchestrate_request.task_id}-{uuid.uuid4().hex[:8]}"
+    logger.info(
+        "ORCHESTRATE_V2_START | task_id=%s | thread_id=%s",
+        orchestrate_request.task_id, thread_id,
+    )
+
+    async def _run_background():
+        try:
+            result = await handle_background(orchestrate_request)
+            await kotlin_client.report_status_change(
+                task_id=orchestrate_request.task_id,
+                thread_id=thread_id,
+                status="done",
+                summary=result.get("summary", ""),
+                branch=result.get("branch"),
+                artifacts=result.get("artifacts", []),
+            )
+        except Exception as e:
+            logger.exception("Background v2 failed: %s", e)
+            await kotlin_client.report_status_change(
+                task_id=orchestrate_request.task_id,
+                thread_id=thread_id,
+                status="error",
+                error=str(e),
+            )
+
+    asyncio.create_task(_run_background())
+    return {"thread_id": thread_id}
 
 
 # ---------------------------------------------------------------------------

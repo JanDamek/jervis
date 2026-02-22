@@ -17,6 +17,11 @@ MongoDB collections:
 
 Note: 'conversationId' is the ObjectId linking messages to a conversation thread.
 For ChatSession, this is ChatSession._id. For background tasks, it's TaskDocument._id.
+
+Hardening:
+- W-15: Compression error handling — retry with marker, callback on done
+- W-20: Sequence number race — atomic findOneAndUpdate counter
+- W-10: Checkpoint message growth — truncate tool results in stored messages
 """
 
 from __future__ import annotations
@@ -47,6 +52,8 @@ CONTEXT_BUDGET = TOTAL_CONTEXT_WINDOW - SYSTEM_PROMPT_RESERVE - RESPONSE_RESERVE
 RECENT_MESSAGE_COUNT = 20              # Max recent verbatim messages
 MAX_SUMMARY_BLOCKS = 15                # Max compressed summary blocks to load
 COMPRESS_THRESHOLD = 20                # Compress when >=N unsummarized messages
+COMPRESS_MAX_RETRIES = 2               # W-15: Max compression retries on LLM failure
+MAX_TOOL_RESULT_IN_MSG = 2000          # W-10: Max chars for tool results stored in messages
 
 # Token estimation: chars/4 is rough but works for mixed cs/en text.
 # TODO: Replace with tiktoken when model-specific tokenizer is available.
@@ -259,7 +266,11 @@ class ChatContextAssembler:
             total_db_messages=total_count,
         )
 
-    async def maybe_compress(self, conversation_id: str) -> bool:
+    async def maybe_compress(
+        self,
+        conversation_id: str,
+        done_callback: callable | None = None,
+    ) -> bool:
         """Check if compression is needed and trigger it (fire-and-forget).
 
         Algorithm (same as Kotlin ChatHistoryService):
@@ -267,6 +278,12 @@ class ChatContextAssembler:
         2. Find last summarized sequence
         3. Count unsummarized messages before recent window
         4. If >= COMPRESS_THRESHOLD -> compress via LLM, save to MongoDB
+
+        W-15: Added done_callback for completion notification and retry logic.
+
+        Args:
+            conversation_id: Conversation thread ID.
+            done_callback: Optional async callable(conversation_id, success, error) invoked on completion/failure.
 
         Returns True if compression was triggered, False if skipped.
         """
@@ -293,9 +310,17 @@ class ChatContextAssembler:
 
             logger.info("COMPRESS_START | conversationId=%s | unsummarized=%d", conversation_id, len(unsummarized))
 
-            asyncio.create_task(
-                self._compress_block(conversation_id, unsummarized, last_summary)
-            )
+            async def _compress_with_callback():
+                try:
+                    await self._compress_block(conversation_id, unsummarized, last_summary)
+                    if done_callback:
+                        await done_callback(conversation_id, True, None)
+                except Exception as cb_err:
+                    logger.warning("COMPRESS_CALLBACK_ERROR | conversationId=%s | %s", conversation_id, cb_err)
+                    if done_callback:
+                        await done_callback(conversation_id, False, str(cb_err))
+
+            asyncio.create_task(_compress_with_callback())
             return True
 
         except Exception as e:
@@ -448,86 +473,114 @@ class ChatContextAssembler:
         """Compress a block of messages into a summary via LLM.
 
         Called as fire-and-forget asyncio task. Errors are logged, not raised.
+        W-15: Added retry logic — retries COMPRESS_MAX_RETRIES times on failure.
+        On exhausted retries, saves a placeholder marker so the block isn't re-attempted.
         """
-        try:
-            from app.llm.provider import llm_provider
-            from app.models import ModelTier
+        from app.llm.provider import llm_provider
+        from app.models import ModelTier
 
-            formatted = []
-            for m in messages:
-                label = {"user": "Uživatel", "assistant": "Jervis"}.get(m.role, m.role)
-                formatted.append(f"[{label}]: {m.content[:500]}")
-            conversation_text = "\n".join(formatted)
+        formatted = []
+        for m in messages:
+            label = {"user": "Uživatel", "assistant": "Jervis"}.get(m.role, m.role)
+            formatted.append(f"[{label}]: {m.content[:500]}")
+        conversation_text = "\n".join(formatted)
 
-            previous_context = ""
-            if last_summary:
-                previous_context = f"\n\nPředchozí kontext konverzace:\n{last_summary.get('summary', '')}"
+        previous_context = ""
+        if last_summary:
+            previous_context = f"\n\nPředchozí kontext konverzace:\n{last_summary.get('summary', '')}"
 
-            llm_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Jsi analytik konverzací. Tvůj úkol je shrnout blok konverzace do stručného souhrnu.\n\n"
-                        "Pravidla:\n"
-                        "- Piš česky\n"
-                        "- Souhrn: 2-3 věty shrnující hlavní téma a průběh (max 500 znaků)\n"
-                        "- Klíčová rozhodnutí: důležitá rozhodnutí učiněná v konverzaci\n"
-                        "- Témata: hlavní témata diskuze (stručné štítky)\n"
-                        "- Pokud se směr konverzace ZÁSADNĚ změnil oproti předchozímu kontextu, "
-                        "nastav is_checkpoint=true a uveď důvod\n\n"
-                        "Odpověz POUZE validním JSON (bez markdown backticks):\n"
-                        "{\n"
-                        '  "summary": "...",\n'
-                        '  "key_decisions": ["rozhodnutí 1", "rozhodnutí 2"],\n'
-                        '  "topics": ["téma 1", "téma 2"],\n'
-                        '  "is_checkpoint": false,\n'
-                        '  "checkpoint_reason": null\n'
-                        "}"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Shrň tento blok konverzace:{previous_context}\n\n"
-                        f"Konverzace k shrnutí:\n{conversation_text}"
-                    ),
-                },
-            ]
+        llm_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Jsi analytik konverzací. Tvůj úkol je shrnout blok konverzace do stručného souhrnu.\n\n"
+                    "Pravidla:\n"
+                    "- Piš česky\n"
+                    "- Souhrn: 2-3 věty shrnující hlavní téma a průběh (max 500 znaků)\n"
+                    "- Klíčová rozhodnutí: důležitá rozhodnutí učiněná v konverzaci\n"
+                    "- Témata: hlavní témata diskuze (stručné štítky)\n"
+                    "- Pokud se směr konverzace ZÁSADNĚ změnil oproti předchozímu kontextu, "
+                    "nastav is_checkpoint=true a uveď důvod\n\n"
+                    "Odpověz POUZE validním JSON (bez markdown backticks):\n"
+                    "{\n"
+                    '  "summary": "...",\n'
+                    '  "key_decisions": ["rozhodnutí 1", "rozhodnutí 2"],\n'
+                    '  "topics": ["téma 1", "téma 2"],\n'
+                    '  "is_checkpoint": false,\n'
+                    '  "checkpoint_reason": null\n'
+                    "}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Shrň tento blok konverzace:{previous_context}\n\n"
+                    f"Konverzace k shrnutí:\n{conversation_text}"
+                ),
+            },
+        ]
 
-            response = await llm_provider.completion(
-                messages=llm_messages,
-                tier=ModelTier.LOCAL_FAST,
-                max_tokens=2048,
-                temperature=0.1,
-            )
-            content = response.choices[0].message.content
+        last_error = None
+        for attempt in range(1, COMPRESS_MAX_RETRIES + 1):
+            try:
+                response = await llm_provider.completion(
+                    messages=llm_messages,
+                    tier=ModelTier.LOCAL_FAST,
+                    max_tokens=2048,
+                    temperature=0.1,
+                )
+                content = response.choices[0].message.content
 
-            parsed = _parse_json_response(content)
-            if not parsed:
-                logger.warning("COMPRESS_PARSE_FAILED | conversationId=%s", conversation_id)
-                parsed = {"summary": content[:500]}
+                parsed = _parse_json_response(content)
+                if not parsed:
+                    logger.warning("COMPRESS_PARSE_FAILED | conversationId=%s | attempt=%d", conversation_id, attempt)
+                    parsed = {"summary": content[:500]}
 
-            await self._save_summary(
-                conversation_id=conversation_id,
-                sequence_start=messages[0].sequence,
-                sequence_end=messages[-1].sequence,
-                summary=parsed.get("summary", content[:500]),
-                key_decisions=parsed.get("key_decisions", []),
-                topics=parsed.get("topics", []),
-                is_checkpoint=parsed.get("is_checkpoint", False),
-                checkpoint_reason=parsed.get("checkpoint_reason"),
-                message_count=len(messages),
-            )
+                await self._save_summary(
+                    conversation_id=conversation_id,
+                    sequence_start=messages[0].sequence,
+                    sequence_end=messages[-1].sequence,
+                    summary=parsed.get("summary", content[:500]),
+                    key_decisions=parsed.get("key_decisions", []),
+                    topics=parsed.get("topics", []),
+                    is_checkpoint=parsed.get("is_checkpoint", False),
+                    checkpoint_reason=parsed.get("checkpoint_reason"),
+                    message_count=len(messages),
+                )
 
-            logger.info(
-                "COMPRESS_DONE | conversationId=%s | range=%d-%d | messages=%d",
-                conversation_id,
-                messages[0].sequence, messages[-1].sequence,
-                len(messages),
-            )
+                logger.info(
+                    "COMPRESS_DONE | conversationId=%s | range=%d-%d | messages=%d | attempt=%d",
+                    conversation_id,
+                    messages[0].sequence, messages[-1].sequence,
+                    len(messages), attempt,
+                )
+                return  # Success
 
-        except Exception as e:
-            logger.warning("COMPRESS_FAILED | conversationId=%s | %s", conversation_id, e, exc_info=True)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "COMPRESS_RETRY | conversationId=%s | attempt=%d/%d | %s",
+                    conversation_id, attempt, COMPRESS_MAX_RETRIES, e,
+                )
+                if attempt < COMPRESS_MAX_RETRIES:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+        # W-15: All retries exhausted — save placeholder marker
+        logger.error(
+            "COMPRESS_EXHAUSTED | conversationId=%s | range=%d-%d | last_error=%s",
+            conversation_id, messages[0].sequence, messages[-1].sequence, last_error,
+        )
+        await self._save_summary(
+            conversation_id=conversation_id,
+            sequence_start=messages[0].sequence,
+            sequence_end=messages[-1].sequence,
+            summary=f"[Compression failed after {COMPRESS_MAX_RETRIES} retries: {str(last_error)[:200]}]",
+            key_decisions=[],
+            topics=[],
+            is_checkpoint=False,
+            checkpoint_reason=None,
+            message_count=len(messages),
+        )
 
     async def _save_summary(
         self,
@@ -572,14 +625,30 @@ class ChatContextAssembler:
         sequence: int,
         metadata: dict[str, str] | None = None,
     ) -> None:
-        """Save a chat message to MongoDB."""
+        """Save a chat message to MongoDB.
+
+        W-10: Tool role messages have content truncated to MAX_TOOL_RESULT_IN_MSG
+        to prevent unbounded checkpoint growth.
+        """
         from bson import ObjectId
+
+        # W-10: Truncate tool results to prevent checkpoint bloat
+        saved_content = content
+        if role.upper() == "TOOL" and len(content) > MAX_TOOL_RESULT_IN_MSG:
+            saved_content = (
+                content[:MAX_TOOL_RESULT_IN_MSG]
+                + f"\n[... truncated {len(content) - MAX_TOOL_RESULT_IN_MSG} chars for storage]"
+            )
+            logger.debug(
+                "TOOL_MSG_TRUNCATED | conversationId=%s | original=%d | stored=%d",
+                conversation_id, len(content), len(saved_content),
+            )
 
         doc = {
             "conversationId": ObjectId(conversation_id),
             "correlationId": correlation_id,
             "role": role.upper(),
-            "content": content,
+            "content": saved_content,
             "timestamp": datetime.now(timezone.utc),
             "sequence": sequence,
             "metadata": metadata or {},
@@ -588,9 +657,20 @@ class ChatContextAssembler:
         await self.db["chat_messages"].insert_one(doc)
 
     async def get_next_sequence(self, conversation_id: str) -> int:
-        """Get the next sequence number for a conversation thread."""
-        count = await self._count_messages(conversation_id)
-        return count + 1
+        """Get the next sequence number for a conversation thread.
+
+        W-20: Uses atomic findOneAndUpdate on a counter document
+        to prevent race conditions with parallel writes.
+        """
+        from pymongo import ReturnDocument
+
+        result = await self.db["chat_sequence_counters"].find_one_and_update(
+            {"_id": f"seq_{conversation_id}"},
+            {"$inc": {"counter": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return result["counter"]
 
 
 # ---------------------------------------------------------------------------

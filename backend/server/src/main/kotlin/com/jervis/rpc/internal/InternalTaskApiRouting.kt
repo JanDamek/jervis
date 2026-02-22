@@ -1,15 +1,22 @@
 package com.jervis.rpc.internal
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.TaskTypeEnum
 import com.jervis.repository.TaskRepository
+import com.jervis.service.background.TaskService
 import com.jervis.service.task.UserTaskService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.bson.types.ObjectId
@@ -29,8 +36,73 @@ private val logger = KotlinLogging.logger {}
  */
 fun Routing.installInternalTaskApi(
     taskRepository: TaskRepository,
+    taskService: TaskService,
     userTaskService: UserTaskService,
 ) {
+    // Create a background task — for chat tool create_background_task
+    post("/internal/tasks/create") {
+        try {
+            val body = call.receive<InternalCreateTaskRequest>()
+            val clientId = ClientId(ObjectId(body.clientId))
+            val projectId = body.projectId?.let { ProjectId(ObjectId(it)) }
+            val task = taskService.createTask(
+                taskType = TaskTypeEnum.STANDARD,
+                content = body.query,
+                clientId = clientId,
+                correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
+                sourceUrn = SourceUrn("chat://foreground"),
+                projectId = projectId,
+                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                taskName = body.query.take(100),
+            )
+            call.respondText(
+                Json.encodeToString(mapOf(
+                    "id" to task.id.toString(),
+                    "state" to task.state.name,
+                    "name" to task.taskName,
+                )),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/create" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // Respond to a USER_TASK — for chat tool respond_to_user_task
+    post("/internal/tasks/{taskId}/respond") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val body = call.receive<InternalRespondToTaskRequest>()
+            val taskId = TaskId(ObjectId(taskIdStr))
+            val task = taskRepository.getById(taskId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val updated = task.copy(
+                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                content = "${task.content}\n\n[User response]: ${body.response}",
+                pendingUserQuestion = null,
+            )
+            taskRepository.save(updated)
+            call.respondText("""{"ok":true}""", ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/respond | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // Get task status by ID — for chat tool get_task_status
     get("/internal/tasks/{taskId}/status") {
         try {
@@ -178,3 +250,17 @@ private fun parseSince(since: String): Instant = when (since) {
     else -> Instant.now().atZone(ZoneId.systemDefault())
         .toLocalDate().atStartOfDay(ZoneId.systemDefault()).toInstant()
 }
+
+// --- DTOs for internal task endpoints ---
+
+@Serializable
+data class InternalCreateTaskRequest(
+    val query: String,
+    val clientId: String,
+    val projectId: String? = null,
+)
+
+@Serializable
+data class InternalRespondToTaskRequest(
+    val response: String,
+)

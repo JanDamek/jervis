@@ -49,7 +49,7 @@ from app.models import (
     StepResult,
 )
 from app.context.context_store import context_store
-from app.context.distributed_lock import distributed_lock
+from app.context.distributed_lock import distributed_lock, task_checkpoint_lock
 from app.context.session_memory import session_memory_store
 from app.monitoring.delegation_metrics import metrics_collector
 from app.llm.provider import llm_provider
@@ -108,6 +108,9 @@ async def lifespan(app: FastAPI):
     # Initialize distributed lock (multi-pod concurrency)
     await distributed_lock.init()
     logger.info("Distributed lock ready (multi-pod orchestration)")
+    # W-9: Initialize per-task checkpoint lock
+    await task_checkpoint_lock.init()
+    logger.info("Task checkpoint lock ready (per-task concurrency)")
     # Initialize multi-agent delegation system (opt-in)
     if settings.use_delegation_graph:
         logger.info("Initializing multi-agent delegation system...")
@@ -189,6 +192,7 @@ async def lifespan(app: FastAPI):
     reset_lqm()
     logger.info("Memory Agent LQM cleared")
     await distributed_lock.close()
+    await task_checkpoint_lock.close()
     await context_store.close()
     await close_checkpointer()
     await kotlin_client.close()

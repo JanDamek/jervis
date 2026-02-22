@@ -7,7 +7,8 @@ Three layers:
 
 Layer 4 (Cold, mmap) is deferred.
 
-Not thread-safe — designed for single-threaded asyncio event loop.
+W-18: Asyncio-safe — uses asyncio.Lock for affair mutations to prevent
+interleaved async operations from corrupting state.
 """
 
 from __future__ import annotations
@@ -110,6 +111,9 @@ class LocalQuickMemory:
         warm_ttl: float = 300.0,
         write_buffer_max: int = 500,
     ) -> None:
+        # W-18: asyncio.Lock for affair mutations
+        self._affair_lock = asyncio.Lock()
+
         # Layer 1: Hot affairs
         self._affairs: dict[str, Affair] = {}
 

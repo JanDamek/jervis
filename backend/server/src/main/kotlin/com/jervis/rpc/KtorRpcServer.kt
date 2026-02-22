@@ -96,7 +96,7 @@ class KtorRpcServer(
                         routing {
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)
-                            installInternalTaskApi(taskRepository, userTaskService)
+                            installInternalTaskApi(taskRepository, taskService, userTaskService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
