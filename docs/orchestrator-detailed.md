@@ -3381,18 +3381,41 @@ Multi-topic long messages (>8000 chars) are detected and split:
 ```
 Message > 8000 chars?
   NO → existing flow
-  YES → LLM classifier (LOCAL_FAST, head+tail, ~3s)
+  YES → LLM classifier (LOCAL_FAST, head + middle samples + tail, ~3s)
         → single-topic? → existing flow (fallback)
         → multi-topic?  → extract sub-topics with char ranges
                         → process each in mini agentic loop (3 iter max)
                         → combine results via LLM combiner
 ```
 
-- **Classifier**: LOCAL_FAST, head 1500 chars + tail 500 chars, returns JSON with topic titles and char ranges
+- **Classifier**: LOCAL_FAST with CRITICAL priority, ~3500 chars sampled:
+  head (1500) + 2 middle samples at 1/3 and 2/3 (500 each) + tail (500).
+  Middle samples catch topic boundaries that head+tail alone would miss.
 - **Sub-topic processing**: each gets own agentic mini-loop (SUBTOPIC_MAX_ITERATIONS=3), same tools/drift detection
-- **Combiner**: LOCAL_FAST, merges sub-results into one cohesive response
+- **Combiner**: LOCAL_FAST with CRITICAL priority, merges sub-results into one cohesive response
 - **Fallback**: any classifier/parse failure → existing single-pass flow (zero regression)
 - **Latency**: 3-topic message ~90s (classifier 3s + 3×25s + combiner 8s) vs 4-8 min single-pass CPU-spill
+
+#### L. Pre-trim: Oversized Messages
+
+When a user message exceeds the tier's context window capacity, the LLM provider
+automatically trims it before sending to Ollama (preserving 75% head + 25% tail
+with a truncation marker). This prevents sending 126k chars to a 48k-token model
+where Ollama would internally discard the excess anyway — saves network transfer
+and Ollama tokenization overhead. Non-user messages are never trimmed.
+
+#### M. Tier Timeout Strategy
+
+Blocking calls (tool-call mode) use tier-based timeouts:
+
+| Tier | num_ctx | Timeout | Rationale |
+|------|---------|---------|-----------|
+| LOCAL_FAST | 8k | 300s | Pure GPU, ~30 tok/s |
+| LOCAL_STANDARD | 32k | 300s | Pure GPU, ~30 tok/s |
+| LOCAL_LARGE | 48k | **600s** | 30b + 49k KV spills to CPU on P40 (24GB) |
+| LOCAL_XLARGE | 128k | 900s | CPU RAM spill, ~7-12 tok/s |
+| LOCAL_XXLARGE | 256k | 1200s | CPU, slowest |
+| Cloud tiers | — | 300s | Fast APIs |
 
 #### Token Impact
 

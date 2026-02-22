@@ -1072,21 +1072,36 @@ async def _maybe_decompose(message: str) -> list[SubTopic] | None:
     """Classify whether a long message contains multiple distinct topics.
 
     Returns list of SubTopic if multi-topic, None if single-topic or on any failure.
-    Uses LOCAL_FAST tier (~2-3s on GPU) with head+tail excerpt.
+    Uses LOCAL_FAST tier (~2-3s on GPU) with head + middle samples + tail excerpt.
+    Middle samples at 1/3 and 2/3 positions catch topic boundaries in long messages.
     On ANY error: returns None (safe fallback to existing single-pass flow).
     """
-    if len(message) < DECOMPOSE_THRESHOLD:
+    msg_len = len(message)
+    if msg_len < DECOMPOSE_THRESHOLD:
         return None
 
+    # Sampling strategy: head + evenly-spaced middle segments + tail.
+    # Total budget ~3500 chars — LOCAL_FAST (8k ctx ≈ 32k chars) has plenty of room.
+    # Middle samples catch topic boundaries that head+tail alone would miss.
     head = message[:1500]
     tail = message[-500:]
 
-    user_content = (
-        f"Zpráva ({len(message)} znaků):\n\n"
-        f"ZAČÁTEK:\n{head}\n\n"
-        f"KONEC:\n{tail}\n\n"
-        f"Analyzuj a urči počet nezávislých témat."
-    )
+    middle_samples: list[tuple[int, str]] = []
+    if msg_len > 5000:
+        for frac in (1 / 3, 2 / 3):
+            mid_pos = int(msg_len * frac)
+            start = max(0, mid_pos - 250)
+            end = min(msg_len, mid_pos + 250)
+            middle_samples.append((mid_pos, message[start:end]))
+
+    parts = [f"Zpráva ({msg_len} znaků):\n"]
+    parts.append(f"ZAČÁTEK (0–1500):\n{head}\n")
+    for mid_pos, sample in middle_samples:
+        parts.append(f"STŘED (~{mid_pos}):\n{sample}\n")
+    parts.append(f"KONEC ({msg_len - 500}–{msg_len}):\n{tail}\n")
+    parts.append("Analyzuj a urči počet nezávislých témat.")
+
+    user_content = "\n".join(parts)
 
     try:
         response = await llm_provider.completion(
@@ -1098,6 +1113,7 @@ async def _maybe_decompose(message: str) -> list[SubTopic] | None:
             tools=None,
             max_tokens=512,
             temperature=0.1,
+            extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
         )
 
         content = response.choices[0].message.content or ""
@@ -1122,7 +1138,6 @@ async def _maybe_decompose(message: str) -> list[SubTopic] | None:
             return None
 
         # Build SubTopic objects with clamped char ranges
-        msg_len = len(message)
         subtopics: list[SubTopic] = []
 
         for t in topics_raw:
@@ -1371,6 +1386,7 @@ async def _combine_results(
             tools=None,
             max_tokens=4096,
             temperature=0.1,
+            extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
         )
         combined = response.choices[0].message.content or ""
         if combined.strip():

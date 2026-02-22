@@ -7,7 +7,7 @@ Timeout strategy:
 - Streaming calls: per-chunk heartbeat (HEARTBEAT_DEAD_SECONDS). As long as
   tokens keep arriving, the call can run indefinitely.
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
-  GPU tiers (≤48k): 300s. CPU-spill tiers (128k+): 900-1200s.
+  GPU tiers (≤32k): 300s. GPU-boundary (48k): 600s. CPU-spill (128k+): 900-1200s.
 
 Cloud model usage:
 - Always try local Ollama first
@@ -88,13 +88,14 @@ TIER_CONFIG: dict[ModelTier, dict] = {
 }
 
 # Blocking call timeout per tier (seconds).
-# GPU tiers (~30 tok/s): 300s is plenty.
+# GPU tiers (≤32k, ~30 tok/s): 300s is plenty.
+# GPU-boundary tier (48k): 600s — 30b model + 49k KV spills to CPU on P40 (24GB).
 # CPU-spill tiers (~7-12 tok/s): need longer — large context = slow generation.
 # Cloud tiers: fast APIs, 300s is fine.
 TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
     ModelTier.LOCAL_FAST:           300,   # 8k ctx, GPU
     ModelTier.LOCAL_STANDARD:       300,   # 32k ctx, GPU
-    ModelTier.LOCAL_LARGE:          300,   # 48k ctx, GPU boundary
+    ModelTier.LOCAL_LARGE:          600,   # 48k ctx, GPU boundary — 30b+49k KV spills on P40
     ModelTier.LOCAL_XLARGE:         900,   # 128k ctx, CPU spill (~7-12 tok/s)
     ModelTier.LOCAL_XXLARGE:       1200,   # 256k ctx, CPU, slower
     ModelTier.CLOUD_REASONING:     300,
@@ -102,6 +103,89 @@ TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
     ModelTier.CLOUD_PREMIUM:       300,
     ModelTier.CLOUD_LARGE_CONTEXT: 300,
 }
+
+
+# ---------------------------------------------------------------------------
+# Pre-trim: cut oversized user messages to fit tier context window
+# ---------------------------------------------------------------------------
+
+def _estimate_max_user_chars(num_ctx: int, messages: list[dict], max_tokens: int) -> int | None:
+    """Estimate max chars allowed for the largest user message.
+
+    Returns None if no trimming is needed (everything fits).
+    Returns max char count for user message content if trimming is needed.
+    """
+    if not num_ctx:
+        return None
+
+    # Total budget in chars (1 token ≈ 4 chars)
+    total_chars = num_ctx * 4
+
+    # Subtract non-user overhead + output reserve
+    overhead = max_tokens * 4  # output reserve
+    for msg in messages:
+        if msg.get("role") != "user":
+            overhead += len(msg.get("content", "") or "") + 20  # +20 for role/formatting
+
+    available = total_chars - overhead
+    if available < 4000:
+        available = 4000  # absolute minimum
+
+    # Check if any user message exceeds budget
+    max_user_len = max(
+        (len(msg.get("content", "") or "") for msg in messages if msg.get("role") == "user"),
+        default=0,
+    )
+    if max_user_len <= available:
+        return None
+
+    return available
+
+
+def _trim_content(content: str, max_chars: int) -> str:
+    """Trim content to max_chars preserving head (75%) + tail (25%).
+
+    Inserts a truncation marker showing how many chars were removed.
+    """
+    if len(content) <= max_chars:
+        return content
+
+    marker = f"\n\n[… {len(content) - max_chars} znaků vynecháno pro LLM kontext …]\n\n"
+    usable = max_chars - len(marker)
+    if usable < 1000:
+        usable = 1000
+
+    head_len = int(usable * 0.75)
+    tail_len = usable - head_len
+    return content[:head_len] + marker + content[-tail_len:]
+
+
+def _trim_messages_for_context(
+    messages: list[dict], num_ctx: int, max_tokens: int,
+) -> list[dict]:
+    """Return messages with user content trimmed to fit tier's context window.
+
+    Only trims if necessary. Non-user messages are never trimmed.
+    Returns a new list (does not mutate input).
+    """
+    max_chars = _estimate_max_user_chars(num_ctx, messages, max_tokens)
+    if max_chars is None:
+        return messages  # no trimming needed
+
+    trimmed = []
+    for msg in messages:
+        if msg.get("role") == "user" and len(msg.get("content", "") or "") > max_chars:
+            new_msg = dict(msg)
+            original_len = len(new_msg["content"])
+            new_msg["content"] = _trim_content(new_msg["content"], max_chars)
+            logger.info(
+                "LLM pre-trim: user message %d → %d chars (num_ctx=%d)",
+                original_len, len(new_msg["content"]), num_ctx,
+            )
+            trimmed.append(new_msg)
+        else:
+            trimmed.append(msg)
+    return trimmed
 
 
 class EscalationPolicy:
@@ -252,6 +336,8 @@ class LLMProvider:
             kwargs["api_base"] = config["api_base"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
+            # Pre-trim oversized user messages to avoid sending excess data to Ollama
+            kwargs["messages"] = _trim_messages_for_context(messages, config["num_ctx"], max_tokens)
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
 
@@ -300,6 +386,8 @@ class LLMProvider:
             kwargs["api_base"] = config["api_base"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
+            # Pre-trim oversized user messages to avoid sending excess data to Ollama
+            kwargs["messages"] = _trim_messages_for_context(messages, config["num_ctx"], max_tokens)
         if tools:
             kwargs["tools"] = tools
         if extra_headers:
