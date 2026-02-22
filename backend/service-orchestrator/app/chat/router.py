@@ -17,6 +17,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 from app.chat.context import chat_context_assembler, _parse_json_response
 from app.chat.models import ChatRequest
@@ -37,22 +38,22 @@ async def chat(request: ChatRequest):
     This is the primary foreground chat path (v6 architecture).
     Replaces the LangGraph respond node for interactive chat.
 
-    Flow: User message → agentic loop → streamed answer → MongoDB save.
-    Streaming happens via kotlin_client push (POST /internal/streaming-token).
+    Flow: User message → agentic loop → streamed SSE events → Kotlin → UI.
+    handle_chat is an async generator yielding ChatStreamEvent objects.
     """
     from app.chat.handler import handle_chat
 
-    try:
-        result = await handle_chat(request)
-        return {
-            "success": True,
-            "answer": result.get("answer", ""),
-            "tool_calls_count": result.get("tool_calls_count", 0),
-            "iterations": result.get("iterations", 0),
-        }
-    except Exception as e:
-        logger.exception("Chat handler failed for task %s", request.task_id)
-        raise HTTPException(status_code=500, detail=str(e))
+    async def sse_stream():
+        try:
+            async for event in handle_chat(request):
+                data = event.model_dump_json()
+                yield f"event: {event.type}\ndata: {data}\n\n"
+        except Exception as e:
+            logger.exception("Chat handler failed for session %s", request.session_id)
+            error_event = json.dumps({"type": "error", "content": str(e), "metadata": {}})
+            yield f"event: error\ndata: {error_event}\n\n"
+
+    return StreamingResponse(sse_stream(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
