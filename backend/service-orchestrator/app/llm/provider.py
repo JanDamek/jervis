@@ -163,26 +163,50 @@ def _trim_content(content: str, max_chars: int) -> str:
 def _trim_messages_for_context(
     messages: list[dict], num_ctx: int, max_tokens: int,
 ) -> list[dict]:
-    """Return messages with user content trimmed to fit tier's context window.
+    """Return messages with OLD user content trimmed to fit tier's context window.
 
-    Only trims if necessary. Non-user messages are never trimmed.
+    NO-TRIM PRINCIPLE: The LAST user message (current message) is NEVER trimmed.
+    Only older conversation history messages may be trimmed.
+    Current user message should have been summarized by the handler before
+    reaching the LLM provider. If it still overflows, we log a warning
+    but do NOT truncate it — the model handles the overflow via Ollama's
+    internal truncation (which at least doesn't silently lose data).
+
+    Non-user messages are never trimmed.
     Returns a new list (does not mutate input).
     """
     max_chars = _estimate_max_user_chars(num_ctx, messages, max_tokens)
     if max_chars is None:
         return messages  # no trimming needed
 
+    # Find the LAST user message index (current message — never trim)
+    last_user_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            last_user_idx = i
+            break
+
     trimmed = []
-    for msg in messages:
+    for i, msg in enumerate(messages):
         if msg.get("role") == "user" and len(msg.get("content", "") or "") > max_chars:
-            new_msg = dict(msg)
-            original_len = len(new_msg["content"])
-            new_msg["content"] = _trim_content(new_msg["content"], max_chars)
-            logger.info(
-                "LLM pre-trim: user message %d → %d chars (num_ctx=%d)",
-                original_len, len(new_msg["content"]), num_ctx,
-            )
-            trimmed.append(new_msg)
+            if i == last_user_idx:
+                # NO-TRIM: Current user message — never truncate
+                logger.warning(
+                    "LLM pre-trim: SKIPPING current user message (%d chars > %d max) — no-trim principle. "
+                    "Message should have been summarized by handler.",
+                    len(msg.get("content", "")), max_chars,
+                )
+                trimmed.append(msg)
+            else:
+                # OLD conversation history — safe to trim
+                new_msg = dict(msg)
+                original_len = len(new_msg["content"])
+                new_msg["content"] = _trim_content(new_msg["content"], max_chars)
+                logger.info(
+                    "LLM pre-trim: history message %d → %d chars (num_ctx=%d)",
+                    original_len, len(new_msg["content"]), num_ctx,
+                )
+                trimmed.append(new_msg)
         else:
             trimmed.append(msg)
     return trimmed

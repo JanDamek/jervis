@@ -3376,24 +3376,42 @@ Message length?
 ```
 
 **Summarize-then-Act (messages >16k chars):**
-1. LLM summarizer (LOCAL_FAST, CRITICAL priority, 30s timeout) creates structured summary (~2-4k chars)
-2. Summary preserves ALL: requirements, action items, questions, key details (IDs, names, numbers)
-3. Agentic loop works with compact summary instead of raw message
-4. Original message saved verbatim to MongoDB — nothing is lost
-5. If summarizer fails → fallback to pre-trim (75% head + 25% tail)
+1. Original message saved to KB FIRST — nothing is ever lost
+2. LLM summarizer (LOCAL_FAST, CRITICAL priority, **90s timeout**) creates structured summary (~2-4k chars)
+3. Summary preserves ALL: requirements, action items, questions, key details (IDs, names, numbers)
+4. Agentic loop works with compact summary instead of raw message
+5. If summarizer fails → **suggest background task** (NEVER fall back to pre-trim)
+
+**NO-TRIM PRINCIPLE (CRITICAL):**
+The current user message is NEVER truncated/trimmed. This is enforced at two levels:
+- **Handler**: if summarizer fails, immediately suggest background task instead of falling through
+- **LLM Provider**: `_trim_messages_for_context()` skips the last (current) user message;
+  only OLD conversation history messages may be trimmed
+
+**Summarizer timeout (90s):**
+Must be >60s because Router GPU cleanup can take up to 60s when embedding model needs
+to be unloaded (wait loop with 2s polling + force unload at 60s). Previous 30s timeout
+caused summarizer to ALWAYS fail when embedding model was loaded on GPU.
 
 **Tier Ceiling (VRAM protection):**
 Foreground chat NEVER goes above LOCAL_LARGE (40k context). LOCAL_XLARGE (131k) causes
 catastrophic CPU spill on P40 (6GB overflow, 630s for 387 tokens). Instead of escalating,
-the message is summarized/trimmed to fit in 40k.
+the message is summarized (not trimmed) to fit in 40k.
 
 **Dynamic MAX_ITERATIONS:**
 - Short messages (<8k): MAX_ITERATIONS=6 (standard)
 - Long messages (>8k): MAX_ITERATIONS_LONG=3 (each iteration costs 3-5 min on GPU)
 
 **Background offload:**
-System prompt instructs model: if message contains >5 distinct tasks, suggest
-`create_background_task` instead of processing everything in foreground chat.
+- FOCUS hint with background suggestion injected for ALL long messages (>16k), not just summarized ones
+- System prompt instructs model: if message contains >5 distinct tasks, suggest
+  `create_background_task` instead of processing everything in foreground chat
+- If summarizer fails: handler immediately suggests background task (no fallback to trim)
+
+**Cooperative disconnect:**
+Disconnect event is checked not just between iterations but also inside the tool execution
+loop. This prevents zombie streams from continuing to execute tools after the user sent
+a new message (which sets disconnect_event on the old stream).
 
 #### K. Long Message Decomposition
 

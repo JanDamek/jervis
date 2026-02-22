@@ -185,23 +185,38 @@ async def handle_chat(
         # Fallback: any failure → existing single-pass flow (zero regression).
 
         # Step 1: For very long messages, summarize BEFORE decompose or agentic loop
+        # NO-TRIM PRINCIPLE: NEVER truncate the current user message. Either summarize or background task.
         message_for_llm = request.message  # default: original message
         is_summarized = False
+        is_long_message = msg_len > SUMMARIZE_THRESHOLD  # used for background offload hint
 
-        if msg_len > SUMMARIZE_THRESHOLD:
+        if is_long_message:
             yield ChatStreamEvent(type="thinking", content="Analyzuji obsah dlouhé zprávy...")
+
+            # Save original message to KB BEFORE any processing — nothing is ever lost.
+            # Agent can retrieve it later via kb_search if needed.
+            try:
+                await _save_original_to_kb(
+                    message=request.message,
+                    client_id=request.active_client_id,
+                    project_id=request.active_project_id,
+                    session_id=request.session_id,
+                )
+            except Exception as kb_err:
+                logger.warning("Chat: failed to save original to KB: %s", kb_err)
+
             summary = await _summarize_long_message(request.message)
             if summary:
                 is_summarized = True
                 # Replace the user message in messages with a compact version:
-                # summary + pointer to original length
+                # summary + pointer to original in KB
                 summarized_content = (
                     f"[Uživatel poslal dlouhou zprávu ({msg_len} znaků). "
-                    f"Níže je strukturovaný souhrn zachovávající všechny požadavky.]\n\n"
+                    f"Níže je strukturovaný souhrn zachovávající všechny požadavky. "
+                    f"Originál je uložen v KB.]\n\n"
                     f"{summary}\n\n"
-                    f"[Poznámka: Originální zpráva je uložena. "
-                    f"Pokud je to příliš rozsáhlé na zpracování v chatu, "
-                    f"navrhni vytvoření background task pro podrobnější zpracování.]"
+                    f"[Poznámka: Originální zpráva je uložena v KB (session {request.session_id}). "
+                    f"Pokud potřebuješ detaily, hledej přes kb_search.]"
                 )
                 # Replace the last user message in the messages array
                 for i in range(len(messages) - 1, -1, -1):
@@ -213,6 +228,37 @@ async def handle_chat(
                     "Chat: summarized %d chars → %d chars for agentic loop",
                     msg_len, len(summarized_content),
                 )
+            else:
+                # NO-TRIM FALLBACK: summarizer failed — suggest background task immediately.
+                # NEVER fall through to pre-trim which would lose 75% of content.
+                logger.warning(
+                    "Chat: summarizer failed for %d char message — suggesting background task",
+                    msg_len,
+                )
+                bg_suggestion = (
+                    f"Zpráva je velmi dlouhá ({msg_len} znaků) a nepodařilo se ji analyzovat v reálném čase. "
+                    f"Vytvořím background task pro podrobné zpracování — bude to důkladnější.\n\n"
+                    f"Originál zprávy je uložen v KB. Background task si ji může přečíst celou."
+                )
+                for i in range(0, len(bg_suggestion), STREAM_CHUNK_SIZE):
+                    yield ChatStreamEvent(type="token", content=bg_suggestion[i:i + STREAM_CHUNK_SIZE])
+                    await asyncio.sleep(0.03)
+
+                # Save this response
+                await chat_context_assembler.save_message(
+                    conversation_id=request.session_id,
+                    role="ASSISTANT",
+                    content=bg_suggestion,
+                    correlation_id=str(ObjectId()),
+                    sequence=request.message_sequence + 1,
+                    metadata={"summarizer_failed": "true", "original_length": str(msg_len)},
+                )
+                yield ChatStreamEvent(type="done", metadata={
+                    "summarizer_failed": True,
+                    "suggest_background": True,
+                    "original_length": msg_len,
+                })
+                return
 
         if msg_len > DECOMPOSE_THRESHOLD:
             subtopics = await _maybe_decompose(request.message)
@@ -323,7 +369,14 @@ async def handle_chat(
                 if is_summarized:
                     focus_hint += (
                         " Pracuješ se SOUHRNEM originální zprávy. Souhrn zachovává všechny klíčové informace. "
-                        "Pokud zpráva obsahuje příliš mnoho úkolů na zpracování v chatu, "
+                        "Originál je uložen v KB — můžeš ho najít přes kb_search."
+                    )
+                # Background offload hint for ALL long messages (>16k), not just summarized.
+                # BUG FIX: Previously this was inside `if is_summarized:` — so when summarizer
+                # failed, the model never got the hint to suggest background task.
+                if is_long_message:
+                    focus_hint += (
+                        " Pokud zpráva obsahuje příliš mnoho úkolů na zpracování v chatu, "
                         "navrhni uživateli vytvoření background task pomocí create_background_task."
                     )
                 messages.append({"role": "system", "content": focus_hint})
@@ -518,6 +571,23 @@ async def handle_chat(
             messages.append(assistant_msg)
 
             for tool_call in tool_calls:
+                # Cooperative disconnect check INSIDE tool execution loop.
+                # Without this, a 268s LLM call completes, then we execute tools
+                # for a stream that was already cancelled — wasting GPU cycles.
+                if disconnect_event and disconnect_event.is_set():
+                    logger.info("Chat: disconnect detected during tool execution (iter %d)", iteration)
+                    partial = _build_interrupted_content(tool_summaries)
+                    if partial:
+                        await chat_context_assembler.save_message(
+                            conversation_id=request.session_id,
+                            role="ASSISTANT", content=partial,
+                            correlation_id=str(ObjectId()),
+                            sequence=request.message_sequence + 1,
+                            metadata={"interrupted": "true"},
+                        )
+                    yield ChatStreamEvent(type="done", metadata={"interrupted": True})
+                    return
+
                 tool_name = tool_call.function.name
                 try:
                     arguments = json.loads(tool_call.function.arguments)
@@ -1234,6 +1304,47 @@ def _build_interrupted_content(tool_summaries: list[str]) -> str | None:
 
 
 # ------------------------------------------------------------------
+# Long message: save original to KB (no-trim principle)
+# ------------------------------------------------------------------
+
+
+async def _save_original_to_kb(
+    message: str,
+    client_id: str | None,
+    project_id: str | None,
+    session_id: str,
+) -> None:
+    """Save original long message to KB before summarization.
+
+    NO-TRIM PRINCIPLE: The original message is NEVER truncated or discarded.
+    It's saved to KB so the agent (or a background task) can retrieve it later
+    via kb_search if the summary doesn't have enough detail.
+
+    Uses store_knowledge tool (bypasses the anti-dump guard since this is
+    the handler itself, not the model calling the tool).
+    """
+    from app.tools.executor import execute_tool
+
+    # Store with clear metadata for later retrieval
+    subject = f"Originální zpráva z chatu (session {session_id}, {len(message)} znaků)"
+
+    # For very long messages, we store as-is — KB handles large content
+    result = await execute_tool(
+        tool_name="store_knowledge",
+        arguments={
+            "subject": subject,
+            "content": message,
+            "source": f"chat:{session_id}",
+            "tags": "original_message,long_message,chat",
+        },
+        client_id=client_id or "",
+        project_id=project_id,
+        processing_mode="FOREGROUND",
+    )
+    logger.info("Chat: saved original %d char message to KB: %s", len(message), result[:100])
+
+
+# ------------------------------------------------------------------
 # Long message decomposition
 # ------------------------------------------------------------------
 
@@ -1309,6 +1420,10 @@ async def _summarize_long_message(message: str) -> str | None:
     )
 
     try:
+        # Timeout 90s: Router GPU cleanup can take up to 60s when embedding model
+        # needs to be unloaded (wait loop + force unload). Summarizer timeout MUST be
+        # longer than 60s, otherwise it ALWAYS times out when embedding is loaded.
+        # Previous 30s timeout caused summarizer to fail every time GPU had embedding model.
         response = await asyncio.wait_for(
             llm_provider.completion(
                 messages=[
@@ -1321,7 +1436,7 @@ async def _summarize_long_message(message: str) -> str | None:
                 temperature=0.1,
                 extra_headers={"X-Ollama-Priority": "0"},
             ),
-            timeout=30.0,  # Summarizer can take a bit longer than classifier
+            timeout=90.0,  # Must be > 60s (router GPU cleanup wait)
         )
 
         summary = response.choices[0].message.content or ""
@@ -1338,10 +1453,10 @@ async def _summarize_long_message(message: str) -> str | None:
         return summary
 
     except asyncio.TimeoutError:
-        logger.warning("Chat summarizer: timed out (30s), falling back to pre-trim")
+        logger.warning("Chat summarizer: timed out (90s), GPU likely busy with model swap")
         return None
     except Exception as e:
-        logger.warning("Chat summarizer: failed (%s), falling back to pre-trim", e)
+        logger.warning("Chat summarizer: failed (%s)", e)
         return None
 
 
