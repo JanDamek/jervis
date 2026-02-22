@@ -63,6 +63,21 @@ class ChatRpcImpl(
                     ),
                 )
             }
+
+            // Emit persisted scope so UI restores client/project selection on startup
+            val clientId = history.activeClientId
+            if (!clientId.isNullOrBlank()) {
+                emit(
+                    ChatResponseDto(
+                        message = "",
+                        type = ChatResponseType.SCOPE_CHANGE,
+                        metadata = mapOf(
+                            "clientId" to clientId,
+                            "projectId" to (history.activeProjectId ?: ""),
+                        ),
+                    ),
+                )
+            }
         } catch (e: Exception) {
             logger.error(e) { "Failed to load chat history for subscription" }
         }
