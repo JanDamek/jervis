@@ -90,13 +90,23 @@ def classify_intent(
     """
     categories: set[ToolCategory] = {ToolCategory.CORE}
 
-    if _BRAIN_PATTERNS.search(user_message):
+    # For long messages (>2000 chars), classify from head+tail only.
+    # Long messages are typically "information dumps" (bug reports, analyses)
+    # where keywords in the middle would match ALL categories.
+    # The actual intent/question is in the first or last sentences.
+    if len(user_message) > 2000:
+        intent_text = user_message[:500] + "\n" + user_message[-500:]
+        logger.info("Chat intent: long message (%d chars), classifying from head+tail (1000 chars)", len(user_message))
+    else:
+        intent_text = user_message
+
+    if _BRAIN_PATTERNS.search(intent_text):
         categories.add(ToolCategory.BRAIN)
 
-    if _TASK_MGMT_PATTERNS.search(user_message):
+    if _TASK_MGMT_PATTERNS.search(intent_text):
         categories.add(ToolCategory.TASK_MGMT)
 
-    if _RESEARCH_PATTERNS.search(user_message):
+    if _RESEARCH_PATTERNS.search(intent_text):
         categories.add(ToolCategory.RESEARCH)
 
     # Context-driven: responding to a user_task needs TASK_MGMT tools
@@ -104,7 +114,7 @@ def classify_intent(
         categories.add(ToolCategory.TASK_MGMT)
 
     # Proactive: greeting with pending tasks/meetings → TASK_MGMT
-    if _GREETING_PATTERNS.search(user_message):
+    if _GREETING_PATTERNS.search(intent_text):
         if has_pending_user_tasks or has_unclassified_meetings:
             categories.add(ToolCategory.TASK_MGMT)
 

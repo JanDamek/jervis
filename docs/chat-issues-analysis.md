@@ -236,11 +236,11 @@ The model received a long bug analysis and decided to `store_knowledge` with the
 | 1 | Response takes 5-8 min (tool-call loops) | HIGH | Partially fixed (36d72e8f) | handler.py |
 | 2 | Response is confused/irrelevant | HIGH | Partially fixed (36d72e8f) | handler.py, system_prompt.py |
 | 3 | Thinking event shown too long | MEDIUM | Fixed (36d72e8f) | handler.py |
-| 4 | Duplicate assistant messages | MEDIUM | Open | ChatService.kt or ChatViewModel.kt |
-| 5 | "Zpracovávám..." shown 4+ min | HIGH | Open | ChatViewModel.kt, handler.py |
-| 6 | Intent classification: all categories match | MEDIUM | Open | intent.py |
-| 7 | Token overflow (41k for 32k context) | HIGH | Open | handler.py |
-| 8 | Model stores user message instead of responding | LOW | Open | system_prompt.py, tools.py |
+| 4 | Duplicate assistant messages | MEDIUM | Fixed — `_isLoading` guard before coroutine | ChatViewModel.kt |
+| 5 | "Zpracovávám..." shown 4+ min | HIGH | Fixed — thinking event before first LLM call | handler.py |
+| 6 | Intent classification: all categories match | MEDIUM | Fixed — head+tail classification for long messages | intent.py |
+| 7 | Token overflow (41k for 32k context) | HIGH | By design — tier escalation handles it (LOCAL_LARGE→XLARGE→XXLARGE), slow but complete. No truncation. | handler.py |
+| 8 | Model stores user message instead of responding | LOW | Fixed — system prompt instruction against verbatim storage | system_prompt.py |
 
 ---
 

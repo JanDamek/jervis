@@ -3336,21 +3336,41 @@ Replaces simple "consecutive same signature" with 3 signals:
 
 On detection, forces text response without tools (same as loop break).
 
-#### E. Thinking Event Between Iterations
+#### E. Thinking Events (3 types, distinct wording)
 
-After tool execution, before next LLM call:
-```python
-yield ChatStreamEvent(type="thinking", content="Zpracovávám informace...")
-```
-Fixes Issue 3 — UI no longer shows stale "Přepínám na..." for 60s during LLM call.
+1. **Pre-LLM** (before first iteration): `"Připravuji odpověď..."` or `"Analyzuji dlouhou zprávu..."` (>4k chars). Immediately replaces client-side "Zpracovávám..." so user gets feedback within milliseconds.
+2. **Pre-tool** (before each tool call): `_describe_tool_call()` e.g. "Hledám v KB: ..."
+3. **Inter-iteration** (after tool results, before next LLM): `"Analyzuji výsledky..."`. Prevents stale "Přepínám na..." during 60s LLM call.
+4. **Long message warning** (>49k estimated tokens, iteration 0): `"Dlouhá zpráva — zpracování potrvá déle..."`. GPU VRAM exceeded → CPU spill → much slower.
 
-#### F. System Prompt Deduplication
+#### F. System Prompt Deduplication + Anti-Dump
 
-Tool descriptions in system prompt reduced from ~375 tokens to ~120 tokens. Emphasis on "Odpovídej PŘÍMO" and "Maximálně 2-3 tool calls".
+Tool descriptions reduced from ~375 to ~120 tokens. Key additions:
+- "Odpovídej PŘÍMO" — answer directly if you know
+- "Maximálně 2-3 tool calls" — cap tool usage
+- "NIKDY neukládej celou zprávu uživatele do KB/memory" — prevents model from storing user's message verbatim
 
 #### G. MAX_ITERATIONS 15 → 6
 
 With intent filtering + focus reminders + drift detection, 6 iterations suffice. Typical: 1-2 (simple), 3-4 (multi-intent). Worst case: 6 × 60s = 6 min vs 15 × 60s = 15 min.
+
+#### H. Long Message Intent (head+tail)
+
+For messages >2000 chars, `classify_intent()` analyzes only first 500 + last 500 characters. Long messages (bug reports, analyses) contain keywords from all categories in the body, but the actual intent is in the first/last sentences. Full message is sent to LLM unchanged — only intent classification uses the excerpt.
+
+#### I. Duplicate Send Guard (ChatViewModel)
+
+`_isLoading` set to `true` synchronously BEFORE `scope.launch`. `sendMessage()` returns immediately if `_isLoading` is already true. Prevents race condition where rapid double-click or UI retry created two parallel SSE connections.
+
+#### J. Token Overflow — No Truncation
+
+Long messages are NOT truncated. Tier escalation handles it:
+- >32k tokens → LOCAL_LARGE (48k, full GPU speed)
+- >48k tokens → LOCAL_XLARGE (128k, CPU RAM spill, ~7-12 tok/s)
+- >128k tokens → LOCAL_XXLARGE (256k, Qwen3 max)
+- For extreme cases → cloud escalation to Gemini (1M+ context)
+
+Slow but complete. Nothing is discarded.
 
 #### Token Impact
 

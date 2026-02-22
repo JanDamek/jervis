@@ -122,6 +122,14 @@ async def handle_chat(
         effective_client_id = request.active_client_id
         effective_project_id = request.active_project_id
 
+        # Emit thinking event BEFORE first LLM call.
+        # Replaces client-side "Zpracovávám..." instantly instead of waiting 1-4 min.
+        msg_len = len(request.message)
+        if msg_len > 4000:
+            yield ChatStreamEvent(type="thinking", content="Analyzuji dlouhou zprávu...")
+        else:
+            yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
+
         for iteration in range(MAX_ITERATIONS):
             # Check for disconnect/stop between iterations
             if disconnect_event and disconnect_event.is_set():
@@ -151,6 +159,13 @@ async def handle_chat(
             tier = llm_provider.escalation.select_local_tier(estimated_tokens)
             logger.info("Chat: estimated_tokens=%d (msgs=%d + tools=%d + output=%d) → tier=%s",
                         estimated_tokens, message_tokens, tools_tokens, output_tokens, tier.value)
+
+            # Warn user when context exceeds GPU VRAM (48k) — CPU spill = much slower
+            if iteration == 0 and estimated_tokens > 49_000:
+                yield ChatStreamEvent(
+                    type="thinking",
+                    content="Dlouhá zpráva — zpracování potrvá déle...",
+                )
 
             response = await llm_provider.completion(
                 messages=messages,
@@ -390,7 +405,7 @@ async def handle_chat(
 
             # --- Thinking event between iterations (Component E) ---
             # Prevents UI from showing stale "Přepínám na..." during next LLM call
-            yield ChatStreamEvent(type="thinking", content="Zpracovávám informace...")
+            yield ChatStreamEvent(type="thinking", content="Analyzuji výsledky...")
 
         # Max iterations reached — force text response without tools
         logger.warning("Chat: max iterations (%d) reached, forcing response", MAX_ITERATIONS)

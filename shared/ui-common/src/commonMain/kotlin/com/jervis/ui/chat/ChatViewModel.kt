@@ -153,9 +153,15 @@ class ChatViewModel(
 
     @OptIn(ExperimentalEncodingApi::class, ExperimentalUuidApi::class)
     fun sendMessage() {
+        // Guard: prevent duplicate sends while request is in-flight
+        if (_isLoading.value) return
+
         val text = _inputText.value.trim()
         val currentAttachments = _attachments.value
         if (text.isEmpty() && currentAttachments.isEmpty()) return
+
+        // Set loading immediately (before coroutine) to prevent race condition
+        _isLoading.value = true
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
@@ -181,7 +187,6 @@ class ChatViewModel(
         val clientMessageId = Uuid.random().toString()
 
         scope.launch {
-            _isLoading.value = true
             val originalText = text
             _inputText.value = ""
             _attachments.value = emptyList()
