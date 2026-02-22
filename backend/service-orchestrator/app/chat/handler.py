@@ -34,17 +34,20 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.context import chat_context_assembler
+from app.chat.intent import classify_intent, select_tools
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import RuntimeContext, build_system_prompt
-from app.chat.tools import CHAT_TOOLS
+from app.chat.tools import CHAT_TOOLS, TOOL_DOMAINS
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.executor import execute_tool
 
 logger = logging.getLogger(__name__)
 
-# Max agentic iterations (tool calls) per message
-MAX_ITERATIONS = 15
+# Max agentic iterations (tool calls) per message.
+# 6 is enough with intent filtering + focus reminders + drift detection.
+# Typical: 1 (direct), 2 (search+answer), 3-4 (multi-intent). 6 gives buffer.
+MAX_ITERATIONS = 6
 
 # Chunk size for fake token streaming (chars, ~10 tokens)
 STREAM_CHUNK_SIZE = 40
@@ -77,12 +80,25 @@ async def handle_chat(
         # 2. Load runtime context (clients, pending tasks, meetings)
         runtime_ctx = await _load_runtime_context()
 
-        # 3. If responding to user_task, load task context
+        # 3. Intent classification → select tool subset (no LLM call, <1ms)
+        intent_categories = classify_intent(
+            user_message=request.message,
+            has_pending_user_tasks=runtime_ctx.pending_user_tasks.get("count", 0) > 0,
+            has_unclassified_meetings=runtime_ctx.unclassified_meetings_count > 0,
+            has_context_task_id=bool(request.context_task_id),
+        )
+        selected_tools = select_tools(intent_categories)
+        logger.info(
+            "Chat: intent=%s → %d/%d tools",
+            [c.value for c in intent_categories], len(selected_tools), len(CHAT_TOOLS),
+        )
+
+        # 4. If responding to user_task, load task context
         task_context_msg = None
         if request.context_task_id:
             task_context_msg = await _load_task_context_message(request.context_task_id)
 
-        # 4. Build LLM messages
+        # 5. Build LLM messages
         messages = _build_messages(
             system_prompt=build_system_prompt(
                 active_client_id=request.active_client_id,
@@ -101,6 +117,8 @@ async def handle_chat(
         tool_summaries: list[str] = []  # For error recovery (partial save)
         last_tool_sig: str | None = None  # For loop detection
         consecutive_same = 0
+        domain_history: list[set[str]] = []  # Per-iteration tool domains for drift detection
+        distinct_tools_used: set[str] = set()  # All unique tools called across iterations
         effective_client_id = request.active_client_id
         effective_project_id = request.active_project_id
 
@@ -126,7 +144,7 @@ async def handle_chat(
             # Estimate context tokens (1 token ≈ 4 chars)
             message_chars = sum(len(str(m)) for m in messages)
             message_tokens = message_chars // 4
-            tools_tokens = sum(len(str(t)) for t in CHAT_TOOLS) // 4
+            tools_tokens = sum(len(str(t)) for t in selected_tools) // 4
             output_tokens = 4096
             estimated_tokens = message_tokens + tools_tokens + output_tokens
 
@@ -137,7 +155,7 @@ async def handle_chat(
             response = await llm_provider.completion(
                 messages=messages,
                 tier=tier,
-                tools=CHAT_TOOLS,
+                tools=selected_tools,
                 max_tokens=4096,
                 temperature=0.1,
                 extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
@@ -189,7 +207,8 @@ async def handle_chat(
                 })
                 return
 
-            # Loop detection — same tool+args called 3+ times = stuck
+            # --- Drift detection (multi-signal) ---
+            # Signal 1: Consecutive same tool+args
             tool_sig = "|".join(
                 f"{tc.function.name}:{tc.function.arguments}" for tc in tool_calls
             )
@@ -199,26 +218,41 @@ async def handle_chat(
                 consecutive_same = 1
                 last_tool_sig = tool_sig
 
-            if consecutive_same >= 2:
-                logger.warning("Chat: loop detected (%dx same tool call), forcing response", consecutive_same)
-                # Inject system message to break loop, re-run LLM without tools
+            # Signal 2: Domain tracking for drift detection
+            iter_domains = set()
+            for tc in tool_calls:
+                domain = TOOL_DOMAINS.get(tc.function.name, "unknown")
+                iter_domains.add(domain)
+                distinct_tools_used.add(tc.function.name)
+            domain_history.append(iter_domains)
+
+            # Check drift signals
+            drift_reason = _detect_drift(
+                consecutive_same=consecutive_same,
+                domain_history=domain_history,
+                distinct_tools_used=distinct_tools_used,
+                iteration=iteration,
+            )
+
+            if drift_reason:
+                logger.warning("Chat: drift detected (%s), forcing response", drift_reason)
                 messages.append({
                     "role": "system",
                     "content": (
-                        "STOP — voláš opakovaně stejný tool se stejnými argumenty. "
+                        f"STOP — {drift_reason}. "
                         "Odpověz uživateli s tím co víš. Nevolej žádné další tools."
                     ),
                 })
                 break_response = await llm_provider.completion(
                     messages=messages,
                     tier=tier,
-                    tools=None,  # No tools — force text response
+                    tools=None,
                     max_tokens=4096,
                     temperature=0.1,
                     extra_headers={"X-Ollama-Priority": "0"},
                 )
                 final_text = break_response.choices[0].message.content or "Nemám dostatek informací pro odpověď."
-                logger.info("Chat: loop-break response (%d chars)", len(final_text))
+                logger.info("Chat: drift-break response (%d chars)", len(final_text))
                 for i in range(0, len(final_text), STREAM_CHUNK_SIZE):
                     yield ChatStreamEvent(type="token", content=final_text[i:i + STREAM_CHUNK_SIZE])
                     await asyncio.sleep(0.03)
@@ -227,9 +261,9 @@ async def handle_chat(
                     role="ASSISTANT", content=final_text,
                     correlation_id=str(ObjectId()),
                     sequence=request.message_sequence + 1,
-                    metadata={"loop_break": "true", "used_tools": ",".join(used_tools)},
+                    metadata={"drift_break": drift_reason, "used_tools": ",".join(used_tools)},
                 )
-                yield ChatStreamEvent(type="done", metadata={"loop_break": True, "iterations": iteration + 1})
+                yield ChatStreamEvent(type="done", metadata={"drift_break": drift_reason, "iterations": iteration + 1})
                 return
 
             # Execute tool calls
@@ -344,6 +378,20 @@ async def handle_chat(
                     "content": result,
                 })
 
+            # --- Focus reminder after tool results (Component C) ---
+            remaining_iters = MAX_ITERATIONS - iteration - 1
+            messages.append({
+                "role": "system",
+                "content": (
+                    f'[FOCUS] Původní otázka: "{request.message[:200]}"\n'
+                    f"Zbývá {remaining_iters} iterací. Pokud máš dost info, ODPOVĚZ."
+                ),
+            })
+
+            # --- Thinking event between iterations (Component E) ---
+            # Prevents UI from showing stale "Přepínám na..." during next LLM call
+            yield ChatStreamEvent(type="thinking", content="Zpracovávám informace...")
+
         # Max iterations reached — force text response without tools
         logger.warning("Chat: max iterations (%d) reached, forcing response", MAX_ITERATIONS)
         messages.append({
@@ -407,6 +455,50 @@ async def handle_chat(
             await kotlin_client.register_foreground_end()
         except Exception as e:
             logger.warning("Failed to register foreground end: %s", e)
+
+
+# ------------------------------------------------------------------
+# Drift detection
+# ------------------------------------------------------------------
+
+
+def _detect_drift(
+    consecutive_same: int,
+    domain_history: list[set[str]],
+    distinct_tools_used: set[str],
+    iteration: int,
+) -> str | None:
+    """Multi-signal drift detection.
+
+    Returns a human-readable reason if drift is detected, None otherwise.
+
+    Signals:
+    1. Consecutive same: 2× identical tool+args → stuck in loop
+    2. Domain drift: 3 iterations with 3+ distinct domains and no common domain → wandering
+    3. Excessive tools: 8+ distinct tools after 4+ iterations → unfocused
+    """
+    # Signal 1: Consecutive same tool+args (existing behavior)
+    if consecutive_same >= 2:
+        return "opakovaně voláš stejný tool se stejnými argumenty"
+
+    # Signal 2: Domain drift — 3+ iterations, each with different domains, no overlap
+    if len(domain_history) >= 3:
+        last_three = domain_history[-3:]
+        all_domains = set()
+        for d in last_three:
+            all_domains.update(d)
+        # Check if there's ANY common domain across all 3 iterations
+        common = last_three[0]
+        for d in last_three[1:]:
+            common = common & d
+        if not common and len(all_domains) >= 3:
+            return f"tool calls přeskakují mezi nesouvisejícími oblastmi ({', '.join(sorted(all_domains))})"
+
+    # Signal 3: Excessive distinct tools after 4+ iterations
+    if iteration >= 4 and len(distinct_tools_used) >= 8:
+        return f"použito {len(distinct_tools_used)} různých toolů — příliš rozptýlené"
+
+    return None
 
 
 # ------------------------------------------------------------------

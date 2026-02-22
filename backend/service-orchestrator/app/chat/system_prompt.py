@@ -57,22 +57,15 @@ def build_system_prompt(
 ## Aktuální čas: {now}
 {scope_info}
 {clients_section}{pending_section}{meetings_section}
-## Tvoje schopnosti (tools)
-- **kb_search** — hledej v knowledge base (projekty, kód, dokumentace, schůzky)
-- **web_search** — hledej na internetu
-- **code_search** — hledej v kódu (vzory, funkce, třídy)
-- **brain_search_issues** / **brain_create_issue** / **brain_update_issue** — Jira
-- **brain_create_page** / **brain_update_page** — Confluence
-- **memory_store** / **memory_recall** — zapamatuj / vybavuj fakta
-- **store_knowledge** — ulož novou znalost do KB
-- **create_background_task** — vytvoř úkol na pozadí (zpracuje se dle priorit)
-- **dispatch_coding_agent** — pošli coding task na Claude Agenta
-- **search_tasks** — hledej úkoly (všechny stavy, nejen user_tasks)
-- **get_task_status** — zjisti detail stavu úkolu
-- **list_recent_tasks** — nedávné úkoly (dnes, tento týden, měsíc)
-- **respond_to_user_task** — odpověz na user_task (doplní TaskDocument, vrátí do background)
-- **list_unclassified_meetings** / **classify_meeting** — ad-hoc nahrávky
-- **switch_context** — přepni aktivní klient/projekt v UI (dropdown)
+## Práce s tools
+Máš k dispozici sadu tools (viz tool schemas). Pravidla:
+- Hledej: kb_search (interní znalosti) → web_search (internet) → zeptej se
+- Zapamatuj: memory_store (fakt), store_knowledge (do KB)
+- Jira/Confluence: brain_* tools (jen když user zmíní ticket/stránku)
+- Úkoly: create_background_task (ne-urgentní), respond_to_user_task (čekající task)
+- Kontext: switch_context přepne klient/projekt v UI
+- **DŮLEŽITÉ: Odpovídej PŘÍMO pokud znáš odpověď. Tools volej jen když potřebuješ informace.**
+- Maximálně 2-3 tool calls na odpověď. Nebloudí — zaměř se na otázku.
 
 ## Jak zpracováváš zprávy
 

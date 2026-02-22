@@ -3,9 +3,17 @@
 These tools are available ONLY in the foreground chat agentic loop.
 They extend the base tools (kb_search, web_search, brain_*, memory_*, store_knowledge)
 with chat-specific capabilities like task management and meeting classification.
+
+Tool categories enable intent-based filtering (see intent.py):
+- CORE: always available (5 tools)
+- RESEARCH: code/KB introspection (4 tools)
+- BRAIN: Jira/Confluence CRUD (8 tools)
+- TASK_MGMT: task lifecycle + meetings (9 tools)
 """
 
 from __future__ import annotations
+
+from enum import Enum
 
 from app.tools.definitions import (
     TOOL_WEB_SEARCH,
@@ -301,3 +309,64 @@ CHAT_TOOLS: list[dict] = [
     *BRAIN_TOOLS,
     *CHAT_SPECIFIC_TOOLS,
 ]
+
+
+# ---------------------------------------------------------------------------
+# Tool categories for intent-based filtering (see intent.py)
+# ---------------------------------------------------------------------------
+
+class ToolCategory(str, Enum):
+    """Tool category for intent-based filtering.
+
+    CORE is always included. Other categories are added based on
+    lightweight intent classification of the user message.
+    """
+    CORE = "core"
+    RESEARCH = "research"
+    BRAIN = "brain"
+    TASK_MGMT = "task_mgmt"
+
+
+TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
+    ToolCategory.CORE: [
+        TOOL_KB_SEARCH,
+        TOOL_WEB_SEARCH,
+        TOOL_MEMORY_STORE,
+        TOOL_MEMORY_RECALL,
+        TOOL_SWITCH_CONTEXT,
+    ],
+    ToolCategory.RESEARCH: [
+        TOOL_CODE_SEARCH,
+        TOOL_GET_KB_STATS,
+        TOOL_GET_INDEXED_ITEMS,
+        TOOL_LIST_AFFAIRS,
+    ],
+    ToolCategory.BRAIN: list(BRAIN_TOOLS),
+    ToolCategory.TASK_MGMT: [
+        TOOL_CREATE_BACKGROUND_TASK,
+        TOOL_DISPATCH_CODING_AGENT,
+        TOOL_SEARCH_TASKS,
+        TOOL_GET_TASK_STATUS,
+        TOOL_LIST_RECENT_TASKS,
+        TOOL_RESPOND_TO_USER_TASK,
+        TOOL_CLASSIFY_MEETING,
+        TOOL_LIST_UNCLASSIFIED_MEETINGS,
+        TOOL_STORE_KNOWLEDGE,
+    ],
+}
+
+# Domain mapping for drift detection (tool name → semantic domain)
+TOOL_DOMAINS: dict[str, str] = {
+    "kb_search": "search", "web_search": "search", "code_search": "search",
+    "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
+    "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
+    "brain_create_issue": "brain", "brain_update_issue": "brain",
+    "brain_add_comment": "brain", "brain_transition_issue": "brain",
+    "brain_search_issues": "brain", "brain_create_page": "brain",
+    "brain_update_page": "brain", "brain_search_pages": "brain",
+    "create_background_task": "task", "dispatch_coding_agent": "task",
+    "search_tasks": "task", "get_task_status": "task",
+    "list_recent_tasks": "task", "respond_to_user_task": "task",
+    "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
+    "switch_context": "scope",
+}

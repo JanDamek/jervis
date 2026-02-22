@@ -3280,3 +3280,83 @@ The v6 handlers coexist with the legacy LangGraph orchestrator:
 1. **Phase 1 (current):** Both systems active; foreground→`/chat` (SSE), background→`/orchestrate/v2` with legacy fallback
 2. **Phase 2 (stabilization):** Remove `dispatchLegacy()` fallback after v6 background handler is proven stable
 3. **Phase 3 (cleanup):** Remove old 14-node LangGraph (`app/graph/orchestrator.py`), 22 specialist agents (`app/agents/specialists/`), unused graph nodes (`app/graph/nodes/`)
+
+### 31.16 Chat Focus — Intent Classification & Drift Detection
+
+**Problem:** qwen3-coder:30b model gets lost in 26 tools (~10.6k tokens = 33% of 32k context). Instead of answering simple questions, it cycles 8+ tool-call iterations (5-8 min). See `docs/chat-issues-analysis.md`.
+
+**Solution:** 7 components reducing tool noise, maintaining focus, and detecting drift.
+
+#### A. Tool Categories (`app/chat/tools.py`)
+
+26 tools divided into 4 categories via `ToolCategory` enum:
+
+| Category | Count | When exposed |
+|----------|-------|-------------|
+| **CORE** | 5 | Always (kb_search, web_search, memory_store, memory_recall, switch_context) |
+| **RESEARCH** | 4 | Code/KB introspection keywords |
+| **BRAIN** | 8 | Jira/Confluence keywords (issue, ticket, TPT-xxx, confluence...) |
+| **TASK_MGMT** | 9 | Task/meeting keywords (úkol, background, agent, nahrávka...) |
+
+`TOOL_DOMAINS` dict maps each tool to a semantic domain (search, memory, brain, task, meeting, scope) for drift detection.
+
+#### B. Intent Classifier (`app/chat/intent.py`)
+
+Regex-based pre-pass (no LLM call, <1ms):
+
+```python
+classify_intent(user_message, has_pending_user_tasks, has_unclassified_meetings, has_context_task_id)
+→ set[ToolCategory]   # always includes CORE
+```
+
+Patterns: `_BRAIN_PATTERNS` (Czech+English), `_TASK_MGMT_PATTERNS`, `_RESEARCH_PATTERNS`, `_GREETING_PATTERNS`. Context-driven: greeting + pending tasks → TASK_MGMT. User_task response → TASK_MGMT.
+
+`select_tools(categories)` builds deduplicated tool list from matched categories.
+
+**Typical result:** simple question → 5 CORE tools (~2k tokens) instead of 26 (~10.6k tokens).
+
+#### C. Focus Reminder
+
+After each iteration's tool results, a system message reminds the model:
+
+```
+[FOCUS] Původní otázka: "{message[:200]}"
+Zbývá {remaining} iterací. Pokud máš dost info, ODPOVĚZ.
+```
+
+~80 tokens/iteration — pulls model back to the original question.
+
+#### D. Multi-Signal Drift Detection (`_detect_drift()`)
+
+Replaces simple "consecutive same signature" with 3 signals:
+
+1. **Consecutive same** (2× identical tool+args) — model stuck in loop
+2. **Domain drift** (3 iterations, 3+ distinct domains, no common domain) — model wandering between unrelated areas
+3. **Excessive tools** (8+ distinct tools after 4+ iterations) — model unfocused
+
+On detection, forces text response without tools (same as loop break).
+
+#### E. Thinking Event Between Iterations
+
+After tool execution, before next LLM call:
+```python
+yield ChatStreamEvent(type="thinking", content="Zpracovávám informace...")
+```
+Fixes Issue 3 — UI no longer shows stale "Přepínám na..." for 60s during LLM call.
+
+#### F. System Prompt Deduplication
+
+Tool descriptions in system prompt reduced from ~375 tokens to ~120 tokens. Emphasis on "Odpovídej PŘÍMO" and "Maximálně 2-3 tool calls".
+
+#### G. MAX_ITERATIONS 15 → 6
+
+With intent filtering + focus reminders + drift detection, 6 iterations suffice. Typical: 1-2 (simple), 3-4 (multi-intent). Worst case: 6 × 60s = 6 min vs 15 × 60s = 15 min.
+
+#### Token Impact
+
+| | Before | After | Delta |
+|---|---|---|---|
+| Tool schemas (avg) | ~2,600 | ~900 | -1,700 |
+| System prompt tools | ~375 | ~120 | -255 |
+| Focus reminder | 0 | +80/iter | +160 |
+| **Per call total** | **~2,975** | **~1,180** | **-1,795** |
