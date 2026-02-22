@@ -72,15 +72,15 @@ internal fun ChatArea(
 ) {
     val listState = rememberLazyListState()
 
-    // Instant scroll to bottom — no animation
+    // Scroll to bottom when messages change
     var previousCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             if (previousCount == 0 || messages.size > previousCount) {
-                // Initial load or new message added → instant jump
+                // Brief delay so rapid stream arrivals settle before final scroll
+                kotlinx.coroutines.delay(50)
                 listState.scrollToItem(messages.size - 1)
             }
-            // When "Load more" prepends older messages, don't scroll
         }
         previousCount = messages.size
     }
