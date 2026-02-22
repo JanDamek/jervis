@@ -286,17 +286,21 @@ class MainViewModel(
     }
 
     /**
-     * Lightweight scope update from chat — updates dropdown without clearing messages or subscriptions.
-     * Called when the chat LLM switches to a different client/project context.
+     * Scope update from chat — called on scope_change events and history restore.
+     *
+     * Two modes:
+     * 1. Live scope_change (projectsJson present) — lightweight update with embedded project list
+     * 2. History restore (no projectsJson) — delegates to selectClient for full flow
      */
     private fun updateChatScope(clientId: String, projectId: String? = null, projectsJson: String? = null) {
         if (clientId == _selectedClientId.value && projectId == _selectedProjectId.value) return
         println("MainViewModel: updateChatScope(client=$clientId, project=$projectId)")
 
-        _selectedClientId.value = clientId
+        val clientChanged = clientId != _selectedClientId.value
 
-        // Parse projects from scope_change event (format: [{"id":"...","name":"..."}])
         if (!projectsJson.isNullOrBlank()) {
+            // Live scope_change with embedded projects — lightweight update
+            _selectedClientId.value = clientId
             try {
                 val jsonArray = Json.parseToJsonElement(projectsJson).jsonArray
                 val parsed = jsonArray.map { element ->
@@ -311,20 +315,38 @@ class MainViewModel(
             } catch (e: Exception) {
                 println("Failed to parse scope_change projects: ${e.message}")
             }
+            _selectedProjectId.value = projectId
+            persistChatScope(clientId, projectId)
+        } else if (clientChanged) {
+            // History restore or scope_change without projects — full selectClient flow
+            selectClient(clientId, chatProjectId = projectId)
+        } else if (projectId != _selectedProjectId.value) {
+            // Same client, different project
+            _selectedProjectId.value = projectId
+            persistChatScope(clientId, projectId)
         }
-
-        _selectedProjectId.value = projectId
     }
 
-    fun selectClient(clientId: String) {
-        if (_selectedClientId.value == clientId) return
-        println("MainViewModel: selectClient($clientId) — previous: ${_selectedClientId.value}")
+    /**
+     * Select a client in the UI. Loads projects, groups, environments, badges.
+     *
+     * @param chatProjectId If set (from chat history restore), overrides lastSelectedProjectId.
+     *                      Does NOT persist scope (already saved in chat session).
+     */
+    fun selectClient(clientId: String, chatProjectId: String? = null) {
+        if (_selectedClientId.value == clientId && chatProjectId == null) return
+        println("MainViewModel: selectClient($clientId, chatProject=$chatProjectId) — previous: ${_selectedClientId.value}")
 
         // Chat is global — do NOT cancel chatJob or clear chatMessages here.
 
         _selectedProjectId.value = null
         _selectedGroupId.value = null
         _selectedClientId.value = clientId
+
+        // Only persist scope on manual user switch, not on chat restore
+        if (chatProjectId == null) {
+            persistChatScope(clientId, null)
+        }
 
         _projects.value = emptyList()
         _projectGroups.value = emptyList()
@@ -342,12 +364,10 @@ class MainViewModel(
         cached?.projectsByClient?.get(clientId)?.let { cachedProjects ->
             if (_projects.value.isEmpty()) {
                 _projects.value = cachedProjects
-                // Restore last selected project from cache
-                val client = _clients.value.find { it.id == clientId }
-                client?.lastSelectedProjectId?.let { lastProjectId ->
-                    if (cachedProjects.any { it.id == lastProjectId }) {
-                        _selectedProjectId.value = lastProjectId
-                    }
+                val projectToSelect = chatProjectId
+                    ?: _clients.value.find { it.id == clientId }?.lastSelectedProjectId
+                if (projectToSelect != null && cachedProjects.any { it.id == projectToSelect }) {
+                    _selectedProjectId.value = projectToSelect
                 }
             }
         }
@@ -364,12 +384,11 @@ class MainViewModel(
                 val clientGroups = allGroups.filter { it.clientId == clientId }
                 _projectGroups.value = clientGroups
 
-                // Restore last selected project if available
-                val client = _clients.value.find { it.id == clientId }
-                client?.lastSelectedProjectId?.let { lastProjectId ->
-                    if (projectList.any { it.id == lastProjectId }) {
-                        _selectedProjectId.value = lastProjectId
-                    }
+                // chatProjectId (from chat session) has priority over lastSelectedProjectId
+                val projectToSelect = chatProjectId
+                    ?: _clients.value.find { it.id == clientId }?.lastSelectedProjectId
+                if (projectToSelect != null && projectList.any { it.id == projectToSelect }) {
+                    _selectedProjectId.value = projectToSelect
                 }
 
                 // Eagerly load environments to determine badge visibility
@@ -409,8 +428,11 @@ class MainViewModel(
         _selectedGroupId.value = null
         // Chat is global — do NOT cancel chatJob or clear chatMessages here.
 
-        // Save selection to server
+        // Persist scope to chat session (so restart restores correct project)
         val clientId = _selectedClientId.value
+        persistChatScope(clientId, projectId)
+
+        // Save selection to server
         if (clientId != null) {
             scope.launch {
                 try {
@@ -436,6 +458,21 @@ class MainViewModel(
                 _selectedClientId.value?.let { selectClient(it) }
             } catch (_: Exception) {
                 // Ignore — will retry automatically via backoff
+            }
+        }
+    }
+
+    /**
+     * Persist current scope to chat session (fire-and-forget).
+     * Called on manual client/project switch so that app restart restores correct scope.
+     */
+    private fun persistChatScope(clientId: String?, projectId: String?) {
+        scope.launch {
+            try {
+                repository.chat.updateScope(clientId = clientId, projectId = projectId)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                // Non-critical — scope will be updated on next message send
             }
         }
     }

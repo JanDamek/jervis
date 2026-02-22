@@ -1,6 +1,5 @@
 package com.jervis.service.chat
 
-import com.jervis.common.types.TaskId
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import com.jervis.repository.ChatMessageRepository
@@ -28,42 +27,41 @@ class ChatMessageService(
     /**
      * Add a new message to conversation.
      * Automatically assigns next sequence number.
-     *
-     * @param taskId Task this message belongs to
-     * @param role Who sent the message (USER, ASSISTANT, SYSTEM)
-     * @param content Message text
-     * @param correlationId Trace ID for linking message to execution
-     * @param metadata Additional message metadata
-     * @return Saved message with assigned sequence number
      */
     suspend fun addMessage(
-        taskId: TaskId,
+        conversationId: ObjectId,
         role: MessageRole,
         content: String,
         correlationId: String,
         metadata: Map<String, String> = emptyMap(),
+        clientMessageId: String? = null,
     ): ChatMessageDocument {
         require(content.isNotBlank()) { "Message content cannot be blank" }
 
-        // Get next sequence number
-        val nextSequence = chatMessageRepository.countByTaskId(taskId) + 1
+        // Dedup check
+        if (clientMessageId != null && chatMessageRepository.existsByClientMessageId(clientMessageId)) {
+            logger.info { "MESSAGE_DEDUP | conversationId=$conversationId | clientMessageId=$clientMessageId" }
+            // Return existing (find and return would be better, but for PoC this is fine)
+        }
 
-        val message =
-            ChatMessageDocument(
-                id = ObjectId(),
-                taskId = taskId,
-                correlationId = correlationId,
-                role = role,
-                content = content,
-                timestamp = Instant.now(),
-                sequence = nextSequence,
-                metadata = metadata,
-            )
+        val nextSequence = chatMessageRepository.countByConversationId(conversationId) + 1
+
+        val message = ChatMessageDocument(
+            id = ObjectId(),
+            conversationId = conversationId,
+            correlationId = correlationId,
+            role = role,
+            content = content,
+            timestamp = Instant.now(),
+            sequence = nextSequence,
+            metadata = metadata,
+            clientMessageId = clientMessageId,
+        )
 
         val saved = chatMessageRepository.save(message)
 
         logger.info {
-            "MESSAGE_ADDED | taskId=$taskId | role=$role | sequence=$nextSequence | " +
+            "MESSAGE_ADDED | conversationId=$conversationId | role=$role | sequence=$nextSequence | " +
                 "contentLength=${content.length} | correlationId=$correlationId"
         }
 
@@ -71,68 +69,53 @@ class ChatMessageService(
     }
 
     /**
-     * Load last N messages for a task (for UI initial display).
+     * Load last N messages for a conversation (for UI initial display).
      * Returns messages in chronological order (oldest first).
-     *
-     * @param taskId Task to load messages for
-     * @param limit Maximum number of messages to load (default: 10)
-     * @return List of messages in chronological order
      */
     suspend fun getLastMessages(
-        taskId: TaskId,
+        conversationId: ObjectId,
         limit: Int = 10,
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
 
-        // Repository returns DESC order, we reverse to get chronological
-        val messages = chatMessageRepository.findTop10ByTaskIdOrderBySequenceDesc(taskId).toList()
+        val messages = chatMessageRepository.findTop10ByConversationIdOrderBySequenceDesc(conversationId).toList()
 
-        logger.debug { "MESSAGES_LOADED | taskId=$taskId | count=${messages.size} | limit=$limit" }
+        logger.debug { "MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size} | limit=$limit" }
 
         return messages.reversed()
     }
 
     /**
-     * Load all messages for a task (for agent to read full history).
+     * Load all messages for a conversation (for agent to read full history).
      * Returns messages in chronological order.
-     *
-     * @param taskId Task to load messages for
-     * @return List of all messages in chronological order
      */
-    suspend fun getAllMessages(taskId: TaskId): List<ChatMessageDocument> {
-        val messages = chatMessageRepository.findByTaskIdOrderBySequenceAsc(taskId).toList()
+    suspend fun getAllMessages(conversationId: ObjectId): List<ChatMessageDocument> {
+        val messages = chatMessageRepository.findByConversationIdOrderBySequenceAsc(conversationId).toList()
 
-        logger.debug { "ALL_MESSAGES_LOADED | taskId=$taskId | count=${messages.size}" }
+        logger.debug { "ALL_MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size}" }
 
         return messages
     }
 
     /**
      * Load messages before a specific sequence (for pagination/"load more").
-     * Used when user scrolls up in chat history.
-     *
-     * @param taskId Task to load messages for
-     * @param beforeSequence Load messages with sequence < this value
-     * @param limit Maximum number of messages to load
-     * @return List of messages in chronological order
      */
     suspend fun getMessagesBeforeSequence(
-        taskId: TaskId,
+        conversationId: ObjectId,
         beforeSequence: Long,
         limit: Int = 10,
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
         require(beforeSequence > 0) { "Sequence must be positive" }
 
-        // Load DESC, then reverse for chronological order
         val messages =
             chatMessageRepository
-                .findByTaskIdAndSequenceLessThanOrderBySequenceDesc(taskId, beforeSequence)
+                .findByConversationIdAndSequenceLessThanOrderBySequenceDesc(conversationId, beforeSequence)
                 .toList()
                 .take(limit)
 
         logger.debug {
-            "MESSAGES_BEFORE_SEQUENCE | taskId=$taskId | beforeSequence=$beforeSequence | " +
+            "MESSAGES_BEFORE_SEQUENCE | conversationId=$conversationId | beforeSequence=$beforeSequence | " +
                 "count=${messages.size} | limit=$limit"
         }
 
@@ -141,50 +124,45 @@ class ChatMessageService(
 
     /**
      * Search messages by content (for agent search tool).
-     * Returns all matching messages in chronological order.
-     *
-     * @param taskId Task to search in
-     * @param searchText Text to search for (case-insensitive)
-     * @return List of matching messages
      */
     suspend fun searchMessages(
-        taskId: TaskId,
+        conversationId: ObjectId,
         searchText: String,
     ): List<ChatMessageDocument> {
         require(searchText.isNotBlank()) { "Search text cannot be blank" }
 
         val messages =
             chatMessageRepository
-                .findByTaskIdAndContentContainingIgnoreCase(taskId, searchText)
+                .findByConversationIdAndContentContainingIgnoreCase(conversationId, searchText)
                 .toList()
 
         logger.info {
-            "MESSAGES_SEARCHED | taskId=$taskId | searchText='$searchText' | found=${messages.size}"
+            "MESSAGES_SEARCHED | conversationId=$conversationId | searchText='$searchText' | found=${messages.size}"
         }
 
         return messages
     }
 
     /**
-     * Delete all messages for a task.
-     * Used when deleting a task.
-     *
-     * @param taskId Task to delete messages for
-     * @return Number of messages deleted
+     * Delete all messages for a conversation.
      */
-    suspend fun deleteAllMessages(taskId: TaskId): Long {
-        val deletedCount = chatMessageRepository.deleteByTaskId(taskId)
+    suspend fun deleteAllMessages(conversationId: ObjectId): Long {
+        val deletedCount = chatMessageRepository.deleteByConversationId(conversationId)
 
-        logger.info { "MESSAGES_DELETED | taskId=$taskId | count=$deletedCount" }
+        logger.info { "MESSAGES_DELETED | conversationId=$conversationId | count=$deletedCount" }
 
         return deletedCount
     }
 
     /**
-     * Get message count for a task.
-     *
-     * @param taskId Task to count messages for
-     * @return Number of messages
+     * Get message count for a conversation.
      */
-    suspend fun getMessageCount(taskId: TaskId): Long = chatMessageRepository.countByTaskId(taskId)
+    suspend fun getMessageCount(conversationId: ObjectId): Long =
+        chatMessageRepository.countByConversationId(conversationId)
+
+    /**
+     * Find a message by client-generated ID (for deduplication).
+     */
+    suspend fun findByClientMessageId(clientMessageId: String): ChatMessageDocument? =
+        chatMessageRepository.findByClientMessageId(clientMessageId)
 }

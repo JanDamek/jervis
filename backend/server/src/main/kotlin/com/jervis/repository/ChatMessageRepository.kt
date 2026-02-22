@@ -1,6 +1,5 @@
 package com.jervis.repository
 
-import com.jervis.common.types.TaskId
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import kotlinx.coroutines.flow.Flow
@@ -22,25 +21,25 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, ObjectId> {
     /**
-     * Load last N messages for a task, ordered by sequence descending.
+     * Load last N messages for a conversation, ordered by sequence descending.
      * Used for initial UI display (show last 10 messages).
      *
      * NOTE: Returns in DESCENDING order (newest first), caller should reverse if needed.
      */
-    suspend fun findTop10ByTaskIdOrderBySequenceDesc(taskId: TaskId): Flow<ChatMessageDocument>
+    suspend fun findTop10ByConversationIdOrderBySequenceDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
 
     /**
-     * Load all messages for a task, ordered by sequence ascending.
+     * Load all messages for a conversation, ordered by sequence ascending.
      * Used by agent to read full conversation history.
      */
-    suspend fun findByTaskIdOrderBySequenceAsc(taskId: TaskId): Flow<ChatMessageDocument>
+    suspend fun findByConversationIdOrderBySequenceAsc(conversationId: ObjectId): Flow<ChatMessageDocument>
 
     /**
-     * Load messages after a specific sequence number (for pagination).
+     * Load messages before a specific sequence number (for pagination).
      * Used for "load more" functionality in UI.
      */
-    suspend fun findByTaskIdAndSequenceLessThanOrderBySequenceDesc(
-        taskId: TaskId,
+    suspend fun findByConversationIdAndSequenceLessThanOrderBySequenceDesc(
+        conversationId: ObjectId,
         sequence: Long,
     ): Flow<ChatMessageDocument>
 
@@ -48,50 +47,48 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
      * Search messages by content (case-insensitive).
      * Used by agent search tool to find specific information in history.
      */
-    suspend fun findByTaskIdAndContentContainingIgnoreCase(
-        taskId: TaskId,
+    suspend fun findByConversationIdAndContentContainingIgnoreCase(
+        conversationId: ObjectId,
         searchText: String,
     ): Flow<ChatMessageDocument>
 
     /**
-     * Count messages for a task.
+     * Count messages for a conversation.
      * Used to generate next sequence number when adding new message.
      */
-    suspend fun countByTaskId(taskId: TaskId): Long
+    suspend fun countByConversationId(conversationId: ObjectId): Long
 
     /**
-     * Count USER messages for a task after a given timestamp.
+     * Count USER messages for a conversation after a given timestamp.
      * Used to detect inline messages sent while agent was orchestrating.
      */
-    suspend fun countByTaskIdAndRoleAndTimestampAfter(
-        taskId: TaskId,
+    suspend fun countByConversationIdAndRoleAndTimestampAfter(
+        conversationId: ObjectId,
         role: MessageRole,
         timestamp: java.time.Instant,
     ): Long
 
     /**
-     * Delete all messages for a task.
-     * Used when deleting a task.
+     * Delete all messages for a conversation.
+     * Used when deleting a task/session.
      */
-    suspend fun deleteByTaskId(taskId: TaskId): Long
+    suspend fun deleteByConversationId(conversationId: ObjectId): Long
 
     /**
-     * Find messages by task and role, ordered by sequence descending.
-     * Used by ChatHistoryTools to get user-only or assistant-only messages.
+     * Find messages by conversation and role.
      */
-    @Query("{ 'taskId': ?0, 'role': ?1 }")
-    suspend fun findByTaskIdAndRole(
-        taskId: TaskId,
+    @Query("{ 'conversationId': ?0, 'role': ?1 }")
+    suspend fun findByConversationIdAndRole(
+        conversationId: ObjectId,
         role: MessageRole,
     ): Flow<ChatMessageDocument>
 
     /**
      * Find messages by content search (case-insensitive).
-     * Used by ChatHistoryTools for searching conversation history.
      */
-    @Query("{ 'taskId': ?0, 'content': { '\$regex': ?1, '\$options': 'i' } }")
-    suspend fun findByTaskIdAndContentRegex(
-        taskId: TaskId,
+    @Query("{ 'conversationId': ?0, 'content': { '\$regex': ?1, '\$options': 'i' } }")
+    suspend fun findByConversationIdAndContentRegex(
+        conversationId: ObjectId,
         searchText: String,
     ): Flow<ChatMessageDocument>
 
@@ -100,4 +97,10 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
      * Used for deduplication — prevents duplicate processing on retry.
      */
     suspend fun existsByClientMessageId(clientMessageId: String): Boolean
+
+    /**
+     * Find a message by client-generated ID.
+     * Used for deduplication — returns existing message on retry.
+     */
+    suspend fun findByClientMessageId(clientMessageId: String): ChatMessageDocument?
 }

@@ -182,4 +182,30 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         type: TaskTypeEnum,
         state: TaskStateEnum,
     ): Flow<TaskDocument>
+
+    /**
+     * Find recent tasks ordered by creation date (newest first).
+     * Used by chat tool list_recent_tasks.
+     */
+    fun findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+        since: Instant,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find recent tasks by state ordered by creation date (newest first).
+     * Used by chat tool list_recent_tasks with state filter.
+     */
+    fun findByStateAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+        state: TaskStateEnum,
+        since: Instant,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find recent tasks by client ordered by creation date (newest first).
+     */
+    fun findByClientIdAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+        clientId: ClientId,
+        since: Instant,
+    ): Flow<TaskDocument>
+
 }

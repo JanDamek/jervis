@@ -51,12 +51,12 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.LOCAL_LARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 49152,  # 48k — GPU VRAM limit (fast)
+        "num_ctx": 49152,  # 48k — max for full GPU speed (~30 tok/s)
     },
     ModelTier.LOCAL_XLARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 131072,  # 128k — CPU RAM (slower)
+        "num_ctx": 131072,  # 128k — CPU RAM spill (~7-12 tok/s)
     },
     ModelTier.LOCAL_XXLARGE: {
         "model": f"ollama/{settings.default_local_model}",
@@ -84,8 +84,9 @@ class EscalationPolicy:
     def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
         """Always returns a local tier based on context size.
 
-        Qwen3 supports up to 256k context. GPU VRAM limit is ~48k (fast),
-        above that spills to CPU RAM (slower but works).
+        Qwen3 supports up to 256k context. P40 GPU VRAM fits up to 48k
+        at full speed (~30 tok/s). Above 48k spills to CPU RAM, still works
+        at reduced speed (~7-12 tok/s). Handles up to ~250k context.
         """
         if context_tokens > 128_000:
             return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
@@ -253,7 +254,7 @@ class LLMProvider:
         max_tokens: int,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
-        """Blocking LLM call (for tool calls)."""
+        """Blocking LLM call (for tool calls) with timeout protection."""
         kwargs: dict = {
             "model": config["model"],
             "messages": messages,
@@ -271,10 +272,17 @@ class LLMProvider:
             kwargs["extra_headers"] = extra_headers
 
         logger.info("LLM blocking call (tools): model=%s api_base=%s headers=%s", config["model"], config.get("api_base"), extra_headers or {})
-        # DEBUG: Log request being sent to Ollama
         logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
-        response = await litellm.acompletion(**kwargs)
+        try:
+            response = await asyncio.wait_for(
+                litellm.acompletion(**kwargs),
+                timeout=HEARTBEAT_DEAD_SECONDS,  # Same 5min as streaming heartbeat
+            )
+        except asyncio.TimeoutError:
+            raise HeartbeatTimeoutError(
+                f"LLM blocking call timed out after {HEARTBEAT_DEAD_SECONDS}s"
+            )
 
         # DEBUG: Log RAW response to debug tool_calls parsing
         try:

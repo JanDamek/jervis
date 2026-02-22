@@ -97,8 +97,9 @@ fun MeetingsScreen(
     }
 
     // Load meetings + projects when global selection changes
+    // Skip "__global__" — it's not a valid MongoDB ObjectId, only used for global chat
     LaunchedEffect(selectedClientId, selectedProjectId, showTrash) {
-        selectedClientId?.let { clientId ->
+        selectedClientId?.takeIf { it != "__global__" }?.let { clientId ->
             if (showTrash) {
                 viewModel.loadDeletedMeetings(clientId, selectedProjectId)
             } else {

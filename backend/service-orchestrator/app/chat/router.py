@@ -31,13 +31,22 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class PrepareChatContextRequest(BaseModel):
-    task_id: str
+    task_id: str = ""
+    conversation_id: str = ""
     memory_context: str = ""
     context_budget: int = 0  # 0 = use default
 
+    def get_conversation_id(self) -> str:
+        """Return conversation_id, falling back to task_id for backward compat."""
+        return self.conversation_id or self.task_id
+
 
 class CompressChatAsyncRequest(BaseModel):
-    task_id: str
+    task_id: str = ""
+    conversation_id: str = ""
+
+    def get_conversation_id(self) -> str:
+        return self.conversation_id or self.task_id
 
 
 class CompressChatAsyncResponse(BaseModel):
@@ -54,11 +63,12 @@ async def prepare_chat_context(request: PrepareChatContextRequest):
     """Build chat context payload from MongoDB.
 
     Replaces Kotlin ChatHistoryService.prepareChatHistoryPayload().
-    Kotlin sends just taskId → Python reads MongoDB → returns payload.
+    Kotlin sends conversationId -> Python reads MongoDB -> returns payload.
     Same JSON structure as ChatHistoryPayloadDto.
     """
+    cid = request.get_conversation_id()
     try:
-        payload = await chat_context_assembler.prepare_payload_for_kotlin(request.task_id)
+        payload = await chat_context_assembler.prepare_payload_for_kotlin(cid)
 
         if payload is None:
             return {
@@ -68,8 +78,8 @@ async def prepare_chat_context(request: PrepareChatContextRequest):
             }
 
         logger.info(
-            "PREPARE_CONTEXT | taskId=%s | messages=%d | summaries=%d",
-            request.task_id,
+            "PREPARE_CONTEXT | conversationId=%s | messages=%d | summaries=%d",
+            cid,
             len(payload["recent_messages"]),
             len(payload["summary_blocks"]),
         )
@@ -77,7 +87,7 @@ async def prepare_chat_context(request: PrepareChatContextRequest):
         return payload
 
     except Exception as e:
-        logger.exception("Failed to prepare chat context for task %s", request.task_id)
+        logger.exception("Failed to prepare chat context for conversation %s", cid)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -86,10 +96,11 @@ async def compress_chat_async(request: CompressChatAsyncRequest):
     """Trigger async compression for a conversation thread.
 
     Replaces Kotlin ChatHistoryService.compressIfNeeded().
-    Python reads MongoDB → checks threshold → fires LLM compression → saves to MongoDB.
+    Python reads MongoDB -> checks threshold -> fires LLM compression -> saves to MongoDB.
     """
+    cid = request.get_conversation_id()
     try:
-        triggered = await chat_context_assembler.maybe_compress(request.task_id)
+        triggered = await chat_context_assembler.maybe_compress(cid)
 
         return CompressChatAsyncResponse(
             triggered=triggered,
@@ -97,7 +108,7 @@ async def compress_chat_async(request: CompressChatAsyncRequest):
         )
 
     except Exception as e:
-        logger.exception("Failed to trigger compression for task %s", request.task_id)
+        logger.exception("Failed to trigger compression for conversation %s", cid)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -105,14 +116,14 @@ async def compress_chat_async(request: CompressChatAsyncRequest):
 async def compress_chat_legacy(request: dict):
     """Legacy compress endpoint — backward compatible with existing Kotlin calls.
 
-    Kotlin sends messages directly → Python compresses → returns summary.
+    Kotlin sends messages directly -> Python compresses -> returns summary.
     DEPRECATED: Use /internal/compress-chat-async instead.
     Kept during migration for backward compatibility.
     """
     try:
         messages_data = request.get("messages", [])
         previous_summary = request.get("previous_summary")
-        task_id = request.get("task_id", "unknown")
+        task_id = request.get("task_id", request.get("conversation_id", "unknown"))
 
         if not messages_data:
             return {
@@ -188,5 +199,5 @@ async def compress_chat_legacy(request: dict):
         }
 
     except Exception as e:
-        logger.exception("Failed to compress chat for task %s", request.get("task_id"))
+        logger.exception("Failed to compress chat for conversation %s", request.get("task_id", request.get("conversation_id")))
         raise HTTPException(status_code=500, detail=str(e))

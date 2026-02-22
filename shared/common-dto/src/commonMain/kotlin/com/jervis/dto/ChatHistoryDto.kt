@@ -8,4 +8,6 @@ data class ChatHistoryDto(
     val hasMore: Boolean = false,
     val oldestSequence: Long? = null,
     val compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
+    val activeClientId: String? = null,
+    val activeProjectId: String? = null,
 )

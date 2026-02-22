@@ -1,6 +1,5 @@
 package com.jervis.entity
 
-import com.jervis.common.types.TaskId
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.CompoundIndex
@@ -14,7 +13,7 @@ import java.time.Instant
  * Rolling summaries for long conversations. Every 20 messages beyond the
  * recent window are compressed by LLM into a summary block.
  *
- * @property taskId The conversation thread this summary belongs to
+ * @property conversationId The conversation thread this summary belongs to
  * @property sequenceStart First message sequence number in this summary
  * @property sequenceEnd Last message sequence number in this summary
  * @property summary LLM-generated summary text (200-500 chars)
@@ -25,10 +24,10 @@ import java.time.Instant
  * @property messageCount Number of messages compressed in this block
  */
 @Document(collection = "chat_summaries")
-@CompoundIndex(name = "task_seq_idx", def = "{'taskId': 1, 'sequenceEnd': -1}")
+@CompoundIndex(name = "conversation_seq_idx", def = "{'conversationId': 1, 'sequenceEnd': -1}")
 data class ChatSummaryDocument(
     @Id val id: ObjectId = ObjectId(),
-    @Indexed val taskId: TaskId,
+    @Indexed val conversationId: ObjectId,
     val sequenceStart: Long,
     val sequenceEnd: Long,
     val summary: String,

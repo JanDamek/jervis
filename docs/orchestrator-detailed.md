@@ -643,7 +643,7 @@ Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_schedul
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 
-**Token streaming**: Finální odpověď (po poslední LLM iteraci bez tool_calls) se streamuje do UI po malých chuncích (12 znaků) přes `kotlin_client.emit_streaming_token()` → Kotlin `/internal/streaming-token` endpoint → `emitToChatStream(STREAMING_TOKEN)` → UI `MainViewModel.handleStreamingToken()` akumuluje po `messageId`. Výsledek: ChatGPT-style postupné vypisování textu. Finální FINAL message pak nahradí streaming buffer.
+**Token streaming (background tasks)**: Finální odpověď (po poslední LLM iteraci bez tool_calls) se streamuje do UI po malých chuncích (12 znaků) přes `kotlin_client.emit_streaming_token()` → Kotlin `/internal/streaming-token` endpoint (legacy no-op). **Pozn.:** Foreground chat nyní používá přímý SSE stream přes `IChatService.subscribeToChatEvents()` → `ChatRpcImpl` → `PythonChatClient` (viz architecture.md §16).
 
 **Output**: `final_result` — odpověď v češtině
 

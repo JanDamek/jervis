@@ -12,12 +12,11 @@ Used by:
 - Background orchestrator (replaces Kotlin prepareChatHistoryPayload)
 
 MongoDB collections:
-- chat_messages:   {taskId, role, content, timestamp, sequence, correlationId, ...}
-- chat_summaries:  {taskId, sequenceStart, sequenceEnd, summary, keyDecisions, topics, ...}
+- chat_messages:   {conversationId, role, content, timestamp, sequence, correlationId, ...}
+- chat_summaries:  {conversationId, sequenceStart, sequenceEnd, summary, keyDecisions, topics, ...}
 
-Note: 'taskId' is the ObjectId linking messages to a conversation thread.
-For ChatSession, this will be the session's taskId. For background tasks,
-it's the TaskDocument._id. The field name stays 'taskId' for compatibility.
+Note: 'conversationId' is the ObjectId linking messages to a conversation thread.
+For ChatSession, this is ChatSession._id. For background tasks, it's TaskDocument._id.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ CONTEXT_BUDGET = TOTAL_CONTEXT_WINDOW - SYSTEM_PROMPT_RESERVE - RESPONSE_RESERVE
 
 RECENT_MESSAGE_COUNT = 20              # Max recent verbatim messages
 MAX_SUMMARY_BLOCKS = 15                # Max compressed summary blocks to load
-COMPRESS_THRESHOLD = 20                # Compress when ≥N unsummarized messages
+COMPRESS_THRESHOLD = 20                # Compress when >=N unsummarized messages
 
 # Token estimation: chars/4 is rough but works for mixed cs/en text.
 # TODO: Replace with tiktoken when model-specific tokenizer is available.
@@ -158,7 +157,7 @@ class ChatContextAssembler:
 
     async def assemble_context(
         self,
-        task_id: str,
+        conversation_id: str,
         *,
         context_budget: int = CONTEXT_BUDGET,
         memory_context: str = "",
@@ -171,16 +170,16 @@ class ChatContextAssembler:
         3. Recent messages (newest first selection, chronological output, fit remaining budget)
 
         Args:
-            task_id: Conversation thread ID (TaskDocument._id as string)
+            conversation_id: Conversation thread ID (ChatSession._id or TaskDocument._id as string)
             context_budget: Available tokens for context (default: CONTEXT_BUDGET)
             memory_context: Pre-built memory text (from KB/affairs, optional)
 
         Returns:
             AssembledContext with LLM-ready messages and metadata.
         """
-        recent_messages = await self._load_recent_messages(task_id)
-        summary_blocks = await self._load_summaries(task_id)
-        total_count = await self._count_messages(task_id)
+        recent_messages = await self._load_recent_messages(conversation_id)
+        summary_blocks = await self._load_summaries(conversation_id)
+        total_count = await self._count_messages(conversation_id)
 
         remaining_budget = context_budget
 
@@ -243,9 +242,9 @@ class ChatContextAssembler:
         total_tokens = memory_tokens + summary_tokens + message_tokens
 
         logger.info(
-            "CONTEXT_ASSEMBLED | taskId=%s | messages=%d/%d | summaries=%d/%d "
-            "| tokens≈%d/%d | totalDbMessages=%d",
-            task_id,
+            "CONTEXT_ASSEMBLED | conversationId=%s | messages=%d/%d | summaries=%d/%d "
+            "| tokens~%d/%d | totalDbMessages=%d",
+            conversation_id,
             len(included_messages), len(recent_messages),
             len(included_summaries), len(summary_blocks),
             total_tokens, context_budget,
@@ -260,26 +259,26 @@ class ChatContextAssembler:
             total_db_messages=total_count,
         )
 
-    async def maybe_compress(self, task_id: str) -> bool:
+    async def maybe_compress(self, conversation_id: str) -> bool:
         """Check if compression is needed and trigger it (fire-and-forget).
 
         Algorithm (same as Kotlin ChatHistoryService):
-        1. If total messages ≤ RECENT_MESSAGE_COUNT → skip
+        1. If total messages <= RECENT_MESSAGE_COUNT -> skip
         2. Find last summarized sequence
         3. Count unsummarized messages before recent window
-        4. If ≥ COMPRESS_THRESHOLD → compress via LLM, save to MongoDB
+        4. If >= COMPRESS_THRESHOLD -> compress via LLM, save to MongoDB
 
         Returns True if compression was triggered, False if skipped.
         """
         try:
-            total = await self._count_messages(task_id)
+            total = await self._count_messages(conversation_id)
             if total <= RECENT_MESSAGE_COUNT:
                 return False
 
-            last_summary = await self._get_last_summary(task_id)
+            last_summary = await self._get_last_summary(conversation_id)
             last_summarized_seq = last_summary["sequenceEnd"] if last_summary else 0
 
-            all_messages = await self._load_all_messages(task_id)
+            all_messages = await self._load_all_messages(conversation_id)
             if not all_messages:
                 return False
 
@@ -292,26 +291,26 @@ class ChatContextAssembler:
             if len(unsummarized) < COMPRESS_THRESHOLD:
                 return False
 
-            logger.info("COMPRESS_START | taskId=%s | unsummarized=%d", task_id, len(unsummarized))
+            logger.info("COMPRESS_START | conversationId=%s | unsummarized=%d", conversation_id, len(unsummarized))
 
             asyncio.create_task(
-                self._compress_block(task_id, unsummarized, last_summary)
+                self._compress_block(conversation_id, unsummarized, last_summary)
             )
             return True
 
         except Exception as e:
-            logger.warning("COMPRESS_CHECK_FAILED | taskId=%s | %s", task_id, e)
+            logger.warning("COMPRESS_CHECK_FAILED | conversationId=%s | %s", conversation_id, e)
             return False
 
-    async def prepare_payload_for_kotlin(self, task_id: str) -> dict | None:
+    async def prepare_payload_for_kotlin(self, conversation_id: str) -> dict | None:
         """Build ChatHistoryPayload compatible with existing Kotlin/Python interface.
 
         Transitional method — same JSON structure as ChatHistoryPayloadDto.
         Returns None if no messages exist.
         """
-        recent_messages = await self._load_recent_messages(task_id)
-        summary_blocks = await self._load_summaries(task_id)
-        total_count = await self._count_messages(task_id)
+        recent_messages = await self._load_recent_messages(conversation_id)
+        summary_blocks = await self._load_summaries(conversation_id)
+        total_count = await self._count_messages(conversation_id)
 
         if not recent_messages and not summary_blocks:
             return None
@@ -345,20 +344,20 @@ class ChatContextAssembler:
     # ------------------------------------------------------------------
 
     async def _load_recent_messages(
-        self, task_id: str, limit: int = RECENT_MESSAGE_COUNT,
+        self, conversation_id: str, limit: int = RECENT_MESSAGE_COUNT,
     ) -> list[ChatMessage]:
         """Load last N messages, filter out errors, ordered by sequence ASC."""
         from bson import ObjectId
 
         cursor = (
             self.db["chat_messages"]
-            .find({"taskId": ObjectId(task_id)})
+            .find({"conversationId": ObjectId(conversation_id)})
             .sort("sequence", -1)
             .limit(limit)
         )
 
         docs = await cursor.to_list(length=limit)
-        docs.reverse()  # newest-first → chronological
+        docs.reverse()  # newest-first -> chronological
 
         messages = []
         for doc in docs:
@@ -374,13 +373,13 @@ class ChatContextAssembler:
 
         return messages
 
-    async def _load_all_messages(self, task_id: str) -> list[ChatMessage]:
+    async def _load_all_messages(self, conversation_id: str) -> list[ChatMessage]:
         """Load ALL messages ordered by sequence ASC. Used for compression."""
         from bson import ObjectId
 
         cursor = (
             self.db["chat_messages"]
-            .find({"taskId": ObjectId(task_id)})
+            .find({"conversationId": ObjectId(conversation_id)})
             .sort("sequence", 1)
         )
 
@@ -396,14 +395,14 @@ class ChatContextAssembler:
         return messages
 
     async def _load_summaries(
-        self, task_id: str, limit: int = MAX_SUMMARY_BLOCKS,
+        self, conversation_id: str, limit: int = MAX_SUMMARY_BLOCKS,
     ) -> list[SummaryBlock]:
         """Load compressed summaries ordered by sequenceEnd ASC (oldest first)."""
         from bson import ObjectId
 
         cursor = (
             self.db["chat_summaries"]
-            .find({"taskId": ObjectId(task_id)})
+            .find({"conversationId": ObjectId(conversation_id)})
             .sort("sequenceEnd", 1)
         )
 
@@ -422,17 +421,17 @@ class ChatContextAssembler:
             for doc in docs
         ]
 
-    async def _count_messages(self, task_id: str) -> int:
+    async def _count_messages(self, conversation_id: str) -> int:
         """Count total messages for a conversation thread."""
         from bson import ObjectId
-        return await self.db["chat_messages"].count_documents({"taskId": ObjectId(task_id)})
+        return await self.db["chat_messages"].count_documents({"conversationId": ObjectId(conversation_id)})
 
-    async def _get_last_summary(self, task_id: str) -> dict | None:
+    async def _get_last_summary(self, conversation_id: str) -> dict | None:
         """Get the most recent summary (highest sequenceEnd)."""
         from bson import ObjectId
 
         return await self.db["chat_summaries"].find_one(
-            {"taskId": ObjectId(task_id)},
+            {"conversationId": ObjectId(conversation_id)},
             sort=[("sequenceEnd", -1)],
         )
 
@@ -442,7 +441,7 @@ class ChatContextAssembler:
 
     async def _compress_block(
         self,
-        task_id: str,
+        conversation_id: str,
         messages: list[ChatMessage],
         last_summary: dict | None,
     ) -> None:
@@ -505,11 +504,11 @@ class ChatContextAssembler:
 
             parsed = _parse_json_response(content)
             if not parsed:
-                logger.warning("COMPRESS_PARSE_FAILED | taskId=%s", task_id)
+                logger.warning("COMPRESS_PARSE_FAILED | conversationId=%s", conversation_id)
                 parsed = {"summary": content[:500]}
 
             await self._save_summary(
-                task_id=task_id,
+                conversation_id=conversation_id,
                 sequence_start=messages[0].sequence,
                 sequence_end=messages[-1].sequence,
                 summary=parsed.get("summary", content[:500]),
@@ -521,18 +520,18 @@ class ChatContextAssembler:
             )
 
             logger.info(
-                "COMPRESS_DONE | taskId=%s | range=%d-%d | messages=%d",
-                task_id,
+                "COMPRESS_DONE | conversationId=%s | range=%d-%d | messages=%d",
+                conversation_id,
                 messages[0].sequence, messages[-1].sequence,
                 len(messages),
             )
 
         except Exception as e:
-            logger.warning("COMPRESS_FAILED | taskId=%s | %s", task_id, e, exc_info=True)
+            logger.warning("COMPRESS_FAILED | conversationId=%s | %s", conversation_id, e, exc_info=True)
 
     async def _save_summary(
         self,
-        task_id: str,
+        conversation_id: str,
         sequence_start: int,
         sequence_end: int,
         summary: str,
@@ -546,7 +545,7 @@ class ChatContextAssembler:
         from bson import ObjectId
 
         doc = {
-            "taskId": ObjectId(task_id),
+            "conversationId": ObjectId(conversation_id),
             "sequenceStart": sequence_start,
             "sequenceEnd": sequence_end,
             "summary": summary,
@@ -561,12 +560,12 @@ class ChatContextAssembler:
         await self.db["chat_summaries"].insert_one(doc)
 
     # ------------------------------------------------------------------
-    # Message saving (for ChatSession handler — budoucí použití)
+    # Message saving (for ChatSession handler)
     # ------------------------------------------------------------------
 
     async def save_message(
         self,
-        task_id: str,
+        conversation_id: str,
         role: str,
         content: str,
         correlation_id: str,
@@ -577,7 +576,7 @@ class ChatContextAssembler:
         from bson import ObjectId
 
         doc = {
-            "taskId": ObjectId(task_id),
+            "conversationId": ObjectId(conversation_id),
             "correlationId": correlation_id,
             "role": role.upper(),
             "content": content,
@@ -588,9 +587,9 @@ class ChatContextAssembler:
 
         await self.db["chat_messages"].insert_one(doc)
 
-    async def get_next_sequence(self, task_id: str) -> int:
+    async def get_next_sequence(self, conversation_id: str) -> int:
         """Get the next sequence number for a conversation thread."""
-        count = await self._count_messages(task_id)
+        count = await self._count_messages(conversation_id)
         return count + 1
 
 

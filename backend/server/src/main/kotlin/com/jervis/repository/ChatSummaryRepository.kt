@@ -1,6 +1,5 @@
 package com.jervis.repository
 
-import com.jervis.common.types.TaskId
 import com.jervis.entity.ChatSummaryDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
@@ -17,20 +16,20 @@ import org.springframework.stereotype.Repository
 interface ChatSummaryRepository : CoroutineCrudRepository<ChatSummaryDocument, ObjectId> {
 
     /**
-     * Load all summaries for a task, ordered by sequenceEnd ascending.
+     * Load all summaries for a conversation, ordered by sequenceEnd ascending.
      * Used to build rolling context for the orchestrator.
      */
-    suspend fun findByTaskIdOrderBySequenceEndAsc(taskId: TaskId): Flow<ChatSummaryDocument>
+    suspend fun findByConversationIdOrderBySequenceEndAsc(conversationId: ObjectId): Flow<ChatSummaryDocument>
 
     /**
-     * Find the latest summary for a task (highest sequenceEnd).
+     * Find the latest summary for a conversation (highest sequenceEnd).
      * Used to determine where compression left off.
      */
-    suspend fun findFirstByTaskIdOrderBySequenceEndDesc(taskId: TaskId): ChatSummaryDocument?
+    suspend fun findFirstByConversationIdOrderBySequenceEndDesc(conversationId: ObjectId): ChatSummaryDocument?
 
     /**
-     * Delete all summaries for a task.
-     * Used when deleting a task.
+     * Delete all summaries for a conversation.
+     * Used when deleting a task/session.
      */
-    suspend fun deleteByTaskId(taskId: TaskId): Long
+    suspend fun deleteByConversationId(conversationId: ObjectId): Long
 }

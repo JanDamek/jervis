@@ -121,27 +121,15 @@ class OrchestratorStatusHandler(
             )
         }
 
-        // FOREGROUND tasks: emit clarification/approval to chat directly.
+        // FOREGROUND tasks: persist clarification and set state for resume.
         // User responds in chat → task gets reused → resumePythonOrchestrator() via orchestratorThreadId.
-        // No USER_TASK needed — the chat IS the interaction channel.
         if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-            // Emit clarification to chat stream as ASSISTANT message
-            try {
-                agentOrchestratorRpc.emitToChatStream(
-                    clientId = task.clientId.toString(),
-                    projectId = task.projectId?.toString(),
-                    response = com.jervis.dto.ChatResponseDto(description),
-                )
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to emit clarification to chat for task ${task.id}" }
-            }
-
             // Persist as assistant message so it survives reconnects
             try {
-                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
                 chatMessageRepository.save(
                     com.jervis.entity.ChatMessageDocument(
-                        taskId = task.id,
+                        conversationId = task.id.value,
                         correlationId = task.correlationId,
                         role = com.jervis.entity.MessageRole.ASSISTANT,
                         content = description,
@@ -181,23 +169,14 @@ class OrchestratorStatusHandler(
     }
 
     private suspend fun handleDone(task: TaskDocument, summary: String?) {
-        // Emit final response for FOREGROUND tasks
+        // Persist final response for FOREGROUND tasks
         if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
             val resultSummary = summary ?: "Orchestrace dokončena"
-            try {
-                agentOrchestratorRpc.emitToChatStream(
-                    clientId = task.clientId.toString(),
-                    projectId = task.projectId?.toString(),
-                    response = com.jervis.dto.ChatResponseDto(resultSummary),
-                )
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to emit orchestrator result for task ${task.id}" }
-            }
 
             // Persist assistant response to DB so it survives reconnects
             // Attach workflow steps to final message for UI display
             try {
-                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
                 val workflowStepsJson = workflowTracker.getStepsAsJson(task.id.value.toString())
                 val metadata = if (workflowStepsJson != null) {
                     mapOf("workflowSteps" to workflowStepsJson)
@@ -205,7 +184,7 @@ class OrchestratorStatusHandler(
 
                 chatMessageRepository.save(
                     com.jervis.entity.ChatMessageDocument(
-                        taskId = task.id,
+                        conversationId = task.id.value,
                         correlationId = task.correlationId,
                         role = com.jervis.entity.MessageRole.ASSISTANT,
                         content = resultSummary,
@@ -225,8 +204,8 @@ class OrchestratorStatusHandler(
         // Check if new user messages arrived during orchestration (inline messages)
         val hasInlineMessages = task.orchestrationStartedAt?.let { startedAt ->
             try {
-                chatMessageRepository.countByTaskIdAndRoleAndTimestampAfter(
-                    taskId = task.id,
+                chatMessageRepository.countByConversationIdAndRoleAndTimestampAfter(
+                    conversationId = task.id.value,
                     role = com.jervis.entity.MessageRole.USER,
                     timestamp = startedAt,
                 ) > 0
@@ -277,26 +256,14 @@ class OrchestratorStatusHandler(
         val errorMsg = error ?: "Unknown orchestrator error"
         logger.error { "ORCHESTRATOR_ERROR: taskId=${task.id} error=$errorMsg" }
 
-        // Emit error to chat stream + persist for FOREGROUND tasks
+        // Persist error for FOREGROUND tasks
         if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
             val errorContent = "Chyba orchestrátoru: $errorMsg"
             try {
-                agentOrchestratorRpc.emitToChatStream(
-                    clientId = task.clientId.toString(),
-                    projectId = task.projectId?.toString(),
-                    response = com.jervis.dto.ChatResponseDto(
-                        message = errorContent,
-                        type = com.jervis.dto.ChatResponseType.ERROR,
-                    ),
-                )
-            } catch (e: Exception) {
-                logger.warn(e) { "Failed to emit error to chat for task ${task.id}" }
-            }
-            try {
-                val sequence = chatMessageRepository.countByTaskId(task.id) + 1
+                val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
                 chatMessageRepository.save(
                     com.jervis.entity.ChatMessageDocument(
-                        taskId = task.id,
+                        conversationId = task.id.value,
                         correlationId = task.correlationId,
                         role = com.jervis.entity.MessageRole.ASSISTANT,
                         content = errorContent,

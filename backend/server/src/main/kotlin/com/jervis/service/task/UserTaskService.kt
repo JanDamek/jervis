@@ -123,11 +123,63 @@ class UserTaskService(
     data class PagedTasks(
         val items: List<TaskDocument>,
         val totalCount: Int,
+        val total: Long = totalCount.toLong(),
         val hasMore: Boolean,
     )
 
-    suspend fun findPagedTasks(query: String?, offset: Int, limit: Int): PagedTasks {
-        val criteria = Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+    suspend fun findPagedTasks(
+        query: String?,
+        offset: Int,
+        limit: Int,
+        stateFilter: com.jervis.dto.TaskStateEnum? = null,
+    ): PagedTasks {
+        val criteria = if (stateFilter != null) {
+            Criteria.where("state").`is`(stateFilter.name)
+        } else {
+            Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+        }
+
+        if (!query.isNullOrBlank()) {
+            val regex = ".*${Regex.escape(query)}.*"
+            criteria.orOperator(
+                Criteria.where("taskName").regex(regex, "i"),
+                Criteria.where("content").regex(regex, "i"),
+            )
+        }
+
+        val countQuery = Query(criteria)
+        val totalCount = mongoTemplate.count(countQuery, TaskDocument::class.java).awaitSingle().toInt()
+
+        val dataQuery = Query(criteria)
+            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .skip(offset.toLong())
+            .limit(limit)
+
+        val items = mongoTemplate.find(dataQuery, TaskDocument::class.java)
+            .collectList()
+            .awaitSingle()
+
+        return PagedTasks(
+            items = items,
+            totalCount = totalCount,
+            hasMore = offset + items.size < totalCount,
+        )
+    }
+
+    /**
+     * Search all tasks (not just USER_TASK type). Used by chat agent's search_tasks tool.
+     */
+    suspend fun searchAllTasks(
+        query: String?,
+        offset: Int,
+        limit: Int,
+        stateFilter: com.jervis.dto.TaskStateEnum? = null,
+    ): PagedTasks {
+        val criteria = Criteria()
+
+        if (stateFilter != null) {
+            criteria.and("state").`is`(stateFilter.name)
+        }
 
         if (!query.isNullOrBlank()) {
             val regex = ".*${Regex.escape(query)}.*"
