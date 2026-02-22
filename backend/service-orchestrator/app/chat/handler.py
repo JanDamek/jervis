@@ -35,7 +35,7 @@ from bson import ObjectId
 
 from app.chat.context import chat_context_assembler
 from app.chat.intent import classify_intent, select_tools
-from app.chat.models import ChatRequest, ChatStreamEvent
+from app.chat.models import ChatRequest, ChatStreamEvent, SubTopic, SubTopicResult
 from app.chat.system_prompt import RuntimeContext, build_system_prompt
 from app.chat.tools import CHAT_TOOLS, TOOL_DOMAINS
 from app.llm.provider import llm_provider
@@ -51,6 +51,11 @@ MAX_ITERATIONS = 6
 
 # Chunk size for fake token streaming (chars, ~10 tokens)
 STREAM_CHUNK_SIZE = 40
+
+# Long message decomposition thresholds
+DECOMPOSE_THRESHOLD = 8000       # chars (~2k tokens) — below this, never decompose
+SUBTOPIC_MAX_ITERATIONS = 3      # each sub-topic mini-loop (vs 6 for main)
+MAX_SUBTOPICS = 5                # safety cap — more than this → fallback to single-pass
 
 
 async def handle_chat(
@@ -99,12 +104,13 @@ async def handle_chat(
             task_context_msg = await _load_task_context_message(request.context_task_id)
 
         # 5. Build LLM messages
+        system_prompt_text = build_system_prompt(
+            active_client_id=request.active_client_id,
+            active_project_id=request.active_project_id,
+            runtime_context=runtime_ctx,
+        )
         messages = _build_messages(
-            system_prompt=build_system_prompt(
-                active_client_id=request.active_client_id,
-                active_project_id=request.active_project_id,
-                runtime_context=runtime_ctx,
-            ),
+            system_prompt=system_prompt_text,
             context=context,
             task_context_msg=task_context_msg,
             current_message=request.message,
@@ -129,6 +135,109 @@ async def handle_chat(
             yield ChatStreamEvent(type="thinking", content="Analyzuji dlouhou zprávu...")
         else:
             yield ChatStreamEvent(type="thinking", content="Připravuji odpověď...")
+
+        # --- Long message decomposition ---
+        # For messages > DECOMPOSE_THRESHOLD, try to split into sub-topics.
+        # Each sub-topic is processed separately on GPU tier (fast), then combined.
+        # Fallback: any failure → existing single-pass flow (zero regression).
+        if msg_len > DECOMPOSE_THRESHOLD:
+            subtopics = await _maybe_decompose(request.message)
+
+            if subtopics and len(subtopics) > 1:
+                logger.info(
+                    "Chat: decomposing %d chars into %d sub-topics: %s",
+                    msg_len, len(subtopics), [t.title for t in subtopics],
+                )
+                yield ChatStreamEvent(
+                    type="thinking",
+                    content=f"Rozděluji zprávu na {len(subtopics)} témat...",
+                )
+
+                all_results: list[SubTopicResult] = []
+                all_used_tools: list[str] = []
+                all_created_tasks: list[dict] = []
+                all_responded_tasks: list[str] = []
+
+                for i, topic in enumerate(subtopics, 1):
+                    # Check disconnect between sub-topics
+                    if disconnect_event and disconnect_event.is_set():
+                        logger.info("Chat: stopped during decompose after %d/%d topics", i - 1, len(subtopics))
+                        partial_parts = [f"## {r.topic.title}\n{r.text}" for r in all_results]
+                        if partial_parts:
+                            partial_text = "\n\n---\n\n".join(partial_parts)
+                            await chat_context_assembler.save_message(
+                                conversation_id=request.session_id,
+                                role="ASSISTANT", content=partial_text,
+                                correlation_id=str(ObjectId()),
+                                sequence=request.message_sequence + 1,
+                                metadata={"interrupted": "true", "decomposed": str(len(subtopics))},
+                            )
+                        yield ChatStreamEvent(type="done", metadata={"interrupted": True})
+                        return
+
+                    yield ChatStreamEvent(
+                        type="thinking",
+                        content=f"Zpracovávám téma {i}/{len(subtopics)}: {topic.title}",
+                    )
+
+                    result = await _process_sub_topic(
+                        topic=topic,
+                        topic_index=i,
+                        total_topics=len(subtopics),
+                        request=request,
+                        context=context,
+                        runtime_ctx=runtime_ctx,
+                        selected_tools=selected_tools,
+                        system_prompt=system_prompt_text,
+                    )
+                    all_results.append(result)
+                    all_used_tools.extend(result.used_tools)
+                    all_created_tasks.extend(result.created_tasks)
+                    all_responded_tasks.extend(result.responded_tasks)
+
+                # Combine results
+                yield ChatStreamEvent(type="thinking", content="Sestavuji odpověď...")
+
+                final_text = await _combine_results(all_results, request.message[:200])
+
+                # Stream combined response
+                for i in range(0, len(final_text), STREAM_CHUNK_SIZE):
+                    chunk = final_text[i:i + STREAM_CHUNK_SIZE]
+                    yield ChatStreamEvent(type="token", content=chunk)
+                    await asyncio.sleep(0.03)
+
+                # Save to MongoDB
+                await chat_context_assembler.save_message(
+                    conversation_id=request.session_id,
+                    role="ASSISTANT",
+                    content=final_text,
+                    correlation_id=str(ObjectId()),
+                    sequence=request.message_sequence + 1,
+                    metadata={
+                        "decomposed": str(len(subtopics)),
+                        "topics": ",".join(t.title for t in subtopics),
+                        **({"used_tools": ",".join(all_used_tools)} if all_used_tools else {}),
+                        **({"created_tasks": ",".join(str(t.get("title", "")) for t in all_created_tasks)} if all_created_tasks else {}),
+                        **({"responded_tasks": ",".join(all_responded_tasks)} if all_responded_tasks else {}),
+                    },
+                )
+
+                # Compress
+                try:
+                    await chat_context_assembler.maybe_compress(request.session_id)
+                except Exception as compress_err:
+                    logger.warning("Chat compression failed: %s", compress_err)
+
+                yield ChatStreamEvent(type="done", metadata={
+                    "decomposed": True,
+                    "topic_count": len(subtopics),
+                    "topics": [t.title for t in subtopics],
+                    "used_tools": all_used_tools,
+                    "created_tasks": all_created_tasks,
+                    "responded_tasks": all_responded_tasks,
+                })
+                return
+            # else: single-topic or classifier failed → fall through to existing flow
 
         for iteration in range(MAX_ITERATIONS):
             # Check for disconnect/stop between iterations
@@ -932,3 +1041,343 @@ def _build_interrupted_content(tool_summaries: list[str]) -> str | None:
         f"[Přerušeno po {len(tool_summaries)} operacích]\n"
         + "\n".join(f"- {s}" for s in tool_summaries)
     )
+
+
+# ------------------------------------------------------------------
+# Long message decomposition
+# ------------------------------------------------------------------
+
+_CLASSIFIER_SYSTEM = (
+    "Jsi analytik zpráv. Urči, zda zpráva obsahuje JEDNO nebo VÍCE nezávislých témat.\n\n"
+    "Pravidla:\n"
+    "- Jedno téma = celá zpráva se týká jedné věci (i dlouhý bug report s logy)\n"
+    "- Více témat = NEZÁVISLÉ požadavky (bug + otázka + žádost o task)\n"
+    "- Max 5 témat\n"
+    '- Odpověz POUZE validním JSON:\n'
+    '{"topic_count": N, "topics": [{"title": "...", "type": "bug_report|question|request|info|task", '
+    '"char_start": 0, "char_end": 5000}]}'
+)
+
+_COMBINER_SYSTEM = (
+    "Spojíš odpovědi na jednotlivá témata do jedné souvislé zprávy pro uživatele.\n\n"
+    "Pravidla:\n"
+    "- Zachovej VŠECHNY informace z každé odpovědi\n"
+    "- Použij markdown ## nadpisy pro jednotlivá témata\n"
+    "- Piš česky, stručně a věcně\n"
+    "- Nepoužívej úvod typu 'Na základě analýzy...' — piš rovnou věcně"
+)
+
+
+async def _maybe_decompose(message: str) -> list[SubTopic] | None:
+    """Classify whether a long message contains multiple distinct topics.
+
+    Returns list of SubTopic if multi-topic, None if single-topic or on any failure.
+    Uses LOCAL_FAST tier (~2-3s on GPU) with head+tail excerpt.
+    On ANY error: returns None (safe fallback to existing single-pass flow).
+    """
+    if len(message) < DECOMPOSE_THRESHOLD:
+        return None
+
+    head = message[:1500]
+    tail = message[-500:]
+
+    user_content = (
+        f"Zpráva ({len(message)} znaků):\n\n"
+        f"ZAČÁTEK:\n{head}\n\n"
+        f"KONEC:\n{tail}\n\n"
+        f"Analyzuj a urči počet nezávislých témat."
+    )
+
+    try:
+        response = await llm_provider.completion(
+            messages=[
+                {"role": "system", "content": _CLASSIFIER_SYSTEM},
+                {"role": "user", "content": user_content},
+            ],
+            tier=ModelTier.LOCAL_FAST,
+            tools=None,
+            max_tokens=512,
+            temperature=0.1,
+        )
+
+        content = response.choices[0].message.content or ""
+        content = content.strip()
+
+        # Strip markdown fences if present
+        if content.startswith("```"):
+            content = re.sub(r'^```(?:json)?\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+
+        parsed = json.loads(content)
+
+        topic_count = parsed.get("topic_count", 0)
+        if topic_count <= 1:
+            logger.debug("Chat decompose: classifier says single-topic")
+            return None
+
+        topics_raw = parsed.get("topics", [])
+        if not topics_raw or len(topics_raw) > MAX_SUBTOPICS:
+            logger.warning("Chat decompose: invalid topic count %d (max %d), fallback",
+                           len(topics_raw), MAX_SUBTOPICS)
+            return None
+
+        # Build SubTopic objects with clamped char ranges
+        msg_len = len(message)
+        subtopics: list[SubTopic] = []
+
+        for t in topics_raw:
+            title = t.get("title", "").strip()
+            topic_type = t.get("type", "info")
+            char_start = max(0, int(t.get("char_start", 0)))
+            char_end = min(msg_len, int(t.get("char_end", msg_len)))
+
+            if not title or char_end <= char_start:
+                continue
+
+            subtopics.append(SubTopic(
+                title=title,
+                topic_type=topic_type,
+                char_start=char_start,
+                char_end=char_end,
+            ))
+
+        if len(subtopics) <= 1:
+            return None
+
+        # Close gaps > 200 chars between topics (extend previous topic's end)
+        subtopics.sort(key=lambda t: t.char_start)
+        for i in range(len(subtopics) - 1):
+            gap = subtopics[i + 1].char_start - subtopics[i].char_end
+            if gap > 200:
+                subtopics[i].char_end = subtopics[i + 1].char_start
+
+        # Ensure first topic starts at 0 and last ends at msg_len
+        subtopics[0].char_start = 0
+        subtopics[-1].char_end = msg_len
+
+        logger.info("Chat decompose: %d topics — %s",
+                     len(subtopics), [(t.title, t.char_start, t.char_end) for t in subtopics])
+        return subtopics
+
+    except Exception as e:
+        logger.warning("Chat decompose: classifier failed (%s), fallback to single-pass", e)
+        return None
+
+
+async def _process_sub_topic(
+    topic: SubTopic,
+    topic_index: int,
+    total_topics: int,
+    request: ChatRequest,
+    context,
+    runtime_ctx: RuntimeContext,
+    selected_tools: list[dict],
+    system_prompt: str,
+) -> SubTopicResult:
+    """Process one sub-topic through a mini agentic loop.
+
+    Same structure as the main agentic loop but:
+    - Fewer iterations (SUBTOPIC_MAX_ITERATIONS)
+    - Scoped to the relevant section of the original message
+    - Does NOT yield events (caller handles UI)
+    - Does NOT save to MongoDB (caller aggregates and saves)
+    """
+    section = request.message[topic.char_start:topic.char_end]
+
+    # Build scoped user message
+    scoped_message = (
+        f"[Téma {topic_index}/{total_topics}: {topic.title}]\n\n"
+        f"{section}\n\n"
+        f"Odpověz POUZE na toto téma. Stručně a věcně."
+    )
+
+    messages = _build_messages(
+        system_prompt=system_prompt,
+        context=context,
+        task_context_msg=None,
+        current_message=scoped_message,
+    )
+
+    used_tools: list[str] = []
+    created_tasks: list[dict] = []
+    responded_tasks: list[str] = []
+    last_tool_sig: str | None = None
+    consecutive_same = 0
+    domain_history: list[set[str]] = []
+    distinct_tools_used: set[str] = set()
+
+    try:
+        for iteration in range(SUBTOPIC_MAX_ITERATIONS):
+            # Estimate tokens and select tier
+            message_chars = sum(len(str(m)) for m in messages)
+            message_tokens = message_chars // 4
+            tools_tokens = sum(len(str(t)) for t in selected_tools) // 4
+            estimated_tokens = message_tokens + tools_tokens + 4096
+
+            tier = llm_provider.escalation.select_local_tier(estimated_tokens)
+            logger.info("Chat sub-topic %d/%d iter %d: estimated=%d → tier=%s",
+                        topic_index, total_topics, iteration + 1, estimated_tokens, tier.value)
+
+            response = await llm_provider.completion(
+                messages=messages,
+                tier=tier,
+                tools=selected_tools,
+                max_tokens=4096,
+                temperature=0.1,
+                extra_headers={"X-Ollama-Priority": "0"},
+            )
+
+            choice = response.choices[0]
+            message_obj = choice.message
+            tool_calls, remaining_text = _extract_tool_calls(message_obj)
+
+            if not tool_calls:
+                # Final text response for this sub-topic
+                final_text = remaining_text or message_obj.content or ""
+                logger.info("Chat sub-topic %d/%d: answer after %d iterations (%d chars)",
+                            topic_index, total_topics, iteration + 1, len(final_text))
+                return SubTopicResult(
+                    topic=topic, text=final_text,
+                    used_tools=used_tools, created_tasks=created_tasks,
+                    responded_tasks=responded_tasks,
+                )
+
+            # --- Drift detection ---
+            tool_sig = "|".join(
+                f"{tc.function.name}:{tc.function.arguments}" for tc in tool_calls
+            )
+            if tool_sig == last_tool_sig:
+                consecutive_same += 1
+            else:
+                consecutive_same = 1
+                last_tool_sig = tool_sig
+
+            iter_domains = set()
+            for tc in tool_calls:
+                domain = TOOL_DOMAINS.get(tc.function.name, "unknown")
+                iter_domains.add(domain)
+                distinct_tools_used.add(tc.function.name)
+            domain_history.append(iter_domains)
+
+            drift_reason = _detect_drift(consecutive_same, domain_history, distinct_tools_used, iteration)
+            if drift_reason:
+                logger.warning("Chat sub-topic %d/%d: drift (%s), forcing answer",
+                               topic_index, total_topics, drift_reason)
+                messages.append({"role": "system", "content": f"STOP — {drift_reason}. Odpověz."})
+                forced = await llm_provider.completion(
+                    messages=messages, tier=tier, tools=None,
+                    max_tokens=4096, temperature=0.1,
+                    extra_headers={"X-Ollama-Priority": "0"},
+                )
+                return SubTopicResult(
+                    topic=topic, text=forced.choices[0].message.content or "",
+                    used_tools=used_tools, created_tasks=created_tasks,
+                    responded_tasks=responded_tasks,
+                )
+
+            # Execute tool calls
+            assistant_msg = {"role": "assistant", "content": remaining_text or None, "tool_calls": []}
+            for tc in tool_calls:
+                assistant_msg["tool_calls"].append({
+                    "id": tc.id, "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                })
+            messages.append(assistant_msg)
+
+            for tool_call in tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                # Skip switch_context in sub-topics (doesn't make sense per-topic)
+                if tool_name == "switch_context":
+                    result = "switch_context ignorován v sub-topic zpracování"
+                else:
+                    result = await _execute_chat_tool(
+                        tool_name, arguments,
+                        request.active_client_id, request.active_project_id,
+                    )
+                    used_tools.append(tool_name)
+
+                    if tool_name == "create_background_task":
+                        created_tasks.append(arguments)
+                    if tool_name == "respond_to_user_task":
+                        responded_tasks.append(arguments.get("task_id", ""))
+
+                messages.append({
+                    "role": "tool", "tool_call_id": tool_call.id, "content": result,
+                })
+
+            # Focus reminder
+            remaining_iters = SUBTOPIC_MAX_ITERATIONS - iteration - 1
+            messages.append({
+                "role": "system",
+                "content": (
+                    f'[FOCUS] Téma: "{topic.title}". '
+                    f"Zbývá {remaining_iters} iterací. Pokud máš dost info, ODPOVĚZ."
+                ),
+            })
+
+        # Max iterations — force response
+        logger.warning("Chat sub-topic %d/%d: max iterations, forcing answer", topic_index, total_topics)
+        messages.append({"role": "system", "content": "Dosáhl jsi limitu iterací. Odpověz."})
+        forced = await llm_provider.completion(
+            messages=messages, tier=tier, tools=None,
+            max_tokens=4096, temperature=0.1,
+            extra_headers={"X-Ollama-Priority": "0"},
+        )
+        return SubTopicResult(
+            topic=topic, text=forced.choices[0].message.content or "",
+            used_tools=used_tools, created_tasks=created_tasks,
+            responded_tasks=responded_tasks,
+        )
+
+    except Exception as e:
+        logger.warning("Chat sub-topic %d/%d failed: %s", topic_index, total_topics, e)
+        return SubTopicResult(
+            topic=topic, text=f"[Chyba při zpracování tématu '{topic.title}': {e}]",
+            used_tools=used_tools, created_tasks=created_tasks,
+            responded_tasks=responded_tasks,
+        )
+
+
+async def _combine_results(
+    results: list[SubTopicResult],
+    original_message_summary: str,
+) -> str:
+    """Combine sub-topic results into one cohesive response.
+
+    Uses LOCAL_FAST LLM call for natural combination.
+    Falls back to plain concatenation on failure.
+    """
+    if len(results) == 1:
+        return results[0].text
+
+    # Build formatted results for combiner
+    parts = []
+    for r in results:
+        parts.append(f"## {r.topic.title}\n{r.text}")
+    formatted = "\n\n---\n\n".join(parts)
+
+    try:
+        response = await llm_provider.completion(
+            messages=[
+                {"role": "system", "content": _COMBINER_SYSTEM},
+                {"role": "user", "content": formatted + "\n\nSpoj do jedné odpovědi."},
+            ],
+            tier=ModelTier.LOCAL_FAST,
+            tools=None,
+            max_tokens=4096,
+            temperature=0.1,
+        )
+        combined = response.choices[0].message.content or ""
+        if combined.strip():
+            logger.info("Chat combiner: merged %d topics (%d chars)", len(results), len(combined))
+            return combined
+    except Exception as e:
+        logger.warning("Chat combiner failed (%s), using plain concatenation", e)
+
+    # Fallback: plain concatenation with markdown headers
+    return "\n\n---\n\n".join(parts)

@@ -3374,6 +3374,26 @@ Long messages are NOT truncated. Tier escalation handles it:
 
 Slow but complete. Nothing is discarded.
 
+#### K. Long Message Decomposition
+
+Multi-topic long messages (>8000 chars) are detected and split:
+
+```
+Message > 8000 chars?
+  NO → existing flow
+  YES → LLM classifier (LOCAL_FAST, head+tail, ~3s)
+        → single-topic? → existing flow (fallback)
+        → multi-topic?  → extract sub-topics with char ranges
+                        → process each in mini agentic loop (3 iter max)
+                        → combine results via LLM combiner
+```
+
+- **Classifier**: LOCAL_FAST, head 1500 chars + tail 500 chars, returns JSON with topic titles and char ranges
+- **Sub-topic processing**: each gets own agentic mini-loop (SUBTOPIC_MAX_ITERATIONS=3), same tools/drift detection
+- **Combiner**: LOCAL_FAST, merges sub-results into one cohesive response
+- **Fallback**: any classifier/parse failure → existing single-pass flow (zero regression)
+- **Latency**: 3-topic message ~90s (classifier 3s + 3×25s + combiner 8s) vs 4-8 min single-pass CPU-spill
+
 #### Token Impact
 
 | | Before | After | Delta |
