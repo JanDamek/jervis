@@ -3,10 +3,11 @@
 Supports local Ollama models and cloud providers (Anthropic, OpenAI, Google).
 Implements EscalationPolicy for local-first tier selection with cloud fallback.
 
-ALL calls use streaming + heartbeat liveness detection:
-- No hard timeouts on LLM calls
-- Liveness = tokens keep arriving
-- If no token for HEARTBEAT_DEAD_SECONDS → HeartbeatTimeoutError
+Timeout strategy:
+- Streaming calls: per-chunk heartbeat (HEARTBEAT_DEAD_SECONDS). As long as
+  tokens keep arriving, the call can run indefinitely.
+- Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
+  GPU tiers (≤48k): 300s. CPU-spill tiers (128k+): 900-1200s.
 
 Cloud model usage:
 - Always try local Ollama first
@@ -84,6 +85,22 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.CLOUD_LARGE_CONTEXT: {
         "model": f"google/{settings.default_large_context_model}",
     },
+}
+
+# Blocking call timeout per tier (seconds).
+# GPU tiers (~30 tok/s): 300s is plenty.
+# CPU-spill tiers (~7-12 tok/s): need longer — large context = slow generation.
+# Cloud tiers: fast APIs, 300s is fine.
+TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
+    ModelTier.LOCAL_FAST:           300,   # 8k ctx, GPU
+    ModelTier.LOCAL_STANDARD:       300,   # 32k ctx, GPU
+    ModelTier.LOCAL_LARGE:          300,   # 48k ctx, GPU boundary
+    ModelTier.LOCAL_XLARGE:         900,   # 128k ctx, CPU spill (~7-12 tok/s)
+    ModelTier.LOCAL_XXLARGE:       1200,   # 256k ctx, CPU, slower
+    ModelTier.CLOUD_REASONING:     300,
+    ModelTier.CLOUD_CODING:        300,
+    ModelTier.CLOUD_PREMIUM:       300,
+    ModelTier.CLOUD_LARGE_CONTEXT: 300,
 }
 
 
@@ -207,7 +224,7 @@ class LLMProvider:
             # Tool calls can't be reliably streamed — use blocking call
             if tools:
                 return await self._blocking_completion(
-                    config, messages, tools, temperature, max_tokens, extra_headers,
+                    config, messages, tools, temperature, max_tokens, extra_headers, tier,
                 )
 
             return await self._streaming_completion(
@@ -269,8 +286,9 @@ class LLMProvider:
         temperature: float,
         max_tokens: int,
         extra_headers: dict[str, str] | None = None,
+        tier: ModelTier = ModelTier.LOCAL_STANDARD,
     ) -> dict:
-        """Blocking LLM call (for tool calls) with timeout protection."""
+        """Blocking LLM call (for tool calls) with tier-based timeout."""
         kwargs: dict = {
             "model": config["model"],
             "messages": messages,
@@ -287,17 +305,19 @@ class LLMProvider:
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
 
-        logger.info("LLM blocking call (tools): model=%s api_base=%s headers=%s", config["model"], config.get("api_base"), extra_headers or {})
+        timeout = TIER_TIMEOUT_SECONDS.get(tier, HEARTBEAT_DEAD_SECONDS)
+        logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds api_base=%s headers=%s",
+                     config["model"], tier.value, timeout, config.get("api_base"), extra_headers or {})
         logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
         try:
             response = await asyncio.wait_for(
                 litellm.acompletion(**kwargs),
-                timeout=HEARTBEAT_DEAD_SECONDS,  # Same 5min as streaming heartbeat
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             raise HeartbeatTimeoutError(
-                f"LLM blocking call timed out after {HEARTBEAT_DEAD_SECONDS}s"
+                f"LLM blocking call timed out after {timeout}s (tier={tier.value})"
             )
 
         # DEBUG: Log RAW response to debug tool_calls parsing

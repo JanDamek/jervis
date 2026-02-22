@@ -833,10 +833,12 @@ async def _iter_with_heartbeat(stream):
         yield chunk
 ```
 
-- **Žádné hard timeouty** na LLM call
-- Pokud tokeny přicházejí → čeká neomezeně
-- Pokud 5 minut bez tokenu → HeartbeatTimeoutError → escalate/retry
-- Tool calls (structured output): blocking call (litellm omezení)
+- **Streaming** (bez tool calls): per-chunk heartbeat. Pokud tokeny přicházejí → čeká neomezeně. Pokud 5 min bez tokenu → HeartbeatTimeoutError → escalate/retry.
+- **Blocking** (tool calls — litellm omezení): tier-based timeout via `TIER_TIMEOUT_SECONDS`:
+  - GPU tiery (LOCAL_FAST..LOCAL_LARGE, ≤48k): **300s**
+  - CPU-spill tiery (LOCAL_XLARGE 128k): **900s** (~7-12 tok/s)
+  - CPU-spill tiery (LOCAL_XXLARGE 256k): **1200s**
+  - Cloud tiery: **300s** (rychlé API)
 
 ---
 
