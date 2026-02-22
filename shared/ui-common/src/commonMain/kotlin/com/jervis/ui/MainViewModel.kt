@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -59,6 +60,9 @@ class MainViewModel(
     // Client/project selection state
     private val _clients = MutableStateFlow<List<ClientDto>>(emptyList())
     val clients: StateFlow<List<ClientDto>> = _clients.asStateFlow()
+
+    // Signals that clients have been loaded from server at least once
+    private val clientsLoaded = MutableStateFlow(false)
 
     private val _projects = MutableStateFlow<List<ProjectDto>>(emptyList())
     val projects: StateFlow<List<ProjectDto>> = _projects.asStateFlow()
@@ -250,6 +254,7 @@ class MainViewModel(
             try {
                 val clientList = repository.clients.getAllClients()
                 _clients.value = clientList
+                clientsLoaded.value = true
                 // Persist to offline cache
                 saveClientsToCache(clientList)
             } catch (e: Exception) {
@@ -291,39 +296,49 @@ class MainViewModel(
      * Two modes:
      * 1. Live scope_change (projectsJson present) — lightweight update with embedded project list
      * 2. History restore (no projectsJson) — delegates to selectClient for full flow
+     *
+     * Waits for clients to be loaded before applying scope (prevents race condition on startup).
      */
     private fun updateChatScope(clientId: String, projectId: String? = null, projectsJson: String? = null) {
         if (clientId == _selectedClientId.value && projectId == _selectedProjectId.value) return
         println("MainViewModel: updateChatScope(client=$clientId, project=$projectId)")
 
-        val clientChanged = clientId != _selectedClientId.value
+        scope.launch {
+            // Wait for clients to be loaded (prevents race condition on app startup)
+            clientsLoaded.first { it }
 
-        if (!projectsJson.isNullOrBlank()) {
-            // Live scope_change with embedded projects — lightweight update
-            _selectedClientId.value = clientId
-            try {
-                val jsonArray = Json.parseToJsonElement(projectsJson).jsonArray
-                val parsed = jsonArray.map { element ->
-                    val obj = element.jsonObject
-                    ProjectDto(
-                        id = obj["id"]?.jsonPrimitive?.content ?: "",
-                        clientId = clientId,
-                        name = obj["name"]?.jsonPrimitive?.content ?: "",
-                    )
+            // Re-check after waiting — another scope change may have already applied
+            if (clientId == _selectedClientId.value && projectId == _selectedProjectId.value) return@launch
+
+            val clientChanged = clientId != _selectedClientId.value
+
+            if (!projectsJson.isNullOrBlank()) {
+                // Live scope_change with embedded projects — lightweight update
+                _selectedClientId.value = clientId
+                try {
+                    val jsonArray = Json.parseToJsonElement(projectsJson).jsonArray
+                    val parsed = jsonArray.map { element ->
+                        val obj = element.jsonObject
+                        ProjectDto(
+                            id = obj["id"]?.jsonPrimitive?.content ?: "",
+                            clientId = clientId,
+                            name = obj["name"]?.jsonPrimitive?.content ?: "",
+                        )
+                    }
+                    _projects.value = parsed
+                } catch (e: Exception) {
+                    println("Failed to parse scope_change projects: ${e.message}")
                 }
-                _projects.value = parsed
-            } catch (e: Exception) {
-                println("Failed to parse scope_change projects: ${e.message}")
+                _selectedProjectId.value = projectId
+                persistChatScope(clientId, projectId)
+            } else if (clientChanged) {
+                // History restore or scope_change without projects — full selectClient flow
+                selectClient(clientId, chatProjectId = projectId)
+            } else if (projectId != _selectedProjectId.value) {
+                // Same client, different project
+                _selectedProjectId.value = projectId
+                persistChatScope(clientId, projectId)
             }
-            _selectedProjectId.value = projectId
-            persistChatScope(clientId, projectId)
-        } else if (clientChanged) {
-            // History restore or scope_change without projects — full selectClient flow
-            selectClient(clientId, chatProjectId = projectId)
-        } else if (projectId != _selectedProjectId.value) {
-            // Same client, different project
-            _selectedProjectId.value = projectId
-            persistChatScope(clientId, projectId)
         }
     }
 
