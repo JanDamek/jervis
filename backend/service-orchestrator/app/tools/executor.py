@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT_WEB_SEARCH = 15.0  # seconds
 _TIMEOUT_KB_SEARCH = 10.0   # seconds
+MAX_TOOL_RESULT_CHARS = 8000  # W-11: Cap tool results to prevent context explosion
+_TOOL_EXECUTION_TIMEOUT_S = 120  # W-22: Max seconds for any single tool execution
 
 
 class AskUserInterrupt(Exception):
@@ -313,6 +315,7 @@ async def execute_tool(
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
+        result = _truncate_result(result, tool_name)
         logger.debug("execute_tool END: tool=%s, result_len=%d, result=%s", tool_name, len(result), result[:500])
         return result
     except Exception as e:
@@ -320,6 +323,31 @@ async def execute_tool(
         result = f"Error executing {tool_name}: {str(e)[:300]}"
         logger.debug("execute_tool ERROR: tool=%s, result=%s", tool_name, result)
         return result
+
+
+def _truncate_result(result: str, tool_name: str) -> str:
+    """W-11: Truncate tool result to MAX_TOOL_RESULT_CHARS.
+
+    Preserves beginning and end of content for context, inserts truncation marker.
+    """
+    if len(result) <= MAX_TOOL_RESULT_CHARS:
+        return result
+
+    # Keep 70% from start, 20% from end, 10% for marker
+    head_chars = int(MAX_TOOL_RESULT_CHARS * 0.70)
+    tail_chars = int(MAX_TOOL_RESULT_CHARS * 0.20)
+    truncated_chars = len(result) - head_chars - tail_chars
+
+    logger.info(
+        "TOOL_RESULT_TRUNCATED | tool=%s | original=%d chars | truncated=%d chars",
+        tool_name, len(result), truncated_chars,
+    )
+
+    return (
+        result[:head_chars]
+        + f"\n\n... [TRUNCATED {truncated_chars} chars — result too large] ...\n\n"
+        + result[-tail_chars:]
+    )
 
 
 def _sanitize_text(text: str) -> str:

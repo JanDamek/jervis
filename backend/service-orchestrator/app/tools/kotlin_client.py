@@ -200,6 +200,276 @@ class KotlinServerClient:
             logger.debug("Failed to emit streaming token: %s", e)
             return False
 
+    # ------------------------------------------------------------------
+    # Chat foreground preemption
+    # ------------------------------------------------------------------
+
+    async def register_foreground_start(self) -> bool:
+        """Register foreground chat start — preempts background tasks."""
+        try:
+            client = await self._get_client()
+            await client.post("/internal/foreground-start")
+            return True
+        except Exception as e:
+            logger.warning("Failed to register foreground start: %s", e)
+            return False
+
+    async def register_foreground_end(self) -> bool:
+        """Register foreground chat end — allows background tasks to resume."""
+        try:
+            client = await self._get_client()
+            await client.post("/internal/foreground-end")
+            return True
+        except Exception as e:
+            logger.warning("Failed to register foreground end: %s", e)
+            return False
+
+    # ------------------------------------------------------------------
+    # Chat-specific task tools
+    # ------------------------------------------------------------------
+
+    async def create_background_task(
+        self,
+        title: str,
+        description: str,
+        client_id: str,
+        project_id: str | None = None,
+        priority: str = "medium",
+    ) -> str:
+        """Create a background task via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/create-background-task",
+                json={
+                    "title": title,
+                    "description": description,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "priority": priority,
+                },
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to create background task: %s", e)
+            return f"Error: {e}"
+
+    async def dispatch_coding_agent(
+        self,
+        task_description: str,
+        client_id: str,
+        project_id: str,
+    ) -> str:
+        """Dispatch coding agent via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/dispatch-coding-agent",
+                json={
+                    "taskDescription": task_description,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                },
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to dispatch coding agent: %s", e)
+            return f"Error: {e}"
+
+    async def search_user_tasks(
+        self,
+        query: str,
+        max_results: int = 5,
+    ) -> str:
+        """Search user_tasks via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(
+                "/internal/user-tasks",
+                params={"query": query, "maxResults": max_results},
+            )
+            if resp.status_code == 200:
+                import json
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to search user tasks: %s", e)
+            return f"Error: {e}"
+
+    async def respond_to_user_task(
+        self,
+        task_id: str,
+        response: str,
+    ) -> str:
+        """Respond to user_task via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/respond-to-user-task",
+                json={
+                    "taskId": task_id,
+                    "response": response,
+                },
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to respond to user task: %s", e)
+            return f"Error: {e}"
+
+    async def get_user_task(self, task_id: str) -> dict | None:
+        """Get a user_task by ID for context loading."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(f"/internal/user-tasks/{task_id}")
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+        except Exception as e:
+            logger.warning("Failed to get user task %s: %s", task_id, e)
+            return None
+
+    async def classify_meeting(
+        self,
+        meeting_id: str,
+        client_id: str,
+        project_id: str | None = None,
+        title: str | None = None,
+    ) -> str:
+        """Classify meeting via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/classify-meeting",
+                json={
+                    "meetingId": meeting_id,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                    "title": title,
+                },
+            )
+            return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to classify meeting: %s", e)
+            return f"Error: {e}"
+
+    async def list_unclassified_meetings(self) -> str:
+        """List unclassified meetings via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/internal/unclassified-meetings")
+            if resp.status_code == 200:
+                import json
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to list unclassified meetings: %s", e)
+            return f"Error: {e}"
+
+    # ------------------------------------------------------------------
+    # Chat runtime context (for system prompt enrichment)
+    # ------------------------------------------------------------------
+
+    async def get_clients_projects(self) -> list[dict]:
+        """Get all clients with their projects (id, name) for LLM scope resolution."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/internal/clients-projects")
+            if resp.status_code == 200:
+                return resp.json()
+            return []
+        except Exception as e:
+            logger.warning("Failed to get clients-projects: %s", e)
+            return []
+
+    async def get_pending_user_tasks_summary(self, limit: int = 3) -> dict:
+        """Get pending user tasks count + top N for proactive mentions."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(
+                "/internal/pending-user-tasks/summary",
+                params={"limit": limit},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"count": 0, "tasks": []}
+        except Exception as e:
+            logger.warning("Failed to get pending user tasks summary: %s", e)
+            return {"count": 0, "tasks": []}
+
+    async def count_unclassified_meetings(self) -> int:
+        """Get count of unclassified meetings."""
+        try:
+            client = await self._get_client()
+            resp = await client.get("/internal/unclassified-meetings/count")
+            if resp.status_code == 200:
+                return resp.json().get("count", 0)
+            return 0
+        except Exception as e:
+            logger.warning("Failed to count unclassified meetings: %s", e)
+            return 0
+
+    # ------------------------------------------------------------------
+    # Task tools (for chat agent)
+    # ------------------------------------------------------------------
+
+    async def get_task_status(self, task_id: str) -> str:
+        """Get task status by ID."""
+        try:
+            client = await self._get_client()
+            resp = await client.get(f"/internal/tasks/{task_id}/status")
+            if resp.status_code == 200:
+                import json
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Task not found: {task_id}"
+        except Exception as e:
+            logger.warning("Failed to get task status %s: %s", task_id, e)
+            return f"Error: {e}"
+
+    async def search_tasks(
+        self,
+        query: str,
+        state: str | None = None,
+        max_results: int = 5,
+    ) -> str:
+        """Search all tasks (not just user_tasks)."""
+        try:
+            client = await self._get_client()
+            params: dict = {"q": query, "limit": max_results}
+            if state and state != "all":
+                params["state"] = state
+            resp = await client.get("/internal/tasks/search", params=params)
+            if resp.status_code == 200:
+                import json
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to search tasks: %s", e)
+            return f"Error: {e}"
+
+    async def list_recent_tasks(
+        self,
+        limit: int = 10,
+        state: str | None = None,
+        since: str = "today",
+        client_id: str | None = None,
+    ) -> str:
+        """List recent tasks with optional filters."""
+        try:
+            client = await self._get_client()
+            params: dict = {"limit": limit, "since": since}
+            if state and state != "all":
+                params["state"] = state
+            if client_id:
+                params["clientId"] = client_id
+            resp = await client.get("/internal/tasks/recent", params=params)
+            if resp.status_code == 200:
+                import json
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to list recent tasks: %s", e)
+            return f"Error: {e}"
+
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()

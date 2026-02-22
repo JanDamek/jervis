@@ -2,7 +2,7 @@
 
 > Kompletní referenční dokument pro Python orchestrátor a jeho integraci s Kotlin serverem.
 > Základ pro analýzu, rozšiřování a debugging celé orchestrační vrstvy.
-> **Automaticky aktualizováno:** 2026-02-18
+> **Automaticky aktualizováno:** 2026-02-21
 
 ---
 
@@ -643,7 +643,7 @@ Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_schedul
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 
-**Token streaming**: Finální odpověď (po poslední LLM iteraci bez tool_calls) se streamuje do UI po malých chuncích (12 znaků) přes `kotlin_client.emit_streaming_token()` → Kotlin `/internal/streaming-token` endpoint → `emitToChatStream(STREAMING_TOKEN)` → UI `MainViewModel.handleStreamingToken()` akumuluje po `messageId`. Výsledek: ChatGPT-style postupné vypisování textu. Finální FINAL message pak nahradí streaming buffer.
+**Token streaming (background tasks)**: Finální odpověď (po poslední LLM iteraci bez tool_calls) se streamuje do UI po malých chuncích (12 znaků) přes `kotlin_client.emit_streaming_token()` → Kotlin `/internal/streaming-token` endpoint (legacy no-op). **Pozn.:** Foreground chat nyní používá přímý SSE stream přes `IChatService.subscribeToChatEvents()` → `ChatRpcImpl` → `PythonChatClient` (viz architecture.md §16).
 
 **Output**: `final_result` — odpověď v češtině
 
@@ -2572,6 +2572,19 @@ backend/service-orchestrator/
 │   ├── config.py                        # Environment-based configuration (+feature flags)
 │   ├── agent_task_watcher.py            # Background watcher for async K8s Job monitoring
 │   ├── models.py                        # Pydantic models (ALL data structures + delegation models)
+│   ├── chat/
+│   │   ├── __init__.py
+│   │   ├── context.py                   # Chat context assembler (MongoDB read/write)
+│   │   ├── router.py                    # FastAPI router: /chat, /orchestrate/v2, /internal/*
+│   │   ├── models.py                    # NEW v6: ChatRequest, ChatStreamEvent, ChatEventType
+│   │   ├── system_prompt.py             # NEW v6: Runtime context fetch + system prompt builder
+│   │   ├── tools.py                     # NEW v6: 8 chat-specific tool definitions
+│   │   └── handler.py                   # NEW v6: Foreground SSE agentic loop (15 iterations)
+│   ├── background/
+│   │   ├── __init__.py                  # NEW v6
+│   │   ├── escalation.py               # NEW v6: EscalationTracker, needs_escalation()
+│   │   ├── tools.py                     # NEW v6: Background tool subset (~30 tools)
+│   │   └── handler.py                   # NEW v6: Simplified background agentic loop
 │   ├── graph/
 │   │   ├── orchestrator.py              # LangGraph StateGraph, state, routing, streaming
 │   │   │                                #   build_orchestrator_graph() — legacy 14-node
@@ -2886,3 +2899,367 @@ When Memory Agent is active, ADVICE tasks with affair context become significant
 5. **Memory layers** — `session_memory.py`, `procedural_memory.py`, `summarizer.py`, `retention_policy.py` need implementation.
 6. **Tool executor** — `tools/executor.py` for agent tool dispatch.
 7. **Integration testing** — End-to-end delegation flow with feature flags.
+
+---
+
+## 30. Hardening (W-9 to W-23) — Robustness Improvements
+
+> **Implemented:** 2026-02-21 | **Scope:** respond node, executor, context, provider, distributed lock
+
+### 30.1 Overview
+
+Systematic hardening of the Python orchestrator addressing 15 weak spots identified in the post-v5 audit. All changes are backward-compatible and use local-first approach (cloud never called unless explicitly allowed in project rules).
+
+### 30.2 Changes by File
+
+#### `app/tools/executor.py`
+- **W-11: Tool Result Size Bound** — `MAX_TOOL_RESULT_CHARS = 8000`. All tool results are truncated via `_truncate_result()` before returning. Preserves 70% head + 20% tail with truncation marker.
+- **W-22: Tool Execution Timeout** — `_TOOL_EXECUTION_TIMEOUT_S = 120`. Exported for use in respond node.
+
+#### `app/graph/nodes/respond.py`
+- **W-22: Tool Execution Timeout** — Each `execute_tool()` call wrapped in `asyncio.wait_for(timeout=120s)`. Timeout returns error string (not exception).
+- **W-17: JSON Workaround Validation** — Ollama tool_call JSON parsing now validates structure: checks `tool_calls` is list, each entry is dict, has `function.name`. Invalid entries are skipped with warning.
+- **W-13: Quality Escalation** — Short answer detection: if answer < 40 chars, retries once with "expand your answer" system message. `_MIN_ANSWER_CHARS = 40`, `_MAX_SHORT_RETRIES = 1`.
+- **W-12: Real Token Streaming** — New `_stream_answer_realtime()` uses `llm_provider.stream_completion()` for real-time token emission. Falls back to fake chunked streaming on error.
+- **W-19: User Message Save** — User query and assistant answer saved to MongoDB via `chat_context_assembler.save_message()` for chat history persistence.
+
+#### `app/graph/nodes/_helpers.py`
+- **W-14: Context Overflow Guard** — Before LLM call, validates `context_tokens` fits selected tier's `num_ctx`. If exceeded, calls `_truncate_messages_to_budget()` which removes oldest tool results first, then middle messages, while protecting system message and last 4 messages.
+
+#### `app/chat/context.py`
+- **W-20: Sequence Number Race** — `get_next_sequence()` uses atomic `findOneAndUpdate` on `chat_sequence_counters` collection instead of `count_documents + 1`.
+- **W-15: Compression Error Handling** — `_compress_block()` retries `COMPRESS_MAX_RETRIES = 2` times with exponential backoff. On exhaustion, saves placeholder marker so block isn't re-attempted. `maybe_compress()` accepts `done_callback` for completion notification.
+- **W-10: Checkpoint Message Growth** — `save_message()` truncates TOOL role messages to `MAX_TOOL_RESULT_IN_MSG = 2000` chars before MongoDB write.
+
+#### `app/llm/provider.py`
+- **W-21: LLM Rate Limiting** — `asyncio.Semaphore(2)` for local (Ollama can't handle many concurrent requests), `asyncio.Semaphore(5)` for cloud. Applied in `completion()` method.
+
+#### `app/context/distributed_lock.py`
+- **W-9: Task Checkpoint Lock** — New `TaskCheckpointLock` class for per-task locking. Uses MongoDB document-level locking with 60s stale timeout. Allows multiple tasks concurrently but prevents concurrent checkpoint writes to same task. Singleton `task_checkpoint_lock` initialized at startup.
+
+#### `app/graph/nodes/finalize.py`
+- **W-16: Background Quality Escalation** — Logs warning when background task has failed steps (quality check without LLM summary generation).
+
+#### `app/memory/lqm.py`
+- **W-18: Global Cache Race** — Added `asyncio.Lock` for affair mutations in LQM. Defensive measure for concurrent asyncio coroutines.
+
+### 30.3 New MongoDB Collections
+
+| Collection | Purpose | Document schema |
+|-----------|---------|-----------------|
+| `task_checkpoint_locks` | W-9: Per-task checkpoint locking | `{_id: task_id, locked_by: pod_id, locked_at: timestamp}` |
+| `chat_sequence_counters` | W-20: Atomic sequence numbers | `{_id: "seq_{taskId}", counter: int}` |
+
+### 30.4 New Constants
+
+| Constant | Value | File | Purpose |
+|----------|-------|------|---------|
+| `MAX_TOOL_RESULT_CHARS` | 8000 | executor.py | W-11: Max tool result size |
+| `_TOOL_EXECUTION_TIMEOUT_S` | 120 | executor.py | W-22: Per-tool timeout |
+| `_MIN_ANSWER_CHARS` | 40 | respond.py | W-13: Short answer threshold |
+| `_MAX_SHORT_RETRIES` | 1 | respond.py | W-13: Retry limit |
+| `COMPRESS_MAX_RETRIES` | 2 | context.py | W-15: Compression retry limit |
+| `MAX_TOOL_RESULT_IN_MSG` | 2000 | context.py | W-10: Stored message truncation |
+| `_SEMAPHORE_LOCAL` | Semaphore(2) | provider.py | W-21: Local rate limit |
+| `_SEMAPHORE_CLOUD` | Semaphore(5) | provider.py | W-21: Cloud rate limit |
+
+### 30.5 Test Suite
+
+Tests in `backend/service-orchestrator/tests/test_hardening.py`:
+- Unit tests for truncation, context guard, JSON validation, escalation policy
+- No MongoDB/LLM required — pure unit tests
+- Run: `cd backend/service-orchestrator && python -m pytest tests/`
+
+### 30.6 Cloud Safety
+
+**CRITICAL:** Cloud models are NEVER called unless explicitly allowed in project rules (`auto_use_anthropic`, `auto_use_openai`, `auto_use_gemini`). All hardening changes (W-14 context guard, W-13 quality retry) use local Ollama only. The `llm_with_cloud_fallback` in `_helpers.py` checks `auto_providers(rules)` which derives from project settings — this is the ONLY path to cloud and it respects project configuration.
+
+---
+
+## 31. v6 Architecture — Dedicated Chat & Background Handlers
+
+> **Implemented:** 2026-02-21 | **Scope:** New foreground chat handler, simplified background handler, model escalation, runtime context, chat-specific tools
+
+### 31.1 Motivation
+
+The v5 architecture routed both foreground (interactive chat) and background (autonomous tasks) through the same 14-node LangGraph orchestrator. This caused:
+
+- **Foreground latency:** Every chat message traversed 14 nodes even for simple Q&A
+- **Streaming complexity:** SSE streaming was bolted onto graph nodes
+- **Inflexible tool sets:** Same tools for chat and background, no chat-specific capabilities
+- **No model escalation:** Background tasks couldn't recover from model failures
+
+v6 introduces **two dedicated handlers**, independent from LangGraph, with purpose-built tool sets and model escalation.
+
+### 31.2 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kotlin Server                             │
+│                                                              │
+│  AgentOrchestratorRpcImpl ──┐                               │
+│                              │  POST /chat                   │
+│  BackgroundEngine ──────────┤  POST /orchestrate/v2          │
+│                              │  POST /orchestrate (legacy)    │
+└──────────────────────────────┼──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│               Python Orchestrator (FastAPI)                   │
+│                                                              │
+│  /chat ──────────────→ app/chat/handler.py                  │
+│                          • 45 tools (37 base + 8 chat)       │
+│                          • SSE streaming via kotlin_client    │
+│                          • Runtime context system prompt      │
+│                          • MongoDB save + compression         │
+│                                                              │
+│  /orchestrate/v2 ────→ app/background/handler.py            │
+│                          • ~30 tools (background subset)      │
+│                          • No streaming (status push)         │
+│                          • Model tier escalation              │
+│                          • Fire-and-forget via asyncio.task   │
+│                                                              │
+│  /orchestrate ───────→ app/graph/orchestrator.py (legacy)   │
+│                          • 14-node LangGraph (kept for now)   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 31.3 Foreground Chat Handler (`app/chat/handler.py`)
+
+**Entry point:** `POST /chat` → `handle_chat(ChatRequest) → dict`
+
+**Flow:**
+
+1. **Save user message** to MongoDB via `chat_context_assembler.save_message()`
+2. **Fetch runtime context** — clients/projects, pending user tasks, unclassified meetings (cached 5min)
+3. **Load memory context** — KB search for task-relevant context
+4. **Build system prompt** — persona rules + dynamic runtime sections
+5. **Assemble history** — last 20 messages + summaries from MongoDB
+6. **Agentic loop** (max 15 iterations):
+   - Call LLM with messages + 45 tools
+   - Parse tool_calls (native or Ollama JSON workaround)
+   - Execute tools (120s timeout per tool)
+   - Detect tool loop (same tool+args 3× → force answer)
+   - Append results → next iteration
+7. **Stream answer** — chunked tokens via `kotlin_client.emit_streaming_token()`
+8. **Short answer retry** — if < 40 chars, retry once with "expand" instruction
+9. **Save assistant message** to MongoDB
+10. **Fire-and-forget compression** — `asyncio.create_task(maybe_compress())`
+
+**Constants:**
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `_MAX_ITERATIONS` | 15 | Max agentic loop turns |
+| `_MIN_ANSWER_CHARS` | 40 | Short answer detection (W-13) |
+| `_MAX_SHORT_RETRIES` | 1 | Short answer retry limit |
+| `_STREAM_CHUNK_SIZE` | 12 | Token chunk size for streaming |
+| `_RUNTIME_CTX_TTL` | 300.0 | Runtime context cache TTL (5 min) |
+
+**Communication:**
+- **Kotlin → Python:** `POST /chat` with `ChatRequest` JSON
+- **Python → Kotlin:** `POST /internal/streaming-token` (real-time tokens)
+- **Python → MongoDB:** `chat_messages` (save), `chat_summaries` (compress)
+- **Python → Kotlin internal API:** `/internal/clients-projects`, `/internal/pending-user-tasks/summary`, `/internal/unclassified-meetings/count`, `/internal/tasks/*`
+
+### 31.4 Chat Request Model (`app/chat/models.py`)
+
+```python
+class ChatRequest(BaseModel):
+    task_id: str
+    client_id: str
+    project_id: str | None = None
+    client_name: str | None = None
+    project_name: str | None = None
+    query: str
+    workspace_path: str = ""
+    processing_mode: str = "FOREGROUND"
+    auto_use_anthropic: bool = False
+    auto_use_openai: bool = False
+    auto_use_gemini: bool = False
+
+class ChatStreamEvent(BaseModel):
+    event_type: ChatEventType  # token | thinking | tool_call | tool_result | done | error
+    content: str = ""
+    tool_name: str | None = None
+    tool_args: dict | None = None
+    tool_call_id: str | None = None
+    metadata: dict | None = None
+```
+
+### 31.5 Runtime System Prompt (`app/chat/system_prompt.py`)
+
+The system prompt is assembled dynamically at each chat turn:
+
+```
+┌─────────────────────────────────────────┐
+│ Static persona rules (Czech language)    │
+│  • Role, behavior, output format         │
+│  • Tool usage instructions               │
+│  • Safety constraints                    │
+├─────────────────────────────────────────┤
+│ Dynamic: Available clients & projects    │  ← /internal/clients-projects
+├─────────────────────────────────────────┤
+│ Dynamic: Pending user tasks              │  ← /internal/pending-user-tasks/summary
+├─────────────────────────────────────────┤
+│ Dynamic: Unclassified meetings count     │  ← /internal/unclassified-meetings/count
+├─────────────────────────────────────────┤
+│ Dynamic: User context from request       │  ← ChatRequest fields
+├─────────────────────────────────────────┤
+│ Dynamic: Memory/KB context               │  ← kb_search results
+└─────────────────────────────────────────┘
+```
+
+`fetch_runtime_context()` calls Kotlin internal API endpoints with graceful degradation — if any endpoint fails, that section is omitted (not a fatal error). Results are cached for 5 minutes.
+
+### 31.6 Chat-Specific Tools (`app/chat/tools.py`)
+
+8 new tools available ONLY in foreground chat (not in background):
+
+| Tool | Description | Implementation |
+|------|-------------|----------------|
+| `create_background_task` | Create a new background task for autonomous processing | POST /internal/tasks/create |
+| `search_tasks` | Search existing tasks by query | POST /internal/tasks/search |
+| `get_task_status` | Get status of a specific task | GET /internal/tasks/{id} |
+| `list_recent_tasks` | List recent tasks for current client | GET /internal/tasks/recent |
+| `respond_to_user_task` | Respond to a pending user-review task | POST /internal/tasks/{id}/respond |
+| `dispatch_coding_agent` | Dispatch K8s coding agent (aider/openhands/claude) | K8s Job via job_runner |
+| `classify_meeting` | Classify an unclassified meeting | POST /internal/meetings/{id}/classify |
+| `list_unclassified_meetings` | List meetings awaiting classification | GET /internal/unclassified-meetings |
+
+**Total tool count:** 37 base tools (from `ALL_RESPOND_TOOLS_FULL`) + 8 chat-specific = **45 tools**
+
+### 31.7 Background Handler (`app/background/handler.py`)
+
+**Entry point:** `POST /orchestrate/v2` → fire-and-forget → `handle_background(OrchestrateRequest) → dict`
+
+**4-Phase Flow:**
+
+```
+Phase 1: INTAKE
+  └─ Analyze task, select initial model tier, build context
+
+Phase 2: EXECUTE (agentic loop, max 15 iterations)
+  └─ LLM → tool_calls → execute → repeat
+  └─ On failure → EscalationTracker bumps model tier
+  └─ Max 3 escalation retries per failure
+
+Phase 3: DISPATCH (if coding needed)
+  └─ K8s Job via dispatch_coding_agent tool
+
+Phase 4: FINALIZE
+  └─ Save result to MongoDB
+  └─ Notify Kotlin (report_status_change)
+  └─ Log quality metrics
+```
+
+**Key differences from foreground chat:**
+
+| Aspect | Foreground (chat) | Background (v2) |
+|--------|-------------------|------------------|
+| Streaming | SSE tokens via kotlin_client | No streaming (status push only) |
+| Tools | 45 (37 base + 8 chat) | ~30 (subset, no ask_user/memory/list_affairs) |
+| Model selection | Single tier from project config | Escalation on failure |
+| Execution | Synchronous (awaited) | Fire-and-forget (asyncio.create_task) |
+| System prompt | Dynamic runtime context | Basic task context |
+| Compression | Fire-and-forget after answer | At finalize |
+
+### 31.8 Model Tier Escalation (`app/background/escalation.py`)
+
+Background tasks use progressive model escalation when the current tier fails:
+
+```
+LOCAL_FAST → LOCAL_STANDARD → LOCAL_LARGE → LOCAL_XLARGE → (cloud, if allowed)
+```
+
+**`needs_escalation(answer, tool_parse_failures, iteration)`** detects:
+- Empty or None response
+- Refusal patterns ("I cannot", "I'm unable", "I don't have access")
+- Tool parse failures ≥ 2 (JSON workaround issues)
+- Gibberish detection (low alphabetic ratio)
+
+**`get_next_tier(current, cloud_allowed)`** follows the escalation path. Cloud bridge (`CLOUD_REASONING → CLOUD_CODING → CLOUD_PREMIUM`) is ONLY accessible when `cloud_allowed=True`, derived from project rules.
+
+**`EscalationTracker`** — stateful tracker per background execution:
+- Tracks current tier, escalation count, failure reasons
+- Max 3 escalation retries before giving up
+- `escalate() → ModelTier | None` — returns next tier or None if exhausted
+
+### 31.9 Background Tool Subset (`app/background/tools.py`)
+
+Background tasks use a reduced tool set — excludes interactive and session-specific tools:
+
+**Included:** KB (search, store, traverse, graph_search), web_search, repository tools (list_repos, list_branches, get_commits, read_file_content, search_code), git workspace tools (git_status, git_diff, git_commit, git_push, create_branch), filesystem tools (read_file, list_files, search_files, write_file, create_directory), terminal (execute_command), scheduled tasks (create_scheduled_task, list_scheduled_tasks), coding agent dispatch, brain tools (Jira/Confluence CRUD).
+
+**Excluded:** `ask_user`, `memory_store`, `memory_recall`, `list_affairs` (foreground-only), `respond_to_user_task`, `classify_meeting`, `list_unclassified_meetings`.
+
+### 31.10 New API Endpoints
+
+| Endpoint | Method | Handler | Mode |
+|----------|--------|---------|------|
+| `/chat` | POST | `app/chat/handler.handle_chat` | Synchronous (awaited) |
+| `/orchestrate/v2` | POST | `app/background/handler.handle_background` | Fire-and-forget |
+
+Both are registered in `app/chat/router.py` alongside existing endpoints.
+
+### 31.11 Kotlin Internal REST Endpoints (Implemented)
+
+All v6 Python tool endpoints are implemented in `KtorRpcServer.kt` as thin REST wrappers
+delegating to existing Kotlin services:
+
+| Endpoint | Method | Delegates to | Used by |
+|----------|--------|-------------|---------|
+| `/internal/clients-projects` | GET | `ClientRpcImpl.getAllClients()` + `ProjectRpcImpl.listProjectsForClient()` | system_prompt.py |
+| `/internal/pending-user-tasks/summary` | GET | `TaskRepository.findByTypeAndState(USER_TASK, PENDING)` | system_prompt.py |
+| `/internal/unclassified-meetings/count` | GET | `MeetingRpcImpl.listUnclassifiedMeetings()` | system_prompt.py |
+| `/internal/tasks/create` | POST | `TaskService.createTask()` | chat tool |
+| `/internal/tasks/search` | GET | `TaskRepository.findAllByOrderByCreatedAtAsc()` + text filter | chat tool |
+| `/internal/tasks/{id}/status` | GET | `TaskRepository.getById()` | chat tool |
+| `/internal/tasks/recent` | GET | `TaskRepository.findAllByOrderByCreatedAtAsc()` | chat tool |
+| `/internal/tasks/{id}/respond` | POST | `TaskRepository.save()` (state transition) | chat tool |
+| `/internal/meetings/{id}/classify` | POST | `MeetingRpcImpl.classifyMeeting()` | chat tool |
+| `/internal/unclassified-meetings` | GET | `MeetingRpcImpl.listUnclassifiedMeetings()` | chat tool |
+| `/internal/dispatch-coding-agent` | POST | `TaskService.createTask(READY_FOR_GPU)` | chat tool |
+
+Request DTOs: `InternalCreateTaskRequest`, `InternalRespondToTaskRequest`, `InternalClassifyMeetingRequest`, `InternalDispatchCodingAgentRequest` (all in KtorRpcServer.kt).
+
+Graceful degradation: `fetch_runtime_context()` catches HTTP errors per-endpoint, so chat works even if some endpoints fail.
+
+### 31.12 New File Inventory
+
+```
+backend/service-orchestrator/
+├── app/
+│   ├── chat/
+│   │   ├── __init__.py                    # (existing)
+│   │   ├── context.py                     # (existing) Chat context assembler
+│   │   ├── router.py                      # (modified) Added /chat, /orchestrate/v2
+│   │   ├── models.py                      # NEW: ChatRequest, ChatStreamEvent
+│   │   ├── system_prompt.py               # NEW: Runtime context + system prompt builder
+│   │   ├── tools.py                       # NEW: 8 chat-specific tool definitions
+│   │   └── handler.py                     # NEW: Foreground SSE agentic loop
+│   └── background/
+│       ├── __init__.py                    # NEW: Package init
+│       ├── escalation.py                  # NEW: Model tier escalation logic
+│       ├── tools.py                       # NEW: Background tool subset
+│       └── handler.py                     # NEW: Simplified background agentic loop
+
+backend/server/
+└── src/main/kotlin/com/jervis/rpc/
+    └── KtorRpcServer.kt                   # (modified) Added 11 /internal/* REST endpoints + 4 DTOs
+```
+
+### 31.13 Cloud Safety
+
+Both handlers enforce the same cloud safety rule as the rest of the system:
+
+- **Chat handler:** Passes `auto_use_*` flags from `ChatRequest` to `llm_with_cloud_fallback()` via project rules. Cloud is never used unless explicitly allowed.
+- **Background handler:** Derives `cloud_allowed` from `OrchestrateRequest.rules` (`auto_use_anthropic or auto_use_openai or auto_use_gemini`). `EscalationTracker` only bridges to cloud tiers when `cloud_allowed=True`.
+- **No implicit cloud:** If all project `auto_use_*` flags are `False`, escalation stops at `LOCAL_XLARGE` and the task fails if that tier can't handle it.
+
+### 31.14 Migration Path
+
+The v6 handlers coexist with the legacy LangGraph orchestrator:
+
+1. **Phase 1 (current):** Both systems active, Kotlin can call either `/chat` (v6) or `/orchestrate` (legacy)
+2. **Phase 2 (after Kotlin integration):** Switch `BackgroundEngine` to call `/orchestrate/v2` instead of `/orchestrate`
+3. **Phase 3 (cleanup):** Remove old 14-node LangGraph (`app/graph/orchestrator.py`), 22 specialist agents (`app/agents/specialists/`), unused graph nodes (`app/graph/nodes/`)

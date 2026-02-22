@@ -3,8 +3,6 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.AttachmentDto
-import com.jervis.dto.ChatResponseDto
-import com.jervis.dto.ChatResponseType
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.user.TaskRoutingMode
@@ -28,7 +26,6 @@ class UserTaskRpcImpl(
     private val agentOrchestratorService: AgentOrchestratorService,
     private val taskService: TaskService,
     private val notificationRpc: NotificationRpcImpl,
-    private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val taskRepository: com.jervis.repository.TaskRepository,
 ) : IUserTaskService {
@@ -77,24 +74,6 @@ class UserTaskRpcImpl(
         try {
             when (routingMode) {
                 TaskRoutingMode.DIRECT_TO_AGENT -> {
-                    // Emit user message to chat stream for UI sync
-                    agentOrchestratorRpc.emitToChatStream(
-                        clientId = task.clientId.toString(),
-                        projectId = task.projectId?.toString() ?: "",
-                        response =
-                            ChatResponseDto(
-                                message = additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}",
-                                type = ChatResponseType.USER_MESSAGE,
-                                metadata =
-                                    mapOf(
-                                        "sender" to "user",
-                                        "clientId" to task.clientId.toString(),
-                                        "timestamp" to Instant.now().toString(),
-                                        "resumedFromTask" to task.id.toString(),
-                                    ),
-                            ),
-                    )
-
                     // CRITICAL: Return to SAME TaskDocument, not create new one!
                     // This preserves agent checkpoint and conversation history.
                     // Calculate next queuePosition for FOREGROUND tasks
@@ -133,10 +112,10 @@ class UserTaskRpcImpl(
                             append(additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}")
                         }
 
-                    val messageSequence = chatMessageRepository.countByTaskId(task.id) + 1
+                    val messageSequence = chatMessageRepository.countByConversationId(task.id.value) + 1
                     val userMessage =
                         com.jervis.entity.ChatMessageDocument(
-                            taskId = task.id,
+                            conversationId = task.id.value,
                             correlationId = task.correlationId,
                             role = com.jervis.entity.MessageRole.USER,
                             content = messageContent,
@@ -168,10 +147,10 @@ class UserTaskRpcImpl(
 
                     // Add user response to ChatMessageDocument if additionalInput provided
                     if (!additionalInput.isNullOrBlank()) {
-                        val messageSequence = chatMessageRepository.countByTaskId(task.id) + 1
+                        val messageSequence = chatMessageRepository.countByConversationId(task.id.value) + 1
                         val userMessage =
                             com.jervis.entity.ChatMessageDocument(
-                                taskId = task.id,
+                                conversationId = task.id.value,
                                 correlationId = task.correlationId,
                                 role = com.jervis.entity.MessageRole.USER,
                                 content = additionalInput,

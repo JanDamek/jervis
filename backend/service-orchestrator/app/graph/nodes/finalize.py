@@ -31,9 +31,18 @@ async def finalize(state: dict) -> dict:
 
     # BACKGROUND tasks: no user to read the summary — skip LLM
     # ADVICE / respond: final_result already set by respond node
+    # W-16: Still check result quality for background tasks
     if state.get("processing_mode") == "BACKGROUND":
+        final = state.get("final_result", "Background task completed.")
+        step_results = state.get("step_results", [])
+        failed = sum(1 for r in step_results if isinstance(r, dict) and not r.get("success", True))
+        if failed > 0:
+            logger.warning(
+                "BACKGROUND_QUALITY | %d/%d steps failed | task=%s",
+                failed, len(step_results), state.get("task", {}).get("id", "?"),
+            )
         logger.info("BACKGROUND task — skipping summary generation (no audience)")
-        result = {"final_result": state.get("final_result", "Background task completed.")}
+        result = {"final_result": final}
     elif state.get("final_result"):
         result = {}
     else:

@@ -64,7 +64,7 @@ fun RecordingSetupDialog(
     onStart: (clientId: String, projectId: String?, audioInputType: AudioInputType, selectedDevice: AudioDevice?, title: String?, meetingType: MeetingTypeEnum) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var clientId by remember { mutableStateOf(selectedClientId ?: clients.firstOrNull()?.id ?: "") }
+    var clientId by remember { mutableStateOf(selectedClientId?.takeIf { it != "__global__" } ?: clients.firstOrNull()?.id ?: "") }
     var projectId by remember { mutableStateOf(selectedProjectId) }
     var selectedDevice by remember { mutableStateOf(audioDevices.firstOrNull()) }
     var captureSystemAudio by remember { mutableStateOf(false) }

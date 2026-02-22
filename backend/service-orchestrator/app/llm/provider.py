@@ -12,6 +12,10 @@ Cloud model usage:
 - Always try local Ollama first
 - Cloud only on local failure, with per-provider settings
 - Three cloud providers: Anthropic (reasoning), OpenAI (code editing), Gemini (large context)
+- Cloud ONLY used when explicitly allowed in project rules (auto_use_*)
+
+Hardening:
+- W-21: Rate limiting — asyncio.Semaphore per priority level
 """
 
 from __future__ import annotations
@@ -29,6 +33,11 @@ logger = logging.getLogger(__name__)
 
 # Heartbeat: no token for this long = dead
 HEARTBEAT_DEAD_SECONDS = 300  # 5 min
+
+# W-21: Rate limiting semaphores
+# Ollama can only handle limited concurrent requests
+_SEMAPHORE_LOCAL = asyncio.Semaphore(2)     # Max 2 concurrent local LLM calls
+_SEMAPHORE_CLOUD = asyncio.Semaphore(5)     # Max 5 concurrent cloud calls
 
 
 class HeartbeatTimeoutError(Exception):
@@ -51,12 +60,12 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.LOCAL_LARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 49152,  # 48k — GPU VRAM limit (fast)
+        "num_ctx": 49152,  # 48k — max for full GPU speed (~30 tok/s)
     },
     ModelTier.LOCAL_XLARGE: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 131072,  # 128k — CPU RAM (slower)
+        "num_ctx": 131072,  # 128k — CPU RAM spill (~7-12 tok/s)
     },
     ModelTier.LOCAL_XXLARGE: {
         "model": f"ollama/{settings.default_local_model}",
@@ -84,8 +93,9 @@ class EscalationPolicy:
     def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
         """Always returns a local tier based on context size.
 
-        Qwen3 supports up to 256k context. GPU VRAM limit is ~48k (fast),
-        above that spills to CPU RAM (slower but works).
+        Qwen3 supports up to 256k context. P40 GPU VRAM fits up to 48k
+        at full speed (~30 tok/s). Above 48k spills to CPU RAM, still works
+        at reduced speed (~7-12 tok/s). Handles up to ~250k context.
         """
         if context_tokens > 128_000:
             return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
@@ -184,18 +194,25 @@ class LLMProvider:
         Internally streams, accumulates tokens, returns assembled response
         in the same format as litellm non-streaming response.
         Tool calls are not streamed (litellm limitation) — falls back to blocking.
+
+        W-21: Rate-limited via asyncio.Semaphore per provider type.
         """
         config = TIER_CONFIG[tier]
 
-        # Tool calls can't be reliably streamed — use blocking call
-        if tools:
-            return await self._blocking_completion(
-                config, messages, tools, temperature, max_tokens, extra_headers,
-            )
+        # W-21: Select appropriate rate limiter
+        is_cloud = tier.value.startswith("cloud_")
+        semaphore = _SEMAPHORE_CLOUD if is_cloud else _SEMAPHORE_LOCAL
 
-        return await self._streaming_completion(
-            config, messages, temperature, max_tokens, extra_headers,
-        )
+        async with semaphore:
+            # Tool calls can't be reliably streamed — use blocking call
+            if tools:
+                return await self._blocking_completion(
+                    config, messages, tools, temperature, max_tokens, extra_headers,
+                )
+
+            return await self._streaming_completion(
+                config, messages, temperature, max_tokens, extra_headers,
+            )
 
     async def _streaming_completion(
         self,
@@ -253,7 +270,7 @@ class LLMProvider:
         max_tokens: int,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
-        """Blocking LLM call (for tool calls)."""
+        """Blocking LLM call (for tool calls) with timeout protection."""
         kwargs: dict = {
             "model": config["model"],
             "messages": messages,
@@ -271,10 +288,17 @@ class LLMProvider:
             kwargs["extra_headers"] = extra_headers
 
         logger.info("LLM blocking call (tools): model=%s api_base=%s headers=%s", config["model"], config.get("api_base"), extra_headers or {})
-        # DEBUG: Log request being sent to Ollama
         logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
-        response = await litellm.acompletion(**kwargs)
+        try:
+            response = await asyncio.wait_for(
+                litellm.acompletion(**kwargs),
+                timeout=HEARTBEAT_DEAD_SECONDS,  # Same 5min as streaming heartbeat
+            )
+        except asyncio.TimeoutError:
+            raise HeartbeatTimeoutError(
+                f"LLM blocking call timed out after {HEARTBEAT_DEAD_SECONDS}s"
+            )
 
         # DEBUG: Log RAW response to debug tool_calls parsing
         try:

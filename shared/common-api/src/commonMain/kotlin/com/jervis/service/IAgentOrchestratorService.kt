@@ -1,7 +1,5 @@
 package com.jervis.service
 
-import com.jervis.dto.ChatHistoryDto
-import com.jervis.dto.ChatRequestDto
 import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.PendingTasksDto
 import com.jervis.dto.PendingTasksPageDto
@@ -12,29 +10,10 @@ import kotlinx.rpc.annotations.Rpc
 @Rpc
 interface IAgentOrchestratorService {
     /**
-     * Subscribe to chat session for given client and project.
-     * Returns long-lived Flow of all chat responses for this session.
-     * Multiple messages can arrive independently of send requests.
-     */
-    fun subscribeToChat(clientId: String, projectId: String, limit: Int? = null): Flow<ChatResponseDto>
-
-    /**
      * Subscribe to queue status updates for given client.
      * Returns Flow of queue status messages with running project and queue size.
      */
     fun subscribeToQueueStatus(clientId: String): Flow<ChatResponseDto>
-
-    /**
-     * Send a chat message. Does not return responses - use subscribeToChat() to receive them.
-     */
-    suspend fun sendMessage(request: ChatRequestDto)
-
-    /**
-     * Retrieve last N messages from chat history for display.
-     * Used when loading chat to show previous conversation.
-     * @param beforeSequence If provided, load messages before this sequence (pagination cursor).
-     */
-    suspend fun getChatHistory(clientId: String, projectId: String?, limit: Int = 10, beforeSequence: Long? = null): ChatHistoryDto
 
     // --- Queue Management ---
 

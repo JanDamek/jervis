@@ -3,10 +3,17 @@
 Generates answers using LLM + tools (web search, KB search) in an agentic loop.
 Max 8 iterations to prevent infinite loops.
 Streams final LLM answer token-by-token to UI via kotlin_client.
+
+Hardening (W-11..W-22):
+- W-14: Context overflow guard — validates messages fit selected tier
+- W-17: JSON workaround validation — validates Ollama tool_call structure
+- W-22: Tool execution timeout — asyncio.wait_for on each tool call
+- W-13: Quality escalation — short-response detection with retry
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -15,13 +22,16 @@ from langgraph.types import interrupt
 
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
+from app.llm.provider import TIER_CONFIG, llm_provider
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
-from app.tools.executor import execute_tool, AskUserInterrupt
+from app.tools.executor import execute_tool, AskUserInterrupt, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ITERATIONS = 8  # Increased from 5 to give agent more room for complex queries
+_MIN_ANSWER_CHARS = 40    # W-13: Minimum acceptable answer length (short answer retry)
+_MAX_SHORT_RETRIES = 1    # W-13: Max retries for short answers
 
 
 async def respond(state: dict) -> dict:
@@ -191,6 +201,20 @@ async def respond(state: dict) -> dict:
     project_id = state.get("project_id")
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
 
+    # W-19: Save user message to MongoDB (idempotent — Kotlin may have already saved)
+    try:
+        from app.chat.context import chat_context_assembler
+        seq = await chat_context_assembler.get_next_sequence(task.id)
+        await chat_context_assembler.save_message(
+            task_id=task.id,
+            role="USER",
+            content=task.query,
+            correlation_id=f"respond-{uuid.uuid4().hex[:8]}",
+            sequence=seq,
+        )
+    except Exception as e:
+        logger.warning("W-19: Failed to save user message: %s", e)
+
     # Tool list (includes memory tools)
     respond_tools = ALL_RESPOND_TOOLS_FULL
 
@@ -258,26 +282,49 @@ async def respond(state: dict) -> dict:
         # WORKAROUND: Ollama qwen3-coder-tool:30b doesn't support native tool_calls
         # It outputs JSON in content instead: {"tool_calls": [...]}
         # Parse and convert to proper format
+        # W-17: Added validation for tool_call structure
         if not tool_calls and message.content:
             try:
                 content_json = json.loads(message.content.strip())
                 if isinstance(content_json, dict) and "tool_calls" in content_json:
                     logger.info("Respond: parsing tool_calls from JSON content (Ollama workaround)")
-                    # Convert JSON tool calls to OpenAI-style objects
+                    raw_calls = content_json["tool_calls"]
+                    if not isinstance(raw_calls, list):
+                        raise ValueError(f"tool_calls is not a list: {type(raw_calls)}")
+
+                    # Convert JSON tool calls to OpenAI-style objects (with validation)
                     class ToolCall:
                         def __init__(self, tc_dict):
-                            self.id = tc_dict.get("id", "")
+                            if not isinstance(tc_dict, dict):
+                                raise ValueError(f"tool_call entry is not a dict: {type(tc_dict)}")
+                            self.id = tc_dict.get("id", f"call_{uuid.uuid4().hex[:8]}")
                             self.type = tc_dict.get("type", "function")
+                            func = tc_dict.get("function")
+                            if not isinstance(func, dict) or "name" not in func:
+                                raise ValueError(f"Invalid function in tool_call: {func}")
+
                             class Function:
                                 def __init__(self, f_dict):
-                                    self.name = f_dict.get("name", "")
-                                    self.arguments = json.dumps(f_dict.get("arguments", {}))
-                            self.function = Function(tc_dict.get("function", {}))
+                                    self.name = f_dict["name"]
+                                    args = f_dict.get("arguments", {})
+                                    self.arguments = json.dumps(args) if isinstance(args, dict) else str(args)
 
-                    tool_calls = [ToolCall(tc) for tc in content_json["tool_calls"]]
-                    message.content = None  # Clear content since we extracted tool calls
-                    logger.info("Respond: extracted %d tool calls from JSON", len(tool_calls))
-            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                            self.function = Function(func)
+
+                    validated_calls = []
+                    for tc in raw_calls:
+                        try:
+                            validated_calls.append(ToolCall(tc))
+                        except (ValueError, KeyError, TypeError) as ve:
+                            logger.warning("Respond: skipping invalid tool_call: %s — %s", tc, ve)
+
+                    if validated_calls:
+                        tool_calls = validated_calls
+                        message.content = None  # Clear content since we extracted tool calls
+                        logger.info("Respond: extracted %d valid tool calls from JSON", len(tool_calls))
+                    else:
+                        logger.warning("Respond: all tool_calls from JSON were invalid")
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 logger.debug("Respond: content is not JSON tool_calls format: %s", e)
 
         # Check if we have tool calls (including parsed from JSON)
@@ -287,8 +334,29 @@ async def respond(state: dict) -> dict:
             answer = message.content or ""
             logger.info("Respond: final answer after %d iterations (%d chars)", iteration, len(answer))
 
+            # W-13: Quality escalation — retry if answer is suspiciously short
+            if answer and len(answer.strip()) < _MIN_ANSWER_CHARS and iteration <= _MAX_TOOL_ITERATIONS - 1:
+                short_retries = state.get("_short_answer_retries", 0)
+                if short_retries < _MAX_SHORT_RETRIES:
+                    state["_short_answer_retries"] = short_retries + 1
+                    logger.warning(
+                        "SHORT_ANSWER_RETRY | len=%d < min=%d | retry=%d/%d",
+                        len(answer.strip()), _MIN_ANSWER_CHARS, short_retries + 1, _MAX_SHORT_RETRIES,
+                    )
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "Tvá odpověď je příliš krátká. Rozveď ji — uživatel očekává "
+                            "podrobnou odpověď s konkrétními fakty z nástrojů."
+                        ),
+                    })
+                    continue  # retry the loop
+
             # Stream tokens to UI for real-time display
             await _stream_answer_to_ui(state, answer)
+
+            # W-19: Save assistant answer to MongoDB
+            await _save_assistant_message(state, answer)
 
             return {"final_result": answer}
 
@@ -306,14 +374,24 @@ async def respond(state: dict) -> dict:
             logger.info("Respond: calling tool %s with args: %s", tool_name, arguments)
 
             # Execute tool — may raise AskUserInterrupt for ask_user tool
+            # W-22: Wrap in asyncio.wait_for to prevent hung tools
             try:
-                result = await execute_tool(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    client_id=client_id,
-                    project_id=project_id,
-                    processing_mode=state.get("processing_mode", "FOREGROUND"),
+                result = await asyncio.wait_for(
+                    execute_tool(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        client_id=client_id,
+                        project_id=project_id,
+                        processing_mode=state.get("processing_mode", "FOREGROUND"),
+                    ),
+                    timeout=_TOOL_EXECUTION_TIMEOUT_S,
                 )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "TOOL_TIMEOUT | tool=%s | timeout=%ds",
+                    tool_name, _TOOL_EXECUTION_TIMEOUT_S,
+                )
+                result = f"Error: Tool '{tool_name}' timed out after {_TOOL_EXECUTION_TIMEOUT_S}s."
             except AskUserInterrupt as e:
                 # Agent needs user input — interrupt graph execution
                 logger.info("ASK_USER: tool requested user input: %s", e.question)
@@ -382,31 +460,40 @@ async def respond(state: dict) -> dict:
     }]
     # Estimate: messages + no tools + output space
     final_tokens = (sum(len(str(m)) for m in final_messages) // 4) + 4096
-    final_response = await llm_with_cloud_fallback(
-        state={**state, "allow_cloud_prompt": allow_cloud_prompt},
-        messages=final_messages,
-        task_type="conversational",
-        context_tokens=final_tokens,
-        max_tokens=4096,
-    )
-    answer = final_response.choices[0].message.content or ""
 
-    # Stream tokens to UI for real-time display
-    await _stream_answer_to_ui(state, answer)
+    # W-12: Try real-time streaming first for forced final answer
+    answer = await _stream_answer_realtime(state, final_messages, final_tokens)
+
+    if not answer:
+        # Fallback to batch generation + fake streaming
+        final_response = await llm_with_cloud_fallback(
+            state={**state, "allow_cloud_prompt": allow_cloud_prompt},
+            messages=final_messages,
+            task_type="conversational",
+            context_tokens=final_tokens,
+            max_tokens=4096,
+        )
+        answer = final_response.choices[0].message.content or ""
+        await _stream_answer_to_ui(state, answer)
+
+    # W-19: Save assistant answer to MongoDB
+    await _save_assistant_message(state, answer)
 
     return {"final_result": answer}
 
 
-# Token chunk size for streaming: send N chars at a time for efficiency
-_STREAM_CHUNK_SIZE = 12
+# W-12: Real token streaming — streams LLM tokens as they arrive
+_STREAM_CHUNK_SIZE = 12  # Fallback chunk size for fake streaming
 
 
 async def _stream_answer_to_ui(state: dict, answer: str) -> None:
     """Stream an already-generated answer to UI token-by-token.
 
+    W-12: This is the fallback for pre-generated answers (e.g. forced final answer).
+    For normal responses, _stream_answer_realtime is preferred.
+
     Splits the answer into small chunks and emits each via kotlin_client.
     This provides ChatGPT-style progressive text display in the UI.
-    The final FINAL message is still sent separately by OrchestratorStatusHandler.
     """
     if not answer:
         return
@@ -447,3 +534,92 @@ async def _stream_answer_to_ui(state: dict, answer: str) -> None:
         "Streamed answer to UI: %d chunks, %d chars, message_id=%s",
         emitted, len(answer), message_id,
     )
+
+
+async def _stream_answer_realtime(state: dict, messages: list[dict], context_tokens: int) -> str:
+    """W-12: Stream LLM answer in real-time, emitting tokens as they arrive.
+
+    Uses llm_provider.stream_completion() for actual token streaming.
+    Returns the complete answer text after streaming completes.
+    """
+    from app.graph.nodes._helpers import priority_headers
+    from app.llm.provider import _SEMAPHORE_LOCAL
+
+    task = CodingTask(**state["task"])
+    client_id = state.get("client_id", "")
+    project_id = state.get("project_id")
+    message_id = f"stream-{uuid.uuid4().hex[:12]}"
+
+    escalation = llm_provider.escalation
+    local_tier = escalation.select_local_tier(context_tokens)
+    headers = priority_headers(state)
+
+    try:
+        async with _SEMAPHORE_LOCAL:
+            stream = await llm_provider.stream_completion(
+                messages=messages,
+                tier=local_tier,
+                max_tokens=4096,
+                temperature=0.1,
+                extra_headers=headers,
+            )
+
+        content_parts: list[str] = []
+        emitted = 0
+
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                token = delta.content
+                content_parts.append(token)
+
+                ok = await kotlin_client.emit_streaming_token(
+                    task_id=task.id,
+                    client_id=client_id,
+                    project_id=project_id,
+                    token=token,
+                    message_id=message_id,
+                )
+                if ok:
+                    emitted += 1
+
+        # Emit final token
+        await kotlin_client.emit_streaming_token(
+            task_id=task.id,
+            client_id=client_id,
+            project_id=project_id,
+            token="",
+            message_id=message_id,
+            is_final=True,
+        )
+
+        answer = "".join(content_parts)
+        logger.info(
+            "REALTIME_STREAM | tokens=%d | chars=%d | message_id=%s",
+            emitted, len(answer), message_id,
+        )
+        return answer
+
+    except Exception as e:
+        logger.warning("REALTIME_STREAM_FAILED | falling back to batch: %s", e)
+        # Fallback: return empty to trigger batch generation
+        return ""
+
+
+async def _save_assistant_message(state: dict, answer: str) -> None:
+    """W-19: Save assistant answer to MongoDB for chat history persistence."""
+    if not answer:
+        return
+    try:
+        from app.chat.context import chat_context_assembler
+        task = CodingTask(**state["task"])
+        seq = await chat_context_assembler.get_next_sequence(task.id)
+        await chat_context_assembler.save_message(
+            task_id=task.id,
+            role="ASSISTANT",
+            content=answer,
+            correlation_id=f"respond-{uuid.uuid4().hex[:8]}",
+            sequence=seq,
+        )
+    except Exception as e:
+        logger.warning("W-19: Failed to save assistant message: %s", e)

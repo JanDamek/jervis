@@ -211,6 +211,9 @@ abstract class EmailPollingHandlerBase(
     /**
      * Parse email content (text/html body + attachments).
      * Returns null if content cannot be loaded (corrupted message, IMAP error, etc.)
+     *
+     * Recursively traverses nested MIME multipart structures (e.g. multipart/mixed
+     * containing multipart/alternative with text/plain + text/html body parts).
      */
     protected fun parseContent(message: Message): Triple<String?, String?, List<EmailAttachment>>? {
         val content =
@@ -228,6 +231,43 @@ abstract class EmailPollingHandlerBase(
         var htmlBody: String? = null
         val attachments = mutableListOf<EmailAttachment>()
 
+        fun processPart(part: Part, depth: Int = 0) {
+            if (depth > 10) return // guard against infinite recursion
+
+            val partContent = try {
+                part.content
+            } catch (e: Exception) {
+                logger.warn { "Failed to read part content: ${e.message}" }
+                return
+            }
+
+            when {
+                Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) -> {
+                    attachments.add(
+                        EmailAttachment(
+                            filename = part.fileName ?: "attachment",
+                            contentType = part.contentType,
+                            size = part.size.toLong(),
+                        ),
+                    )
+                }
+
+                partContent is Multipart -> {
+                    for (i in 0 until partContent.count) {
+                        processPart(partContent.getBodyPart(i), depth + 1)
+                    }
+                }
+
+                part.isMimeType("text/plain") && textBody == null -> {
+                    textBody = partContent.toString()
+                }
+
+                part.isMimeType("text/html") && htmlBody == null -> {
+                    htmlBody = partContent.toString()
+                }
+            }
+        }
+
         when (content) {
             is String -> {
                 textBody = content
@@ -235,26 +275,7 @@ abstract class EmailPollingHandlerBase(
 
             is Multipart -> {
                 for (i in 0 until content.count) {
-                    val part = content.getBodyPart(i)
-                    when {
-                        Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) -> {
-                            attachments.add(
-                                EmailAttachment(
-                                    filename = part.fileName ?: "attachment_$i",
-                                    contentType = part.contentType,
-                                    size = part.size.toLong(),
-                                ),
-                            )
-                        }
-
-                        part.isMimeType("text/plain") -> {
-                            textBody = part.content.toString()
-                        }
-
-                        part.isMimeType("text/html") -> {
-                            htmlBody = part.content.toString()
-                        }
-                    }
+                    processPart(content.getBodyPart(i))
                 }
             }
         }

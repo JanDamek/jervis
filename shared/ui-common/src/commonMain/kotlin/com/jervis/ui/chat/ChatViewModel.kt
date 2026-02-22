@@ -509,6 +509,12 @@ class ChatViewModel(
             oldestSequence = history.oldestSequence
             _compressionBoundaries.value = history.compressionBoundaries
 
+            // Restore UI scope from chat session (persisted client/project)
+            val restoredClientId = history.activeClientId
+            if (!restoredClientId.isNullOrBlank()) {
+                onScopeChange(restoredClientId, history.activeProjectId, null)
+            }
+
             pendingState?.let { state ->
                 if (!state.isExpired()) {
                     println("=== Scheduling retry for pending message after reconnect ===")

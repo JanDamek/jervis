@@ -18,6 +18,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
+import com.jervis.rpc.internal.installInternalChatContextApi
+import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import jakarta.annotation.PostConstruct
@@ -64,6 +66,12 @@ class KtorRpcServer(
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
+    private val userTaskService: com.jervis.service.task.UserTaskService,
+    private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
+    private val chatRpcImpl: ChatRpcImpl,
+    // Dependencies for internal routing modules (injected, used by install*Api extensions)
+    private val clientService: com.jervis.service.client.ClientService,
+    private val projectService: com.jervis.service.project.ProjectService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -86,6 +94,10 @@ class KtorRpcServer(
                         }
 
                         routing {
+                            // Internal REST API modules (Python orchestrator → Kotlin)
+                            installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)
+                            installInternalTaskApi(taskRepository, taskService, userTaskService)
+
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
                             }
@@ -844,23 +856,10 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: Python orchestrator streams LLM tokens for real-time UI display
+                            // Internal endpoint: Python orchestrator streams LLM tokens (legacy, no-op)
                             post("/internal/streaming-token") {
                                 try {
-                                    val body = call.receive<StreamingTokenRequest>()
-                                    // isFinal=true is just a signal to stop streaming, don't relay it
-                                    // The actual FINAL message comes later from OrchestratorStatusHandler
-                                    if (!body.isFinal) {
-                                        agentOrchestratorRpcImpl.emitToChatStream(
-                                            clientId = body.clientId,
-                                            projectId = body.projectId.ifBlank { null },
-                                            response = com.jervis.dto.ChatResponseDto(
-                                                message = body.token,
-                                                type = com.jervis.dto.ChatResponseType.STREAMING_TOKEN,
-                                                messageId = body.messageId,
-                                            ),
-                                        )
-                                    }
+                                    call.receive<StreamingTokenRequest>() // consume body
                                     call.respondText(
                                         "{\"ok\":true}",
                                         io.ktor.http.ContentType.Application.Json,
@@ -911,6 +910,227 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // --- Chat internal endpoints (Python → Kotlin) ---
+
+                            // Foreground preemption: Python registers start/end of chat processing
+                            post("/internal/foreground-start") {
+                                try {
+                                    backgroundEngine.registerForegroundChatStart()
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to register foreground start" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+
+                            post("/internal/foreground-end") {
+                                try {
+                                    backgroundEngine.registerForegroundChatEnd()
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to register foreground end" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+
+                            // Create background task from chat
+                            post("/internal/create-background-task") {
+                                try {
+                                    val body = call.receive<CreateBackgroundTaskRequest>()
+                                    val clientId = com.jervis.common.types.ClientId.fromString(body.clientId)
+                                    val projectId = body.projectId?.let { com.jervis.common.types.ProjectId.fromString(it) }
+                                    val correlationId = ObjectId().toHexString()
+
+                                    val task = taskService.createTask(
+                                        taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        content = body.description,
+                                        clientId = clientId,
+                                        correlationId = correlationId,
+                                        sourceUrn = com.jervis.common.types.SourceUrn("chat:background-task"),
+                                        projectId = projectId,
+                                        taskName = body.title,
+                                    )
+
+                                    call.respondText(
+                                        """{"taskId":"${task.id}","title":"${body.title}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to create background task" }
+                                    call.respondText(
+                                        """{"error":"${e.message}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Dispatch coding agent from chat
+                            post("/internal/dispatch-coding-agent") {
+                                try {
+                                    val body = call.receive<DispatchCodingAgentRequest>()
+                                    val clientId = com.jervis.common.types.ClientId.fromString(body.clientId)
+                                    val projectId = com.jervis.common.types.ProjectId.fromString(body.projectId)
+                                    val correlationId = ObjectId().toHexString()
+
+                                    val task = taskService.createTask(
+                                        taskType = com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING,
+                                        content = body.taskDescription,
+                                        clientId = clientId,
+                                        correlationId = correlationId,
+                                        sourceUrn = com.jervis.common.types.SourceUrn("chat:coding-agent"),
+                                        projectId = projectId,
+                                        taskName = body.taskDescription.take(100),
+                                    )
+
+                                    call.respondText(
+                                        """{"taskId":"${task.id}","dispatched":true}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to dispatch coding agent" }
+                                    call.respondText(
+                                        """{"error":"${e.message}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Search user tasks
+                            get("/internal/user-tasks") {
+                                try {
+                                    val query = call.request.queryParameters["query"] ?: ""
+                                    val maxResults = call.request.queryParameters["maxResults"]?.toIntOrNull() ?: 5
+
+                                    val result = userTaskService.findPagedTasks(
+                                        query = query.ifBlank { null },
+                                        offset = 0,
+                                        limit = maxResults,
+                                    )
+
+                                    val tasksJson = result.items.map { task ->
+                                        mapOf(
+                                            "id" to task.id.toString(),
+                                            "title" to (task.sourceUrn?.toString() ?: ""),
+                                            "state" to task.state.name,
+                                            "question" to (task.pendingUserQuestion ?: ""),
+                                            "context" to (task.userQuestionContext ?: ""),
+                                            "clientId" to (task.clientId?.toString() ?: ""),
+                                        )
+                                    }
+
+                                    call.respondText(
+                                        Json.encodeToString<List<Map<String, String>>>(tasksJson),
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to search user tasks" }
+                                    call.respondText("[]", io.ktor.http.ContentType.Application.Json)
+                                }
+                            }
+
+                            // Get single user task by ID
+                            get("/internal/user-tasks/{taskId}") {
+                                try {
+                                    val taskIdStr = call.parameters["taskId"] ?: ""
+                                    val taskId = com.jervis.common.types.TaskId(ObjectId(taskIdStr))
+                                    val task = userTaskService.getTaskByIdOrNull(taskId)
+
+                                    if (task != null) {
+                                        val taskMap = mapOf(
+                                            "id" to task.id.toString(),
+                                            "title" to (task.sourceUrn?.toString() ?: ""),
+                                            "state" to task.state.name,
+                                            "question" to (task.pendingUserQuestion ?: ""),
+                                            "context" to (task.userQuestionContext ?: ""),
+                                            "clientId" to (task.clientId?.toString() ?: ""),
+                                        )
+                                        call.respondText(
+                                            Json.encodeToString<Map<String, String>>(taskMap),
+                                            io.ktor.http.ContentType.Application.Json,
+                                        )
+                                    } else {
+                                        call.respondText("{}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.NotFound)
+                                    }
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to get user task" }
+                                    call.respondText("{}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+
+                            // Respond to user task
+                            post("/internal/respond-to-user-task") {
+                                try {
+                                    val body = call.receive<RespondToUserTaskRequest>()
+
+                                    userTaskRpcImpl.sendToAgent(
+                                        taskId = body.taskId,
+                                        routingMode = com.jervis.dto.user.TaskRoutingMode.DIRECT_TO_AGENT,
+                                        additionalInput = body.response,
+                                    )
+
+                                    call.respondText(
+                                        """{"ok":true,"taskId":"${body.taskId}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to respond to user task" }
+                                    call.respondText(
+                                        """{"error":"${e.message}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // Classify meeting
+                            post("/internal/classify-meeting") {
+                                try {
+                                    val body = call.receive<ClassifyMeetingRequest>()
+                                    val dto = com.jervis.dto.meeting.MeetingClassifyDto(
+                                        meetingId = body.meetingId,
+                                        clientId = body.clientId,
+                                        projectId = body.projectId,
+                                        title = body.title,
+                                    )
+                                    val result = meetingRpcImpl.classifyMeeting(dto)
+                                    call.respondText(
+                                        """{"ok":true,"meetingId":"${result.id}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to classify meeting" }
+                                    call.respondText(
+                                        """{"error":"${e.message}"}""",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
+                            // List unclassified meetings
+                            get("/internal/unclassified-meetings") {
+                                try {
+                                    val meetings = meetingRpcImpl.listUnclassifiedMeetings()
+                                    val meetingsJson = meetings.map { meeting ->
+                                        mapOf(
+                                            "id" to meeting.id,
+                                            "title" to (meeting.title ?: ""),
+                                            "startedAt" to meeting.startedAt.toString(),
+                                            "durationSeconds" to (meeting.durationSeconds?.toString() ?: "0"),
+                                        )
+                                    }
+                                    call.respondText(
+                                        Json.encodeToString<List<Map<String, String>>>(meetingsJson),
+                                        io.ktor.http.ContentType.Application.Json,
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to list unclassified meetings" }
+                                    call.respondText("[]", io.ktor.http.ContentType.Application.Json)
+                                }
+                            }
+
                             rpc("/rpc") {
                                 rpcConfig {
                                     serialization {
@@ -941,6 +1161,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IEnvironmentService> { environmentRpcImpl }
                                 registerService<com.jervis.service.IEnvironmentResourceService> { environmentResourceRpcImpl }
                                 registerService<com.jervis.service.ISystemConfigService> { systemConfigRpcImpl }
+                                registerService<com.jervis.service.IChatService> { chatRpcImpl }
                             }
                         }
                     }
@@ -1053,6 +1274,38 @@ data class StreamingTokenRequest(
     val token: String,
     val messageId: String,
     val isFinal: Boolean = false,
+)
+
+// --- Chat internal DTOs (Python → Kotlin) ---
+
+@kotlinx.serialization.Serializable
+data class CreateBackgroundTaskRequest(
+    val title: String,
+    val description: String,
+    val clientId: String,
+    val projectId: String? = null,
+    val priority: String = "medium",
+)
+
+@kotlinx.serialization.Serializable
+data class DispatchCodingAgentRequest(
+    val taskDescription: String,
+    val clientId: String,
+    val projectId: String,
+)
+
+@kotlinx.serialization.Serializable
+data class RespondToUserTaskRequest(
+    val taskId: String,
+    val response: String,
+)
+
+@kotlinx.serialization.Serializable
+data class ClassifyMeetingRequest(
+    val meetingId: String,
+    val clientId: String,
+    val projectId: String? = null,
+    val title: String? = null,
 )
 
 // --- Brain internal DTOs ---

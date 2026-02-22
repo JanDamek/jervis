@@ -341,7 +341,8 @@ class BackgroundEngine(
                 var task = taskService.getNextForegroundTask()
 
                 // 2. If no FOREGROUND tasks, check for BACKGROUND tasks
-                if (task == null) {
+                //    But skip if a foreground chat is active (GPU needed for chat LLM)
+                if (task == null && !isForegroundChatActive()) {
                     task = taskService.getNextBackgroundTask()
                 }
 
@@ -434,18 +435,8 @@ class BackgroundEngine(
                 emitQueueStatus(task)
 
                 try {
-                    // Create progress callback that emits to chat stream
                     val onProgress: suspend (String, Map<String, String>) -> Unit = { message, metadata ->
-                        try {
-                            agentOrchestratorRpc.emitProgress(
-                                clientId = task.clientId.toString(),
-                                projectId = task.projectId?.toString(),
-                                message = message,
-                                metadata = metadata,
-                            )
-                        } catch (e: Exception) {
-                            logger.warn(e) { "Failed to emit progress for task ${task.id}" }
-                        }
+                        logger.debug { "TASK_PROGRESS: id=${task.id} step=${metadata["step"]} message=${message.take(50)}" }
                     }
 
                     val finalResponse = agentOrchestrator.run(task, task.content, onProgress)
@@ -488,20 +479,6 @@ class BackgroundEngine(
                     }
 
                     logger.info { "GPU_EXECUTION_SUCCESS: id=${task.id} correlationId=${task.correlationId}" }
-
-                    // Emit final response to chat stream for FOREGROUND tasks
-                    if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
-                        try {
-                            agentOrchestratorRpc.emitToChatStream(
-                                clientId = task.clientId.toString(),
-                                projectId = task.projectId?.toString(),
-                                response = finalResponse,
-                            )
-                            logger.info { "FINAL_RESPONSE_EMITTED | taskId=${task.id} | messageLength=${finalResponse.message.length}" }
-                        } catch (e: Exception) {
-                            logger.error(e) { "Failed to emit final response for task ${task.id}" }
-                        }
-                    }
 
                     // Handle task cleanup based on processingMode
                     when (task.processingMode) {
@@ -1269,6 +1246,54 @@ class BackgroundEngine(
             }
         }
     }
+
+    // --- Foreground chat preemption ---
+
+    private val activeForegroundChats = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /**
+     * Register that a foreground chat is active. Called by Python /chat endpoint
+     * via /internal/foreground-start. While active, background GPU tasks are
+     * interrupted to free the GPU for chat LLM calls.
+     */
+    fun registerForegroundChatStart() {
+        val count = activeForegroundChats.incrementAndGet()
+        logger.info { "FOREGROUND_CHAT_START: active=$count" }
+
+        // Interrupt currently running BACKGROUND task if any
+        if (count == 1) {
+            scope.launch {
+                try {
+                    val runningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                        .toList()
+                    val backgroundTask = runningTasks.firstOrNull {
+                        it.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND
+                    }
+                    if (backgroundTask != null) {
+                        logger.info { "FOREGROUND_CHAT_PREEMPT: Interrupting BACKGROUND task ${backgroundTask.id}" }
+                        interruptBackgroundTask(backgroundTask)
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to preempt background task for chat" }
+                }
+            }
+        }
+    }
+
+    /**
+     * Register that a foreground chat has ended. Called by Python /chat endpoint
+     * via /internal/foreground-end.
+     */
+    fun registerForegroundChatEnd() {
+        val count = activeForegroundChats.decrementAndGet()
+        logger.info { "FOREGROUND_CHAT_END: active=$count" }
+    }
+
+    /**
+     * Check if a foreground chat is currently active.
+     * Used by execution loop to skip background task dispatch.
+     */
+    fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
 
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)

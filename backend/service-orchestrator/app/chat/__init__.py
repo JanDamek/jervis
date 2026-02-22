@@ -1,8 +1,10 @@
-"""Chat module — context management for foreground chat and background orchestrator.
+"""Chat module — foreground chat and context management.
 
-Replaces Kotlin ChatHistoryService with Python-native implementation:
-- Direct MongoDB access (motor async) — no round-trip through Kotlin
-- Token-budgeted context assembly
-- LLM-based compression of old message blocks
-- Reusable for both ChatSession (foreground) and background orchestrator
+Components:
+- context.py:       ChatContextAssembler — token-budgeted context from MongoDB
+- handler.py:       ChatHandler — agentic loop (LLM + tools) for foreground chat
+- models.py:        ChatRequest, ChatStreamEvent — Pydantic models
+- system_prompt.py: Jervis system prompt builder
+- tools.py:         Chat-specific tool definitions
+- router.py:        FastAPI router for internal context/compression endpoints
 """

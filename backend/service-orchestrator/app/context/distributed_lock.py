@@ -236,5 +236,99 @@ class DistributedLock:
                 )
 
 
-# Singleton instance
+class TaskCheckpointLock:
+    """W-9: Per-task checkpoint lock to prevent concurrent writes.
+
+    Uses MongoDB document-level locking with short TTL.
+    Different from DistributedLock — this allows multiple tasks to run
+    concurrently, but prevents concurrent checkpoint writes to the SAME task.
+
+    Collection: task_checkpoint_locks
+    Document per task_id: {_id: task_id, locked_by: pod_id, locked_at: timestamp}
+    """
+
+    LOCK_COLLECTION = "task_checkpoint_locks"
+    STALE_TIMEOUT_S = 60  # 1 min — checkpoint writes should be fast
+
+    def __init__(self):
+        self._client: AsyncIOMotorClient | None = None
+        self._db: AsyncIOMotorDatabase | None = None
+
+    async def init(self):
+        """Initialize MongoDB connection (shares same instance as app)."""
+        self._client = AsyncIOMotorClient(settings.mongodb_url)
+        self._db = self._client.jervis_orchestrator
+        logger.info("TaskCheckpointLock initialized (pod=%s)", _POD_ID)
+
+    async def close(self):
+        if self._client:
+            self._client.close()
+
+    @asynccontextmanager
+    async def acquire(self, task_id: str, timeout: float = 10.0):
+        """Acquire per-task checkpoint lock with timeout.
+
+        Raises RuntimeError if lock cannot be acquired within timeout.
+        """
+        deadline = time.time() + timeout
+        acquired = False
+
+        while time.time() < deadline:
+            acquired = await self._try_acquire(task_id)
+            if acquired:
+                break
+            await asyncio.sleep(0.2)
+
+        if not acquired:
+            raise RuntimeError(f"Could not acquire checkpoint lock for task {task_id} within {timeout}s")
+
+        try:
+            yield
+        finally:
+            await self._release(task_id)
+
+    async def _try_acquire(self, task_id: str) -> bool:
+        """Atomically try to acquire the per-task lock."""
+        coll = self._db[self.LOCK_COLLECTION]
+        now = time.time()
+
+        # Try acquire: only if no lock exists or lock is stale
+        result = await coll.find_one_and_update(
+            {
+                "_id": task_id,
+                "$or": [
+                    {"locked_by": None},
+                    {"locked_at": {"$lt": now - self.STALE_TIMEOUT_S}},
+                ],
+            },
+            {"$set": {"locked_by": _POD_ID, "locked_at": now}},
+        )
+
+        if result is not None:
+            return True
+
+        # Document might not exist — try upsert
+        try:
+            await coll.update_one(
+                {"_id": task_id, "locked_by": None},
+                {"$set": {"locked_by": _POD_ID, "locked_at": now}},
+                upsert=True,
+            )
+            return True
+        except Exception:
+            return False
+
+    async def _release(self, task_id: str):
+        """Release the per-task lock."""
+        if self._db is None:
+            return
+        coll = self._db[self.LOCK_COLLECTION]
+        await coll.find_one_and_update(
+            {"_id": task_id, "locked_by": _POD_ID},
+            {"$set": {"locked_by": None, "locked_at": None}},
+        )
+
+
+# Singleton instances
 distributed_lock = DistributedLock()
+task_checkpoint_lock = TaskCheckpointLock()

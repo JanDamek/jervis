@@ -29,7 +29,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
@@ -49,7 +49,7 @@ from app.models import (
     StepResult,
 )
 from app.context.context_store import context_store
-from app.context.distributed_lock import distributed_lock
+from app.context.distributed_lock import distributed_lock, task_checkpoint_lock
 from app.context.session_memory import session_memory_store
 from app.monitoring.delegation_metrics import metrics_collector
 from app.llm.provider import llm_provider
@@ -108,6 +108,9 @@ async def lifespan(app: FastAPI):
     # Initialize distributed lock (multi-pod concurrency)
     await distributed_lock.init()
     logger.info("Distributed lock ready (multi-pod orchestration)")
+    # W-9: Initialize per-task checkpoint lock
+    await task_checkpoint_lock.init()
+    logger.info("Task checkpoint lock ready (per-task concurrency)")
     # Initialize multi-agent delegation system (opt-in)
     if settings.use_delegation_graph:
         logger.info("Initializing multi-agent delegation system...")
@@ -189,6 +192,7 @@ async def lifespan(app: FastAPI):
     reset_lqm()
     logger.info("Memory Agent LQM cleared")
     await distributed_lock.close()
+    await task_checkpoint_lock.close()
     await context_store.close()
     await close_checkpointer()
     await kotlin_client.close()
@@ -250,6 +254,74 @@ app = FastAPI(
 
 # Register chat context router (prepare-chat-context, compress-chat endpoints)
 app.include_router(chat_router)
+
+
+# --- Foreground Chat Endpoint ---
+
+# Active chat stop events per session (for explicit stop button)
+_active_chat_stops: dict[str, asyncio.Event] = {}
+
+
+@app.post("/chat")
+async def chat_endpoint(request_body: dict, request: Request):
+    """Foreground chat — streaming SSE response.
+
+    Receives a message from Kotlin, processes it through Jervis agentic loop
+    (LLM + tools), and streams events back as SSE.
+
+    Events: token, thinking, tool_call, tool_result, done, error
+
+    Stop mechanisms:
+    - SSE client disconnect → detected via request.is_disconnected()
+    - Explicit POST /chat/stop → sets asyncio.Event for session
+    """
+    from app.chat.models import ChatRequest
+    from app.chat.handler import handle_chat
+
+    chat_request = ChatRequest(**request_body)
+    logger.info("CHAT_REQUEST | session=%s | message=%s", chat_request.session_id, chat_request.message[:100])
+
+    # Create stop event for this session
+    disconnect_event = asyncio.Event()
+    _active_chat_stops[chat_request.session_id] = disconnect_event
+
+    async def event_generator():
+        try:
+            async for event in handle_chat(chat_request, disconnect_event):
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    logger.info("CHAT_DISCONNECT | session=%s", chat_request.session_id)
+                    disconnect_event.set()
+                    break
+
+                yield {
+                    "event": event.type,
+                    "data": json.dumps({
+                        "type": event.type,
+                        "content": event.content,
+                        "metadata": event.metadata,
+                    }, ensure_ascii=False),
+                }
+        finally:
+            _active_chat_stops.pop(chat_request.session_id, None)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post("/chat/stop")
+async def chat_stop(request_body: dict):
+    """Explicit stop for a running chat session.
+
+    Called by Kotlin when user presses the Stop button.
+    Sets the disconnect event so handler saves partial results and stops.
+    """
+    session_id = request_body.get("session_id", "")
+    event = _active_chat_stops.get(session_id)
+    if event:
+        event.set()
+        logger.info("CHAT_STOP | session=%s", session_id)
+        return {"stopped": True}
+    return {"stopped": False, "reason": "No active chat for session"}
 
 
 @app.get("/health")
@@ -540,7 +612,7 @@ async def _run_and_stream(
             try:
                 await chat_context_assembler.maybe_compress(request.task_id)
             except Exception as compress_err:
-                logger.warning("Chat compression failed for task %s: %s", request.task_id, compress_err)
+                logger.warning("Chat compression failed for conversation %s: %s", request.task_id, compress_err)
     except Exception as e:
         logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
         logger.exception("Full exception traceback:")
@@ -774,7 +846,7 @@ async def _resume_in_background(thread_id: str, resume_value: dict, chat_history
                     try:
                         await chat_context_assembler.maybe_compress(task_id)
                     except Exception as compress_err:
-                        logger.warning("Chat compression failed for task %s: %s", task_id, compress_err)
+                        logger.warning("Chat compression failed for conversation %s: %s", task_id, compress_err)
     except Exception as e:
         logger.exception("Background resume failed for thread %s: %s", thread_id, e)
 

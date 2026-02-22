@@ -1,6 +1,10 @@
 """Shared helpers for orchestrator nodes.
 
 Contains LLM call wrappers, JSON parsing, cloud escalation logic.
+
+Hardening:
+- W-14: Context overflow guard — truncate messages if they exceed tier limit
+- W-18: Thread-safe cache via asyncio.Lock (if global caches are added)
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ import re
 
 from langgraph.types import interrupt
 
-from app.llm.provider import llm_provider
+from app.llm.provider import llm_provider, TIER_CONFIG
 from app.models import (
     CodingTask,
     ModelTier,
@@ -133,6 +137,17 @@ async def llm_with_cloud_fallback(
 
     # Try local first (qwen3 supports up to 256k context)
     local_tier = escalation.select_local_tier(context_tokens)
+
+    # W-14: Context overflow guard — ensure messages fit selected tier
+    tier_config = TIER_CONFIG.get(local_tier, {})
+    tier_ctx_limit = tier_config.get("num_ctx", 262144)
+    if context_tokens > tier_ctx_limit:
+        logger.warning(
+            "CONTEXT_OVERFLOW | estimated=%d tokens > tier %s limit=%d | truncating messages",
+            context_tokens, local_tier.value, tier_ctx_limit,
+        )
+        messages = _truncate_messages_to_budget(messages, tier_ctx_limit - max_tokens)
+
     logger.debug("llm_with_cloud_fallback: trying local tier=%s, tools=%s, headers=%s", local_tier.value, bool(tools), headers)
     try:
         response = await llm_provider.completion(
@@ -250,6 +265,70 @@ def parse_json_response(content: str) -> dict:
 
     logger.warning("Failed to parse JSON from LLM response: %s", content[:200])
     return {}
+
+
+# --- W-14: Context overflow guard ---
+
+
+def _truncate_messages_to_budget(messages: list, token_budget: int) -> list:
+    """Truncate messages to fit within token budget.
+
+    Strategy:
+    - Always keep system message (first) and last user message
+    - Remove oldest tool results first (they're bulkiest)
+    - Then remove oldest assistant/tool messages
+    - Never remove the last 4 messages (recent conversation)
+    """
+    def _estimate_tokens(msg) -> int:
+        content = str(msg.get("content", ""))
+        return max(1, len(content) // 4)
+
+    total = sum(_estimate_tokens(m) for m in messages)
+    if total <= token_budget:
+        return messages
+
+    # Protect first (system) and last 4 messages
+    protected_head = 1
+    protected_tail = min(4, len(messages) - 1)
+    removable_start = protected_head
+    removable_end = len(messages) - protected_tail
+
+    if removable_start >= removable_end:
+        return messages  # Nothing to remove
+
+    # Remove from oldest, prioritizing tool results
+    result = list(messages)
+    removed = 0
+    for i in range(removable_start, removable_end):
+        if total <= token_budget:
+            break
+        msg = result[i]
+        if msg.get("role") == "tool":
+            tokens = _estimate_tokens(msg)
+            # Truncate content instead of removing entirely
+            content = msg.get("content", "")
+            if len(content) > 200:
+                msg["content"] = content[:200] + " [truncated for context budget]"
+                saved = tokens - _estimate_tokens(msg)
+                total -= saved
+                removed += saved
+
+    # If still over budget, remove middle messages entirely
+    if total > token_budget:
+        new_result = result[:protected_head]
+        for i in range(protected_head, len(result) - protected_tail):
+            if total <= token_budget:
+                new_result.extend(result[i:len(result) - protected_tail])
+                break
+            total -= _estimate_tokens(result[i])
+        new_result.extend(result[-protected_tail:])
+        result = new_result
+
+    logger.info(
+        "CONTEXT_TRUNCATED | original=%d msgs | result=%d msgs | saved≈%d tokens",
+        len(messages), len(result), sum(_estimate_tokens(m) for m in messages) - sum(_estimate_tokens(m) for m in result),
+    )
+    return result
 
 
 # --- Agent selection logic ---
