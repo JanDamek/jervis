@@ -1785,6 +1785,33 @@ fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
 Python registers foreground via `POST /internal/foreground-start` and `/internal/foreground-end`.
 BackgroundEngine skips `getNextBackgroundTask()` when `isForegroundChatActive()`.
 
+### Long Message Processing — Pravidla
+
+**KRITICKÉ PRAVIDLO: NIKDY neořezávat zprávy (pre-trim). Veškerý obsah musí být zpracován.**
+
+Ořezávání (truncation) zpráv je nepřípustné. Pokud zpráva nemůže být zpracována v kontextovém okně:
+
+1. **Sumarizovat** — LLM vytvoří strukturovaný souhrn zachovávající VŠECHNY požadavky a detaily
+2. **Background task** — Pro zprávy s desítkami/stovkami úkolů: vytvořit background task, který zpracuje vše postupně
+3. **Uložit do KB** — Originální zpráva se uloží do KB a agent se k ní může kdykoli vrátit přes `kb_search`
+
+**Co je přípustné zkrátit:**
+- UI log/progress info — zobrazit "Zpracovávám..." s indikátorem, ne celý obsah v UI
+
+**Co NIKDY neořezávat:**
+- Scope, kontext, výsledky tool calls, uživatelské požadavky
+- Agent musí mít vždy možnost vrátit se ke kterémukoliv výsledku
+- KB read je relativně rychlé — není třeba cachovat, agent se může zeptat znova
+
+**Správný flow pro dlouhé zprávy:**
+```
+Zpráva > 16k chars → sumarizovat (LOCAL_FAST, ~5s)
+  ├── Sumarizace OK → agentic loop na souhrnu, originál v KB
+  └── Sumarizace FAIL → navrhnout background task (NIKDY neořezávat!)
+Zpráva > 50 požadavků → automaticky background task
+Zpráva < 16k chars → normální agentic loop
+```
+
 ### Python Chat Tools (26 tools)
 
 Available tools in the agentic loop, organized by category:
