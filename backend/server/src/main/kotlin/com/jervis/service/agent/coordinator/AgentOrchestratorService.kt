@@ -257,26 +257,7 @@ class AgentOrchestratorService(
             }
         }
 
-        onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrator"))
-
         val rules = loadProjectRules(task.clientId, task.projectId)
-
-        val environmentJson = task.projectId?.let { pid ->
-            try {
-                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
-            } catch (e: Exception) {
-                logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
-                null
-            }
-        }
-
-        // Resolve JERVIS internal project for orchestrator planning
-        val jervisProjectId = try {
-            projectService.getOrCreateJervisProject(task.clientId).id.toString()
-        } catch (e: Exception) {
-            logger.warn { "Failed to resolve JERVIS internal project: ${e.message}" }
-            null
-        }
 
         // Resolve client/project names for orchestrator context
         val clientName = try {
@@ -288,7 +269,48 @@ class AgentOrchestratorService(
             } catch (e: Exception) { null }
         }
 
-        // Chat history: Python loads directly from MongoDB (no Kotlin payload)
+        val workspacePath = resolveWorkspacePath(task)
+
+        // -----------------------------------------------------------------------
+        // v6 routing: BACKGROUND → /orchestrate/v2 (simplified agentic loop)
+        // Fallback: if v6 endpoint fails, fall through to legacy /orchestrate/stream
+        // -----------------------------------------------------------------------
+        return dispatchBackgroundV6(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+    }
+
+    /**
+     * v6 BACKGROUND dispatch — POST /orchestrate/v2.
+     *
+     * Fire-and-forget: returns thread_id immediately.
+     * Python runs 4-phase loop (intake → execute → dispatch → finalize)
+     * and pushes status to Kotlin via /internal/orchestrator-status.
+     */
+    private suspend fun dispatchBackgroundV6(
+        task: TaskDocument,
+        userInput: String,
+        rules: ProjectRulesDto,
+        clientName: String?,
+        projectName: String?,
+        workspacePath: String,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
+    ): Boolean {
+        onProgress("Spouštím orchestrátor v2...", mapOf("phase" to "python_orchestrate_v2"))
+
+        val environmentJson = task.projectId?.let { pid ->
+            try {
+                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
+            } catch (e: Exception) {
+                logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
+                null
+            }
+        }
+
+        val jervisProjectId = try {
+            projectService.getOrCreateJervisProject(task.clientId).id.toString()
+        } catch (e: Exception) {
+            logger.warn { "Failed to resolve JERVIS internal project: ${e.message}" }
+            null
+        }
 
         val request = OrchestrateRequestDto(
             taskId = task.id.toString(),
@@ -296,7 +318,81 @@ class AgentOrchestratorService(
             projectId = task.projectId?.toString(),
             clientName = clientName,
             projectName = projectName,
-            workspacePath = resolveWorkspacePath(task),
+            workspacePath = workspacePath,
+            query = userInput,
+            rules = rules,
+            environment = environmentJson,
+            jervisProjectId = jervisProjectId,
+            processingMode = "BACKGROUND",
+        )
+
+        try {
+            val streamResponse = pythonOrchestratorClient.orchestrateV2(request)
+            if (streamResponse == null) {
+                logger.info { "ORCHESTRATE_V2_BUSY: returned 429, falling back to legacy" }
+                return dispatchLegacy(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+            }
+
+            val updatedTask = task.copy(
+                state = TaskStateEnum.PYTHON_ORCHESTRATING,
+                orchestratorThreadId = streamResponse.threadId,
+                orchestrationStartedAt = java.time.Instant.now(),
+                orchestratorSteps = emptyList(),
+            )
+            taskRepository.save(updatedTask)
+
+            logger.info { "ORCHESTRATE_V2_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}" }
+            onProgress(
+                "Orchestrátor zpracovává úkol...",
+                mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),
+            )
+            return true
+        } catch (e: Exception) {
+            logger.warn(e) { "ORCHESTRATE_V2_FAILED: taskId=${task.id}, falling back to legacy /orchestrate/stream" }
+            return dispatchLegacy(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+        }
+    }
+
+    /**
+     * Legacy dispatch — POST /orchestrate/stream (LangGraph path).
+     *
+     * Fallback for when v6 /orchestrate/v2 fails or is unavailable.
+     * Will be removed after v6 stabilization (Phase 3).
+     */
+    private suspend fun dispatchLegacy(
+        task: TaskDocument,
+        userInput: String,
+        rules: ProjectRulesDto,
+        clientName: String?,
+        projectName: String?,
+        workspacePath: String,
+        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
+    ): Boolean {
+        onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrator"))
+
+        val environmentJson = task.projectId?.let { pid ->
+            try {
+                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
+            } catch (e: Exception) {
+                logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
+                null
+            }
+        }
+
+        val jervisProjectId = try {
+            projectService.getOrCreateJervisProject(task.clientId).id.toString()
+        } catch (e: Exception) {
+            logger.warn { "Failed to resolve JERVIS internal project: ${e.message}" }
+            null
+        }
+
+        val request = OrchestrateRequestDto(
+            taskId = task.id.toString(),
+            clientId = task.clientId.toString(),
+            projectId = task.projectId?.toString(),
+            clientName = clientName,
+            projectName = projectName,
+            workspacePath = workspacePath,
             query = userInput,
             rules = rules,
             environment = environmentJson,
@@ -314,12 +410,11 @@ class AgentOrchestratorService(
             state = TaskStateEnum.PYTHON_ORCHESTRATING,
             orchestratorThreadId = streamResponse.threadId,
             orchestrationStartedAt = java.time.Instant.now(),
-            orchestratorSteps = emptyList(), // Clear previous steps on new dispatch
+            orchestratorSteps = emptyList(),
         )
         taskRepository.save(updatedTask)
 
-        logger.info { "PYTHON_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}" }
-
+        logger.info { "PYTHON_DISPATCHED_LEGACY: taskId=${task.id} threadId=${streamResponse.threadId}" }
         onProgress(
             "Orchestrátor zpracovává úkol...",
             mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),

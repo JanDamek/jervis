@@ -3256,10 +3256,27 @@ Both handlers enforce the same cloud safety rule as the rest of the system:
 - **Background handler:** Derives `cloud_allowed` from `OrchestrateRequest.rules` (`auto_use_anthropic or auto_use_openai or auto_use_gemini`). `EscalationTracker` only bridges to cloud tiers when `cloud_allowed=True`.
 - **No implicit cloud:** If all project `auto_use_*` flags are `False`, escalation stops at `LOCAL_XLARGE` and the task fails if that tier can't handle it.
 
-### 31.14 Migration Path
+### 31.14 Kotlin Integration (Implemented)
+
+**Foreground chat** (master `7d31a405`):
+- `ChatRpcImpl` → `ChatService` → `PythonChatClient.chat()` → SSE `POST /chat`
+- Bypasses `AgentOrchestratorService` entirely; streams tokens directly to UI
+
+**Background tasks** (v6 dispatch):
+- `BackgroundEngine` → `AgentOrchestratorService.dispatchToPythonOrchestrator()`
+- `dispatchBackgroundV6()` → `PythonOrchestratorClient.orchestrateV2()` → `POST /orchestrate/v2`
+- Fallback: `dispatchLegacy()` → `PythonOrchestratorClient.orchestrateStream()` → `POST /orchestrate/stream`
+
+| Kotlin method | Python endpoint | Mode |
+|---------------|-----------------|------|
+| `PythonChatClient.chat()` | `POST /chat` | Foreground SSE |
+| `PythonOrchestratorClient.orchestrateV2()` | `POST /orchestrate/v2` | Background fire-and-forget |
+| `PythonOrchestratorClient.orchestrateStream()` | `POST /orchestrate/stream` | Legacy fallback |
+
+### 31.15 Migration Path
 
 The v6 handlers coexist with the legacy LangGraph orchestrator:
 
-1. **Phase 1 (current):** Both systems active, Kotlin can call either `/chat` (v6) or `/orchestrate` (legacy)
-2. **Phase 2 (after Kotlin integration):** Switch `BackgroundEngine` to call `/orchestrate/v2` instead of `/orchestrate`
+1. **Phase 1 (current):** Both systems active; foreground→`/chat` (SSE), background→`/orchestrate/v2` with legacy fallback
+2. **Phase 2 (stabilization):** Remove `dispatchLegacy()` fallback after v6 background handler is proven stable
 3. **Phase 3 (cleanup):** Remove old 14-node LangGraph (`app/graph/orchestrator.py`), 22 specialist agents (`app/agents/specialists/`), unused graph nodes (`app/graph/nodes/`)

@@ -258,6 +258,39 @@ class PythonOrchestratorClient(baseUrl: String) {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // v6 endpoint: simplified background handler
+    // -----------------------------------------------------------------------
+
+    /**
+     * v6 background orchestration endpoint — POST /orchestrate/v2.
+     *
+     * Replaces the LangGraph /orchestrate/stream for BACKGROUND tasks.
+     * Fire-and-forget: returns thread_id immediately.
+     * Python runs 4-phase loop (intake → execute → dispatch → finalize),
+     * pushes status to Kotlin via POST /internal/orchestrator-status.
+     *
+     * @return StreamStartResponseDto with thread_id, or null if busy (429)
+     */
+    suspend fun orchestrateV2(request: OrchestrateRequestDto): StreamStartResponseDto? {
+        logger.info { "PYTHON_ORCHESTRATE_V2_START: taskId=${request.taskId}" }
+        return try {
+            val response = client.post("$apiBaseUrl/orchestrate/v2") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            if (response.status.value == 429) {
+                logger.info { "PYTHON_ORCHESTRATE_V2_BUSY: orchestrator returned 429, skipping dispatch" }
+                return null
+            }
+            circuitBreaker.recordSuccess()
+            response.body()
+        } catch (e: Exception) {
+            circuitBreaker.recordFailure()
+            throw e
+        }
+    }
+
     /**
      * SSE stream URL for a given thread.
      */
