@@ -41,9 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -72,20 +70,9 @@ internal fun ChatArea(
 ) {
     val listState = rememberLazyListState()
 
-    // Scroll to bottom when messages change
-    var previousCount by remember { mutableIntStateOf(0) }
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            if (previousCount == 0 || messages.size > previousCount) {
-                // Wait for stream batch to settle + layout to complete
-                kotlinx.coroutines.delay(150)
-                // Large scrollOffset ensures the bottom of the last item is visible
-                listState.scrollToItem(messages.size - 1, scrollOffset = Int.MAX_VALUE)
-            }
-        }
-        previousCount = messages.size
-    }
-
+    // reverseLayout=true: item 0 is at the bottom of the screen.
+    // We reverse the messages so the newest message is item 0 (bottom).
+    val reversedMessages = remember(messages) { messages.asReversed() }
     Box(modifier = modifier) {
         if (messages.isEmpty()) {
             // Empty state
@@ -102,11 +89,38 @@ internal fun ChatArea(
         } else {
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                // "Load more" button at top
+                items(reversedMessages.size) { index ->
+                    val message = reversedMessages[index]
+                    // Original index in the non-reversed list
+                    val originalIndex = messages.size - 1 - index
+
+                    ChatMessageItem(
+                        message = message,
+                        orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
+                        onEditMessage = onEditMessage,
+                    )
+
+                    // Compression boundary AFTER this message (before the next older one)
+                    if (originalIndex > 0) {
+                        val prevSequence = messages[originalIndex - 1].sequence
+                        val currSequence = message.sequence
+                        if (prevSequence != null && currSequence != null) {
+                            val boundary = compressionBoundaries.find { b ->
+                                b.afterSequence in prevSequence until currSequence
+                            }
+                            if (boundary != null) {
+                                CompressionBoundaryIndicator(boundary)
+                            }
+                        }
+                    }
+                }
+
+                // "Load more" button at top (= end of reversed list)
                 if (hasMore) {
                     item {
                         Box(
@@ -125,30 +139,6 @@ internal fun ChatArea(
                             }
                         }
                     }
-                }
-
-                items(messages.size) { index ->
-                    val message = messages[index]
-
-                    // Check for compression boundary before this message
-                    if (index > 0) {
-                        val prevSequence = messages[index - 1].sequence
-                        val currSequence = message.sequence
-                        if (prevSequence != null && currSequence != null) {
-                            val boundary = compressionBoundaries.find { b ->
-                                b.afterSequence in prevSequence until currSequence
-                            }
-                            if (boundary != null) {
-                                CompressionBoundaryIndicator(boundary)
-                            }
-                        }
-                    }
-
-                    ChatMessageItem(
-                        message = message,
-                        orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
-                        onEditMessage = onEditMessage,
-                    )
                 }
             }
         }
