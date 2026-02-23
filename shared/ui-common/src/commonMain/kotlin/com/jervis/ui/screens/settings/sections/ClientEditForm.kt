@@ -88,6 +88,9 @@ internal fun ClientEditForm(
     // Projects
     var projects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
 
+    // GPG certificates for dropdown
+    var gpgCertificates by remember { mutableStateOf<List<com.jervis.dto.coding.GpgCertificateDto>>(emptyList()) }
+
     val scope = rememberCoroutineScope()
 
     fun loadConnections() {
@@ -145,6 +148,9 @@ internal fun ClientEditForm(
     LaunchedEffect(Unit) {
         loadConnections()
         loadProjects()
+        try {
+            gpgCertificates = repository.gpgCertificates.getCertificates(client.id)
+        } catch (_: Exception) {}
     }
 
     LaunchedEffect(availableConnections, selectedConnectionIds.size) {
@@ -393,6 +399,7 @@ internal fun ClientEditForm(
                         onGpgSignChange = { gitCommitGpgSign = it },
                         gpgKeyId = gitCommitGpgKeyId,
                         onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                        gpgCertificates = gpgCertificates,
                     )
                 }
 

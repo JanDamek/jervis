@@ -7,8 +7,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.coding.GpgCertificateDto
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.ui.design.JCheckboxRow
+import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JTextField
 import com.jervis.ui.design.JervisSpacing
 
@@ -32,10 +34,6 @@ internal fun getIndexAllLabel(capability: ConnectionCapability): String {
     }
 }
 
-/**
- * Shared Git commit configuration form fields.
- * Used by both ClientEditForm and ProjectEditForm to avoid duplication.
- */
 @Composable
 internal fun GitCommitConfigFields(
     messageFormat: String,
@@ -54,6 +52,7 @@ internal fun GitCommitConfigFields(
     onGpgSignChange: (Boolean) -> Unit,
     gpgKeyId: String,
     onGpgKeyIdChange: (String) -> Unit,
+    gpgCertificates: List<GpgCertificateDto> = emptyList(),
 ) {
     JTextField(
         value = messageFormat,
@@ -128,11 +127,22 @@ internal fun GitCommitConfigFields(
 
     if (gpgSign) {
         Spacer(Modifier.height(JervisSpacing.itemGap))
-        JTextField(
-            value = gpgKeyId,
-            onValueChange = onGpgKeyIdChange,
-            label = "GPG Key ID",
-            placeholder = "např. ABCD1234",
-        )
+        if (gpgCertificates.isNotEmpty()) {
+            val selectedCert = gpgCertificates.find { it.keyId == gpgKeyId }
+            JDropdown(
+                items = gpgCertificates,
+                selectedItem = selectedCert,
+                onItemSelected = { onGpgKeyIdChange(it.keyId) },
+                label = "GPG klíč",
+                itemLabel = { "${it.keyId} (${it.userName} <${it.userEmail}>)" },
+            )
+        } else {
+            JTextField(
+                value = gpgKeyId,
+                onValueChange = onGpgKeyIdChange,
+                label = "GPG Key ID",
+                placeholder = "např. ABCD1234",
+            )
+        }
     }
 }

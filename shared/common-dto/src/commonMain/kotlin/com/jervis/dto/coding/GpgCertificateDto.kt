@@ -2,10 +2,6 @@ package com.jervis.dto.coding
 
 import kotlinx.serialization.Serializable
 
-/**
- * GPG certificate for coding agent commit signing.
- * Each client can have one active GPG key used by all coding agents.
- */
 @Serializable
 data class GpgCertificateDto(
     val id: String = "",
@@ -17,7 +13,6 @@ data class GpgCertificateDto(
     val createdAt: String = "",
 )
 
-/** Upload request — includes the actual private key (never returned in GpgCertificateDto). */
 @Serializable
 data class GpgCertificateUploadDto(
     val clientId: String,
@@ -28,7 +23,6 @@ data class GpgCertificateUploadDto(
     val passphrase: String? = null,
 )
 
-/** Delete request. */
 @Serializable
 data class GpgCertificateDeleteDto(
     val id: String,

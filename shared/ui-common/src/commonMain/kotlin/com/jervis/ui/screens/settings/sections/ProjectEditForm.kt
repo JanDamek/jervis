@@ -87,6 +87,9 @@ internal fun ProjectEditForm(
     var gitCommitGpgSign by remember { mutableStateOf(project.gitCommitGpgSign ?: false) }
     var gitCommitGpgKeyId by remember { mutableStateOf(project.gitCommitGpgKeyId ?: "") }
 
+    // GPG certificates for dropdown
+    var gpgCertificates by remember { mutableStateOf<List<com.jervis.dto.coding.GpgCertificateDto>>(emptyList()) }
+
     // Cloud model policy override
     var overrideCloudPolicy by remember {
         mutableStateOf(
@@ -110,6 +113,7 @@ internal fun ProjectEditForm(
                     client?.connectionIds?.contains(conn.id) == true
                 }
                 clientGroups = repository.projectGroups.listGroupsForClient(cid)
+                gpgCertificates = repository.gpgCertificates.getCertificates(cid)
             }
         } catch (_: Exception) {
         }
@@ -377,6 +381,7 @@ internal fun ProjectEditForm(
                             onGpgSignChange = { gitCommitGpgSign = it },
                             gpgKeyId = gitCommitGpgKeyId,
                             onGpgKeyIdChange = { gitCommitGpgKeyId = it },
+                            gpgCertificates = gpgCertificates,
                         )
                     }
                 }

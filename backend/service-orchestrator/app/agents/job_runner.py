@@ -11,6 +11,7 @@ import json
 import logging
 from pathlib import Path
 
+import httpx
 from kubernetes import client, config, watch
 
 from app.config import settings
@@ -112,6 +113,9 @@ class JobRunner:
             jervis_dir.mkdir(exist_ok=True)
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
+        # Fetch GPG key for commit signing (if configured)
+        gpg_key = await self._fetch_gpg_key(client_id) if allow_git else None
+
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
         job = self._build_job_manifest(
@@ -122,9 +126,10 @@ class JobRunner:
             project_id=project_id or "",
             workspace_path=workspace_path,
             allow_git=allow_git,
+            gpg_key=gpg_key,
         )
 
-        logger.info("Creating K8s Job: %s (agent=%s, task=%s)", job_name, agent_type, task_id)
+        logger.info("Creating K8s Job: %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
         self.batch_v1.create_namespaced_job(namespace=ns, body=job)
 
         # Stream logs in background
@@ -260,6 +265,9 @@ class JobRunner:
             jervis_dir.mkdir(exist_ok=True)
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
+        # Fetch GPG key for commit signing (if configured)
+        gpg_key = await self._fetch_gpg_key(client_id) if allow_git else None
+
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
         job = self._build_job_manifest(
@@ -270,9 +278,10 @@ class JobRunner:
             project_id=project_id or "",
             workspace_path=workspace_path,
             allow_git=allow_git,
+            gpg_key=gpg_key,
         )
 
-        logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s)", job_name, agent_type, task_id)
+        logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
         self.batch_v1.create_namespaced_job(namespace=settings.k8s_namespace, body=job)
 
         return {
@@ -319,6 +328,22 @@ class JobRunner:
             "agentType": agent_type,
         }
 
+    async def _fetch_gpg_key(self, client_id: str) -> dict | None:
+        """Fetch GPG key from Kotlin server for commit signing."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                resp = await http.get(
+                    f"{settings.kotlin_server_url}/internal/gpg-key/{client_id}"
+                )
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                if data.get("keyId"):
+                    return data
+        except Exception as e:
+            logger.warning("Failed to fetch GPG key for client %s: %s", client_id, e)
+        return None
+
     def cancel_job(self, job_name: str):
         """Cancel (delete) a K8s Job."""
         try:
@@ -340,6 +365,7 @@ class JobRunner:
         project_id: str,
         workspace_path: str,
         allow_git: bool = False,
+        gpg_key: dict | None = None,
     ) -> client.V1Job:
         """Build K8s Job manifest for a coding agent."""
         image = AGENT_IMAGES.get(agent_type)
@@ -377,6 +403,12 @@ class JobRunner:
                 ),
             ),
         ]
+
+        if gpg_key:
+            env_vars.append(client.V1EnvVar(name="GPG_KEY_ID", value=gpg_key["keyId"]))
+            env_vars.append(client.V1EnvVar(name="GPG_PRIVATE_KEY", value=gpg_key["privateKeyArmored"]))
+            if gpg_key.get("passphrase"):
+                env_vars.append(client.V1EnvVar(name="GPG_PASSPHRASE", value=gpg_key["passphrase"]))
 
         return client.V1Job(
             metadata=client.V1ObjectMeta(

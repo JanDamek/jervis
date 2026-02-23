@@ -11,8 +11,11 @@
 #   AGENT_TYPE  – aider | openhands | claude | junie
 #
 # Optional env vars:
-#   ALLOW_GIT   – "true" to allow git operations (default: "false")
-#   CLAUDE_MODEL – model override for Claude Code
+#   ALLOW_GIT       – "true" to allow git operations (default: "false")
+#   CLAUDE_MODEL    – model override for Claude Code
+#   GPG_PRIVATE_KEY – armored GPG private key for commit signing
+#   GPG_KEY_ID      – GPG key ID (fingerprint) for signing
+#   GPG_PASSPHRASE  – passphrase for the GPG key (if protected)
 #
 set -euo pipefail
 
@@ -22,6 +25,23 @@ AGENT_TYPE="${AGENT_TYPE:?AGENT_TYPE env is required}"
 RESULT_FILE="$WORKSPACE/.jervis/result.json"
 
 cd "$WORKSPACE"
+
+# Import GPG key for commit signing (if provided by orchestrator)
+if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+    echo "Importing GPG key: ${GPG_KEY_ID:-unknown}"
+    echo "$GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null || true
+    git config --global commit.gpgsign true
+    git config --global user.signingkey "${GPG_KEY_ID}"
+    if [ -n "${GPG_PASSPHRASE:-}" ]; then
+        GPG_KEYGRIP=$(gpg --list-keys --with-keygrip "${GPG_KEY_ID}" 2>/dev/null | grep -m1 Keygrip | awk '{print $3}')
+        if [ -n "$GPG_KEYGRIP" ]; then
+            gpg-connect-agent "PRESET_PASSPHRASE $GPG_KEYGRIP -1 $(echo -n "$GPG_PASSPHRASE" | xxd -p | tr -d '\n')" /bye 2>/dev/null || true
+        fi
+    fi
+    export GPG_TTY=""
+    git config --global gpg.program gpg
+    echo "GPG signing configured"
+fi
 
 # Read instructions from orchestrator
 INSTRUCTIONS=""

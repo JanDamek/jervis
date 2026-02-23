@@ -53,10 +53,6 @@ class GpgCertificateRpcImpl(
         }
     }
 
-    /**
-     * Internal: get the active GPG key for a client (used by orchestrator for agent job creation).
-     * Returns the private key armored text, or null if no certificate is configured.
-     */
     suspend fun getActiveKey(clientId: String): GpgKeyInfo? {
         val doc = gpgCertificateRepository.findFirstByClientId(clientId) ?: return null
         return GpgKeyInfo(
@@ -79,7 +75,6 @@ class GpgCertificateRpcImpl(
     )
 }
 
-/** Internal data holder for GPG key distribution to agents. */
 data class GpgKeyInfo(
     val keyId: String,
     val userName: String,
