@@ -9,9 +9,11 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
+import com.jervis.dto.user.UserTaskListPageDto
 import com.jervis.dto.user.UserTaskPageDto
 import com.jervis.mapper.toDto
 import com.jervis.mapper.toUserTaskDto
+import com.jervis.mapper.toUserTaskListItemDto
 import com.jervis.service.IUserTaskService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
 import com.jervis.service.background.TaskService
@@ -46,6 +48,20 @@ class UserTaskRpcImpl(
             totalCount = paged.totalCount,
             hasMore = paged.hasMore,
         )
+    }
+
+    override suspend fun listAllLightweight(query: String?, offset: Int, limit: Int): UserTaskListPageDto {
+        val paged = userTaskService.findPagedTasksLightweight(query, offset, limit.coerceAtMost(50))
+        return UserTaskListPageDto(
+            items = paged.items.map { it.toUserTaskListItemDto() },
+            totalCount = paged.totalCount,
+            hasMore = paged.hasMore,
+        )
+    }
+
+    override suspend fun getById(taskId: String): UserTaskDto? {
+        val task = userTaskService.getTaskById(TaskId.fromString(taskId))
+        return task?.toUserTaskDto()
     }
 
     override suspend fun activeCount(clientId: String): UserTaskCountDto {

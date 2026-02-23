@@ -167,6 +167,86 @@ class UserTaskService(
     }
 
     /**
+     * Lightweight paginated query for list view.
+     * Uses MongoDB $text index on taskName + content when search query is provided.
+     * Falls back to regex if text index is not available.
+     * Applies field projection to exclude content, attachments, agentCheckpointJson.
+     */
+    suspend fun findPagedTasksLightweight(
+        query: String?,
+        offset: Int,
+        limit: Int,
+    ): PagedTasks {
+        val criteria = Criteria.where("type").`is`(com.jervis.dto.TaskTypeEnum.USER_TASK.name)
+
+        if (!query.isNullOrBlank()) {
+            // Try $text search first (requires text index on taskName + content)
+            try {
+                val textCriteria = org.springframework.data.mongodb.core.query.TextCriteria
+                    .forDefaultLanguage()
+                    .matching(query)
+                val textQuery = org.springframework.data.mongodb.core.query.TextQuery.queryText(textCriteria)
+                    .addCriteria(criteria)
+                    .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+
+                val totalCount = mongoTemplate.count(textQuery, TaskDocument::class.java).awaitSingle().toInt()
+
+                val dataQuery = org.springframework.data.mongodb.core.query.TextQuery.queryText(textCriteria)
+                    .addCriteria(criteria)
+                    .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+                    .skip(offset.toLong())
+                    .limit(limit)
+
+                // Exclude large fields
+                dataQuery.fields()
+                    .exclude("agentCheckpointJson")
+
+                val items = mongoTemplate.find(dataQuery, TaskDocument::class.java)
+                    .collectList()
+                    .awaitSingle()
+
+                return PagedTasks(
+                    items = items,
+                    totalCount = totalCount,
+                    hasMore = offset + items.size < totalCount,
+                )
+            } catch (e: Exception) {
+                // Text index may not exist — fall back to regex
+                logger.debug { "Text search failed, falling back to regex: ${e.message}" }
+            }
+
+            // Regex fallback
+            val regex = ".*${Regex.escape(query)}.*"
+            criteria.orOperator(
+                Criteria.where("taskName").regex(regex, "i"),
+                Criteria.where("content").regex(regex, "i"),
+            )
+        }
+
+        val countQuery = Query(criteria)
+        val totalCount = mongoTemplate.count(countQuery, TaskDocument::class.java).awaitSingle().toInt()
+
+        val dataQuery = Query(criteria)
+            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+            .skip(offset.toLong())
+            .limit(limit)
+
+        // Exclude large fields from projection
+        dataQuery.fields()
+            .exclude("agentCheckpointJson")
+
+        val items = mongoTemplate.find(dataQuery, TaskDocument::class.java)
+            .collectList()
+            .awaitSingle()
+
+        return PagedTasks(
+            items = items,
+            totalCount = totalCount,
+            hasMore = offset + items.size < totalCount,
+        )
+    }
+
+    /**
      * Search all tasks (not just USER_TASK type). Used by chat agent's search_tasks tool.
      */
     suspend fun searchAllTasks(

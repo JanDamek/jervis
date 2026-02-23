@@ -47,6 +47,7 @@ fun SchedulerScreen(
 
     var selectedTask by remember { mutableStateOf<EnhancedScheduledTask?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var showDoneTasks by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf<EnhancedScheduledTask?>(null) }
 
@@ -121,9 +122,10 @@ fun SchedulerScreen(
         }
     }
 
-    // Build grouped list items (group headers + tasks)
-    val groupedItems = remember(tasks) {
-        buildGroupedItems(tasks)
+    // Build grouped list items (group headers + tasks), optionally filtering DONE
+    val groupedItems = remember(tasks, showDoneTasks) {
+        val filtered = if (showDoneTasks) tasks else tasks.filter { it.timeGroup != TaskTimeGroup.DONE }
+        buildGroupedItems(filtered)
     }
 
     if (selectedTask != null) {
@@ -147,6 +149,22 @@ fun SchedulerScreen(
                         }
                     },
                 )
+                // DONE filter toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = JervisSpacing.outerPadding),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val doneCount = tasks.count { it.timeGroup == TaskTimeGroup.DONE }
+                    FilterChip(
+                        selected = showDoneTasks,
+                        onClick = { showDoneTasks = !showDoneTasks },
+                        label = { Text("Dokončené ($doneCount)") },
+                    )
+                }
+
                 Spacer(Modifier.height(JervisSpacing.itemGap))
 
                 if (isLoading && tasks.isEmpty()) {

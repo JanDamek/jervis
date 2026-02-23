@@ -33,6 +33,7 @@ import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.ChatRole
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
+import com.jervis.dto.user.UserTaskListItemDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.util.ConfirmDialog
@@ -60,16 +61,21 @@ fun UserTasksScreen(
     onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
     onRefreshBadge: (() -> Unit)? = null,
 ) {
-    var tasks by remember { mutableStateOf<List<UserTaskDto>>(emptyList()) }
+    var listItems by remember { mutableStateOf<List<UserTaskListItemDto>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
     var totalCount by remember { mutableStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var filterText by remember { mutableStateOf("") }
-    var selectedTask by remember { mutableStateOf<UserTaskDto?>(null) }
+
+    // Selected item in lightweight list + full DTO loaded on demand
+    var selectedListItem by remember { mutableStateOf<UserTaskListItemDto?>(null) }
+    var selectedFullTask by remember { mutableStateOf<UserTaskDto?>(null) }
+    var isLoadingDetail by remember { mutableStateOf(false) }
+
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var taskToDelete by remember { mutableStateOf<UserTaskDto?>(null) }
+    var taskToDelete by remember { mutableStateOf<UserTaskListItemDto?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -78,10 +84,10 @@ fun UserTasksScreen(
             if (append) isLoadingMore = true else isLoading = true
             errorMessage = null
             try {
-                val offset = if (append) tasks.size else 0
+                val offset = if (append) listItems.size else 0
                 val serverQuery = query?.takeIf { it.isNotBlank() }
-                val page = repository.userTasks.listAll(serverQuery, offset, PAGE_SIZE)
-                tasks = if (append) tasks + page.items else page.items
+                val page = repository.userTasks.listAllLightweight(serverQuery, offset, PAGE_SIZE)
+                listItems = if (append) listItems + page.items else page.items
                 hasMore = page.hasMore
                 totalCount = page.totalCount
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
@@ -95,6 +101,25 @@ fun UserTasksScreen(
         }
     }
 
+    // Load full task detail when selecting an item from the lightweight list
+    fun selectTask(item: UserTaskListItemDto) {
+        selectedListItem = item
+        selectedFullTask = null
+        isLoadingDetail = true
+        scope.launch {
+            try {
+                selectedFullTask = repository.userTasks.getById(item.id)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errorMessage = "Chyba načítání detailu: ${e.message}"
+                selectedListItem = null
+            } finally {
+                isLoadingDetail = false
+            }
+        }
+    }
+
     fun handleDelete() {
         val task = taskToDelete ?: return
         scope.launch {
@@ -102,7 +127,10 @@ fun UserTasksScreen(
                 repository.userTasks.cancel(task.id)
                 showDeleteConfirm = false
                 taskToDelete = null
-                if (selectedTask?.id == task.id) selectedTask = null
+                if (selectedListItem?.id == task.id) {
+                    selectedListItem = null
+                    selectedFullTask = null
+                }
                 loadTasks(filterText)
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
@@ -126,17 +154,17 @@ fun UserTasksScreen(
         }
     }
 
-    if (errorMessage != null && selectedTask == null) {
+    if (errorMessage != null && selectedListItem == null) {
         Column {
             JTopBar(title = "Uživatelské úlohy")
             JErrorState(message = errorMessage!!, onRetry = { loadTasks(filterText) })
         }
     } else {
         JListDetailLayout(
-            items = tasks,
-            selectedItem = selectedTask,
+            items = listItems,
+            selectedItem = selectedListItem,
             isLoading = isLoading,
-            onItemSelected = { selectedTask = it },
+            onItemSelected = { it?.let { item -> selectTask(item) } },
             emptyMessage = "Žádné úlohy nenalezeny",
             emptyIcon = "📋",
             listHeader = {
@@ -148,7 +176,7 @@ fun UserTasksScreen(
                     value = filterText,
                     onValueChange = { filterText = it },
                     label = "Filtr",
-                    placeholder = "Hledat podle názvu nebo popisu...",
+                    placeholder = "Hledat podle názvu...",
                     modifier = Modifier.fillMaxWidth().padding(horizontal = JervisSpacing.outerPadding),
                     singleLine = true,
                 )
@@ -163,40 +191,52 @@ fun UserTasksScreen(
                             JCenteredLoading()
                         } else {
                             JSecondaryButton(onClick = { loadTasks(filterText, append = true) }) {
-                                Text("Načíst další (${tasks.size}/$totalCount)")
+                                Text("Načíst další (${listItems.size}/$totalCount)")
                             }
                         }
                     }
                 }
             } else null,
-            listItem = { task ->
-                UserTaskRow(
-                    task = task,
-                    onClick = { selectedTask = task },
+            listItem = { item ->
+                UserTaskListRow(
+                    item = item,
+                    onClick = { selectTask(item) },
                     onDelete = {
-                        taskToDelete = task
+                        taskToDelete = item
                         showDeleteConfirm = true
                     },
                 )
             },
-            detailContent = { task ->
-                UserTaskDetail(
-                    task = task,
-                    repository = repository,
-                    onBack = { selectedTask = null },
-                    onTaskSent = { mode ->
-                        selectedTask = null
-                        loadTasks(filterText)
-                        if (mode == TaskRoutingMode.DIRECT_TO_AGENT) {
-                            onNavigateToProject?.invoke(task.clientId, task.projectId)
-                        }
-                    },
-                    onError = { errorMessage = it },
-                    onDelete = {
-                        taskToDelete = task
-                        showDeleteConfirm = true
-                    },
-                )
+            detailContent = {
+                if (isLoadingDetail) {
+                    JCenteredLoading()
+                } else if (selectedFullTask != null) {
+                    UserTaskDetail(
+                        task = selectedFullTask!!,
+                        repository = repository,
+                        onBack = {
+                            selectedListItem = null
+                            selectedFullTask = null
+                        },
+                        onTaskSent = { mode ->
+                            val clientId = selectedFullTask!!.clientId
+                            val projectId = selectedFullTask!!.projectId
+                            selectedListItem = null
+                            selectedFullTask = null
+                            loadTasks(filterText)
+                            if (mode == TaskRoutingMode.DIRECT_TO_AGENT) {
+                                onNavigateToProject?.invoke(clientId, projectId)
+                            }
+                        },
+                        onError = { errorMessage = it },
+                        onDelete = {
+                            selectedListItem?.let {
+                                taskToDelete = it
+                                showDeleteConfirm = true
+                            }
+                        },
+                    )
+                }
             },
         )
     }
@@ -213,12 +253,12 @@ fun UserTasksScreen(
 }
 
 @Composable
-private fun UserTaskRow(
-    task: UserTaskDto,
+private fun UserTaskListRow(
+    item: UserTaskListItemDto,
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val (stateLabel, stateColor) = userTaskStateBadge(task.state)
+    val (stateLabel, stateColor) = userTaskStateBadge(item.state)
 
     JCard(
         modifier = Modifier.fillMaxWidth(),
@@ -233,7 +273,7 @@ private fun UserTaskRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = task.title,
+                    text = item.title,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                 )
@@ -243,10 +283,23 @@ private fun UserTaskRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Badge(containerColor = stateColor) { Text(stateLabel) }
+                    if (item.hasPendingQuestion) {
+                        Badge(containerColor = Color(0xFFF57C00)) { Text("❓") }
+                    }
                     Text(
-                        text = formatInstant(task.createdAtEpochMillis),
+                        text = formatInstant(item.createdAtEpochMillis),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Show pending question preview if available
+                if (!item.pendingQuestionPreview.isNullOrBlank()) {
+                    Text(
+                        text = item.pendingQuestionPreview!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
@@ -323,6 +376,32 @@ private fun UserTaskDetail(
         ) {
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Structured header with metadata
+                    JSection(title = "Informace") {
+                        val (stateLabel, stateColor) = userTaskStateBadge(task.state)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Badge(containerColor = stateColor) { Text(stateLabel) }
+                            Text(
+                                text = formatInstant(task.createdAtEpochMillis),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (!task.sourceUri.isNullOrBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Zdroj: ${task.sourceUri}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    // Prominent pending question from the agent
                     if (!task.pendingQuestion.isNullOrBlank()) {
                         JSection(title = "Otázka agenta") {
                             Text(

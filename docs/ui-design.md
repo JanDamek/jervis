@@ -921,67 +921,72 @@ State: Frontend expanded
 
 ### 5.6) User Tasks Screen (`UserTasksScreen.kt`)
 
-Full-screen view accessed from hamburger menu ("Uzivatelske ulohy"). Shows escalated tasks that require user attention (failed background tasks, approval requests). Uses `JListDetailLayout` + `JDetailScreen` pattern.
+Full-screen view accessed from hamburger menu ("Uzivatelske ulohy"). Shows escalated tasks that require user attention (failed background tasks, approval requests). Uses `JListDetailLayout` + `JDetailScreen` pattern with **two-tier DTO loading**: lightweight `UserTaskListItemDto` for list, full `UserTaskDto` loaded on-demand for detail.
 
-**List view:**
+**List view (lightweight DTO):**
 ```
 +-- JTopBar ("Uzivatelske ulohy", onBack, [Refresh]) ----------+
 |                                                                |
-| [JTextField: Filtr]                                           |
+| [JTextField: Filtr (server-side text index + regex fallback)] |
 |                                                                |
 | +-- JCard ------------------------------------------------+   |
 | | Task title                            [Delete] [>]      |   |
-| | * USER_TASK  projectId                                   |   |
+| | * K vyrizeni  ❓  22.02.2025                             |   |
+| | Agent question preview (120 chars)...                    |   |
 | +----------------------------------------------------------+   |
 | +-- JCard ------------------------------------------------+   |
 | | Another task                          [Delete] [>]      |   |
-| | * USER_TASK  projectId                                   |   |
+| | * Zpracovava se  22.02.2025                              |   |
 | +----------------------------------------------------------+   |
+|                                                                |
+|          [Nacist dalsi (20/45)]                                |
 +----------------------------------------------------------------+
 ```
 
-**Detail view (replaces list via JListDetailLayout):**
+**Detail view (full DTO loaded via getById):**
 ```
 +-- JDetailScreen ("Task title", onBack) -----------------------+
 |                                                                 |
-| +-- JSection: Zakladni udaje --------------------------------+ |
-| | Stav: USER_TASK                                             | |
-| | Projekt: projectId                                          | |
-| | Klient: clientId                                            | |
+| +-- JSection: Informace -------------------------------------+ |
+| | * K vyrizeni  22.02.2025 14:30                              | |
+| | Zdroj: email/issue-123                                      | |
 | +-------------------------------------------------------------+ |
-| +-- JSection: Odkaz na zdroj --------------------------------+ |
-| |                                     [Kopirovat]             | |
-| | https://source-uri...                                       | |
+| +-- JSection: Otazka agenta ---------------------------------+ |
+| | Agent's pending question text (primary color, bodyLarge)    | |
+| | Context explanation (onSurfaceVariant)                      | |
 | +-------------------------------------------------------------+ |
 | +-- JSection: Popis -----------------------------------------+ |
-| |                                     [Kopirovat]             | |
 | | Task description text...                                    | |
 | +-------------------------------------------------------------+ |
-| +-- JSection: Dodatecne instrukce ---------------------------+ |
+| +-- JSection: Historie konverzace ----------------------------+ |
+| | [ChatBubble: User / Agent / System messages]                | |
+| +-------------------------------------------------------------+ |
+| +-- JSection: Odpoved ----------------------------------------+ |
 | | [JTextField: placeholder]                                   | |
 | +-------------------------------------------------------------+ |
 |                                                                 |
 | +-- JActionBar -----------------------------------------------+ |
-| |                    [Do fronty] [Agentovi]                    | |
+| |              [Prevzit do chatu] [Odpovedět]                  | |
 | +-------------------------------------------------------------+ |
 +------------------------------------------------------------------+
 ```
 
 **Routing modes:**
 - "Do fronty" (`BACK_TO_PENDING`) -- returns task to BACKGROUND processing queue
-- "Agentovi" (`DIRECT_TO_AGENT`) -- sends task directly to FOREGROUND agent processing
+- "Prevzit do chatu" (`DIRECT_TO_AGENT`) -- sends task directly to FOREGROUND agent processing
 
 **Key components:**
-- `UserTasksScreen` -- `JListDetailLayout` with filter, list cards, detail view
-- `UserTaskRow` -- `JCard` with title, state badge, projectId, `JDeleteButton`, chevron
-- `UserTaskDetail` -- `JDetailScreen` with `JSection` blocks, additional instructions input, routing buttons
-- `JKeyValueRow` -- Label/value pair with primary-colored label (replaces TaskDetailField)
+- `UserTasksScreen` -- `JListDetailLayout<UserTaskListItemDto>` with server-side filter, lightweight list, on-demand detail
+- `UserTaskListRow` -- `JCard` with title, state badge, pending question indicator ❓, question preview, `JDeleteButton`, chevron
+- `UserTaskDetail` -- `JDetailScreen` with structured info header, prominent pending question, chat history, routing buttons
+- `ChatBubble` -- Role-labeled message card (User/Agent/System)
 
 **Data flow:**
-- Loads tasks from all clients via `repository.userTasks.listActive(clientId)`
-- Sorted by creation date (oldest first)
-- Client-side filter by title, description, projectId
-- Delete via `repository.userTasks.cancel(taskId)` with `JConfirmDialog`
+- **List**: `repository.userTasks.listAllLightweight(query, offset, limit)` -- server-side paginated with MongoDB $text index (regex fallback), excludes content/attachments/agentCheckpointJson
+- **Detail**: `repository.userTasks.getById(taskId)` -- loads full `UserTaskDto` on item selection
+- **Search**: Server-side via `$text` index on `taskName` + `content`, falls back to regex; debounced 300ms
+- Sorted by creation date (newest first)
+- Delete via `repository.userTasks.cancel(taskId)` with `ConfirmDialog`
 
 ### 5.7) Meetings Screen (`MeetingsScreen.kt`)
 
@@ -1717,10 +1722,10 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 +-- ChatInputArea.kt                  <- Message input + send button
 +-- AgentWorkloadScreen.kt            <- Agent workload accordion layout
 +-- AgentWorkloadSections.kt          <- Agent/queue/history sections (internal)
-+-- SchedulerScreen.kt                <- Task scheduling list
++-- SchedulerScreen.kt                <- Task scheduling calendar with DONE filter toggle
 +-- SchedulerComponents.kt            <- ScheduledTaskDetail, ScheduleTaskDialog (internal)
 +-- RagSearchScreen.kt                <- RAG search interface
-+-- UserTasksScreen.kt                <- Escalated task list + detail
++-- UserTasksScreen.kt                <- Escalated task list (lightweight DTO) + detail (full DTO on-demand)
 +-- PendingTasksScreen.kt             <- Task queue with filters
 +-- ErrorLogsScreen.kt                <- Error logs display
 +-- model/

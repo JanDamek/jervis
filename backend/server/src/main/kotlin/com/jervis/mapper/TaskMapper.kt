@@ -2,6 +2,7 @@ package com.jervis.mapper
 
 import com.jervis.dto.PendingTaskDto
 import com.jervis.dto.user.UserTaskDto
+import com.jervis.dto.user.UserTaskListItemDto
 import com.jervis.entity.TaskDocument
 
 fun TaskDocument.toUserTaskDto(): UserTaskDto =
@@ -17,6 +18,19 @@ fun TaskDocument.toUserTaskDto(): UserTaskDto =
         attachments = this.attachments.map { it.toDto() },
         pendingQuestion = this.pendingUserQuestion,
         questionContext = this.userQuestionContext,
+    )
+
+/** Lightweight mapper for list view — skips content, attachments, agentCheckpointJson. */
+fun TaskDocument.toUserTaskListItemDto(): UserTaskListItemDto =
+    UserTaskListItemDto(
+        id = this.id.toString(),
+        title = this.taskName,
+        state = this.state.name,
+        projectId = this.projectId?.toString(),
+        clientId = this.clientId.toString(),
+        createdAtEpochMillis = this.createdAt.toEpochMilli(),
+        hasPendingQuestion = !this.pendingUserQuestion.isNullOrBlank(),
+        pendingQuestionPreview = this.pendingUserQuestion?.take(120),
     )
 
 fun TaskDocument.toPendingTaskDto(): PendingTaskDto =
