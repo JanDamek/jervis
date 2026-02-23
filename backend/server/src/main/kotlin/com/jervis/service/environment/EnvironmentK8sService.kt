@@ -388,7 +388,7 @@ class EnvironmentK8sService(
                     .addToLabels("app", componentName)
                     .addToLabels("managed-by", "jervis-server")
                 .endMetadata()
-                .withData(envVars)
+                .also { builder -> envVars.forEach { (k, v) -> builder.addToData(k, v) } }
                 .build()
 
             client.configMaps()

@@ -1,5 +1,6 @@
 package com.jervis.rpc
 
+import com.jervis.dto.PagedPendingTasksResult
 import com.jervis.dto.PendingTaskDto
 import com.jervis.service.IPendingTaskService
 
@@ -20,6 +21,13 @@ class PendingTaskRpcImpl(
         taskType: String?,
         state: String?,
     ): Long = pendingTaskService.countTasks(taskType, state)
+
+    override suspend fun listTasksPaged(
+        taskType: String?,
+        state: String?,
+        page: Int,
+        pageSize: Int,
+    ): PagedPendingTasksResult = pendingTaskService.listTasksPaged(taskType, state, page, pageSize)
 
     override suspend fun deletePendingTask(id: String) = pendingTaskService.deletePendingTask(id)
 }
