@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
@@ -57,6 +58,7 @@ fun EnvironmentManagerScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showNewDialog by remember { mutableStateOf(false) }
+    var templates by remember { mutableStateOf<List<ComponentTemplateDto>>(emptyList()) }
 
     val scope = rememberCoroutineScope()
 
@@ -66,6 +68,8 @@ fun EnvironmentManagerScreen(
             error = null
             try {
                 environments = repository.environments.getAllEnvironments()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = "Chyba při načítání prostředí: ${e.message}"
             } finally {
@@ -74,7 +78,13 @@ fun EnvironmentManagerScreen(
         }
     }
 
-    LaunchedEffect(Unit) { loadEnvironments() }
+    LaunchedEffect(Unit) {
+        loadEnvironments()
+        // Load templates once (static data)
+        try {
+            templates = repository.environments.getComponentTemplates()
+        } catch (_: Exception) {}
+    }
 
     // Deep-link: select initial environment once loaded
     LaunchedEffect(environments, initialEnvironmentId) {
@@ -133,6 +143,7 @@ fun EnvironmentManagerScreen(
                             EnvironmentDetail(
                                 environment = env,
                                 repository = repository,
+                                templates = templates,
                                 onBack = { selectedEnv = null },
                                 onDeleted = {
                                     selectedEnv = null
@@ -198,6 +209,7 @@ private fun EnvironmentListItem(
 private fun EnvironmentDetail(
     environment: EnvironmentDto,
     repository: JervisRepository,
+    templates: List<ComponentTemplateDto> = emptyList(),
     onBack: () -> Unit,
     onDeleted: () -> Unit,
     onUpdated: () -> Unit,
@@ -283,6 +295,7 @@ private fun EnvironmentDetail(
                     environment = environment,
                     repository = repository,
                     onUpdated = onUpdated,
+                    templates = templates,
                 )
             }
 

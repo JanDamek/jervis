@@ -1,5 +1,6 @@
 package com.jervis.service
 
+import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
 import kotlinx.rpc.annotations.Rpc
@@ -37,4 +38,10 @@ interface IEnvironmentService {
      * Returns null if no environment is defined.
      */
     suspend fun resolveEnvironmentForProject(projectId: String): EnvironmentDto?
+
+    /** Get available component templates with version lists from COMPONENT_DEFAULTS. */
+    suspend fun getComponentTemplates(): List<ComponentTemplateDto>
+
+    /** Sync K8s resources (ConfigMaps, re-apply deployments) for a RUNNING environment. */
+    suspend fun syncEnvironmentResources(id: String): EnvironmentDto
 }

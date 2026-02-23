@@ -47,6 +47,8 @@ data class EnvironmentDocument(
     val agentInstructions: String? = null,
     /** State of the K8s namespace */
     val state: EnvironmentState = EnvironmentState.PENDING,
+    /** PVC storage size in Gi (shared by all components) */
+    val storageSizeGi: Int = 5,
 )
 
 /**
@@ -77,6 +79,8 @@ data class EnvironmentComponent(
     val startOrder: Int = 0,
     /** Health check endpoint (e.g., "/health") */
     val healthCheckPath: String? = null,
+    /** Persistent volume mount path (e.g., "/var/lib/postgresql/data") */
+    val volumeMountPath: String? = null,
 )
 
 enum class ComponentType {

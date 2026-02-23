@@ -3,12 +3,16 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.EnvironmentId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.environment.ComponentTemplateDto
+import com.jervis.dto.environment.ComponentTypeEnum
+import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
-import com.jervis.mapper.toAgentContext
+import com.jervis.dto.environment.PortMappingDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.service.IEnvironmentService
+import com.jervis.service.environment.COMPONENT_DEFAULTS
 import com.jervis.service.environment.EnvironmentK8sService
 import com.jervis.service.environment.EnvironmentService
 import com.jervis.service.error.ErrorLogService
@@ -72,5 +76,23 @@ class EnvironmentRpcImpl(
     override suspend fun resolveEnvironmentForProject(projectId: String): EnvironmentDto? =
         executeWithErrorHandling("resolveEnvironmentForProject") {
             environmentService.resolveEnvironmentForProject(ProjectId(ObjectId(projectId)))?.toDto()
+        }
+
+    override suspend fun getComponentTemplates(): List<ComponentTemplateDto> =
+        executeWithErrorHandling("getComponentTemplates") {
+            COMPONENT_DEFAULTS.map { (type, defaults) ->
+                ComponentTemplateDto(
+                    type = ComponentTypeEnum.valueOf(type.name),
+                    versions = defaults.versions.map { ComponentVersionDto(label = it.label, image = it.image) },
+                    defaultEnvVars = defaults.defaultEnvVars,
+                    defaultPorts = defaults.ports.map { PortMappingDto(it.containerPort, it.servicePort, it.name) },
+                    defaultVolumeMountPath = defaults.defaultVolumeMountPath,
+                )
+            }
+        }
+
+    override suspend fun syncEnvironmentResources(id: String): EnvironmentDto =
+        executeWithErrorHandling("syncEnvironmentResources") {
+            environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(id))).toDto()
         }
 }

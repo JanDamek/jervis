@@ -2,6 +2,8 @@ package com.jervis.ui.screens.settings.sections
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -10,10 +12,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.ClientDto
 import com.jervis.dto.filterVisible
+import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.ComponentTypeEnum
+import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.repository.JervisRepository
@@ -25,12 +30,35 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddComponentDialog(
     existingComponents: List<EnvironmentComponentDto>,
+    templates: List<ComponentTemplateDto> = emptyList(),
     onAdd: (EnvironmentComponentDto) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(ComponentTypeEnum.POSTGRESQL) }
-    var image by remember { mutableStateOf("") }
+    var customImage by remember { mutableStateOf("") }
+    var useCustomImage by remember { mutableStateOf(false) }
+
+    // Find template for current type
+    val currentTemplate = templates.find { it.type == selectedType }
+    val versions = currentTemplate?.versions ?: emptyList()
+    var selectedVersion by remember { mutableStateOf<ComponentVersionDto?>(null) }
+
+    // When type changes, reset version to first available
+    LaunchedEffect(selectedType) {
+        val template = templates.find { it.type == selectedType }
+        selectedVersion = template?.versions?.firstOrNull()
+        useCustomImage = false
+        customImage = ""
+    }
+
+    val resolvedImage = when {
+        useCustomImage -> customImage.ifBlank { null }
+        selectedVersion != null -> selectedVersion!!.image
+        else -> null
+    }
+
+    val volumeMountPath = currentTemplate?.defaultVolumeMountPath
 
     JFormDialog(
         visible = true,
@@ -42,7 +70,8 @@ fun AddComponentDialog(
                     id = id,
                     name = name,
                     type = selectedType,
-                    image = image.ifBlank { null },
+                    image = resolvedImage,
+                    volumeMountPath = volumeMountPath,
                 ),
             )
             onDismiss()
@@ -66,13 +95,55 @@ fun AddComponentDialog(
             itemLabel = { componentTypeLabel(it) },
         )
         if (selectedType != ComponentTypeEnum.PROJECT) {
+            // Version picker (if template has versions)
+            if (versions.isNotEmpty() && !useCustomImage) {
+                Spacer(Modifier.height(12.dp))
+                JDropdown(
+                    items = versions,
+                    selectedItem = selectedVersion,
+                    onItemSelected = { selectedVersion = it },
+                    label = "Verze",
+                    itemLabel = { it.label },
+                )
+                // Show resolved image in monospace
+                selectedVersion?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        it.image,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // Custom image toggle / field
             Spacer(Modifier.height(12.dp))
-            JTextField(
-                value = image,
-                onValueChange = { image = it },
-                label = "Docker image (volitelné, výchozí bude použit)",
-                singleLine = true,
-            )
+            if (versions.isNotEmpty()) {
+                com.jervis.ui.design.JTextButton(
+                    onClick = { useCustomImage = !useCustomImage },
+                ) {
+                    Text(if (useCustomImage) "Zpět na výběr verze" else "Vlastní image")
+                }
+            }
+            if (useCustomImage || versions.isEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                JTextField(
+                    value = customImage,
+                    onValueChange = { customImage = it },
+                    label = "Docker image",
+                    singleLine = true,
+                )
+            }
+
+            // Volume mount path preview (read-only)
+            volumeMountPath?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Volume: $it",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

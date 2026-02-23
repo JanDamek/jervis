@@ -25,7 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.ComponentTypeEnum
+import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.PortMappingDto
 import com.jervis.ui.design.JActionBar
@@ -47,6 +49,7 @@ fun ComponentEditPanel(
     component: EnvironmentComponentDto,
     onSave: (EnvironmentComponentDto) -> Unit,
     onCancel: () -> Unit,
+    templates: List<ComponentTemplateDto> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     var name by remember { mutableStateOf(component.name) }
@@ -80,6 +83,26 @@ fun ComponentEditPanel(
                 label = "Typ",
                 itemLabel = { componentTypeLabel(it) },
             )
+
+            // Version dropdown from templates (if image matches a template version)
+            val currentTemplate = templates.find { it.type == type }
+            val templateVersions = currentTemplate?.versions ?: emptyList()
+            if (templateVersions.isNotEmpty()) {
+                Spacer(Modifier.height(JervisSpacing.fieldGap))
+                val matchedVersion = templateVersions.find { it.image == image }
+                JDropdown(
+                    items = templateVersions + ComponentVersionDto(label = "Vlastní image", image = ""),
+                    selectedItem = matchedVersion ?: ComponentVersionDto(label = "Vlastní image", image = ""),
+                    onItemSelected = { ver ->
+                        if (ver.image.isNotBlank()) {
+                            image = ver.image
+                        }
+                    },
+                    label = "Verze",
+                    itemLabel = { it.label },
+                )
+            }
+
             Spacer(Modifier.height(JervisSpacing.fieldGap))
             JTextField(
                 value = image,
@@ -87,6 +110,12 @@ fun ComponentEditPanel(
                 label = "Docker image (volitelné)",
                 singleLine = true,
             )
+
+            // Show volume mount path (read-only)
+            component.volumeMountPath?.let { path ->
+                Spacer(Modifier.height(JervisSpacing.fieldGap))
+                com.jervis.ui.design.JKeyValueRow("Volume mount", path)
+            }
         }
 
         // Ports

@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.repository.JervisRepository
@@ -51,6 +52,7 @@ fun ComponentsTab(
     environment: EnvironmentDto,
     repository: JervisRepository,
     onUpdated: () -> Unit,
+    templates: List<ComponentTemplateDto> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     var expandedComponentId by remember { mutableStateOf<String?>(null) }
@@ -133,6 +135,7 @@ fun ComponentsTab(
     if (showAddDialog) {
         AddComponentDialog(
             existingComponents = environment.components,
+            templates = templates,
             onAdd = { newComponent ->
                 val updatedComponents = environment.components + newComponent
                 saveEnvironment(environment.copy(components = updatedComponents))
@@ -262,6 +265,7 @@ private fun ComponentReadOnlyDetail(
         component.cpuLimit?.let { com.jervis.ui.design.JKeyValueRow("CPU limit", it) }
         component.memoryLimit?.let { com.jervis.ui.design.JKeyValueRow("Memory limit", it) }
         component.healthCheckPath?.let { com.jervis.ui.design.JKeyValueRow("Health check", it) }
+        component.volumeMountPath?.let { com.jervis.ui.design.JKeyValueRow("Volume mount", it) }
         com.jervis.ui.design.JKeyValueRow("Auto start", if (component.autoStart) "Ano" else "Ne")
         if (component.startOrder != 0) {
             com.jervis.ui.design.JKeyValueRow("Pořadí", "${component.startOrder}")

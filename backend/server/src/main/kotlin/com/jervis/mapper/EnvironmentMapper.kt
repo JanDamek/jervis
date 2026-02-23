@@ -26,6 +26,7 @@ fun EnvironmentDocument.toDto(): EnvironmentDto =
         propertyMappings = this.propertyMappings.map { it.toDto() },
         agentInstructions = this.agentInstructions,
         state = EnvironmentStateEnum.valueOf(this.state.name),
+        storageSizeGi = this.storageSizeGi,
     )
 
 fun EnvironmentDto.toDocument(): EnvironmentDocument {
@@ -44,6 +45,7 @@ fun EnvironmentDto.toDocument(): EnvironmentDocument {
         propertyMappings = this.propertyMappings.map { it.toEntity() },
         agentInstructions = this.agentInstructions,
         state = EnvironmentState.valueOf(this.state.name),
+        storageSizeGi = this.storageSizeGi,
     )
 }
 
@@ -146,6 +148,7 @@ fun EnvironmentComponent.toDto(): EnvironmentComponentDto =
         autoStart = this.autoStart,
         startOrder = this.startOrder,
         healthCheckPath = this.healthCheckPath,
+        volumeMountPath = this.volumeMountPath,
     )
 
 fun EnvironmentComponentDto.toEntity(): EnvironmentComponent =
@@ -162,6 +165,7 @@ fun EnvironmentComponentDto.toEntity(): EnvironmentComponent =
         autoStart = this.autoStart,
         startOrder = this.startOrder,
         healthCheckPath = this.healthCheckPath,
+        volumeMountPath = this.volumeMountPath,
     )
 
 fun PortMapping.toDto(): PortMappingDto =

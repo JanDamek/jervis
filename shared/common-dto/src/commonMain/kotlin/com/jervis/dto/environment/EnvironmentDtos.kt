@@ -17,6 +17,7 @@ data class EnvironmentDto(
     val propertyMappings: List<PropertyMappingDto> = emptyList(),
     val agentInstructions: String? = null,
     val state: EnvironmentStateEnum = EnvironmentStateEnum.PENDING,
+    val storageSizeGi: Int = 5,
 )
 
 @Serializable
@@ -33,6 +34,7 @@ data class EnvironmentComponentDto(
     val autoStart: Boolean = true,
     val startOrder: Int = 0,
     val healthCheckPath: String? = null,
+    val volumeMountPath: String? = null,
 )
 
 @Serializable
@@ -102,4 +104,25 @@ data class ComponentStatusDto(
     val replicas: Int = 0,
     val availableReplicas: Int = 0,
     val message: String? = null,
+)
+
+/**
+ * Available versions for a component type.
+ */
+@Serializable
+data class ComponentVersionDto(
+    val label: String,
+    val image: String,
+)
+
+/**
+ * Template with available versions and defaults for a component type.
+ */
+@Serializable
+data class ComponentTemplateDto(
+    val type: ComponentTypeEnum,
+    val versions: List<ComponentVersionDto>,
+    val defaultEnvVars: Map<String, String> = emptyMap(),
+    val defaultPorts: List<PortMappingDto> = emptyList(),
+    val defaultVolumeMountPath: String? = null,
 )
