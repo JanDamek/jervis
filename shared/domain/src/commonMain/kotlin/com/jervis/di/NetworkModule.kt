@@ -24,7 +24,6 @@ import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
 import com.jervis.service.IChatService
 import com.jervis.service.ISystemConfigService
-import com.jervis.service.IWhisperSettingsService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.HttpTimeout
@@ -137,7 +136,6 @@ object NetworkModule {
             connectionService = rpcClient.withService<IConnectionService>(),
             notificationService = rpcClient.withService<INotificationService>(),
             gpgCertificateService = rpcClient.withService<IGpgCertificateService>(),
-            whisperSettingsService = rpcClient.withService<IWhisperSettingsService>(),
             pollingIntervalService = rpcClient.withService<IPollingIntervalService>(),
             projectGroupService = rpcClient.withService<IProjectGroupService>(),
             environmentService = rpcClient.withService<IEnvironmentService>(),
@@ -168,7 +166,6 @@ object NetworkModule {
         val connectionService: IConnectionService,
         val notificationService: INotificationService,
         val gpgCertificateService: IGpgCertificateService,
-        val whisperSettingsService: IWhisperSettingsService,
         val pollingIntervalService: IPollingIntervalService,
         val projectGroupService: IProjectGroupService,
         val environmentService: IEnvironmentService,

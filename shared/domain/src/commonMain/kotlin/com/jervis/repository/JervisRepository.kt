@@ -22,7 +22,6 @@ import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
 import com.jervis.service.IChatService
 import com.jervis.service.ISystemConfigService
-import com.jervis.service.IWhisperSettingsService
 
 /**
  * Main repository facade for Jervis application.
@@ -47,7 +46,6 @@ class JervisRepository(
     val connections: IConnectionService get() = servicesProvider().connectionService
     val notifications: INotificationService get() = servicesProvider().notificationService
     val gpgCertificates: IGpgCertificateService get() = servicesProvider().gpgCertificateService
-    val whisperSettings: IWhisperSettingsService get() = servicesProvider().whisperSettingsService
     val pollingIntervals: IPollingIntervalService get() = servicesProvider().pollingIntervalService
     val meetings: IMeetingService get() = servicesProvider().meetingService
     val transcriptCorrections: ITranscriptCorrectionService get() = servicesProvider().transcriptCorrectionService

@@ -8,7 +8,6 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -73,7 +72,6 @@ enum class SettingsCategory(
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek (Git, Jira, Wiki, Email)."),
     ENVIRONMENTS("Prostředí", Icons.Default.Language, "Definice K8s prostředí pro testování."),
     GPG_CERTIFICATES("GPG Certifikáty", Icons.Default.Lock, "Správa GPG klíčů pro podepisování commitů coding agentů."),
-    WHISPER("Whisper", Icons.Default.Mic, "Nastavení přepisu řeči na text a konfigurace modelu."),
 }
 
 @Composable
@@ -273,6 +271,5 @@ private fun SettingsContent(
             },
         )
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
-        SettingsCategory.WHISPER -> WhisperSettings(repository)
     }
 }

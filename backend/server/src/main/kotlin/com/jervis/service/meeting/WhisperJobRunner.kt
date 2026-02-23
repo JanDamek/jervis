@@ -2,8 +2,7 @@ package com.jervis.service.meeting
 
 import com.jervis.configuration.CorrectionListRequestDto
 import com.jervis.configuration.PythonOrchestratorClient
-import com.jervis.entity.WhisperSettingsDocument
-import com.jervis.rpc.WhisperSettingsRpcImpl
+import com.jervis.configuration.properties.WhisperProperties
 import io.fabric8.kubernetes.api.model.EnvVarBuilder
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSourceBuilder
 import io.fabric8.kubernetes.api.model.VolumeBuilder
@@ -35,12 +34,12 @@ private val json = Json { ignoreUnknownKeys = true }
  * 2. **REST Remote** (`deploymentMode=rest_remote`) — sends audio to a persistent Whisper REST server via HTTP
  * 3. **Local subprocess** (development, not in K8s) — runs whisper_runner.py directly
  *
- * Reads configurable parameters from [WhisperSettingsDocument] via [WhisperSettingsRpcImpl].
+ * Reads configurable parameters from [WhisperProperties] (ConfigMap).
  * Progress tracking: K8s Job mode uses PVC file polling, REST mode uses SSE streaming events.
  */
 @Service
 class WhisperJobRunner(
-    private val whisperSettingsRpc: WhisperSettingsRpcImpl,
+    private val whisperProperties: WhisperProperties,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val orchestratorClient: PythonOrchestratorClient,
     private val correctionClient: com.jervis.configuration.CorrectionClient,
@@ -76,7 +75,7 @@ class WhisperJobRunner(
      * K8S_JOB: checks K8s API accessibility (always true locally).
      */
     suspend fun isAvailable(): Boolean {
-        val settings = whisperSettingsRpc.getSettingsDocument()
+        val settings = whisperProperties
         if (settings.deploymentMode == "rest_remote") {
             return whisperRestClient.isHealthy(settings.restRemoteUrl)
         }
@@ -111,7 +110,7 @@ class WhisperJobRunner(
         clientId: String? = null,
         projectId: String? = null,
     ): WhisperResult {
-        val settings = whisperSettingsRpc.getSettingsDocument()
+        val settings = whisperProperties
 
         // Auto-build initial_prompt from KB corrections for this client/project
         val autoPrompt = buildInitialPromptFromCorrections(clientId, projectId)
@@ -134,7 +133,7 @@ class WhisperJobRunner(
         val timeoutSeconds = (audioDurationSeconds * settings.timeoutMultiplier).coerceAtLeast(settings.minTimeoutSeconds.toLong())
         logger.info {
             "Whisper timeout: ${timeoutSeconds}s (audio: ${audioDurationSeconds}s, file: ${audioFileSize} bytes, " +
-                "model=${settings.model}, lang=${settings.language ?: "auto"}, beam=${settings.beamSize}, vad=${settings.vadFilter})"
+                "model=${settings.model}, lang=auto, beam=${settings.beamSize}, vad=${settings.vadFilter})"
         }
 
         // Build options JSON for whisper_runner.py
@@ -227,7 +226,7 @@ class WhisperJobRunner(
         val optionsJson = buildRetranscribeOptionsJson(progressFile.toString(), autoPrompt, rangesJson)
 
         // REST_REMOTE mode: send audio over HTTP SSE stream instead of K8s Job / local subprocess
-        val settings = whisperSettingsRpc.getSettingsDocument()
+        val settings = whisperProperties
         if (settings.deploymentMode == "rest_remote") {
             logger.info { "Using REST remote mode for retranscription: ${settings.restRemoteUrl}" }
             return whisperRestClient.transcribe(
@@ -369,7 +368,7 @@ class WhisperJobRunner(
 
         val audioFileSize = withContext(Dispatchers.IO) { Files.size(Paths.get(audioFilePath)) }
         val audioDurationSeconds = (audioFileSize - WAV_HEADER_SIZE).coerceAtLeast(0) / BYTES_PER_SECOND
-        val settings = whisperSettingsRpc.getSettingsDocument()
+        val settings = whisperProperties
         val timeoutSeconds = (audioDurationSeconds * settings.timeoutMultiplier).coerceAtLeast(settings.minTimeoutSeconds.toLong())
 
         logger.info { "Re-attaching to existing Whisper Job $jobName (timeout: ${timeoutSeconds}s)" }
@@ -486,9 +485,9 @@ class WhisperJobRunner(
         }
     }
 
-    private fun buildOptionsJson(settings: WhisperSettingsDocument, progressFilePath: String, initialPrompt: String? = null): String {
+    private fun buildOptionsJson(settings: WhisperProperties, progressFilePath: String, initialPrompt: String? = null): String {
         val opts = mutableMapOf<String, Any?>(
-            "task" to settings.task,
+            "task" to "transcribe",
             "model" to settings.model,
             "beam_size" to settings.beamSize,
             "vad_filter" to settings.vadFilter,
@@ -497,7 +496,7 @@ class WhisperJobRunner(
             "no_speech_threshold" to settings.noSpeechThreshold,
             "progress_file" to progressFilePath,
         )
-        settings.language?.let { opts["language"] = it }
+        // language is always auto-detect (not set)
         initialPrompt?.let { opts["initial_prompt"] = it }
 
         // Manual JSON serialization to avoid dependency issues

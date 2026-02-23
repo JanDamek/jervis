@@ -8,7 +8,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
-import com.jervis.rpc.WhisperSettingsRpcImpl
+import com.jervis.configuration.properties.WhisperProperties
 import com.jervis.service.background.TaskService
 import com.jervis.service.storage.DirectoryStructureService
 import jakarta.annotation.PostConstruct
@@ -62,7 +62,7 @@ class MeetingContinuousIndexer(
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val taskService: TaskService,
     private val directoryStructureService: DirectoryStructureService,
-    private val whisperSettingsRpc: WhisperSettingsRpcImpl,
+    private val whisperProperties: WhisperProperties,
     private val whisperJobRunner: WhisperJobRunner,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val correctionHeartbeatTracker: CorrectionHeartbeatTracker,
@@ -430,7 +430,7 @@ class MeetingContinuousIndexer(
      */
     private suspend fun refreshMaxParallelJobs() {
         try {
-            val settings = whisperSettingsRpc.getSettingsDocument()
+            val settings = whisperProperties
             if (settings.maxParallelJobs != currentMaxParallelJobs) {
                 logger.info { "Whisper max parallel jobs changed: $currentMaxParallelJobs -> ${settings.maxParallelJobs}" }
                 currentMaxParallelJobs = settings.maxParallelJobs

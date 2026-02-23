@@ -45,7 +45,6 @@ class KtorRpcServer(
     private val clientProjectLinkRpcImpl: ClientProjectLinkRpcImpl,
     private val pendingTaskRpcImpl: PendingTaskRpcImpl,
     private val notificationRpcImpl: NotificationRpcImpl,
-    private val whisperSettingsRpcImpl: WhisperSettingsRpcImpl,
     private val pollingIntervalRpcImpl: PollingIntervalRpcImpl,
     private val meetingRpcImpl: MeetingRpcImpl,
     private val transcriptCorrectionRpcImpl: TranscriptCorrectionRpcImpl,
@@ -1149,7 +1148,6 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IPendingTaskService> { pendingTaskRpcImpl }
                                 registerService<com.jervis.service.INotificationService> { notificationRpcImpl }
                                 registerService<com.jervis.service.IGpgCertificateService> { gpgCertificateRpcImpl }
-                                registerService<com.jervis.service.IWhisperSettingsService> { whisperSettingsRpcImpl }
                                 registerService<com.jervis.service.IPollingIntervalService> { pollingIntervalRpcImpl }
                                 registerService<com.jervis.service.IMeetingService> { meetingRpcImpl }
                                 registerService<com.jervis.service.ITranscriptCorrectionService> { transcriptCorrectionRpcImpl }
