@@ -13,4 +13,5 @@ data class ScheduledTaskDto(
     val scheduledAt: Long,
     val cronExpression: String? = null,
     val correlationId: String? = null,
+    val state: TaskStateEnum = TaskStateEnum.NEW,
 )

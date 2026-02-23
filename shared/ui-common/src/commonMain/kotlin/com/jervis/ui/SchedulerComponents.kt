@@ -62,6 +62,8 @@ internal fun ScheduledTaskDetail(
                     Spacer(Modifier.height(JervisSpacing.itemGap))
                     JKeyValueRow("Projekt", task.projectName)
                     Spacer(Modifier.height(JervisSpacing.itemGap))
+                    JKeyValueRow("Stav", task.task.state.name)
+                    Spacer(Modifier.height(JervisSpacing.itemGap))
                     JKeyValueRow("Naplánováno", formatInstant(task.task.scheduledAt))
                     task.task.cronExpression?.let {
                         Spacer(Modifier.height(JervisSpacing.itemGap))

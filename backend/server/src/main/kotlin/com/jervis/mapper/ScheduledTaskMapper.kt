@@ -1,6 +1,7 @@
 package com.jervis.mapper
 
 import com.jervis.dto.ScheduledTaskDto
+import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
 import java.time.Instant
 
@@ -14,4 +15,5 @@ fun TaskDocument.toDto(): ScheduledTaskDto =
         scheduledAt = this.scheduledAt?.toEpochMilli() ?: Instant.now().toEpochMilli(),
         cronExpression = this.cronExpression,
         correlationId = this.correlationId,
+        state = TaskStateEnum.valueOf(this.state.name),
     )

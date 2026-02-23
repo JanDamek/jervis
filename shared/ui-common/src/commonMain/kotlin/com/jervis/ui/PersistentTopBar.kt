@@ -76,7 +76,7 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
     MEETINGS(Icons.Default.Mic, "Meetingy", 0),
     // Group 1: Management
     PENDING_TASKS(Icons.Default.MoveToInbox, "Fronta úloh", 1),
-    SCHEDULER(Icons.Default.CalendarMonth, "Plánovač", 1),
+    SCHEDULER(Icons.Default.CalendarMonth, "Kalendář", 1),
     INDEXING_QUEUE(Icons.Filled.Schedule, "Fronta indexace", 1),
     ENVIRONMENT_MANAGER(Icons.Default.Dns, "Správa prostředí", 1),
     // Group 2: Debug
