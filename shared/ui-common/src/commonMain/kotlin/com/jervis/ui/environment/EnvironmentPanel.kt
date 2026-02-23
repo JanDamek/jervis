@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ fun EnvironmentPanel(
     onToggleComponent: (String) -> Unit,
     onClose: () -> Unit,
     onRefresh: () -> Unit,
+    onOpenInManager: (String) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         JTopBar(
@@ -47,6 +49,9 @@ fun EnvironmentPanel(
             onBack = if (isCompact) onClose else null,
             actions = {
                 JRefreshButton(onClick = onRefresh)
+                IconButton(onClick = { onOpenInManager("") }) {
+                    Icon(Icons.Default.Settings, contentDescription = "Spravovat prostředí")
+                }
                 if (!isCompact) {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, contentDescription = "Zavřít")
@@ -81,6 +86,7 @@ fun EnvironmentPanel(
                             onToggleExpand = { onToggleEnv(env.id) },
                             expandedComponentIds = expandedComponentIds,
                             onToggleComponent = onToggleComponent,
+                            onManage = onOpenInManager,
                         )
                     }
                 }

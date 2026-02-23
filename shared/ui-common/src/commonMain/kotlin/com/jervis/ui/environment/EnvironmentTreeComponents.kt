@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,6 +47,7 @@ fun EnvironmentTreeNode(
     onToggleExpand: () -> Unit,
     expandedComponentIds: Set<String>,
     onToggleComponent: (String) -> Unit,
+    onManage: ((String) -> Unit)? = null,
 ) {
     val currentState = status?.state ?: environment.state
 
@@ -74,6 +76,20 @@ fun EnvironmentTreeNode(
                 )
             }
             EnvironmentStateBadge(currentState)
+            if (onManage != null) {
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.IconButton(
+                    onClick = { onManage(environment.id) },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Spravovat",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         // Expanded components

@@ -152,6 +152,12 @@ fun App(
             Screen.Main -> {
                 MainScreen(
                     viewModel = viewModel,
+                    onOpenEnvironmentManager = { envId ->
+                        viewModel.environment.closePanel()
+                        appNavigator.navigateTo(
+                            Screen.EnvironmentManager(initialEnvironmentId = envId.ifEmpty { null }),
+                        )
+                    },
                 )
             }
 

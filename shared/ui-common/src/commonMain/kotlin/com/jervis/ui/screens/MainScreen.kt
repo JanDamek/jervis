@@ -10,6 +10,7 @@ import com.jervis.ui.MainScreenView as MainScreenViewInternal
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
+    onOpenEnvironmentManager: (String) -> Unit = {},
 ) {
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
@@ -85,6 +86,7 @@ fun MainScreen(
                 onToggleComponent = viewModel.environment::toggleComponentExpanded,
                 onClose = viewModel.environment::closePanel,
                 onRefresh = viewModel.environment::refreshEnvironments,
+                onOpenInManager = onOpenEnvironmentManager,
             )
         },
     )
