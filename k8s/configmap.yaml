@@ -100,6 +100,20 @@ data:
       indexing:
         skip-if-indexed-within: 30d
 
+    # -- Whisper transcription -------------------------------------------------
+    whisper:
+      deployment-mode: rest_remote
+      rest-remote-url: http://192.168.100.117:8786
+      model: medium
+      beam-size: 8
+      vad-filter: true
+      word-timestamps: false
+      condition-on-previous-text: true
+      no-speech-threshold: 0.6
+      max-parallel-jobs: 5
+      timeout-multiplier: 3
+      min-timeout-seconds: 600
+
     # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
     coding-tools:
       aider:

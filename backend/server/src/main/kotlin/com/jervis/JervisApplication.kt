@@ -10,6 +10,7 @@ import com.jervis.configuration.properties.LinkIndexingProperties
 import com.jervis.configuration.properties.PollingProperties
 import com.jervis.configuration.properties.SecurityProperties
 import com.jervis.configuration.properties.WeaviateProperties
+import com.jervis.configuration.properties.WhisperProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.runApplication
@@ -28,6 +29,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
     QualifierProperties::class,
     CodingToolsProperties::class,
     PollingProperties::class,
+    WhisperProperties::class,
 )
 class JervisApplication
 
