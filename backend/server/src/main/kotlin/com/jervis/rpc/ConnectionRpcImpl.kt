@@ -240,6 +240,15 @@ class ConnectionRpcImpl(
                 }
             }
             resources
+        } catch (e: com.jervis.common.http.ProviderAuthException) {
+            // Token expired or revoked — mark connection as AUTH_EXPIRED
+            logger.warn { "Auth expired for connection ${refreshedConnection.id} (${refreshedConnection.provider}): ${e.message}" }
+            try {
+                connectionService.save(refreshedConnection.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
+            } catch (saveErr: Exception) {
+                logger.error(saveErr) { "Failed to update connection state to AUTH_EXPIRED" }
+            }
+            emptyList()
         } catch (e: Exception) {
             logger.error(e) { "Failed to list resources for connection ${refreshedConnection.id}" }
             emptyList()

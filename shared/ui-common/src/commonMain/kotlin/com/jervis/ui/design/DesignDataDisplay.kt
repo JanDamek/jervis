@@ -52,9 +52,10 @@ fun JStatusBadge(
 ) {
     val semanticColors = LocalJervisSemanticColors.current
     val color = when (status.uppercase()) {
-        "CONNECTED", "RUNNING", "OK", "ACTIVE" -> semanticColors.success
-        "CONNECTING", "PENDING", "STARTING" -> semanticColors.warning
-        "ERROR", "DISCONNECTED", "FAILED" -> MaterialTheme.colorScheme.error
+        "CONNECTED", "RUNNING", "OK", "ACTIVE", "VALID" -> semanticColors.success
+        "CONNECTING", "PENDING", "STARTING", "NEW" -> semanticColors.warning
+        "ERROR", "DISCONNECTED", "FAILED", "INVALID" -> MaterialTheme.colorScheme.error
+        "AUTH_EXPIRED", "EXPIRED" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.outline
     }
 

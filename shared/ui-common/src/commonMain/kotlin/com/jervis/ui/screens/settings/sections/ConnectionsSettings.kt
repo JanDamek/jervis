@@ -37,6 +37,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionResponseDto
+import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JActionBar
@@ -258,6 +259,15 @@ private fun ConnectionItemCard(
             )
             Spacer(Modifier.width(8.dp))
             JStatusBadge(status = connection.state.name)
+        }
+
+        // AUTH_EXPIRED warning
+        if (connection.state == ConnectionStateEnum.AUTH_EXPIRED) {
+            Text(
+                text = "⚠ Token expiroval — obnovte přes Re-auth tlačítko",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
 
         // URL and client info
