@@ -32,6 +32,7 @@ import com.jervis.dto.PendingTaskDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.util.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 @Composable
@@ -57,11 +58,19 @@ fun PendingTasksScreen(
         scope.launch {
             isLoading = true
             error = null
-            runCatching {
-                tasks = repository.pendingTasks.listTasks(selectedTaskType, selectedState)
-                totalTasks = repository.pendingTasks.countTasks(selectedTaskType, selectedState)
-            }.onFailure { error = it.message }
-            isLoading = false
+            try {
+                // Parallelize the two independent RPC calls
+                val tasksDeferred = async { repository.pendingTasks.listTasks(selectedTaskType, selectedState) }
+                val countDeferred = async { repository.pendingTasks.countTasks(selectedTaskType, selectedState) }
+                tasks = tasksDeferred.await()
+                totalTasks = countDeferred.await()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message
+            } finally {
+                isLoading = false
+            }
         }
     }
 
@@ -71,6 +80,8 @@ fun PendingTasksScreen(
                 repository.pendingTasks.deletePendingTask(taskId)
                 snackbarHostState.showSnackbar("Úloha byla úspěšně smazána")
                 load()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 snackbarHostState.showSnackbar("Smazání úlohy selhalo: ${t.message}")
             }

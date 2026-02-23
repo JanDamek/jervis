@@ -115,6 +115,8 @@ internal fun ProjectEditForm(
                 clientGroups = repository.projectGroups.listGroupsForClient(cid)
                 gpgCertificates = repository.gpgCertificates.getCertificates(cid)
             }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
     }
@@ -127,6 +129,8 @@ internal fun ProjectEditForm(
             try {
                 val res = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to res)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
             } finally {

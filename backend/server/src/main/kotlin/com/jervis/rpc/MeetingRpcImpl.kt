@@ -678,36 +678,35 @@ class MeetingRpcImpl(
         val pid = projectId?.let { ProjectId.fromString(it) }
         val now = Instant.now()
 
-        // Current week boundary (Monday 00:00 of this week)
         val weekStart = now.atZone(java.time.ZoneOffset.UTC)
             .with(java.time.DayOfWeek.MONDAY)
             .toLocalDate()
             .atStartOfDay(java.time.ZoneOffset.UTC)
             .toInstant()
 
-        // Fetch current week meetings as summaries
         val currentWeekMeetings = if (pid != null) {
             meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, pid, weekStart)
         } else {
             meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, weekStart)
         }.toList().map { it.toSummaryDto() }
 
-        // Fetch ALL older meetings (just id + startedAt for counting)
+        // Fetch older meetings (before current week) — DB-filtered, not full scan
         val olderMeetings = if (pid != null) {
-            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(cid, pid)
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, weekStart)
         } else {
-            meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(cid)
-        }.toList().filter { it.startedAt.isBefore(weekStart) }
+            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(cid, weekStart)
+        }.toList()
 
-        // Group older meetings into time buckets
         val thirtyDaysAgo = now.minus(java.time.Duration.ofDays(30))
+        val oneYearAgo = now.minus(java.time.Duration.ofDays(365))
         val groups = mutableListOf<MeetingGroupDto>()
+        val monthNames = arrayOf("", "Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec")
 
-        // Weekly groups (last 4 weeks before current week)
-        val weeklyMeetings = olderMeetings.filter { it.startedAt.isAfter(thirtyDaysAgo) || it.startedAt == thirtyDaysAgo }
+        // Weekly groups (last 30 days before current week)
+        val weeklyMeetings = olderMeetings.filter { !it.startedAt.isBefore(thirtyDaysAgo) }
         val byWeek = weeklyMeetings.groupBy { doc ->
-            val zdt = doc.startedAt.atZone(java.time.ZoneOffset.UTC)
-            zdt.with(java.time.DayOfWeek.MONDAY).toLocalDate()
+            doc.startedAt.atZone(java.time.ZoneOffset.UTC)
+                .with(java.time.DayOfWeek.MONDAY).toLocalDate()
         }
         for ((mondayDate, docs) in byWeek.entries.sortedByDescending { it.key }) {
             val start = mondayDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
@@ -717,13 +716,11 @@ class MeetingRpcImpl(
         }
 
         // Monthly groups (older than 30 days, within last year)
-        val oneYearAgo = now.minus(java.time.Duration.ofDays(365))
-        val monthlyMeetings = olderMeetings.filter { it.startedAt.isBefore(thirtyDaysAgo) && it.startedAt.isAfter(oneYearAgo) }
+        val monthlyMeetings = olderMeetings.filter { it.startedAt.isBefore(thirtyDaysAgo) && !it.startedAt.isBefore(oneYearAgo) }
         val byMonth = monthlyMeetings.groupBy { doc ->
             val zdt = doc.startedAt.atZone(java.time.ZoneOffset.UTC)
             java.time.YearMonth.of(zdt.year, zdt.month)
         }
-        val monthNames = arrayOf("", "Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec")
         for ((ym, docs) in byMonth.entries.sortedByDescending { it.key }) {
             val start = ym.atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
             val end = ym.plusMonths(1).atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
@@ -732,7 +729,7 @@ class MeetingRpcImpl(
         }
 
         // Yearly groups (older than 1 year)
-        val yearlyMeetings = olderMeetings.filter { !it.startedAt.isAfter(oneYearAgo) }
+        val yearlyMeetings = olderMeetings.filter { it.startedAt.isBefore(oneYearAgo) }
         val byYear = yearlyMeetings.groupBy { doc ->
             doc.startedAt.atZone(java.time.ZoneOffset.UTC).year
         }
@@ -754,13 +751,16 @@ class MeetingRpcImpl(
         val cid = ClientId.fromString(clientId)
         val from = Instant.parse(fromIso)
         val to = Instant.parse(toIso)
+        logger.debug { "listMeetingsByRange client=$clientId project=$projectId from=$fromIso to=$toIso" }
         val meetings = if (projectId != null) {
             val pid = ProjectId.fromString(projectId)
             meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, from, to)
         } else {
             meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, from, to)
         }
-        return meetings.toList().map { it.toSummaryDto() }
+        val result = meetings.toList().map { it.toSummaryDto() }
+        logger.debug { "listMeetingsByRange returned ${result.size} items" }
+        return result
     }
 }
 

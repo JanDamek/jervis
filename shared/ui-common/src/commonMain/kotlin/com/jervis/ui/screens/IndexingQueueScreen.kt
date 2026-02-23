@@ -111,6 +111,8 @@ fun IndexingQueueScreen(
                     indexedTotalCount = data.kbIndexedTotalCount
                     indexedPage = 0
                 }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = "Chyba: ${e.message}"
                 println("IndexingQueueScreen loadDashboard error: ${e.message}")
@@ -134,6 +136,8 @@ fun IndexingQueueScreen(
                 kbWaitingItems = kbWaitingItems + more.kbWaiting
                 kbWaitingTotalCount = more.kbWaitingTotalCount
                 kbWaitingPage = nextPage
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 println("IndexingQueueScreen loadMoreKbWaiting error: ${e.message}")
             } finally {
@@ -156,6 +160,8 @@ fun IndexingQueueScreen(
                 indexedItems = indexedItems + more.kbIndexed
                 indexedTotalCount = more.kbIndexedTotalCount
                 indexedPage = nextPage
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 println("IndexingQueueScreen loadMoreIndexed error: ${e.message}")
             } finally {
@@ -167,10 +173,10 @@ fun IndexingQueueScreen(
     // Initial load
     LaunchedEffect(Unit) { loadDashboard() }
 
-    // Auto-refresh every 10 seconds (safety net)
+    // Auto-refresh every 30 seconds (safety net — 10s was too aggressive for 12+ DB queries)
     LaunchedEffect(Unit) {
         while (true) {
-            delay(10_000)
+            delay(30_000)
             try {
                 val data = repository.indexingQueue.getIndexingDashboard(
                     search = "",

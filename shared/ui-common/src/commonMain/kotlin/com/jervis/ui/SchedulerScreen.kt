@@ -87,6 +87,8 @@ fun SchedulerScreen(
                 val clientMap = clients.associateBy { it.id }
                 val projectMap = projects.associateBy { it.id }
                 tasks = buildEnhancedTasks(allTasks, clientMap, projectMap)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 snackbarHostState.showSnackbar("Chyba načítání úloh: ${e.message}")
             } finally {
@@ -110,6 +112,8 @@ fun SchedulerScreen(
             val clientMap = clients.associateBy { it.id }
             val projectMap = projects.associateBy { it.id }
             tasks = buildEnhancedTasks(allTasks, clientMap, projectMap)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
             snackbarHostState.showSnackbar("Chyba načítání dat: ${e.message}")
         } finally {
@@ -210,6 +214,8 @@ fun SchedulerScreen(
                         snackbarHostState.showSnackbar("Úloha naplánována")
                         showCreateDialog = false
                         loadTasks()
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
                     }
@@ -232,6 +238,8 @@ fun SchedulerScreen(
                         selectedTask = null
                         showDeleteConfirm = null
                         loadTasks()
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
                     }

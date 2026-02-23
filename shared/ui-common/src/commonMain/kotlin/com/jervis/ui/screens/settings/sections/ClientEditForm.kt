@@ -97,6 +97,8 @@ internal fun ClientEditForm(
         scope.launch {
             try {
                 availableConnections = repository.connections.getAllConnections()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
@@ -106,6 +108,8 @@ internal fun ClientEditForm(
         scope.launch {
             try {
                 projects = repository.projects.listProjectsForClient(client.id).filterVisible()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
@@ -120,6 +124,8 @@ internal fun ClientEditForm(
             try {
                 val resources = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to resources)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
             } finally {
@@ -361,8 +367,9 @@ internal fun ClientEditForm(
                                 try {
                                     gitAnalysisResult = repository.clients.analyzeGitRepositories(client.id)
                                     showGitAnalysisDialog = true
-                                } catch (e: Exception) {
-                                    // TODO: show error snackbar
+                                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
                                 } finally {
                                     analyzingGit = false
                                 }

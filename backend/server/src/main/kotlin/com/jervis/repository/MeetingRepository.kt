@@ -52,6 +52,17 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         startedAt: java.time.Instant,
     ): Flow<MeetingDocument>
 
+    fun findByClientIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(
+        clientId: ClientId,
+        startedAt: java.time.Instant,
+    ): Flow<MeetingDocument>
+
+    fun findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtLessThanOrderByStartedAtDesc(
+        clientId: ClientId,
+        projectId: ProjectId,
+        startedAt: java.time.Instant,
+    ): Flow<MeetingDocument>
+
     fun findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(
         clientId: ClientId,
         startedAtStart: java.time.Instant,

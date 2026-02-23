@@ -332,26 +332,23 @@ class IndexingQueueRpcImpl(
             TaskStateEnum.QUALIFYING,
             TaskStateEnum.DONE,
         )
-        val activeServerTasks = mongoTemplate.find(
+        val activeServerTasksList = mongoTemplate.find(
             Query(
                 Criteria.where("state").`in`(indexingActiveStates.map { it.name })
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
             ),
             TaskDocument::class.java, "tasks",
-        ).collectList().awaitSingle().associateBy { it.correlationId }
+        ).collectList().awaitSingle()
+        val activeServerTasks = activeServerTasksList.associateBy { it.correlationId }
 
         // Split KB items into in_progress and pending
         val kbInProgress = kbQueueResponse.items.filter { it.status == "in_progress" }
         val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
 
-        // Server QUALIFYING tasks (RAG ingest + summary — first stage of KB processing)
-        val qualifyingTasks = mongoTemplate.find(
-            Query(
-                Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
-                    .and("type").`in`(indexingTaskTypes.map { it.name }),
-            ).with(Sort.by(Sort.Direction.ASC, "qualificationStartedAt")),
-            TaskDocument::class.java, "tasks",
-        ).collectList().awaitSingle()
+        // Server QUALIFYING tasks — reuse from the activeServerTasks query (eliminates duplicate DB scan)
+        val qualifyingTasks = activeServerTasksList
+            .filter { it.state == TaskStateEnum.QUALIFYING }
+            .sortedBy { it.qualificationStartedAt }
 
         // KB extraction IN_PROGRESS items exclude those that match a QUALIFYING server task
         // (they represent different stages — qualification = RAG+summary, extraction = graph)

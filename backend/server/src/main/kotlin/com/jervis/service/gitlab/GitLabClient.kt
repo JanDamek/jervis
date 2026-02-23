@@ -1,6 +1,7 @@
 package com.jervis.service.gitlab
 
 import com.jervis.entity.connection.ConnectionDocument
+import com.jervis.common.http.checkProviderResponse
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -32,7 +33,8 @@ class GitLabClient(
         val response = httpClient.get("$baseUrl/user") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        return json.decodeFromString(GitLabUser.serializer(), response.bodyAsText())
+        val body = response.checkProviderResponse("GitLab", "getUser")
+        return json.decodeFromString(GitLabUser.serializer(), body)
     }
 
     suspend fun listProjects(connection: ConnectionDocument): List<GitLabProject> {
@@ -44,7 +46,8 @@ class GitLabClient(
             parameter("order_by", "last_activity_at")
             parameter("membership", true)
         }
-        return json.decodeFromString(response.bodyAsText())
+        val body = response.checkProviderResponse("GitLab", "listProjects")
+        return json.decodeFromString(body)
     }
 
     suspend fun getProject(connection: ConnectionDocument, projectId: String): GitLabProject {
@@ -53,7 +56,8 @@ class GitLabClient(
         val response = httpClient.get("$baseUrl/projects/${projectId.encodeURLParameter()}") {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
-        return json.decodeFromString(GitLabProject.serializer(), response.bodyAsText())
+        val body = response.checkProviderResponse("GitLab", "getProject")
+        return json.decodeFromString(GitLabProject.serializer(), body)
     }
 
     suspend fun listIssues(connection: ConnectionDocument, projectId: String): List<GitLabIssue> {
@@ -63,7 +67,8 @@ class GitLabClient(
             header(HttpHeaders.Authorization, "Bearer $token")
             parameter("per_page", 100)
         }
-        return json.decodeFromString(response.bodyAsText())
+        val body = response.checkProviderResponse("GitLab", "listIssues")
+        return json.decodeFromString(body)
     }
 }
 

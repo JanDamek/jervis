@@ -61,8 +61,10 @@ class UserTaskRpcImpl(
 
     override suspend fun getChatHistory(taskId: String): List<ChatMessageDto> {
         val tid = TaskId.fromString(taskId)
+        // Paginate: load last 50 messages instead of ALL (some conversations have thousands)
         return chatMessageRepository.findByConversationIdOrderBySequenceAsc(tid.value)
             .toList()
+            .takeLast(50)
             .map { it.toDto() }
     }
 

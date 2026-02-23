@@ -84,9 +84,10 @@ internal fun ProjectGroupEditForm(
             clientConnections = allConnections.filter { conn ->
                 client.connectionIds.contains(conn.id)
             }
-            // Load projects
             allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
             projectsInGroup = allProjects.filter { it.groupId == group.id }
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
     }
@@ -99,6 +100,8 @@ internal fun ProjectGroupEditForm(
             try {
                 val res = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to res)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
             } finally {
@@ -218,6 +221,8 @@ internal fun ProjectGroupEditForm(
                                                     )
                                                     projectsInGroup = projectsInGroup.filter { it.id != project.id }
                                                     allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
+                                                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                                                    throw e
                                                 } catch (_: Exception) {
                                                 }
                                             }
@@ -341,6 +346,8 @@ internal fun ProjectGroupEditForm(
                 scope.launch {
                     try {
                         allProjects = repository.projects.listProjectsForClient(group.clientId).filterVisible()
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                     }
                 }

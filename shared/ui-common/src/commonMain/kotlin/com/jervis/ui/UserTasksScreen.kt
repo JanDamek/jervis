@@ -84,6 +84,8 @@ fun UserTasksScreen(
                 tasks = if (append) tasks + page.items else page.items
                 hasMore = page.hasMore
                 totalCount = page.totalCount
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Chyba načítání úloh: ${e.message}"
             } finally {
@@ -102,6 +104,8 @@ fun UserTasksScreen(
                 taskToDelete = null
                 if (selectedTask?.id == task.id) selectedTask = null
                 loadTasks(filterText)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Chyba mazání úlohy: ${e.message}"
             }
@@ -266,15 +270,20 @@ private fun UserTaskDetail(
     var isSending by remember(task.id) { mutableStateOf(false) }
     var chatHistory by remember(task.id) { mutableStateOf<List<ChatMessageDto>>(emptyList()) }
     var isChatLoading by remember(task.id) { mutableStateOf(true) }
+    var chatError by remember(task.id) { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(task.id) {
         isChatLoading = true
+        chatError = null
         try {
             chatHistory = repository.userTasks.getChatHistory(task.id)
-        } catch (_: Exception) {
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
             chatHistory = emptyList()
+            chatError = "Chyba načítání historie: ${e.message}"
         } finally {
             isChatLoading = false
         }
@@ -290,6 +299,8 @@ private fun UserTaskDetail(
                     replyInput.takeIf { it.isNotBlank() },
                 )
                 onTaskSent(mode)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 onError(e.message ?: "Selhalo odeslání úlohy")
             } finally {
@@ -341,6 +352,12 @@ private fun UserTaskDetail(
 
                     if (isChatLoading) {
                         JCenteredLoading()
+                    } else if (chatError != null) {
+                        Text(
+                            text = chatError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     } else if (chatHistory.isNotEmpty()) {
                         JSection(title = "Historie konverzace") {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

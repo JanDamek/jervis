@@ -224,10 +224,16 @@ class MeetingViewModel(
             _loadingGroups.value = _loadingGroups.value + key
             try {
                 val items = repository.meetings.listMeetingsByRange(
-                    clientId, lastProjectId, group.periodStart, group.periodEnd,
+                    clientId = clientId,
+                    projectId = lastProjectId,
+                    fromIso = group.periodStart,
+                    toIso = group.periodEnd,
                 )
                 _expandedGroups.value = _expandedGroups.value + (key to items)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
+                println("[Meeting] toggleGroup failed: ${e::class.simpleName}: ${e.message}")
                 _error.value = "Nepodařilo se načíst skupinu: ${e.message}"
             } finally {
                 _loadingGroups.value = _loadingGroups.value - key

@@ -13,6 +13,7 @@
 4. [OAuth2 Implementation & Connection Testing](#oauth2-implementation--connection-testing)
 5. [Troubleshooting Guide](#troubleshooting-guide)
 6. [Python Orchestrator Implementation](#python-orchestrator-implementation)
+7. [Kotlin Coroutine Best Practices](#kotlin-coroutine-best-practices)
 
 ---
 
@@ -560,6 +561,11 @@ freezing the entire BackgroundEngine execution loop.
 - BackgroundEngine picks up task → `resumePythonOrchestrator()` → `POST /approve/{thread_id}`
 - LangGraph resumes from MongoDB checkpoint with user's approval
 
+**Chat history pagination**: `getChatHistory()` in `UserTaskRpcImpl` loads messages via
+`chatMessageRepository.findByConversationIdOrderBySequenceAsc()`, then applies `.takeLast(50)`
+to limit results. Some conversations have thousands of messages — loading all would cause
+UI freezes and excessive memory usage.
+
 ### Concurrency Control
 
 Only one Python orchestration runs at a time:
@@ -897,3 +903,70 @@ All services have dedicated build scripts in `k8s/`:
 5. **Scalable:** Iteration limits and context window management
 6. **Cost efficient:** GPU models only when necessary
 7. **User priority:** Preemption ensures immediate response
+
+---
+
+## Kotlin Coroutine Best Practices
+
+### CancellationException Must Be Re-thrown
+
+**Problem:** Kotlin coroutines use `CancellationException` for structured concurrency.
+When a Compose `rememberCoroutineScope()` or `LaunchedEffect` is cancelled (e.g., composable
+leaves composition), the runtime throws `CancellationException`. If a `catch (e: Exception)`
+block swallows this exception, the coroutine scope breaks — Compose stops launching new
+coroutines in that scope, and the UI becomes unresponsive.
+
+**Pattern:** Every `catch (e: Exception)` in a coroutine MUST re-throw `CancellationException`:
+
+```kotlin
+scope.launch {
+    try {
+        // async work
+    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // handle actual errors
+    }
+}
+```
+
+**Applied to:** All Compose screens with `scope.launch {}` or `LaunchedEffect` blocks:
+`PendingTasksScreen`, `IndexingQueueScreen`, `UserTasksScreen`, `SchedulerScreen`,
+`ClientEditForm`, `ProjectEditForm`, `ProjectGroupEditForm`, `MeetingViewModel`.
+
+### Parallel RPC Calls
+
+**Problem:** Sequential RPC calls over kRPC WebSocket add unnecessary latency.
+
+**Pattern:** Use `kotlinx.coroutines.async` for independent calls:
+
+```kotlin
+scope.launch {
+    val aDeferred = async { repository.foo.getA() }
+    val bDeferred = async { repository.foo.getB() }
+    val a = aDeferred.await()
+    val b = bDeferred.await()
+}
+```
+
+**Applied to:** `PendingTasksScreen.load()` (listTasks + countTasks),
+`SchedulerScreen` LaunchedEffect (clients + projects + tasks).
+
+### IndexingQueue Dashboard Optimization
+
+**Problem:** `IndexingQueueRpcImpl.getDashboard()` executed 12+ MongoDB queries per
+refresh (10s interval). The QUALIFYING tasks query was duplicated — once for the
+`activeServerTasks` map and again separately for the qualifying list.
+
+**Fix:** Reuse the `activeServerTasksList` — filter to derive both the associateBy map and
+the qualifying tasks list from a single query. Auto-refresh interval increased from 10s to
+30s to reduce server load.
+
+### DB-Level Filtering
+
+**Rule:** Always filter in MongoDB, never load all documents and filter in application code.
+
+**Example:** `PendingTaskService.listTasks()` now properly uses typed repository query
+methods (`findByTypeAndStateOrderByCreatedAtAsc`, `findByStateOrderByCreatedAtAsc`) instead
+of loading all tasks and filtering in memory. The `state` parameter was previously accepted
+but silently ignored.
