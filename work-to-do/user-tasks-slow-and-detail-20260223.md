@@ -105,6 +105,9 @@ naplánované na 23.2.2026 13:30. Stav "Dokončeno" → nemají v kalendáři co
    ihned eskalovat jako urgentní USER_TASK na začátek fronty.
 4. **Anglické popisky** — "An email inviting...", "Confirmation of CACI telephone..." —
    orchestrátor generoval anglicky, viz §3 výše.
+5. **Chybí kalendářní zobrazení** — aktuálně jen seznam. Přidat přepínač
+   seznam / denní / týdenní kalendář. Týdenní kalendář jako grid (Po-Ne),
+   denní jako timeline s hodinami. Přepínač v JTopBar vedle refreshe.
 
 ### Dotčené soubory
 
