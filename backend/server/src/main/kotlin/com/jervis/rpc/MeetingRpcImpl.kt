@@ -736,7 +736,7 @@ class MeetingRpcImpl(
         val byYear = yearlyMeetings.groupBy { doc ->
             doc.startedAt.atZone(java.time.ZoneOffset.UTC).year
         }
-        for ((year, docs) in byYear.entries.sortedDescending()) {
+        for ((year, docs) in byYear.entries.sortedByDescending { it.key }) {
             val start = java.time.LocalDate.of(year, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
             val end = java.time.LocalDate.of(year + 1, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
             groups.add(MeetingGroupDto(label = "Rok $year", periodStart = start.toString(), periodEnd = end.toString(), count = docs.size))
