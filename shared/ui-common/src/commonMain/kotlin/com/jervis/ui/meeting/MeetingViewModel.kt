@@ -512,8 +512,10 @@ class MeetingViewModel(
 
     // ── Interrupted recording recovery ──────────────────────────────────
 
-    /** Check for a recording that was interrupted by crash/restart. */
+    /** Check for a recording that was interrupted by crash/restart.
+     *  Returns null if recording is currently active (not interrupted). */
     fun checkForInterruptedRecording(): RecordingState? {
+        if (_isRecording.value) return null  // Active recording — not interrupted
         return RecordingStateStorage.load()
     }
 
