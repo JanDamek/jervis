@@ -165,3 +165,38 @@ Nesouvisí přímo s bugem, ale:
 - **Client** ping: 20s (`NetworkModule.kt:80`)
 - **Server** ping: 30s, timeout 15s (`KtorRpcServer.kt:89-90`)
 - Oba posílají pingy nezávisle — funguje to, ale je to zbytečně nesynchronizované
+
+---
+
+## 7. Architektonický návrh: Server ping je zbytečný (P2)
+
+### Problém
+
+Server posílá ping klientovi (`KtorRpcServer.kt:87-91`, interval 30s, timeout 15s). Ale:
+
+- **Server nepotřebuje klienta ke své práci** — server běží nezávisle, zpracovává tasky, indexuje KB atd. bez ohledu na to, zda je klient připojený
+- **Server nepotřebuje znát stav klientů** — heartbeat `getAllClients()` na klientovi je pro UI, ne pro server
+- Server ping jen detekuje mrtvého klienta, aby mohl uzavřít WebSocket — ale server z toho nemá žádný benefit
+
+### Správný design: Remote notifikace jako fallback
+
+Server má (nebo by měl mít) **remote notification** mechanismus pro případ, kdy flow/WebSocket nedoručí zprávu:
+
+1. **Primární kanál:** kRPC WebSocket flow (push, real-time)
+2. **Fallback:** Remote notifikace — pokud WebSocket selže, zpráva se uloží jako pending notifikace
+3. **Doručení:** Jakékoli UI po otevření (nebo reconnectu) stáhne pending notifikace (pull-based)
+4. **Scope:** Jen ta konkrétní notifikace, ne vše — UI stáhne a zobrazí jen to, co mu patří
+
+### Co to znamená pro tento bug:
+
+- **Client ping (20s)** je správný — klient POTŘEBUJE vědět, zda je server živý (pro UI indikátor)
+- **Server ping (30s)** je zbytečný — server nemá důvod aktivně monitorovat klienty
+- **Heartbeat `getAllClients()`** je správný koncept, ale patří čistě na klienta (detekce mrtvého spojení → reconnect)
+- **Při selhání doručení** (WebSocket mrtvý) → zpráva by se měla uložit jako remote notifikace → klient ji stáhne po reconnectu
+
+### Řešení (směr):
+
+1. **Odebrat server-side ping** z `KtorRpcServer.kt` — server nepotřebuje pingovat klienty
+2. **Client-side ping ponechat** (`NetworkModule.kt:80`, 20s) — klient detekuje mrtvý server
+3. **Implementovat/ověřit remote notifikace** — pokud flow nedoručí zprávu, uložit jako pending notifikaci
+4. **Po reconnectu stáhnout pending notifikace** — klient po reconnectu zavolá endpoint pro nevyzvednuté notifikace
