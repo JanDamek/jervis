@@ -37,7 +37,7 @@ from app.chat.context import chat_context_assembler
 from app.chat.intent import classify_intent, select_tools
 from app.chat.models import ChatRequest, ChatStreamEvent, SubTopic, SubTopicResult
 from app.chat.system_prompt import RuntimeContext, build_system_prompt
-from app.chat.tools import CHAT_TOOLS, TOOL_DOMAINS
+from app.chat.tools import CHAT_TOOLS, TOOL_DOMAINS, ToolCategory
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.executor import execute_tool
@@ -380,6 +380,53 @@ async def handle_chat(
                         "navrhni uživateli vytvoření background task pomocí create_background_task."
                     )
                 messages.append({"role": "system", "content": focus_hint})
+
+        # --- Simple message fast path ---
+        # For short messages with CORE-only intent (no keywords matched), try a direct
+        # answer WITHOUT tools first. This avoids the 60-120s overhead of 3-4 unnecessary
+        # tool calls for questions like "ahoj" or "na čem pracuju?".
+        # If the model needs tools, it will say so → fall through to agentic loop.
+        if (
+            msg_len < 500
+            and intent_categories == {ToolCategory.CORE}
+            and not request.context_task_id
+        ):
+            logger.info("Chat: short simple message (%d chars, CORE-only) — trying direct answer", msg_len)
+            try:
+                direct_response = await llm_provider.completion(
+                    messages=messages,
+                    tier=ModelTier.LOCAL_FAST,
+                    tools=None,  # No tools → model MUST answer directly
+                    max_tokens=2048,
+                    temperature=0.1,
+                    extra_headers={"X-Ollama-Priority": "0"},
+                )
+                direct_text = direct_response.choices[0].message.content or ""
+
+                # Accept the direct answer unless model explicitly says it needs tools
+                _NEEDS_TOOLS_MARKERS = ["potřebuji", "nemám informac", "nevím", "musím", "nemohu"]
+                if direct_text.strip() and not any(m in direct_text.lower() for m in _NEEDS_TOOLS_MARKERS):
+                    logger.info("Chat: direct answer accepted (%d chars, no tools needed)", len(direct_text))
+                    for i in range(0, len(direct_text), STREAM_CHUNK_SIZE):
+                        yield ChatStreamEvent(type="token", content=direct_text[i:i + STREAM_CHUNK_SIZE])
+                        await asyncio.sleep(0.03)
+                    await chat_context_assembler.save_message(
+                        conversation_id=request.session_id,
+                        role="ASSISTANT", content=direct_text,
+                        correlation_id=str(ObjectId()),
+                        sequence=request.message_sequence + 1,
+                        metadata={"direct_answer": "true"},
+                    )
+                    try:
+                        await chat_context_assembler.maybe_compress(request.session_id)
+                    except Exception:
+                        pass
+                    yield ChatStreamEvent(type="done", metadata={"direct_answer": True, "iterations": 0})
+                    return
+                else:
+                    logger.info("Chat: direct answer insufficient, falling through to agentic loop")
+            except Exception as e:
+                logger.warning("Chat: direct answer attempt failed (%s), falling through", e)
 
         # Dynamic max iterations based on message length.
         # Long messages (>8k chars) produce ~40k token context — each iteration costs 3-5 min.

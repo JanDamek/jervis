@@ -743,6 +743,43 @@ When a Whisper job completes or fails, the result handler in `MeetingTranscripti
 
 ---
 
+### kRPC "RpcClient was cancelled" Fix
+
+**Deployed:** 2026-02-23
+
+**Problem:**
+After server restart, WebSocket dies silently. UI shows green "connected" dot (stale state — heartbeat hasn't detected the failure yet). User sends a message → kRPC throws `IllegalStateException("RpcClient was cancelled")` → classified as `SendError.Server` (non-retryable) → no auto-retry, no reconnect. User must manually click "Znovu" after 30s heartbeat reconnects.
+
+**Root cause chain:**
+1. `classifySendError()` didn't match "cancelled" → classified as Server (non-retryable)
+2. `sendMessage()` didn't trigger reconnect on "cancelled" error (waited 30s for heartbeat)
+3. `scheduleAutoRetry()` skipped "server" errors entirely → pending message stuck forever
+4. After reconnect, `reloadHistory()` didn't reclassify stale "server" errors
+
+**Fixes:**
+- `SendError.kt`: Added "was cancelled" and "channel was closed" as `SendError.Network` (retryable)
+- `ChatViewModel.kt`: Immediate `connectionManager.triggerReconnect()` on "cancelled" errors in both `sendMessage()` and `retrySendMessage()`
+- `ChatViewModel.kt`: After reconnect in `reloadHistory()`, reclassify old "server" errors as "network" to enable auto-retry on fresh connection
+- `RpcConnectionManager.kt`: Made `triggerReconnect()` public so ChatViewModel can call it directly
+
+**Files:**
+- `shared/ui-common/.../model/SendError.kt` — error classification
+- `shared/ui-common/.../chat/ChatViewModel.kt` — send + retry + reconnect logic
+- `shared/domain/.../di/RpcConnectionManager.kt` — triggerReconnect visibility
+
+**Timeline after fix:**
+```
+T+0s   Server restarts, WebSocket dies
+T+5s   User sends message → "cancelled" error
+T+5s   classifySendError → Network (retryable) ✓
+T+5s   triggerReconnect("send failed: cancelled") → immediate reconnect ✓
+T+10s  Reconnect successful
+T+10s  reloadHistory → reclassify pending → scheduleAutoRetry ✓
+T+10s  Auto-retry succeeds → message delivered ✓
+```
+
+---
+
 ### Whisper REST In-Memory Queue
 
 **Deployed:** 2026-02-13

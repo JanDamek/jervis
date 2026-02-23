@@ -207,8 +207,11 @@ class RpcConnectionManager(private val baseUrl: String) {
      * dead subscriptions or heartbeat failures firing simultaneously.
      * Only the first caller actually triggers reconnect; subsequent calls are no-ops
      * because state is already Disconnected and reconnect() mutex handles the rest.
+     *
+     * Public so that ChatViewModel can trigger immediate reconnect on "cancelled" errors
+     * instead of waiting 30s for the next heartbeat to detect the dead connection.
      */
-    private fun triggerReconnect(reason: String) {
+    fun triggerReconnect(reason: String) {
         val wasConnected = _state.value is RpcConnectionState.Connected
         _state.value = RpcConnectionState.Disconnected
         if (wasConnected) {

@@ -122,7 +122,9 @@ class RecordingForegroundService : Service() {
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Nahravani"
         currentTitle = title
         startForeground(NOTIFICATION_ID, buildNotification(this, 0L, title))
-        return START_STICKY
+        // NOT_STICKY: do NOT restart service after crash/kill.
+        // START_STICKY caused zombie notification that survives app crash and can't be dismissed.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

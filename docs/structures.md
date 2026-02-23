@@ -547,6 +547,25 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
 - **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset. Migration: old BACKGROUND DISPATCHED_GPU tasks without orchestratorThreadId are migrated to DONE.
 
+### Qualification Watchdog (2026-02-23)
+
+**Problem:** If `processOne()` hangs on a KB HTTP call without timeout (e.g., GPU busy with chat for 2+ hours), `isQualificationRunning` stays `true` forever. No new qualification cycle can start → `recoverStuckIndexingTasks()` never runs → stuck tasks accumulate.
+
+**Solution:** Timestamp-based watchdog in `TaskQualificationService`:
+- `qualificationStartedAt` records when each cycle begins
+- At cycle start, if `isQualificationRunning=true` AND elapsed > 15 min → force-release lock + call `recoverStuckIndexingTasks()`
+- Stuck QUALIFYING tasks (>10 min) get reset to READY_FOR_QUALIFICATION
+- No separate timer thread — watchdog runs on the next BackgroundEngine qualification loop tick (every 30s)
+
+### KB Queue Count Fix (2026-02-23)
+
+**Problem:** UI always showed "KB fronta 199" because:
+1. Kotlin fetches max 200 items from Python KB queue (`limit=200`)
+2. 1 item is `in_progress` and filtered out as matching QUALIFYING
+3. 200 - 1 = 199
+
+**Solution:** `IndexingQueueRpcImpl.collectPipelineTasks()` now uses `kbStats.pending` (real `COUNT(*)` from SQLite) for `kbWaitingTotalCount` when no search/client filter is active. With filters, falls back to `filteredKbWaiting.size` (correct for filtered subsets).
+
 ### Auto-Requeue on Inline Messages
 
 When orchestration is dispatched, `TaskDocument.orchestrationStartedAt` is set to the current timestamp.

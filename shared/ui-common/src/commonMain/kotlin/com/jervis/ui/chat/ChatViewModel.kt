@@ -211,6 +211,13 @@ class ChatViewModel(
                 if (e is CancellationException) throw e
                 println("Error sending message: ${e.message}")
                 e.printStackTrace()
+
+                // "RpcClient was cancelled" means WebSocket is dead — trigger immediate reconnect
+                // instead of waiting 30s for the next heartbeat to detect the stale connection.
+                if (e.message?.contains("cancelled", ignoreCase = true) == true) {
+                    connectionManager.triggerReconnect("send failed: cancelled")
+                }
+
                 val error = classifySendError(e)
                 pendingState = PendingMessageState(
                     text = originalText,
@@ -255,6 +262,12 @@ class ChatViewModel(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 println("Error retrying message: ${e.message}")
+
+                // Trigger immediate reconnect on stale connection (same as sendMessage)
+                if (e.message?.contains("cancelled", ignoreCase = true) == true) {
+                    connectionManager.triggerReconnect("retry failed: cancelled")
+                }
+
                 val error = classifySendError(e)
                 pendingState = state.copy(
                     attemptCount = state.attemptCount + 1,
@@ -523,6 +536,13 @@ class ChatViewModel(
             pendingState?.let { state ->
                 if (!state.isExpired()) {
                     println("=== Scheduling retry for pending message after reconnect ===")
+                    // After reconnect, reclassify old "server" errors as "network" if they were
+                    // caused by a dead connection (e.g., "RpcClient was cancelled" was previously
+                    // classified as server error before the fix). Fresh connection = always retry.
+                    if (state.lastErrorType == "server") {
+                        pendingState = state.copy(lastErrorType = "network")
+                        PendingMessageStorage.save(pendingState)
+                    }
                     updatePendingInfo()
                     scheduleAutoRetry()
                 } else {

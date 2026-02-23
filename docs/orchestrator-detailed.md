@@ -3295,10 +3295,12 @@ The v6 handlers coexist with the legacy LangGraph orchestrator:
 
 | Category | Count | When exposed |
 |----------|-------|-------------|
-| **CORE** | 5 | Always (kb_search, web_search, memory_store, memory_recall, switch_context) |
+| **CORE** | 3 | Always (kb_search, web_search, memory_recall) |
 | **RESEARCH** | 4 | Code/KB introspection keywords |
 | **BRAIN** | 8 | Jira/Confluence keywords (issue, ticket, TPT-xxx, confluence...) |
-| **TASK_MGMT** | 9 | Task/meeting keywords (úkol, background, agent, nahrávka...) |
+| **TASK_MGMT** | 11 | Task/meeting keywords + switch_context + memory_store (úkol, přepni na, zapamatuj...) |
+
+**Design decision (2026-02-23):** `switch_context` and `memory_store` moved from CORE to TASK_MGMT. Qwen3-30b has strong tool-calling bias — with 5 CORE tools, it called unnecessary tools (kb_search, switch_context, memory_store) on simple questions, causing 2 min response time instead of 5s. With 3 CORE tools, simple questions get direct answers without tool calls.
 
 `TOOL_DOMAINS` dict maps each tool to a semantic domain (search, memory, brain, task, meeting, scope) for drift detection.
 
@@ -3315,7 +3317,13 @@ Patterns: `_BRAIN_PATTERNS` (Czech+English), `_TASK_MGMT_PATTERNS`, `_RESEARCH_P
 
 `select_tools(categories)` builds deduplicated tool list from matched categories.
 
-**Typical result:** simple question → 5 CORE tools (~2k tokens) instead of 26 (~10.6k tokens).
+**Typical result:** simple question → 3 CORE tools (~1.2k tokens) instead of 26 (~10.6k tokens).
+
+#### B2. Simple Message Fast Path
+
+For short messages (<500 chars) with CORE-only intent (no keywords matched), the handler tries a **direct answer without tools** first. LLM gets `tools=None` → must answer directly. If the answer is sufficient (no "potřebuji informace" markers), it's returned immediately (~5s). If insufficient, falls through to the normal agentic loop.
+
+This eliminates the 60-120s overhead of 3-4 unnecessary tool calls for simple questions like "ahoj" or "na čem pracuju?".
 
 #### C. Focus Reminder
 
@@ -3345,12 +3353,16 @@ On detection, forces text response without tools (same as loop break).
 3. **Inter-iteration** (after tool results, before next LLM): `"Analyzuji výsledky..."`. Prevents stale "Přepínám na..." during 60s LLM call.
 4. **Long message warning** (>49k estimated tokens, iteration 0): `"Dlouhá zpráva — zpracování potrvá déle..."`. GPU VRAM exceeded → CPU spill → much slower.
 
-#### F. System Prompt Deduplication + Anti-Dump
+#### F. System Prompt — Strong Direct Answer Rules + Anti-Dump
 
-Tool descriptions reduced from ~375 to ~120 tokens. Key additions:
-- "Odpovídej PŘÍMO" — answer directly if you know
+System prompt restructured (2026-02-23) to combat Qwen3's tool-calling bias:
+
+- **⚠️ KLÍČOVÉ PRAVIDLO section** — explicit "answer from context ABOVE" instruction with concrete examples (Q: "Na čem pracuju?" → look at client/project in context and ANSWER, don't call kb_search)
+- **Negative examples** — "NEVOLEJ tools v těchto případech" list with specific tools and when NOT to use them
+- **Few-shot examples** — 3 concrete Q&A showing correct no-tool behavior
 - "Maximálně 2-3 tool calls" — cap tool usage
 - "NIKDY neukládej celou zprávu uživatele do KB/memory" — prevents model from storing user's message verbatim
+- "NIKDY neukládej runtime stav" — prevents storing trivial facts like "active project is nUFO"
 
 #### G. MAX_ITERATIONS 15 → 6
 

@@ -22,6 +22,9 @@ import org.springframework.stereotype.Service
  *
  * Concurrency: 1 — each qualification calls _generate_summary() (30B LLM via router).
  * Higher concurrency overloads CPU Ollama. RAG embedding is skipped on re-qualification (content hash match).
+ *
+ * Watchdog: if a qualification cycle runs >15 min, the lock is force-released and stuck tasks
+ * are recovered. This prevents permanent deadlock when a KB HTTP call hangs without timeout.
  */
 @Service
 class TaskQualificationService(
@@ -35,12 +38,46 @@ class TaskQualificationService(
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
+    /** Timestamp when the current qualification cycle started. Used by watchdog. */
+    @Volatile
+    private var qualificationStartedAt: Long = 0L
+
+    companion object {
+        /** Max time a qualification cycle can run before watchdog force-resets (15 min). */
+        private const val WATCHDOG_TIMEOUT_MS = 15 * 60 * 1000L
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
+        // Watchdog: if previous cycle has been running >15 min, force-release the lock.
+        // This handles the case where processOne() hangs on a KB HTTP call without timeout,
+        // leaving isQualificationRunning=true forever and blocking all future cycles.
+        if (isQualificationRunning.get()) {
+            val elapsed = System.currentTimeMillis() - qualificationStartedAt
+            if (elapsed > WATCHDOG_TIMEOUT_MS) {
+                logger.warn {
+                    "QUALIFICATION_WATCHDOG: cycle running for ${elapsed / 1000}s (>${WATCHDOG_TIMEOUT_MS / 1000}s), " +
+                        "force-releasing lock and recovering stuck tasks"
+                }
+                isQualificationRunning.set(false)
+                // Recover any tasks stuck in QUALIFYING state
+                try {
+                    val recovered = taskService.recoverStuckIndexingTasks()
+                    if (recovered > 0) {
+                        logger.warn { "QUALIFICATION_WATCHDOG: recovered $recovered stuck tasks" }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) { "QUALIFICATION_WATCHDOG: recovery failed" }
+                }
+            }
+        }
+
         if (!isQualificationRunning.compareAndSet(false, true)) {
             logger.debug { "QUALIFICATION_SKIPPED: Another cycle already running" }
             return
         }
+
+        qualificationStartedAt = System.currentTimeMillis()
 
         try {
             logger.debug { "QUALIFICATION_CYCLE_START" }
@@ -70,9 +107,9 @@ class TaskQualificationService(
                                     }
                                 } catch (inner: Exception) {
                                     // Error handler itself failed (e.g. MongoDB down) — task stays QUALIFYING
-                                    // Will be recovered by resetStaleTasks on next restart
+                                    // Will be recovered by watchdog or resetStaleTasks on next restart
                                     logger.error(inner) {
-                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until restart"
+                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until watchdog or restart"
                                     }
                                 }
                             }

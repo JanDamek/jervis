@@ -245,8 +245,9 @@ TOOL_SWITCH_CONTEXT: dict = {
     "function": {
         "name": "switch_context",
         "description": (
-            "Přepni aktivní klient/projekt v UI dropdownu. Použij když user řekne "
-            "'přepni se na X', 'otevři projekt Y', nebo když potřebuješ pracovat s jiným klientem/projektem. "
+            "Přepni aktivní klient/projekt v UI dropdownu. "
+            "POUZE když user EXPLICITNĚ řekne 'přepni se na X', 'otevři projekt Y'. "
+            "NEVOLEJ pro zjištění informací — ty máš v kontextu. "
             "Stačí zadat jméno — tool si sám dohledá ID."
         ),
         "parameters": {
@@ -328,12 +329,13 @@ class ToolCategory(str, Enum):
 
 
 TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
+    # CORE: minimal set for typical questions. No switch_context (only on explicit user request),
+    # no memory_store (only when learning new procedures — TASK_MGMT intent).
+    # Fewer tools = less tool-calling bias = faster direct answers.
     ToolCategory.CORE: [
         TOOL_KB_SEARCH,
         TOOL_WEB_SEARCH,
-        TOOL_MEMORY_STORE,
         TOOL_MEMORY_RECALL,
-        TOOL_SWITCH_CONTEXT,
     ],
     ToolCategory.RESEARCH: [
         TOOL_CODE_SEARCH,
@@ -352,6 +354,8 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
         TOOL_STORE_KNOWLEDGE,
+        TOOL_SWITCH_CONTEXT,
+        TOOL_MEMORY_STORE,
     ],
 }
 

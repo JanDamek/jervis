@@ -439,9 +439,19 @@ class IndexingQueueRpcImpl(
             pageSize = safeKbPageSize,
         )
 
+        // KB waiting total count: use real SQLite pending count when no filters are active.
+        // With limit=200 fetch, filteredKbWaiting.size caps at ~199 (200 - 1 in_progress).
+        // kbStats.pending is the actual COUNT(*) from SQLite — the real number (e.g. 1247).
+        val hasFilters = query.isNotEmpty() || clientFilterQuery.isNotEmpty() || projectFilterQuery.isNotEmpty()
+        val kbWaitingTotal = if (hasFilters) {
+            filteredKbWaiting.size.toLong()
+        } else {
+            kbStats.pending.toLong()
+        }
+
         return PipelineResult(
             kbWaiting = pagedKbWaiting,
-            kbWaitingTotalCount = filteredKbWaiting.size.toLong(),
+            kbWaitingTotalCount = kbWaitingTotal,
             kbProcessing = filteredKbProcessing,
             kbProcessingCount = filteredKbProcessing.size.toLong(),
             executionWaiting = filteredExecWaiting,

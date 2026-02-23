@@ -40,7 +40,12 @@ _TASK_MGMT_PATTERNS = re.compile(
     r"co\s+(?:jsi|jste)\s+(?:udělal|dělal)|nedávn[éý]\s+úkol|"
     r"stav\s+úkol|vytvoř.*úkol|"
     r"respond|odpověz\s+na\s+(?:task|úkol)|user_task|"
-    r"znalost|knowledge|ulož\s+(?:do\s+)?kb"
+    r"znalost|knowledge|ulož\s+(?:do\s+)?kb|"
+    # switch_context triggers (explicit user request to switch/open client/project)
+    r"přepni\s+(?:se\s+)?na|otevři\s+(?:projekt|klient)|"
+    r"switch|přepnout|zapamatuj\s+si|"
+    # memory_store triggers (learning new procedures)
+    r"nauč\s+se|pamatuj\s+si|konvence|postup"
     r")",
     re.IGNORECASE,
 )

@@ -46,11 +46,14 @@ sealed class Screen {
 }
 
 /**
- * Stack-based navigator for app navigation.
- * Maintains a back-stack so goBack() returns to previous screen (not always Main).
+ * Flat navigator — no back-stack, back always goes to Main (chat).
+ *
+ * Design decision: stack-based navigation caused crashes when back was pressed
+ * during ad-hoc recording (navigated to stale screen, killed recording).
+ * Flat model: navigateTo() sets screen, goBack() always returns to Main.
+ * Simple, safe, no stale state.
  */
 class AppNavigator {
-    private val _backStack = mutableListOf<Screen>()
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Main)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
@@ -59,23 +62,20 @@ class AppNavigator {
 
     fun navigateTo(screen: Screen) {
         if (_currentScreen.value != screen) {
-            _backStack.add(_currentScreen.value)
             _currentScreen.value = screen
-            _canGoBack.value = _backStack.isNotEmpty()
+            _canGoBack.value = screen != Screen.Main
         }
     }
 
+    /** Always go to Main (chat). No stack, no stale screens. */
     fun goBack() {
-        if (_backStack.isNotEmpty()) {
-            _currentScreen.value = _backStack.removeLast()
-            _canGoBack.value = _backStack.isNotEmpty()
-        }
+        _currentScreen.value = Screen.Main
+        _canGoBack.value = false
     }
 
-    /** Navigate to screen, clearing entire history (e.g., menu resets to fresh). */
+    /** Navigate to screen (same as navigateTo — kept for API compat). */
     fun navigateAndClearHistory(screen: Screen) {
-        _backStack.clear()
         _currentScreen.value = screen
-        _canGoBack.value = false
+        _canGoBack.value = screen != Screen.Main
     }
 }

@@ -47,6 +47,10 @@ fun classifySendError(e: Exception): SendError {
         msgLower.contains("broken pipe") -> SendError.Network("Připojení přerušeno")
         msgLower.contains("eof") -> SendError.Network("Připojení přerušeno")
         msgLower.contains("closed") -> SendError.Network("Připojení uzavřeno")
+        // kRPC wraps dead WebSocket as IllegalStateException("RpcClient was cancelled")
+        // This is a network error (stale connection), not a server error — must be retryable
+        msgLower.contains("was cancelled") -> SendError.Network("Připojení ztraceno")
+        msgLower.contains("channel was closed") -> SendError.Network("Připojení uzavřeno")
         else -> SendError.Server(null, msg)
     }
 }
