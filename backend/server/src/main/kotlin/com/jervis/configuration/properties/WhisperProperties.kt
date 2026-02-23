@@ -2,12 +2,6 @@ package com.jervis.configuration.properties
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 
-/**
- * Whisper transcription configuration, read from ConfigMap (application.yml).
- * Replaces the former MongoDB-based WhisperSettingsDocument.
- *
- * All parameters have sensible defaults matching production usage.
- */
 @ConfigurationProperties(prefix = "whisper")
 data class WhisperProperties(
     /** Deployment mode: "k8s_job" or "rest_remote" */

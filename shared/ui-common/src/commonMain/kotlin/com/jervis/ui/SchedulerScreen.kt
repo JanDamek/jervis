@@ -28,9 +28,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
-/**
- * Time-based groups for scheduled tasks display.
- */
 private enum class TaskTimeGroup(val label: String) {
     OVERDUE("Prošlé"),
     TODAY("Dnes"),
@@ -246,8 +243,6 @@ fun SchedulerScreen(
     }
 }
 
-// --- Grouped list model ---
-
 private sealed class GroupedItem {
     data class Header(val label: String, val group: TaskTimeGroup) : GroupedItem()
     data class Task(val task: EnhancedScheduledTask) : GroupedItem()
@@ -268,8 +263,6 @@ private fun buildGroupedItems(tasks: List<EnhancedScheduledTask>): List<GroupedI
     }
     return result
 }
-
-// --- List item ---
 
 @Composable
 private fun ScheduledTaskListItem(
@@ -351,11 +344,6 @@ private fun ScheduledTaskListItem(
     }
 }
 
-// --- Helpers ---
-
-/**
- * Classify a task into a time group based on its scheduledAt and state.
- */
 private fun classifyTimeGroup(
     task: ScheduledTaskDto,
     nowMs: Long,
@@ -363,7 +351,6 @@ private fun classifyTimeGroup(
     endOfWeek: LocalDate,
     tz: TimeZone,
 ): TaskTimeGroup {
-    // Terminal states go to DONE group
     if (task.state == TaskStateEnum.DONE || task.state == TaskStateEnum.ERROR) {
         return TaskTimeGroup.DONE
     }
@@ -383,9 +370,6 @@ private fun classifyTimeGroup(
     }
 }
 
-/**
- * Map task state to Czech label and color.
- */
 @Composable
 private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.ui.graphics.Color> {
     val color = when (state) {

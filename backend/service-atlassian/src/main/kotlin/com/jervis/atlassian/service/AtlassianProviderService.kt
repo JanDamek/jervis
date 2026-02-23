@@ -18,10 +18,6 @@ import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 
-/**
- * Single source of truth for Atlassian OAuth2 scopes.
- * Used in AtlassianProviderService, AtlassianApplication, and OAuth2Service (fallback).
- */
 const val ATLASSIAN_OAUTH2_SCOPES =
     "read:jira-user read:jira-work write:jira-work " +
     "read:confluence-content.all read:confluence-content.summary read:confluence-content.permission " +
