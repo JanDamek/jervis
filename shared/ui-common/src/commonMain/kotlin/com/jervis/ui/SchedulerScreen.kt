@@ -28,7 +28,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
-private enum class TaskTimeGroup(val label: String) {
+internal enum class TaskTimeGroup(val label: String) {
     OVERDUE("Prošlé"),
     TODAY("Dnes"),
     THIS_WEEK("Tento týden"),
@@ -396,7 +396,7 @@ private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.
     return label to color
 }
 
-data class EnhancedScheduledTask(
+internal data class EnhancedScheduledTask(
     val task: ScheduledTaskDto,
     val projectName: String,
     val clientName: String,
