@@ -90,19 +90,21 @@ je v češtině a `ask_user` tool generuje otázky v jazyce promptu.
 - Pokud orchestrátor stále generuje anglicky → posílit system prompt:
   "VŽDY komunikuj s uživatelem ČESKY, včetně ask_user otázek"
 
-## 4. Kalendář — prošlé termíny musí vyvolat urgentní user task
+## 4. Kalendář — DONE tasky se zobrazují, staré emaily naplánované na dnešek
 
 ### Symptom
-Naplánovaná úloha (SCHEDULED_TASK) s termínem v minulosti (např. 23.2.2026 13:30 pro email z roku 2017)
-zůstane v kalendáři ve stavu DONE, ale nikdo ji neřeší. Starý email prošel indexací a orchestrátor
-ho naplánoval na dnešek — evidentně chyba v kvalifikaci.
+Kalendář zobrazuje 3 DONE tasky — všechno staré emaily (2017, 2018) s anglickými popisky,
+naplánované na 23.2.2026 13:30. Stav "Dokončeno" → nemají v kalendáři co dělat.
 
-### Požadavek
-- **Při každém cyklu BackgroundEngine / TaskSchedulingService**:
-  prošlé SCHEDULED_TASK (datum < now) ihned eskalovat jako **urgentní USER_TASK**
-  a zařadit na **začátek** fronty
-- Kvalifikátor by měl rozpoznat staré emaily (datum 2017) a neplánovat je na aktuální datum
-- V kalendáři UI by prošlé položky měly být vizuálně odlišeny (červeně / s varováním)
+### Problémy
+1. **DONE tasky se zobrazují v kalendáři** — kalendář by měl ukazovat jen aktivní
+   (SCHEDULED, READY, QUALIFYING...), ne dokončené. DONE filtrovat pryč.
+2. **Staré emaily naplánované na dnešek** — kvalifikátor naplánoval emaily z 2017/2018
+   na aktuální datum. Kvalifikátor by měl rozpoznat že email je starý a NEnaplánovat ho.
+3. **Prošlé SCHEDULED_TASK** — pokud termín < now a task NENÍ done,
+   ihned eskalovat jako urgentní USER_TASK na začátek fronty.
+4. **Anglické popisky** — "An email inviting...", "Confirmation of CACI telephone..." —
+   orchestrátor generoval anglicky, viz §3 výše.
 
 ### Dotčené soubory
 
