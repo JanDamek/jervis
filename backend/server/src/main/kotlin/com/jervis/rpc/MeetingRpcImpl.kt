@@ -10,7 +10,10 @@ import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
+import com.jervis.dto.meeting.MeetingGroupDto
 import com.jervis.dto.meeting.MeetingStateEnum
+import com.jervis.dto.meeting.MeetingSummaryDto
+import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingUploadStateDto
 import com.jervis.dto.meeting.TranscriptSegmentDto
 import com.jervis.entity.meeting.CorrectionChatMessage
@@ -669,6 +672,96 @@ class MeetingRpcImpl(
         }
         return saved.toDto()
     }
+
+    override suspend fun getMeetingTimeline(clientId: String, projectId: String?): MeetingTimelineDto {
+        val cid = ClientId.fromString(clientId)
+        val pid = projectId?.let { ProjectId.fromString(it) }
+        val now = Instant.now()
+
+        // Current week boundary (Monday 00:00 of this week)
+        val weekStart = now.atZone(java.time.ZoneOffset.UTC)
+            .with(java.time.DayOfWeek.MONDAY)
+            .toLocalDate()
+            .atStartOfDay(java.time.ZoneOffset.UTC)
+            .toInstant()
+
+        // Fetch current week meetings as summaries
+        val currentWeekMeetings = if (pid != null) {
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, pid, weekStart)
+        } else {
+            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualOrderByStartedAtDesc(cid, weekStart)
+        }.toList().map { it.toSummaryDto() }
+
+        // Fetch ALL older meetings (just id + startedAt for counting)
+        val olderMeetings = if (pid != null) {
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseOrderByStartedAtDesc(cid, pid)
+        } else {
+            meetingRepository.findByClientIdAndDeletedIsFalseOrderByStartedAtDesc(cid)
+        }.toList().filter { it.startedAt.isBefore(weekStart) }
+
+        // Group older meetings into time buckets
+        val thirtyDaysAgo = now.minus(java.time.Duration.ofDays(30))
+        val groups = mutableListOf<MeetingGroupDto>()
+
+        // Weekly groups (last 4 weeks before current week)
+        val weeklyMeetings = olderMeetings.filter { it.startedAt.isAfter(thirtyDaysAgo) || it.startedAt == thirtyDaysAgo }
+        val byWeek = weeklyMeetings.groupBy { doc ->
+            val zdt = doc.startedAt.atZone(java.time.ZoneOffset.UTC)
+            zdt.with(java.time.DayOfWeek.MONDAY).toLocalDate()
+        }
+        for ((mondayDate, docs) in byWeek.entries.sortedByDescending { it.key }) {
+            val start = mondayDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            val end = mondayDate.plusDays(7).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            val label = "Týden ${mondayDate.dayOfMonth}.${mondayDate.monthValue}. – ${mondayDate.plusDays(6).dayOfMonth}.${mondayDate.plusDays(6).monthValue}."
+            groups.add(MeetingGroupDto(label = label, periodStart = start.toString(), periodEnd = end.toString(), count = docs.size))
+        }
+
+        // Monthly groups (older than 30 days, within last year)
+        val oneYearAgo = now.minus(java.time.Duration.ofDays(365))
+        val monthlyMeetings = olderMeetings.filter { it.startedAt.isBefore(thirtyDaysAgo) && it.startedAt.isAfter(oneYearAgo) }
+        val byMonth = monthlyMeetings.groupBy { doc ->
+            val zdt = doc.startedAt.atZone(java.time.ZoneOffset.UTC)
+            java.time.YearMonth.of(zdt.year, zdt.month)
+        }
+        val monthNames = arrayOf("", "Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec")
+        for ((ym, docs) in byMonth.entries.sortedByDescending { it.key }) {
+            val start = ym.atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            val end = ym.plusMonths(1).atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            val label = "${monthNames[ym.monthValue]} ${ym.year}"
+            groups.add(MeetingGroupDto(label = label, periodStart = start.toString(), periodEnd = end.toString(), count = docs.size))
+        }
+
+        // Yearly groups (older than 1 year)
+        val yearlyMeetings = olderMeetings.filter { !it.startedAt.isAfter(oneYearAgo) }
+        val byYear = yearlyMeetings.groupBy { doc ->
+            doc.startedAt.atZone(java.time.ZoneOffset.UTC).year
+        }
+        for ((year, docs) in byYear.entries.sortedDescending()) {
+            val start = java.time.LocalDate.of(year, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            val end = java.time.LocalDate.of(year + 1, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+            groups.add(MeetingGroupDto(label = "Rok $year", periodStart = start.toString(), periodEnd = end.toString(), count = docs.size))
+        }
+
+        return MeetingTimelineDto(currentWeek = currentWeekMeetings, olderGroups = groups)
+    }
+
+    override suspend fun listMeetingsByRange(
+        clientId: String,
+        projectId: String?,
+        fromIso: String,
+        toIso: String,
+    ): List<MeetingSummaryDto> {
+        val cid = ClientId.fromString(clientId)
+        val from = Instant.parse(fromIso)
+        val to = Instant.parse(toIso)
+        val meetings = if (projectId != null) {
+            val pid = ProjectId.fromString(projectId)
+            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, from, to)
+        } else {
+            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, from, to)
+        }
+        return meetings.toList().map { it.toSummaryDto() }
+    }
 }
 
 /** Create a 44-byte WAV header for 16kHz mono 16-bit PCM. Data size is 0 (fixed on finalize). */
@@ -786,4 +879,15 @@ private fun MeetingDocument.toDto(): MeetingDto =
         errorMessage = errorMessage,
         deleted = deleted,
         deletedAt = deletedAt?.toString(),
+    )
+
+private fun MeetingDocument.toSummaryDto(): MeetingSummaryDto =
+    MeetingSummaryDto(
+        id = id.toHexString(),
+        title = title,
+        meetingType = meetingType,
+        state = state,
+        durationSeconds = durationSeconds,
+        startedAt = startedAt.toString(),
+        errorMessage = errorMessage,
     )

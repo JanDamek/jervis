@@ -6,6 +6,8 @@ import com.jervis.dto.meeting.MeetingClassifyDto
 import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
+import com.jervis.dto.meeting.MeetingSummaryDto
+import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingUploadStateDto
 import kotlinx.rpc.annotations.Rpc
 
@@ -66,4 +68,16 @@ interface IMeetingService {
     suspend fun classifyMeeting(request: MeetingClassifyDto): MeetingDto
 
     suspend fun listUnclassifiedMeetings(): List<MeetingDto>
+
+    suspend fun getMeetingTimeline(
+        clientId: String,
+        projectId: String?,
+    ): MeetingTimelineDto
+
+    suspend fun listMeetingsByRange(
+        clientId: String,
+        projectId: String?,
+        fromIso: String,
+        toIso: String,
+    ): List<MeetingSummaryDto>
 }

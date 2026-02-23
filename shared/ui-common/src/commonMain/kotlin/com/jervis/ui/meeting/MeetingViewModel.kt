@@ -9,7 +9,10 @@ import com.jervis.dto.meeting.MeetingCreateDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingFinalizeDto
+import com.jervis.dto.meeting.MeetingGroupDto
 import com.jervis.dto.meeting.CorrectionAnswerDto
+import com.jervis.dto.meeting.MeetingSummaryDto
+import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
@@ -121,6 +124,18 @@ class MeetingViewModel(
     private val _unclassifiedMeetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val unclassifiedMeetings: StateFlow<List<MeetingDto>> = _unclassifiedMeetings.asStateFlow()
 
+    private val _currentWeekMeetings = MutableStateFlow<List<MeetingSummaryDto>>(emptyList())
+    val currentWeekMeetings: StateFlow<List<MeetingSummaryDto>> = _currentWeekMeetings.asStateFlow()
+
+    private val _olderGroups = MutableStateFlow<List<MeetingGroupDto>>(emptyList())
+    val olderGroups: StateFlow<List<MeetingGroupDto>> = _olderGroups.asStateFlow()
+
+    private val _expandedGroups = MutableStateFlow<Map<String, List<MeetingSummaryDto>>>(emptyMap())
+    val expandedGroups: StateFlow<Map<String, List<MeetingSummaryDto>>> = _expandedGroups.asStateFlow()
+
+    private val _loadingGroups = MutableStateFlow<Set<String>>(emptySet())
+    val loadingGroups: StateFlow<Set<String>> = _loadingGroups.asStateFlow()
+
     /** Whether current recording is offline (no server meeting, chunks saved to disk only). */
     private val _isOfflineRecording = MutableStateFlow(false)
     val isOfflineRecording: StateFlow<Boolean> = _isOfflineRecording.asStateFlow()
@@ -177,6 +192,49 @@ class MeetingViewModel(
         }
     }
 
+    fun loadTimeline(clientId: String, projectId: String? = null, silent: Boolean = false) {
+        lastClientId = clientId
+        lastProjectId = projectId
+        scope.launch {
+            if (!silent) {
+                _isLoading.value = true
+                _expandedGroups.value = emptyMap()
+                _loadingGroups.value = emptySet()
+            }
+            try {
+                val timeline = repository.meetings.getMeetingTimeline(clientId, projectId)
+                _currentWeekMeetings.value = timeline.currentWeek
+                _olderGroups.value = timeline.olderGroups
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se načíst přehled: ${e.message}"
+            } finally {
+                if (!silent) _isLoading.value = false
+            }
+        }
+    }
+
+    fun toggleGroup(group: MeetingGroupDto) {
+        val key = group.periodStart
+        if (_expandedGroups.value.containsKey(key)) {
+            _expandedGroups.value = _expandedGroups.value - key
+            return
+        }
+        val clientId = lastClientId ?: return
+        scope.launch {
+            _loadingGroups.value = _loadingGroups.value + key
+            try {
+                val items = repository.meetings.listMeetingsByRange(
+                    clientId, lastProjectId, group.periodStart, group.periodEnd,
+                )
+                _expandedGroups.value = _expandedGroups.value + (key to items)
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se načíst skupinu: ${e.message}"
+            } finally {
+                _loadingGroups.value = _loadingGroups.value - key
+            }
+        }
+    }
+
     fun loadProjects(clientId: String) {
         scope.launch {
             try {
@@ -214,6 +272,24 @@ class MeetingViewModel(
                 meeting.copy(state = newState, errorMessage = event.errorMessage)
             } else {
                 meeting
+            }
+        }
+
+        // Update timeline summary items
+        _currentWeekMeetings.value = _currentWeekMeetings.value.map { summary ->
+            if (summary.id == event.meetingId) {
+                summary.copy(state = newState, errorMessage = event.errorMessage)
+            } else {
+                summary
+            }
+        }
+        _expandedGroups.value = _expandedGroups.value.mapValues { (_, items) ->
+            items.map { summary ->
+                if (summary.id == event.meetingId) {
+                    summary.copy(state = newState, errorMessage = event.errorMessage)
+                } else {
+                    summary
+                }
             }
         }
 
@@ -478,7 +554,7 @@ class MeetingViewModel(
                 RecordingStateStorage.remove(meetingId)
                 AudioChunkQueue.clearMeeting(meetingId)
 
-                lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
+                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
                 println("[Meeting] Finalization complete")
             } catch (e: Exception) {
                 println("[Meeting] Error finalizing: ${e.message}")
@@ -694,6 +770,17 @@ class MeetingViewModel(
         _selectedMeeting.value = meeting
     }
 
+    fun selectMeetingById(meetingId: String) {
+        scope.launch {
+            try {
+                val meeting = repository.meetings.getMeeting(meetingId)
+                _selectedMeeting.value = meeting
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se načíst detail: ${e.message}"
+            }
+        }
+    }
+
     fun refreshMeeting(meetingId: String) {
         scope.launch {
             try {
@@ -717,6 +804,10 @@ class MeetingViewModel(
             try {
                 repository.meetings.deleteMeeting(meetingId)
                 _meetings.value = _meetings.value.filter { it.id != meetingId }
+                _currentWeekMeetings.value = _currentWeekMeetings.value.filter { it.id != meetingId }
+                _expandedGroups.value = _expandedGroups.value.mapValues { (_, items) ->
+                    items.filter { it.id != meetingId }
+                }
                 if (_selectedMeeting.value?.id == meetingId) {
                     _selectedMeeting.value = null
                 }
@@ -744,8 +835,8 @@ class MeetingViewModel(
             try {
                 repository.meetings.restoreMeeting(meetingId)
                 _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
-                // Refresh active meetings to show restored item
-                lastClientId?.let { loadMeetings(it, lastProjectId) }
+                // Refresh timeline to show restored item
+                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se obnovit schůzku: ${e.message}"
             }
@@ -795,8 +886,8 @@ class MeetingViewModel(
                 )
                 // Remove from unclassified list
                 _unclassifiedMeetings.value = _unclassifiedMeetings.value.filter { it.id != meetingId }
-                // Refresh current meetings list
-                lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
+                // Refresh timeline to show classified item
+                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se klasifikovat nahrávku: ${e.message}"
             }

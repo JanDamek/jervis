@@ -29,6 +29,8 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingDto
+import com.jervis.dto.meeting.MeetingGroupDto
+import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.ui.audio.AudioRecorder
 import com.jervis.ui.audio.AudioRecordingConfig
@@ -53,13 +55,11 @@ fun MeetingsScreen(
     onBack: () -> Unit,
     offlineSyncService: OfflineMeetingSyncService? = null,
 ) {
-    val meetings by viewModel.meetings.collectAsState()
     val vmProjects by viewModel.projects.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
     val recordingDuration by viewModel.recordingDuration.collectAsState()
     val selectedMeeting by viewModel.selectedMeeting.collectAsState()
-    val currentMeetingId by viewModel.currentMeetingId.collectAsState()
     val playingMeetingId by viewModel.playingMeetingId.collectAsState()
     val playingSegmentIndex by viewModel.playingSegmentIndex.collectAsState()
     val isCorrecting by viewModel.isCorrecting.collectAsState()
@@ -74,6 +74,11 @@ fun MeetingsScreen(
     val deletedMeetings by viewModel.deletedMeetings.collectAsState()
     val unclassifiedMeetings by viewModel.unclassifiedMeetings.collectAsState()
     val offlinePending = offlineSyncService?.pendingMeetings?.collectAsState()?.value ?: emptyList()
+
+    val currentWeekMeetings by viewModel.currentWeekMeetings.collectAsState()
+    val olderGroups by viewModel.olderGroups.collectAsState()
+    val expandedGroups by viewModel.expandedGroups.collectAsState()
+    val loadingGroups by viewModel.loadingGroups.collectAsState()
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
@@ -100,7 +105,7 @@ fun MeetingsScreen(
             if (showTrash) {
                 viewModel.loadDeletedMeetings(clientId, selectedProjectId)
             } else {
-                viewModel.loadMeetings(clientId, selectedProjectId)
+                viewModel.loadTimeline(clientId, selectedProjectId)
             }
             viewModel.loadProjects(clientId)
         }
@@ -164,13 +169,6 @@ fun MeetingsScreen(
             onStopTranscription = { viewModel.stopTranscription(currentDetail.id) },
         )
         return
-    }
-
-    // Filter out the currently recording meeting from the list
-    val displayedMeetings = if (currentMeetingId != null) {
-        meetings.filter { it.id != currentMeetingId }
-    } else {
-        meetings
     }
 
     // List view
@@ -270,7 +268,7 @@ fun MeetingsScreen(
                     }
                 }
             } else {
-                // Active meetings view
+                // Active meetings view with timeline grouping
                 when {
                     selectedClientId == null -> {
                         JEmptyState(message = "Vyberte klienta", icon = "")
@@ -278,7 +276,8 @@ fun MeetingsScreen(
                     isLoading -> {
                         JCenteredLoading()
                     }
-                    displayedMeetings.isEmpty() && !isRecording -> {
+                    currentWeekMeetings.isEmpty() && olderGroups.isEmpty() && !isRecording
+                        && unclassifiedMeetings.isEmpty() && offlinePending.isEmpty() -> {
                         JEmptyState(message = "Zatím žádné nahrávky", icon = "")
                     }
                     else -> {
@@ -336,15 +335,48 @@ fun MeetingsScreen(
                                 }
                             }
 
-                            items(displayedMeetings, key = { it.id }) { meeting ->
-                                MeetingListItem(
-                                    meeting = meeting,
-                                    isPlaying = playingMeetingId == meeting.id,
-                                    transcriptionPercent = transcriptionProgress[meeting.id],
-                                    correctionProgress = correctionProgress[meeting.id],
-                                    onClick = { viewModel.selectMeeting(meeting) },
-                                    onPlayToggle = { viewModel.playAudio(meeting.id) },
-                                )
+                            // Current week — always expanded
+                            if (currentWeekMeetings.isNotEmpty()) {
+                                item(key = "week_header") {
+                                    Text(
+                                        text = "Tento týden",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(bottom = 4.dp),
+                                    )
+                                }
+                                items(currentWeekMeetings, key = { "cw_${it.id}" }) { meeting ->
+                                    MeetingSummaryListItem(
+                                        meeting = meeting,
+                                        onClick = { viewModel.selectMeeting(null); viewModel.selectMeetingById(meeting.id) },
+                                    )
+                                }
+                            }
+
+                            // Older groups — collapsed by default, expand on click
+                            for (group in olderGroups) {
+                                val key = group.periodStart
+                                val isExpanded = expandedGroups.containsKey(key)
+                                val isGroupLoading = loadingGroups.contains(key)
+
+                                item(key = "group_$key") {
+                                    TimelineGroupHeader(
+                                        group = group,
+                                        isExpanded = isExpanded,
+                                        isLoading = isGroupLoading,
+                                        onClick = { viewModel.toggleGroup(group) },
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    val groupItems = expandedGroups[key] ?: emptyList()
+                                    items(groupItems, key = { "g_${key}_${it.id}" }) { meeting ->
+                                        MeetingSummaryListItem(
+                                            meeting = meeting,
+                                            onClick = { viewModel.selectMeeting(null); viewModel.selectMeetingById(meeting.id) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -716,6 +748,48 @@ private fun OfflineMeetingListItem(
             }
             if (meeting.syncState == com.jervis.ui.storage.OfflineSyncState.SYNCING) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineGroupHeader(
+    group: MeetingGroupDto,
+    isExpanded: Boolean,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    androidx.compose.material3.OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val icon = if (isExpanded) "▼" else "▶"
+            Text(
+                text = icon,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(end = 8.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.label,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            } else {
+                Text(
+                    text = "${group.count} nahrávek",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

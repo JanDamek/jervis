@@ -144,3 +144,28 @@ data class MeetingUploadStateDto(
     val chunkCount: Int,
     val audioSizeBytes: Long,
 )
+
+@Serializable
+data class MeetingSummaryDto(
+    val id: String,
+    val title: String? = null,
+    val meetingType: MeetingTypeEnum? = null,
+    val state: MeetingStateEnum,
+    val durationSeconds: Long? = null,
+    val startedAt: String,
+    val errorMessage: String? = null,
+)
+
+@Serializable
+data class MeetingGroupDto(
+    val label: String,
+    val periodStart: String,
+    val periodEnd: String,
+    val count: Int,
+)
+
+@Serializable
+data class MeetingTimelineDto(
+    val currentWeek: List<MeetingSummaryDto>,
+    val olderGroups: List<MeetingGroupDto>,
+)

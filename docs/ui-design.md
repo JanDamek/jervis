@@ -987,27 +987,48 @@ Full-screen view accessed from hamburger menu ("Uzivatelske ulohy"). Shows escal
 
 Recording management screen accessed from the hamburger menu ("Meetingy").
 Lists meeting recordings with state indicators, supports starting new recordings and viewing transcripts.
+Uses **timeline grouping** with on-demand loading to avoid downloading long flat lists.
 
 ```
 Compact (<600dp):
 +-- JTopBar ("Meetingy", onBack, [+ Nova]) ------+
 |                                                  |
-| * Nahravani  03:42     [Zastavit]  <- only       |
-|                                     during rec.  |
-| +-- JCard ----------------------------------+    |
-| | Standup tym Alfa              ok  15:32    |    |
-| | 8.2.2026  *  Standup tym                   |    |
-| +--------------------------------------------+    |
-| +-- JCard ----------------------------------+    |
-| | Sprint review                  ...  1:02:15|    |
-| | 7.2.2026  *  Review                       |    |
-| +--------------------------------------------+    |
+| Neklasifikované nahrávky (if any)               |
+|   [Ad-hoc nahrávka]  [Klasifikovat]            |
+|                                                  |
+| Tento týden                                      |
+| +-- JCard (MeetingSummaryListItem) ----------+  |
+| | Standup tym Alfa              ok  15:32    |  |
+| | 8.2.2026  *  Standup tym                   |  |
+| +--------------------------------------------+  |
+|                                                  |
+| ▶ Týden 27.1. – 2.2.           4 nahrávek      |
+| ▶ Týden 20.1. – 26.1.          2 nahrávek      |
+| ▶ Leden 2026                    8 nahrávek      |
+| ▶ Rok 2025                     42 nahrávek      |
 +--------------------------------------------------+
 ```
 
+**Timeline grouping (lazy loading):**
+- **Current week** -- Always expanded, shows `MeetingSummaryListItem` for each meeting. Loaded via `getMeetingTimeline()` on screen open.
+- **Last 30 days** -- Grouped by week (`Týden D.M. – D.M.`). Collapsed by default, expand on click to fetch items via `listMeetingsByRange()`.
+- **Last year** -- Grouped by month (`Leden 2025`). Same expand-on-click pattern.
+- **Older** -- Grouped by year (`Rok 2024`). Same expand-on-click pattern.
+- `TimelineGroupHeader` -- `OutlinedCard` with ▶/▼ icon, label, count, loading spinner.
+- `MeetingSummaryListItem` -- Lightweight card using `MeetingSummaryDto` (no transcript/correction data). On click, loads full `MeetingDto` via `selectMeetingById()`.
+
+**DTOs:**
+- `MeetingSummaryDto` -- Lightweight: id, title, meetingType, state, durationSeconds, startedAt, errorMessage
+- `MeetingGroupDto` -- label, periodStart, periodEnd, count
+- `MeetingTimelineDto` -- currentWeek: `List<MeetingSummaryDto>`, olderGroups: `List<MeetingGroupDto>`
+
+**RPC methods:**
+- `getMeetingTimeline(clientId, projectId?)` -- Returns current week items + older group metadata
+- `listMeetingsByRange(clientId, projectId?, fromIso, toIso)` -- Returns `List<MeetingSummaryDto>` for a date range (called when expanding a group)
+
 **Key components:**
-- `MeetingsScreen` -- List + detail, manages setup/finalize dialogs
-- `MeetingViewModel` -- State: meetings, isRecording, recordingDuration, selectedMeeting
+- `MeetingsScreen` -- List + detail, manages setup/finalize dialogs, timeline groups
+- `MeetingViewModel` -- State: currentWeekMeetings, olderGroups, expandedGroups, loadingGroups, isRecording, recordingDuration, selectedMeeting
 - `RecordingSetupDialog` -- Client, project, audio device selection, system audio toggle
 - `RecordingFinalizeDialog` -- Meeting type (radio buttons), optional title
 - `RecordingIndicator` -- Animated red dot + elapsed time + stop button (shown during recording)
@@ -1639,7 +1660,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- AppNavigator.kt               <- Screen sealed class + navigator
 +-- meeting/                           <- Meeting feature package
 |   +-- MeetingsScreen.kt             <- Public entry point (list + routing)
-|   +-- MeetingListItems.kt           <- MeetingListItem, DeletedMeetingListItem (internal)
+|   +-- MeetingListItems.kt           <- MeetingListItem, DeletedMeetingListItem, MeetingSummaryListItem (internal)
 |   +-- MeetingDetailView.kt          <- Detail view with split layout
 |   +-- TranscriptPanel.kt            <- Transcript segments display
 |   +-- AgentChatPanel.kt             <- Correction agent chat

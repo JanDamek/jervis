@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.meeting.MeetingDto
+import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JIconButton
@@ -166,6 +167,74 @@ internal fun DeletedMeetingListItem(
                 contentDescription = "Trvale smazat",
                 tint = MaterialTheme.colorScheme.error,
             )
+        }
+    }
+}
+
+@Composable
+internal fun MeetingSummaryListItem(
+    meeting: MeetingSummaryDto,
+    onClick: () -> Unit,
+) {
+    JCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meeting.title ?: "Meeting ${meeting.id.takeLast(6)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = formatDateTime(meeting.startedAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    meeting.meetingType?.let { type ->
+                        Text(
+                            text = meetingTypeLabel(type),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            meeting.durationSeconds?.let { dur ->
+                Text(
+                    text = formatDuration(dur),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stateIcon(meeting.state),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stateLabel(meeting.state),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (meeting.state == MeetingStateEnum.FAILED)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
