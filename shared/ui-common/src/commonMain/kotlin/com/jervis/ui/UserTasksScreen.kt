@@ -27,7 +27,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.ChatMessageDto
+import com.jervis.dto.ChatRole
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.repository.JervisRepository
@@ -40,6 +43,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val PAGE_SIZE = 20
+
+private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state) {
+    "USER_TASK" -> "K vyřízení" to Color(0xFF1976D2)
+    "DONE" -> "Dokončeno" to Color(0xFF388E3C)
+    "ERROR", "FAILED" -> "Chyba" to Color(0xFFD32F2F)
+    "READY_FOR_GPU" -> "Zpracovává se" to Color(0xFFF57C00)
+    "NEW" -> "Nový" to Color(0xFF7B1FA2)
+    else -> state to Color(0xFF757575)
+}
 
 @Composable
 fun UserTasksScreen(
@@ -96,18 +108,16 @@ fun UserTasksScreen(
         }
     }
 
-    // Initial load + sync badge
     LaunchedEffect(Unit) {
         loadTasks()
         onRefreshBadge?.invoke()
     }
 
-    // Debounced server-side filter
     var filterJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(filterText) {
         filterJob?.cancel()
         filterJob = scope.launch {
-            delay(300) // debounce 300ms
+            delay(300)
             loadTasks(filterText)
         }
     }
@@ -204,6 +214,8 @@ private fun UserTaskRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val (stateLabel, stateColor) = userTaskStateBadge(task.state)
+
     JCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
@@ -221,7 +233,18 @@ private fun UserTaskRow(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                 )
-                Badge(modifier = Modifier.padding(top = 4.dp)) { Text(task.state) }
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Badge(containerColor = stateColor) { Text(stateLabel) }
+                    Text(
+                        text = formatInstant(task.createdAtEpochMillis),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             DeleteIconButton(onClick = onDelete)
             Spacer(Modifier.width(4.dp))
@@ -241,8 +264,21 @@ private fun UserTaskDetail(
 ) {
     var replyInput by remember(task.id) { mutableStateOf("") }
     var isSending by remember(task.id) { mutableStateOf(false) }
+    var chatHistory by remember(task.id) { mutableStateOf<List<ChatMessageDto>>(emptyList()) }
+    var isChatLoading by remember(task.id) { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(task.id) {
+        isChatLoading = true
+        try {
+            chatHistory = repository.userTasks.getChatHistory(task.id)
+        } catch (_: Exception) {
+            chatHistory = emptyList()
+        } finally {
+            isChatLoading = false
+        }
+    }
 
     fun sendReply(mode: TaskRoutingMode) {
         scope.launch {
@@ -276,7 +312,6 @@ private fun UserTaskDetail(
         ) {
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Show pending question prominently if present
                     if (!task.pendingQuestion.isNullOrBlank()) {
                         JSection(title = "Otázka agenta") {
                             Text(
@@ -303,10 +338,21 @@ private fun UserTaskDetail(
                             )
                         }
                     }
+
+                    if (isChatLoading) {
+                        JCenteredLoading()
+                    } else if (chatHistory.isNotEmpty()) {
+                        JSection(title = "Historie konverzace") {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (msg in chatHistory) {
+                                    ChatBubble(msg)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            // Reply input — outside SelectionContainer so keyboard interaction works
             JSection(title = "Odpověď") {
                 JTextField(
                     value = replyInput,
@@ -324,11 +370,10 @@ private fun UserTaskDetail(
             Spacer(Modifier.height(16.dp))
         }
 
-        // Action buttons at the bottom — outside scroll, always visible
         JActionBar(modifier = Modifier.padding(vertical = JervisSpacing.outerPadding)) {
             JSecondaryButton(
-                onClick = { /* TODO: move to frontend chat */ },
-                enabled = false,
+                onClick = { sendReply(TaskRoutingMode.DIRECT_TO_AGENT) },
+                enabled = !isSending,
             ) {
                 Text("Převzít do chatu")
             }
@@ -338,6 +383,36 @@ private fun UserTaskDetail(
             ) {
                 Text("Odpovědět")
             }
+        }
+    }
+}
+
+@Composable
+private fun ChatBubble(message: ChatMessageDto) {
+    val isUser = message.role == ChatRole.USER
+    val roleLabel = when (message.role) {
+        ChatRole.USER -> "Uživatel"
+        ChatRole.ASSISTANT -> "Agent"
+        ChatRole.SYSTEM -> "Systém"
+    }
+    val bgColor = if (isUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    JCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = roleLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = message.content,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }

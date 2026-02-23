@@ -35,26 +35,26 @@ class UserTaskService(
         interruptAction: String? = null,
         isApproval: Boolean = false,
     ) {
-        val title = pendingQuestion ?: "Background task failed: ${task.type}"
+        val title = pendingQuestion ?: "Úloha na pozadí selhala: ${task.type}"
         val description =
             buildString {
                 if (pendingQuestion != null) {
-                    appendLine("Agent Question:")
+                    appendLine("Dotaz agenta:")
                     appendLine(pendingQuestion)
                     appendLine()
                     if (questionContext != null) {
-                        appendLine("Context:")
+                        appendLine("Kontext:")
                         appendLine(questionContext)
                         appendLine()
                     }
-                    appendLine("Original Task:")
+                    appendLine("Původní úloha:")
                     appendLine(task.content)
                 } else {
-                    appendLine("Pending task ${task.id} failed in state ${task.state}")
-                    appendLine("Reason: $reason")
-                    error?.message?.let { appendLine("Error: $it") }
+                    appendLine("Úloha ${task.id} selhala ve stavu ${task.state}")
+                    appendLine("Důvod: $reason")
+                    error?.message?.let { appendLine("Chyba: $it") }
                     appendLine()
-                    appendLine("Task Content:")
+                    appendLine("Obsah úlohy:")
                     appendLine(task.content)
                 }
             }

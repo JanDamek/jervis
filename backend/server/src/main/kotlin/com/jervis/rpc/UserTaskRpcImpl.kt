@@ -3,12 +3,14 @@ package com.jervis.rpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.AttachmentDto
+import com.jervis.dto.ChatMessageDto
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskCountDto
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.dto.user.UserTaskPageDto
+import com.jervis.mapper.toDto
 import com.jervis.mapper.toUserTaskDto
 import com.jervis.service.IUserTaskService
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
@@ -57,6 +59,13 @@ class UserTaskRpcImpl(
         return updated.toUserTaskDto()
     }
 
+    override suspend fun getChatHistory(taskId: String): List<ChatMessageDto> {
+        val tid = TaskId.fromString(taskId)
+        return chatMessageRepository.findByConversationIdOrderBySequenceAsc(tid.value)
+            .toList()
+            .map { it.toDto() }
+    }
+
     override suspend fun sendToAgent(
         taskId: String,
         routingMode: TaskRoutingMode,
@@ -102,12 +111,12 @@ class UserTaskRpcImpl(
                     val messageContent =
                         buildString {
                             if (task.pendingUserQuestion != null) {
-                                appendLine("Original Question: ${task.pendingUserQuestion}")
+                                appendLine("Původní dotaz: ${task.pendingUserQuestion}")
                                 if (task.userQuestionContext != null) {
-                                    appendLine("Context: ${task.userQuestionContext}")
+                                    appendLine("Kontext: ${task.userQuestionContext}")
                                 }
                                 appendLine()
-                                appendLine("User Answer:")
+                                appendLine("Odpověď uživatele:")
                             }
                             append(additionalInput ?: "Uživatel pokračuje v úloze: ${task.taskName}")
                         }
