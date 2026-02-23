@@ -5,7 +5,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
@@ -73,7 +72,6 @@ enum class SettingsCategory(
     CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení (Atlassian, Git, Email)."),
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek (Git, Jira, Wiki, Email)."),
     ENVIRONMENTS("Prostředí", Icons.Default.Language, "Definice K8s prostředí pro testování."),
-    CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastavení API klíčů a konfigurace coding agentů (Claude, Junie, Aider)."),
     GPG_CERTIFICATES("GPG Certifikáty", Icons.Default.Lock, "Správa GPG klíčů pro podepisování commitů coding agentů."),
     WHISPER("Whisper", Icons.Default.Mic, "Nastavení přepisu řeči na text a konfigurace modelu."),
 }
@@ -274,7 +272,6 @@ private fun SettingsContent(
                 onNavigate(Screen.EnvironmentManager(initialEnvironmentId = environmentId))
             },
         )
-        SettingsCategory.CODING_AGENTS -> CodingAgentsSettings(repository)
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
         SettingsCategory.WHISPER -> WhisperSettings(repository)
     }

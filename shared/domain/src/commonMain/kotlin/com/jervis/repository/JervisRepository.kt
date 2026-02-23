@@ -3,7 +3,6 @@ package com.jervis.repository
 import com.jervis.di.NetworkModule
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientService
-import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IGpgCertificateService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
@@ -47,7 +46,6 @@ class JervisRepository(
     val pendingTasks: IPendingTaskService get() = servicesProvider().pendingTaskService
     val connections: IConnectionService get() = servicesProvider().connectionService
     val notifications: INotificationService get() = servicesProvider().notificationService
-    val codingAgents: ICodingAgentSettingsService get() = servicesProvider().codingAgentSettingsService
     val gpgCertificates: IGpgCertificateService get() = servicesProvider().gpgCertificateService
     val whisperSettings: IWhisperSettingsService get() = servicesProvider().whisperSettingsService
     val pollingIntervals: IPollingIntervalService get() = servicesProvider().pollingIntervalService

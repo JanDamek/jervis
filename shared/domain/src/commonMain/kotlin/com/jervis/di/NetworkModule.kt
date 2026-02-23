@@ -4,7 +4,6 @@ import com.jervis.api.SecurityConstants
 import com.jervis.service.IAgentOrchestratorService
 import com.jervis.service.IClientProjectLinkService
 import com.jervis.service.IClientService
-import com.jervis.service.ICodingAgentSettingsService
 import com.jervis.service.IConnectionService
 import com.jervis.service.IDeviceTokenService
 import com.jervis.service.IIndexingQueueService
@@ -137,7 +136,6 @@ object NetworkModule {
             pendingTaskService = rpcClient.withService<IPendingTaskService>(),
             connectionService = rpcClient.withService<IConnectionService>(),
             notificationService = rpcClient.withService<INotificationService>(),
-            codingAgentSettingsService = rpcClient.withService<ICodingAgentSettingsService>(),
             gpgCertificateService = rpcClient.withService<IGpgCertificateService>(),
             whisperSettingsService = rpcClient.withService<IWhisperSettingsService>(),
             pollingIntervalService = rpcClient.withService<IPollingIntervalService>(),
@@ -169,7 +167,6 @@ object NetworkModule {
         val pendingTaskService: IPendingTaskService,
         val connectionService: IConnectionService,
         val notificationService: INotificationService,
-        val codingAgentSettingsService: ICodingAgentSettingsService,
         val gpgCertificateService: IGpgCertificateService,
         val whisperSettingsService: IWhisperSettingsService,
         val pollingIntervalService: IPollingIntervalService,
