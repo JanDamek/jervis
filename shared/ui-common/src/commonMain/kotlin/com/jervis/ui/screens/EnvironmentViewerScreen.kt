@@ -266,6 +266,7 @@ fun EnvironmentViewerScreen(
 
                         // Resource list
                         LazyColumn(
+                            modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
                         ) {
                             // --- Pods section ---

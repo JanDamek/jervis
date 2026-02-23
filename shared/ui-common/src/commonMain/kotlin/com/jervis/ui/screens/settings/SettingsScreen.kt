@@ -1,6 +1,8 @@
 package com.jervis.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Code
@@ -147,7 +149,10 @@ private fun GeneralSettings(repository: JervisRepository) {
     }
 
     Box {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             JSection(title = "Vzhled") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
