@@ -23,6 +23,7 @@ import os
 import queue
 import shutil
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -38,11 +39,38 @@ from sse_starlette.sse import EventSourceResponse
 # Import the whisper_runner functions directly (same directory)
 import whisper_runner
 
+# ---------------------------------------------------------------------------
+# Global model cache — load once, reuse across all concurrent requests.
+# CTranslate2 (faster-whisper backend) is thread-safe for inference.
+# ---------------------------------------------------------------------------
+_model_cache: dict = {}
+_model_lock = threading.Lock()
+_active_transcriptions = 0
+_active_lock = threading.Lock()
+
+
+def get_model(model_name: str):
+    """Get or load a WhisperModel (thread-safe singleton per model name)."""
+    if model_name in _model_cache:
+        return _model_cache[model_name]
+    with _model_lock:
+        if model_name not in _model_cache:
+            from faster_whisper import WhisperModel
+            print(f"Loading model: {model_name} (device=cpu) — first load, will be cached", flush=True)
+            _model_cache[model_name] = WhisperModel(model_name, device="cpu")
+            print(f"Model {model_name} loaded and cached", flush=True)
+        return _model_cache[model_name]
+
+
+DEFAULT_MODEL = os.environ.get("WHISPER_DEFAULT_MODEL", "medium")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Pre-load default model on startup for faster first request."""
-    print("Whisper REST server starting up...", flush=True)
+    print(f"Whisper REST server starting up, pre-loading model: {DEFAULT_MODEL}...", flush=True)
+    get_model(DEFAULT_MODEL)
+    print(f"Model {DEFAULT_MODEL} ready, server accepting requests", flush=True)
     yield
     print("Whisper REST server shutting down...", flush=True)
 
@@ -57,7 +85,13 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "service": "whisper-rest", "timestamp": time.time()}
+    return {
+        "status": "ok",
+        "service": "whisper-rest",
+        "timestamp": time.time(),
+        "active_transcriptions": _active_transcriptions,
+        "cached_models": list(_model_cache.keys()),
+    }
 
 
 @app.post("/transcribe")
@@ -107,6 +141,9 @@ async def transcribe(
     progress_queue = queue.Queue()
 
     async def event_generator():
+        global _active_transcriptions
+        with _active_lock:
+            _active_transcriptions += 1
         try:
             # Remove progress_file from opts — we use in-memory queue instead
             opts.pop("progress_file", None)
@@ -120,7 +157,7 @@ async def transcribe(
             def run_in_thread():
                 try:
                     result_container["result"] = run_whisper(
-                        audio_path, opts, progress_queue,
+                        audio_path, opts, progress_queue, request_id,
                     )
                 except Exception as e:
                     error_container["error"] = str(e)
@@ -218,13 +255,15 @@ async def transcribe(
                 }),
             }
         finally:
+            with _active_lock:
+                _active_transcriptions -= 1
             # Clean up temp files
             shutil.rmtree(work_dir, ignore_errors=True)
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(event_generator(), ping=15)
 
 
-def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dict:
+def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue, request_id: str = "") -> dict:
     """
     Run Whisper transcription in-process (blocking, CPU-bound).
     Reuses whisper_runner.py logic but captures output as dict instead of stdout.
@@ -232,8 +271,6 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dic
     Progress updates are pushed to progress_queue as dicts:
     {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340, "last_segment_text": "..."}
     """
-    from faster_whisper import WhisperModel
-
     task = opts.get("task", "transcribe")
     model_name = opts.get("model", "base")
     language = opts.get("language")
@@ -252,7 +289,7 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dic
 
     if extraction_ranges:
         print(
-            f"Extraction mode: {len(extraction_ranges)} ranges from {audio_path}",
+            f"[{request_id}] Extraction mode: {len(extraction_ranges)} ranges from {audio_path}",
             flush=True,
         )
         cleanup_dir = tempfile.mkdtemp(prefix="whisper_extract_")
@@ -269,9 +306,8 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dic
                 "error": f"ffmpeg extraction failed: {str(e)[:500]}",
             }
 
-    print(f"Loading model: {model_name} (device=cpu)", flush=True)
-    model = WhisperModel(model_name, device="cpu")
-    print(f"Model loaded, starting transcription: task={task}, lang={language or 'auto'}", flush=True)
+    model = get_model(model_name)
+    print(f"[{request_id}] Starting transcription: task={task}, model={model_name}, lang={language or 'auto'}", flush=True)
 
     # Build transcribe kwargs
     transcribe_kwargs = {
@@ -321,7 +357,7 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dic
                 "last_segment_text": seg.text.strip(),
             })
             print(
-                f"Progress: {percent:.1f}% ({len(out_segments)} segments, {elapsed:.0f}s elapsed)",
+                f"[{request_id}] Progress: {percent:.1f}% ({len(out_segments)} segments, {elapsed:.0f}s elapsed)",
                 flush=True,
             )
             last_progress_time = now
@@ -336,7 +372,7 @@ def run_whisper(audio_path: str, opts: dict, progress_queue: queue.Queue) -> dic
     })
 
     print(
-        f"Transcription complete: {len(out_segments)} segments, "
+        f"[{request_id}] Transcription complete: {len(out_segments)} segments, "
         f"{len(''.join(all_text))} chars, {elapsed:.1f}s",
         flush=True,
     )
