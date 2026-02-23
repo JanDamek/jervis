@@ -63,6 +63,7 @@ class KtorRpcServer(
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
+    private val kbResultRouter: com.jervis.qualifier.KbResultRouter,
     private val systemConfigRpcImpl: SystemConfigRpcImpl,
     private val userTaskService: com.jervis.service.task.UserTaskService,
     private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
@@ -908,6 +909,119 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: KB microservice signals async processing completion
+                            post("/internal/kb-done") {
+                                try {
+                                    val body = call.receive<KbCompletionCallback>()
+                                    logger.info { "KB_DONE_CALLBACK: taskId=${body.taskId} status=${body.status}" }
+
+                                    launch {
+                                        try {
+                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
+                                            val task = taskRepository.getById(taskId)
+
+                                            if (task == null) {
+                                                logger.error { "KB_DONE_CALLBACK: task not found taskId=${body.taskId}" }
+                                                return@launch
+                                            }
+
+                                            if (task.state != com.jervis.dto.TaskStateEnum.QUALIFYING) {
+                                                logger.warn { "KB_DONE_CALLBACK: task not in QUALIFYING state taskId=${body.taskId} state=${task.state}" }
+                                                return@launch
+                                            }
+
+                                            if (body.status == "error") {
+                                                val errorMsg = body.error ?: "KB processing failed"
+                                                logger.error { "KB_DONE_CALLBACK: KB reported error taskId=${body.taskId} error=$errorMsg" }
+                                                taskService.markAsError(task, errorMsg)
+
+                                                // Emit final progress step
+                                                taskService.appendQualificationStep(
+                                                    taskId,
+                                                    com.jervis.entity.QualificationStepRecord(
+                                                        timestamp = java.time.Instant.now(),
+                                                        step = "error",
+                                                        message = "KB chyba: $errorMsg",
+                                                        metadata = mapOf("agent" to "simple_qualifier"),
+                                                    ),
+                                                )
+                                                notificationRpcImpl.emitQualificationProgress(
+                                                    taskId = body.taskId,
+                                                    clientId = body.clientId,
+                                                    message = "KB chyba: $errorMsg",
+                                                    step = "error",
+                                                    metadata = mapOf("agent" to "simple_qualifier"),
+                                                )
+                                                return@launch
+                                            }
+
+                                            // Parse result and run routing
+                                            val r = body.result
+                                            if (r == null) {
+                                                taskService.markAsError(task, "KB returned done but no result")
+                                                return@launch
+                                            }
+
+                                            val kbResult = com.jervis.knowledgebase.model.FullIngestResult(
+                                                success = true,
+                                                chunksCount = r.chunksCount,
+                                                nodesCreated = r.nodesCreated,
+                                                edgesCreated = r.edgesCreated,
+                                                attachmentsProcessed = r.attachmentsProcessed,
+                                                attachmentsFailed = r.attachmentsFailed,
+                                                summary = r.summary,
+                                                entities = r.entities,
+                                                hasActionableContent = r.hasActionableContent,
+                                                suggestedActions = r.suggestedActions,
+                                                hasFutureDeadline = r.hasFutureDeadline,
+                                                suggestedDeadline = r.suggestedDeadline,
+                                                isAssignedToMe = r.isAssignedToMe,
+                                                urgency = r.urgency,
+                                            )
+
+                                            // Emit progress for routing step via callback
+                                            val onProgress: suspend (String, Map<String, String>) -> Unit = { message, metadata ->
+                                                taskService.appendQualificationStep(
+                                                    taskId,
+                                                    com.jervis.entity.QualificationStepRecord(
+                                                        timestamp = java.time.Instant.now(),
+                                                        step = metadata["step"] ?: "unknown",
+                                                        message = message,
+                                                        metadata = metadata,
+                                                    ),
+                                                )
+                                                notificationRpcImpl.emitQualificationProgress(
+                                                    taskId = body.taskId,
+                                                    clientId = body.clientId,
+                                                    message = message,
+                                                    step = metadata["step"] ?: "unknown",
+                                                    metadata = metadata,
+                                                )
+                                            }
+
+                                            val routingDecision = kbResultRouter.routeTask(task, kbResult, onProgress)
+                                            taskService.updateState(task, routingDecision.state)
+
+                                            logger.info {
+                                                "KB_DONE_CALLBACK: routed taskId=${body.taskId} state=${routingDecision.state} " +
+                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated}"
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
+                                        }
+                                    }
+
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process KB completion callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
+                                }
+                            }
+
                             // --- Chat internal endpoints (Python → Kotlin) ---
 
                             // Foreground preemption: Python registers start/end of chat processing
@@ -1222,6 +1336,33 @@ data class KbProgressCallback(
     val step: String,
     val message: String,
     val metadata: Map<String, String>? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class KbCompletionCallback(
+    val taskId: String,
+    val clientId: String,
+    val status: String, // "done" or "error"
+    val error: String? = null,
+    val result: KbCompletionResult? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class KbCompletionResult(
+    val status: String = "success",
+    @kotlinx.serialization.SerialName("chunks_count") val chunksCount: Int = 0,
+    @kotlinx.serialization.SerialName("nodes_created") val nodesCreated: Int = 0,
+    @kotlinx.serialization.SerialName("edges_created") val edgesCreated: Int = 0,
+    @kotlinx.serialization.SerialName("attachments_processed") val attachmentsProcessed: Int = 0,
+    @kotlinx.serialization.SerialName("attachments_failed") val attachmentsFailed: Int = 0,
+    val summary: String = "",
+    val entities: List<String> = emptyList(),
+    val hasActionableContent: Boolean = false,
+    val suggestedActions: List<String> = emptyList(),
+    val hasFutureDeadline: Boolean = false,
+    val suggestedDeadline: String? = null,
+    val isAssignedToMe: Boolean = false,
+    val urgency: String = "normal",
 )
 
 @kotlinx.serialization.Serializable

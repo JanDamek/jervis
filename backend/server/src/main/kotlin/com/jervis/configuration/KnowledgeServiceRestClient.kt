@@ -404,6 +404,64 @@ class KnowledgeServiceRestClient(
         )
     }
 
+    /**
+     * Submit full ingest request to KB asynchronously (fire-and-forget).
+     *
+     * KB processes in background and calls back to /internal/kb-done when done.
+     * Progress events are pushed to /internal/kb-progress along the way.
+     * Returns true if KB accepted the request (HTTP 202).
+     */
+    suspend fun submitFullIngestAsync(
+        request: FullIngestRequest,
+        taskId: String,
+        clientId: String,
+    ): Boolean {
+        val callbackUrl = if (callbackBaseUrl.isNotBlank()) {
+            "${callbackBaseUrl.trimEnd('/')}/internal/kb-done"
+        } else {
+            throw RuntimeException("callbackBaseUrl not configured — cannot use async KB flow")
+        }
+
+        logger.info { "KB_ASYNC_SUBMIT: taskId=$taskId sourceUrn=${request.sourceUrn}" }
+
+        val httpResponse = client.submitFormWithBinaryData(
+            url = "$apiBaseUrl/ingest/full/async",
+            formData = formData {
+                append("clientId", request.clientId.toString())
+                append("sourceUrn", request.sourceUrn)
+                append("sourceType", request.sourceType)
+                request.subject?.let { append("subject", it) }
+                append("content", request.content)
+                request.projectId?.let { append("projectId", it.toString()) }
+                append("metadata", Json.encodeToString(request.metadata))
+                append("callbackUrl", callbackUrl)
+                append("taskId", taskId)
+
+                request.attachments.forEach { attachment ->
+                    append(
+                        "attachments",
+                        attachment.data,
+                        Headers.build {
+                            append(HttpHeaders.ContentDisposition, "filename=\"${attachment.filename}\"")
+                            attachment.contentType?.let {
+                                append(HttpHeaders.ContentType, it)
+                            }
+                        },
+                    )
+                }
+            },
+        )
+
+        if (!httpResponse.status.isSuccess()) {
+            val errorBody = httpResponse.bodyAsText()
+            logger.error { "KB_ASYNC_SUBMIT: failed taskId=$taskId status=${httpResponse.status} body=$errorBody" }
+            return false
+        }
+
+        logger.info { "KB_ASYNC_SUBMIT: accepted taskId=$taskId" }
+        return true
+    }
+
     override suspend fun retrieve(request: RetrievalRequest): EvidencePack {
         logger.debug { "Calling knowledgebase retrieve: query=${request.query}" }
 

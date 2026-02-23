@@ -13,18 +13,22 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Qualification service - sends tasks to KB microservice for indexing + summary generation.
+ * Qualification service — dispatches tasks to KB microservice for async processing.
  *
- * Retry strategy (DB-based exponential backoff):
- * - Operational errors (timeout, connection refused): retry with backoff 1s→2s→4s→...→5min, then 5min forever
- * - Actual indexing errors: mark as ERROR permanently (no retry)
- * - Retry state is in DB (nextQualificationRetryAt), NOT in RAM
+ * Flow (fire-and-forget):
+ * 1. Claim READY_FOR_QUALIFICATION tasks (atomic MongoDB update → QUALIFYING)
+ * 2. Extract text + load attachments (local, fast)
+ * 3. Submit to KB's /ingest/full/async endpoint (returns immediately with HTTP 202)
+ * 4. Move on to next task — KB processes in background
+ * 5. KB calls /internal/kb-done when finished → KbResultRouter handles routing
  *
- * Concurrency: 1 — each qualification calls _generate_summary() (30B LLM via router).
- * Higher concurrency overloads CPU Ollama. RAG embedding is skipped on re-qualification (content hash match).
+ * Since dispatch is fast (no blocking on KB), concurrency=1 is sufficient.
+ * Each dispatch takes seconds (Tika extraction + HTTP POST), not minutes.
  *
- * Watchdog: if a qualification cycle runs >15 min, the lock is force-released and stuck tasks
- * are recovered. This prevents permanent deadlock when a KB HTTP call hangs without timeout.
+ * Error handling:
+ * - If KB is unreachable or rejects the request → return to queue with backoff
+ * - KB handles its own retry logic internally (Ollama busy, timeouts, etc.)
+ * - When KB permanently fails, it calls /internal/kb-done with status="error"
  */
 @Service
 class TaskQualificationService(
@@ -38,92 +42,50 @@ class TaskQualificationService(
         java.util.concurrent.atomic
             .AtomicBoolean(false)
 
-    /** Timestamp when the current qualification cycle started. Used by watchdog. */
-    @Volatile
-    private var qualificationStartedAt: Long = 0L
-
-    companion object {
-        /** Max time a qualification cycle can run before watchdog force-resets (15 min). */
-        private const val WATCHDOG_TIMEOUT_MS = 15 * 60 * 1000L
-    }
-
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
-        // Watchdog: if previous cycle has been running >15 min, force-release the lock.
-        // This handles the case where processOne() hangs on a KB HTTP call without timeout,
-        // leaving isQualificationRunning=true forever and blocking all future cycles.
-        if (isQualificationRunning.get()) {
-            val elapsed = System.currentTimeMillis() - qualificationStartedAt
-            if (elapsed > WATCHDOG_TIMEOUT_MS) {
-                logger.warn {
-                    "QUALIFICATION_WATCHDOG: cycle running for ${elapsed / 1000}s (>${WATCHDOG_TIMEOUT_MS / 1000}s), " +
-                        "force-releasing lock and recovering stuck tasks"
-                }
-                isQualificationRunning.set(false)
-                // Recover any tasks stuck in QUALIFYING state
-                try {
-                    val recovered = taskService.recoverStuckIndexingTasks()
-                    if (recovered > 0) {
-                        logger.warn { "QUALIFICATION_WATCHDOG: recovered $recovered stuck tasks" }
-                    }
-                } catch (e: Exception) {
-                    logger.error(e) { "QUALIFICATION_WATCHDOG: recovery failed" }
-                }
-            }
-        }
-
         if (!isQualificationRunning.compareAndSet(false, true)) {
             logger.debug { "QUALIFICATION_SKIPPED: Another cycle already running" }
             return
         }
 
-        qualificationStartedAt = System.currentTimeMillis()
-
         try {
             logger.debug { "QUALIFICATION_CYCLE_START" }
 
-            val effectiveConcurrency = 1
-            var processedCount = 0
+            var dispatchedCount = 0
 
             taskService
                 .findTasksForQualification()
-                .buffer(effectiveConcurrency)
-                .flatMapMerge(concurrency = effectiveConcurrency) { task ->
+                .buffer(1)
+                .flatMapMerge(concurrency = 1) { task ->
                     flow {
                         runCatching { processOne(task) }
                             .onFailure { e ->
                                 try {
-                                    val isRetriable = isRetriableError(e)
                                     logger.error(e) {
-                                        "QUALIFICATION_ERROR: task=${task.id} type=${task.type} retriable=$isRetriable msg=${e.message}"
+                                        "QUALIFICATION_DISPATCH_ERROR: task=${task.id} type=${task.type} msg=${e.message}"
                                     }
-
-                                    if (isRetriable) {
-                                        // Operational error → return to queue with exponential backoff (never marks ERROR)
-                                        taskService.returnToQueue(task)
-                                    } else {
-                                        // Actual indexing error → permanent ERROR
-                                        taskService.markAsError(task, e.message ?: "Unknown error")
-                                    }
+                                    // KB is unreachable or rejected the request → return to queue
+                                    taskService.returnToQueue(task)
                                 } catch (inner: Exception) {
-                                    // Error handler itself failed (e.g. MongoDB down) — task stays QUALIFYING
-                                    // Will be recovered by watchdog or resetStaleTasks on next restart
                                     logger.error(inner) {
-                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until watchdog or restart"
+                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until recovery"
                                     }
                                 }
                             }
                         emit(Unit)
                     }
-                }.onEach { processedCount++ }
+                }.onEach { dispatchedCount++ }
                 .catch { e ->
                     logger.error(e) { "Qualification stream failure: ${e.message}" }
                 }.collect()
 
-            // Always recover stuck tasks — even when queue is busy
+            // Recover tasks stuck in QUALIFYING >10min (e.g. KB callback never arrived)
             taskService.recoverStuckIndexingTasks()
 
-            logger.info { "QUALIFICATION_CYCLE_COMPLETE: processed=$processedCount" }
+            if (dispatchedCount > 0) {
+                logger.info { "QUALIFICATION_CYCLE_COMPLETE: dispatched=$dispatchedCount" }
+            }
         } finally {
             isQualificationRunning.set(false)
         }
@@ -136,10 +98,11 @@ class TaskQualificationService(
                 return
             }
 
-        val summary = simpleQualifierAgent.run(task) { message, metadata ->
+        // Dispatch to KB (fire-and-forget) — task stays in QUALIFYING until KB calls back
+        simpleQualifierAgent.dispatch(task) { message, metadata ->
             val step = metadata["step"] ?: "unknown"
 
-            // Persist step to DB for history (viewable in "Hotovo" section)
+            // Persist step to DB for history
             taskService.appendQualificationStep(
                 task.id,
                 com.jervis.entity.QualificationStepRecord(
@@ -160,32 +123,6 @@ class TaskQualificationService(
             )
         }
 
-        logger.info {
-            "QUALIFICATION_RESULT: id=${task.id} type=${task.type} summary=${summary.take(100)}"
-        }
-    }
-
-    private fun isRetriableError(e: Throwable): Boolean {
-        val message = e.message ?: return false
-        return message.contains("timeout", ignoreCase = true) ||
-            message.contains("timed out", ignoreCase = true) ||
-            message.contains("connection", ignoreCase = true) ||
-            message.contains("socket", ignoreCase = true) ||
-            message.contains("network", ignoreCase = true) ||
-            message.contains("prematurely closed", ignoreCase = true) ||
-            // Ollama busy / queue full errors (exponential retry, never marks ERROR)
-            message.contains("busy", ignoreCase = true) ||
-            message.contains("queue full", ignoreCase = true) ||
-            message.contains("too many requests", ignoreCase = true) ||
-            message.contains("429", ignoreCase = true) ||
-            // HTTP server errors from KB service (temporary crashes, restarts)
-            message.contains("500", ignoreCase = true) ||
-            message.contains("502", ignoreCase = true) ||
-            message.contains("503", ignoreCase = true) ||
-            message.contains("504", ignoreCase = true) ||
-            message.contains("service unavailable", ignoreCase = true) ||
-            message.contains("internal server error", ignoreCase = true) ||
-            e is java.net.SocketTimeoutException ||
-            e is java.net.SocketException
+        logger.info { "QUALIFICATION_DISPATCHED: id=${task.id} type=${task.type}" }
     }
 }

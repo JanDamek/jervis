@@ -284,19 +284,24 @@ The Knowledge Base is implemented as a Python service (`service-knowledgebase`) 
 7.  **Deep Code Analysis**: `POST /ingest/cpg` — Joern CPG export adds semantic edges (calls, extends, uses_type).
 8.  **Git Commit Ingest**: `POST /ingest/git-commits` — structured commit nodes with graph edges to branches/files + diff as RAG chunks.
 
-### Full Ingest Endpoint (`POST /ingest/full`)
+### Full Ingest Endpoint (`POST /ingest/full/async`)
 
-Called by `SimpleQualifierAgent` for each task. Combines RAG embedding, graph extraction, and summary generation in one call.
+Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 202 immediately, KB processes in background.
 
-**Flow:**
-1. Content hashing (SHA256[:16]) for idempotent re-ingest
-2. Check existing chunks by `sourceUrn`:
-   - Same content hash → skip RAG embedding (use existing chunks)
-   - Different content hash → purge old chunks, re-ingest
-   - No existing chunks → fresh ingest
-3. RAG ingest (embedding + Weaviate) with `contentHash` property on each chunk
-4. `_generate_summary()` — synchronous LLM call (14B model, `ingest_llm_complex`, CPU via Ollama Router)
-5. Returns `FullIngestResult` with routing hints for `SimpleQualifierAgent`
+**Async flow:**
+1. Server dispatches task via `POST /ingest/full/async` with `callbackUrl` + `taskId` (fire-and-forget)
+2. KB returns HTTP 202 immediately — server qualification worker is NOT blocked
+3. KB processes in background:
+   a. Content hashing (SHA256[:16]) for idempotent re-ingest
+   b. RAG ingest (embedding + Weaviate) with `contentHash` property
+   c. `_generate_summary()` — LLM call (14B model, `ingest_llm_complex`, CPU via Ollama Router)
+   d. Graph extraction enqueued to background worker
+4. Progress events pushed to `/internal/kb-progress` (real-time WebSocket updates)
+5. On completion: KB POSTs `FullIngestResult` to `/internal/kb-done` callback
+6. `KbResultRouter` handles routing decision (DONE / READY_FOR_GPU / scheduled)
+7. On error: KB POSTs error to `/internal/kb-done` → task marked ERROR
+
+**Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous NDJSON streaming).
 
 **Content Hash Deduplication:**
 - SHA256 of combined content, truncated to 16 chars

@@ -388,6 +388,69 @@ async def ingest_full(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/ingest/full/async")
+async def ingest_full_async(
+    http_request: Request,
+    clientId: str = Form(...),
+    sourceUrn: str = Form(...),
+    sourceType: str = Form(""),
+    subject: str = Form(None),
+    content: str = Form(""),
+    projectId: str = Form(None),
+    groupId: str = Form(None),
+    metadata: str = Form("{}"),
+    callbackUrl: str = Form(...),
+    taskId: str = Form(...),
+    attachments: List[UploadFile] = File(default=[])
+):
+    """
+    Async full document ingestion — fire-and-forget.
+
+    Accepts same params as /ingest/full plus required callbackUrl + taskId.
+    Returns immediately with HTTP 202 Accepted.
+    KB processes in background (RAG + LLM summary + graph extraction).
+    When done, POSTs result to callbackUrl (/internal/kb-done).
+    Progress events are pushed to /internal/kb-progress along the way.
+    """
+    import asyncio
+
+    try:
+        meta = json.loads(metadata)
+
+        request = FullIngestRequest(
+            clientId=clientId,
+            projectId=projectId,
+            groupId=groupId,
+            sourceUrn=sourceUrn,
+            sourceType=sourceType,
+            subject=subject,
+            content=content,
+            metadata=meta
+        )
+
+        # Read all attachments into memory before returning (they're UploadFile streams)
+        attachment_list = []
+        for attachment in attachments:
+            file_bytes = await attachment.read()
+            attachment_list.append((file_bytes, attachment.filename))
+
+        # Spawn background task — processing continues after HTTP response
+        asyncio.create_task(service.process_full_async(
+            request, attachment_list,
+            callback_url=callbackUrl,
+            task_id=taskId,
+            client_id=clientId,
+        ))
+
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=202,
+            content={"accepted": True, "taskId": taskId},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/ingest/git-structure", response_model=GitStructureIngestResult)
 async def ingest_git_structure(request: GitStructureIngestRequest):
     """Structural ingest of git repository (no LLM).

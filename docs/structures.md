@@ -412,34 +412,30 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 
 **Preemption guarantees:** User requests ALWAYS have priority over background tasks
 
-#### Intelligent Task Routing (SimpleQualifierAgent)
+#### Intelligent Task Routing (Async Fire-and-Forget)
 
-The qualifier delegates heavy lifting to the KB microservice (`POST /ingest/full`),
-which returns routing hints: `hasActionableContent`, `isAssignedToMe`, `hasFutureDeadline`,
-`suggestedDeadline`, `urgency`, `actionType`.
+The qualifier dispatches tasks to KB via `POST /ingest/full/async` (fire-and-forget, HTTP 202).
+KB processes in background and calls `/internal/kb-done` with routing hints when finished.
+`KbResultRouter` (server-side callback handler) receives `FullIngestResult` and makes routing decisions.
 
-**NDJSON Streaming Progress:**
-The Kotlin server calls `/ingest/full` with `Accept: application/x-ndjson`. The KB service
-responds with newline-delimited JSON events (`ingest_full_streaming()`), each with
-`type: "progress"|"result"`, `step`, `message`, and `metadata`. The Kotlin client
-(`KnowledgeServiceRestClient.ingestFullWithProgress`) parses each line and invokes the
-`onProgress` callback, which emits `QualificationProgress` events to all connected UIs.
+**Async flow:**
+1. `SimpleQualifierAgent.dispatch()` — extracts text, loads attachments, submits to KB
+2. KB returns HTTP 202 immediately — server qualification worker moves to next task
+3. KB processes: attachments → RAG → LLM summary (parallel) → graph extraction (queued)
+4. Progress events pushed via `POST /internal/kb-progress` (real-time UI updates)
+5. On completion: KB POSTs `FullIngestResult` to `POST /internal/kb-done`
+6. `KbResultRouter.routeTask()` — routing decision based on KB analysis result
 
-**Progress steps (in order):**
+**Progress steps (pushed from KB via callback):**
 1. `start` — processing begins
 2. `attachments` — attachment files processed (count metadata)
 3. `content_ready` — combined content hashed (content_length, hash)
 4. `hash_match` — content unchanged, RAG skipped (idempotent re-ingest)
    OR `purge` — content changed, old chunks deleted
-5. `parallel_start` — RAG ingest + summary generation launched via `asyncio.gather()`
-   (if hash_match, only `summary_start` is emitted instead)
+5. `rag_start` + `llm_start` — RAG ingest + summary generation launched (parallel)
 6. `rag_done` — RAG chunks stored (chunks count)
-7. `summary_done` — LLM analysis complete (summary, entities, actionability, urgency)
-8. `result` — final `FullIngestResult` with routing hints
-
-**Parallel RAG + Summary:** When content is new or changed, RAG embedding and
-`_generate_summary()` (14B LLM) run concurrently via `asyncio.gather()`, reducing
-wall-clock time vs sequential execution.
+7. `llm_done` — LLM analysis complete (summary, entities, actionability, urgency)
+8. `summary_done` — full metadata available
 
 **Server timestamps:** Each progress event includes `epochMs` in metadata
 (set by `NotificationRpcImpl` from server `Instant.now().toEpochMilli()`). The UI
@@ -512,22 +508,21 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 
 ## Background Engine & Task Processing
 
-### Qualification Loop (CPU)
+### Qualification Loop (CPU) — Fire-and-Forget Dispatch
 
 - **Interval:** 30 seconds
 - **Process:** Reads READY_FOR_QUALIFICATION tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
-- **Agents:** SimpleQualifierAgent with CPU model (OLLAMA_QUALIFIER)
-- **Max iterations:** 10 (for chunking loops)
-- **Concurrency:** 1 (each qualification calls `_generate_summary()` — 14B LLM on CPU, ~5s/task; higher concurrency overloads CPU Ollama)
-- **Retry:** Operational errors (Ollama busy, timeout, 429, 500/502/503/504, connection errors) → infinite exponential backoff 5s→10s→20s→...→5min cap. Items stay READY_FOR_QUALIFICATION with future `nextQualificationRetryAt`. Non-retriable errors → ERROR state. Recovery: (1) on server restart AND (2) when KB queue is empty (every 30s cycle), ERROR indexing tasks (max 2 recoveries via `errorRecoveryCount`, then stays ERROR for manual review) + stuck QUALIFYING tasks (>10min) are automatically reset to READY_FOR_QUALIFICATION. Error handler in qualification cycle is wrapped in try/catch to prevent tasks getting stuck in QUALIFYING when the handler itself fails.
+- **Agents:** SimpleQualifierAgent dispatches to KB microservice (fire-and-forget)
+- **Concurrency:** 1 (dispatch is fast — Tika extraction + HTTP POST, not blocking on KB)
+- **Dispatch flow:** `setToQualifying()` (atomic claim) → `SimpleQualifierAgent.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in QUALIFYING until KB calls back.
+- **Retry:** If KB is unreachable or rejects the request → return to queue with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck QUALIFYING tasks (>10min without KB callback) are reset to READY_FOR_QUALIFICATION.
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
-- **Live progress with push-based callbacks:** Two progress paths:
-  - **Pre/post-KB steps** (agent_start, text_extracted, kb_call_start, routing, done): `SimpleQualifierAgent.onProgress` → `TaskQualificationService` callback → DB save + WebSocket emit
-  - **KB internal steps** (start, content_ready, rag_done, summary_done): Python KB service POSTs to `http://jervis-server:5500/internal/kb-progress` → Kotlin handler saves to DB + emits to WebSocket (real-time push, no NDJSON buffering). Callback URL + taskId + clientId passed as form params in `ingestFullWithProgress`. Events carry `metadata: Map<String, String>` with structured data (chunks, entities, actionability, routing decisions) and server `epochMs` timestamps
-- **Persistent history:** Each progress step is saved to `TaskDocument.qualificationSteps` (via `TaskService.appendQualificationStep()` using MongoDB `$push`) — both from pre/post-KB callback and from `/internal/kb-progress` endpoint. `qualificationStartedAt` is set atomically in `setToQualifying()`. This enables viewing qualification history for completed items in "Hotovo" section.
-- **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section with structured metadata display. Completed items in "Hotovo" are expandable — clicking shows stored `qualificationSteps` from `PipelineItemDto`. Elapsed time shows active processing duration (from `qualificationStartedAt`), not queue wait time.
-- **Indexing Queue UI data source:** "KB zpracování" and "KB fronta" sections display data from the **KB write service SQLite extraction queue** (not MongoDB server tasks). `IndexingQueueRpcImpl` calls `KnowledgeServiceRestClient.getExtractionQueue()` → `GET /api/v1/queue` on KB write service. Items are split into IN_PROGRESS (KB zpracování) and PENDING (KB fronta), ordered by `priority ASC, created_at ASC`. Each KB queue item is enriched with server task info (connection name, client name, task type) when a matching `sourceUrn` exists in MongoDB. Items without a server task (MCP/orchestrator CRITICAL writes) display the sourceUrn and kind from the KB queue directly. `KbQueueStatsDto` (total, pending, inProgress, failed) is passed to the UI for display.
-- **Backend pagination:** `getPendingBackgroundTasksPaginated(limit, offset)` with DB skip/limit. Initial load 20 items via `getPendingTasks()`, more via `getBackgroundTasksPage()` RPC
+- **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → `KbResultRouter.routeTask()` handles routing (DONE / READY_FOR_GPU / scheduled). Routing logic lives in `KbResultRouter`, not in the qualification loop.
+- **Live progress:** KB pushes progress events via `POST /internal/kb-progress` → Kotlin handler saves to DB + emits to WebSocket (real-time). Pre-KB steps (agent_start, text_extracted, kb_accepted) emitted by `SimpleQualifierAgent.dispatch()`.
+- **Persistent history:** Each progress step saved to `TaskDocument.qualificationSteps` via MongoDB `$push`. `qualificationStartedAt` set atomically in `setToQualifying()`.
+- **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section.
+- **Indexing Queue UI data source:** "KB zpracování" and "KB fronta" sections display data from the **KB write service SQLite extraction queue** (not MongoDB server tasks). `IndexingQueueRpcImpl` calls `KnowledgeServiceRestClient.getExtractionQueue()` → `GET /api/v1/queue` on KB write service.
+- **Backend pagination:** `getPendingBackgroundTasksPaginated(limit, offset)` with DB skip/limit.
 
 ### Scheduler Loop (Task Dispatch)
 
@@ -546,16 +541,6 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
 - **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
 - **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset. Migration: old BACKGROUND DISPATCHED_GPU tasks without orchestratorThreadId are migrated to DONE.
-
-### Qualification Watchdog (2026-02-23)
-
-**Problem:** If `processOne()` hangs on a KB HTTP call without timeout (e.g., GPU busy with chat for 2+ hours), `isQualificationRunning` stays `true` forever. No new qualification cycle can start → `recoverStuckIndexingTasks()` never runs → stuck tasks accumulate.
-
-**Solution:** Timestamp-based watchdog in `TaskQualificationService`:
-- `qualificationStartedAt` records when each cycle begins
-- At cycle start, if `isQualificationRunning=true` AND elapsed > 15 min → force-release lock + call `recoverStuckIndexingTasks()`
-- Stuck QUALIFYING tasks (>10 min) get reset to READY_FOR_QUALIFICATION
-- No separate timer thread — watchdog runs on the next BackgroundEngine qualification loop tick (every 30s)
 
 ### KB Queue Count Fix (2026-02-23)
 

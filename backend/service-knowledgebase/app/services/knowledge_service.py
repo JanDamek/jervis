@@ -610,6 +610,99 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         except Exception as e:
             logger.debug("KB progress callback failed: %s", e)
 
+    async def _post_completion_callback(
+        self,
+        callback_url: str,
+        task_id: str,
+        client_id: str,
+        status: str,
+        result: dict | None = None,
+        error: str | None = None,
+    ):
+        """POST completion/error event to Kotlin server when async processing finishes."""
+        if not self._callback_http:
+            logger.warning("No callback HTTP client — cannot notify server for task %s", task_id)
+            return
+        payload = {
+            "taskId": task_id,
+            "clientId": client_id,
+            "status": status,
+        }
+        if result is not None:
+            payload["result"] = result
+        if error is not None:
+            payload["error"] = error
+        try:
+            resp = await self._callback_http.post(callback_url, json=payload)
+            if resp.status_code >= 400:
+                logger.error("KB completion callback returned %d for task %s", resp.status_code, task_id)
+        except Exception as e:
+            logger.error("KB completion callback failed for task %s: %s", task_id, e)
+
+    async def process_full_async(
+        self,
+        request: FullIngestRequest,
+        attachments: list[tuple[bytes, str]],
+        callback_url: str,
+        task_id: str,
+        client_id: str,
+    ):
+        """Process full ingest in background and POST result to callback when done.
+
+        Reuses ingest_full_streaming logic (RAG + LLM summary in parallel),
+        fires progress callbacks along the way, then sends final result or error.
+        KB handles retry internally — server just waits for callback.
+        """
+        import time as _time
+
+        # Derive progress and completion URLs from the base callback URL
+        # callback_url = "http://server:5500/internal/kb-done"
+        # progress_url = "http://server:5500/internal/kb-progress"
+        base = callback_url.rsplit("/internal/", 1)[0] if "/internal/" in callback_url else callback_url.rsplit("/", 1)[0]
+        progress_url = f"{base}/internal/kb-progress"
+        completion_url = callback_url  # /internal/kb-done
+
+        t0 = _time.monotonic()
+        logger.info("ASYNC_INGEST_START task=%s source=%s", task_id, request.sourceUrn)
+
+        try:
+            # Consume the streaming generator — progress callbacks fire via _post_progress_callback
+            result_data = None
+            async for event in self.ingest_full_streaming(
+                request, attachments,
+                callback_url=progress_url,
+                task_id=task_id,
+                client_id=client_id,
+            ):
+                if event.get("type") == "result":
+                    result_data = event.get("data")
+
+            elapsed = _time.monotonic() - t0
+
+            if result_data:
+                logger.info("ASYNC_INGEST_DONE task=%s elapsed=%.1fs", task_id, elapsed)
+                await self._post_completion_callback(
+                    completion_url, task_id, client_id,
+                    status="done",
+                    result=result_data,
+                )
+            else:
+                logger.error("ASYNC_INGEST_NO_RESULT task=%s elapsed=%.1fs", task_id, elapsed)
+                await self._post_completion_callback(
+                    completion_url, task_id, client_id,
+                    status="error",
+                    error="No result produced by processing pipeline",
+                )
+        except Exception as e:
+            elapsed = _time.monotonic() - t0
+            logger.error("ASYNC_INGEST_FAILED task=%s elapsed=%.1fs error=%s",
+                         task_id, elapsed, e, exc_info=True)
+            await self._post_completion_callback(
+                completion_url, task_id, client_id,
+                status="error",
+                error=f"{type(e).__name__}: {str(e)}",
+            )
+
     async def ingest_full_streaming(
         self,
         request: FullIngestRequest,
