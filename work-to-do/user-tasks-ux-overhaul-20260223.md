@@ -157,24 +157,109 @@ Přidat chip filtry: stav, priorita, klient. Textový filtr ponechat pro full-te
 
 ---
 
-## 6. Nesoulad s docs
+## 6. BUG: State badge zobrazuje interní enum ("USER_TASK", "NEW") — nečitelné (P0)
+
+### Aktuální stav
+
+**Soubor:** `shared/ui-common/.../UserTasksScreen.kt:224`
+
+```kotlin
+Badge(modifier = Modifier.padding(top = 4.dp)) { Text(task.state) }
+```
+
+Badge zobrazuje raw `task.state` string — interní enum hodnoty:
+- `"USER_TASK"` — nic uživateli neříká
+- `"NEW"` — neříká co je nové, čeho se to týká
+
+### Problém
+
+Ze screenshotu: task má badge `USER_TASK` nebo `NEW`. To jsou interní stavy, ne lidsky čitelné popisky. Uživatel neví co to znamená. Toto pravděpodobně není v docs — žádný design nepočítal s tím, že se zobrazí raw enum.
+
+### Řešení
+
+Přeložit stavy do českých popisků:
+- `USER_TASK` → "Čeká na odpověď" (oranžová)
+- `NEW` → "Nový" (modrá)
+- `READY_FOR_GPU` → "Zpracovává se" (žlutá)
+- `DONE` → "Hotovo" (zelená)
+- `ERROR` → "Chyba" (červená)
+
+Nebo lépe: zobrazit typ interakce (Clarification / Approval / Escalation) místo stavu.
+
+---
+
+## 7. BUG: Přepis obsahu do angličtiny — musí zachovat originál + komunikovat česky (P0)
+
+### Aktuální stav
+
+**Soubor:** `backend/server/.../UserTaskService.kt:38-59`
+
+```kotlin
+val title = pendingQuestion ?: "Background task failed: ${task.type}"
+val description = buildString {
+    if (pendingQuestion != null) {
+        appendLine("Agent Question:")        // ← anglicky
+        appendLine(pendingQuestion)
+        appendLine("Context:")               // ← anglicky
+        appendLine(questionContext)
+        appendLine("Original Task:")         // ← anglicky
+        appendLine(task.content)
+    } else {
+        appendLine("Pending task ${task.id} failed in state ${task.state}")  // ← anglicky
+        appendLine("Reason: $reason")        // ← anglicky
+        appendLine("Task Content:")          // ← anglicky
+        appendLine(task.content)
+    }
+}
+```
+
+### Problém
+
+1. **Titulky a labely jsou anglicky** — "Agent Question:", "Context:", "Original Task:", "Background task failed" — uživatel vidí angličtinu v české aplikaci
+
+2. **Originální obsah se přepisuje** — `task.content` se přepíše nově vygenerovaným `description`. Pokud přišel email česky, teď je obalený anglickými labely
+
+3. **Orchestrátor (Python) generuje otázky anglicky** — `pendingQuestion` přichází z LLM, který komunikuje anglicky. Ze screenshotu: "The sender, acostamiller, informs Juanito Checo that his recent oncological test results are positive..." — to je anglický překlad českého/španělského emailu
+
+### Pravidla jazykové politiky
+
+- **UI jazyk:** Čeština (CLAUDE.md: "UI language: Czech")
+- **Komunikace agent → uživatel:** Česky (dotazy, instrukce, otázky)
+- **Odpovědi na task/email/dotaz:** V jazyce původního dotazu (pokud uživatel neřekne jinak)
+- **Originál:** VŽDY zachovat — nikdy nepřepisovat/neztrácet původní text
+- **Interní labely:** Česky ("Dotaz agenta:", "Kontext:", "Původní úloha:")
+
+### Řešení (směr)
+
+1. **Kotlin labely přeložit do češtiny:** "Agent Question:" → "Dotaz agenta:", "Original Task:" → "Původní úloha:"
+2. **Python orchestrátor:** System prompt musí instruovat LLM aby `pendingQuestion` psal česky (uživatelský jazyk)
+3. **Zachovat originál:** `task.content` nepřepisovat — originální obsah uložit zvlášť nebo zachovat v content vedle nového popisu
+4. **Odpovědi v jazyce dotazu:** Pokud přišel email španělsky, odpovědět španělsky. Pokud česky, česky. Agent se ptá uživatele vždy česky.
+
+---
+
+## 8. Nesoulad s docs
 
 | Aspekt | Docs / Očekávání | Realita |
 |--------|------------------|---------|
+| UI jazyk | CLAUDE.md: "UI language: Czech" | Badge: raw enum "USER_TASK"/"NEW", labely anglicky |
 | Konverzační historie | `ChatMessageDocument` se ukládá (`UserTaskRpcImpl:117-126`) | UI nezobrazuje historii, jen poslední otázku |
 | Převzít do chatu | Backend flow existuje (`DIRECT_TO_AGENT`) | Tlačítko disabled (hardcoded `false`) |
 | Priorita | `TaskPriorityEnum` definován | Nikde nepoužit — ne v DB, ne v DTO, ne v UI |
 | Approval metadata | Event má `isApproval`, `interruptAction` | UI nerozlišuje typy tasků |
 | Attachmenty | DTO má `attachments: List<AttachmentDto>` | Detail je nezobrazuje |
+| Jazyk komunikace | Agent → uživatel česky, odpovědi v jazyce dotazu | Vše anglicky (LLM + Kotlin labely) |
+| Originální obsah | Zachovat vždy | `task.content` přepsán anglickými labely |
 
 ---
 
-## 7. Relevantní soubory
+## 9. Relevantní soubory
 
 | Soubor | Řádky | Co |
 |--------|-------|----|
 | `shared/ui-common/.../UserTasksScreen.kt` | 45-199 | Seznam tasků — list + filtr |
-| `shared/ui-common/.../UserTasksScreen.kt` | 200-230 | `UserTaskRow` — řádek v seznamu |
+| `shared/ui-common/.../UserTasksScreen.kt` | 200-230 | `UserTaskRow` — řádek v seznamu (badge raw enum) |
+| `shared/ui-common/.../UserTasksScreen.kt` | 224 | `Text(task.state)` — raw enum v badge |
 | `shared/ui-common/.../UserTasksScreen.kt` | 233-343 | `UserTaskDetail` — detail + odpověď |
 | `shared/ui-common/.../UserTasksScreen.kt` | 331 | `enabled = false` — disabled "Převzít do chatu" |
 | `shared/common-dto/.../UserTaskDto.kt` | — | DTO (chybí priority, chat history) |
@@ -182,6 +267,7 @@ Přidat chip filtry: stav, priorita, klient. Textový filtr ponechat pro full-te
 | `backend/server/.../UserTaskRpcImpl.kt` | 76-167 | `sendToAgent()` — DIRECT_TO_AGENT + BACK_TO_PENDING |
 | `backend/server/.../UserTaskRpcImpl.kt` | 117-126 | `saveToChatHistory` — ukládá ale UI nezobrazuje |
 | `backend/server/.../UserTaskService.kt` | 29-121 | `failAndEscalateToUserTask()` — vytvoření user tasku |
+| `backend/server/.../UserTaskService.kt` | 38-59 | Anglické labely + přepis content |
 | `backend/server/.../TaskMapper.kt` | 7-20 | Mapping TaskDocument → UserTaskDto |
 | `backend/server/.../TaskDocument.kt` | 131-142 | `pendingUserQuestion`, `userQuestionContext` |
 | `docs/orchestrator-detailed.md` | §13 | Approval flow, iterace user↔agent |
