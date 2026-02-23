@@ -475,7 +475,7 @@ class MeetingViewModel(
                 _recordingDuration.value = 0
 
                 // Clear persisted recording state + disk queue — successfully finalized
-                RecordingStateStorage.save(null)
+                RecordingStateStorage.remove(meetingId)
                 AudioChunkQueue.clearMeeting(meetingId)
 
                 lastClientId?.let { loadMeetings(it, lastProjectId, silent = true) }
@@ -505,20 +505,20 @@ class MeetingViewModel(
                 repository.meetings.cancelRecording(meetingId)
             } catch (_: Exception) {}
             _currentMeetingId.value = null
-            RecordingStateStorage.save(null)
+            RecordingStateStorage.remove(meetingId)
             AudioChunkQueue.clearMeeting(meetingId)
         }
     }
 
     // ── Interrupted recording recovery ──────────────────────────────────
 
-    /** Check for a recording that was interrupted by crash/restart.
-     *  Returns null if the stored state belongs to the currently active recording. */
-    fun checkForInterruptedRecording(): RecordingState? {
-        val saved = RecordingStateStorage.load() ?: return null
-        // If we're currently recording the same meeting, it's not interrupted — it's active
-        if (_isRecording.value && _currentMeetingId.value == saved.meetingId) return null
-        return saved
+    /** Check for recordings that were interrupted by crash/restart.
+     *  Returns all stored states EXCEPT the currently active recording. */
+    fun checkForInterruptedRecordings(): List<RecordingState> {
+        val all = RecordingStateStorage.loadAll()
+        if (all.isEmpty()) return emptyList()
+        val activeMeetingId = if (_isRecording.value) _currentMeetingId.value else null
+        return all.filter { it.meetingId != activeMeetingId }
     }
 
     /** Resume an interrupted recording: retry pending disk chunks, then finalize. */
@@ -563,7 +563,7 @@ class MeetingViewModel(
                     )
                 } else {
                     // Meeting was already finalized/cancelled
-                    RecordingStateStorage.save(null)
+                    RecordingStateStorage.remove(state.meetingId)
                     AudioChunkQueue.clearMeeting(state.meetingId)
                 }
             } catch (e: Exception) {
@@ -578,7 +578,7 @@ class MeetingViewModel(
             try {
                 repository.meetings.cancelRecording(state.meetingId)
             } catch (_: Exception) {}
-            RecordingStateStorage.save(null)
+            RecordingStateStorage.remove(state.meetingId)
             AudioChunkQueue.clearMeeting(state.meetingId)
         }
     }
@@ -1028,9 +1028,11 @@ class MeetingViewModel(
                     chunkIndex++
 
                     // Persist updated chunk index for crash recovery
-                    RecordingStateStorage.load()?.let { state ->
-                        RecordingStateStorage.save(state.copy(chunkIndex = chunkIndex))
-                    }
+                    RecordingStateStorage.loadAll()
+                        .find { it.meetingId == meetingId }
+                        ?.let { state ->
+                            RecordingStateStorage.save(state.copy(chunkIndex = chunkIndex))
+                        }
 
                     println("[Meeting] Chunk $chunkIndex uploaded (${subChunk.size} bytes)")
                 } catch (e: Exception) {

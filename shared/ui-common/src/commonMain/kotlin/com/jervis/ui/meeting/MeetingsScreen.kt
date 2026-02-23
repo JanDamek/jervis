@@ -80,15 +80,12 @@ fun MeetingsScreen(
     var classifyTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
-    var interruptedRecording by remember { mutableStateOf<RecordingState?>(null) }
+    var interruptedRecordings by remember { mutableStateOf<List<RecordingState>>(emptyList()) }
     val audioRecorder = remember { AudioRecorder() }
 
-    // Check for interrupted recording on startup
+    // Check for interrupted recordings on startup
     LaunchedEffect(Unit) {
-        val state = viewModel.checkForInterruptedRecording()
-        if (state != null) {
-            interruptedRecording = state
-        }
+        interruptedRecordings = viewModel.checkForInterruptedRecordings()
     }
 
     // Load unclassified meetings once on startup
@@ -413,24 +410,28 @@ fun MeetingsScreen(
         onDismiss = { showPermanentDeleteConfirmDialog = null },
     )
 
-    // Interrupted recording resume dialog
+    // Interrupted recording resume dialog — shows one at a time, processes the list
+    val currentInterrupted = interruptedRecordings.firstOrNull()
     ConfirmDialog(
-        visible = interruptedRecording != null,
-        title = "Nalezena přerušená nahrávka",
+        visible = currentInterrupted != null,
+        title = if (interruptedRecordings.size > 1)
+            "Nalezena přerušená nahrávka (${interruptedRecordings.size})"
+        else
+            "Nalezena přerušená nahrávka",
         message = buildString {
             append("Byla nalezena nedokončená nahrávka")
-            interruptedRecording?.title?.let { append(" \"$it\"") }
+            currentInterrupted?.title?.let { append(" \"$it\"") }
             append(". Částečná data jsou uložena na serveru. Chcete nahrávku dokončit?")
         },
         confirmText = "Dokončit",
         onConfirm = {
-            val state = interruptedRecording ?: return@ConfirmDialog
-            interruptedRecording = null
+            val state = currentInterrupted ?: return@ConfirmDialog
+            interruptedRecordings = interruptedRecordings.drop(1)
             viewModel.resumeInterruptedUpload(state)
         },
         onDismiss = {
-            val state = interruptedRecording ?: return@ConfirmDialog
-            interruptedRecording = null
+            val state = currentInterrupted ?: return@ConfirmDialog
+            interruptedRecordings = interruptedRecordings.drop(1)
             viewModel.discardInterruptedRecording(state)
         },
         isDestructive = false,
