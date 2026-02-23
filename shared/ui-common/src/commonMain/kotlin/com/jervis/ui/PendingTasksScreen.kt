@@ -1,6 +1,7 @@
 package com.jervis.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -25,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,8 +37,9 @@ import com.jervis.dto.PendingTaskDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import com.jervis.ui.util.*
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+
+private const val PAGE_SIZE = 50
 
 @Composable
 fun PendingTasksScreen(
@@ -42,7 +48,9 @@ fun PendingTasksScreen(
 ) {
     var tasks by remember { mutableStateOf<List<PendingTaskDto>>(emptyList()) }
     var totalTasks by remember { mutableStateOf(0L) }
+    var currentPage by remember { mutableStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingDeleteTaskId by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -59,17 +67,46 @@ fun PendingTasksScreen(
             isLoading = true
             error = null
             try {
-                // Parallelize the two independent RPC calls
-                val tasksDeferred = async { repository.pendingTasks.listTasks(selectedTaskType, selectedState) }
-                val countDeferred = async { repository.pendingTasks.countTasks(selectedTaskType, selectedState) }
-                tasks = tasksDeferred.await()
-                totalTasks = countDeferred.await()
+                val result = repository.pendingTasks.listTasksPaged(
+                    taskType = selectedTaskType,
+                    state = selectedState,
+                    page = 0,
+                    pageSize = PAGE_SIZE,
+                )
+                tasks = result.items
+                totalTasks = result.totalCount
+                currentPage = 0
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 error = e.message
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    fun loadMore() {
+        if (isLoadingMore || tasks.size.toLong() >= totalTasks) return
+        scope.launch {
+            isLoadingMore = true
+            try {
+                val nextPage = currentPage + 1
+                val result = repository.pendingTasks.listTasksPaged(
+                    taskType = selectedTaskType,
+                    state = selectedState,
+                    page = nextPage,
+                    pageSize = PAGE_SIZE,
+                )
+                tasks = tasks + result.items
+                totalTasks = result.totalCount
+                currentPage = nextPage
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Silent failure for load-more — user can scroll again
+            } finally {
+                isLoadingMore = false
             }
         }
     }
@@ -89,6 +126,20 @@ fun PendingTasksScreen(
     }
 
     LaunchedEffect(selectedTaskType, selectedState) { load() }
+
+    val listState = rememberLazyListState()
+
+    // Infinite scroll: load more when near end
+    LaunchedEffect(listState, tasks.size) {
+        snapshotFlow {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= tasks.size - 5
+        }.collect { nearEnd ->
+            if (nearEnd && tasks.size.toLong() < totalTasks) {
+                loadMore()
+            }
+        }
+    }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
@@ -159,14 +210,40 @@ fun PendingTasksScreen(
                 else -> {
                     SelectionContainer {
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
                         ) {
-                            items(tasks) { task ->
+                            items(tasks, key = { it.id }) { task ->
                                 PendingTaskCard(
                                     task = task,
                                     onDelete = { pendingDeleteTaskId = task.id },
                                 )
+                            }
+                            // Loading more indicator
+                            if (isLoadingMore) {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    }
+                                }
+                            }
+                            // Remaining count hint
+                            if (tasks.size.toLong() < totalTasks && !isLoadingMore) {
+                                item {
+                                    Text(
+                                        text = "... a dalších ${totalTasks - tasks.size} úloh",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(16.dp),
+                                    )
+                                }
                             }
                         }
                     }

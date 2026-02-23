@@ -66,6 +66,46 @@ class IndexingQueueRpcImpl(
     private val logger = KotlinLogging.logger {}
     private val isoFormatter = DateTimeFormatter.ISO_INSTANT
 
+    // ── Reference data cache (connections, clients, projects change infrequently) ──
+    private data class ReferenceDataCache(
+        val connections: List<ConnectionDocument>,
+        val connectionMap: Map<ConnectionId, ConnectionDocument>,
+        val clients: List<ClientDocument>,
+        val clientMap: Map<ClientId, ClientDocument>,
+        val clientMapByObjectId: Map<ObjectId, ClientDocument>,
+        val projects: List<ProjectDocument>,
+        val projectMap: Map<ProjectId, ProjectDocument>,
+        val projectMapByObjectId: Map<ObjectId, ProjectDocument>,
+        val fetchedAt: Instant,
+    )
+
+    @Volatile
+    private var referenceCache: ReferenceDataCache? = null
+    private val cacheTtl = Duration.ofSeconds(45)
+
+    private suspend fun getReferenceData(): ReferenceDataCache {
+        val cached = referenceCache
+        if (cached != null && Duration.between(cached.fetchedAt, Instant.now()) < cacheTtl) {
+            return cached
+        }
+        val connections = connectionRepository.findAll().toList()
+        val clients = clientRepository.findAll().toList()
+        val projects = projectRepository.findAll().toList()
+        val newCache = ReferenceDataCache(
+            connections = connections,
+            connectionMap = connections.associateBy { it.id },
+            clients = clients,
+            clientMap = clients.associateBy { it.id },
+            clientMapByObjectId = clients.associateBy { it.id.value },
+            projects = projects,
+            projectMap = projects.associateBy { it.id },
+            projectMapByObjectId = projects.associateBy { it.id.value },
+            fetchedAt = Instant.now(),
+        )
+        referenceCache = newCache
+        return newCache
+    }
+
     override suspend fun getPendingItems(page: Int, pageSize: Int, search: String): IndexingQueuePageDto {
         return getItems(
             gitStates = listOf(GitCommitState.NEW, GitCommitState.INDEXING),
@@ -95,15 +135,13 @@ class IndexingQueueRpcImpl(
     ): IndexingDashboardDto {
         val now = Instant.now()
 
-        // Build name caches
-        val connections = connectionRepository.findAll().toList()
-        val connectionMap = connections.associateBy { it.id }
-        val clients = clientRepository.findAll().toList()
-        val clientMap = clients.associateBy { it.id }
-        val clientMapByObjectId = clients.associateBy { it.id.value }
-        val projects = projectRepository.findAll().toList()
-        val projectMap = projects.associateBy { it.id }
-        val projectMapByObjectId = projects.associateBy { it.id.value }
+        // Use cached reference data (TTL 45s) — avoids 4× findAll on every dashboard load
+        val ref = getReferenceData()
+        val connectionMap = ref.connectionMap
+        val clientMap = ref.clientMap
+        val clientMapByObjectId = ref.clientMapByObjectId
+        val projectMap = ref.projectMap
+        val projectMapByObjectId = ref.projectMapByObjectId
 
         // Load polling states and interval settings
         val pollingStates = pollingStateRepository.findAll().toList()
@@ -198,6 +236,75 @@ class IndexingQueueRpcImpl(
             logger.error(e) { "Failed to process KB item now: $taskId" }
             false
         }
+    }
+
+    override suspend fun getKbWaitingPage(page: Int, pageSize: Int): com.jervis.dto.indexing.PipelinePageDto {
+        val ref = getReferenceData()
+        val safePageSize = pageSize.coerceIn(1, 100)
+        val safePage = page.coerceAtLeast(0)
+
+        val kbQueueResponse = kbClient.getExtractionQueue(limit = 200)
+        val kbPending = kbQueueResponse.items.filter { it.status == "pending" }
+
+        // Pre-load server tasks for enrichment
+        val indexingTaskTypes = listOf(
+            TaskTypeEnum.EMAIL_PROCESSING, TaskTypeEnum.BUGTRACKER_PROCESSING,
+            TaskTypeEnum.WIKI_PROCESSING, TaskTypeEnum.GIT_PROCESSING,
+            TaskTypeEnum.MEETING_PROCESSING, TaskTypeEnum.LINK_PROCESSING,
+        )
+        val activeServerTasksList = mongoTemplate.find(
+            Query(
+                Criteria.where("state").`in`(listOf(TaskStateEnum.READY_FOR_QUALIFICATION, TaskStateEnum.QUALIFYING, TaskStateEnum.DONE).map { it.name })
+                    .and("type").`in`(indexingTaskTypes.map { it.name }),
+            ),
+            TaskDocument::class.java, "tasks",
+        ).collectList().awaitSingle()
+        val activeServerTasks = activeServerTasksList.associateBy { it.correlationId }
+
+        val kbWaitingAll = kbPending.mapIndexed { index, item ->
+            enrichKbItem(item, index, activeServerTasks, ref.clientMap, ref.connectionMap)
+        }
+
+        val start = safePage * safePageSize
+        val paged = if (start >= kbWaitingAll.size) emptyList()
+        else kbWaitingAll.subList(start, (start + safePageSize).coerceAtMost(kbWaitingAll.size))
+
+        // Use real SQLite pending count (not capped by limit=200)
+        val totalCount = kbQueueResponse.stats.pending.toLong()
+
+        return com.jervis.dto.indexing.PipelinePageDto(
+            items = paged,
+            totalCount = totalCount,
+            page = safePage,
+            pageSize = safePageSize,
+        )
+    }
+
+    override suspend fun getIndexedPage(page: Int, pageSize: Int): com.jervis.dto.indexing.PipelinePageDto {
+        val ref = getReferenceData()
+        val safePageSize = pageSize.coerceIn(1, 100)
+        val safePage = page.coerceAtLeast(0)
+
+        val indexingTaskTypes = listOf(
+            TaskTypeEnum.EMAIL_PROCESSING, TaskTypeEnum.BUGTRACKER_PROCESSING,
+            TaskTypeEnum.WIKI_PROCESSING, TaskTypeEnum.GIT_PROCESSING,
+            TaskTypeEnum.MEETING_PROCESSING, TaskTypeEnum.LINK_PROCESSING,
+        )
+
+        val (items, totalCount) = collectIndexedTasksPaginated(
+            types = indexingTaskTypes,
+            clientMap = ref.clientMap,
+            connectionMap = ref.connectionMap,
+            page = safePage,
+            pageSize = safePageSize,
+        )
+
+        return com.jervis.dto.indexing.PipelinePageDto(
+            items = items,
+            totalCount = totalCount,
+            page = safePage,
+            pageSize = safePageSize,
+        )
     }
 
     // ── Hierarchical grouping: connection → capability → client ──
@@ -888,14 +995,13 @@ class IndexingQueueRpcImpl(
         pageSize: Int,
         search: String,
     ): IndexingQueuePageDto {
-        val connections = connectionRepository.findAll().toList()
-        val connectionMap = connections.associateBy { it.id }
-        val clients = clientRepository.findAll().toList()
-        val clientMap = clients.associateBy { it.id }
-        val clientMapByObjectId = clients.associateBy { it.id.value }
-        val projects = projectRepository.findAll().toList()
-        val projectMap = projects.associateBy { it.id }
-        val projectMapByObjectId = projects.associateBy { it.id.value }
+        // Use cached reference data (TTL 45s)
+        val ref = getReferenceData()
+        val connectionMap = ref.connectionMap
+        val clientMap = ref.clientMap
+        val clientMapByObjectId = ref.clientMapByObjectId
+        val projectMap = ref.projectMap
+        val projectMapByObjectId = ref.projectMapByObjectId
 
         val allItems = mutableListOf<IndexingQueueItemDto>()
         collectGitItems(allItems, gitStates, clientMapByObjectId, projectMapByObjectId)

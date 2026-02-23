@@ -166,6 +166,18 @@ data class KbQueueStatsDto(
 )
 
 /**
+ * Lightweight paginated result for KB waiting / indexed pipeline items.
+ * Used by dedicated page RPCs to avoid loading the full dashboard on scroll.
+ */
+@Serializable
+data class PipelinePageDto(
+    val items: List<PipelineItemDto>,
+    val totalCount: Long,
+    val page: Int,
+    val pageSize: Int,
+)
+
+/**
  * Combined dashboard response: indexing queue + full processing pipeline.
  */
 @Serializable

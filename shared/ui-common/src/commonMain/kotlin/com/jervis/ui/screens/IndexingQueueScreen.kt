@@ -128,13 +128,12 @@ fun IndexingQueueScreen(
             isLoadingMoreKb = true
             try {
                 val nextPage = kbWaitingPage + 1
-                val more = repository.indexingQueue.getIndexingDashboard(
-                    search = "",
-                    kbPage = nextPage,
-                    kbPageSize = kbPageSize,
+                val page = repository.indexingQueue.getKbWaitingPage(
+                    page = nextPage,
+                    pageSize = kbPageSize,
                 )
-                kbWaitingItems = kbWaitingItems + more.kbWaiting
-                kbWaitingTotalCount = more.kbWaitingTotalCount
+                kbWaitingItems = kbWaitingItems + page.items
+                kbWaitingTotalCount = page.totalCount
                 kbWaitingPage = nextPage
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
@@ -152,13 +151,12 @@ fun IndexingQueueScreen(
             isLoadingMoreIndexed = true
             try {
                 val nextPage = indexedPage + 1
-                val more = repository.indexingQueue.getIndexingDashboard(
-                    search = "",
-                    kbPage = nextPage,
-                    kbPageSize = kbPageSize,
+                val page = repository.indexingQueue.getIndexedPage(
+                    page = nextPage,
+                    pageSize = kbPageSize,
                 )
-                indexedItems = indexedItems + more.kbIndexed
-                indexedTotalCount = more.kbIndexedTotalCount
+                indexedItems = indexedItems + page.items
+                indexedTotalCount = page.totalCount
                 indexedPage = nextPage
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e

@@ -14,3 +14,12 @@ data class PendingTaskDto(
     val state: String,
     val attachments: List<AttachmentDto> = emptyList(),
 )
+
+/** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */
+@Serializable
+data class PagedPendingTasksResult(
+    val items: List<PendingTaskDto>,
+    val totalCount: Long,
+    val page: Int,
+    val pageSize: Int,
+)

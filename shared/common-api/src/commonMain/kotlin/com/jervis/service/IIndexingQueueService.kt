@@ -2,6 +2,7 @@ package com.jervis.service
 
 import com.jervis.dto.indexing.IndexingDashboardDto
 import com.jervis.dto.indexing.IndexingQueuePageDto
+import com.jervis.dto.indexing.PipelinePageDto
 import kotlinx.rpc.annotations.Rpc
 
 @Rpc
@@ -20,6 +21,12 @@ interface IIndexingQueueService {
         clientFilter: String = "",
         projectFilter: String = "",
     ): IndexingDashboardDto
+
+    /** Lightweight paginated KB waiting items — for infinite scroll without loading full dashboard. */
+    suspend fun getKbWaitingPage(page: Int, pageSize: Int): PipelinePageDto
+
+    /** Lightweight paginated indexed (DONE) items — for infinite scroll without loading full dashboard. */
+    suspend fun getIndexedPage(page: Int, pageSize: Int): PipelinePageDto
 
     /** Trigger immediate polling for a specific connection+capability. */
     suspend fun triggerIndexNow(connectionId: String, capability: String): Boolean
