@@ -64,17 +64,12 @@ RUN mkdir -p /opt/junie && \
     ln -s /opt/junie/junie /usr/local/bin/junie && \
     rm /tmp/junie.zip
 
-# === MCP servers for Junie (KB + Joern) ===
+# === MCP servers for Junie (Joern only — KB + Environment served by HTTP service-mcp) ===
 # Junie reads MCP config from $WORKSPACE/.junie/mcp/mcp.json
 # The Kotlin orchestrator writes this config before launching the agent.
-# Servers are stdio-based, same Python scripts as Claude uses.
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-COPY backend/service-kb-mcp/requirements.txt /opt/jervis/mcp/kb-requirements.txt
-RUN pip install --no-cache-dir -r /opt/jervis/mcp/kb-requirements.txt
-COPY backend/service-kb-mcp/server.py /opt/jervis/mcp/kb-server.py
 
 COPY backend/service-joern-mcp/requirements.txt /opt/jervis/mcp/joern-requirements.txt
 RUN pip install --no-cache-dir -r /opt/jervis/mcp/joern-requirements.txt

@@ -684,13 +684,35 @@ class BackgroundEngine(
         }
     }
 
+    companion object {
+        /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
+        val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
+    }
+
     /**
      * Dispatch a single scheduled task into the processing pipeline.
      *
      * One-shot (no cron): Transition task NEW → READY_FOR_QUALIFICATION, clear scheduledAt.
      * Recurring (cron): Keep original task with next scheduledAt, create a new task for execution.
+     * Overdue (>24h past scheduledAt): Escalate as urgent USER_TASK.
      */
     private suspend fun dispatchScheduledTask(task: TaskDocument) {
+        // Escalate severely overdue tasks (>24h) as urgent USER_TASKs
+        val scheduledAt = task.scheduledAt
+        if (scheduledAt != null) {
+            val overdue = Duration.between(scheduledAt, java.time.Instant.now())
+            if (overdue > OVERDUE_ESCALATION_THRESHOLD) {
+                logger.warn {
+                    "SCHEDULED_ESCALATE: task ${task.id} '${task.taskName}' is ${overdue.toHours()}h overdue → USER_TASK"
+                }
+                userTaskService.failAndEscalateToUserTask(
+                    task,
+                    reason = "Prošlý naplánovaný úkol (${overdue.toHours()} hodin po termínu)",
+                )
+                return
+            }
+        }
+
         val cron = task.cronExpression
 
         if (cron.isNullOrBlank()) {

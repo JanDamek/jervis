@@ -114,42 +114,22 @@ class WorkspaceManager:
         kb_context: str | None,
         environment_context: dict | None = None,
     ):
-        """Claude Code: MCP config + CLAUDE.md for runtime KB access."""
+        """Claude Code: HTTP MCP config + CLAUDE.md for runtime KB + environment access."""
 
-        # MCP configuration for runtime KB access
+        # MCP configuration — single HTTP MCP server with all tools
         claude_dir = workspace / ".claude"
         claude_dir.mkdir(exist_ok=True)
 
-        mcp_env = {
-            "CLIENT_ID": client_id,
-            "PROJECT_ID": project_id or "",
-            "KB_URL": settings.knowledgebase_url,
+        mcp_server_config: dict = {
+            "type": "http",
+            "url": f"{settings.mcp_url}/mcp",
         }
-        # Pass group ID to MCP server for KB cross-visibility
-        if environment_context and environment_context.get("groupId"):
-            mcp_env["GROUP_ID"] = environment_context["groupId"]
-
-        mcp_config = {
-            "mcpServers": {
-                "jervis-kb": {
-                    "command": "python",
-                    "args": ["/opt/jervis/mcp/kb-server.py"],
-                    "env": mcp_env,
-                }
-            }
-        }
-
-        # Add environment MCP server if environment is provisioned
-        if environment_context and environment_context.get("namespace"):
-            mcp_config["mcpServers"]["jervis-environment"] = {
-                "command": "python",
-                "args": ["/opt/jervis/mcp/environment-server.py"],
-                "env": {
-                    "NAMESPACE": environment_context["namespace"],
-                    "SERVER_URL": settings.kotlin_server_url,
-                },
+        if settings.mcp_api_token:
+            mcp_server_config["headers"] = {
+                "Authorization": f"Bearer {settings.mcp_api_token}",
             }
 
+        mcp_config = {"mcpServers": {"jervis": mcp_server_config}}
         (claude_dir / "mcp.json").write_text(json.dumps(mcp_config, indent=2))
 
         # CLAUDE.md with project context and MCP tool descriptions
@@ -164,13 +144,17 @@ class WorkspaceManager:
             "- Make the requested code changes and exit.",
             "",
             "## Knowledge Base",
-            "You have access to the `jervis-kb` MCP server with these tools:",
-            "- `kb_search(query)` – hybrid search (RAG + graph)",
+            "You have access to the `jervis` MCP server with these tools:",
+            "- `kb_search(query, client_id, project_id)` – hybrid search (RAG + graph)",
             "- `kb_search_simple(query)` – quick RAG-only search",
             "- `kb_traverse(start_node)` – graph traversal",
             "- `kb_graph_search(query)` – search graph nodes",
             "- `kb_get_evidence(node_key)` – get supporting chunks",
+            "- `kb_resolve_alias(alias)` – resolve entity aliases",
             "- `kb_store(content, kind)` – store findings (use sparingly)",
+            "",
+            f"Default context: client_id=`{client_id}`, project_id=`{project_id or ''}`",
+            "Pass these IDs to KB tools for proper scoping.",
             "",
             "Use KB to look up coding conventions, architecture decisions,",
             "and previous findings before making changes.",
@@ -195,17 +179,18 @@ class WorkspaceManager:
 
             # Add environment MCP tool descriptions if namespace is present
             if environment_context.get("namespace"):
+                ns = environment_context["namespace"]
                 claude_md_parts.extend(
                     [
                         "",
                         "## Environment Tools",
-                        "You have access to the `jervis-environment` MCP server with these tools:",
-                        "- `list_namespace_resources(resource_type)` – list pods/deployments/services",
-                        "- `get_pod_logs(pod_name, tail_lines)` – read pod logs",
-                        "- `get_deployment_status(name)` – deployment health and events",
-                        "- `scale_deployment(name, replicas)` – scale up/down (0-10)",
-                        "- `restart_deployment(name)` – trigger rolling restart",
-                        "- `get_namespace_status()` – overall namespace health",
+                        f"Environment namespace: `{ns}` — pass this as the `namespace` parameter.",
+                        "- `list_namespace_resources(namespace, resource_type)` – list pods/deployments/services",
+                        "- `get_pod_logs(namespace, pod_name, tail_lines)` – read pod logs",
+                        "- `get_deployment_status(namespace, name)` – deployment health and events",
+                        "- `scale_deployment(namespace, name, replicas)` – scale up/down (0-10)",
+                        "- `restart_deployment(namespace, name)` – trigger rolling restart",
+                        "- `get_namespace_status(namespace)` – overall namespace health",
                         "",
                         "Use these tools to diagnose runtime issues, check service health,",
                         "and manage the environment when fixing bugs.",

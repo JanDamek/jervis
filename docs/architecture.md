@@ -1281,31 +1281,33 @@ When a coding task is dispatched to the Python orchestrator:
 ### Environment MCP Integration (Runtime K8s Access for Agents)
 
 Coding agents (Claude, OpenHands, Junie) can inspect and manage the K8s environment
-associated with their project via the `jervis-environment` MCP server.
+associated with their project via the unified `jervis-mcp` HTTP server (port 8100).
 
 **Architecture:**
 
 ```
 Agent (Claude Code)
-  └─ MCP stdio: jervis-environment (Python, service-environment-mcp/server.py)
-       └─ httpx → Kotlin server :5500/internal/environment/{ns}/*
+  └─ MCP HTTP: jervis-mcp:8100/mcp (FastMCP, Bearer token auth)
+       ├─ KB tools → httpx → jervis-knowledgebase:8080
+       ├─ Environment tools → httpx → Kotlin server :5500/internal/environment/{ns}/*
+       ├─ MongoDB tools → Motor → MongoDB
+       └─ Orchestrator tools → httpx → jervis-orchestrator:8090
             └─ EnvironmentResourceService → fabric8 K8s client → K8s API
 ```
 
-**MCP server runs as stdio subprocess** within the agent's Docker container (same pattern as `jervis-kb`).
-The MCP server does NOT talk to K8s directly — it calls Kotlin backend internal REST endpoints,
-keeping K8s credentials and ServiceAccount tokens server-side.
+**Single HTTP MCP server** (`service-mcp`) exposes all tools over Streamable HTTP.
+Agents connect via HTTP instead of stdio subprocesses — smaller Docker images, one server for all tools.
 
-**MCP Tools:**
+**Environment Tools (namespace as parameter):**
 
 | Tool | Purpose |
 |------|---------|
-| `list_namespace_resources(resource_type)` | List pods/deployments/services/secrets in namespace |
-| `get_pod_logs(pod_name, tail_lines)` | Read recent pod logs (max 1000 lines) |
-| `get_deployment_status(name)` | Deployment health, conditions, recent events |
-| `scale_deployment(name, replicas)` | Scale deployment up/down (0-10 replicas) |
-| `restart_deployment(name)` | Trigger rolling restart |
-| `get_namespace_status()` | Overall namespace health (pod counts, crashing pods) |
+| `list_namespace_resources(namespace, resource_type)` | List pods/deployments/services/secrets |
+| `get_pod_logs(namespace, pod_name, tail_lines)` | Read recent pod logs (max 1000 lines) |
+| `get_deployment_status(namespace, name)` | Deployment health, conditions, recent events |
+| `scale_deployment(namespace, name, replicas)` | Scale deployment up/down (0-10 replicas) |
+| `restart_deployment(namespace, name)` | Trigger rolling restart |
+| `get_namespace_status(namespace)` | Overall namespace health (pod counts, crashing pods) |
 
 **Internal REST Endpoints (KtorRpcServer):**
 
@@ -1323,22 +1325,22 @@ GET  /internal/environment/{ns}/status
 - Secrets: only names returned, NEVER values
 - Replica scaling capped at 0-10
 - ClusterRole `jervis-server-environment-role` grants cross-namespace K8s access
+- MCP server authenticated via Bearer token (`MCP_API_TOKENS`)
 
 **Workspace Integration:**
-- `workspace_manager.py` adds `jervis-environment` to `.claude/mcp.json` when environment has a namespace
-- `CLAUDE.md` includes environment tool descriptions
-- Agent receives `NAMESPACE` and `SERVER_URL` env vars via MCP config
+- `workspace_manager.py` writes `.claude/mcp.json` with HTTP MCP server URL
+- `CLAUDE.md` includes tool descriptions and namespace hint
+- Namespace passed as tool parameter (not env var)
 
 **Key Files:**
 
 | File | Purpose |
 |------|---------|
-| `backend/service-environment-mcp/server.py` | Python MCP server (6 tools, httpx → Kotlin) |
+| `backend/service-mcp/app/main.py` | Unified HTTP MCP server (KB + env + mongo + orchestrator) |
 | `backend/server/.../environment/EnvironmentResourceService.kt` | K8s resource inspection via fabric8 |
 | `backend/server/.../environment/EnvironmentK8sService.kt` | Namespace/deployment/service lifecycle |
 | `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints for MCP |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | MCP config injection |
-| `backend/service-claude/Dockerfile` | Environment MCP server bundled in agent image |
 | `k8s/app_server.yaml` | ClusterRole for cross-namespace access |
 
 ---

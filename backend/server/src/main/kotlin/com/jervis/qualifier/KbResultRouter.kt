@@ -91,6 +91,19 @@ class KbResultRouter(
             val deadline = parseDeadline(suggestedDeadline)
             if (deadline != null) {
                 val now = Instant.now()
+
+                // Deadline already in the past → ignore scheduling (old email / stale content)
+                if (deadline.isBefore(now)) {
+                    logger.info {
+                        "KB_ROUTE: taskId=${task.id} reason=deadlineAlreadyPassed deadline=$suggestedDeadline"
+                    }
+                    onProgress(
+                        "Prošlý termín ($suggestedDeadline) → zpracovat bez plánování",
+                        mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Prošlý termín", "result" to "Čeká na MOZEK"),
+                    )
+                    return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "deadline_already_passed")
+                }
+
                 val leadTime = Duration.ofDays(SCHEDULE_LEAD_DAYS)
                 val scheduledAt = deadline.minus(leadTime)
 

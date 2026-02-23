@@ -224,6 +224,53 @@ async def kb_graph_search(
 
 
 @mcp.tool
+async def kb_get_evidence(node_key: str, client_id: str = "") -> str:
+    """Get RAG chunks that support a specific knowledge graph node.
+
+    Args:
+        node_key: The key of the graph node to get evidence for
+        client_id: Client ID (leave empty for default)
+    """
+    cid = client_id or settings.default_client_id
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.get(
+            f"{settings.knowledgebase_url}/api/v1/graph/node/{node_key}/evidence",
+            params={"clientId": cid},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        chunks = data.get("chunks", [])
+        if not chunks:
+            return f"No evidence found for node '{node_key}'."
+        return "\n---\n".join(
+            f"{c.get('sourceUrn', '?')}: {c.get('content', '')[:500]}"
+            for c in chunks
+        )
+
+
+@mcp.tool
+async def kb_resolve_alias(alias: str, client_id: str = "") -> str:
+    """Resolve an entity alias to its canonical key.
+
+    Use this when you encounter different names for possibly the same entity.
+    Example: 'UserSvc' -> 'UserService', 'auth module' -> 'authentication-service'
+
+    Args:
+        alias: The alias or alternate name to resolve
+        client_id: Client ID (leave empty for default)
+    """
+    cid = client_id or settings.default_client_id
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.get(
+            f"{settings.knowledgebase_url}/api/v1/alias/resolve",
+            params={"alias": alias, "clientId": cid},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return f"'{data.get('alias')}' -> canonical: '{data.get('canonical')}'"
+
+
+@mcp.tool
 async def kb_store(
     content: str,
     client_id: str = "",
@@ -856,6 +903,208 @@ async def cancel_scheduled_task(task_id: str) -> str:
     if doc.get("type") != "SCHEDULED_TASK":
         return f"Error: Task {task_id} is not a scheduled task (type={doc.get('type')})."
     return f"Error: Cannot cancel task in state={doc.get('state')} (already processing or finished)."
+
+
+# ── Environment / K8s Tools ──────────────────────────────────────────────
+# These tools call the Kotlin backend's internal REST endpoints which perform
+# the actual fabric8 K8s operations. K8s credentials stay server-side.
+# Namespace is passed as a parameter (not from env var like the stdio version).
+
+
+@mcp.tool
+async def list_namespace_resources(namespace: str, resource_type: str = "all") -> str:
+    """List resources in a K8s namespace.
+
+    Returns pods, deployments, services, and secrets in the namespace.
+
+    Args:
+        namespace: K8s namespace to inspect
+        resource_type: Filter by type — "all", "pods", "deployments", "services", "secrets"
+    """
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{base}/resources", params={"type": resource_type})
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Error: {data.get('error', 'unknown')}"
+
+        resources = data.get("data", {})
+        lines = [f"Namespace: {namespace}", ""]
+        for rtype, items in resources.items():
+            lines.append(f"## {rtype.title()} ({len(items)})")
+            for item in items:
+                name = item.get("name", "?")
+                if rtype == "pods":
+                    phase = item.get("phase", "?")
+                    ready = "READY" if item.get("ready") else "NOT READY"
+                    restarts = item.get("restartCount", 0)
+                    lines.append(f"  - {name}: {phase} ({ready}, restarts={restarts})")
+                elif rtype == "deployments":
+                    avail = item.get("availableReplicas", 0)
+                    total = item.get("replicas", 0)
+                    image = item.get("image", "?")
+                    lines.append(f"  - {name}: {avail}/{total} ready ({image})")
+                elif rtype == "services":
+                    svc_type = item.get("type", "?")
+                    ports = item.get("ports", [])
+                    lines.append(f"  - {name}: {svc_type} ({', '.join(ports) if ports else 'no ports'})")
+                elif rtype == "secrets":
+                    keys = item.get("keys", [])
+                    lines.append(f"  - {name}: keys={keys}")
+                else:
+                    lines.append(f"  - {name}")
+            lines.append("")
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def get_pod_logs(namespace: str, pod_name: str, tail_lines: int = 100) -> str:
+    """Get recent logs from a pod.
+
+    Args:
+        namespace: K8s namespace
+        pod_name: Name of the pod
+        tail_lines: Number of recent log lines to return (max 1000)
+    """
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{base}/pods/{pod_name}/logs",
+            params={"tail": min(tail_lines, 1000)},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        return resp.text
+
+
+@mcp.tool
+async def get_deployment_status(namespace: str, name: str) -> str:
+    """Get detailed status of a deployment including conditions and recent events.
+
+    Args:
+        namespace: K8s namespace
+        name: Deployment name
+    """
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{base}/deployments/{name}")
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Error: {data.get('error', 'unknown')}"
+
+        d = data.get("data", {})
+        lines = [
+            f"Deployment: {d.get('name', '?')}",
+            f"Namespace: {d.get('namespace', '?')}",
+            f"Image: {d.get('image', '?')}",
+            f"Replicas: {d.get('availableReplicas', 0)}/{d.get('replicas', 0)} ready",
+            f"Status: {'HEALTHY' if d.get('ready') else 'UNHEALTHY'}",
+            "",
+        ]
+
+        conditions = d.get("conditions", [])
+        if conditions:
+            lines.append("Conditions:")
+            for c in conditions:
+                lines.append(f"  - {c.get('type')}: {c.get('status')} ({c.get('reason', '')})")
+                if c.get("message"):
+                    lines.append(f"    {c['message']}")
+            lines.append("")
+
+        events = d.get("events", [])
+        if events:
+            lines.append("Recent Events:")
+            for ev in events:
+                lines.append(f"  [{ev.get('type', '?')}] {ev.get('reason', '?')}: {ev.get('message', '')}")
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def scale_deployment(namespace: str, name: str, replicas: int) -> str:
+    """Scale a deployment to the specified number of replicas.
+
+    Args:
+        namespace: K8s namespace
+        name: Deployment name
+        replicas: Target number of replicas (0-10)
+    """
+    if replicas < 0 or replicas > 10:
+        return "Error: replicas must be between 0 and 10"
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{base}/deployments/{name}/scale",
+            json={"replicas": replicas},
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return data.get("message", "Scaled successfully") if data.get("ok") else f"Error: {data.get('error')}"
+
+
+@mcp.tool
+async def restart_deployment(namespace: str, name: str) -> str:
+    """Trigger a rolling restart of a deployment.
+
+    Args:
+        namespace: K8s namespace
+        name: Deployment name
+    """
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{base}/deployments/{name}/restart")
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return data.get("message", "Restart triggered") if data.get("ok") else f"Error: {data.get('error')}"
+
+
+@mcp.tool
+async def get_namespace_status(namespace: str) -> str:
+    """Get overall health status of a K8s namespace.
+
+    Returns pod counts, deployment readiness, and identifies any crashing pods.
+
+    Args:
+        namespace: K8s namespace to inspect
+    """
+    base = f"{settings.kotlin_server_url}/internal/environment/{namespace}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{base}/status")
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if not data.get("ok"):
+            return f"Error: {data.get('error', 'unknown')}"
+
+        s = data.get("data", {})
+        healthy = s.get("healthy", False)
+        pods = s.get("pods", {})
+        deps = s.get("deployments", {})
+        svcs = s.get("services", {})
+
+        lines = [
+            f"Namespace: {s.get('namespace', '?')}",
+            f"Overall: {'HEALTHY' if healthy else 'UNHEALTHY'}",
+            "",
+            f"Pods: {pods.get('running', 0)}/{pods.get('total', 0)} running",
+            f"Deployments: {deps.get('ready', 0)}/{deps.get('total', 0)} ready",
+            f"Services: {svcs.get('total', 0)}",
+        ]
+
+        crashing = pods.get("crashing", [])
+        if crashing:
+            lines.extend(["", "CRASHING PODS:"])
+            for pod in crashing:
+                lines.append(f"  - {pod}")
+            lines.append("")
+            lines.append("Use get_pod_logs(namespace, pod_name) to inspect logs from crashing pods.")
+
+        return "\n".join(lines)
 
 
 # ── Health endpoint (custom route) ───────────────────────────────────────

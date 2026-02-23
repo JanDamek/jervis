@@ -86,8 +86,8 @@ backend/
     requirements.txt
     Dockerfile
 
-  service-kb-mcp/                 # NOVÝ – MCP server pro KB (stdio)
-    server.py                     # MCP tools: kb_search, kb_traverse, kb_store, ...
+  service-mcp/                    # Unified HTTP MCP server (KB + env + mongo + orchestrator)
+    app/main.py                   # All MCP tools (FastMCP over Streamable HTTP)
     requirements.txt
 
   shared-entrypoints/             # NOVÝ – sdílené entrypointy pro Docker images
@@ -285,18 +285,15 @@ Doplní instrukce, KB kontext a agent-specifickou konfiguraci do existujícího 
 - `_setup_aider_workspace(workspace, files, kb_context)` – .aider.conf.yml
 - `cleanup_workspace(workspace)` – smaže .jervis/ soubory
 
-#### D. MCP Server pro KB (`service-kb-mcp/`)
+#### D. Unified MCP Server (`service-mcp/`)
 
-Stdio MCP server volatelný z Claude Code. Přeposílá dotazy na KB service.
+HTTP MCP server (FastMCP, port 8100, Bearer token auth) accessible by all agents via HTTP.
+Consolidates KB, environment, MongoDB, and orchestrator tools in one service.
 
-**MCP Tools:**
-- `kb_search(query, scope?, max_results?)` – hybrid search
-- `kb_search_simple(query, max_results?)` – RAG only
-- `kb_traverse(start_node, direction?, max_hops?)` – graph traversal
-- `kb_graph_search(query, node_type?, limit?)` – node search
-- `kb_get_evidence(node_key)` – supporting chunks
-- `kb_resolve_alias(alias)` – entity resolution
-- `kb_store(content, kind, source_urn?, metadata?)` – write (controlled)
+**KB Tools:** `kb_search`, `kb_search_simple`, `kb_traverse`, `kb_graph_search`, `kb_get_evidence`, `kb_resolve_alias`, `kb_store`
+**Environment Tools:** `list_namespace_resources`, `get_pod_logs`, `get_deployment_status`, `scale_deployment`, `restart_deployment`, `get_namespace_status`
+**MongoDB Tools:** `list_clients`, `get_client`, `list_projects`, `list_meetings`, `get_meeting`, `list_tasks`, `get_task`, `get_chat_history`, `mongo_query`
+**Orchestrator Tools:** `orchestrator_health`, `orchestrator_status`, `submit_task`, `schedule_task`, `cancel_scheduled_task`
 
 #### E. Dual-mode Entrypoint (`shared-entrypoints/entrypoint-job.sh`)
 
@@ -439,7 +436,7 @@ class ApprovalRequest(BaseModel):
 
 ### Fáze 3: KB integrace
 9. `kb/prefetch.py` – pre-fetch KB kontext
-10. `service-kb-mcp/server.py` – MCP server pro Claude Code
+10. `service-mcp/app/main.py` – unified HTTP MCP server (KB + env + mongo + orchestrator)
 
 ### Fáze 4: Entrypoints
 11. `shared-entrypoints/entrypoint-job.sh` – dual-mode entrypoint
@@ -464,9 +461,12 @@ pydantic>=2.10.0
 pydantic-settings>=2.7.0
 sse-starlette>=2.2.0
 
-# requirements.txt (service-kb-mcp)
-mcp>=1.0.0
+# requirements.txt (service-mcp)
+fastmcp>=2.0.0
 httpx>=0.28.0
+motor>=3.6.0
+pydantic-settings>=2.7.0
+uvicorn>=0.34.0
 ```
 
 ---

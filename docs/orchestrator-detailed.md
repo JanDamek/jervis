@@ -878,15 +878,18 @@ Body: {
 }
 ```
 
-### 9.3 Runtime KB přístup (MCP)
+### 9.3 Runtime KB přístup (HTTP MCP)
 
-Coding agenti (Claude) mají runtime přístup přes MCP server:
-- `kb_search(query, max_results)` — full-text search
-- `kb_search_simple(query)` — jednoduchý search (3 results)
-- `kb_traverse(node_id, depth)` — graph traversal
-- `kb_graph_search(query, node_types)` — graph node search
-- `kb_get_evidence(issue_key)` — evidence pro issue
+Coding agenti mají runtime přístup přes unified HTTP MCP server (`service-mcp:8100`):
+- `kb_search(query, client_id, project_id, max_results)` — full-text search + graph
+- `kb_search_simple(query)` — quick RAG-only search
+- `kb_traverse(start_node, direction, max_hops)` — graph traversal
+- `kb_graph_search(query, node_type, limit)` — graph node search
+- `kb_get_evidence(node_key)` — supporting RAG chunks for a node
+- `kb_resolve_alias(alias)` — entity alias resolution
 - `kb_store(content, kind, metadata)` — store new knowledge
+
+Agents connect via HTTP (`.claude/mcp.json` → `type: "http"`, `url: "http://jervis-mcp:8100/mcp"`).
 
 ---
 
@@ -1006,10 +1009,10 @@ workspace/
 ```json
 {
   "mcpServers": {
-    "jervis-kb": {
-      "command": "curl",
-      "args": ["-X", "POST", "{kb_url}/api/v1/mcp", ...],
-      "env": {"CLIENT_ID": "...", "PROJECT_ID": "..."}
+    "jervis": {
+      "type": "http",
+      "url": "http://jervis-mcp:8100/mcp",
+      "headers": {"Authorization": "Bearer <token>"}
     }
   }
 }
@@ -1020,7 +1023,8 @@ workspace/
 Obsahuje:
 - Název projektu, klient, popis úlohy
 - Forbidden actions: NIKDY nepoužívej git příkazy
-- KB tools: 6 nástrojů pro runtime KB přístup
+- KB tools: 7 nástrojů pro runtime KB přístup (+ kb_resolve_alias)
+- Environment tools: 6 nástrojů pro K8s namespace inspekci
 - Pravidla: write result to `.jervis/result.json`
 
 ### 11.4 CLAUDE.md pro git delegaci

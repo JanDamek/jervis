@@ -73,20 +73,11 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# KB MCP server (stdio subprocess)
-COPY backend/service-kb-mcp/requirements.txt /opt/jervis/mcp/kb-requirements.txt
-RUN pip install --no-cache-dir -r /opt/jervis/mcp/kb-requirements.txt
-COPY backend/service-kb-mcp/server.py /opt/jervis/mcp/kb-server.py
-
 # Joern MCP server (stdio subprocess – delegates to K8s Job)
+# KB + Environment tools now served by HTTP service-mcp (agents connect via HTTP)
 COPY backend/service-joern-mcp/requirements.txt /opt/jervis/mcp/joern-requirements.txt
 RUN pip install --no-cache-dir -r /opt/jervis/mcp/joern-requirements.txt
 COPY backend/service-joern-mcp/server.py /opt/jervis/mcp/joern-server.py
-
-# Environment MCP server (stdio subprocess – calls Kotlin server internal API)
-COPY backend/service-environment-mcp/requirements.txt /opt/jervis/mcp/env-requirements.txt
-RUN pip install --no-cache-dir -r /opt/jervis/mcp/env-requirements.txt
-COPY backend/service-environment-mcp/server.py /opt/jervis/mcp/environment-server.py
 
 # === Application JAR ===
 WORKDIR /opt/jervis/claude

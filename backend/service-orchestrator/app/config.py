@@ -31,6 +31,12 @@ class Settings(BaseSettings):
         "KNOWLEDGEBASE_WRITE_URL", "http://jervis-knowledgebase-write:8080"
     )
 
+    # MCP Server (HTTP – unified KB + environment + orchestrator tools)
+    mcp_url: str = os.getenv(
+        "MCP_URL", "http://jervis-mcp:8100"
+    )
+    mcp_api_token: str = os.getenv("MCP_API_TOKEN", "")
+
     # SearXNG web search (runs on port 30053)
     searxng_url: str = os.getenv(
         "SEARXNG_URL", "http://192.168.100.117:30053"
