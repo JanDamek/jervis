@@ -18,6 +18,20 @@ import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 
+/**
+ * Single source of truth for Atlassian OAuth2 scopes.
+ * Used in AtlassianProviderService, AtlassianApplication, and OAuth2Service (fallback).
+ */
+const val ATLASSIAN_OAUTH2_SCOPES =
+    "read:jira-user read:jira-work write:jira-work " +
+    "read:confluence-content.all read:confluence-content.summary read:confluence-content.permission " +
+    "read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user " +
+    "write:confluence-content write:confluence-space write:confluence-pages " +
+    "search:confluence readonly:content.attachment:confluence " +
+    "read:space:confluence read:page:confluence read:content:confluence " +
+    "read:attachment:confluence read:content.metadata:confluence " +
+    "offline_access"
+
 class AtlassianProviderService(
     private val atlassianService: AtlassianServiceImpl,
 ) : IProviderService {
@@ -35,7 +49,7 @@ class AtlassianProviderService(
         supportsSelfHosted = true,
         oauth2AuthorizationUrl = "https://auth.atlassian.com/authorize",
         oauth2TokenUrl = "https://auth.atlassian.com/oauth/token",
-        oauth2Scopes = "read:jira-user read:jira-work write:jira-work read:confluence-content.all read:confluence-content.summary read:confluence-content.permission read:confluence-props read:confluence-space.summary read:confluence-groups read:confluence-user write:confluence-content write:confluence-space search:confluence readonly:content.attachment:confluence read:space:confluence read:page:confluence read:content:confluence read:attachment:confluence read:content.metadata:confluence offline_access",
+        oauth2Scopes = ATLASSIAN_OAUTH2_SCOPES,
         authOptions = listOf(
             AuthOption(
                 AuthTypeEnum.OAUTH2, "OAuth 2.0",
