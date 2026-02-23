@@ -287,6 +287,14 @@ private fun EnvironmentDetail(
                             } catch (_: Exception) {}
                         }
                     },
+                    onSync = {
+                        scope.launch {
+                            try {
+                                repository.environments.syncEnvironmentResources(environment.id)
+                                onUpdated()
+                            } catch (_: Exception) {}
+                        }
+                    },
                 )
             }
 

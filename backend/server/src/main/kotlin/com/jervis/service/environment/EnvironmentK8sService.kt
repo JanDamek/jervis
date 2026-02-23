@@ -5,17 +5,24 @@ import com.jervis.dto.environment.ComponentStatusDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.entity.ComponentType
+import com.jervis.entity.EnvironmentComponent
 import com.jervis.entity.EnvironmentDocument
 import com.jervis.entity.EnvironmentState
 import com.jervis.entity.PortMapping
 import com.jervis.entity.PropertyMapping
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder
 import io.fabric8.kubernetes.api.model.ContainerPortBuilder
-import io.fabric8.kubernetes.api.model.EnvVarBuilder
+import io.fabric8.kubernetes.api.model.EnvFromSourceBuilder
 import io.fabric8.kubernetes.api.model.IntOrString
 import io.fabric8.kubernetes.api.model.NamespaceBuilder
+import io.fabric8.kubernetes.api.model.PersistentVolumeClaimBuilder
+import io.fabric8.kubernetes.api.model.Probe
+import io.fabric8.kubernetes.api.model.ProbeBuilder
 import io.fabric8.kubernetes.api.model.Quantity
 import io.fabric8.kubernetes.api.model.ServiceBuilder
 import io.fabric8.kubernetes.api.model.ServicePortBuilder
+import io.fabric8.kubernetes.api.model.VolumeBuilder
+import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder
 import io.fabric8.kubernetes.client.ConfigBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
@@ -29,6 +36,12 @@ import org.springframework.stereotype.Service
  * Creates namespaces, deploys infrastructure (PostgreSQL, Redis, etc.) as K8s Deployments+Services,
  * resolves property mapping templates with actual K8s service endpoints.
  *
+ * Features:
+ * - One PVC per environment (shared via subPath per component)
+ * - One ConfigMap per component (envVars externalized from Deployment)
+ * - Health probes (liveness + readiness) from ComponentDefaults
+ * - Sync mechanism: re-apply ConfigMaps + Deployments for RUNNING environments
+ *
  * Does NOT start PROJECT components – that is the agent's responsibility.
  */
 @Service
@@ -37,6 +50,8 @@ class EnvironmentK8sService(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
+        /** Shared PVC name within each environment namespace */
+        private const val PVC_NAME = "jervis-env-data"
     }
 
     /**
@@ -53,7 +68,16 @@ class EnvironmentK8sService(
             // 1. Create namespace
             createNamespace(env.namespace)
 
-            // 2. Deploy infrastructure components (sorted by startOrder)
+            // 2. Create shared PVC if any component needs persistent storage
+            val hasStorage = env.components.any { comp ->
+                comp.type != ComponentType.PROJECT &&
+                    (comp.volumeMountPath ?: COMPONENT_DEFAULTS[comp.type]?.defaultVolumeMountPath) != null
+            }
+            if (hasStorage) {
+                createOrUpdatePvc(env.namespace, env.storageSizeGi)
+            }
+
+            // 3. Deploy infrastructure components (sorted by startOrder)
             val infraComponents = env.components
                 .filter { it.type != ComponentType.PROJECT && it.autoStart }
                 .sortedBy { it.startOrder }
@@ -69,6 +93,17 @@ class EnvironmentK8sService(
 
                 val envVars = (COMPONENT_DEFAULTS[component.type]?.defaultEnvVars ?: emptyMap()) + component.envVars
 
+                // Create ConfigMap for this component's env vars
+                if (envVars.isNotEmpty()) {
+                    createOrUpdateConfigMap(env.namespace, component.name, envVars)
+                }
+
+                val volumeMountPath = component.volumeMountPath
+                    ?: COMPONENT_DEFAULTS[component.type]?.defaultVolumeMountPath
+
+                // Resolve health probe: user override via healthCheckPath, or default from ComponentDefaults
+                val probeConfig = resolveProbeConfig(component)
+
                 deployComponent(
                     namespace = env.namespace,
                     name = component.name,
@@ -77,11 +112,13 @@ class EnvironmentK8sService(
                     envVars = envVars,
                     cpuLimit = component.cpuLimit,
                     memoryLimit = component.memoryLimit,
+                    volumeMountPath = volumeMountPath,
+                    probeConfig = probeConfig,
                 )
                 logger.info { "Deployed component: ${component.name} (${component.type})" }
             }
 
-            // 3. Resolve property mapping templates
+            // 4. Resolve property mapping templates
             val resolvedMappings = env.propertyMappings.map { mapping ->
                 val targetComponent = env.components.find { it.id == mapping.targetComponentId }
                 if (targetComponent != null) {
@@ -123,7 +160,7 @@ class EnvironmentK8sService(
         environmentService.updateState(environmentId, EnvironmentState.STOPPING)
 
         try {
-            // Delete infrastructure components
+            // Delete infrastructure components + their ConfigMaps
             val infraComponents = env.components
                 .filter { it.type != ComponentType.PROJECT }
 
@@ -132,7 +169,9 @@ class EnvironmentK8sService(
                 logger.info { "Deleted component: ${component.name}" }
             }
 
+            // Delete PVC if deleting namespace (otherwise keep data for re-provisioning)
             if (deleteNamespace) {
+                deletePvc(env.namespace)
                 deleteNamespace(env.namespace)
             }
 
@@ -142,6 +181,69 @@ class EnvironmentK8sService(
         } catch (e: Exception) {
             logger.error(e) { "Failed to deprovision environment: ${env.name}" }
             environmentService.updateState(environmentId, EnvironmentState.ERROR)
+            throw e
+        }
+    }
+
+    /**
+     * Sync K8s resources for a RUNNING environment.
+     * Re-applies ConfigMaps and Deployments with current settings.
+     * Idempotent via serverSideApply.
+     */
+    suspend fun syncEnvironmentResources(environmentId: EnvironmentId): EnvironmentDocument {
+        val env = environmentService.getEnvironmentById(environmentId)
+
+        if (env.state != EnvironmentState.RUNNING) {
+            throw IllegalStateException("Cannot sync resources for environment in state ${env.state}")
+        }
+
+        logger.info { "Syncing resources for environment: ${env.name} (ns=${env.namespace})" }
+
+        try {
+            val infraComponents = env.components
+                .filter { it.type != ComponentType.PROJECT && it.autoStart }
+                .sortedBy { it.startOrder }
+
+            for (component in infraComponents) {
+                val image = component.image
+                    ?: COMPONENT_DEFAULTS[component.type]?.image
+                    ?: continue
+
+                val ports = component.ports.ifEmpty {
+                    COMPONENT_DEFAULTS[component.type]?.ports ?: emptyList()
+                }
+
+                val envVars = (COMPONENT_DEFAULTS[component.type]?.defaultEnvVars ?: emptyMap()) + component.envVars
+
+                // Update ConfigMap
+                if (envVars.isNotEmpty()) {
+                    createOrUpdateConfigMap(env.namespace, component.name, envVars)
+                }
+
+                val volumeMountPath = component.volumeMountPath
+                    ?: COMPONENT_DEFAULTS[component.type]?.defaultVolumeMountPath
+
+                val probeConfig = resolveProbeConfig(component)
+
+                // Re-apply Deployment (serverSideApply = idempotent)
+                deployComponent(
+                    namespace = env.namespace,
+                    name = component.name,
+                    image = image,
+                    ports = ports,
+                    envVars = envVars,
+                    cpuLimit = component.cpuLimit,
+                    memoryLimit = component.memoryLimit,
+                    volumeMountPath = volumeMountPath,
+                    probeConfig = probeConfig,
+                )
+                logger.info { "Synced component: ${component.name}" }
+            }
+
+            logger.info { "Resources synced for environment: ${env.name}" }
+            return env
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to sync resources for environment: ${env.name}" }
             throw e
         }
     }
@@ -164,6 +266,25 @@ class EnvironmentK8sService(
             state = EnvironmentStateEnum.valueOf(env.state.name),
             componentStatuses = componentStatuses,
         )
+    }
+
+    // --- Helper: resolve probe config ---
+
+    private fun resolveProbeConfig(component: EnvironmentComponent): HealthProbeConfig? {
+        // User override: healthCheckPath → HTTP probe on first port
+        if (!component.healthCheckPath.isNullOrBlank()) {
+            val port = component.ports.firstOrNull()?.containerPort
+                ?: COMPONENT_DEFAULTS[component.type]?.ports?.firstOrNull()?.containerPort
+                ?: return null
+            return HealthProbeConfig(
+                type = ProbeType.HTTP,
+                port = port,
+                path = component.healthCheckPath,
+                initialDelaySeconds = 30,
+            )
+        }
+        // Default from ComponentDefaults
+        return COMPONENT_DEFAULTS[component.type]?.healthProbe
     }
 
     // --- K8s operations via fabric8 client ---
@@ -206,6 +327,115 @@ class EnvironmentK8sService(
         }
     }
 
+    // --- PVC operations ---
+
+    private fun createOrUpdatePvc(namespace: String, sizeGi: Int) {
+        buildK8sClient().use { client ->
+            // Check if PVC already exists (PVC size cannot be reduced)
+            val existing = client.persistentVolumeClaims()
+                .inNamespace(namespace)
+                .withName(PVC_NAME)
+                .get()
+
+            if (existing != null) {
+                logger.info { "K8s: PVC $PVC_NAME already exists in $namespace" }
+                return
+            }
+
+            val pvc = PersistentVolumeClaimBuilder()
+                .withNewMetadata()
+                    .withName(PVC_NAME)
+                    .withNamespace(namespace)
+                    .addToLabels("app", "jervis")
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .withNewSpec()
+                    .withAccessModes("ReadWriteOnce")
+                    .withNewResources()
+                        .addToRequests("storage", Quantity("${sizeGi}Gi"))
+                    .endResources()
+                .endSpec()
+                .build()
+
+            client.persistentVolumeClaims()
+                .inNamespace(namespace)
+                .resource(pvc)
+                .create()
+
+            logger.info { "K8s: Created PVC $PVC_NAME (${sizeGi}Gi) in $namespace" }
+        }
+    }
+
+    private fun deletePvc(namespace: String) {
+        buildK8sClient().use { client ->
+            client.persistentVolumeClaims()
+                .inNamespace(namespace)
+                .withName(PVC_NAME)
+                .delete()
+            logger.info { "K8s: Deleted PVC $PVC_NAME from $namespace" }
+        }
+    }
+
+    // --- ConfigMap operations ---
+
+    private fun createOrUpdateConfigMap(namespace: String, componentName: String, envVars: Map<String, String>) {
+        buildK8sClient().use { client ->
+            val configMapName = "$componentName-config"
+            val configMap = ConfigMapBuilder()
+                .withNewMetadata()
+                    .withName(configMapName)
+                    .withNamespace(namespace)
+                    .addToLabels("app", componentName)
+                    .addToLabels("managed-by", "jervis-server")
+                .endMetadata()
+                .withData(envVars)
+                .build()
+
+            client.configMaps()
+                .inNamespace(namespace)
+                .resource(configMap)
+                .serverSideApply()
+
+            logger.info { "K8s: Applied ConfigMap $configMapName in $namespace" }
+        }
+    }
+
+    private fun deleteConfigMap(namespace: String, componentName: String) {
+        buildK8sClient().use { client ->
+            client.configMaps()
+                .inNamespace(namespace)
+                .withName("$componentName-config")
+                .delete()
+        }
+    }
+
+    // --- Probe builder ---
+
+    private fun buildProbe(config: HealthProbeConfig): Probe {
+        val builder = ProbeBuilder()
+            .withInitialDelaySeconds(config.initialDelaySeconds)
+            .withPeriodSeconds(config.periodSeconds)
+            .withTimeoutSeconds(5)
+            .withFailureThreshold(3)
+
+        return when (config.type) {
+            ProbeType.TCP -> builder
+                .withNewTcpSocket()
+                    .withPort(IntOrString(config.port))
+                .endTcpSocket()
+                .build()
+
+            ProbeType.HTTP -> builder
+                .withNewHttpGet()
+                    .withPath(config.path ?: "/")
+                    .withPort(IntOrString(config.port))
+                .endHttpGet()
+                .build()
+        }
+    }
+
+    // --- Deploy / delete component ---
+
     private fun deployComponent(
         namespace: String,
         name: String,
@@ -214,6 +444,8 @@ class EnvironmentK8sService(
         envVars: Map<String, String>,
         cpuLimit: String?,
         memoryLimit: String?,
+        volumeMountPath: String? = null,
+        probeConfig: HealthProbeConfig? = null,
     ) {
         buildK8sClient().use { client ->
             // 1. Create Deployment
@@ -223,9 +455,48 @@ class EnvironmentK8sService(
                     .withName(pm.name.ifEmpty { "port-${pm.containerPort}" })
                     .build()
             }
-            val envList = envVars.map { (k, v) ->
-                EnvVarBuilder().withName(k).withValue(v).build()
+
+            // Volume mounts for the container
+            val volumeMounts = mutableListOf<io.fabric8.kubernetes.api.model.VolumeMount>()
+            if (volumeMountPath != null) {
+                volumeMounts.add(
+                    VolumeMountBuilder()
+                        .withName(PVC_NAME)
+                        .withMountPath(volumeMountPath)
+                        .withSubPath(name) // subPath isolates each component's data on the shared PVC
+                        .build()
+                )
             }
+
+            // Pod volumes
+            val volumes = mutableListOf<io.fabric8.kubernetes.api.model.Volume>()
+            if (volumeMountPath != null) {
+                volumes.add(
+                    VolumeBuilder()
+                        .withName(PVC_NAME)
+                        .withNewPersistentVolumeClaim()
+                            .withClaimName(PVC_NAME)
+                        .endPersistentVolumeClaim()
+                        .build()
+                )
+            }
+
+            // EnvFrom — load all env vars from ConfigMap (if any exist)
+            val envFromSources = if (envVars.isNotEmpty()) {
+                listOf(
+                    EnvFromSourceBuilder()
+                        .withNewConfigMapRef()
+                            .withName("$name-config")
+                        .endConfigMapRef()
+                        .build()
+                )
+            } else {
+                emptyList()
+            }
+
+            // Probes
+            val livenessProbe = probeConfig?.let { buildProbe(it) }
+            val readinessProbe = probeConfig?.let { buildProbe(it) }
 
             val deploymentBuilder = DeploymentBuilder()
                 .withNewMetadata()
@@ -248,11 +519,15 @@ class EnvironmentK8sService(
                                 .withName(name)
                                 .withImage(image)
                                 .withPorts(containerPorts)
-                                .withEnv(envList)
+                                .withEnvFrom(envFromSources)
+                                .withVolumeMounts(volumeMounts)
+                                .withLivenessProbe(livenessProbe)
+                                .withReadinessProbe(readinessProbe)
                                 .withNewResources()
                                     .addToLimits(buildResourceMap(cpuLimit, memoryLimit))
                                 .endResources()
                             .endContainer()
+                            .withVolumes(volumes)
                         .endSpec()
                     .endTemplate()
                 .endSpec()
@@ -297,7 +572,9 @@ class EnvironmentK8sService(
         buildK8sClient().use { client ->
             client.apps().deployments().inNamespace(namespace).withName(name).delete()
             client.services().inNamespace(namespace).withName(name).delete()
-            logger.info { "K8s: Deleted $name from namespace $namespace" }
+            // Delete component ConfigMap
+            client.configMaps().inNamespace(namespace).withName("$name-config").delete()
+            logger.info { "K8s: Deleted $name (deployment + service + configmap) from namespace $namespace" }
         }
     }
 

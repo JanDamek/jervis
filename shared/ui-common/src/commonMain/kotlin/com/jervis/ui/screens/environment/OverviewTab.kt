@@ -22,6 +22,7 @@ import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JKeyValueRow
+import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JTextButton
@@ -38,6 +39,7 @@ fun OverviewTab(
     onProvision: () -> Unit,
     onStop: () -> Unit,
     onDelete: () -> Unit,
+    onSync: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val currentState = status?.state ?: environment.state
@@ -101,6 +103,23 @@ fun OverviewTab(
             }
         }
 
+        // Storage section
+        JSection(title = "Úložiště") {
+            JKeyValueRow("Strategie", "Jeden PVC na prostředí")
+            JKeyValueRow("Velikost", "${environment.storageSizeGi} Gi")
+            JKeyValueRow("Název PVC", "jervis-env-data")
+
+            val componentsWithStorage = environment.components.filter {
+                it.type != ComponentTypeEnum.PROJECT && it.volumeMountPath != null
+            }
+            if (componentsWithStorage.isNotEmpty()) {
+                JKeyValueRow(
+                    "Komponenty s úložištěm",
+                    componentsWithStorage.joinToString(", ") { it.name },
+                )
+            }
+        }
+
         // Agent instructions (if any)
         environment.agentInstructions?.let { instructions ->
             if (instructions.isNotBlank()) {
@@ -124,6 +143,7 @@ fun OverviewTab(
                 }
                 EnvironmentStateEnum.RUNNING -> {
                     JTextButton(onClick = onDelete) { Text("Smazat") }
+                    JSecondaryButton(onClick = onSync) { Text("Synchronizovat") }
                     JPrimaryButton(onClick = onStop) { Text("Zastavit") }
                 }
                 EnvironmentStateEnum.CREATING, EnvironmentStateEnum.STOPPING -> {

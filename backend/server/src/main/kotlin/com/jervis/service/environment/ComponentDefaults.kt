@@ -4,15 +4,26 @@ import com.jervis.entity.ComponentType
 import com.jervis.entity.PortMapping
 
 /**
- * Multi-version component defaults with Docker images, ports, ENV vars and volume paths.
+ * Multi-version component defaults with Docker images, ports, ENV vars, volume paths and health probes.
  */
 data class ComponentVersion(val label: String, val image: String)
+
+enum class ProbeType { TCP, HTTP }
+
+data class HealthProbeConfig(
+    val type: ProbeType,
+    val port: Int,
+    val path: String? = null,
+    val initialDelaySeconds: Int = 30,
+    val periodSeconds: Int = 10,
+)
 
 data class ComponentDefault(
     val versions: List<ComponentVersion>,
     val ports: List<PortMapping>,
     val defaultEnvVars: Map<String, String> = emptyMap(),
     val defaultVolumeMountPath: String? = null,
+    val healthProbe: HealthProbeConfig? = null,
 ) {
     /** First version image (newest) — used as default when no explicit image is set. */
     val image: String get() = versions.first().image
@@ -29,6 +40,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ports = listOf(PortMapping(5432, 5432, "postgres")),
         defaultEnvVars = mapOf("POSTGRES_PASSWORD" to "jervis"),
         defaultVolumeMountPath = "/var/lib/postgresql/data",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 5432, initialDelaySeconds = 20),
     ),
     ComponentType.MONGODB to ComponentDefault(
         versions = listOf(
@@ -38,6 +50,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ),
         ports = listOf(PortMapping(27017, 27017, "mongo")),
         defaultVolumeMountPath = "/data/db",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 27017, initialDelaySeconds = 15),
     ),
     ComponentType.REDIS to ComponentDefault(
         versions = listOf(
@@ -46,6 +59,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ),
         ports = listOf(PortMapping(6379, 6379, "redis")),
         defaultVolumeMountPath = "/data",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 6379, initialDelaySeconds = 5),
     ),
     ComponentType.RABBITMQ to ComponentDefault(
         versions = listOf(
@@ -56,6 +70,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
             PortMapping(15672, 15672, "management"),
         ),
         defaultVolumeMountPath = "/var/lib/rabbitmq",
+        healthProbe = HealthProbeConfig(ProbeType.HTTP, port = 15672, path = "/api/healthchecks/node", initialDelaySeconds = 30),
     ),
     ComponentType.KAFKA to ComponentDefault(
         versions = listOf(
@@ -64,6 +79,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ),
         ports = listOf(PortMapping(9092, 9092, "kafka")),
         defaultVolumeMountPath = "/var/lib/kafka/data",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 9092, initialDelaySeconds = 30),
     ),
     ComponentType.ELASTICSEARCH to ComponentDefault(
         versions = listOf(
@@ -74,6 +90,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ports = listOf(PortMapping(9200, 9200, "http")),
         defaultEnvVars = mapOf("discovery.type" to "single-node", "xpack.security.enabled" to "false"),
         defaultVolumeMountPath = "/usr/share/elasticsearch/data",
+        healthProbe = HealthProbeConfig(ProbeType.HTTP, port = 9200, path = "/_cluster/health", initialDelaySeconds = 30),
     ),
     ComponentType.ORACLE to ComponentDefault(
         versions = listOf(
@@ -82,6 +99,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ports = listOf(PortMapping(1521, 1521, "oracle")),
         defaultEnvVars = mapOf("ORACLE_PASSWORD" to "jervis"),
         defaultVolumeMountPath = "/opt/oracle/oradata",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 1521, initialDelaySeconds = 60),
     ),
     ComponentType.MYSQL to ComponentDefault(
         versions = listOf(
@@ -91,6 +109,7 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ports = listOf(PortMapping(3306, 3306, "mysql")),
         defaultEnvVars = mapOf("MYSQL_ROOT_PASSWORD" to "jervis"),
         defaultVolumeMountPath = "/var/lib/mysql",
+        healthProbe = HealthProbeConfig(ProbeType.TCP, port = 3306, initialDelaySeconds = 20),
     ),
     ComponentType.MINIO to ComponentDefault(
         versions = listOf(
@@ -102,5 +121,6 @@ val COMPONENT_DEFAULTS: Map<ComponentType, ComponentDefault> = mapOf(
         ),
         defaultEnvVars = mapOf("MINIO_ROOT_USER" to "jervis", "MINIO_ROOT_PASSWORD" to "jervis123"),
         defaultVolumeMountPath = "/data",
+        healthProbe = HealthProbeConfig(ProbeType.HTTP, port = 9000, path = "/minio/health/ready", initialDelaySeconds = 15),
     ),
 )
