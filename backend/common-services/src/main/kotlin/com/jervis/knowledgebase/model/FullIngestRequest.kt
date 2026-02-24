@@ -2,6 +2,7 @@ package com.jervis.knowledgebase.model
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.TaskTypeEnum
 import java.time.Instant
 
 /**
@@ -12,7 +13,7 @@ data class FullIngestRequest(
     val clientId: ClientId,
     val projectId: ProjectId? = null,
     val sourceUrn: String,
-    val sourceType: String, // "email", "confluence", "jira", "git"
+    val sourceType: TaskTypeEnum,
     val subject: String? = null, // Email subject, page title, issue key
     val content: String, // Main text content
     val metadata: Map<String, String> = emptyMap(),

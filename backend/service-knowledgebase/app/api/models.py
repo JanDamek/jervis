@@ -1,6 +1,26 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+
+
+class SourceType(str, Enum):
+    """Content source type for KB ingestion.
+
+    Values must match Kotlin TaskTypeEnum.sourceKey values
+    in shared/common-dto/.../TaskTypeEnum.kt.
+    """
+    EMAIL = "email"
+    JIRA = "jira"
+    LINK = "link"
+    CONFLUENCE = "confluence"
+    GIT = "git"
+    MEETING = "meeting"
+    CHAT = "chat"
+    USER_TASK = "user_task"
+    SCHEDULED = "scheduled"
+    IDLE_REVIEW = "idle_review"
 
 
 class IngestRequest(BaseModel):
@@ -158,7 +178,7 @@ class FullIngestRequest(BaseModel):
     projectId: Optional[str] = None
     groupId: Optional[str] = None
     sourceUrn: str
-    sourceType: str = ""  # "email", "confluence", "jira", "git", etc.
+    sourceType: Optional[SourceType] = None
     subject: Optional[str] = None  # Email subject, page title, issue key
     content: str  # Main text content
     metadata: Dict[str, Any] = {}

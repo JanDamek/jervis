@@ -223,17 +223,23 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 
 For indexer details see [knowledge-base.md § Continuous Indexers](knowledge-base.md#continuous-indexers).
 
-**TaskTypeEnum values:**
-- `EMAIL_PROCESSING` – Email content from IMAP/POP3
-- `WIKI_PROCESSING` – Confluence pages
-- `BUGTRACKER_PROCESSING` – Jira/GitHub/GitLab issues
-- `GIT_PROCESSING` – Git commits and diffs
-- `USER_INPUT_PROCESSING` – User chat messages
-- `USER_TASK` – User-created tasks
-- `SCHEDULED_TASK` – Cron-scheduled tasks
-- `LINK_PROCESSING` – URLs extracted from other documents
-- `MEETING_PROCESSING` – Transcribed meeting recordings (from MeetingContinuousIndexer)
-- `IDLE_REVIEW` – System-generated proactive review task (from BackgroundEngine idle loop)
+**TaskTypeEnum values** (each carries a `sourceKey` used as wire-format identifier for KB):
+
+| Enum value | `sourceKey` | Description |
+|------------|-------------|-------------|
+| `EMAIL_PROCESSING` | `email` | Email content from IMAP/POP3 |
+| `WIKI_PROCESSING` | `confluence` | Confluence pages |
+| `BUGTRACKER_PROCESSING` | `jira` | Jira/GitHub/GitLab issues |
+| `GIT_PROCESSING` | `git` | Git commits and diffs |
+| `USER_INPUT_PROCESSING` | `chat` | User chat messages |
+| `USER_TASK` | `user_task` | User-created tasks |
+| `SCHEDULED_TASK` | `scheduled` | Cron-scheduled tasks |
+| `LINK_PROCESSING` | `link` | URLs extracted from other documents |
+| `MEETING_PROCESSING` | `meeting` | Transcribed meeting recordings |
+| `IDLE_REVIEW` | `idle_review` | System-generated proactive review task |
+
+The `sourceKey` is sent to KB via multipart form field `sourceType` and stored in graph metadata.
+Python KB service uses matching `SourceType(str, Enum)` in `app/api/models.py`.
 
 #### 1.1 Link Handling Flow - SEPARATE PENDING TASKS
 
@@ -386,7 +392,7 @@ data class TaskMemoryDocument(
     val structuredData: Map<String, String>, // Metadata
     val routingDecision: String,         // DONE / READY_FOR_GPU
     val routingReason: String,
-    val sourceType: String?,             // EMAIL, JIRA, GIT_COMMIT
+    val sourceType: TaskTypeEnum?,       // wire value via .sourceKey (email, jira, git, ...)
     val sourceId: String?
 )
 ```

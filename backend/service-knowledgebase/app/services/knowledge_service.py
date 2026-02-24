@@ -521,7 +521,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             clientId=request.clientId,
             projectId=request.projectId,
             sourceUrn=request.sourceUrn,
-            kind=request.sourceType,
+            kind=request.sourceType or "",
             content=combined_content,
             metadata={
                 **request.metadata,
@@ -814,7 +814,7 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
             clientId=request.clientId,
             projectId=request.projectId,
             sourceUrn=request.sourceUrn,
-            kind=request.sourceType,
+            kind=request.sourceType or "",
             content=combined_content,
             metadata={
                 **request.metadata,

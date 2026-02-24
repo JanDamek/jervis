@@ -10,7 +10,7 @@ from starlette.responses import StreamingResponse
 from app.api.models import (
     IngestRequest, IngestResult, RetrievalRequest, EvidencePack,
     TraversalRequest, GraphNode, CrawlRequest,
-    FullIngestRequest, FullIngestResult,
+    FullIngestRequest, FullIngestResult, SourceType,
     HybridRetrievalRequest, HybridEvidenceItem, HybridEvidencePack,
     PurgeRequest, PurgeResult,
     ListByKindRequest,
@@ -351,13 +351,14 @@ async def ingest_full(
     """
     try:
         meta = json.loads(metadata)
+        source_type_enum = SourceType(sourceType) if sourceType else None
 
         request = FullIngestRequest(
             clientId=clientId,
             projectId=projectId,
             groupId=groupId,
             sourceUrn=sourceUrn,
-            sourceType=sourceType,
+            sourceType=source_type_enum,
             subject=subject,
             content=content,
             metadata=meta
@@ -416,13 +417,14 @@ async def ingest_full_async(
 
     try:
         meta = json.loads(metadata)
+        source_type_enum = SourceType(sourceType) if sourceType else None
 
         request = FullIngestRequest(
             clientId=clientId,
             projectId=projectId,
             groupId=groupId,
             sourceUrn=sourceUrn,
-            sourceType=sourceType,
+            sourceType=source_type_enum,
             subject=subject,
             content=content,
             metadata=meta

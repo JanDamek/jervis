@@ -1,7 +1,6 @@
 package com.jervis.qualifier
 
 import com.jervis.domain.atlassian.AttachmentMetadata
-import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.Attachment
 import com.jervis.knowledgebase.model.FullIngestRequest
@@ -69,7 +68,7 @@ class SimpleQualifierAgent(
             clientId = task.clientId,
             projectId = task.projectId,
             sourceUrn = task.correlationId,
-            sourceType = mapTaskTypeToSourceType(task.type),
+            sourceType = task.type,
             subject = extractSubject(task),
             content = cleanedContent,
             metadata = buildMetadata(task),
@@ -114,21 +113,6 @@ class SimpleQualifierAgent(
                 logger.warn(e) { "Failed to load attachment: ${attachmentMeta.storagePath}" }
                 null
             }
-        }
-    }
-
-    private fun mapTaskTypeToSourceType(taskType: TaskTypeEnum): String {
-        return when (taskType) {
-            TaskTypeEnum.EMAIL_PROCESSING -> "email"
-            TaskTypeEnum.WIKI_PROCESSING -> "confluence"
-            TaskTypeEnum.BUGTRACKER_PROCESSING -> "jira"
-            TaskTypeEnum.GIT_PROCESSING -> "git"
-            TaskTypeEnum.USER_INPUT_PROCESSING -> "chat"
-            TaskTypeEnum.USER_TASK -> "user_task"
-            TaskTypeEnum.SCHEDULED_TASK -> "scheduled"
-            TaskTypeEnum.LINK_PROCESSING -> "link"
-            TaskTypeEnum.MEETING_PROCESSING -> "meeting"
-            TaskTypeEnum.IDLE_REVIEW -> "idle_review"
         }
     }
 
