@@ -37,36 +37,9 @@ Chat odpovídá s termíny "traceId" a "Telemetry", které v datech NEEXISTUJÍ.
 
 ---
 
-## Bug 2: create_background_task bez souhlasu uživatele
+## ~~Bug 2: create_background_task bez souhlasu uživatele~~ ✅ OPRAVENO
 
-### Symptom
-Chat vytvořil background task, aniž uživatel o to požádal. Uživatel napsal pouze dotaz, ne žádost o background zpracování.
-
-### Příčina
-System prompt (`system_prompt.py:102-109`) **aktivně nabádá** k vytváření background tasků:
-```
-Většina práce jde na BACKGROUND — default.
-```
-A dále:
-```
-Background TODO — "podívej se na...", "zkontroluj..." → create_background_task
-```
-
-LLM interpretuje jakýkoli dotaz jako potenciální "background TODO" a vytváří tasky proaktivně.
-
-### Řešení
-Zpřísnit pravidla v system prompt:
-```
-**create_background_task**: Použij POUZE když:
-1. Uživatel EXPLICITNĚ požádá o background zpracování ("udělej to na pozadí", "vytvoř task")
-2. Uživatel pošle seznam 5+ požadavků a ty mu to NAVRHUJEŠ — ale čekej na souhlas
-NIKDY nevytvářej background task bez explicitního souhlasu uživatele.
-```
-
-Odstranit/přeformulovat řádky 102-109 kde je "Většina práce jde na BACKGROUND — default".
-
-### Soubory
-- `backend/service-orchestrator/app/chat/system_prompt.py` — zpřísnit pravidla pro create_background_task
+Opraveno v `0dae82a9` — system prompt nyní vyžaduje explicitní souhlas uživatele před vytvořením background tasku. Nasazeno.
 
 ---
 
@@ -117,7 +90,7 @@ Když chat uloží špatnou informaci do KB (nebo ji tam vloží jiný tool), ne
 
 ## Pořadí implementace
 
-1. **Bug 2** (system prompt — background task pravidla) — nejrychlejší, čistě textová změna
+1. ~~**Bug 2** (system prompt — background task pravidla)~~ ✅ HOTOVO
 2. **Bug 1** (system prompt + context — označení historie) — malý scope
 3. **Feature 3** (kb_delete tool) — nový endpoint + tool + executor
 
