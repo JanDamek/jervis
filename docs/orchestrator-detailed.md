@@ -3229,7 +3229,7 @@ delegating to existing Kotlin services:
 | `/internal/unclassified-meetings` | GET | `MeetingRpcImpl.listUnclassifiedMeetings()` | chat tool |
 | `/internal/dispatch-coding-agent` | POST | `TaskService.createTask(READY_FOR_GPU)` | chat tool |
 
-Request DTOs: `InternalCreateTaskRequest`, `InternalRespondToTaskRequest`, `InternalClassifyMeetingRequest`, `InternalDispatchCodingAgentRequest` (all in KtorRpcServer.kt).
+Request DTOs: `InternalCreateTaskRequest` (in InternalTaskApiRouting.kt), `InternalRespondToTaskRequest`, `InternalClassifyMeetingRequest`, `InternalDispatchCodingAgentRequest` (in KtorRpcServer.kt). `InternalCreateTaskRequest` accepts both legacy (`query`) and new (`title`, `description`, `schedule`, `daysOffset`, `createdBy`) fields.
 
 Graceful degradation: `fetch_runtime_context()` catches HTTP errors per-endpoint, so chat works even if some endpoints fail.
 
