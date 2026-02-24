@@ -4,8 +4,14 @@ import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import com.jervis.repository.ChatMessageRepository
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactive.awaitSingle
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.springframework.data.mongodb.core.FindAndModifyOptions
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate
+import org.springframework.data.mongodb.core.query.Criteria
+import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -21,6 +27,7 @@ import java.time.Instant
 @Service
 class ChatMessageService(
     private val chatMessageRepository: ChatMessageRepository,
+    private val mongoTemplate: ReactiveMongoTemplate,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -38,13 +45,15 @@ class ChatMessageService(
     ): ChatMessageDocument {
         require(content.isNotBlank()) { "Message content cannot be blank" }
 
-        // Dedup check
+        // Dedup check — return existing message instead of creating a duplicate
         if (clientMessageId != null && chatMessageRepository.existsByClientMessageId(clientMessageId)) {
             logger.info { "MESSAGE_DEDUP | conversationId=$conversationId | clientMessageId=$clientMessageId" }
-            // Return existing (find and return would be better, but for PoC this is fine)
+            val existing = chatMessageRepository.findByClientMessageId(clientMessageId)
+            if (existing != null) return existing
+            // If existsBy returned true but findBy returned null (race), fall through to create
         }
 
-        val nextSequence = chatMessageRepository.countByConversationId(conversationId) + 1
+        val nextSequence = getNextSequenceAtomic(conversationId)
 
         val message = ChatMessageDocument(
             id = ObjectId(),
@@ -165,4 +174,24 @@ class ChatMessageService(
      */
     suspend fun findByClientMessageId(clientMessageId: String): ChatMessageDocument? =
         chatMessageRepository.findByClientMessageId(clientMessageId)
+
+    /**
+     * Atomic sequence counter using MongoDB findAndModify with $inc.
+     * Prevents race conditions when parallel callers request next sequence.
+     *
+     * Uses a dedicated "chat_sequence_counters" collection (same as Python handler).
+     */
+    private suspend fun getNextSequenceAtomic(conversationId: ObjectId): Long {
+        data class SequenceCounter(val counter: Long = 0)
+
+        val result = mongoTemplate.findAndModify(
+            Query(Criteria.where("_id").`is`("seq_$conversationId")),
+            Update().inc("counter", 1),
+            FindAndModifyOptions.options().returnNew(true).upsert(true),
+            SequenceCounter::class.java,
+            "chat_sequence_counters",
+        ).awaitSingle()
+
+        return result.counter
+    }
 }

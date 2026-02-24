@@ -41,9 +41,10 @@ _TASK_MGMT_PATTERNS = re.compile(
     r"stav\s+úkol|vytvoř.*úkol|"
     r"respond|odpověz\s+na\s+(?:task|úkol)|user_task|"
     r"znalost|knowledge|ulož\s+(?:do\s+)?kb|"
-    # switch_context triggers (explicit user request to switch/open client/project)
-    r"přepni\s+(?:se\s+)?na|otevři\s+(?:projekt|klient)|"
-    r"switch|přepnout|zapamatuj\s+si|"
+    # switch_context triggers (explicit + natural phrases for switching context)
+    r"přepni\s+(?:se\s+)?na|otevři\s+(?:projekt|klient|\w+)|"
+    r"jdeme\s+na|pojďme\s+na|pojdme\s+na|přejdi\s+na|prejdi\s+na|"
+    r"switch|přepnout|prepnout|zapamatuj\s+si|"
     # memory_store triggers (learning new procedures)
     r"nauč\s+se|pamatuj\s+si|konvence|postup"
     r")",
@@ -52,11 +53,14 @@ _TASK_MGMT_PATTERNS = re.compile(
 
 _RESEARCH_PATTERNS = re.compile(
     r"(?:"
-    r"kód[ue]?|code|zdrojov|source|funkc[ei]|class|tříd[auy]|metod[auy]|"
+    r"kód[ue]?|kod[ue]?|code|zdrojov|source|funkc[ei]|class|"
+    r"tříd[auy]|trid[auy]|metod[auy]|"
     r"architektur|pattern|vzor|implementac|"
     r"indexovan|indexed|statistik|stats|"
-    r"co\s+víš\s+o|co\s+máš\s+o|přehled|overview|"
-    r"affair|záležitost|téma[ta]?"
+    r"co\s+víš\s+o|co\s+vis\s+o|co\s+máš\s+o|co\s+mas\s+o|"
+    r"přehled|prehled|overview|"
+    r"analýz|analyz|bug|chyb[auy]?|error|tracing|debug|"
+    r"affair|záležitost|zalezitost|téma[ta]?|tema[ta]?"
     r")",
     re.IGNORECASE,
 )

@@ -250,7 +250,7 @@ async def handle_chat(
                     role="ASSISTANT",
                     content=bg_suggestion,
                     correlation_id=str(ObjectId()),
-                    sequence=request.message_sequence + 1,
+                    sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                     metadata={"summarizer_failed": "true", "original_length": str(msg_len)},
                 )
                 yield ChatStreamEvent(type="done", metadata={
@@ -289,7 +289,7 @@ async def handle_chat(
                                 conversation_id=request.session_id,
                                 role="ASSISTANT", content=partial_text,
                                 correlation_id=str(ObjectId()),
-                                sequence=request.message_sequence + 1,
+                                sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                                 metadata={"interrupted": "true", "decomposed": str(len(subtopics))},
                             )
                         yield ChatStreamEvent(type="done", metadata={"interrupted": True})
@@ -332,7 +332,7 @@ async def handle_chat(
                     role="ASSISTANT",
                     content=final_text,
                     correlation_id=str(ObjectId()),
-                    sequence=request.message_sequence + 1,
+                    sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                     metadata={
                         "decomposed": str(len(subtopics)),
                         "topics": ",".join(t.title for t in subtopics),
@@ -382,16 +382,28 @@ async def handle_chat(
                 messages.append({"role": "system", "content": focus_hint})
 
         # --- Simple message fast path ---
-        # For short messages with CORE-only intent (no keywords matched), try a direct
-        # answer WITHOUT tools first. This avoids the 60-120s overhead of 3-4 unnecessary
-        # tool calls for questions like "ahoj" or "na čem pracuju?".
-        # If the model needs tools, it will say so → fall through to agentic loop.
+        # For short GREETING messages with CORE-only intent, try a direct answer WITHOUT
+        # tools. This avoids 60-120s overhead for simple greetings like "ahoj".
+        #
+        # IMPORTANT: Direct answer is restricted to greeting-only messages. Any message
+        # that could require factual information (code, projects, tasks) MUST go through
+        # the agentic loop with tools. Without tools the LLM confidently hallucinates
+        # fake tool results (e.g. "Pomocí kb_search jsem vyhledal...") which is worse
+        # than a slower but correct answer.
+        _GREETING_RE = re.compile(
+            r"^\s*(?:ahoj|čau|zdravím|hej|hi|hello|hey|"
+            r"dobr[éý]?\s+(?:ráno|den|odpoledne|večer)|"
+            r"co\s+je\s+nového|co\s+se\s+děje)"
+            r"[!?.\s]*$",
+            re.IGNORECASE,
+        )
         if (
-            msg_len < 500
+            msg_len < 200
             and intent_categories == {ToolCategory.CORE}
             and not request.context_task_id
+            and _GREETING_RE.match(request.message)
         ):
-            logger.info("Chat: short simple message (%d chars, CORE-only) — trying direct answer", msg_len)
+            logger.info("Chat: greeting message (%d chars, CORE-only) — trying direct answer", msg_len)
             try:
                 direct_response = await llm_provider.completion(
                     messages=messages,
@@ -403,9 +415,22 @@ async def handle_chat(
                 )
                 direct_text = direct_response.choices[0].message.content or ""
 
-                # Accept the direct answer unless model explicitly says it needs tools
+                # Reject if model hallucinates tool usage or admits it needs tools.
+                # _NEEDS_TOOLS_MARKERS: model says "I don't know / I need to search".
+                # _FAKE_TOOL_MARKERS: model pretends it called tools (hallucination).
                 _NEEDS_TOOLS_MARKERS = ["potřebuji", "nemám informac", "nevím", "musím", "nemohu"]
-                if direct_text.strip() and not any(m in direct_text.lower() for m in _NEEDS_TOOLS_MARKERS):
+                _FAKE_TOOL_MARKERS = [
+                    "pomocí kb_search", "pomocí brain_", "pomocí code_search",
+                    "pomocí web_search", "pomocí memory_",
+                    "kb_search", "brain_search", "code_search",
+                    "web_search", "memory_recall",
+                    "krok 1:", "krok 2:", "step 1:", "step 2:",
+                    "vyhledal jsem", "našel jsem v",
+                ]
+                direct_lower = direct_text.lower()
+                has_tool_markers = any(m in direct_lower for m in _NEEDS_TOOLS_MARKERS)
+                has_fake_tools = any(m in direct_lower for m in _FAKE_TOOL_MARKERS)
+                if direct_text.strip() and not has_tool_markers and not has_fake_tools:
                     logger.info("Chat: direct answer accepted (%d chars, no tools needed)", len(direct_text))
                     for i in range(0, len(direct_text), STREAM_CHUNK_SIZE):
                         yield ChatStreamEvent(type="token", content=direct_text[i:i + STREAM_CHUNK_SIZE])
@@ -414,7 +439,7 @@ async def handle_chat(
                         conversation_id=request.session_id,
                         role="ASSISTANT", content=direct_text,
                         correlation_id=str(ObjectId()),
-                        sequence=request.message_sequence + 1,
+                        sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                         metadata={"direct_answer": "true"},
                     )
                     try:
@@ -424,7 +449,8 @@ async def handle_chat(
                     yield ChatStreamEvent(type="done", metadata={"direct_answer": True, "iterations": 0})
                     return
                 else:
-                    logger.info("Chat: direct answer insufficient, falling through to agentic loop")
+                    logger.info("Chat: direct answer rejected (tool_markers=%s, fake_tools=%s), falling through",
+                                has_tool_markers, has_fake_tools)
             except Exception as e:
                 logger.warning("Chat: direct answer attempt failed (%s), falling through", e)
 
@@ -447,7 +473,7 @@ async def handle_chat(
                         role="ASSISTANT",
                         content=partial,
                         correlation_id=str(ObjectId()),
-                        sequence=request.message_sequence + 1,
+                        sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                         metadata={"interrupted": "true"},
                     )
                 yield ChatStreamEvent(type="done", metadata={"interrupted": True})
@@ -516,7 +542,7 @@ async def handle_chat(
                     role="ASSISTANT",
                     content=final_text,
                     correlation_id=str(ObjectId()),
-                    sequence=request.message_sequence + 1,
+                    sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                     metadata={
                         **({"used_tools": ",".join(used_tools)} if used_tools else {}),
                         **({"created_tasks": ",".join(str(t.get("title", "")) for t in created_tasks)} if created_tasks else {}),
@@ -598,7 +624,7 @@ async def handle_chat(
                     conversation_id=request.session_id,
                     role="ASSISTANT", content=final_text,
                     correlation_id=str(ObjectId()),
-                    sequence=request.message_sequence + 1,
+                    sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                     metadata={"drift_break": drift_reason, "used_tools": ",".join(used_tools)},
                 )
                 yield ChatStreamEvent(type="done", metadata={"drift_break": drift_reason, "iterations": iteration + 1})
@@ -629,7 +655,7 @@ async def handle_chat(
                             conversation_id=request.session_id,
                             role="ASSISTANT", content=partial,
                             correlation_id=str(ObjectId()),
-                            sequence=request.message_sequence + 1,
+                            sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                             metadata={"interrupted": "true"},
                         )
                     yield ChatStreamEvent(type="done", metadata={"interrupted": True})
@@ -639,7 +665,15 @@ async def handle_chat(
                 try:
                     arguments = json.loads(tool_call.function.arguments)
                 except json.JSONDecodeError:
-                    arguments = {}
+                    logger.warning("Chat: malformed tool arguments for %s: %s",
+                                   tool_name, tool_call.function.arguments[:200])
+                    # Report parse error back to LLM instead of running with empty args
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": f"Chyba: argumenty pro {tool_name} nejsou platný JSON. Oprav formát a zkus znovu.",
+                    })
+                    continue
 
                 logger.info("Chat: calling tool %s with args: %s", tool_name, str(arguments)[:200])
 
@@ -773,7 +807,7 @@ async def handle_chat(
                 conversation_id=request.session_id,
                 role="ASSISTANT", content=final_text,
                 correlation_id=str(ObjectId()),
-                sequence=request.message_sequence + 1,
+                sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                 metadata={"max_iterations": "true", "used_tools": ",".join(used_tools)},
             )
             yield ChatStreamEvent(type="done", metadata={"max_iterations": True, "iterations": effective_max_iterations})
@@ -797,7 +831,7 @@ async def handle_chat(
                     role="ASSISTANT",
                     content=partial_content,
                     correlation_id=str(ObjectId()),
-                    sequence=request.message_sequence + 1,
+                    sequence=await chat_context_assembler.get_next_sequence(request.session_id),
                     metadata={"interrupted": "true", "error": str(e)},
                 )
                 logger.info("Chat: saved partial response (%d tool results)", len(tool_summaries))
@@ -1181,20 +1215,27 @@ async def _execute_chat_specific_tool(
         from app.tools.kotlin_client import kotlin_client
 
         if tool_name == "create_background_task":
+            effective_client_id = arguments.get("client_id") or active_client_id
+            if not effective_client_id:
+                return "Chyba: client_id je povinný pro vytvoření background tasku. Zeptej se uživatele na klienta."
             result = await kotlin_client.create_background_task(
                 title=arguments["title"],
                 description=arguments["description"],
-                client_id=arguments.get("client_id", active_client_id or ""),
+                client_id=effective_client_id,
                 project_id=arguments.get("project_id", active_project_id),
                 priority=arguments.get("priority", "medium"),
             )
             return f"Background task created: {result}"
 
         elif tool_name == "dispatch_coding_agent":
+            effective_client_id = arguments.get("client_id") or active_client_id
+            effective_project_id = arguments.get("project_id") or active_project_id
+            if not effective_client_id or not effective_project_id:
+                return "Chyba: client_id a project_id jsou povinné pro dispatch coding agenta. Zeptej se uživatele."
             result = await kotlin_client.dispatch_coding_agent(
                 task_description=arguments["task_description"],
-                client_id=arguments["client_id"],
-                project_id=arguments["project_id"],
+                client_id=effective_client_id,
+                project_id=effective_project_id,
             )
             return f"Coding agent dispatched: {result}"
 
@@ -1259,13 +1300,32 @@ def _resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
         available = ", ".join(c.get("name", "?") for c in ctx.clients_projects)
         return {"message": f"Chybí jméno klienta. Dostupní klienti: {available}"}
 
-    # Find client by name (case-insensitive substring match)
-    matched_client = None
+    # Find client by name — prefer exact match, then substring.
+    # If multiple substring matches exist, report ambiguity instead of picking first.
+    exact_match = None
+    substring_matches: list[dict] = []
     for c in ctx.clients_projects:
         cname = (c.get("name") or "").lower()
-        if cname == client_name_query or client_name_query in cname:
-            matched_client = c
+        if cname == client_name_query:
+            exact_match = c
             break
+        elif client_name_query in cname:
+            substring_matches.append(c)
+
+    if exact_match:
+        matched_client = exact_match
+    elif len(substring_matches) == 1:
+        matched_client = substring_matches[0]
+    elif len(substring_matches) > 1:
+        ambiguous_names = ", ".join(c.get("name", "?") for c in substring_matches)
+        return {
+            "message": (
+                f"'{arguments.get('client')}' odpovídá více klientům: {ambiguous_names}. "
+                f"Upřesni, kterého myslíš."
+            ),
+        }
+    else:
+        matched_client = None
 
     if not matched_client:
         available = ", ".join(c.get("name", "?") for c in ctx.clients_projects)
@@ -1284,15 +1344,29 @@ def _resolve_switch_context(arguments: dict, ctx: RuntimeContext) -> dict:
         "message": f"Přepnuto na {client_name}",
     }
 
-    # Resolve project if requested
+    # Resolve project if requested — same exact-then-substring logic
     if project_name_query:
         projects = matched_client.get("projects", [])
         matched_project = None
+        project_substring_matches: list[dict] = []
         for p in projects:
             pname = (p.get("name") or "").lower()
-            if pname == project_name_query or project_name_query in pname:
+            if pname == project_name_query:
                 matched_project = p
                 break
+            elif project_name_query in pname:
+                project_substring_matches.append(p)
+
+        if not matched_project:
+            if len(project_substring_matches) == 1:
+                matched_project = project_substring_matches[0]
+            elif len(project_substring_matches) > 1:
+                ambiguous_projects = ", ".join(p.get("name", "?") for p in project_substring_matches)
+                result["message"] = (
+                    f"Přepnuto na {client_name}, ale '{arguments.get('project')}' odpovídá "
+                    f"více projektům: {ambiguous_projects}. Upřesni, který myslíš."
+                )
+                return result
 
         if matched_project:
             result["project_id"] = matched_project["id"]
@@ -1668,6 +1742,7 @@ async def _process_sub_topic(
     consecutive_same = 0
     domain_history: list[set[str]] = []
     distinct_tools_used: set[str] = set()
+    tool_call_history: list[tuple[str, str]] = []
 
     try:
         for iteration in range(SUBTOPIC_MAX_ITERATIONS):
@@ -1720,9 +1795,13 @@ async def _process_sub_topic(
                 domain = TOOL_DOMAINS.get(tc.function.name, "unknown")
                 iter_domains.add(domain)
                 distinct_tools_used.add(tc.function.name)
+                tool_call_history.append((tc.function.name, tc.function.arguments))
             domain_history.append(iter_domains)
 
-            drift_reason = _detect_drift(consecutive_same, domain_history, distinct_tools_used, iteration)
+            drift_reason = _detect_drift(
+                consecutive_same, domain_history, distinct_tools_used, iteration,
+                tool_call_history=tool_call_history,
+            )
             if drift_reason:
                 logger.warning("Chat sub-topic %d/%d: drift (%s), forcing answer",
                                topic_index, total_topics, drift_reason)
@@ -1752,7 +1831,14 @@ async def _process_sub_topic(
                 try:
                     arguments = json.loads(tool_call.function.arguments)
                 except json.JSONDecodeError:
-                    arguments = {}
+                    logger.warning("Chat sub-topic: malformed tool arguments for %s: %s",
+                                   tool_name, tool_call.function.arguments[:200])
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": f"Chyba: argumenty pro {tool_name} nejsou platný JSON.",
+                    })
+                    continue
 
                 # Skip switch_context in sub-topics (doesn't make sense per-topic)
                 if tool_name == "switch_context":
@@ -1825,21 +1911,26 @@ async def _combine_results(
     formatted = "\n\n---\n\n".join(parts)
 
     try:
-        response = await llm_provider.completion(
-            messages=[
-                {"role": "system", "content": _COMBINER_SYSTEM},
-                {"role": "user", "content": formatted + "\n\nSpoj do jedné odpovědi."},
-            ],
-            tier=ModelTier.LOCAL_FAST,
-            tools=None,
-            max_tokens=4096,
-            temperature=0.1,
-            extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
+        response = await asyncio.wait_for(
+            llm_provider.completion(
+                messages=[
+                    {"role": "system", "content": _COMBINER_SYSTEM},
+                    {"role": "user", "content": formatted + "\n\nSpoj do jedné odpovědi."},
+                ],
+                tier=ModelTier.LOCAL_FAST,
+                tools=None,
+                max_tokens=4096,
+                temperature=0.1,
+                extra_headers={"X-Ollama-Priority": "0"},  # CRITICAL — foreground chat
+            ),
+            timeout=90.0,  # Prevent combiner from exceeding foreground timeout (300s)
         )
         combined = response.choices[0].message.content or ""
         if combined.strip():
             logger.info("Chat combiner: merged %d topics (%d chars)", len(results), len(combined))
             return combined
+    except asyncio.TimeoutError:
+        logger.warning("Chat combiner timed out (90s), using plain concatenation")
     except Exception as e:
         logger.warning("Chat combiner failed (%s), using plain concatenation", e)
 

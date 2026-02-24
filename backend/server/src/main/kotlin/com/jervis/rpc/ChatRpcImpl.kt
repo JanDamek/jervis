@@ -80,6 +80,13 @@ class ChatRpcImpl(
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to load chat history for subscription" }
+            emit(
+                ChatResponseDto(
+                    message = "Nepodařilo se načíst historii chatu: ${e.message}",
+                    type = ChatResponseType.ERROR,
+                    metadata = mapOf("historyLoadFailed" to "true"),
+                ),
+            )
         }
 
         // Emit sync marker

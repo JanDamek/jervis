@@ -73,12 +73,14 @@ class ChatService(
         val session = getOrCreateActiveSession(userId)
         val sessionId = session.id
 
-        // 2. Dedup check
+        // 2. Dedup check — return confirmation event instead of empty flow
         if (clientMessageId != null) {
             val existingMessage = chatMessageService.findByClientMessageId(clientMessageId)
             if (existingMessage != null) {
                 logger.info { "CHAT_DEDUP | sessionId=$sessionId | clientMessageId=$clientMessageId" }
-                return kotlinx.coroutines.flow.emptyFlow()
+                return kotlinx.coroutines.flow.flow {
+                    emit(ChatStreamEvent(type = "done", metadata = mapOf("deduplicated" to true, "existingSequence" to existingMessage.sequence)))
+                }
             }
         }
 
