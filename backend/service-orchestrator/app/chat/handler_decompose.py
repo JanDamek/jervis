@@ -250,6 +250,8 @@ async def process_sub_topic(
     runtime_ctx,
     selected_tools: list[dict],
     system_prompt: str,
+    client_id: str | None = None,
+    project_id: str | None = None,
 ) -> SubTopicResult:
     """Process one sub-topic through a mini agentic loop."""
     from app.chat.handler_agentic import detect_drift
@@ -351,7 +353,8 @@ async def process_sub_topic(
                 else:
                     result = await execute_chat_tool(
                         tool_name, arguments,
-                        request.active_client_id, request.active_project_id,
+                        client_id or request.active_client_id,
+                        project_id or request.active_project_id,
                     )
                     used_tools.append(tool_name)
                     if tool_name == "create_background_task":

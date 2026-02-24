@@ -251,6 +251,8 @@ async def _try_decompose(
                 topic=topic, topic_index=i, total_topics=len(subtopics),
                 request=request, context=context, runtime_ctx=runtime_ctx,
                 selected_tools=selected_tools, system_prompt=system_prompt_text,
+                client_id=request.active_client_id,
+                project_id=request.active_project_id,
             )
             all_results.append(result)
             all_used_tools.extend(result.used_tools)
