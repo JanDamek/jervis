@@ -1,71 +1,88 @@
 # Bug: Chat kb_search nenajde data uložená přes MCP kb_store
 
-**Severity**: HIGH
+**Severity**: CRITICAL
 **Date**: 2026-02-24
 
-## Popis
+## Root Cause (ověřeno z logů KB read service)
 
-MCP `kb_store` uložil 2 detailní bug reporty o tracing problémech v nUFO projektu
-(clientId=`68a2df3e`, projectId=`6899c257`). MCP vrátil "Stored successfully."
+**`handler_agentic.py:297` — po `switch_context` se tool scope neaktualizuje.**
 
-Chat pak hledal `kb_search("nUFO tracing error Invalid traceId")` ale nic nenašel.
-Po 3× kb_search drift detection zastavil loop a chat odpověděl bez nalezených dat.
+Chat začal v Commerzbank/bms (`68a330231b04695a243e5adb`/`6915dcab2335684eaa4f1862`).
+Uživatel napsal "jdeme na nufo" → `switch_context` → `effective_client_id` aktualizováno
+na MMB/nUFO (`68a2df3e178dfe5b0f74a5a8`/`6899c2575ec8291c20f1a038`).
 
-## Uložená data (přes MCP kb_store)
+Ale následný `kb_search` volá:
+```python
+result = await execute_chat_tool(
+    tool_name, arguments,
+    request.active_client_id, request.active_project_id,  # ← STALE scope!
+)
+```
 
-- "BUG: Reset tracing sequence v getSessionNoLock" — SessionManagementSqlBean, AtomicLong, setSequence
-- "BUG: DuplicateKeyException handler zahazuje celý chunk" — StorageService.kt, insertMany
+Místo:
+```python
+result = await execute_chat_tool(
+    tool_name, arguments,
+    effective_client_id, effective_project_id,  # ← CORRECT scope
+)
+```
 
-## Search queries (chat kb_search)
+**Důkaz z KB read logů:**
+```
+# switch_context v 13:33:58 → resolved MMB/nUFO (68a2df3e.../6899c257...)
+# kb_search v 13:34:09 → hledá stále v Commerzbank (68a33023.../6915dcab...)
 
-1. `"nUFO tracing error Invalid traceId"`
-2. `"nUFO ufo-core module tracing"`
-3. `"nUFO tracing error traceId spanId"`
-4. `"nUFO ufo-core module tracing error IllegalArgumentException"`
+RETRIEVE_START query='nUFO tracing error Invalid traceId'
+  clientId=68a330231b04695a243e5adb    ← WRONG (Commerzbank)
+  projectId=6915dcab2335684eaa4f1862   ← WRONG (bms)
+```
 
-**Poznámka**: "traceId" se v nUFO tracingu vůbec nepoužívá — skutečný termín je "sessionId".
-LLM si "traceId" domyslel (intuice). Tím je sémantická vzdálenost ještě větší.
+Data v KB EXISTUJÍ a jsou správně scopovaná na MMB/nUFO — ověřeno MCP search s plnými ID.
 
-## Možné příčiny
+## Oprava
 
-### 1. Sémantická vzdálenost (LIKELY)
-Queries obsahují "Invalid traceId", "IllegalArgumentException" — termy, které v uložených
-bug reportech NEJSOU. Uložené bugy mluví o "setSequence", "AtomicLong", "getSessionNoLock".
-Embedding model nemusí propojit "tracing error" se "Reset tracing sequence".
+### A. Jednořádková oprava (KRITICKÁ)
 
-**Ověření**: Zavolat kb_search s query "setSequence tracing sequence reset" → mělo by najít.
+`handler_agentic.py:297` — změnit `request.active_*` na `effective_*`:
 
-### 2. Executor nepředává scope (TO VERIFY)
-Chat executor (`executor.py`) volá KB API s clientId/projectId.
-Potřeba ověřit, že se tyto hodnoty skutečně předávají z chat kontextu.
+```python
+# PŘED:
+result = await execute_chat_tool(
+    tool_name, arguments,
+    request.active_client_id, request.active_project_id,
+)
 
-**Ověření**: Přidat logging do executoru — logovat clientId/projectId při kb_search volání.
+# PO:
+result = await execute_chat_tool(
+    tool_name, arguments,
+    effective_client_id, effective_project_id,
+)
+```
 
-### 3. minConfidence filtr (POSSIBLE)
-KB retrieve API má `minConfidence=0.5`. Výsledky mohou existovat ale s nižším skóre.
+### B. Sémantická vzdálenost (sekundární problém)
 
-**Ověření**: Snížit minConfidence na 0.1 a zkusit znovu.
+I po opravě scope: chat hledal "nUFO tracing error Invalid traceId" —
+termy, které v uložených bug reportech NEJSOU. Uložené bugy mluví o
+"setSequence", "AtomicLong", "getSessionNoLock". LLM si "traceId" domyslel
+(v nUFO se používá "sessionId"). S `minConfidence=0.5` výsledky projdou
+(score ~0.54 pro meeting notes), ale relevance je nízká.
 
-### 4. Weaviate indexing delay (RULED OUT)
-Data do KB byla vložena před několika dny — dávno zaindexovaná.
+**Doporučení**: Snížit `minConfidence` na 0.3 v `executor.py:440`.
+Nechat LLM rozhodnout relevanci z výsledků.
 
-## Doporučená oprava
+### C. Obecné MCP search vylepšení
 
-### A. Logging v chat executoru
-Přidat log do `executor.py` při kb_search: query, clientId, projectId, počet výsledků.
-Umožní rychlou diagnostiku scope problémů.
+Do KB zapisují i externí nástroje (Claude Code, jiné MCP klienty).
+Data nemusí odpovídat interním pojmům aplikace, ale jsou hodnotná.
 
-### B. Fallback na širší search
-Pokud kb_search vrátí 0 výsledků s projectId, zkusit znovu jen s clientId (bez projectId).
-Některá data mohou být uložena na úrovni klienta.
-
-### C. Snížit minConfidence pro první pokus
-0.5 je dost vysoký práh pro sémantické vyhledávání. Zkusit 0.3 a nechat LLM
-rozhodnout relevanci z výsledků.
+**Doporučení**:
+1. Fallback na `scope=client` (bez projectId) pokud project-scope search vrátí 0 výsledků
+2. Logging v executor.py: query, clientId, projectId, počet výsledků (pro diagnostiku)
 
 ## Dotčené soubory
 
 | Soubor | Změna |
 |--------|-------|
-| `backend/service-orchestrator/app/tools/executor.py` | Logging kb_search params + results, scope fallback |
-| `backend/service-orchestrator/app/chat/handler_agentic.py` | Případně retry s širším scope |
+| `backend/service-orchestrator/app/chat/handler_agentic.py:297` | **KRITICKÁ**: `request.active_*` → `effective_*` |
+| `backend/service-orchestrator/app/tools/executor.py:440` | Snížit minConfidence 0.5 → 0.3 |
+| `backend/service-orchestrator/app/tools/executor.py` | Přidat logging kb_search params + results |
