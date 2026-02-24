@@ -573,7 +573,7 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 3. Delegates to Python orchestrator via `PythonOrchestratorClient.correctTranscript()`
 4. Python `CorrectionAgent` loads per-client/project correction rules from KB (Weaviate)
 5. Transcript segments chunked (20/chunk) and sent to Ollama GPU (`qwen3-coder-tool:30b`, configurable via `DEFAULT_CORRECTION_MODEL`)
-6. **Streaming + heartbeat**: Ollama called with `stream: True`, responses processed as NDJSON lines. Liveness determined by token arrival — if no token arrives for 5 min (`HEARTBEAT_DEAD_SECONDS=300`), `HeartbeatTimeoutError` is raised
+6. **Streaming + liveness**: Ollama called with `stream: True`, responses processed as NDJSON lines. Liveness determined by token arrival — if no token arrives for 5 min, `HeartbeatTimeoutError` is raised (LLM-level heartbeat, separate from task-level stuck detection)
 7. **Intra-chunk progress**: Every ~10s during streaming, progress is emitted to Kotlin server with token count, enabling smooth UI progress within each chunk
 8. System prompt: meaning-first approach — read full context, phonetic reasoning for garbled Czech, apply correction rules
 9. LLM returns corrections + optional questions when uncertain about proper nouns/terminology
@@ -610,10 +610,9 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ### Liveness & Recovery
 
-- **Heartbeat tracking**: `CorrectionHeartbeatTracker` (in-memory `ConcurrentHashMap`) stores last progress timestamp per meeting. Updated on every `/internal/correction-progress` callback from Python
-- **Stuck detection (Pipeline 5)**: CORRECTING meetings with no heartbeat for 10 min are reset to TRANSCRIBED (auto-retry), not FAILED
+- **Timestamp-based stuck detection (Pipeline 5)**: `MeetingContinuousIndexer` checks `stateChangedAt` on CORRECTING meetings. If stuck for longer than `STUCK_CORRECTING_THRESHOLD_MINUTES` (15 min), the meeting is reset to TRANSCRIBED (auto-retry), not FAILED. No in-memory tracker needed — detection is purely DB-based
 - **Connection-error recovery**: If `TranscriptCorrectionService.correct()` fails with `ConnectException` or `IOException` (Connection refused/reset), the meeting is reset to TRANSCRIBED for automatic retry instead of being marked as FAILED
-- **No hard timeouts**: All LLM operations use streaming with heartbeat-based liveness detection — never a fixed timeout
+- **No hard timeouts**: All LLM operations use streaming with token-arrival-based liveness detection — never a fixed timeout
 
 ### Correction Rules Management
 
@@ -637,7 +636,7 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 | `shared/common-dto/.../dto/meeting/MeetingDtos.kt` | `MeetingStateEnum` (incl. CORRECTION_REVIEW), `CorrectionQuestionDto`, `CorrectionAnswerDto` |
 | `shared/ui-common/.../meeting/CorrectionsScreen.kt` | Corrections management UI |
 | `shared/ui-common/.../meeting/CorrectionViewModel.kt` | Corrections UI state management |
-| `backend/server/.../service/meeting/CorrectionHeartbeatTracker.kt` | In-memory heartbeat tracking for correction liveness |
+| `backend/server/.../service/meeting/MeetingContinuousIndexer.kt` | Pipeline 5 stuck detection via `stateChangedAt` timestamp (STUCK_CORRECTING_THRESHOLD_MINUTES = 15) |
 
 ---
 
@@ -948,7 +947,7 @@ Kotlin Server (BackgroundEngine)
     │                                    │
     │   ◄── POST /internal/             │   Python pushes progress on each node:
     │       orchestrator-progress ──────│   - node name, message, goal/step indices
-    │   (real-time node progress)        │   - heartbeat for liveness detection
+    │   (real-time node progress)        │   - updates stateChangedAt for stuck detection
     │                                    │
     │   ◄── POST /internal/             │   Python pushes status on completion:
     │       orchestrator-status ────────│   - done/error/interrupted + details
@@ -959,9 +958,8 @@ Kotlin Server (BackgroundEngine)
     │
     ├── GET /status/{thread_id} ◄─── safety-net polling (60s, NOT primary)
     │
-    ├── OrchestratorHeartbeatTracker    (in-memory liveness detection)
     ├── OrchestratorStatusHandler       (task state transitions)
-    └── TaskDocument (MongoDB) = SSOT for lifecycle state
+    └── TaskDocument (MongoDB) = SSOT for lifecycle state + stuck detection timestamps
 ```
 
 **4 task categories** with intelligent routing:
@@ -973,7 +971,7 @@ Kotlin Server (BackgroundEngine)
 **Communication model**: Push-based (Python → Kotlin) with 60s safety-net polling.
 - **Primary**: Python pushes `orchestrator-progress` on each node transition and `orchestrator-status` on completion
 - **Safety net**: BackgroundEngine polls every 60s to catch missed callbacks (network failure, process restart)
-- **Heartbeat**: OrchestratorHeartbeatTracker tracks last progress timestamp; 10 min without heartbeat = dead
+- **Stuck detection**: Timestamp-based — uses `orchestrationStartedAt` / `stateChangedAt` fields from DB; 15 min without progress = stuck (STUCK_THRESHOLD_MINUTES = 15)
 - **UI**: Kotlin broadcasts events via Flow-based subscriptions (no UI polling)
 - **task_id convention**: `task_id` sent to Python in `OrchestrateRequestDto` is `task.id.toString()` (MongoDB document `_id`). Python sends this same `task_id` back in all callbacks. `OrchestratorStatusHandler` resolves it via `taskRepository.findById(TaskId(ObjectId(taskId)))`. The `correlationId` field on `TaskDocument` is a separate identifier used for idempotency/deduplication, NOT sent to Python.
 
@@ -1066,7 +1064,7 @@ Two layers:
 
 | File | Purpose |
 |------|---------|
-| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, SSE, concurrency, MongoDB lifecycle |
+| `backend/service-orchestrator/app/main.py` | FastAPI endpoints, concurrency, MongoDB lifecycle, crash handler (atexit + SIGTERM) |
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, 4-category routing, checkpointing |
 | `backend/service-orchestrator/app/graph/nodes/` | Modular nodes: intake, evidence, respond, plan, execute, evaluate, git_ops, finalize, coding, epic, design |
 | `backend/service-orchestrator/app/context/context_store.py` | MongoDB hierarchical context store (orchestrator_context) |
@@ -1074,12 +1072,11 @@ Two layers:
 | `backend/service-orchestrator/app/context/context_assembler.py` | Per-node LLM context assembly (step/goal/epic levels) |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, JERVIS project resolution, concurrency guard |
-| `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), heartbeat-based stuck detection |
+| `backend/server/.../BackgroundEngine.kt` | Safety-net polling (60s), timestamp-based stuck detection (STUCK_THRESHOLD_MINUTES = 15) |
 | `backend/server/.../OrchestratorStatusHandler.kt` | Task state transitions (push-based from Python callbacks) |
-| `backend/server/.../OrchestratorHeartbeatTracker.kt` | In-memory liveness detection for orchestrator tasks |
 | `backend/server/.../PythonOrchestratorClient.kt` | REST client for Python orchestrator (429 handling) |
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Push client: progress + status callbacks to Kotlin |
-| `backend/service-orchestrator/app/llm/provider.py` | LLM provider with streaming + heartbeat liveness |
+| `backend/service-orchestrator/app/llm/provider.py` | LLM provider with streaming + token-arrival liveness |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | Workspace preparation (instructions, KB, environment context) |
 | `backend/service-orchestrator/app/agents/base.py` | BaseAgent abstract class, communication protocol, agentic loop |
 | `backend/service-orchestrator/app/agents/registry.py` | AgentRegistry singleton — agent discovery and capability listing |
@@ -1410,7 +1407,7 @@ Hybrid push/local notification architecture for real-time user alerts.
 ```
 Python Orchestrator → node transition
   → POST /internal/orchestrator-progress
-    → KtorRpcServer → OrchestratorHeartbeatTracker.updateHeartbeat()
+    → KtorRpcServer → update stateChangedAt timestamp on TaskDocument
     → NotificationRpcImpl.emitOrchestratorTaskProgress() [kRPC stream]
     → MainViewModel.handleGlobalEvent() → QueueViewModel.handleOrchestratorProgress()
 
@@ -1732,7 +1729,7 @@ Chat LLM calls are configured as follows:
 - **Priority**: `X-Ollama-Priority: 0` (CRITICAL) — preempts background/qualification tasks in ollama-router queue
 - **Context estimation**: Dynamic — `message_tokens + tools_tokens + output_tokens` (same pattern as orchestrator respond node)
 - **Tools**: 26 tools (~4000 tokens in JSON) → tier typically `LOCAL_STANDARD` (32k context)
-- **Timeout**: `HEARTBEAT_DEAD_SECONDS` (300s) via `asyncio.wait_for()` on blocking LLM call
+- **Timeout**: `LLM_TIMEOUT_SECONDS` (300s) via `asyncio.wait_for()` on blocking LLM call
 - **GPU speed tiers**: ≤48k context = full P40 GPU speed (~30 tok/s); >48k spills to CPU RAM (~7-12 tok/s); handles up to ~250k
 - **Blocking mode**: Tool calls use `litellm.acompletion()` (non-streaming) because litellm can't reliably stream tool_calls for Ollama
 
@@ -1759,7 +1756,7 @@ Two mechanisms for stopping an active chat:
 
 1. **Explicit stop** (`POST /chat/stop`): User presses Stop button → Kotlin `PythonChatClient.stopChat(sessionId)` → sets `asyncio.Event` in `_active_chat_stops` dict → handler checks event at start of each iteration → emits partial content + `done` event
 
-2. **SSE disconnect**: Kotlin `PythonChatClient` closes SSE connection → `request.is_disconnected()` detected → same interrupt flow
+2. **SSE disconnect**: Kotlin `PythonChatClient` closes chat SSE connection → `request.is_disconnected()` detected → same interrupt flow
 
 Both mechanisms save accumulated `tool_summaries` as partial content before stopping.
 

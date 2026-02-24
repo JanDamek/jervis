@@ -73,7 +73,6 @@ class BackgroundEngine(
     private val pythonOrchestratorClient: PythonOrchestratorClient,
     private val chatMessageRepository: com.jervis.repository.ChatMessageRepository,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
-    private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
     private val taskNotifier: TaskNotifier,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val projectRepository: com.jervis.repository.ProjectRepository,
@@ -770,18 +769,20 @@ class BackgroundEngine(
     }
 
     /**
-     * Orchestrator result loop – SAFETY NET polling for tasks in PYTHON_ORCHESTRATING state.
+     * Orchestrator result loop – SAFETY NET for tasks in PYTHON_ORCHESTRATING state.
      *
      * Primary communication is push-based: Python → POST /internal/orchestrator-status
      * → OrchestratorStatusHandler handles state transitions.
      *
      * This loop is a safety net (60s interval) that catches cases where:
      * - Python push callback failed to deliver
-     * - Python process restarted mid-task
+     * - Python process restarted mid-task (crash handler best-effort callback missed)
      * - Network issues prevented callback delivery
      *
-     * Also performs heartbeat-based stuck detection:
-     * - If no heartbeat for 10 min → task considered dead → reset for retry
+     * Stuck detection is purely timestamp-based (no in-memory heartbeat tracker):
+     * - Uses task.orchestrationStartedAt from DB (survives pod restarts)
+     * - If task has been in PYTHON_ORCHESTRATING longer than threshold AND
+     *   Python is unreachable → reset for retry
      */
     private suspend fun runOrchestratorResultLoop() {
         delay(backgroundProperties.waitOnStartup)
@@ -813,74 +814,64 @@ class BackgroundEngine(
     /**
      * Safety-net check for a single Python-orchestrated task.
      *
-     * 1. Check heartbeat — if alive (< 10 min), skip polling entirely
-     * 2. If no heartbeat for >= 10 min, poll Python for status
-     * 3. If Python unreachable and no heartbeat → reset to READY_FOR_GPU for retry
-     * 4. Delegates state handling to OrchestratorStatusHandler
+     * Timestamp-based stuck detection (no in-memory heartbeat):
+     * 1. If task has been orchestrating < STUCK_THRESHOLD → skip (too early to worry)
+     * 2. If task has been orchestrating >= STUCK_THRESHOLD → poll Python for status
+     * 3. If Python unreachable → reset to READY_FOR_GPU for retry
+     * 4. If Python says "running" but task age >= STUCK_THRESHOLD → stale, reset
+     * 5. Otherwise delegate terminal states to OrchestratorStatusHandler
      */
     private suspend fun checkOrchestratorTaskStatus(task: TaskDocument) {
         val threadId = task.orchestratorThreadId ?: return
         val taskIdStr = task.id.toString()
-
-        // Heartbeat-based liveness check
-        val lastHeartbeat = orchestratorHeartbeatTracker.getLastHeartbeat(taskIdStr)
         val now = java.time.Instant.now()
 
-        if (lastHeartbeat != null) {
-            val minutesSinceHeartbeat = java.time.Duration.between(lastHeartbeat, now).toMinutes()
-            if (minutesSinceHeartbeat < HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
-                // Still alive — skip polling
-                return
-            }
-            // Heartbeat dead — fall through to poll Python
-            logger.warn { "ORCHESTRATOR_HEARTBEAT_DEAD: taskId=$taskIdStr last=${minutesSinceHeartbeat}min ago" }
+        // Timestamp-based: skip if task hasn't been orchestrating long enough
+        val orchestrationAge = task.orchestrationStartedAt?.let {
+            java.time.Duration.between(it, now).toMinutes()
+        } ?: Long.MAX_VALUE
+
+        if (orchestrationAge < STUCK_THRESHOLD_MINUTES) {
+            // Task is young — trust push-based callbacks, skip polling
+            return
         }
 
-        // Poll Python as safety net
+        // Task has been orchestrating >= threshold — poll Python as safety net
         val status = try {
             pythonOrchestratorClient.getStatus(threadId)
         } catch (e: Exception) {
             logger.debug { "Python orchestrator unreachable for thread $threadId: ${e.message}" }
 
-            // If no heartbeat ever received or heartbeat dead → likely Python died
-            if (lastHeartbeat == null || java.time.Duration.between(lastHeartbeat, now).toMinutes() >= HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
-                logger.warn { "ORCHESTRATOR_STUCK: taskId=$taskIdStr, Python unreachable, no heartbeat → resetting to READY_FOR_GPU" }
-                val resetTask = task.copy(
-                    state = TaskStateEnum.READY_FOR_GPU,
-                    orchestratorThreadId = null,
-                    orchestrationStartedAt = null,
-                )
-                taskRepository.save(resetTask)
-                orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
-            }
+            // Python unreachable + task old enough → likely crashed, reset for retry
+            logger.warn { "ORCHESTRATOR_STUCK: taskId=$taskIdStr age=${orchestrationAge}min, Python unreachable → resetting to READY_FOR_GPU" }
+            val resetTask = task.copy(
+                state = TaskStateEnum.READY_FOR_GPU,
+                orchestratorThreadId = null,
+                orchestrationStartedAt = null,
+            )
+            taskRepository.save(resetTask)
             return
         }
 
         val state = status["status"] ?: "unknown"
 
-        // If Python says "running" but we have no heartbeat and task has been orchestrating
-        // for longer than the threshold, it's stale (checkpoint says running but nothing is active)
-        if (state == "running" && lastHeartbeat == null) {
-            val orchestrationAge = task.orchestrationStartedAt?.let {
-                java.time.Duration.between(it, now).toMinutes()
-            } ?: Long.MAX_VALUE
-            if (orchestrationAge >= HEARTBEAT_DEAD_THRESHOLD_MINUTES) {
-                logger.warn {
-                    "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but no heartbeat " +
-                        "for ${orchestrationAge}min → resetting to READY_FOR_GPU"
-                }
-                val resetTask = task.copy(
-                    state = TaskStateEnum.READY_FOR_GPU,
-                    orchestratorThreadId = null,
-                    orchestrationStartedAt = null,
-                )
-                taskRepository.save(resetTask)
-                orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
-                return
+        // Python says "running" but task has exceeded threshold — stale checkpoint
+        // (pod restarted, checkpoint says "running" but no active asyncio task)
+        if (state == "running" && orchestrationAge >= STUCK_THRESHOLD_MINUTES) {
+            logger.warn {
+                "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but " +
+                    "task age is ${orchestrationAge}min → resetting to READY_FOR_GPU"
             }
+            val resetTask = task.copy(
+                state = TaskStateEnum.READY_FOR_GPU,
+                orchestratorThreadId = null,
+                orchestrationStartedAt = null,
+            )
+            taskRepository.save(resetTask)
+            return
         }
 
-        // Delegate to shared handler
+        // Delegate terminal states to shared handler
         orchestratorStatusHandler.handleStatusChange(
             taskId = taskIdStr,
             status = state,
@@ -891,11 +882,6 @@ class BackgroundEngine(
             branch = status["branch"],
             artifacts = status["artifacts"]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
         )
-
-        // Clear heartbeat on terminal states
-        if (state in setOf("done", "error", "interrupted")) {
-            orchestratorHeartbeatTracker.clearHeartbeat(taskIdStr)
-        }
     }
 
     /**
@@ -1317,8 +1303,8 @@ class BackgroundEngine(
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
 
-        /** No heartbeat for this long = orchestrator task is dead. */
-        private const val HEARTBEAT_DEAD_THRESHOLD_MINUTES = 10L
+        /** Task in PYTHON_ORCHESTRATING for this long without completion = stuck (timestamp-based). */
+        private const val STUCK_THRESHOLD_MINUTES = 15L
 
         /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
         val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)

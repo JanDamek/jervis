@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Accumulates progress events (node transitions) per task to build workflow history.
  * When task completes, workflow steps are attached to the final chat message.
  *
- * Similar pattern to OrchestratorHeartbeatTracker but tracks structured workflow data.
+ * In-memory tracker — accumulates steps per task, cleared after saving to history.
  */
 @Component
 class OrchestratorWorkflowTracker {

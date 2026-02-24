@@ -126,8 +126,8 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
-     * Start orchestration with SSE streaming.
-     * Returns thread_id for subscribing to /stream/{thread_id}.
+     * Start orchestration (fire-and-forget).
+     * Returns thread_id. Python pushes progress/status via callbacks to /internal/*.
      *
      * Returns null if Python orchestrator is busy (HTTP 429).
      * The caller should skip dispatch and let BackgroundEngine retry later.
@@ -291,11 +291,6 @@ class PythonOrchestratorClient(baseUrl: String) {
         }
     }
 
-    /**
-     * SSE stream URL for a given thread.
-     */
-    fun streamUrl(threadId: String): String = "$apiBaseUrl/stream/$threadId"
-
 }
 
 // --- DTOs for Python Orchestrator ---
@@ -362,7 +357,6 @@ data class StepResultDto(
 @Serializable
 data class StreamStartResponseDto(
     @SerialName("thread_id") val threadId: String,
-    @SerialName("stream_url") val streamUrl: String,
 )
 
 @Serializable

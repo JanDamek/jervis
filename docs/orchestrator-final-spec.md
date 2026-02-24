@@ -40,7 +40,7 @@ backend/
   service-orchestrator/           # Python orchestrator (KB-first architecture)
     app/
       __init__.py
-      main.py                     # FastAPI + SSE endpoints
+      main.py                     # FastAPI endpoints + crash handler (atexit + SIGTERM)
       config.py                   # Konfigurace (env vars)
       models.py                   # Pydantic modely (TaskCategory, TaskAction, EvidencePack, ...)
       graph/
@@ -99,14 +99,13 @@ backend/
 #### A. Python Orchestrator (`service-orchestrator/`)
 
 FastAPI server s LangGraph StateGraph. Přijímá requesty z Kotlin serveru, řídí
-coding workflow, streamuje progress přes SSE.
+coding workflow, pushuje progress přes push callbacky do Kotlin serveru.
 
 **API endpointy:**
 ```
 POST /orchestrate            # Spustí orchestraci (blocking – čeká na výsledek)
 POST /orchestrate/stream     # Spustí orchestraci (fire-and-forget – vrátí thread_id ihned)
 GET  /status/{thread_id}     # Status polling (running/interrupted/done/error)
-GET  /stream/{thread_id}     # SSE stream progress
 POST /approve/{thread_id}    # Approval response od uživatele (resume z interrupt)
 POST /cancel/{thread_id}     # Cancel running orchestration (asyncio task cancellation)
 GET  /health                 # Health check
@@ -123,7 +122,7 @@ GET  /health                 # Health check
 - Kotlin → Python: `POST /orchestrate/stream` s kompletním `OrchestrateRequest`
   (rules, workspace, task info – vše upfront, `task_id` = MongoDB ObjectId z `TaskDocument._id`)
 - Python → Kotlin: **push-based callbacky** (`kotlin_client.py`):
-  - `POST /internal/orchestrator-progress` — node transition events (heartbeat pro liveness detection)
+  - `POST /internal/orchestrator-progress` — node transition events (updates stateChangedAt for stuck detection)
   - `POST /internal/orchestrator-status` — completion/error/interrupt + task state transition
 - Safety-net: Kotlin polls `GET /status/{thread_id}` z `BackgroundEngine.runOrchestratorResultLoop()` každých 60s
 - Interrupts: clarification (pre-planning questions) + approval (commit/push) → USER_TASK → user odpovídá → `POST /approve/{thread_id}`
@@ -260,7 +259,7 @@ Operational context (plans, results, summaries) stored in MongoDB `orchestrator_
 
 **Multi-pod support:**
 
-MongoDB distributed lock (`orchestrator_locks` collection) replaces `asyncio.Semaphore` for multi-pod deployments. Lock acquired atomically via `findOneAndUpdate`, heartbeat every 10s, stale recovery after 5 min.
+MongoDB distributed lock (`orchestrator_locks` collection) replaces `asyncio.Semaphore` for multi-pod deployments. Lock acquired atomically via `findOneAndUpdate`, lock heartbeat every 10s, stale recovery after 5 min.
 
 #### B. K8s Job Runner (`agents/job_runner.py`)
 
@@ -735,7 +734,7 @@ Python orchestrátor **smí zpracovávat maximálně jednu orchestraci najednou*
 Vrstva 1: Kotlin (early guard)                    Vrstva 2: Python (in-process)        Vrstva 3: MongoDB (multi-pod)
 ─────────────────────────────                      ────────────────────────────────      ────────────────────────────
 dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)                 DistributedLock (orchestrator_locks)
-  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429       findOneAndUpdate + heartbeat 10s
+  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429       findOneAndUpdate + lock heartbeat 10s
   → return false (skip dispatch)                   GET /health → {"busy": true/false}    stale recovery after 5 min
 ```
 
@@ -752,8 +751,8 @@ dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)         
 **MongoDB distributed lock** (`app/context/distributed_lock.py`):
 - Collection `orchestrator_locks`, single document `_id: "orchestration_slot"`
 - Lock acquired atomically via `findOneAndUpdate` (condition: `locked_by: null`)
-- Heartbeat every 10s updates `locked_at` to prevent stale detection
-- Stale lock recovery: locks older than 5 min without heartbeat are force-acquired
+- Lock heartbeat every 10s updates `locked_at` to prevent stale detection
+- Stale lock recovery: locks older than 5 min without lock heartbeat are force-acquired
 - Pod ID from `HOSTNAME` env var (K8s pod name)
 - On startup: auto-recover stale locks from crashed pods
 
@@ -781,7 +780,7 @@ POST /approve/{thread_id} {approved, reason}
 ### 12.1 Princip
 
 Orchestrátor **vždy zkusí lokální Ollama model nejdříve**. Cloud modely se použijí pouze při:
-- Selhání lokálního modelu (HeartbeatTimeout, prázdná odpověď, error)
+- Selhání lokálního modelu (token-arrival timeout, prázdná odpověď, error)
 - Kontextu > 49k tokenů (nelze lokálně)
 
 ### 12.2 Tři cloud provideři

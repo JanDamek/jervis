@@ -301,7 +301,7 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
 6. `KbResultRouter` handles routing decision (DONE / READY_FOR_GPU / scheduled)
 7. On error: KB POSTs error to `/internal/kb-done` → task marked ERROR
 
-**Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous NDJSON streaming).
+**Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous processing). Note: The Kotlin `ingestFullWithProgress` NDJSON streaming client method has been removed — only the async callback pattern (`POST /ingest/full/async`) is used in production.
 
 **Content Hash Deduplication:**
 - SHA256 of combined content, truncated to 16 chars

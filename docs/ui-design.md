@@ -1321,7 +1321,7 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 - `QualificationProgress` events broadcast from `TaskQualificationService` via `NotificationRpcImpl`
 - Events carry `metadata: Map<String, String>` with structured data for UI display
 - **Persistent history:** Steps also saved to `TaskDocument.qualificationSteps` via `$push` for viewing in Hotovo
-- **Granular progress steps from KB service (NDJSON streaming):** start → attachments → content_ready → hash_match/purge → parallel_start → rag_done → summary_done → routing/simple_action → done
+- **Granular progress steps from KB service (push callbacks via `/internal/kb-progress`):** start → attachments → content_ready → hash_match/purge → parallel_start → rag_done → summary_done → routing/simple_action → done
 - **summary_done step metadata**: entities, actionable, urgency, suggestedActions, assignedTo, suggestedDeadline, summary
 - **Routing step metadata**: route, targetState
 - **Simple action step metadata**: actionType

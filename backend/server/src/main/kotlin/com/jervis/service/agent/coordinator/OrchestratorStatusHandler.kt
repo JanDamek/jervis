@@ -88,7 +88,7 @@ class OrchestratorStatusHandler(
 
         when (status) {
             "running" -> {
-                // Still working — no state change needed (heartbeat tracking handles liveness)
+                // Still working — no state change needed (timestamp-based stuck detection in BackgroundEngine)
             }
             "interrupted" -> handleInterrupted(task, interruptAction, interruptDescription)
             "done" -> handleDone(task, summary)

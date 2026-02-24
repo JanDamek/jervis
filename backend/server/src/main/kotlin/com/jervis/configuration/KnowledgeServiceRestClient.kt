@@ -19,7 +19,6 @@ import com.jervis.knowledgebase.service.graphdb.model.GraphNode
 import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -36,15 +35,12 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.delay
 import mu.KotlinLogging
 import java.time.format.DateTimeFormatter
@@ -217,181 +213,6 @@ class KnowledgeServiceRestClient(
 
         // All retries exhausted
         logger.error(lastException) { "Failed to ingestFull after $MAX_RETRIES retries: ${lastException?.message}" }
-        return FullIngestResult(
-            success = false,
-            chunksCount = 0,
-            nodesCreated = 0,
-            edgesCreated = 0,
-            attachmentsProcessed = 0,
-            attachmentsFailed = 0,
-            summary = "Ingestion failed after $MAX_RETRIES retries",
-            error = lastException?.message,
-        )
-    }
-
-    /**
-     * Streaming version of ingestFull that reads NDJSON progress events
-     * from the KB service and calls onProgress for each one.
-     *
-     * When callbackBaseUrl is configured, passes callback URL + taskId + clientId
-     * to the KB service. KB then POSTs progress events directly to the Kotlin server
-     * (/internal/kb-progress) for real-time push to UI via WebSocket flow.
-     * NDJSON progress events are still read but only for the final result.
-     */
-    suspend fun ingestFullWithProgress(
-        request: FullIngestRequest,
-        taskId: String = "",
-        clientId: String = "",
-        onProgress: suspend (message: String, step: String, metadata: Map<String, String>) -> Unit,
-    ): FullIngestResult {
-        logger.debug { "Calling knowledgebase ingestFull (streaming): sourceUrn=${request.sourceUrn}" }
-
-        val callbackUrl = if (callbackBaseUrl.isNotBlank() && taskId.isNotBlank()) {
-            "${callbackBaseUrl.trimEnd('/')}/internal/kb-progress"
-        } else ""
-
-        // Retry on transient failures (SocketTimeout, ClosedByteChannel).
-        var lastException: Exception? = null
-        for (attempt in 0..MAX_RETRIES) {
-            if (attempt > 0) {
-                val delayMs = RETRY_BASE_DELAY_MS * (1L shl (attempt - 1))
-                logger.info { "KB ingestFull (streaming) retry $attempt/$MAX_RETRIES after ${delayMs}ms" }
-                delay(delayMs)
-            }
-
-            try {
-                val httpResponse = client.submitFormWithBinaryData(
-                    url = "$apiBaseUrl/ingest/full",
-                    formData = formData {
-                        append("clientId", request.clientId.toString())
-                        append("sourceUrn", request.sourceUrn)
-                        append("sourceType", request.sourceType.sourceKey)
-                        request.subject?.let { append("subject", it) }
-                        append("content", request.content)
-                        request.projectId?.let { append("projectId", it.toString()) }
-                        append("metadata", Json.encodeToString(request.metadata))
-
-                        // Push-based progress callback params
-                        if (callbackUrl.isNotBlank()) {
-                            append("callbackUrl", callbackUrl)
-                            append("taskId", taskId)
-                        }
-
-                        request.attachments.forEach { attachment ->
-                            append(
-                                "attachments",
-                                attachment.data,
-                                Headers.build {
-                                    append(HttpHeaders.ContentDisposition, "filename=\"${attachment.filename}\"")
-                                    attachment.contentType?.let {
-                                        append(HttpHeaders.ContentType, it)
-                                    }
-                                },
-                            )
-                        }
-                    },
-                ) {
-                    accept(ContentType("application", "x-ndjson"))
-                }
-
-                if (!httpResponse.status.isSuccess()) {
-                    val errorBody = httpResponse.bodyAsText()
-                    throw RuntimeException("KB ingest/full streaming returned ${httpResponse.status}: $errorBody")
-                }
-
-                // Stream NDJSON lines as they arrive (like WhisperRestClient SSE pattern)
-                // Socket timeout (10 min) prevents stuck readUTF8Line on half-open TCP
-                val channel = httpResponse.bodyAsChannel()
-                var result: FullIngestResult? = null
-
-                while (true) {
-                    val line = channel.readUTF8Line() ?: break
-                    if (line.isBlank()) continue
-
-                    try {
-                        val jsonElement = Json.parseToJsonElement(line)
-                        val obj = jsonElement as? kotlinx.serialization.json.JsonObject ?: continue
-                        val type = obj["type"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
-
-                        when (type) {
-                            "progress" -> {
-                                // When callback URL is configured, KB events are pushed via POST
-                                // to /internal/kb-progress (real-time). NDJSON events arrive
-                                // buffered at the end, so skip them to avoid duplicates.
-                                if (callbackUrl.isBlank()) {
-                                    val step = obj["step"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: "unknown"
-                                    val message = obj["message"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull } ?: ""
-                                    val metadata = obj["metadata"]?.let { el ->
-                                        (el as? kotlinx.serialization.json.JsonObject)?.entries?.associate { (k, v) ->
-                                            k to ((v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: "")
-                                        }
-                                    } ?: emptyMap()
-
-                                    onProgress(message, step, metadata)
-                                }
-                            }
-
-                            "result" -> {
-                                val data = obj["data"] ?: continue
-                                val parsed: PythonFullIngestResult = Json.decodeFromJsonElement(
-                                    PythonFullIngestResult.serializer(),
-                                    data,
-                                )
-                                result = FullIngestResult(
-                                    success = parsed.status == "success",
-                                    chunksCount = parsed.chunksCount,
-                                    nodesCreated = parsed.nodesCreated,
-                                    edgesCreated = parsed.edgesCreated,
-                                    attachmentsProcessed = parsed.attachmentsProcessed,
-                                    attachmentsFailed = parsed.attachmentsFailed,
-                                    summary = parsed.summary,
-                                    entities = parsed.entities,
-                                    hasActionableContent = parsed.hasActionableContent,
-                                    suggestedActions = parsed.suggestedActions,
-                                    hasFutureDeadline = parsed.hasFutureDeadline,
-                                    suggestedDeadline = parsed.suggestedDeadline,
-                                    isAssignedToMe = parsed.isAssignedToMe,
-                                    urgency = parsed.urgency,
-                                )
-                            }
-                        }
-                    } catch (e: Exception) {
-                        logger.warn { "Failed to parse NDJSON line: $line — ${e.message}" }
-                    }
-                }
-
-                if (attempt > 0) {
-                    logger.info { "KB ingestFull (streaming) succeeded on retry $attempt" }
-                }
-
-                return result ?: throw RuntimeException("No result received from KB ingest/full streaming")
-            } catch (e: java.net.SocketTimeoutException) {
-                logger.warn { "KB ingestFull (streaming) socket timeout (attempt $attempt): ${e.message}" }
-                lastException = e
-            } catch (e: io.ktor.utils.io.ClosedByteChannelException) {
-                logger.warn { "KB ingestFull (streaming) channel closed (attempt $attempt): ${e.message}" }
-                lastException = e
-            } catch (e: java.io.IOException) {
-                logger.warn { "KB ingestFull (streaming) I/O error (attempt $attempt): ${e.message}" }
-                lastException = e
-            } catch (e: Exception) {
-                // Non-retryable
-                logger.error(e) { "Failed to ingestFull (streaming) to knowledgebase (non-retryable): ${e.message}" }
-                return FullIngestResult(
-                    success = false,
-                    chunksCount = 0,
-                    nodesCreated = 0,
-                    edgesCreated = 0,
-                    attachmentsProcessed = 0,
-                    attachmentsFailed = 0,
-                    summary = "Ingestion failed",
-                    error = e.message,
-                )
-            }
-        }
-
-        // All retries exhausted
-        logger.error(lastException) { "Failed to ingestFull (streaming) after $MAX_RETRIES retries: ${lastException?.message}" }
         return FullIngestResult(
             success = false,
             chunksCount = 0,

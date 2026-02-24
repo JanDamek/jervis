@@ -619,7 +619,6 @@ class TaskService(
         }
 
         // Reset ALL PYTHON_ORCHESTRATING → READY_FOR_GPU on pod restart.
-        // After restart we lose in-memory heartbeat tracking, so we can't verify liveness.
         // If Python orchestrator IS still running, it will get ignored callback and task re-dispatches.
         val orchestratingQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.PYTHON_ORCHESTRATING.name),

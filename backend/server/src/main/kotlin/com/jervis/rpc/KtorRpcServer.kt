@@ -55,8 +55,6 @@ class KtorRpcServer(
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
     private val environmentResourceService: com.jervis.service.environment.EnvironmentResourceService,
-    private val correctionHeartbeatTracker: com.jervis.service.meeting.CorrectionHeartbeatTracker,
-    private val orchestratorHeartbeatTracker: com.jervis.service.agent.coordinator.OrchestratorHeartbeatTracker,
     private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
@@ -187,7 +185,6 @@ class KtorRpcServer(
                             post("/internal/correction-progress") {
                                 try {
                                     val body = call.receive<CorrectionProgressCallback>()
-                                    correctionHeartbeatTracker.updateHeartbeat(body.meetingId)
                                     launch {
                                         notificationRpcImpl.emitMeetingCorrectionProgress(
                                             meetingId = body.meetingId,
@@ -214,7 +211,6 @@ class KtorRpcServer(
                             post("/internal/orchestrator-progress") {
                                 try {
                                     val body = call.receive<OrchestratorProgressCallback>()
-                                    orchestratorHeartbeatTracker.updateHeartbeat(body.taskId)
                                     // Track workflow step for final message
                                     orchestratorWorkflowTracker.addStep(
                                         taskId = body.taskId,
@@ -269,7 +265,6 @@ class KtorRpcServer(
                             post("/internal/orchestrator-status") {
                                 try {
                                     val body = call.receive<OrchestratorStatusCallback>()
-                                    orchestratorHeartbeatTracker.clearHeartbeat(body.taskId)
                                     launch {
                                         // 1. Broadcast to UI
                                         notificationRpcImpl.emitOrchestratorTaskStatusChange(

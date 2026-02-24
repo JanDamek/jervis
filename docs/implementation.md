@@ -639,7 +639,7 @@ Only one Python orchestration runs at a time:
 - Calls `task.cancel()` on asyncio task
 - LangGraph automatically saves checkpoint before cancellation completes
 - Returns `{"success": true}` immediately
-- Task removed from `_active_tasks` and SSE stream closed
+- Task removed from `_active_tasks`
 
 ### Key Technical Details
 
@@ -754,11 +754,11 @@ When a Whisper job completes or fails, the result handler in `MeetingTranscripti
 **Deployed:** 2026-02-23
 
 **Problem:**
-After server restart, WebSocket dies silently. UI shows green "connected" dot (stale state — heartbeat hasn't detected the failure yet). User sends a message → kRPC throws `IllegalStateException("RpcClient was cancelled")` → classified as `SendError.Server` (non-retryable) → no auto-retry, no reconnect. User must manually click "Znovu" after 30s heartbeat reconnects.
+After server restart, WebSocket dies silently. UI shows green "connected" dot (stale state — kRPC ping hasn't detected the failure yet). User sends a message → kRPC throws `IllegalStateException("RpcClient was cancelled")` → classified as `SendError.Server` (non-retryable) → no auto-retry, no reconnect. User must manually click "Znovu" after 30s kRPC ping reconnects.
 
 **Root cause chain:**
 1. `classifySendError()` didn't match "cancelled" → classified as Server (non-retryable)
-2. `sendMessage()` didn't trigger reconnect on "cancelled" error (waited 30s for heartbeat)
+2. `sendMessage()` didn't trigger reconnect on "cancelled" error (waited 30s for kRPC ping)
 3. `scheduleAutoRetry()` skipped "server" errors entirely → pending message stuck forever
 4. After reconnect, `reloadHistory()` didn't reclassify stale "server" errors
 
@@ -891,8 +891,8 @@ All services have dedicated build scripts in `k8s/`:
 5. **Consistent, responsive UI with shared components**
 6. **Clear module boundaries and contracts**
 7. **Documentation in existing files ONLY - no status/summary files**
-8. **No hard timeouts — streaming + heartbeat everywhere**: All LLM/GPU operations (Ollama, correction agent, orchestrator) MUST use streaming. Liveness is determined by whether tokens keep arriving, not by a fixed timeout. If tokens stop arriving for an extended period, the operation is considered dead and retried/reset. This principle applies to ALL LLM calls in the project.
-9. **Push-based communication — no polling as primary**: All real-time progress and status changes use push callbacks (Python → Kotlin POST endpoints → Flow-based UI subscriptions). Polling is reduced to safety-net only (60s interval). Heartbeat trackers (CorrectionHeartbeatTracker, OrchestratorHeartbeatTracker) detect dead processes. Connection errors reset to retryable state, not FAILED.
+8. **No hard timeouts — streaming + token-arrival liveness**: All LLM/GPU operations (Ollama, correction agent, orchestrator) MUST use streaming. Liveness is determined by whether tokens keep arriving, not by a fixed timeout. If tokens stop arriving for an extended period, the operation is considered dead and retried/reset. This principle applies to ALL LLM calls in the project.
+9. **Push-based communication — no polling as primary**: All real-time progress and status changes use push callbacks (Python → Kotlin POST endpoints → Flow-based UI subscriptions). Polling is reduced to safety-net only (60s interval). Timestamp-based stuck detection (`orchestrationStartedAt` / `stateChangedAt` from DB, STUCK_THRESHOLD_MINUTES = 15) replaces in-memory heartbeat trackers. Connection errors reset to retryable state, not FAILED. Python orchestrator includes a crash handler (`atexit` + `SIGTERM`) that sends best-effort error callbacks for active tasks.
 
 ### Benefits
 

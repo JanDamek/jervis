@@ -1,31 +1,32 @@
 """FastAPI application – Python Orchestrator Service.
 
 Accepts requests from Kotlin server, runs LangGraph orchestration,
-streams progress via SSE, handles approval flow via LangGraph interrupt().
+pushes progress via callbacks, handles approval flow via LangGraph interrupt().
 
-Communication architecture (push-based):
+Communication architecture (push-based, no SSE):
 - Kotlin → Python: POST /orchestrate/stream (fire-and-forget, returns thread_id)
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress, real-time)
 - Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
-- Python → UI: SSE /stream/{thread_id} (progress + approval requests)
 - Kotlin → Python: POST /approve/{thread_id} (fire-and-forget, resumes graph)
 - Kotlin → Python: GET /status/{thread_id} (safety-net fallback polling, 60s)
 
-Python pushes progress and status changes to Kotlin in real-time.
+Python pushes progress and status changes to Kotlin via HTTP callbacks.
 Kotlin broadcasts to UI via Flow-based event subscriptions.
+Crash handler (atexit/SIGTERM) sends best-effort error callback for active tasks.
 Polling is reduced to a 60s safety-net fallback only.
 
 Concurrency:
-- Only ONE orchestration runs at a time (asyncio.Semaphore)
-- LLM (Ollama/Anthropic) can't handle multiple concurrent requests
+- Router handles GPU/CPU routing, up to 10 concurrent orchestrations
 - Dispatch returns 429 if busy; Kotlin retries on next polling cycle
 """
 
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import logging
+import signal
 import uuid
 from contextlib import asynccontextmanager
 
@@ -83,15 +84,61 @@ class _HealthCheckAccessFilter(logging.Filter):
             return False
         return True
 
-# In-memory store for active SSE streams
-_active_streams: dict[str, asyncio.Queue] = {}
-
-# In-memory store for active orchestration asyncio tasks (for cancellation)
+# In-memory store for active orchestration asyncio tasks (for cancellation and crash cleanup)
 _active_tasks: dict[str, asyncio.Task] = {}
 
 # Concurrency: Router handles GPU/CPU routing, no artificial limit needed
 # Multiple orchestrations can run concurrently - router will manage resources
 _orchestration_semaphore = asyncio.Semaphore(10)  # Allow up to 10 concurrent orchestrations
+
+
+def _crash_cleanup():
+    """Best-effort final callback on process exit.
+
+    Reports error status for all active orchestration tasks so Kotlin server
+    doesn't have to wait for the stuck-task timeout to detect the crash.
+    Uses synchronous httpx (async loop may be dead at this point).
+    """
+    if not _active_tasks:
+        return
+
+    import httpx as _httpx
+
+    base_url = settings.kotlin_server_url
+    if not base_url:
+        return
+
+    for thread_id in list(_active_tasks.keys()):
+        # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
+        parts = thread_id.split("-")
+        task_id = parts[1] if len(parts) >= 2 else thread_id
+        try:
+            _httpx.post(
+                f"{base_url}/internal/orchestrator-status",
+                json={
+                    "taskId": task_id,
+                    "threadId": thread_id,
+                    "status": "error",
+                    "error": "Orchestrátor se neočekávaně ukončil",
+                },
+                timeout=5.0,
+            )
+            logger.info("CRASH_CLEANUP: reported error for thread %s", thread_id)
+        except Exception:
+            pass  # Best-effort — nothing we can do if Kotlin is also down
+
+
+atexit.register(_crash_cleanup)
+
+
+def _sigterm_handler(signum, frame):
+    """Handle SIGTERM (K8s pod termination) — report active tasks before exit."""
+    logger.warning("SIGTERM received — cleaning up %d active tasks", len(_active_tasks))
+    _crash_cleanup()
+    raise SystemExit(0)
+
+
+signal.signal(signal.SIGTERM, _sigterm_handler)
 
 
 @asynccontextmanager
@@ -406,10 +453,6 @@ async def status(thread_id: str):
             "artifacts": values.get("artifacts", []),
         }
 
-    # Check if there's an active stream (still running)
-    if thread_id in _active_streams:
-        return {"status": "running", "thread_id": thread_id}
-
     return {"status": "unknown", "thread_id": thread_id}
 
 
@@ -493,16 +536,14 @@ async def orchestrate_stream(request: OrchestrateRequest):
 
     thread_id = f"thread-{request.task_id}-{uuid.uuid4().hex[:8]}"
     logger.info("ORCHESTRATE_STREAM_RECEIVED | task_id=%s | thread_id=%s", request.task_id, thread_id)
-    queue: asyncio.Queue = asyncio.Queue()
-    _active_streams[thread_id] = queue
 
-    # Run orchestration in background with semaphore, pushing events to queue
+    # Run orchestration in background with semaphore, pushing progress via callbacks
     logger.info("CREATING_BACKGROUND_TASK | thread_id=%s", thread_id)
-    task = asyncio.create_task(_run_and_stream(request, thread_id, queue))
+    task = asyncio.create_task(_run_and_push(request, thread_id))
     _active_tasks[thread_id] = task
     logger.info("BACKGROUND_TASK_CREATED | thread_id=%s | task_done=%s", thread_id, task.done())
 
-    return {"thread_id": thread_id, "stream_url": f"/stream/{thread_id}"}
+    return {"thread_id": thread_id}
 
 
 # Human-readable node messages for progress reporting
@@ -532,17 +573,16 @@ _NODE_MESSAGES = {
 }
 
 
-async def _run_and_stream(
+async def _run_and_push(
     request: OrchestrateRequest,
     thread_id: str,
-    queue: asyncio.Queue,
 ):
-    """Background task: run orchestration, push events to SSE queue and Kotlin.
+    """Background task: run orchestration, push progress/status to Kotlin via callbacks.
 
-    Push-based communication:
+    Push-based communication (no SSE):
     - Each node_start event is pushed to Kotlin via report_progress()
     - Completion/error/interrupt is pushed via report_status_change()
-    - SSE queue is still maintained for direct stream subscribers
+    - Kotlin broadcasts to UI via Flow-based event subscriptions
 
     CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
     to prevent blocking subsequent requests. Status pushing happens outside lock.
@@ -553,8 +593,6 @@ async def _run_and_stream(
         # Acquire semaphore ONLY for graph execution — release immediately after
         async with _orchestration_semaphore:
             async for event in run_orchestration_streaming(request, thread_id):
-                await queue.put(event)
-
                 # Push progress to Kotlin server on each node transition
                 if event.get("type") == "node_start":
                     node = event.get("node", "")
@@ -584,11 +622,6 @@ async def _run_and_stream(
                         interrupt_data = task.interrupts[0].value
                         break
             logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
-            await queue.put({
-                "type": "approval_required",
-                "thread_id": thread_id,
-                "interrupt": interrupt_data,
-            })
 
             # Push interrupted status to Kotlin
             await kotlin_client.report_status_change(
@@ -603,7 +636,6 @@ async def _run_and_stream(
             final_result = values.get("final_result", "")
             logger.info("ORCHESTRATION_DONE | thread_id=%s | result_len=%d | branch=%s | artifacts=%d",
                        thread_id, len(final_result), values.get("branch", "none"), len(values.get("artifacts", [])))
-            await queue.put({"type": "done", "thread_id": thread_id})
 
             # Push done status to Kotlin with final state
             await kotlin_client.report_status_change(
@@ -623,7 +655,6 @@ async def _run_and_stream(
     except Exception as e:
         logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
         logger.exception("Full exception traceback:")
-        await queue.put({"type": "error", "error": str(e)})
 
         # Push error status to Kotlin
         await kotlin_client.report_status_change(
@@ -633,39 +664,8 @@ async def _run_and_stream(
             error=str(e),
         )
     finally:
-        await queue.put(None)  # Sentinel to close SSE
         _active_tasks.pop(thread_id, None)
         logger.info("ORCHESTRATION_CLEANUP | thread_id=%s | task_removed", thread_id)
-
-
-@app.get("/stream/{thread_id}")
-async def stream(thread_id: str):
-    """SSE endpoint for streaming orchestration progress.
-
-    Events:
-        node_start:        {node: "decompose", ...}
-        node_end:          {node: "execute_step", result: ...}
-        approval_required: {interrupt: {action: "commit", ...}}
-        done:              {thread_id: "..."}
-        error:             {error: "..."}
-    """
-    queue = _active_streams.get(thread_id)
-    if not queue:
-        raise HTTPException(status_code=404, detail=f"No active stream for {thread_id}")
-
-    async def event_generator():
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield {
-                "event": event.get("type", "message"),
-                "data": json.dumps(event),
-            }
-        # Cleanup
-        _active_streams.pop(thread_id, None)
-
-    return EventSourceResponse(event_generator())
 
 
 @app.post("/approve/{thread_id}")
@@ -722,14 +722,6 @@ async def interrupt(thread_id: str):
 
         # Remove from active tasks
         _active_tasks.pop(thread_id, None)
-
-        # Clean up SSE stream if exists
-        queue = _active_streams.pop(thread_id, None)
-        if queue:
-            try:
-                await queue.put(None)  # Signal stream end
-            except Exception:
-                pass
 
         return {"success": True}
     except Exception as e:
