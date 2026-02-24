@@ -1,68 +1,31 @@
-# Bug: orchestrateV2 selhává — fallback na legacy MUSÍ být odstraněn
+# Bug: orchestrateV2 fallback na legacy MUSÍ být odstraněn
 
-**Severity**: HIGH
+**Severity**: MEDIUM
 **Date**: 2026-02-24
 
-## Problém
+## Vyřešeno
+- ~~stream_url MissingFieldException~~ — pole odstraněno z StreamStartResponseDto
+- ~~SSE /stream endpoint~~ — smazán z Python orchestrátoru
 
-`AgentOrchestratorService.dispatchToOrchestrator()` volá `orchestrateV2()` (POST `/orchestrate/v2`),
-ale Python orchestrátor nevrací pole `stream_url` → deserializace `StreamStartResponseDto` selhává.
+## Zbývá
 
-Server pak tichým fallbackem volá `dispatchLegacy()` (POST `/orchestrate/stream`).
+### 1. Odstranit fallback pattern
 
-**Žádný fallback v aplikaci nesmí být.** Každý fallback maskuje skutečný problém a brání jeho detekci.
+`AgentOrchestratorService.kt:329-353` — catch block stále volá `dispatchLegacy()`:
+- Řádek 332-333: v2 busy (429) → fallback na legacy
+- Řádek 351-352: v2 exception → fallback na legacy
 
-## Aktuální chybový řetězec
+**Žádný fallback nesmí být.** Pokud v2 selže → error + task zpět do fronty.
 
-```
-AgentOrchestratorService.dispatchToOrchestrator()
-  → pythonOrchestratorClient.orchestrateV2(request)    # POST /orchestrate/v2
-    → Python vrátí JSON BEZ stream_url
-    → MissingFieldException: Field 'stream_url' is required for StreamStartResponseDto
-  → catch (e: Exception) → WARN "ORCHESTRATE_V2_FAILED, falling back to legacy"
-  → dispatchLegacy()                                    # POST /orchestrate/stream ← TOTO JE ŠPATNĚ
-```
+### 2. Smazat legacy dispatch
 
-## Co opravit
-
-### 1. Python `/orchestrate/v2` — vrátit `stream_url`
-
-Endpoint musí vracet response se `stream_url` poli, nebo se musí dohodnout na novém DTO.
-Zkontrolovat co Python skutečně vrací a sjednotit s Kotlin DTO.
-
-### 2. Kotlin `StreamStartResponseDto` — sjednotit s Python response
-
-```kotlin
-// Aktuálně (PythonOrchestratorClient.kt:362)
-@Serializable
-data class StreamStartResponseDto(
-    @SerialName("thread_id") val threadId: String,
-    @SerialName("stream_url") val streamUrl: String,  // ← Python toto nevrací
-)
-```
-
-Buď Python přidat `stream_url`, nebo Kotlin udělat pole nullable/optional, nebo
-zrušit `stream_url` pokud se nepoužívá.
-
-### 3. Odstranit fallback pattern
-
-`AgentOrchestratorService.kt:329-353` — catch block nesmí volat `dispatchLegacy()`.
-Pokud v2 selže, má to být ERROR a task se má vrátit do fronty (READY_FOR_GPU),
-ne tiše přepnout na jinou code path.
-
-Stejně tak `dispatchLegacy()` při 429 (řádek 332-333) — pokud je orchestrátor busy,
-vrátit task do fronty, ne fallback.
-
-### 4. Rozhodnout: v2 nebo legacy?
-
-Pokud `/orchestrate/v2` je finální cesta → smazat `dispatchLegacy()` + `/orchestrate/stream`.
-Pokud legacy je stále potřeba → opravit v2 a pak smazat legacy.
-**Jedno z toho musí zmizet.**
+`dispatchLegacy()` (řádek 362+) + `orchestrateStream()` v PythonOrchestratorClient
++ Python `/orchestrate/stream` endpoint — vše smazat, v2 je jediná cesta.
 
 ## Dotčené soubory
 
 | Soubor | Změna |
 |--------|-------|
-| `backend/server/.../service/agent/coordinator/AgentOrchestratorService.kt:329-353` | Odstranit fallback, error → retry |
-| `backend/server/.../configuration/PythonOrchestratorClient.kt:275,362` | Sjednotit DTO s Python |
-| `backend/service-orchestrator/app/api/routes.py` | Opravit `/orchestrate/v2` response |
+| `backend/server/.../service/agent/coordinator/AgentOrchestratorService.kt` | Smazat fallback + dispatchLegacy |
+| `backend/server/.../configuration/PythonOrchestratorClient.kt` | Smazat orchestrateStream |
+| `backend/service-orchestrator/app/main.py` | Smazat /orchestrate/stream endpoint |
