@@ -398,6 +398,14 @@ system("""
 - Use visual markers (❌ ✅)
 - Be specific about what NOT to do
 
+### Chat Context Quality
+
+**History distrust:** Chat summaries (compressed by LLM) can contain hallucinations from earlier answers. To prevent self-reinforcing loops:
+- Summaries are prefixed with `[Neověřený souhrn]` in context assembly (`context.py`)
+- System prompt includes explicit "KRITICKÁ DISTANCE K HISTORII" warning
+
+**Self-correction:** Chat has `kb_delete` tool (CORE category, always available) for purging incorrect KB entries. System prompt instructs LLM to use it when user reports wrong information or when contradictions are detected between KB and verified facts.
+
 ### Tool Registration Best Practices
 
 ```kotlin

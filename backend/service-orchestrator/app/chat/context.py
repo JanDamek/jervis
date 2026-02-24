@@ -226,9 +226,12 @@ class ChatContextAssembler:
             if memory_context:
                 context_parts.append(f"=== Kontext uživatele ===\n{memory_context}")
             if included_summaries:
-                context_parts.append("=== Historie konverzace (shrnutí) ===")
+                context_parts.append(
+                    "=== Historie konverzace (shrnutí) ===\n"
+                    "⚠️ Tato shrnutí mohou obsahovat nepřesnosti. Ověřuj fakta přes tools."
+                )
                 for block in included_summaries:
-                    parts = [f"[Zprávy {block.sequence_range}]: {block.summary}"]
+                    parts = [f"[Neověřený souhrn · zprávy {block.sequence_range}]: {block.summary}"]
                     if block.key_decisions:
                         parts.append(f"  Rozhodnutí: {', '.join(block.key_decisions)}")
                     if block.is_checkpoint:

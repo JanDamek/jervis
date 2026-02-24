@@ -636,7 +636,7 @@ class OrchestratorState(TypedDict, total=False):
 - Explicitní capabilities (co UMÍŠ a NEUMÍŠ — git je READ-ONLY, žádné code changes, branch ops, deploy)
 
 **Agentic tool-use loop** (max 8 iterations): LLM call → tool calls → execute → repeat.
-Tools: `web_search`, `kb_search`, `store_knowledge`, `ask_user`, `create_scheduled_task`, + KB stats, git, filesystem, terminal tools.
+Tools: `web_search`, `kb_search`, `kb_delete`, `store_knowledge`, `ask_user`, `create_scheduled_task`, + KB stats, git, filesystem, terminal tools.
 
 **Tool loop detection**: Sleduje historii `(tool_name, args_json)`. Pokud se stejný tool se stejnými argumenty zavolá 2×, loop se přeruší, injektuje se system message "STOP", a vynutí se finální odpověď. Sdílí forced-answer path s max iterations.
 
@@ -1292,7 +1292,14 @@ class AgentTaskWatcher:
 4. If unsummarized ≥ 20 → POST `/internal/compress-chat` (Python LLM)
 5. Store `ChatSummaryDocument`
 
-### 16.4 Použití v nodech
+### 16.4 Summary trust level
+
+Souhrny (rolling summaries) mohou obsahovat halucinace z dřívějších LLM odpovědí. Aby se zabránilo self-reinforcing loop (špatná odpověď → uložena → komprimována → znovu použita jako fakt):
+
+1. **Context assembler** (`context.py`) označuje souhrny prefixem `[Neověřený souhrn]` a přidává varování k celé sekci souhrnů.
+2. **System prompt** (`system_prompt.py`) obsahuje explicitní instrukci "KRITICKÁ DISTANCE K HISTORII" — LLM nesmí přebírat fakta ze souhrnů bez ověření přes tools.
+
+### 16.5 Použití v nodech
 
 | Node | Co používá | Jak |
 |------|-----------|-----|

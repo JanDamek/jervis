@@ -59,6 +59,33 @@ TOOL_KB_SEARCH: dict = {
     },
 }
 
+TOOL_KB_DELETE: dict = {
+    "type": "function",
+    "function": {
+        "name": "kb_delete",
+        "description": (
+            "Delete incorrect or outdated entries from the Knowledge Base by sourceUrn. "
+            "Use this when you discover that information in KB is wrong, outdated, or "
+            "when the user tells you a previous answer was incorrect and the bad data "
+            "came from KB. Requires the sourceUrn (visible in kb_search results)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_urn": {
+                    "type": "string",
+                    "description": "The sourceUrn of the KB entry to delete (from kb_search results).",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why this entry is being deleted (for audit log).",
+                },
+            },
+            "required": ["source_urn", "reason"],
+        },
+    },
+}
+
 TOOL_GET_INDEXED_ITEMS: dict = {
     "type": "function",
     "function": {
@@ -668,6 +695,7 @@ BRAIN_TOOLS: list[dict] = [
 ALL_RESPOND_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
+    TOOL_KB_DELETE,
     TOOL_STORE_KNOWLEDGE,
     TOOL_ASK_USER,
     TOOL_CREATE_SCHEDULED_TASK,

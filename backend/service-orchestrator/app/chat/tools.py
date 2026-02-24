@@ -18,6 +18,7 @@ from enum import Enum
 from app.tools.definitions import (
     TOOL_WEB_SEARCH,
     TOOL_KB_SEARCH,
+    TOOL_KB_DELETE,
     TOOL_STORE_KNOWLEDGE,
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
@@ -299,6 +300,7 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
 # All tools available in foreground chat = base research + brain + memory + chat-specific
 CHAT_TOOLS: list[dict] = [
     TOOL_KB_SEARCH,
+    TOOL_KB_DELETE,
     TOOL_WEB_SEARCH,
     TOOL_CODE_SEARCH,
     TOOL_STORE_KNOWLEDGE,
@@ -332,8 +334,10 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
     # CORE: minimal set for typical questions. No switch_context (only on explicit user request),
     # no memory_store (only when learning new procedures — TASK_MGMT intent).
     # Fewer tools = less tool-calling bias = faster direct answers.
+    # kb_delete is in CORE because self-correction must always be available.
     ToolCategory.CORE: [
         TOOL_KB_SEARCH,
+        TOOL_KB_DELETE,
         TOOL_WEB_SEARCH,
         TOOL_MEMORY_RECALL,
     ],
@@ -361,7 +365,7 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
 
 # Domain mapping for drift detection (tool name → semantic domain)
 TOOL_DOMAINS: dict[str, str] = {
-    "kb_search": "search", "web_search": "search", "code_search": "search",
+    "kb_search": "search", "kb_delete": "memory", "web_search": "search", "code_search": "search",
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
     "brain_create_issue": "brain", "brain_update_issue": "brain",

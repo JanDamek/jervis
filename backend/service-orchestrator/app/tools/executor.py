@@ -84,6 +84,12 @@ async def execute_tool(
                 project_id=project_id,
                 processing_mode=processing_mode,
             )
+        elif tool_name == "kb_delete":
+            result = await _execute_kb_delete(
+                source_urn=arguments.get("source_urn", ""),
+                reason=arguments.get("reason", ""),
+                client_id=client_id,
+            )
         elif tool_name == "store_knowledge":
             result = await _execute_store_knowledge(
                 subject=arguments.get("subject", ""),
@@ -476,6 +482,63 @@ async def _execute_kb_search(
         lines.append("")
 
     return "\n".join(lines)
+
+
+async def _execute_kb_delete(
+    source_urn: str,
+    reason: str,
+    client_id: str = "",
+) -> str:
+    """Delete incorrect/outdated KB entries via POST /purge.
+
+    Calls the KB write service purge endpoint which removes:
+    - All Weaviate RAG chunks matching sourceUrn
+    - References from ArangoDB graph nodes/edges
+    - Orphaned nodes/edges with no remaining evidence
+    """
+    if not source_urn.strip():
+        return "Error: source_urn cannot be empty. Use kb_search first to find the sourceUrn."
+    if not reason.strip():
+        return "Error: reason cannot be empty. Explain why the entry is being deleted."
+
+    logger.info("kb_delete: sourceUrn=%r reason=%r clientId=%s", source_urn, reason[:100], client_id)
+
+    kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
+    url = f"{kb_write_url}/purge"
+
+    payload = {
+        "sourceUrn": source_urn,
+        "clientId": client_id,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException:
+        return f"Error: KB delete timed out after 15s for sourceUrn: {source_urn}"
+    except httpx.HTTPStatusError as e:
+        return f"Error: KB purge returned HTTP {e.response.status_code} for sourceUrn: {source_urn}"
+    except Exception as e:
+        return f"Error: KB delete failed: {str(e)[:200]}"
+
+    chunks_deleted = data.get("chunks_deleted", 0)
+    nodes_deleted = data.get("nodes_deleted", 0)
+
+    logger.info(
+        "kb_delete OK: sourceUrn=%r chunks=%d nodes=%d reason=%r",
+        source_urn, chunks_deleted, nodes_deleted, reason[:100],
+    )
+
+    return (
+        f"KB entry deleted successfully.\n"
+        f"Source: {source_urn}\n"
+        f"Chunks removed: {chunks_deleted}\n"
+        f"Graph nodes removed: {nodes_deleted}\n"
+        f"Reason: {reason}\n"
+        f"The incorrect information has been purged from the Knowledge Base."
+    )
 
 
 async def _execute_store_knowledge(
