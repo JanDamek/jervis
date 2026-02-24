@@ -1557,6 +1557,7 @@ data class SystemConfigDocument(
 │  │  BrainWriteService (Kotlin)                                  │   │
 │  │  • Resolves connection credentials from SystemConfig         │   │
 │  │  • Delegates to BugTrackerService / WikiService              │   │
+│  │  • Issue type resolution: config override → Czech aliases    │   │
 │  │  • No approval flow — unrestricted access                    │   │
 │  └──────────┬──────────────────────────────┬────────────────────┘   │
 │             │                              │                         │
