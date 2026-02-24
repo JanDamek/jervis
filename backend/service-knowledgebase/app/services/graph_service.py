@@ -39,6 +39,9 @@ class GraphService:
 
         Same pattern as rag_service._embed_with_priority() — direct httpx gives
         full control over the X-Ollama-Priority header, which ChatOllama doesn't expose.
+
+        Uses explicit num_ctx to prevent Ollama's small default (often 2048)
+        from silently truncating the prompt — same fix as chat/orchestrator context management.
         """
         url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
         effective_priority = priority if priority is not None else None  # default: no header (NORMAL)
@@ -48,9 +51,12 @@ class GraphService:
             "prompt": prompt,
             "format": "json",
             "stream": False,
-            "options": {"temperature": 0},
+            "options": {
+                "temperature": 0,
+                "num_ctx": settings.INGEST_CONTEXT_WINDOW,
+            },
         }
-        resp = await self.http_client.post(url, json=payload, headers=headers)
+        resp = await self.http_client.post(url, json=payload, headers=headers, timeout=settings.LLM_CALL_TIMEOUT)
         resp.raise_for_status()
         return resp.json()["response"]
 
@@ -63,6 +69,14 @@ class GraphService:
     ) -> tuple[int, int, list[str]]:
         """
         Ingest content into graph store with bidirectional linking.
+
+        Uses MAX_EXTRACTION_CHUNKS budget to prevent large documents (backup logs,
+        long emails) from producing unbounded LLM calls. Same principle as chat/
+        orchestrator context budgeting (CONTEXT_BUDGET, _truncate_messages_to_budget).
+
+        For documents exceeding the budget, selects representative chunks:
+        beginning (context/headers) + end (conclusions/signatures) + sampled middle.
+        RAG still indexes ALL content — only graph extraction is budgeted.
 
         Args:
             request: The ingest request
@@ -79,15 +93,42 @@ class GraphService:
         )
 
         # 1. Split text into chunks for processing
-        chunks = self.text_splitter.split_text(request.content)
+        all_chunks = self.text_splitter.split_text(request.content)
+        max_chunks = settings.MAX_EXTRACTION_CHUNKS
+
+        # 2. Budget: select representative chunks if document is too large
+        if len(all_chunks) > max_chunks:
+            # Strategy: beginning (headers/context) + end (conclusions) + sampled middle
+            # Same approach as orchestrator _truncate_messages_to_budget: keep first + last + sample
+            head_count = max(1, max_chunks // 3)
+            tail_count = max(1, max_chunks // 4)
+            middle_budget = max_chunks - head_count - tail_count
+            middle_pool = all_chunks[head_count:-tail_count] if tail_count > 0 else []
+
+            if middle_pool and middle_budget > 0:
+                # Evenly sample from middle
+                step = max(1, len(middle_pool) // middle_budget)
+                middle_selected = middle_pool[::step][:middle_budget]
+            else:
+                middle_selected = []
+
+            chunks = all_chunks[:head_count] + middle_selected + (all_chunks[-tail_count:] if tail_count > 0 else [])
+            logger.info(
+                "GRAPH_WRITE: BUDGET sourceUrn=%s total_chunks=%d → selected=%d "
+                "(head=%d mid=%d tail=%d, max=%d). RAG has ALL chunks.",
+                request.sourceUrn, len(all_chunks), len(chunks),
+                head_count, len(middle_selected), tail_count, max_chunks,
+            )
+        else:
+            chunks = all_chunks
 
         nodes_created = 0
         edges_created = 0
         all_entity_keys = []
 
         logger.info(
-            "GRAPH_WRITE: SPLIT sourceUrn=%s → %d text chunks (will call LLM model=%s)",
-            request.sourceUrn, len(chunks), settings.LLM_MODEL
+            "GRAPH_WRITE: SPLIT sourceUrn=%s → %d text chunks (processing %d, LLM model=%s)",
+            request.sourceUrn, len(all_chunks), len(chunks), settings.LLM_MODEL
         )
 
         # Process chunks sequentially (for LLM rate limiting)

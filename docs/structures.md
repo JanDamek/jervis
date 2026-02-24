@@ -364,6 +364,15 @@ fun routeTask(
 - Service automatically splits document and embeds all chunks
 - Use: Exceptionally in Qualifier for large plain-text documents
 
+**KB Graph Extraction Budget (same pattern as chat/orchestrator context management):**
+
+- RAG embedding indexes ALL content (no limit) — cheap, fast, GPU-routed
+- LLM graph extraction capped at `MAX_EXTRACTION_CHUNKS` (30) per document
+- Large documents: selects representative chunks (beginning + sampled middle + end)
+- All LLM calls use explicit `num_ctx=INGEST_CONTEXT_WINDOW` (32 768) to prevent Ollama's small default (often 2048)
+- Per-call timeout (`LLM_CALL_TIMEOUT=180s`) prevents hangs blocking the async callback
+- See `docs/knowledge-base.md` § "Context Window Management" for full settings table
+
 #### 3. TaskMemory - Context Passing
 
 ```kotlin

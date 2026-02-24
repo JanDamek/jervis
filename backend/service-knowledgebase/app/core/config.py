@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     INGEST_MODEL_SIMPLE: str = "qwen2.5:7b"
     INGEST_MODEL_COMPLEX: str = "qwen3-coder-tool:30b"
 
+    # -- Context window management (same pattern as chat/orchestrator) ---------
+    # Chat/orchestrator uses: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE=4000,
+    # TOKEN_ESTIMATE_RATIO=4, _truncate_messages_to_budget().
+    # Indexing must do the same to prevent silent truncation / model hangs.
+    INGEST_CONTEXT_WINDOW: int = 32_768     # num_ctx for ingest models (must match model capability)
+    INGEST_RESPONSE_RESERVE: int = 2_000    # Reserve tokens for JSON response generation
+    INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
+    TOKEN_ESTIMATE_RATIO: int = 4           # chars / 4 ≈ tokens (same heuristic as orchestrator)
+    MAX_EXTRACTION_CHUNKS: int = 30         # Max chunks for LLM graph extraction per document
+    LLM_CALL_TIMEOUT: float = 180.0         # Max seconds for a single LLM call (3 min)
+
     # -- Image processing -------------------------------------------------------
     # OCR-first strategy: try Tika OCR, fall back to VLM if OCR output is poor.
     OCR_TEXT_THRESHOLD: int = 100      # Min chars for OCR to be considered sufficient

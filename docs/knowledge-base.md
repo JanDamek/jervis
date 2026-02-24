@@ -318,8 +318,28 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
 - `summary: str` — one-line summary
 - `entities: List[str]` — extracted entity references
 
+**Context Window Management (same pattern as chat/orchestrator):**
+
+The indexing pipeline uses the same context budgeting principle as `chat/context.py` and `graph/nodes/_helpers.py`:
+
+| Setting | Value | Equivalent in Chat |
+|---------|-------|--------------------|
+| `INGEST_CONTEXT_WINDOW` | 32 768 tokens | `TOTAL_CONTEXT_WINDOW = 32_768` |
+| `INGEST_PROMPT_RESERVE` | 1 500 tokens | `SYSTEM_PROMPT_RESERVE = 2_000` |
+| `INGEST_RESPONSE_RESERVE` | 2 000 tokens | `RESPONSE_RESERVE = 4_000` |
+| `TOKEN_ESTIMATE_RATIO` | chars / 4 | `TOKEN_ESTIMATE_RATIO = 4` |
+| `MAX_EXTRACTION_CHUNKS` | 30 | `MAX_SUMMARY_BLOCKS = 15` |
+| `LLM_CALL_TIMEOUT` | 180 s | (hardened per-call timeout) |
+
+- **`num_ctx` set explicitly** on all Ollama calls (`ChatOllama` + httpx `_llm_call`). Without this, Ollama uses the model's default (often 2048 tokens), silently truncating the prompt.
+- **Token-aware content truncation** in `_generate_summary()`: `max_chars = (WINDOW − PROMPT − RESPONSE) × RATIO`
+- **Extraction chunk budget**: large documents (backup logs, long emails) are capped at `MAX_EXTRACTION_CHUNKS`. Representative chunks selected: beginning (headers/context) + end (conclusions) + sampled middle. RAG still indexes ALL content.
+- **Per-call timeout**: `LLM_CALL_TIMEOUT` prevents indefinite hangs that block the async callback to Kotlin (which caused infinite QUALIFYING→retry loops).
+
 **Key files:**
-- `app/services/knowledge_service.py` — `ingest_full()`, `_generate_summary()`
+- `app/core/config.py` — `INGEST_CONTEXT_WINDOW`, `MAX_EXTRACTION_CHUNKS`, `LLM_CALL_TIMEOUT`
+- `app/services/knowledge_service.py` — `ingest_full()`, `_generate_summary()`, `ChatOllama(num_ctx=, timeout=)`
+- `app/services/graph_service.py` — `_llm_call(num_ctx=)`, chunk budget in `ingest()`
 - `app/services/rag_service.py` — `ingest()`, `count_by_source()`, `get_content_hash()`, `purge_by_source()`
 
 ### Async Write Queue with Priority

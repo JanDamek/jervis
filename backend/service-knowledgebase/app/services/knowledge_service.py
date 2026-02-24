@@ -49,17 +49,24 @@ class KnowledgeService:
         # Persistent HTTP client for progress callbacks to Kotlin server
         import httpx
         self._callback_http = httpx.AsyncClient(timeout=5.0) if settings.KOTLIN_SERVER_URL else None
-        # LLM for ingest tasks (simple relevance check, complex summary)
+        # LLM for ingest tasks — explicit num_ctx prevents Ollama using small
+        # default (often 2048), and timeout prevents indefinite hangs that block
+        # the async callback to Kotlin (causing infinite QUALIFYING→retry loop).
+        # Same pattern as orchestrator: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE, TOKEN_RATIO.
         self.ingest_llm_simple = ChatOllama(
             base_url=settings.OLLAMA_INGEST_BASE_URL,
             model=settings.INGEST_MODEL_SIMPLE,
             format="json",
-            temperature=0
+            temperature=0,
+            num_ctx=settings.INGEST_CONTEXT_WINDOW,
+            timeout=settings.LLM_CALL_TIMEOUT,
         )
         self.ingest_llm_complex = ChatOllama(
             base_url=settings.OLLAMA_INGEST_BASE_URL,
             model=settings.INGEST_MODEL_COMPLEX,
             format="json",
+            num_ctx=settings.INGEST_CONTEXT_WINDOW,
+            timeout=settings.LLM_CALL_TIMEOUT,
         )
 
     def _ensure_crawl_schema(self):
@@ -405,7 +412,9 @@ class KnowledgeService:
         Uses CPU ingest instance with simple (7B) model for fast classification."""
         llm = self.ingest_llm_simple
 
-        truncated = text[:3000] if len(text) > 3000 else text
+        # Simple model uses same context window; keep truncation conservative for speed
+        max_chars = min(3000, (settings.INGEST_CONTEXT_WINDOW - 1000) * settings.TOKEN_ESTIMATE_RATIO)
+        truncated = text[:max_chars] if len(text) > max_chars else text
         prompt = f"""You are evaluating whether a web page is relevant for indexing in a knowledge base.
 
 Root URL: {root_url}
@@ -907,14 +916,31 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         """
         Generate summary, detect actionable content, deadlines,
         and assignment using LLM.
+
+        Context budget (same pattern as chat/orchestrator):
+        - Total window: INGEST_CONTEXT_WINDOW (default 32768 tokens)
+        - Prompt overhead: INGEST_PROMPT_RESERVE (instruction template)
+        - Response reserve: INGEST_RESPONSE_RESERVE (JSON output)
+        - Content budget: window - prompt - response
         """
         import json
 
         # Use complex model for accurate entity extraction (30B via router)
         llm = self.ingest_llm_complex
 
-        # Truncate content for summary (first 8000 chars)
-        truncated = content[:8000] if len(content) > 8000 else content
+        # Token-aware truncation (same heuristic as orchestrator: chars / 4 ≈ tokens)
+        content_budget_tokens = (
+            settings.INGEST_CONTEXT_WINDOW
+            - settings.INGEST_PROMPT_RESERVE
+            - settings.INGEST_RESPONSE_RESERVE
+        )
+        max_content_chars = content_budget_tokens * settings.TOKEN_ESTIMATE_RATIO
+        truncated = content[:max_content_chars] if len(content) > max_content_chars else content
+        if len(content) > max_content_chars:
+            logger.info(
+                "Summary content truncated: %d → %d chars (budget: %d tokens)",
+                len(content), max_content_chars, content_budget_tokens,
+            )
 
         prompt = f"""Analyze this {source_type or 'content'} and provide a JSON response:
 
