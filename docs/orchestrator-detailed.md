@@ -3046,9 +3046,10 @@ v6 introduces **two dedicated handlers**, independent from LangGraph, with purpo
 6. **Agentic loop** (max 15 iterations):
    - Call LLM with messages + 45 tools
    - Parse tool_calls (native or Ollama JSON workaround)
-   - Execute tools (120s timeout per tool)
+   - Execute tools (120s timeout per tool) with **effective scope** (updated by `switch_context`)
    - Detect tool loop (same tool+args 3× → force answer)
    - Append results → next iteration
+   - **Scope tracking:** `effective_client_id`/`effective_project_id` initialized from request, updated by `switch_context` and tool arguments. All tool calls use effective scope, not stale request scope.
 7. **Stream answer** — chunked tokens via `kotlin_client.emit_streaming_token()`
 8. **Short answer retry** — if < 40 chars, retry once with "expand" instruction
 9. **Save assistant message** to MongoDB
