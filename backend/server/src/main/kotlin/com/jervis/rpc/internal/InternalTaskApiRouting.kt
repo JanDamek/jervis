@@ -39,25 +39,31 @@ fun Routing.installInternalTaskApi(
     taskService: TaskService,
     userTaskService: UserTaskService,
 ) {
-    // Create a background task — for chat tool create_background_task
+    // Create a background task — for chat tool create_background_task / scheduled tasks
     post("/internal/tasks/create") {
         try {
             val body = call.receive<InternalCreateTaskRequest>()
             val clientId = ClientId(ObjectId(body.clientId))
             val projectId = body.projectId?.let { ProjectId(ObjectId(it)) }
+
+            // Support both legacy (query) and new (title+description) field naming
+            val content = body.description ?: body.query
+                ?: throw IllegalArgumentException("Either 'description' or 'query' must be provided")
+            val taskName = body.title ?: content.take(100)
+
             val task = taskService.createTask(
                 taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
-                content = body.query,
+                content = content,
                 clientId = clientId,
                 correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
-                sourceUrn = SourceUrn("chat://foreground"),
+                sourceUrn = SourceUrn(body.createdBy?.let { "agent://$it" } ?: "chat://foreground"),
                 projectId = projectId,
                 state = TaskStateEnum.READY_FOR_QUALIFICATION,
-                taskName = body.query.take(100),
+                taskName = taskName,
             )
             call.respondText(
                 Json.encodeToString(mapOf(
-                    "id" to task.id.toString(),
+                    "taskId" to task.id.toString(),
                     "state" to task.state.name,
                     "name" to task.taskName,
                 )),
@@ -255,9 +261,14 @@ private fun parseSince(since: String): Instant = when (since) {
 
 @Serializable
 data class InternalCreateTaskRequest(
-    val query: String,
+    val query: String? = null,
     val clientId: String,
     val projectId: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val schedule: String? = null,
+    val daysOffset: Int? = null,
+    val createdBy: String? = null,
 )
 
 @Serializable
