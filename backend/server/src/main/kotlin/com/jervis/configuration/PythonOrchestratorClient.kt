@@ -126,33 +126,6 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
-     * Start orchestration (fire-and-forget).
-     * Returns thread_id. Python pushes progress and status via callbacks to internal endpoints.
-     *
-     * Returns null if Python orchestrator is busy (HTTP 429).
-     * The caller should skip dispatch and let BackgroundEngine retry later.
-     */
-    suspend fun orchestrateStream(request: OrchestrateRequestDto): StreamStartResponseDto? {
-        logger.info { "PYTHON_ORCHESTRATOR_STREAM_START: taskId=${request.taskId}" }
-        return try {
-            val response = client.post("$apiBaseUrl/orchestrate/stream") {
-                contentType(ContentType.Application.Json)
-                setBody(request)
-            }
-            if (response.status.value == 429) {
-                logger.info { "PYTHON_ORCHESTRATOR_BUSY: orchestrator returned 429, skipping dispatch" }
-                // 429 = busy, not a failure — don't trip circuit breaker
-                return null
-            }
-            circuitBreaker.recordSuccess()
-            response.body()
-        } catch (e: Exception) {
-            circuitBreaker.recordFailure()
-            throw e
-        }
-    }
-
-    /**
      * Send approval response and resume graph (fire-and-forget).
      *
      * Python endpoint returns immediately with {"status": "resuming"}.

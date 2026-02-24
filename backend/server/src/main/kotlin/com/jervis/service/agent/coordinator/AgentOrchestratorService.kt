@@ -273,7 +273,7 @@ class AgentOrchestratorService(
 
         // -----------------------------------------------------------------------
         // v6 routing: BACKGROUND → /orchestrate/v2 (simplified agentic loop)
-        // Fallback: if v6 endpoint fails, fall through to legacy /orchestrate/stream
+        // No fallback: if v2 fails → error, task goes back to queue
         // -----------------------------------------------------------------------
         return dispatchBackgroundV6(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
     }
@@ -329,8 +329,8 @@ class AgentOrchestratorService(
         try {
             val streamResponse = pythonOrchestratorClient.orchestrateV2(request)
             if (streamResponse == null) {
-                logger.info { "ORCHESTRATE_V2_BUSY: returned 429, falling back to legacy" }
-                return dispatchLegacy(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+                logger.info { "ORCHESTRATE_V2_BUSY: returned 429, task will retry later" }
+                return false
             }
 
             val updatedTask = task.copy(
@@ -348,79 +348,9 @@ class AgentOrchestratorService(
             )
             return true
         } catch (e: Exception) {
-            logger.warn(e) { "ORCHESTRATE_V2_FAILED: taskId=${task.id}, falling back to legacy /orchestrate/stream" }
-            return dispatchLegacy(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+            logger.error(e) { "ORCHESTRATE_V2_FAILED: taskId=${task.id}" }
+            throw e
         }
-    }
-
-    /**
-     * Legacy dispatch — POST /orchestrate/stream (LangGraph path).
-     *
-     * Fallback for when v6 /orchestrate/v2 fails or is unavailable.
-     * Will be removed after v6 stabilization (Phase 3).
-     */
-    private suspend fun dispatchLegacy(
-        task: TaskDocument,
-        userInput: String,
-        rules: ProjectRulesDto,
-        clientName: String?,
-        projectName: String?,
-        workspacePath: String,
-        onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
-    ): Boolean {
-        onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrator"))
-
-        val environmentJson = task.projectId?.let { pid ->
-            try {
-                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
-            } catch (e: Exception) {
-                logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
-                null
-            }
-        }
-
-        val jervisProjectId = try {
-            projectService.getOrCreateJervisProject(task.clientId).id.toString()
-        } catch (e: Exception) {
-            logger.warn { "Failed to resolve JERVIS internal project: ${e.message}" }
-            null
-        }
-
-        val request = OrchestrateRequestDto(
-            taskId = task.id.toString(),
-            clientId = task.clientId.toString(),
-            projectId = task.projectId?.toString(),
-            clientName = clientName,
-            projectName = projectName,
-            workspacePath = workspacePath,
-            query = userInput,
-            rules = rules,
-            environment = environmentJson,
-            jervisProjectId = jervisProjectId,
-            processingMode = task.processingMode.name,
-        )
-
-        val streamResponse = pythonOrchestratorClient.orchestrateStream(request)
-        if (streamResponse == null) {
-            logger.info { "PYTHON_DISPATCH_BUSY: orchestrator returned 429, skipping" }
-            return false
-        }
-
-        val updatedTask = task.copy(
-            state = TaskStateEnum.PYTHON_ORCHESTRATING,
-            orchestratorThreadId = streamResponse.threadId,
-            orchestrationStartedAt = java.time.Instant.now(),
-            orchestratorSteps = emptyList(),
-        )
-        taskRepository.save(updatedTask)
-
-        logger.info { "PYTHON_DISPATCHED_LEGACY: taskId=${task.id} threadId=${streamResponse.threadId}" }
-        onProgress(
-            "Orchestrátor zpracovává úkol...",
-            mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),
-        )
-
-        return true
     }
 
     /**

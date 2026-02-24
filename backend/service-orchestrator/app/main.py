@@ -4,7 +4,7 @@ Accepts requests from Kotlin server, runs LangGraph orchestration,
 pushes progress via callbacks, handles approval flow via LangGraph interrupt().
 
 Communication architecture (push-based, no SSE):
-- Kotlin → Python: POST /orchestrate/stream (fire-and-forget, returns thread_id)
+- Kotlin → Python: POST /orchestrate/v2 (fire-and-forget, returns thread_id)
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress, real-time)
 - Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
 - Kotlin → Python: POST /approve/{thread_id} (fire-and-forget, resumes graph)
@@ -519,31 +519,6 @@ async def orchestrate(request: OrchestrateRequest):
     except Exception as e:
         logger.exception("Orchestration failed for task %s", request.task_id)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/orchestrate/stream")
-async def orchestrate_stream(request: OrchestrateRequest):
-    """Start orchestration with SSE streaming (fire-and-forget).
-
-    Returns thread_id immediately. Client should poll GET /status/{thread_id}.
-    Returns 429 if another orchestration is already running.
-    """
-    if _orchestration_semaphore.locked():
-        raise HTTPException(
-            status_code=429,
-            detail="Orchestrator busy – another orchestration is running",
-        )
-
-    thread_id = f"thread-{request.task_id}-{uuid.uuid4().hex[:8]}"
-    logger.info("ORCHESTRATE_STREAM_RECEIVED | task_id=%s | thread_id=%s", request.task_id, thread_id)
-
-    # Run orchestration in background with semaphore, pushing progress via callbacks
-    logger.info("CREATING_BACKGROUND_TASK | thread_id=%s", thread_id)
-    task = asyncio.create_task(_run_and_push(request, thread_id))
-    _active_tasks[thread_id] = task
-    logger.info("BACKGROUND_TASK_CREATED | thread_id=%s | task_done=%s", thread_id, task.done())
-
-    return {"thread_id": thread_id}
 
 
 # Human-readable node messages for progress reporting
