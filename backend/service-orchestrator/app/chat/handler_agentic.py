@@ -294,7 +294,7 @@ async def run_agentic_loop(
             else:
                 result = await execute_chat_tool(
                     tool_name, arguments,
-                    request.active_client_id, request.active_project_id,
+                    effective_client_id, effective_project_id,
                 )
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result[:100]}")
