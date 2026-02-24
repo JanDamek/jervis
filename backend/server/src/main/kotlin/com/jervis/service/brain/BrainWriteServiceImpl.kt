@@ -35,6 +35,18 @@ class BrainWriteServiceImpl(
 ) : BrainWriteService {
     private val logger = KotlinLogging.logger {}
 
+    /**
+     * English → Czech Jira issue type aliases.
+     * Czech Jira instances use localized names (e.g. "Úkol" instead of "Task").
+     * This map is used as a fallback when the config override is not set.
+     */
+    private val issueTypeAliases: Map<String, List<String>> = mapOf(
+        "Task" to listOf("Úkol", "Úloha"),
+        "Story" to listOf("Příběh", "Story"),
+        "Bug" to listOf("Chyba", "Bug"),
+        "Epic" to listOf("Epik", "Epic"),
+    )
+
     override suspend fun createIssue(
         summary: String,
         description: String?,
@@ -47,8 +59,9 @@ class BrainWriteServiceImpl(
         val projectKey = config.brainBugtrackerProjectKey
             ?: throw IllegalStateException("Brain bugtracker project key not configured")
 
-        // Use configured issue type if available, otherwise fall back to parameter default
-        val effectiveIssueType = config.brainBugtrackerIssueType ?: issueType
+        // Use configured issue type if available, otherwise try to resolve via aliases
+        val effectiveIssueType = config.brainBugtrackerIssueType
+            ?: resolveIssueType(issueType)
 
         val response = withRpcRetry(
             name = "BrainCreateIssue",
@@ -73,8 +86,8 @@ class BrainWriteServiceImpl(
             )
         }.issue
 
-        logger.info { "Brain issue created: ${response.key} - ${response.title}" }
-        return response.toBugTrackerIssue()
+        logger.info { "Brain issue created: ${response.key} - ${response.title} (type=$effectiveIssueType)" }
+        return response.toBugTrackerIssue(effectiveIssueType)
     }
 
     override suspend fun updateIssue(
@@ -360,18 +373,31 @@ class BrainWriteServiceImpl(
         return Pair(conn, config)
     }
 
-    private fun com.jervis.common.dto.bugtracker.BugTrackerIssueDto.toBugTrackerIssue() =
-        BugTrackerIssue(
-            key = key,
-            summary = title,
-            description = description,
-            status = status,
-            assignee = assignee,
-            reporter = reporter ?: "Jervis",
-            created = created,
-            updated = updated,
-            issueType = "Task",
-            priority = priority,
-            labels = emptyList(),
-        )
+    /**
+     * Resolve issue type name: if the English name has a known Czech alias,
+     * return it. Falls back to the original name if no alias exists.
+     * For non-Czech Jira instances, set brainBugtrackerIssueType in config.
+     */
+    private fun resolveIssueType(requestedType: String): String {
+        val aliases = issueTypeAliases[requestedType]
+        if (aliases.isNullOrEmpty()) return requestedType
+        // Return the first Czech alias — the most common localized name
+        return aliases.first()
+    }
+
+    private fun com.jervis.common.dto.bugtracker.BugTrackerIssueDto.toBugTrackerIssue(
+        effectiveIssueType: String? = null,
+    ) = BugTrackerIssue(
+        key = key,
+        summary = title,
+        description = description,
+        status = status,
+        assignee = assignee,
+        reporter = reporter ?: "Jervis",
+        created = created,
+        updated = updated,
+        issueType = effectiveIssueType ?: issueType ?: "Task",
+        priority = priority,
+        labels = emptyList(),
+    )
 }
