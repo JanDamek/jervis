@@ -127,7 +127,7 @@ class PythonOrchestratorClient(baseUrl: String) {
 
     /**
      * Start orchestration (fire-and-forget).
-     * Returns thread_id. Python pushes progress/status via callbacks to /internal/*.
+     * Returns thread_id. Python pushes progress and status via callbacks to internal endpoints.
      *
      * Returns null if Python orchestrator is busy (HTTP 429).
      * The caller should skip dispatch and let BackgroundEngine retry later.
