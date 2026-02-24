@@ -72,15 +72,35 @@ async def git_operations(state: dict) -> dict:
         project_id=task.project_id,
     )
 
+    # Set git config for author/committer/GPG (idempotent, survives from execute step)
+    git_config = {
+        k: getattr(rules, k) for k in (
+            "git_author_name", "git_author_email",
+            "git_committer_name", "git_committer_email",
+            "git_gpg_sign", "git_gpg_key_id",
+        ) if getattr(rules, k, None)
+    }
+    if git_config:
+        from pathlib import Path
+        workspace_manager._setup_git_config(Path(workspace_path), git_config)
+
     # Delegate commit to coding agent (ALLOW_GIT=true, non-blocking)
-    commit_instructions = (
-        f"Commit all current changes on branch '{branch}'.\n"
-        f"Rules:\n"
-        f"- Commit message prefix: {rules.commit_prefix.format(taskId=task.id)}\n"
-        f"- Write a clear, descriptive commit message\n"
-        f"- Stage only relevant files (not .jervis/ directory)\n"
-        f"- Do NOT push"
-    )
+    commit_lines = [
+        f"Commit all current changes on branch '{branch}'.",
+        "Rules:",
+        f"- Commit message prefix: {rules.commit_prefix.format(taskId=task.id)}",
+    ]
+    if rules.git_message_pattern:
+        commit_lines.append(f"- Commit message pattern: {rules.git_message_pattern}")
+    if rules.git_author_name or rules.git_author_email:
+        author = f"{rules.git_author_name or ''} <{rules.git_author_email or ''}>".strip()
+        commit_lines.append(f"- Git author: {author}")
+    commit_lines.extend([
+        "- Write a clear, descriptive commit message",
+        "- Stage only relevant files (not .jervis/ directory)",
+        "- Do NOT push",
+    ])
+    commit_instructions = "\n".join(commit_lines)
 
     dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=f"{task.id}-git-commit",

@@ -90,6 +90,14 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
+    # Git commit config (from client/project settings)
+    git_author_name: str | None = None
+    git_author_email: str | None = None
+    git_committer_name: str | None = None
+    git_committer_email: str | None = None
+    git_gpg_sign: bool = False
+    git_gpg_key_id: str | None = None
+    git_message_pattern: str | None = None
 
 
 # --- Task Models ---

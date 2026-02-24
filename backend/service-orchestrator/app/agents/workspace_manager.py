@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from pathlib import Path
 
 from app.config import settings
@@ -32,6 +33,7 @@ class WorkspaceManager:
         agent_type: str,
         kb_context: str | None = None,
         environment_context: dict | None = None,
+        git_config: dict | None = None,
     ) -> Path:
         """Add instructions and context to an existing workspace.
 
@@ -48,6 +50,7 @@ class WorkspaceManager:
             agent_type: "aider" | "openhands" | "claude" | "junie"
             kb_context: Pre-fetched KB context (markdown).
             environment_context: Resolved environment definition (dict).
+            git_config: Git commit config from project/client settings.
 
         Returns:
             Absolute path to workspace.
@@ -97,6 +100,10 @@ class WorkspaceManager:
             )
         elif agent_type == "aider":
             self._setup_aider_workspace(workspace, files, kb_context)
+
+        # 5. Git config (author, committer, GPG signing)
+        if git_config:
+            self._setup_git_config(workspace, git_config)
 
         logger.info(
             "Workspace prepared: %s (agent=%s, task=%s)",
@@ -273,6 +280,54 @@ class WorkspaceManager:
             lines.append("")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _setup_git_config(workspace: Path, git_config: dict) -> None:
+        """Set git config --local for author, committer, and GPG signing.
+
+        Called during workspace preparation so coding agents inherit these settings.
+        """
+        config_map = {
+            "git_author_name": "user.name",
+            "git_author_email": "user.email",
+            "git_committer_name": "committer.name",
+            "git_committer_email": "committer.email",
+        }
+
+        for key, git_key in config_map.items():
+            value = git_config.get(key)
+            if value:
+                try:
+                    subprocess.run(
+                        ["git", "config", "--local", git_key, value],
+                        cwd=workspace,
+                        check=True,
+                        capture_output=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.warning("Failed to set git config %s: %s", git_key, e.stderr)
+
+        # GPG signing
+        if git_config.get("git_gpg_sign"):
+            try:
+                subprocess.run(
+                    ["git", "config", "--local", "commit.gpgsign", "true"],
+                    cwd=workspace,
+                    check=True,
+                    capture_output=True,
+                )
+                gpg_key_id = git_config.get("git_gpg_key_id")
+                if gpg_key_id:
+                    subprocess.run(
+                        ["git", "config", "--local", "user.signingkey", gpg_key_id],
+                        cwd=workspace,
+                        check=True,
+                        capture_output=True,
+                    )
+            except subprocess.CalledProcessError as e:
+                logger.warning("Failed to set git GPG config: %s", e.stderr)
+
+        logger.info("Git config set for workspace: %s", workspace)
 
     def _setup_aider_workspace(
         self,

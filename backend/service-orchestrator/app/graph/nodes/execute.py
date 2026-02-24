@@ -160,6 +160,16 @@ async def _execute_code_step(
         )
         kb_context = ""
 
+    # Extract git config from rules for workspace setup
+    rules_data = state.get("rules", {})
+    git_config = {
+        k: rules_data[k] for k in (
+            "git_author_name", "git_author_email",
+            "git_committer_name", "git_committer_email",
+            "git_gpg_sign", "git_gpg_key_id",
+        ) if rules_data.get(k)
+    } or None
+
     # Prepare workspace
     await workspace_manager.prepare_workspace(
         task_id=f"{task.id}-step-{step.index}",
@@ -171,6 +181,7 @@ async def _execute_code_step(
         agent_type=step.agent_type.value,
         kb_context=kb_context,
         environment_context=state.get("environment"),
+        git_config=git_config,
     )
 
     # Dispatch coding agent (returns immediately)

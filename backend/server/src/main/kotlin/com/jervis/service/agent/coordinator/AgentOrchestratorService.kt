@@ -431,6 +431,10 @@ class AgentOrchestratorService(
         val clientPolicy = client?.cloudModelPolicy ?: CloudModelPolicy()
         val effectivePolicy = project?.cloudModelPolicy ?: clientPolicy
 
+        // Git commit config: project overrides client
+        val clientGitConfig = client?.gitCommitConfig
+        val effectiveGitConfig = project?.gitCommitConfig ?: clientGitConfig
+
         return ProjectRulesDto(
             branchNaming = prefs["orchestrator.branch_naming"] ?: "task/{taskId}",
             commitPrefix = prefs["orchestrator.commit_prefix"] ?: "task({taskId}):",
@@ -451,6 +455,13 @@ class AgentOrchestratorService(
             autoUseAnthropic = effectivePolicy.autoUseAnthropic,
             autoUseOpenai = effectivePolicy.autoUseOpenai,
             autoUseGemini = effectivePolicy.autoUseGemini,
+            gitAuthorName = effectiveGitConfig?.authorName,
+            gitAuthorEmail = effectiveGitConfig?.authorEmail,
+            gitCommitterName = effectiveGitConfig?.committerName,
+            gitCommitterEmail = effectiveGitConfig?.committerEmail,
+            gitGpgSign = effectiveGitConfig?.gpgSign ?: false,
+            gitGpgKeyId = effectiveGitConfig?.gpgKeyId,
+            gitMessagePattern = effectiveGitConfig?.messagePattern,
         )
     }
 

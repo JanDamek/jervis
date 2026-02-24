@@ -300,6 +300,14 @@ data class ProjectRulesDto(
     @SerialName("auto_use_anthropic") val autoUseAnthropic: Boolean = false,
     @SerialName("auto_use_openai") val autoUseOpenai: Boolean = false,
     @SerialName("auto_use_gemini") val autoUseGemini: Boolean = false,
+    // Git commit config (from client/project settings)
+    @SerialName("git_author_name") val gitAuthorName: String? = null,
+    @SerialName("git_author_email") val gitAuthorEmail: String? = null,
+    @SerialName("git_committer_name") val gitCommitterName: String? = null,
+    @SerialName("git_committer_email") val gitCommitterEmail: String? = null,
+    @SerialName("git_gpg_sign") val gitGpgSign: Boolean = false,
+    @SerialName("git_gpg_key_id") val gitGpgKeyId: String? = null,
+    @SerialName("git_message_pattern") val gitMessagePattern: String? = null,
 )
 
 @Serializable
