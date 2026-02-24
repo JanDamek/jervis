@@ -70,14 +70,9 @@ termy, které v uložených bug reportech NEJSOU. Uložené bugy mluví o
 **Doporučení**: Snížit `minConfidence` na 0.3 v `executor.py:440`.
 Nechat LLM rozhodnout relevanci z výsledků.
 
-### C. Obecné MCP search vylepšení
+### C. Logging (diagnostika)
 
-Do KB zapisují i externí nástroje (Claude Code, jiné MCP klienty).
-Data nemusí odpovídat interním pojmům aplikace, ale jsou hodnotná.
-
-**Doporučení**:
-1. Fallback na `scope=client` (bez projectId) pokud project-scope search vrátí 0 výsledků
-2. Logging v executor.py: query, clientId, projectId, počet výsledků (pro diagnostiku)
+Přidat log do `executor.py` při kb_search: query, clientId, projectId, počet výsledků.
 
 ## Dotčené soubory
 
