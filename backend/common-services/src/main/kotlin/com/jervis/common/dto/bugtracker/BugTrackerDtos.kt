@@ -71,6 +71,7 @@ data class BugTrackerIssueDto(
     val updated: String,
     val url: String,
     val projectKey: String? = null,
+    val issueType: String? = null,
     val attachments: List<BugTrackerAttachmentDto> = emptyList(),
 )
 
