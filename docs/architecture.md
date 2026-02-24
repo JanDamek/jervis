@@ -573,7 +573,7 @@ RECORDING → UPLOADING → UPLOADED → TRANSCRIBING → TRANSCRIBED → CORREC
 3. Delegates to Python orchestrator via `PythonOrchestratorClient.correctTranscript()`
 4. Python `CorrectionAgent` loads per-client/project correction rules from KB (Weaviate)
 5. Transcript segments chunked (20/chunk) and sent to Ollama GPU (`qwen3-coder-tool:30b`, configurable via `DEFAULT_CORRECTION_MODEL`)
-6. **Streaming + liveness**: Ollama called with `stream: True`, responses processed as NDJSON lines. Liveness determined by token arrival — if no token arrives for 5 min, `HeartbeatTimeoutError` is raised (LLM-level heartbeat, separate from task-level stuck detection)
+6. **Streaming + token timeout**: Ollama called with `stream: True`, responses processed as NDJSON lines. Each token must arrive within `TOKEN_TIMEOUT_SECONDS` (300s orchestrator / 3600s correction) — if not, `TokenTimeoutError` is raised (read timeout on LLM stream, separate from task-level stuck detection)
 7. **Intra-chunk progress**: Every ~10s during streaming, progress is emitted to Kotlin server with token count, enabling smooth UI progress within each chunk
 8. System prompt: meaning-first approach — read full context, phonetic reasoning for garbled Czech, apply correction rules
 9. LLM returns corrections + optional questions when uncertain about proper nouns/terminology

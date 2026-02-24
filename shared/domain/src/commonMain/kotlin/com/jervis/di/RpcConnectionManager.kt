@@ -62,7 +62,7 @@ class RpcConnectionManager(private val baseUrl: String) {
     private var httpClient: HttpClient? = null
     private var rpcClient: KtorRpcClient? = null
     private var currentServices: NetworkModule.Services? = null
-    private var heartbeatJob: kotlinx.coroutines.Job? = null
+    private var healthPingJob: kotlinx.coroutines.Job? = null
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val reconnectMutex = Mutex()
@@ -173,15 +173,15 @@ class RpcConnectionManager(private val baseUrl: String) {
     }
 
     /**
-     * Active connection health monitoring via periodic heartbeat.
-     * Tests connection every 30s to detect silent failures.
+     * Active connection health monitoring via periodic ping.
+     * Tests kRPC WebSocket every 30s to detect silent failures.
      */
     private fun monitorConnection(services: NetworkModule.Services) {
-        // Cancel previous heartbeat job to prevent accumulation
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
+        // Cancel previous health ping job to prevent accumulation
+        healthPingJob?.cancel()
+        healthPingJob = scope.launch {
             while (true) {
-                delay(30_000) // 30s heartbeat
+                delay(30_000) // 30s health ping
 
                 // Only check if we think we're connected
                 if (_state.value !is RpcConnectionState.Connected) {
@@ -194,8 +194,8 @@ class RpcConnectionManager(private val baseUrl: String) {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    println("RpcConnectionManager: Heartbeat failed: ${e.message}")
-                    triggerReconnect("heartbeat failure")
+                    println("RpcConnectionManager: Health ping failed: ${e.message}")
+                    triggerReconnect("health ping failure")
                     break
                 }
             }
@@ -204,19 +204,19 @@ class RpcConnectionManager(private val baseUrl: String) {
 
     /**
      * Centralized reconnect trigger — prevents cascading reconnects from multiple
-     * dead subscriptions or heartbeat failures firing simultaneously.
+     * dead subscriptions or health ping failures firing simultaneously.
      * Only the first caller actually triggers reconnect; subsequent calls are no-ops
      * because state is already Disconnected and reconnect() mutex handles the rest.
      *
      * Public so that ChatViewModel can trigger immediate reconnect on "cancelled" errors
-     * instead of waiting 30s for the next heartbeat to detect the dead connection.
+     * instead of waiting 30s for the next health ping to detect the dead connection.
      */
     fun triggerReconnect(reason: String) {
         val wasConnected = _state.value is RpcConnectionState.Connected
         _state.value = RpcConnectionState.Disconnected
         if (wasConnected) {
             println("RpcConnectionManager: Triggering reconnect ($reason)")
-            heartbeatJob?.cancel()
+            healthPingJob?.cancel()
             scope.launch {
                 delay(5000) // 5s cooldown before reconnect
                 _generation.value++
@@ -226,7 +226,7 @@ class RpcConnectionManager(private val baseUrl: String) {
     }
 
     private fun closeCurrentConnection() {
-        heartbeatJob?.cancel()
+        healthPingJob?.cancel()
         try { rpcClient?.close() } catch (_: Exception) {}
         try { httpClient?.close() } catch (_: Exception) {}
         rpcClient = null

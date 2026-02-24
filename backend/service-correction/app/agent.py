@@ -37,14 +37,14 @@ MAX_RETRIES = 1
 OUTPUT_BUDGET = 8192
 # GPU VRAM cap — models above this spill to CPU RAM and become slow
 GPU_CTX_CAP = 49152
-# Streaming heartbeat: no token for this long = dead
-HEARTBEAT_DEAD_SECONDS = 3600  # 1 hour — CPU Ollama has model permanently loaded, just slow
+# Token-arrival timeout: no token for this long = stream dead
+TOKEN_TIMEOUT_SECONDS = 3600  # 1 hour — CPU Ollama has model permanently loaded, just slow
 # How often to emit progress during streaming
 PROGRESS_EMIT_INTERVAL = 10  # seconds
 
 
-class HeartbeatTimeoutError(Exception):
-    """Ollama stopped sending tokens (heartbeat dead)."""
+class TokenTimeoutError(Exception):
+    """Ollama stopped sending tokens within the allowed timeout."""
     pass
 
 CATEGORY_LABELS = {
@@ -527,7 +527,7 @@ class CorrectionAgent:
         chunk_idx: int = 0,
         total_chunks: int = 1,
     ) -> str:
-        """Call Ollama chat API with streaming + heartbeat liveness detection."""
+        """Call Ollama chat API with streaming + token-arrival timeout."""
         # Estimate input tokens (~1 token per 2.5 chars for Czech)
         input_chars = len(system_prompt) + len(user_prompt)
         input_tokens_est = int(input_chars / 2.5)
@@ -572,7 +572,7 @@ class CorrectionAgent:
             ) as response:
                 response.raise_for_status()
 
-                async for raw_line in self._iter_lines_with_heartbeat(response):
+                async for raw_line in self._iter_lines_with_timeout(response):
                     if not raw_line.strip():
                         continue
                     try:
@@ -623,22 +623,22 @@ class CorrectionAgent:
 
         return content
 
-    async def _iter_lines_with_heartbeat(self, response: httpx.Response):
+    async def _iter_lines_with_timeout(self, response: httpx.Response):
         """
-        Iterate over streaming response lines with heartbeat timeout.
-        Raises HeartbeatTimeoutError if no data arrives for HEARTBEAT_DEAD_SECONDS.
+        Iterate over streaming response lines with token-arrival timeout.
+        Raises TokenTimeoutError if no data arrives for TOKEN_TIMEOUT_SECONDS.
         """
         aiter = response.aiter_lines().__aiter__()
         while True:
             try:
                 line = await asyncio.wait_for(
                     aiter.__anext__(),
-                    timeout=HEARTBEAT_DEAD_SECONDS,
+                    timeout=TOKEN_TIMEOUT_SECONDS,
                 )
                 yield line
             except asyncio.TimeoutError:
-                raise HeartbeatTimeoutError(
-                    f"Ollama stopped sending tokens for {HEARTBEAT_DEAD_SECONDS}s"
+                raise TokenTimeoutError(
+                    f"Ollama stopped sending tokens for {TOKEN_TIMEOUT_SECONDS}s"
                 )
             except StopAsyncIteration:
                 return

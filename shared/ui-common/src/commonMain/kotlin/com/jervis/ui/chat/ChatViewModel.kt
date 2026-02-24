@@ -213,7 +213,7 @@ class ChatViewModel(
                 e.printStackTrace()
 
                 // "RpcClient was cancelled" means WebSocket is dead — trigger immediate reconnect
-                // instead of waiting 30s for the next heartbeat to detect the stale connection.
+                // instead of waiting 30s for the next health ping to detect the stale connection.
                 if (e.message?.contains("cancelled", ignoreCase = true) == true) {
                     connectionManager.triggerReconnect("send failed: cancelled")
                 }

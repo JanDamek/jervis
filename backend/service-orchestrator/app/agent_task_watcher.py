@@ -96,7 +96,6 @@ class AgentTaskWatcher:
             job_status = status.get("status", "unknown")
 
             if job_status == "running":
-                # Still running — check for heartbeat timeout
                 continue
 
             # Job completed (succeeded or failed) — collect result and resume

@@ -819,20 +819,17 @@ def select_local_tier(context_tokens):
 
 **Auto-providers**: `rules.auto_use_anthropic/openai/gemini` + explicitní cloud prompt (keywords)
 
-### 8.4 Streaming + token-arrival liveness
+### 8.4 Streaming + token-arrival timeout
 
 ```python
-async def _iter_with_heartbeat(stream):
-    last_token_time = time.monotonic()
+async def _iter_with_timeout(stream):
+    # asyncio.wait_for per chunk — TOKEN_TIMEOUT_SECONDS = 300
     async for chunk in stream:
-        now = time.monotonic()
-        if now - last_token_time > HEARTBEAT_DEAD_SECONDS:  # 300s
-            raise HeartbeatTimeoutError("No tokens for 5 min")
-        last_token_time = now
-        yield chunk
+        yield chunk  # each chunk must arrive within timeout
+    # raises TokenTimeoutError if no token for 5 min
 ```
 
-- **Streaming** (bez tool calls): per-chunk token-arrival check. Pokud tokeny přicházejí → čeká neomezeně. Pokud 5 min bez tokenu → HeartbeatTimeoutError → escalate/retry. (This is LLM-level liveness, separate from task-level stuck detection.)
+- **Streaming** (bez tool calls): per-chunk token-arrival timeout. Pokud tokeny přicházejí → čeká neomezeně. Pokud 5 min bez tokenu → `TokenTimeoutError` → escalate/retry. (This is a read timeout on the LLM stream, separate from task-level stuck detection.)
 - **Blocking** (tool calls — litellm omezení): tier-based timeout via `TIER_TIMEOUT_SECONDS`:
   - GPU tiery (LOCAL_FAST..LOCAL_LARGE, ≤48k): **300s**
   - CPU-spill tiery (LOCAL_XLARGE 128k): **900s** (~7-12 tok/s)
@@ -1178,7 +1175,7 @@ MongoDB distributed lock:
 - Collection: `orchestrator_locks`
 - Document: `{_id: "orchestration_slot", locked_by: pod_id, thread_id, locked_at}`
 - Atomic acquire via `findOneAndUpdate`
-- Heartbeat: 10s interval (updates `locked_at`)
+- Lock renewal: 10s interval (updates `locked_at`)
 - Stale recovery: 300s timeout → auto-release
 
 ---
@@ -1217,22 +1214,20 @@ every 60s:
       task.orchestratorThreadId = null
 ```
 
-### 15.3 LLM token-arrival liveness (Python)
+### 15.3 LLM token-arrival timeout (Python)
 
 ```python
-HEARTBEAT_DEAD_SECONDS = 300  # 5 min
+TOKEN_TIMEOUT_SECONDS = 300  # 5 min
 
-async def _iter_with_heartbeat(stream):
-    last_token_time = time.monotonic()
-    async for chunk in stream:
-        elapsed = time.monotonic() - last_token_time
-        if elapsed > HEARTBEAT_DEAD_SECONDS:
-            raise HeartbeatTimeoutError(...)
-        last_token_time = time.monotonic()
+async def _iter_with_timeout(stream):
+    aiter = stream.__aiter__()
+    while True:
+        chunk = await asyncio.wait_for(aiter.__anext__(), timeout=TOKEN_TIMEOUT_SECONDS)
         yield chunk
+    # raises TokenTimeoutError on timeout
 ```
 
-Note: This is LLM-level liveness (token arrival monitoring), separate from task-level stuck detection above.
+Note: This is a read timeout on the LLM stream (token arrival monitoring), separate from task-level stuck detection above.
 
 ### 15.3a MeetingContinuousIndexer stuck detection
 
@@ -1259,7 +1254,7 @@ class AgentTaskWatcher:
 ```
 
 - Poll interval: `agent_watcher_poll_interval` (default 10s)
-- Heartbeat timeout: `agent_heartbeat_timeout` (default 300s)
+- Job timeout determined by `agent_timeout_*` per agent type (e.g. 600s aider, 1800s claude)
 - Started/stopped in `main.py` lifespan
 - Survives pod restarts — all state in MongoDB (TaskDocument + LangGraph checkpoints)
 

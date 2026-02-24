@@ -4,7 +4,7 @@ Supports local Ollama models and cloud providers (Anthropic, OpenAI, Google).
 Implements EscalationPolicy for local-first tier selection with cloud fallback.
 
 Timeout strategy:
-- Streaming calls: per-chunk heartbeat (HEARTBEAT_DEAD_SECONDS). As long as
+- Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS). As long as
   tokens keep arriving, the call can run indefinitely.
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
   GPU tiers (≤32k): 300s. GPU-boundary (48k): 600s. CPU-spill (128k+): 900-1200s.
@@ -32,8 +32,8 @@ from app.models import Complexity, ModelTier
 
 logger = logging.getLogger(__name__)
 
-# Heartbeat: no token for this long = dead
-HEARTBEAT_DEAD_SECONDS = 300  # 5 min
+# Token-arrival timeout: no token for this long = stream dead
+TOKEN_TIMEOUT_SECONDS = 300  # 5 min
 
 # W-21: Rate limiting semaphores
 # Ollama can only handle limited concurrent requests
@@ -41,8 +41,8 @@ _SEMAPHORE_LOCAL = asyncio.Semaphore(2)     # Max 2 concurrent local LLM calls
 _SEMAPHORE_CLOUD = asyncio.Semaphore(5)     # Max 5 concurrent cloud calls
 
 
-class HeartbeatTimeoutError(Exception):
-    """LLM stopped sending tokens (heartbeat dead)."""
+class TokenTimeoutError(Exception):
+    """LLM stopped sending tokens within the allowed timeout."""
     pass
 
 
@@ -297,9 +297,9 @@ class EscalationPolicy:
 class LLMProvider:
     """Unified LLM provider using litellm.
 
-    All calls use streaming + heartbeat:
+    All calls use streaming + token-arrival timeout:
     - Internally streams, collects tokens, returns full response
-    - HeartbeatTimeoutError if no token for HEARTBEAT_DEAD_SECONDS
+    - TokenTimeoutError if no token for TOKEN_TIMEOUT_SECONDS
     """
 
     def __init__(self):
@@ -314,7 +314,7 @@ class LLMProvider:
         max_tokens: int = 8192,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
-        """Call LLM with streaming + heartbeat liveness detection.
+        """Call LLM with streaming + token-arrival timeout.
 
         Internally streams, accumulates tokens, returns assembled response
         in the same format as litellm non-streaming response.
@@ -347,7 +347,7 @@ class LLMProvider:
         max_tokens: int,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
-        """Stream LLM response with heartbeat timeout."""
+        """Stream LLM response with token-arrival timeout."""
         kwargs: dict = {
             "model": config["model"],
             "messages": messages,
@@ -369,11 +369,11 @@ class LLMProvider:
 
         response = await litellm.acompletion(**kwargs)
 
-        # Accumulate streamed content with heartbeat
+        # Accumulate streamed content with token-arrival timeout
         content_parts: list[str] = []
         token_count = 0
 
-        async for chunk in self._iter_with_heartbeat(response):
+        async for chunk in self._iter_with_timeout(response):
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 content_parts.append(delta.content)
@@ -417,7 +417,7 @@ class LLMProvider:
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
 
-        timeout = TIER_TIMEOUT_SECONDS.get(tier, HEARTBEAT_DEAD_SECONDS)
+        timeout = TIER_TIMEOUT_SECONDS.get(tier, TOKEN_TIMEOUT_SECONDS)
         logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds api_base=%s headers=%s",
                      config["model"], tier.value, timeout, config.get("api_base"), extra_headers or {})
         logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
@@ -428,7 +428,7 @@ class LLMProvider:
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
-            raise HeartbeatTimeoutError(
+            raise TokenTimeoutError(
                 f"LLM blocking call timed out after {timeout}s (tier={tier.value})"
             )
 
@@ -461,22 +461,22 @@ class LLMProvider:
 
         return response
 
-    async def _iter_with_heartbeat(self, stream):
-        """Iterate over streaming chunks with heartbeat timeout.
+    async def _iter_with_timeout(self, stream):
+        """Iterate over streaming chunks with token-arrival timeout.
 
-        Raises HeartbeatTimeoutError if no chunk arrives for HEARTBEAT_DEAD_SECONDS.
+        Raises TokenTimeoutError if no chunk arrives for TOKEN_TIMEOUT_SECONDS.
         """
         aiter = stream.__aiter__()
         while True:
             try:
                 chunk = await asyncio.wait_for(
                     aiter.__anext__(),
-                    timeout=HEARTBEAT_DEAD_SECONDS,
+                    timeout=TOKEN_TIMEOUT_SECONDS,
                 )
                 yield chunk
             except asyncio.TimeoutError:
-                raise HeartbeatTimeoutError(
-                    f"LLM stopped sending tokens for {HEARTBEAT_DEAD_SECONDS}s"
+                raise TokenTimeoutError(
+                    f"LLM stopped sending tokens for {TOKEN_TIMEOUT_SECONDS}s"
                 )
             except StopAsyncIteration:
                 return
