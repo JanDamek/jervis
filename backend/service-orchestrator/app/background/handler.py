@@ -189,7 +189,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             try:
                 if tool_name == "dispatch_coding_agent":
                     # Special handling: dispatch via chat tool handler
-                    from app.chat.handler import _execute_chat_tool
+                    from app.chat.handler_tools import execute_chat_tool as _execute_chat_tool
                     result = await asyncio.wait_for(
                         _execute_chat_tool(tool_name, arguments, client_id, project_id),
                         timeout=_TOOL_EXECUTION_TIMEOUT_S,
