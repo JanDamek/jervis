@@ -684,10 +684,7 @@ class BackgroundEngine(
         }
     }
 
-    companion object {
-        /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
-        val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
-    }
+    // OVERDUE_ESCALATION_THRESHOLD moved to companion object at end of class
 
     /**
      * Dispatch a single scheduled task into the processing pipeline.
@@ -1322,5 +1319,8 @@ class BackgroundEngine(
 
         /** No heartbeat for this long = orchestrator task is dead. */
         private const val HEARTBEAT_DEAD_THRESHOLD_MINUTES = 10L
+
+        /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
+        val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
     }
 }
