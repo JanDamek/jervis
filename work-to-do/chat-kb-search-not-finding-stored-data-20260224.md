@@ -70,7 +70,25 @@ termy, které v uložených bug reportech NEJSOU. Uložené bugy mluví o
 **Doporučení**: Snížit `minConfidence` na 0.3 v `executor.py:440`.
 Nechat LLM rozhodnout relevanci z výsledků.
 
-### C. Logging (diagnostika)
+### C. Stejný bug v handler_decompose.py:354
+
+`handler_decompose.py:354` — stejný pattern, `request.active_client_id` místo effective:
+
+```python
+result = await execute_chat_tool(
+    tool_name, arguments,
+    request.active_client_id, request.active_project_id,  # ← STALE
+)
+```
+
+Decompose se volá před agentic loopem, takže `switch_context` ještě neproběhl.
+Ale `switch_context` je v decompose explicitně ignorován (řádek 349-350), takže
+pokud by se někdy decompose volal po switch_context, tool calls by jely ve špatném scope.
+
+Oprava: předávat effective scope i sem, nebo zajistit, že `process_sub_topic`
+přijímá explicitní `client_id`/`project_id` parametry místo celého `request`.
+
+### D. Logging (diagnostika)
 
 Přidat log do `executor.py` při kb_search: query, clientId, projectId, počet výsledků.
 
@@ -79,5 +97,6 @@ Přidat log do `executor.py` při kb_search: query, clientId, projectId, počet 
 | Soubor | Změna |
 |--------|-------|
 | `backend/service-orchestrator/app/chat/handler_agentic.py:297` | **KRITICKÁ**: `request.active_*` → `effective_*` |
+| `backend/service-orchestrator/app/chat/handler_decompose.py:354` | **KRITICKÁ**: stejný scope bug |
 | `backend/service-orchestrator/app/tools/executor.py:440` | Snížit minConfidence 0.5 → 0.3 |
 | `backend/service-orchestrator/app/tools/executor.py` | Přidat logging kb_search params + results |
