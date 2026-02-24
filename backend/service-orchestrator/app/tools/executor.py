@@ -431,13 +431,16 @@ async def _execute_kb_search(
     if not query.strip():
         return "Error: Empty KB search query."
 
+    logger.info("kb_search: query=%r clientId=%s projectId=%s maxResults=%d",
+                query[:120], client_id, project_id, max_results)
+
     url = f"{settings.knowledgebase_url}/api/v1/retrieve"
     payload = {
         "query": query,
         "clientId": client_id,
         "projectId": project_id,
         "maxResults": max_results,
-        "minConfidence": 0.5,
+        "minConfidence": 0.3,
         "expandGraph": True,
     }
 
@@ -456,6 +459,7 @@ async def _execute_kb_search(
         return f"Error: KB search failed: {str(e)[:200]}"
 
     items = data.get("items", [])
+    logger.info("kb_search: query=%r → %d results", query[:80], len(items))
     if not items:
         return f"No Knowledge Base results found for: {query}"
 
