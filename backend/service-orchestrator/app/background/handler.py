@@ -8,7 +8,7 @@ Simple 4-phase flow:
 4. Finalize: Save result, notify Kotlin, log quality
 
 No SSE streaming — background tasks push status via kotlin_client.
-Model escalation: starts with LOCAL_FAST, escalates on failure.
+Model escalation: starts with dynamically selected tier based on context size, escalates on failure.
 
 Cloud safety: ONLY escalates to cloud if project rules allow it.
 """
@@ -24,15 +24,67 @@ import uuid
 from app.background.escalation import EscalationTracker, needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
-from app.llm.provider import llm_provider, TIER_CONFIG
+from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
 from app.models import ModelTier, OrchestrateRequest, ProjectRules
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
+_escalation_policy = EscalationPolicy()
+
 _MAX_ITERATIONS = 15
 _MAX_ESCALATION_RETRIES = 3  # max times to retry with escalated model
+
+# Background tasks can use higher tiers than chat (no VRAM contention with streaming)
+_BG_MAX_TIER = ModelTier.LOCAL_XLARGE
+
+
+def _estimate_and_select_tier(
+    messages: list[dict], tools: list[dict],
+) -> tuple[int, ModelTier]:
+    """Estimate token count and select appropriate local tier for background.
+
+    Same pattern as chat handler_agentic.estimate_and_select_tier but
+    allows up to LOCAL_XLARGE (128k) since background tasks don't compete
+    with streaming for GPU VRAM.
+    """
+    message_tokens = sum(len(str(m)) for m in messages) // 4
+    tools_tokens = sum(len(str(t)) for t in tools) // 4
+    output_tokens = 4096
+    estimated = message_tokens + tools_tokens + output_tokens
+    tier = _escalation_policy.select_local_tier(estimated)
+    # Clamp to BG max tier
+    from app.chat.handler_agentic import _TIER_INDEX
+    if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(_BG_MAX_TIER, 4):
+        tier = _BG_MAX_TIER
+    return estimated, tier
+
+
+def _detect_context_overflow(response) -> bool:
+    """Detect if Ollama returned a context overflow error as text.
+
+    When num_ctx is exceeded, Ollama returns "Operation not allowed" as
+    generated text (not as an exception). This function detects that pattern.
+    """
+    try:
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        # Check for known overflow patterns
+        if "operation not allowed" in content.lower():
+            # Verify via prompt_tokens if available
+            usage = getattr(response, "usage", None)
+            if usage:
+                prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                if prompt_tokens > 0:
+                    logger.warning(
+                        "CONTEXT_OVERFLOW detected: prompt_tokens=%d, content contains 'Operation not allowed'",
+                        prompt_tokens,
+                    )
+            return True
+    except (AttributeError, IndexError):
+        pass
+    return False
 
 
 async def handle_background(request: OrchestrateRequest) -> dict:
@@ -87,14 +139,20 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
     messages.append({"role": "user", "content": request.query})
 
-    # --- Escalation tracker ---
+    # --- Dynamic tier selection based on initial context size ---
+    initial_estimated, initial_tier = _estimate_and_select_tier(messages, ALL_BACKGROUND_TOOLS)
+    logger.info(
+        "Background: initial context estimate=%d tokens → tier=%s",
+        initial_estimated, initial_tier.value,
+    )
+
     cloud_allowed = any([
         rules.auto_use_anthropic,
         rules.auto_use_openai,
         rules.auto_use_gemini,
     ])
     tracker = EscalationTracker(
-        start_tier=ModelTier.LOCAL_FAST,
+        start_tier=initial_tier,
         cloud_allowed=cloud_allowed,
     )
 
@@ -118,13 +176,20 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             iteration, _MAX_ITERATIONS, tracker.current_tier.value,
         )
 
-        # Estimate tokens
-        message_chars = sum(len(str(m)) for m in messages)
-        estimated_tokens = (message_chars // 4) + 3500 + 4096
-
-        # Select tier-appropriate model
+        # Re-estimate context size and escalate tier if needed
+        estimated_tokens, estimated_tier = _estimate_and_select_tier(messages, ALL_BACKGROUND_TOOLS)
+        # If context grew beyond current tier, escalate tracker
         tier = tracker.current_tier
         tier_config = TIER_CONFIG.get(tier, {})
+        current_num_ctx = tier_config.get("num_ctx", 8192)
+        if estimated_tokens > current_num_ctx * 0.85:
+            logger.info(
+                "Background: context grew (%d tokens > %.0f%% of %d), escalating tier",
+                estimated_tokens, 85, current_num_ctx,
+            )
+            if tracker.escalate():
+                tier = tracker.current_tier
+                tier_config = TIER_CONFIG.get(tier, {})
 
         try:
             response = await llm_provider.completion(
@@ -140,6 +205,17 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             if tracker.escalate():
                 continue
             final_answer = f"Background task failed: {e}"
+            break
+
+        # Detect context overflow (Ollama returns error as text, not exception)
+        if _detect_context_overflow(response):
+            logger.warning(
+                "Background: context overflow detected (tier=%s), escalating",
+                tier.value,
+            )
+            if tracker.escalate():
+                continue
+            final_answer = "Background task failed: LLM context overflow."
             break
 
         choice = response.choices[0]
