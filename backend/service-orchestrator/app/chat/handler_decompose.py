@@ -20,7 +20,7 @@ from app.chat.handler_streaming import call_llm
 from app.chat.handler_tools import extract_tool_calls, execute_chat_tool
 from app.chat.models import ChatStreamEvent, SubTopic, SubTopicResult
 from app.chat.tools import TOOL_DOMAINS
-from app.config import settings
+from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 
@@ -277,8 +277,11 @@ async def process_sub_topic(
 
     try:
         for iteration in range(settings.subtopic_max_iterations):
-            message_chars = sum(len(str(m)) for m in messages)
-            estimated_tokens = message_chars // 4 + sum(len(str(t)) for t in selected_tools) // 4 + 4096
+            estimated_tokens = (
+                sum(estimate_tokens(str(m)) for m in messages)
+                + sum(estimate_tokens(str(t)) for t in selected_tools)
+                + 4096
+            )
 
             tier = llm_provider.escalation.select_local_tier(estimated_tokens)
             logger.info("Chat sub-topic %d/%d iter %d: estimated=%d → tier=%s",

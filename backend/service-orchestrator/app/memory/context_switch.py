@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
+from app.config import estimate_tokens
 from app.memory.models import (
     Affair,
     ContextSwitchResult,
@@ -117,7 +118,7 @@ async def detect_context_switch(
                 {"role": "system", "content": "You are a context classifier. Respond with valid JSON only."},
                 {"role": "user", "content": prompt},
             ],
-            context_tokens=len(prompt) // 4,
+            context_tokens=estimate_tokens(prompt),
             task_type="classification",
             max_tokens=256,
             temperature=0.1,

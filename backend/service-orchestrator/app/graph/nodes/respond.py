@@ -20,7 +20,8 @@ import uuid
 
 from langgraph.types import interrupt
 
-from app.config import settings
+from app.chat.context import chat_context_assembler
+from app.config import settings, estimate_tokens
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
 from app.llm.provider import TIER_CONFIG, llm_provider
@@ -203,18 +204,7 @@ async def respond(state: dict) -> dict:
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
 
     # W-19: Save user message to MongoDB (idempotent — Kotlin may have already saved)
-    try:
-        from app.chat.context import chat_context_assembler
-        seq = await chat_context_assembler.get_next_sequence(task.id)
-        await chat_context_assembler.save_message(
-            conversation_id=task.id,
-            role="USER",
-            content=task.query,
-            correlation_id=f"respond-{uuid.uuid4().hex[:8]}",
-            sequence=seq,
-        )
-    except Exception as e:
-        logger.warning("W-19: Failed to save user message: %s", e)
+    await _save_chat_message(task.id, "USER", task.query)
 
     # Tool list (includes memory tools)
     respond_tools = ALL_RESPOND_TOOLS_FULL
@@ -227,10 +217,8 @@ async def respond(state: dict) -> dict:
         iteration += 1
         logger.info("Respond: iteration %d/%d", iteration, _MAX_TOOL_ITERATIONS)
 
-        # Estimate context tokens (rough: 1 token ≈ 4 chars)
-        # Need to account for: messages + tools + output space
-        message_chars = sum(len(str(m)) for m in messages)
-        message_tokens = message_chars // 4
+        # Estimate context tokens
+        message_tokens = sum(estimate_tokens(str(m)) for m in messages)
 
         # Tools add ~2500-3000 tokens depending on tool set
         tools_tokens = 3000  # includes memory tools
@@ -459,8 +447,7 @@ async def respond(state: dict) -> dict:
         "role": "system",
         "content": "Provide your final answer now based on the information gathered. Do not call more tools."
     }]
-    # Estimate: messages + no tools + output space
-    final_tokens = (sum(len(str(m)) for m in final_messages) // 4) + 4096
+    final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + 4096
 
     # W-12: Try real-time streaming first for forced final answer
     answer = await _stream_answer_realtime(state, final_messages, final_tokens)
@@ -607,20 +594,24 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
         return ""
 
 
-async def _save_assistant_message(state: dict, answer: str) -> None:
-    """W-19: Save assistant answer to MongoDB for chat history persistence."""
-    if not answer:
+async def _save_chat_message(conversation_id: str, role: str, content: str) -> None:
+    """W-19: Save a message to MongoDB for chat history persistence."""
+    if not content:
         return
     try:
-        from app.chat.context import chat_context_assembler
-        task = CodingTask(**state["task"])
-        seq = await chat_context_assembler.get_next_sequence(task.id)
+        seq = await chat_context_assembler.get_next_sequence(conversation_id)
         await chat_context_assembler.save_message(
-            conversation_id=task.id,
-            role="ASSISTANT",
-            content=answer,
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
             correlation_id=f"respond-{uuid.uuid4().hex[:8]}",
             sequence=seq,
         )
     except Exception as e:
-        logger.warning("W-19: Failed to save assistant message: %s", e)
+        logger.warning("W-19: Failed to save %s message: %s", role, e)
+
+
+async def _save_assistant_message(state: dict, answer: str) -> None:
+    """W-19: Save assistant answer to MongoDB for chat history persistence."""
+    task = CodingTask(**state["task"])
+    await _save_chat_message(task.id, "ASSISTANT", answer)

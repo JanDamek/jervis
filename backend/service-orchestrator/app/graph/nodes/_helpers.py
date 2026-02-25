@@ -15,7 +15,7 @@ import re
 
 from langgraph.types import interrupt
 
-from app.config import foreground_headers
+from app.config import foreground_headers, estimate_tokens
 from app.llm.provider import llm_provider, TIER_CONFIG
 from app.models import (
     CodingTask,
@@ -279,8 +279,7 @@ def _truncate_messages_to_budget(messages: list, token_budget: int) -> list:
     - Never remove the last 4 messages (recent conversation)
     """
     def _estimate_tokens(msg) -> int:
-        content = str(msg.get("content", ""))
-        return max(1, len(content) // 4)
+        return estimate_tokens(str(msg.get("content", "")))
 
     total = sum(_estimate_tokens(m) for m in messages)
     if total <= token_budget:

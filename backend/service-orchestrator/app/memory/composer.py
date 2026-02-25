@@ -8,17 +8,10 @@ from __future__ import annotations
 
 import logging
 
+from app.config import estimate_tokens
 from app.memory.models import Affair, SessionContext
 
 logger = logging.getLogger(__name__)
-
-
-def estimate_tokens(text: str) -> int:
-    """Rough token estimate: 1 token ~ 4 chars.
-
-    Same heuristic used in respond.py for context estimation.
-    """
-    return len(text) // 4
 
 
 def compose_affair_context(

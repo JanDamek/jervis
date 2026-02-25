@@ -133,6 +133,28 @@ async def plan(state: dict) -> dict:
     }
 
 
+def _parse_goals_result(content: str, query: str, complexity: Complexity) -> dict:
+    """Parse goals from LLM response JSON, with fallback to single goal."""
+    parsed = parse_json_response(content)
+    raw_goals = parsed.get("goals", [])
+
+    goals = []
+    for g in raw_goals:
+        try:
+            goals.append(Goal(**g))
+        except Exception as e:
+            logger.warning("Skipping invalid goal: %s (%s)", g, e)
+
+    if not goals:
+        goals = [Goal(id="g1", title="Execute task", description=query, complexity=complexity)]
+
+    return {
+        "goals": [g.model_dump() for g in goals],
+        "current_goal_index": 0,
+        "steps": [],
+    }
+
+
 async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -> dict:
     """Plan coding task — decompose into goals + steps with tool support."""
     raw_complexity = state.get("task_complexity", "medium")
@@ -228,33 +250,10 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
         # Check for tool calls
         tool_calls = getattr(message, "tool_calls", None)
         if not tool_calls or choice.finish_reason == "stop":
-            # No more tool calls → final decomposition
             content = message.content or ""
-            parsed = parse_json_response(content)
-            raw_goals = parsed.get("goals", [])
-
-            goals = []
-            for g in raw_goals:
-                try:
-                    goals.append(Goal(**g))
-                except Exception as e:
-                    logger.warning("Skipping invalid goal: %s (%s)", g, e)
-
-            if not goals:
-                goals = [
-                    Goal(
-                        id="g1", title="Execute task",
-                        description=task.query, complexity=complexity,
-                    )
-                ]
-
-            logger.info("Planned %d coding goals after %d iterations", len(goals), iteration)
-
-            return {
-                "goals": [g.model_dump() for g in goals],
-                "current_goal_index": 0,
-                "steps": [],
-            }
+            result = _parse_goals_result(content, task.query, complexity)
+            logger.info("Planned %d coding goals after %d iterations", len(result["goals"]), iteration)
+            return result
 
         # Execute tool calls
         logger.info("Planning: executing %d tool calls", len(tool_calls))
@@ -296,24 +295,7 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
         max_tokens=8192,
     )
     content = final_response.choices[0].message.content or ""
-    parsed = parse_json_response(content)
-    raw_goals = parsed.get("goals", [])
-
-    goals = []
-    for g in raw_goals:
-        try:
-            goals.append(Goal(**g))
-        except Exception as e:
-            logger.warning("Skipping invalid goal: %s (%s)", g, e)
-
-    if not goals:
-        goals = [Goal(id="g1", title="Execute task", description=task.query, complexity=complexity)]
-
-    return {
-        "goals": [g.model_dump() for g in goals],
-        "current_goal_index": 0,
-        "steps": [],
-    }
+    return _parse_goals_result(content, task.query, complexity)
 
 
 async def _plan_tracker_ops(state: dict, task: CodingTask, context_block: str) -> dict:

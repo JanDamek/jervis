@@ -24,7 +24,7 @@ import uuid
 from app.background.escalation import EscalationTracker, needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
-from app.config import settings
+from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
@@ -50,8 +50,8 @@ def _estimate_and_select_tier(
     allows up to LOCAL_XLARGE (128k) since background tasks don't compete
     with streaming for GPU VRAM.
     """
-    message_tokens = sum(len(str(m)) for m in messages) // 4
-    tools_tokens = sum(len(str(t)) for t in tools) // 4
+    message_tokens = sum(estimate_tokens(str(m)) for m in messages)
+    tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
     output_tokens = 4096
     estimated = message_tokens + tools_tokens + output_tokens
     tier = _escalation_policy.select_local_tier(estimated)
@@ -179,7 +179,6 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
         # Re-estimate context size and escalate tier if needed
         estimated_tokens, estimated_tier = _estimate_and_select_tier(messages, ALL_BACKGROUND_TOOLS)
-        # If context grew beyond current tier, escalate tracker
         tier = tracker.current_tier
         tier_config = TIER_CONFIG.get(tier, {})
         current_num_ctx = tier_config.get("num_ctx", 8192)
@@ -341,7 +340,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "role": "system",
                 "content": "Provide your final summary now. Do not call more tools.",
             }]
-            final_tokens = (sum(len(str(m)) for m in final_messages) // 4) + 4096
+            final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + 4096
             final_resp = await llm_provider.completion(
                 messages=final_messages,
                 tier=tracker.current_tier,

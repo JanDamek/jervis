@@ -172,6 +172,15 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimate token count from text using chars/token ratio.
+
+    Uses settings.token_estimate_ratio (default 4 chars/token).
+    Consistent estimator for all modules — avoids scattered // 4 magic.
+    """
+    return max(1, len(text) // settings.token_estimate_ratio)
+
+
 def foreground_headers(processing_mode: str) -> dict[str, str]:
     """Return Ollama priority headers for foreground requests.
 

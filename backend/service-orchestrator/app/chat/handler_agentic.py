@@ -30,7 +30,7 @@ from app.chat.handler_tools import (
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import RuntimeContext
 from app.chat.tools import TOOL_DOMAINS
-from app.config import settings
+from app.config import settings, estimate_tokens
 from app.llm.provider import clamp_tier, llm_provider
 from app.models import ModelTier
 
@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[int, ModelTier]:
     """Estimate token count and select appropriate tier."""
-    message_tokens = sum(len(str(m)) for m in messages) // 4
-    tools_tokens = sum(len(str(t)) for t in tools) // 4
+    message_tokens = sum(estimate_tokens(str(m)) for m in messages)
+    tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
     output_tokens = 4096
     estimated = message_tokens + tools_tokens + output_tokens
     tier = llm_provider.escalation.select_local_tier(estimated)

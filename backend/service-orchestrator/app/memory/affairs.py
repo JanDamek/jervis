@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.config import foreground_headers
+from app.config import foreground_headers, estimate_tokens
 from app.memory.lqm import LocalQuickMemory
 from app.memory.models import (
     Affair,
@@ -247,7 +247,7 @@ Odpověz POUZE validním JSON:
             {"role": "system", "content": "You are a summarization assistant. Respond with valid JSON only."},
             {"role": "user", "content": prompt},
         ],
-        context_tokens=len(prompt) // 4,
+        context_tokens=estimate_tokens(prompt),
         task_type="summarization",
         max_tokens=512,
         temperature=0.1,
