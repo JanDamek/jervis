@@ -34,7 +34,7 @@ from app.chat.handler_decompose import (
     process_sub_topic,
     combine_results,
 )
-from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message, STREAM_CHUNK_SIZE
+from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.intent import classify_intent, select_tools
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt

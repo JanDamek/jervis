@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
-from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message, STREAM_CHUNK_SIZE
+from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.handler_tools import (
     extract_tool_calls,
     describe_tool_call,
@@ -31,27 +31,10 @@ from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import RuntimeContext
 from app.chat.tools import TOOL_DOMAINS
 from app.config import settings
-from app.llm.provider import llm_provider
+from app.llm.provider import clamp_tier, llm_provider
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
-
-# Tier ordering for clamping
-CHAT_MAX_TIER = ModelTier.LOCAL_LARGE
-_TIER_ORDER = [
-    ModelTier.LOCAL_FAST, ModelTier.LOCAL_STANDARD, ModelTier.LOCAL_LARGE,
-    ModelTier.LOCAL_XLARGE, ModelTier.LOCAL_XXLARGE,
-    ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING, ModelTier.CLOUD_PREMIUM,
-    ModelTier.CLOUD_LARGE_CONTEXT,
-]
-_TIER_INDEX = {t: i for i, t in enumerate(_TIER_ORDER)}
-
-
-def clamp_tier(tier: ModelTier) -> ModelTier:
-    """Clamp tier to CHAT_MAX_TIER to prevent GPU VRAM overflow."""
-    if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(CHAT_MAX_TIER, 2):
-        return CHAT_MAX_TIER
-    return tier
 
 
 def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[int, ModelTier]:

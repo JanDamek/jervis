@@ -212,6 +212,23 @@ def _trim_messages_for_context(
     return trimmed
 
 
+# Tier ordering for clamping (local < cloud)
+TIER_ORDER = [
+    ModelTier.LOCAL_FAST, ModelTier.LOCAL_STANDARD, ModelTier.LOCAL_LARGE,
+    ModelTier.LOCAL_XLARGE, ModelTier.LOCAL_XXLARGE,
+    ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING, ModelTier.CLOUD_PREMIUM,
+    ModelTier.CLOUD_LARGE_CONTEXT,
+]
+_TIER_INDEX = {t: i for i, t in enumerate(TIER_ORDER)}
+
+
+def clamp_tier(tier: ModelTier, max_tier: ModelTier = ModelTier.LOCAL_LARGE) -> ModelTier:
+    """Clamp tier to max_tier to prevent GPU VRAM overflow in foreground chat."""
+    if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(max_tier, 2):
+        return max_tier
+    return tier
+
+
 class EscalationPolicy:
     """Local-first model selection. Cloud only via explicit policy check."""
 
