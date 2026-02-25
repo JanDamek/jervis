@@ -154,6 +154,16 @@ data class TaskDocument(
     val qualificationSteps: List<QualificationStepRecord> = emptyList(),
     /** Accumulated orchestrator progress steps — persisted for history display. */
     val orchestratorSteps: List<OrchestratorStepRecord> = emptyList(),
+    // EPIC 2: Priority-based scheduling (replaces FIFO for background tasks)
+    /** Priority score 0–100, higher = more urgent. Used by getNextBackgroundTask() for ordering. */
+    val priorityScore: Int? = null,
+    /** Human-readable reason for the assigned priority. */
+    val priorityReason: String? = null,
+    // EPIC 2: Enhanced qualifier output for pipeline routing
+    /** Inferred action type from qualifier (e.g., CODE_FIX, RESPOND_EMAIL). */
+    val actionType: String? = null,
+    /** Inferred complexity from qualifier (e.g., TRIVIAL, SIMPLE, MEDIUM, COMPLEX). */
+    val estimatedComplexity: String? = null,
 )
 
 /**

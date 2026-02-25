@@ -1076,5 +1076,116 @@ All default to `False` (opt-in):
 
 ---
 
-**Document Version:** 8.2
-**Last Updated:** 2026-02-18
+## Autonomous Pipeline Components (EPIC 2-5, 7-10, 14)
+
+### Enhanced Qualifier Output (EPIC 2-S1)
+
+The qualifier now produces structured fields for pipeline routing:
+
+```
+FullIngestResult (KB service output)
+├── actionType: String?      → CODE_FIX, CODE_REVIEW, RESPOND_EMAIL, etc.
+├── estimatedComplexity: String?  → TRIVIAL, SIMPLE, MEDIUM, COMPLEX
+├── suggestedAgent: String?  → CODING, ORCHESTRATOR, NONE
+├── affectedFiles: List<String>
+└── relatedKbNodes: List<String>
+```
+
+DTOs: `shared/common-dto/.../pipeline/PipelineDtos.kt`
+
+### Auto-Task Creation (EPIC 2-S2)
+
+`AutoTaskCreationService` creates tasks from qualifier findings:
+- `CODE_FIX + SIMPLE` → BACKGROUND task (auto-dispatch)
+- `CODE_FIX + COMPLEX` → USER_TASK (needs plan approval)
+- `RESPOND_EMAIL` → USER_TASK (draft for approval)
+- `INVESTIGATE` → BACKGROUND task
+- Deduplication via `correlationId`
+
+Source: `backend/server/.../service/background/AutoTaskCreationService.kt`
+
+### Priority-Based Scheduling (EPIC 2-S3)
+
+Tasks ordered by `priorityScore DESC, createdAt ASC` instead of FIFO.
+`TaskPriorityCalculator` assigns 0-100 scores based on urgency, deadline, security keywords.
+
+Source: `backend/server/.../service/background/TaskPriorityCalculator.kt`
+
+### Planning Phase (EPIC 2-S4)
+
+Background handler now runs an LLM planning phase before the agentic loop:
+1. Analyze task + guidelines → structured JSON plan
+2. Plan injected into conversation context
+3. Guides agentic loop execution
+
+Source: `backend/service-orchestrator/app/background/handler.py`
+
+### Code Review Pipeline (EPIC 3)
+
+After coding agent dispatch, runs 2-phase review:
+1. **Static analysis**: Forbidden patterns, credentials scan, file restrictions
+2. **LLM review**: Independent reviewer (doesn't see coding agent reasoning)
+3. Verdict: APPROVE → continue, REQUEST_CHANGES → re-dispatch, REJECT → USER_TASK
+
+Source: `backend/service-orchestrator/app/review/review_engine.py`
+
+### Universal Approval Gate (EPIC 4)
+
+Every write action passes through `ApprovalGate.evaluate()`:
+- Checks guidelines approval rules (per-action auto-approve settings)
+- CRITICAL risk → always NEEDS_APPROVAL
+- DEPLOY / KB_DELETE → always NEEDS_APPROVAL
+- Wired into `execute_tool()` in Python executor
+
+Sources:
+- `backend/service-orchestrator/app/review/approval_gate.py`
+- `backend/service-orchestrator/app/tools/executor.py` (approval gate integration)
+
+### Action Execution Engine (EPIC 5)
+
+`ActionExecutorService` in Kotlin server routes approved actions:
+- Evaluates approval via `GuidelinesService.getMergedGuidelines()`
+- AUTO_APPROVED → dispatch to backend service
+- NEEDS_APPROVAL → emit `ApprovalRequired` event, create USER_TASK
+- DENIED → reject and log
+
+Sources:
+- `backend/server/.../service/action/ActionExecutorService.kt`
+- `shared/common-dto/.../pipeline/ApprovalActionDtos.kt`
+
+### Anti-Hallucination Guard (EPIC 14)
+
+Post-processing pipeline for fact-checking LLM responses:
+- Extract claims (file paths, URLs, code references, API endpoints)
+- Verify against KB and git workspace
+- Status: VERIFIED / UNVERIFIED / CONTRADICTED
+- Overall confidence score
+
+Source: `backend/service-orchestrator/app/guard/fact_checker.py`
+
+### Foundation DTOs (EPICs 7-13, 16-17)
+
+| EPIC | DTO Package | Key Types |
+|------|------------|-----------|
+| 7 KB Maintenance | `dto.maintenance` | IdleTaskType, VulnerabilityFinding, KbConsistencyFinding |
+| 8 Deadline | `dto.deadline` | DeadlineItem, DeadlineUrgency, DeadlinePreparationPlan |
+| 9 Chat Intelligence | `dto.chat` | ConversationTopic, TopicSummary, ActionLogEntry |
+| 10 Filtering | `dto.filtering` | FilteringRule, FilterAction, FilterConditionType |
+| 11-12 Integrations | `dto.integration` | ExternalChatMessage, CalendarEvent, AvailabilityInfo |
+| 13 Self-Evolution | `dto.selfevolution` | PromptSection, LearnedBehavior, UserCorrection |
+| 14 Anti-Hallucination | `dto.guard` | FactClaim, SourceAttribution, ResponseConfidence |
+| 16 Brain Workflow | `dto.brain` | BrainIssueType, DailyReport |
+| 17 Environment | `dto.environment` | EnvironmentAgentRequest, DeploymentValidationResult |
+
+### Foundation Services
+
+| Service | EPIC | Source |
+|---------|------|--------|
+| IdleTaskRegistry | 7 | `backend/server/.../service/maintenance/IdleTaskRegistry.kt` |
+| DeadlineTrackerService | 8 | `backend/server/.../service/deadline/DeadlineTrackerService.kt` |
+| FilteringRulesService | 10 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
+
+---
+
+**Document Version:** 9.0
+**Last Updated:** 2026-02-25

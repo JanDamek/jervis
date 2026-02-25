@@ -208,4 +208,21 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
         since: Instant,
     ): Flow<TaskDocument>
 
+    // EPIC 2: Priority-based background task ordering
+
+    /**
+     * Find BACKGROUND tasks ordered by priorityScore DESC (highest first), then createdAt ASC.
+     * Used by getNextBackgroundTask() for priority-based scheduling.
+     */
+    suspend fun findByProcessingModeAndStateOrderByPriorityScoreDescCreatedAtAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
+     * Find task by correlationId for deduplication.
+     * Used by AutoTaskCreationService to avoid creating duplicate tasks.
+     */
+    suspend fun findByCorrelationId(correlationId: String): TaskDocument?
+
 }

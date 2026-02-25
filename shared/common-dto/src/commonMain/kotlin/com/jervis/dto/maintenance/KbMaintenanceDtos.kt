@@ -1,0 +1,91 @@
+package com.jervis.dto.maintenance
+
+import kotlinx.serialization.Serializable
+
+/**
+ * EPIC 7: Proactive KB Maintenance & Learning DTOs.
+ *
+ * Supports idle task registry, vulnerability scanning, KB consistency checks,
+ * learning engine, and documentation freshness monitoring.
+ */
+
+/**
+ * Types of idle tasks that JERVIS can perform autonomously.
+ */
+@Serializable
+enum class IdleTaskType {
+    /** Review open brain JIRA issues (existing). */
+    REVIEW_BRAIN_ISSUES,
+    /** Check KB for duplicate/contradictory chunks. */
+    KB_CONSISTENCY_CHECK,
+    /** Scan project dependencies for known CVEs. */
+    VULNERABILITY_SCAN,
+    /** Basic static code quality analysis from KB data. */
+    CODE_QUALITY_SCAN,
+    /** Check if docs are stale relative to code changes. */
+    DOCUMENTATION_FRESHNESS,
+    /** Search for best practices relevant to project technologies. */
+    LEARNING_BEST_PRACTICES,
+}
+
+/**
+ * Priority-ordered idle task configuration.
+ */
+@Serializable
+data class IdleTaskConfig(
+    val type: IdleTaskType,
+    val enabled: Boolean = true,
+    val priority: Int = 50,
+    val intervalHours: Int = 24,
+    val lastRunAt: String? = null,
+)
+
+/**
+ * Result of a vulnerability scan for a single dependency.
+ */
+@Serializable
+data class VulnerabilityFinding(
+    val dependency: String,
+    val version: String,
+    val cveId: String? = null,
+    val severity: VulnerabilitySeverity,
+    val description: String,
+    val fixVersion: String? = null,
+    val projectId: String,
+)
+
+@Serializable
+enum class VulnerabilitySeverity {
+    LOW, MEDIUM, HIGH, CRITICAL,
+}
+
+/**
+ * KB consistency check result.
+ */
+@Serializable
+data class KbConsistencyFinding(
+    val type: ConsistencyIssueType,
+    val sourceUrn1: String,
+    val sourceUrn2: String? = null,
+    val description: String,
+    val suggestedAction: String,
+)
+
+@Serializable
+enum class ConsistencyIssueType {
+    DUPLICATE_CHUNK,
+    CONTRADICTORY_INFO,
+    STALE_INFORMATION,
+}
+
+/**
+ * Documentation freshness check result.
+ */
+@Serializable
+data class DocFreshnessResult(
+    val docPath: String,
+    val lastDocUpdate: String,
+    val lastCodeUpdate: String,
+    val staleDays: Int,
+    val affectedCodePaths: List<String> = emptyList(),
+)

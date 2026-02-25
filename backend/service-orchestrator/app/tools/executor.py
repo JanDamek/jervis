@@ -37,6 +37,90 @@ class AskUserInterrupt(Exception):
         super().__init__(question)
 
 
+class ApprovalRequiredInterrupt(Exception):
+    """Raised when an action requires user approval (EPIC 4/5).
+
+    Similar to AskUserInterrupt but specifically for approval flow.
+    The respond node catches this and triggers a LangGraph interrupt
+    with approval metadata.
+    """
+
+    def __init__(self, action: str, preview: str, payload: dict):
+        self.action = action
+        self.preview = preview
+        self.payload = payload
+        super().__init__(f"Approval required for {action}: {preview}")
+
+
+# EPIC 4/5: Write tools that require approval gate evaluation
+_WRITE_TOOLS_TO_APPROVAL_ACTION: dict[str, str] = {
+    "kb_delete": "KB_DELETE",
+    "brain_create_issue": "JIRA_CREATE_ISSUE",
+    "brain_update_issue": "JIRA_UPDATE_ISSUE",
+    "brain_add_comment": "JIRA_COMMENT",
+    "brain_transition_issue": "JIRA_TRANSITION",
+    "brain_create_page": "CONFLUENCE_CREATE_PAGE",
+    "brain_update_page": "CONFLUENCE_UPDATE_PAGE",
+    "dispatch_coding_agent": "CODING_DISPATCH",
+    "store_knowledge": "KB_STORE",
+}
+
+
+async def _check_approval_gate(
+    tool_name: str,
+    arguments: dict,
+    client_id: str,
+    project_id: str | None,
+) -> None:
+    """Check if a write tool requires approval. Raises ApprovalRequiredInterrupt if so.
+
+    Read-only tools skip this check entirely.
+    """
+    approval_action = _WRITE_TOOLS_TO_APPROVAL_ACTION.get(tool_name)
+    if not approval_action:
+        return  # Read-only tool, no approval needed
+
+    try:
+        from app.review.approval_gate import approval_gate, ApprovalDecision
+
+        decision = await approval_gate.evaluate(
+            action=approval_action,
+            payload=arguments,
+            risk_level="MEDIUM",
+            confidence=0.8,
+            client_id=client_id,
+            project_id=project_id,
+        )
+
+        if decision == ApprovalDecision.DENIED:
+            raise ApprovalRequiredInterrupt(
+                action=approval_action,
+                preview=f"DENIED: {tool_name} with {list(arguments.keys())}",
+                payload=arguments,
+            )
+
+        if decision == ApprovalDecision.NEEDS_APPROVAL:
+            # Build preview for user
+            preview = f"{tool_name}: {str(arguments)[:200]}"
+            raise ApprovalRequiredInterrupt(
+                action=approval_action,
+                preview=preview,
+                payload=arguments,
+            )
+
+        # AUTO_APPROVED → proceed
+        logger.info(
+            "APPROVAL_GATE: tool=%s action=%s → AUTO_APPROVED",
+            tool_name, approval_action,
+        )
+
+    except ApprovalRequiredInterrupt:
+        raise  # Re-raise approval interrupt
+    except Exception as e:
+        # Approval gate failure is non-fatal — log and proceed (fail open for now)
+        logger.warning("Approval gate check failed for %s: %s", tool_name, e)
+
+
 async def execute_tool(
     tool_name: str,
     arguments: dict,
@@ -68,6 +152,10 @@ async def execute_tool(
             return "Error: Question cannot be empty."
         logger.info("ASK_USER: raising interrupt for question: %s", question)
         raise AskUserInterrupt(question)
+
+    # EPIC 4/5: Check approval gate for write tools.
+    # Raises ApprovalRequiredInterrupt if approval needed (caught by respond node).
+    await _check_approval_gate(tool_name, arguments, client_id, project_id)
 
     try:
         result = None

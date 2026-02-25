@@ -4,8 +4,10 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.pipeline.ActionType
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.FullIngestResult
+import com.jervis.service.background.AutoTaskCreationService
 import com.jervis.service.background.TaskService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -18,10 +20,15 @@ import java.time.Instant
  * Extracted from SimpleQualifierAgent so it can be called both:
  * - Synchronously from qualification (legacy)
  * - From the /internal/kb-done callback (async fire-and-forget flow)
+ *
+ * EPIC 2: Enhanced with ActionTypeInferrer for structured routing
+ * and AutoTaskCreationService for automatic task creation from findings.
  */
 @Service
 class KbResultRouter(
     private val taskService: TaskService,
+    private val actionTypeInferrer: ActionTypeInferrer,
+    private val autoTaskCreationService: AutoTaskCreationService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -43,6 +50,9 @@ class KbResultRouter(
     /**
      * Route task based on KB analysis result.
      *
+     * EPIC 2: Enhanced routing with structured ActionType/Complexity inference
+     * and automatic task creation for actionable findings.
+     *
      * @param onProgress optional callback for emitting progress steps (UI updates)
      */
     suspend fun routeTask(
@@ -50,6 +60,9 @@ class KbResultRouter(
         result: FullIngestResult,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): RoutingDecision {
+        // EPIC 2: Infer structured fields from KB result
+        val inferred = actionTypeInferrer.infer(result)
+
         // Step 1: Not actionable → indexed only
         if (!result.hasActionableContent) {
             logger.info {
@@ -70,7 +83,37 @@ class KbResultRouter(
             logger.info {
                 "KB_ROUTE: taskId=${task.id} reason=simpleAction actions=${result.suggestedActions}"
             }
+
+            // EPIC 2: Also create structured auto-task for tracked pipeline processing
+            try {
+                autoTaskCreationService.createFromQualifierFinding(task, result, inferred)
+            } catch (e: Exception) {
+                logger.warn(e) { "AUTO_TASK_CREATION_FAILED: taskId=${task.id} (non-fatal)" }
+            }
+
             return RoutingDecision(TaskStateEnum.DONE, "simple_action_handled")
+        }
+
+        // EPIC 2: For complex actionable content, create auto-task and let it handle routing
+        try {
+            val autoTask = autoTaskCreationService.createFromQualifierFinding(task, result, inferred)
+            if (autoTask != null) {
+                logger.info {
+                    "KB_ROUTE: taskId=${task.id} autoTaskId=${autoTask.id} " +
+                        "actionType=${inferred.actionType} complexity=${inferred.estimatedComplexity}"
+                }
+                onProgress(
+                    "Vytvořen automatický úkol: ${inferred.actionType.name} (${inferred.estimatedComplexity.name})",
+                    mapOf(
+                        "step" to "auto_task",
+                        "agent" to "simple_qualifier",
+                        "actionType" to inferred.actionType.name,
+                        "complexity" to inferred.estimatedComplexity.name,
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "AUTO_TASK_CREATION_FAILED: taskId=${task.id} (non-fatal, continuing with legacy routing)" }
         }
 
         // Step 3: Complex + assigned to me → immediate
@@ -132,7 +175,8 @@ class KbResultRouter(
 
         // Step 5: Complex actionable → execute when available
         logger.info {
-            "KB_ROUTE: taskId=${task.id} reason=complexActionable urgency=${result.urgency} actions=${result.suggestedActions}"
+            "KB_ROUTE: taskId=${task.id} reason=complexActionable urgency=${result.urgency} actions=${result.suggestedActions} " +
+                "actionType=${inferred.actionType} complexity=${inferred.estimatedComplexity}"
         }
         onProgress(
             "Akční obsah → do fronty pro MOZEK",

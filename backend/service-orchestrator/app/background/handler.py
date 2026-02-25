@@ -1,11 +1,12 @@
 """Simplified background handler — agentic loop without streaming.
 
 Replaces the old 14-node LangGraph orchestrator for background tasks.
-Simple 4-phase flow:
+5-phase flow (EPIC 2 enhanced):
 1. Intake: Analyze task, select tools, build context
-2. Execute: Agentic loop (LLM → tools → repeat, max 15 iterations)
-3. Dispatch: If coding needed → K8s Job via dispatch_coding_agent
-4. Finalize: Save result, notify Kotlin, log quality
+2. Plan: LLM analyzes task + guidelines → structured plan (EPIC 2-S4)
+3. Execute: Agentic loop (LLM → tools → repeat, max 15 iterations)
+4. Dispatch: If coding needed → K8s Job via dispatch_coding_agent
+5. Finalize: Save result, notify Kotlin, log quality
 
 No SSE streaming — background tasks push status via kotlin_client.
 Model escalation: starts with dynamically selected tier based on context size, escalates on failure.
@@ -156,6 +157,34 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         cloud_allowed=cloud_allowed,
     )
 
+    # --- EPIC 2-S4: Planning phase ---
+    plan = None
+    try:
+        plan = await _run_planning_phase(
+            messages=messages[:],  # Copy to avoid mutation
+            tier=initial_tier,
+            task_id=task_id,
+            client_id=client_id,
+            request=request,
+        )
+        if plan:
+            # Inject plan into conversation context for agentic loop
+            plan_text = _format_plan_for_context(plan)
+            messages.append({
+                "role": "system",
+                "content": f"[Plan] Následuj tento plán:\n{plan_text}",
+            })
+            logger.info(
+                "Background: planning phase completed, %d steps",
+                len(plan.get("steps", [])),
+            )
+            await kotlin_client.report_progress(
+                task_id=task_id, client_id=client_id,
+                node="plan", message=f"Plan: {plan.get('summary', 'N/A')[:100]}",
+            )
+    except Exception as e:
+        logger.warning("Planning phase failed (non-fatal): %s", e)
+
     # --- Agentic loop ---
     await kotlin_client.report_progress(
         task_id=task_id, client_id=client_id,
@@ -258,17 +287,40 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
             try:
                 if tool_name == "dispatch_coding_agent":
-                    # Dispatch coding agent directly via kotlin_client
+                    # EPIC 2-S5: Enhanced dispatch with guidelines, plan, review checklist
                     effective_client = arguments.get("client_id") or client_id
                     effective_project = arguments.get("project_id") or project_id
                     if not effective_client or not effective_project:
                         result = "Chyba: client_id a project_id jsou povinné pro dispatch coding agenta."
                     else:
+                        # Build enhanced dispatch context
+                        guidelines_text = None
+                        review_checklist = None
+                        try:
+                            from app.context.guidelines_resolver import (
+                                resolve_guidelines,
+                                format_guidelines_for_coding_agent,
+                            )
+                            gl = await resolve_guidelines(effective_client, effective_project)
+                            guidelines_text = format_guidelines_for_coding_agent(gl) or None
+                            review = gl.get("review", {})
+                            checklist_items = review.get("checklistItems", [])
+                            if checklist_items:
+                                review_checklist = [
+                                    item.get("label", "") for item in checklist_items
+                                    if item.get("enabled", True)
+                                ]
+                        except Exception as e:
+                            logger.debug("Guidelines for coding dispatch: %s", e)
+
                         dispatch_result = await asyncio.wait_for(
                             kotlin_client.dispatch_coding_agent(
                                 task_description=arguments.get("task_description", ""),
                                 client_id=effective_client,
                                 project_id=effective_project,
+                                plan=plan,
+                                guidelines_text=guidelines_text,
+                                review_checklist=review_checklist,
                             ),
                             timeout=_TOOL_EXECUTION_TIMEOUT_S,
                         )
@@ -326,6 +378,44 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                     })
                     break
 
+    # --- EPIC 3: Code Review Phase (after coding agent dispatch) ---
+    review_report = None
+    coding_dispatched = any(
+        r.get("agent_type") == "claude" and r.get("success")
+        for r in step_results
+    )
+    if coding_dispatched and rules and rules.require_review:
+        try:
+            await kotlin_client.report_progress(
+                task_id=task_id, client_id=client_id,
+                node="review", message="Running code review...",
+            )
+            review_report = await _run_code_review(
+                task_description=request.query,
+                step_results=step_results,
+                client_id=client_id,
+                project_id=project_id,
+            )
+            if review_report:
+                from app.review.review_engine import ReviewVerdict, format_review_report
+                review_text = format_review_report(review_report)
+                logger.info(
+                    "REVIEW_COMPLETE | task_id=%s | verdict=%s | score=%d",
+                    task_id, review_report.verdict.value, review_report.score,
+                )
+                # Inject review result into context
+                messages.append({
+                    "role": "system",
+                    "content": f"[Code Review Result]\n{review_text}",
+                })
+                if review_report.verdict == ReviewVerdict.REJECT:
+                    # Escalate to user task
+                    final_answer = f"Code review REJECTED (score: {review_report.score}/100).\n\n{review_text}"
+                elif review_report.verdict == ReviewVerdict.REQUEST_CHANGES:
+                    final_answer = f"Code review requested changes (score: {review_report.score}/100).\n\n{review_text}"
+        except Exception as e:
+            logger.warning("Code review phase failed (non-fatal): %s", e)
+
     # --- Finalize ---
     if not final_answer and iteration >= settings.background_max_iterations:
         # Force a final answer
@@ -381,6 +471,8 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         "step_results": step_results,
         "branch": None,
         "escalation_path": tracker.history_str,
+        "plan": plan,  # EPIC 2: Include plan in result for audit trail
+        "review": review_report.__dict__ if review_report else None,  # EPIC 3
     }
 
 
@@ -433,4 +525,184 @@ async def _build_background_prompt(request: OrchestrateRequest) -> str:
 
     return "\n".join(parts)
 
+
+# ---------------------------------------------------------------------------
+# EPIC 2-S4: Planning phase
+# ---------------------------------------------------------------------------
+
+_PLANNING_PROMPT = """Analyze this task and create a structured execution plan.
+
+Output JSON with these fields:
+{
+  "summary": "One-line description of what needs to be done",
+  "steps": [
+    {"description": "Step 1 description", "tool": "tool_name_or_null"},
+    {"description": "Step 2 description", "tool": "tool_name_or_null"}
+  ],
+  "affected_files": ["file1.kt", "file2.py"],
+  "risk_level": "LOW|MEDIUM|HIGH",
+  "estimated_iterations": 5
+}
+
+Rules:
+- Keep steps concrete and actionable
+- Identify which tools to use for each step
+- List files that will likely be modified
+- Assess risk: HIGH if touches production config, security, or >5 files
+- Be concise — max 8 steps"""
+
+
+async def _run_planning_phase(
+    messages: list[dict],
+    tier: ModelTier,
+    task_id: str,
+    client_id: str,
+    request: OrchestrateRequest,
+) -> dict | None:
+    """Run LLM planning phase before agentic loop.
+
+    Produces a structured plan that guides the execution phase.
+    Returns None if planning fails or is not applicable.
+    """
+    # Add planning instruction
+    plan_messages = messages + [
+        {"role": "system", "content": _PLANNING_PROMPT},
+    ]
+
+    try:
+        response = await llm_provider.completion(
+            messages=plan_messages,
+            tier=tier,
+            max_tokens=1024,
+            temperature=0.1,
+        )
+        content = response.choices[0].message.content or ""
+
+        # Try to parse JSON from response
+        plan = _extract_json_from_response(content)
+        if plan and "steps" in plan:
+            return plan
+
+        logger.debug("Planning phase did not produce valid JSON plan")
+        return None
+
+    except Exception as e:
+        logger.warning("Planning phase LLM call failed: %s", e)
+        return None
+
+
+def _extract_json_from_response(content: str) -> dict | None:
+    """Extract JSON object from LLM response (may be wrapped in markdown)."""
+    import re
+
+    # Try direct parse
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting from ```json ... ``` block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", content, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding first { ... } block
+    start = content.find("{")
+    end = content.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(content[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
+def _format_plan_for_context(plan: dict) -> str:
+    """Format a plan dict into human-readable text for injection into context."""
+    lines = []
+    if plan.get("summary"):
+        lines.append(f"Cíl: {plan['summary']}")
+
+    steps = plan.get("steps", [])
+    if steps:
+        lines.append("Kroky:")
+        for i, step in enumerate(steps, 1):
+            desc = step.get("description", "?")
+            tool = step.get("tool")
+            tool_hint = f" (→ {tool})" if tool else ""
+            lines.append(f"  {i}. {desc}{tool_hint}")
+
+    files = plan.get("affected_files", [])
+    if files:
+        lines.append(f"Soubory: {', '.join(files)}")
+
+    risk = plan.get("risk_level")
+    if risk:
+        lines.append(f"Riziko: {risk}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# EPIC 3: Code Review Phase
+# ---------------------------------------------------------------------------
+
+async def _run_code_review(
+    task_description: str,
+    step_results: list[dict],
+    client_id: str,
+    project_id: str | None,
+) -> "ReviewReport | None":
+    """Run code review on coding agent output.
+
+    Loads guidelines, runs static analysis + LLM review, returns ReviewReport.
+    Returns None if no diff is available or review is not applicable.
+    """
+    from app.review.review_engine import (
+        run_static_analysis,
+        run_llm_review,
+        ReviewReport,
+    )
+
+    # Extract diff/changed files from step results
+    diff = ""
+    changed_files: list[str] = []
+    for step in step_results:
+        summary = step.get("summary", "")
+        if "dispatch" in summary.lower() or step.get("agent_type") == "claude":
+            # The coding agent result typically contains a summary
+            diff += summary + "\n"
+
+    if not diff.strip():
+        logger.debug("No diff available for code review")
+        return None
+
+    # Load guidelines for review rules
+    guidelines: dict = {}
+    try:
+        from app.context.guidelines_resolver import resolve_guidelines
+        guidelines = await resolve_guidelines(client_id, project_id)
+    except Exception as e:
+        logger.debug("Failed to load guidelines for review: %s", e)
+
+    # Phase 1: Static analysis
+    static_passed, static_issues = run_static_analysis(diff, changed_files, guidelines)
+    logger.info(
+        "REVIEW_STATIC | passed=%s | issues=%d",
+        static_passed, len(static_issues),
+    )
+
+    # Phase 2: LLM review
+    report = await run_llm_review(
+        diff=diff,
+        task_description=task_description,
+        guidelines=guidelines,
+        static_issues=static_issues,
+    )
+
+    return report
 
