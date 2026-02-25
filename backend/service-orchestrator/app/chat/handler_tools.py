@@ -10,11 +10,12 @@ Tool call parsing: app.tools.ollama_parsing (shared with background handler).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from app.chat.system_prompt import RuntimeContext
-from app.tools.executor import execute_tool
+from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.ollama_parsing import extract_tool_calls  # noqa: F401 — re-exported for callers
 
 logger = logging.getLogger(__name__)
@@ -227,8 +228,6 @@ async def _execute_chat_specific_tool(
     active_project_id: str | None,
 ) -> str:
     """Execute chat-specific tools via Kotlin internal API using strategy map."""
-    import asyncio
-    from app.tools.executor import _TOOL_EXECUTION_TIMEOUT_S
 
     try:
         from app.tools.kotlin_client import kotlin_client

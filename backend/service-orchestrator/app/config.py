@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Background handler constants
     background_max_iterations: int = 15      # Max agentic loop iterations for background
 
+    # Streaming
+    stream_chunk_size: int = 40              # Chars per fake-streaming chunk (~10 tokens)
+
     # Guidelines cache
     guidelines_cache_ttl: int = 300          # TTL in seconds for guidelines cache
 

@@ -15,13 +15,14 @@ from bson import ObjectId
 
 from app.chat.context import chat_context_assembler
 from app.chat.models import ChatStreamEvent
+from app.config import settings
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
-# Chunk size for fake token streaming (chars, ~10 tokens)
-STREAM_CHUNK_SIZE = 40
+# Re-exported for callers that import from handler_streaming
+STREAM_CHUNK_SIZE = settings.stream_chunk_size
 
 
 async def call_llm(

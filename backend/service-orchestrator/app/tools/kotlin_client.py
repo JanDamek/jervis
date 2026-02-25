@@ -14,6 +14,7 @@ which broadcasts them to UI clients via Flow-based event subscriptions.
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -289,7 +290,7 @@ class KotlinServerClient:
                 params={"query": query, "maxResults": max_results},
             )
             if resp.status_code == 200:
-                import json
+
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code}"
         except Exception as e:
@@ -358,7 +359,7 @@ class KotlinServerClient:
             client = await self._get_client()
             resp = await client.get("/internal/unclassified-meetings")
             if resp.status_code == 200:
-                import json
+
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code}"
         except Exception as e:
@@ -418,7 +419,7 @@ class KotlinServerClient:
             client = await self._get_client()
             resp = await client.get(f"/internal/tasks/{task_id}/status")
             if resp.status_code == 200:
-                import json
+
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Task not found: {task_id}"
         except Exception as e:
@@ -439,7 +440,7 @@ class KotlinServerClient:
                 params["state"] = state
             resp = await client.get("/internal/tasks/search", params=params)
             if resp.status_code == 200:
-                import json
+
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code}"
         except Exception as e:
@@ -463,7 +464,7 @@ class KotlinServerClient:
                 params["clientId"] = client_id
             resp = await client.get("/internal/tasks/recent", params=params)
             if resp.status_code == 200:
-                import json
+
                 return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code}"
         except Exception as e:

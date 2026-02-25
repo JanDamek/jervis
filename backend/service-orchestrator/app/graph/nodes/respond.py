@@ -20,6 +20,7 @@ import uuid
 
 from langgraph.types import interrupt
 
+from app.config import settings
 from app.models import CodingTask
 from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
 from app.llm.provider import TIER_CONFIG, llm_provider
@@ -483,7 +484,7 @@ async def respond(state: dict) -> dict:
 
 
 # W-12: Real token streaming — streams LLM tokens as they arrive
-_STREAM_CHUNK_SIZE = 12  # Fallback chunk size for fake streaming
+_STREAM_CHUNK_SIZE = settings.stream_chunk_size
 
 
 async def _stream_answer_to_ui(state: dict, answer: str) -> None:

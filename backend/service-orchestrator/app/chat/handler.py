@@ -44,6 +44,31 @@ from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
+# Anti-dump: tools removed from long messages
+_STORAGE_TOOL_NAMES = {"store_knowledge", "memory_store"}
+
+# Greeting detection (compiled once at import time)
+_GREETING_RE = re.compile(
+    r"^\s*(?:ahoj|čau|zdravím|hej|hi|hello|hey|"
+    r"dobr[éý]?\s+(?:ráno|den|odpoledne|večer)|"
+    r"co\s+je\s+nového|co\s+se\s+děje)"
+    r"[!?.\s]*$",
+    re.IGNORECASE,
+)
+
+# Markers indicating the model needs tools (not a complete answer)
+_NEEDS_TOOLS_MARKERS = ["potřebuji", "nemám informac", "nevím", "musím", "nemohu"]
+
+# Markers indicating the model is hallucinating tool usage
+_FAKE_TOOL_MARKERS = [
+    "pomocí kb_search", "pomocí brain_", "pomocí code_search",
+    "pomocí web_search", "pomocí memory_",
+    "kb_search", "brain_search", "code_search",
+    "web_search", "memory_recall",
+    "krok 1:", "krok 2:", "step 1:", "step 2:",
+    "vyhledal jsem", "našel jsem v",
+]
+
 
 async def handle_chat(
     request: ChatRequest,
@@ -75,7 +100,6 @@ async def handle_chat(
         selected_tools = select_tools(intent_categories)
 
         # Anti-dump: remove storage tools for long messages
-        _STORAGE_TOOL_NAMES = {"store_knowledge", "memory_store"}
         if len(request.message) > settings.decompose_threshold:
             before_count = len(selected_tools)
             selected_tools = [t for t in selected_tools if t["function"]["name"] not in _STORAGE_TOOL_NAMES]
@@ -313,14 +337,6 @@ async def _try_greeting_fast_path(
     Only fires for short greetings with CORE-only intent.
     Yields events only if greeting was handled; yields nothing if not applicable.
     """
-    _GREETING_RE = re.compile(
-        r"^\s*(?:ahoj|čau|zdravím|hej|hi|hello|hey|"
-        r"dobr[éý]?\s+(?:ráno|den|odpoledne|večer)|"
-        r"co\s+je\s+nového|co\s+se\s+děje)"
-        r"[!?.\s]*$",
-        re.IGNORECASE,
-    )
-
     if not (
         msg_len < 200
         and intent_categories == {ToolCategory.CORE}
@@ -333,16 +349,6 @@ async def _try_greeting_fast_path(
     try:
         direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_FAST)
         direct_text = direct_response.choices[0].message.content or ""
-
-        _NEEDS_TOOLS_MARKERS = ["potřebuji", "nemám informac", "nevím", "musím", "nemohu"]
-        _FAKE_TOOL_MARKERS = [
-            "pomocí kb_search", "pomocí brain_", "pomocí code_search",
-            "pomocí web_search", "pomocí memory_",
-            "kb_search", "brain_search", "code_search",
-            "web_search", "memory_recall",
-            "krok 1:", "krok 2:", "step 1:", "step 2:",
-            "vyhledal jsem", "našel jsem v",
-        ]
         direct_lower = direct_text.lower()
         has_tool_markers = any(m in direct_lower for m in _NEEDS_TOOLS_MARKERS)
         has_fake_tools = any(m in direct_lower for m in _FAKE_TOOL_MARKERS)
