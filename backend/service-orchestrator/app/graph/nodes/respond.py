@@ -206,7 +206,7 @@ async def respond(state: dict) -> dict:
         from app.chat.context import chat_context_assembler
         seq = await chat_context_assembler.get_next_sequence(task.id)
         await chat_context_assembler.save_message(
-            task_id=task.id,
+            conversation_id=task.id,
             role="USER",
             content=task.query,
             correlation_id=f"respond-{uuid.uuid4().hex[:8]}",
@@ -615,7 +615,7 @@ async def _save_assistant_message(state: dict, answer: str) -> None:
         task = CodingTask(**state["task"])
         seq = await chat_context_assembler.get_next_sequence(task.id)
         await chat_context_assembler.save_message(
-            task_id=task.id,
+            conversation_id=task.id,
             role="ASSISTANT",
             content=answer,
             correlation_id=f"respond-{uuid.uuid4().hex[:8]}",

@@ -265,7 +265,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     try:
         seq = await chat_context_assembler.get_next_sequence(task_id)
         await chat_context_assembler.save_message(
-            task_id=task_id,
+            conversation_id=task_id,
             role="ASSISTANT",
             content=final_answer,
             correlation_id=f"bg-{uuid.uuid4().hex[:8]}",
