@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.config import foreground_headers
 from app.memory.lqm import LocalQuickMemory
 from app.memory.models import (
     Affair,
@@ -276,7 +277,7 @@ async def _load_affair_from_kb(
     processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
     """Load a single affair from KB by its source_urn."""
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",
@@ -325,7 +326,7 @@ async def _load_affairs_via_search(
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Fallback: load affairs via semantic search with kind=affair."""
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",

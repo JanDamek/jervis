@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Background handler constants
     background_max_iterations: int = 15      # Max agentic loop iterations for background
 
+    # Ollama Router priority header (FOREGROUND = "0" → CRITICAL)
+    foreground_priority_level: str = "0"     # Value for X-Ollama-Priority header
+
     # Streaming
     stream_chunk_size: int = 40              # Chars per fake-streaming chunk (~10 tokens)
 
@@ -160,3 +163,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def foreground_headers(processing_mode: str) -> dict[str, str]:
+    """Return Ollama priority headers for foreground requests.
+
+    FOREGROUND → {"X-Ollama-Priority": "0"} (user is waiting)
+    BACKGROUND → {} (router defaults to NORMAL)
+    """
+    if processing_mode == "FOREGROUND":
+        return {"X-Ollama-Priority": settings.foreground_priority_level}
+    return {}

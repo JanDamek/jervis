@@ -505,7 +505,6 @@ class KotlinServerClient:
     ) -> str:
         """Get guidelines for a specific scope (raw, unmerged)."""
         try:
-            import json as _json
             client = await self._get_client()
             params: dict = {"scope": scope}
             if client_id:
@@ -514,7 +513,7 @@ class KotlinServerClient:
                 params["projectId"] = project_id
             resp = await client.get("/internal/guidelines", params=params)
             if resp.status_code == 200:
-                return _json.dumps(resp.json(), ensure_ascii=False, indent=2)
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code}"
         except Exception as e:
             logger.warning("Failed to get guidelines: %s", e)
@@ -530,7 +529,6 @@ class KotlinServerClient:
     ) -> str:
         """Update a single category of guidelines for a given scope."""
         try:
-            import json as _json
             client = await self._get_client()
             payload = {
                 "scope": scope,
@@ -543,7 +541,7 @@ class KotlinServerClient:
                 json=payload,
             )
             if resp.status_code == 200:
-                return _json.dumps(resp.json(), ensure_ascii=False, indent=2)
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
             return f"Error: {resp.status_code} - {resp.text}"
         except Exception as e:
             logger.warning("Failed to update guideline: %s", e)

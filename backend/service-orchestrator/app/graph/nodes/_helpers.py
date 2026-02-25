@@ -15,6 +15,7 @@ import re
 
 from langgraph.types import interrupt
 
+from app.config import foreground_headers
 from app.llm.provider import llm_provider, TIER_CONFIG
 from app.models import (
     CodingTask,
@@ -34,9 +35,7 @@ def priority_headers(state: dict) -> dict[str, str]:
     FOREGROUND → CRITICAL (header "0") — user is waiting
     BACKGROUND → no header (router defaults to NORMAL)
     """
-    if state.get("processing_mode") == "FOREGROUND":
-        return {"X-Ollama-Priority": "0"}
-    return {}
+    return foreground_headers(state.get("processing_mode", "BACKGROUND"))
 
 
 # --- Chat history filtering ---

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.config import foreground_headers
 from app.memory.affairs import (
     create_affair,
     load_affairs_from_kb,
@@ -86,9 +87,7 @@ class MemoryAgent:
     @property
     def _kb_headers(self) -> dict[str, str]:
         """Priority headers for KB calls based on processing_mode."""
-        if self.processing_mode == "FOREGROUND":
-            return {"X-Ollama-Priority": "0"}
-        return {}
+        return foreground_headers(self.processing_mode)
 
     # ----- Lifecycle -----
 

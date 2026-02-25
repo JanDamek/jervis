@@ -12,7 +12,7 @@ import logging
 
 import httpx
 
-from app.config import settings
+from app.config import settings, foreground_headers
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ async def prefetch_kb_context(
     sections: list[str] = []
 
     # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
 
     # KB operations can take long due to embeddings and graph traversal
     async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
@@ -215,7 +215,7 @@ async def fetch_project_context(
     sections: list[str] = []
 
     # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
 
     # KB operations can take long due to embeddings and graph traversal
     async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:

@@ -15,7 +15,7 @@ from datetime import datetime
 
 import httpx
 
-from app.config import settings
+from app.config import settings, foreground_headers
 
 logger = logging.getLogger(__name__)
 
@@ -450,7 +450,7 @@ async def _execute_kb_search(
         "expandGraph": True,
     }
 
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
@@ -589,7 +589,7 @@ async def _execute_store_knowledge(
         },
     }
 
-    headers = {"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {}
+    headers = foreground_headers(processing_mode)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1874,7 +1874,7 @@ async def _execute_memory_recall(
                                 "clientId": client_id,
                                 "maxResults": 3,
                             },
-                            headers={"X-Ollama-Priority": "0"} if processing_mode == "FOREGROUND" else {},
+                            headers=foreground_headers(processing_mode),
                         )
                         if resp.status_code == 200:
                             kb_items = resp.json().get("items", [])

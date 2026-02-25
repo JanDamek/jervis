@@ -15,7 +15,7 @@ from bson import ObjectId
 
 from app.chat.context import chat_context_assembler
 from app.chat.models import ChatStreamEvent
-from app.config import settings
+from app.config import settings, foreground_headers
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 
@@ -44,7 +44,7 @@ async def call_llm(
         tools=tools,
         max_tokens=max_tokens,
         temperature=temperature,
-        extra_headers={"X-Ollama-Priority": "0"},
+        extra_headers=foreground_headers("FOREGROUND"),
     )
     if timeout:
         return await asyncio.wait_for(coro, timeout=timeout)
