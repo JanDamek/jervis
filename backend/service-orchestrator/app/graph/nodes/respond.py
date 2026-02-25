@@ -28,6 +28,7 @@ from app.llm.provider import TIER_CONFIG, llm_provider
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool, AskUserInterrupt, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
+from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
 
@@ -213,42 +214,23 @@ async def respond(state: dict) -> dict:
 
         # Estimate context tokens
         message_tokens = sum(estimate_tokens(str(m)) for m in messages)
-
-        # Tools add ~2500-3000 tokens depending on tool set
-        tools_tokens = 3000  # includes memory tools
-
-        # Reserve space for output
-        output_tokens = 4096
-
-        # Total context needed
-        estimated_tokens = message_tokens + tools_tokens + output_tokens
+        tools_tokens = sum(estimate_tokens(str(t)) for t in respond_tools)
+        estimated_tokens = message_tokens + tools_tokens + settings.default_output_tokens
         logger.debug("Respond: messages=%d tokens, tools=%d tokens, output=%d tokens, total=%d tokens",
-                     message_tokens, tools_tokens, output_tokens, estimated_tokens)
-
-        # Log full messages array structure
-        for i, msg in enumerate(messages):
-            role = msg.get("role", "?")
-            content_preview = str(msg.get("content", ""))[:200]
-            has_tool_calls = "tool_calls" in msg
-            has_tool_call_id = "tool_call_id" in msg
-            logger.debug(
-                "Respond: messages[%d] role=%s, content_len=%d, preview=%s, has_tool_calls=%s, has_tool_call_id=%s",
-                i, role, len(str(msg.get("content", ""))), content_preview, has_tool_calls, has_tool_call_id
-            )
+                     message_tokens, tools_tokens, settings.default_output_tokens, estimated_tokens)
 
         response = await llm_with_cloud_fallback(
             state={**state, "allow_cloud_prompt": allow_cloud_prompt},
             messages=messages,
             task_type="conversational",
-            context_tokens=estimated_tokens,  # Dynamic tier selection based on conversation length
-            max_tokens=4096,
-            tools=respond_tools,  # Enable all tools (KB, web, git, filesystem + memory when enabled)
+            context_tokens=estimated_tokens,
+            max_tokens=settings.default_output_tokens,
+            tools=respond_tools,
         )
 
         choice = response.choices[0]
         message = choice.message
 
-        # DEBUG: Log full response details
         logger.info(
             "Respond: LLM response - finish_reason=%s, has_content=%s, content_len=%d, has_tool_calls=%s",
             choice.finish_reason,
@@ -259,62 +241,12 @@ async def respond(state: dict) -> dict:
         if message.content:
             logger.info("Respond: message.content = %s", message.content[:500])
 
-        # Check for tool calls (OpenAI format)
-        tool_calls = getattr(message, "tool_calls", None)
+        # Extract tool calls (shared Ollama JSON workaround + native format)
+        tool_calls, remaining_text = extract_tool_calls(message)
 
-        # WORKAROUND: Ollama qwen3-coder-tool:30b doesn't support native tool_calls
-        # It outputs JSON in content instead: {"tool_calls": [...]}
-        # Parse and convert to proper format
-        # W-17: Added validation for tool_call structure
-        if not tool_calls and message.content:
-            try:
-                content_json = json.loads(message.content.strip())
-                if isinstance(content_json, dict) and "tool_calls" in content_json:
-                    logger.info("Respond: parsing tool_calls from JSON content (Ollama workaround)")
-                    raw_calls = content_json["tool_calls"]
-                    if not isinstance(raw_calls, list):
-                        raise ValueError(f"tool_calls is not a list: {type(raw_calls)}")
-
-                    # Convert JSON tool calls to OpenAI-style objects (with validation)
-                    class ToolCall:
-                        def __init__(self, tc_dict):
-                            if not isinstance(tc_dict, dict):
-                                raise ValueError(f"tool_call entry is not a dict: {type(tc_dict)}")
-                            self.id = tc_dict.get("id", f"call_{uuid.uuid4().hex[:8]}")
-                            self.type = tc_dict.get("type", "function")
-                            func = tc_dict.get("function")
-                            if not isinstance(func, dict) or "name" not in func:
-                                raise ValueError(f"Invalid function in tool_call: {func}")
-
-                            class Function:
-                                def __init__(self, f_dict):
-                                    self.name = f_dict["name"]
-                                    args = f_dict.get("arguments", {})
-                                    self.arguments = json.dumps(args) if isinstance(args, dict) else str(args)
-
-                            self.function = Function(func)
-
-                    validated_calls = []
-                    for tc in raw_calls:
-                        try:
-                            validated_calls.append(ToolCall(tc))
-                        except (ValueError, KeyError, TypeError) as ve:
-                            logger.warning("Respond: skipping invalid tool_call: %s — %s", tc, ve)
-
-                    if validated_calls:
-                        tool_calls = validated_calls
-                        message.content = None  # Clear content since we extracted tool calls
-                        logger.info("Respond: extracted %d valid tool calls from JSON", len(tool_calls))
-                    else:
-                        logger.warning("Respond: all tool_calls from JSON were invalid")
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-                logger.debug("Respond: content is not JSON tool_calls format: %s", e)
-
-        # Check if we have tool calls (including parsed from JSON)
-        # Only stop if there are truly no tool calls (ignore finish_reason when tools were parsed)
         if not tool_calls:
             # No more tool calls → final answer
-            answer = message.content or ""
+            answer = remaining_text or message.content or ""
             logger.info("Respond: final answer after %d iterations (%d chars)", iteration, len(answer))
 
             # W-13: Quality escalation — retry if answer is suspiciously short
@@ -428,7 +360,7 @@ async def respond(state: dict) -> dict:
         "role": "system",
         "content": "Poskytni finální odpověď na základě shromážděných informací. Nevolej další nástroje."
     }]
-    final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + 4096
+    final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + settings.default_output_tokens
 
     # W-12: Try real-time streaming first for forced final answer
     answer = await _stream_answer_realtime(state, final_messages, final_tokens)
@@ -440,7 +372,7 @@ async def respond(state: dict) -> dict:
             messages=final_messages,
             task_type="conversational",
             context_tokens=final_tokens,
-            max_tokens=4096,
+            max_tokens=settings.default_output_tokens,
         )
         answer = final_response.choices[0].message.content or ""
         await _stream_answer_to_ui(state, answer)
@@ -528,7 +460,7 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
             stream = await llm_provider.stream_completion(
                 messages=messages,
                 tier=local_tier,
-                max_tokens=4096,
+                max_tokens=settings.default_output_tokens,
                 temperature=0.1,
                 extra_headers=headers,
             )

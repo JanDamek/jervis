@@ -100,7 +100,7 @@ async def plan_delegations(state: dict) -> dict:
         state=state,
         messages=messages,
         task_type="planning",
-        max_tokens=4096,
+        max_tokens=settings.default_output_tokens,
     )
     content = response.choices[0].message.content or ""
     plan_data = parse_json_response(content)

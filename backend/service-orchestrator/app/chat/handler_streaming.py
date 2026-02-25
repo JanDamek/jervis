@@ -29,7 +29,7 @@ async def call_llm(
     messages: list[dict],
     tier: ModelTier,
     tools: list[dict] | None = None,
-    max_tokens: int = 4096,
+    max_tokens: int = settings.default_output_tokens,
     temperature: float = 0.1,
     timeout: float | None = None,
 ):

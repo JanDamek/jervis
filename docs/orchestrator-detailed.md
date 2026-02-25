@@ -2173,6 +2173,32 @@ use_procedural_memory: bool = False      # KB procedure learning + lookup
 | `use_dag_execution` | `False` | `execute_delegation` uses `DAGExecutor` (parallel) | Sequential execution only |
 | `use_procedural_memory` | `False` | `plan_delegations` looks up learned procedures in KB | No procedure lookup |
 
+### 25.1b Centralized LLM & handler settings
+
+All handler constants are in `app/config.py` Settings class (env prefix `ORCHESTRATOR_`):
+
+```python
+# LLM token budgets
+default_output_tokens: int = 4096        # Output token reserve for tier estimation
+gpu_vram_token_boundary: int = 40_000    # P40 VRAM limit — above this spills to CPU
+
+# Handler iterations
+chat_max_iterations: int = 6
+chat_max_iterations_long: int = 3
+background_max_iterations: int = 15
+respond_max_iterations: int = 8
+
+# Token estimation
+token_estimate_ratio: int = 4            # Chars-per-token (rough, cs/en)
+```
+
+All handlers (foreground, background, respond, plan, synthesize) use:
+- `estimate_tokens()` from `app.config` — single implementation
+- `settings.default_output_tokens` — no hardcoded `4096`
+- `settings.gpu_vram_token_boundary` — no hardcoded `40_000`
+- `clamp_tier()` from `app.llm.provider` — unified tier clamping
+- `extract_tool_calls()` from `app.tools.ollama_parsing` — unified Ollama workaround
+
 ### 25.2 Backward compatibility guarantees
 
 1. **API endpointy identické** — Kotlin server nepotřebuje žádné změny

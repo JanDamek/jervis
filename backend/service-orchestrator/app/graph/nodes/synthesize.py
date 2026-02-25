@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from app.config import settings
 from app.context.retention_policy import extract_kb_facts, should_persist_to_kb
 from app.context.summarizer import summarize_agent_output
 from app.graph.nodes._helpers import llm_with_cloud_fallback
@@ -104,7 +105,7 @@ async def synthesize(state: dict) -> dict:
             state=state,
             messages=messages,
             task_type="synthesis",
-            max_tokens=4096,
+            max_tokens=settings.default_output_tokens,
         )
         synthesized = response.choices[0].message.content or combined
     except Exception as exc:
@@ -198,7 +199,7 @@ async def _translate(text: str, target_lang: str, state: dict) -> str:
             state=state,
             messages=messages,
             task_type="translation",
-            max_tokens=4096,
+            max_tokens=settings.default_output_tokens,
         )
         return response.choices[0].message.content or text
     except Exception as exc:

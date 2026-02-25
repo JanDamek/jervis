@@ -53,7 +53,7 @@ def _estimate_and_select_tier(
     """
     message_tokens = sum(estimate_tokens(str(m)) for m in messages)
     tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
-    output_tokens = 4096
+    output_tokens = settings.default_output_tokens
     estimated = message_tokens + tools_tokens + output_tokens
     tier = _escalation_policy.select_local_tier(estimated)
     # Clamp to BG max tier
@@ -194,7 +194,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             response = await llm_provider.completion(
                 messages=messages,
                 tier=tier,
-                max_tokens=4096,
+                max_tokens=settings.default_output_tokens,
                 temperature=0.2,
                 tools=ALL_BACKGROUND_TOOLS,
             )
@@ -334,11 +334,11 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "role": "system",
                 "content": "Provide your final summary now. Do not call more tools.",
             }]
-            final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + 4096
+            final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + settings.default_output_tokens
             final_resp = await llm_provider.completion(
                 messages=final_messages,
                 tier=tracker.current_tier,
-                max_tokens=4096,
+                max_tokens=settings.default_output_tokens,
                 temperature=0.2,
             )
             final_answer = final_resp.choices[0].message.content or ""

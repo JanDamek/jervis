@@ -235,13 +235,15 @@ class EscalationPolicy:
     def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
         """Always returns a local tier based on context size.
 
-        Qwen3 supports up to 256k context. P40 GPU VRAM fits 40k tokens
+        Qwen3 supports up to 256k context. P40 GPU VRAM fits ~40k tokens
         for 30b model (~17GB weights + ~4GB KV cache < 24GB VRAM).
-        Above 40k spills to CPU RAM, still works at reduced speed (~7-12 tok/s).
+        Above that spills to CPU RAM, still works at reduced speed (~7-12 tok/s).
+        Boundary is configurable via gpu_vram_token_boundary setting.
         """
+        vram_boundary = settings.gpu_vram_token_boundary
         if context_tokens > 128_000:
             return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
-        if context_tokens > 40_000:
+        if context_tokens > vram_boundary:
             return ModelTier.LOCAL_XLARGE   # 128k — CPU RAM spill
         if context_tokens > 32_000:
             return ModelTier.LOCAL_LARGE    # 40k — GPU VRAM limit

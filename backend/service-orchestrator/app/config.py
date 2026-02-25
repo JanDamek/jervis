@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     # Background handler constants
     background_max_iterations: int = 15      # Max agentic loop iterations for background
 
+    # LLM token budgets
+    default_output_tokens: int = 4096        # Output token reserve for tier estimation
+    gpu_vram_token_boundary: int = 40_000    # P40 VRAM limit for 30b model + KV cache
+
     # Graph node constants (respond, plan, design)
     respond_max_iterations: int = 8          # Max tool iterations in respond node
     respond_min_answer_chars: int = 40       # W-13: Minimum acceptable answer length

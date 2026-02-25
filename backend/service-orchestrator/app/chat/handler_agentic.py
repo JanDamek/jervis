@@ -41,8 +41,7 @@ def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[i
     """Estimate token count and select appropriate tier."""
     message_tokens = sum(estimate_tokens(str(m)) for m in messages)
     tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
-    output_tokens = 4096
-    estimated = message_tokens + tools_tokens + output_tokens
+    estimated = message_tokens + tools_tokens + settings.default_output_tokens
     tier = llm_provider.escalation.select_local_tier(estimated)
     return estimated, clamp_tier(tier)
 
@@ -94,7 +93,7 @@ async def run_agentic_loop(
         estimated, tier = estimate_and_select_tier(messages, selected_tools)
         logger.info("Chat: estimated_tokens=%d → tier=%s", estimated, tier.value)
 
-        if iteration == 0 and estimated > 40_000:
+        if iteration == 0 and estimated > settings.gpu_vram_token_boundary:
             yield ChatStreamEvent(type="thinking", content="Dlouhá zpráva — zpracování potrvá déle...")
 
         response = await call_llm(messages=messages, tier=tier, tools=selected_tools)

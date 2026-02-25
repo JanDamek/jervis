@@ -325,7 +325,7 @@ async def _plan_tracker_ops(state: dict, task: CodingTask, context_block: str) -
     ]
 
     response = await llm_with_cloud_fallback(
-        state=state, messages=messages, task_type="planning", max_tokens=4096,
+        state=state, messages=messages, task_type="planning", max_tokens=settings.default_output_tokens,
     )
     content = response.choices[0].message.content
     parsed = parse_json_response(content)

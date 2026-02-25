@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
-from app.config import settings
+from app.config import settings, estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +56,6 @@ MAX_SUMMARY_BLOCKS = settings.max_summary_blocks
 COMPRESS_THRESHOLD = settings.compress_threshold
 COMPRESS_MAX_RETRIES = settings.compress_max_retries
 MAX_TOOL_RESULT_IN_MSG = settings.max_tool_result_in_msg
-
-# Token estimation: chars/N is rough but works for mixed cs/en text.
-TOKEN_ESTIMATE_RATIO = settings.token_estimate_ratio
 
 
 # ---------------------------------------------------------------------------
@@ -109,15 +106,6 @@ def _is_error_message(content: str) -> bool:
     if "llm_call_failed" in cl or "operation not allowed" in cl:
         return True
     return False
-
-
-# ---------------------------------------------------------------------------
-# Token estimation
-# ---------------------------------------------------------------------------
-
-def estimate_tokens(text: str) -> int:
-    """Estimate token count. chars/4 is rough but consistent."""
-    return max(1, len(text) // TOKEN_ESTIMATE_RATIO)
 
 
 # ---------------------------------------------------------------------------

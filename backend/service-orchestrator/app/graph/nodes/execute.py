@@ -89,7 +89,7 @@ async def _execute_respond_step(
     ]
 
     response = await llm_with_cloud_fallback(
-        state=state, messages=messages, task_type="analysis", max_tokens=4096,
+        state=state, messages=messages, task_type="analysis", max_tokens=settings.default_output_tokens,
     )
     answer = response.choices[0].message.content
 
