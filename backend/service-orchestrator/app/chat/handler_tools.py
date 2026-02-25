@@ -1,89 +1,23 @@
-"""Tool execution, parsing, and resolution for chat handler.
+"""Tool execution, descriptions, and resolution for chat handler.
 
 Responsibilities:
-- Extract tool calls from LLM response (incl. Ollama JSON workaround)
 - Describe tool calls for thinking events
 - Execute tools (base + chat-specific via strategy map)
 - Resolve switch_context (name → ID, ambiguity handling)
 - Resolve client/project names from cached runtime context
+
+Tool call parsing: app.tools.ollama_parsing (shared with background handler).
 """
 from __future__ import annotations
 
 import json
 import logging
-import re
-import uuid
 
 from app.chat.system_prompt import RuntimeContext
 from app.tools.executor import execute_tool
+from app.tools.ollama_parsing import extract_tool_calls  # noqa: F401 — re-exported for callers
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Tool call extraction (Ollama JSON workaround)
-# ---------------------------------------------------------------------------
-
-
-class _ToolCall:
-    """Lightweight tool call object for Ollama JSON workaround."""
-
-    def __init__(self, tc_dict: dict):
-        self.id = tc_dict.get("id", str(uuid.uuid4())[:8])
-        self.type = tc_dict.get("type", "function")
-
-        class Function:
-            def __init__(self, f_dict):
-                self.name = f_dict.get("name", "")
-                self.arguments = json.dumps(f_dict.get("arguments", {}))
-        self.function = Function(tc_dict.get("function", {}))
-
-
-def extract_tool_calls(message) -> tuple[list, str | None]:
-    """Extract tool calls from LLM response, including Ollama JSON workaround.
-
-    Returns (tool_calls, remaining_text).
-
-    Handles:
-    1. Standard litellm tool_calls field
-    2. Ollama JSON-in-content {"tool_calls": [...]}
-    3. JSON embedded in markdown ```json blocks
-    4. Pure text (no tools)
-    """
-    tool_calls = getattr(message, "tool_calls", None)
-    if tool_calls:
-        return tool_calls, message.content
-
-    if not message.content:
-        return [], None
-
-    content = message.content.strip()
-
-    # Pure JSON {"tool_calls": [...]}
-    try:
-        parsed = json.loads(content)
-        if isinstance(parsed, dict) and "tool_calls" in parsed:
-            logger.info("Chat: parsing tool_calls from JSON content (Ollama workaround)")
-            calls = [_ToolCall(tc) for tc in parsed["tool_calls"]]
-            logger.info("Chat: extracted %d tool calls from JSON", len(calls))
-            return calls, None
-    except (json.JSONDecodeError, KeyError, TypeError):
-        pass
-
-    # JSON in markdown ```json block
-    md_match = re.search(r'```(?:json)?\s*(\{.*?"tool_calls".*?\})\s*```', content, re.DOTALL)
-    if md_match:
-        try:
-            parsed = json.loads(md_match.group(1))
-            remaining = content[:md_match.start()] + content[md_match.end():]
-            remaining = remaining.strip() or None
-            calls = [_ToolCall(tc) for tc in parsed["tool_calls"]]
-            logger.info("Chat: extracted %d tool calls from markdown JSON block", len(calls))
-            return calls, remaining
-        except (json.JSONDecodeError, KeyError, TypeError):
-            pass
-
-    return [], content
 
 
 # ---------------------------------------------------------------------------
@@ -293,17 +227,26 @@ async def _execute_chat_specific_tool(
     active_project_id: str | None,
 ) -> str:
     """Execute chat-specific tools via Kotlin internal API using strategy map."""
+    import asyncio
+    from app.tools.executor import _TOOL_EXECUTION_TIMEOUT_S
+
     try:
         from app.tools.kotlin_client import kotlin_client
 
         handler = _TOOL_HANDLER_MAP.get(tool_name)
-        if handler:
-            return await handler(arguments, active_client_id, active_project_id, kotlin_client)
-        return f"Unknown chat tool: {tool_name}"
+        if not handler:
+            return f"Unknown chat tool: {tool_name}"
+        return await asyncio.wait_for(
+            handler(arguments, active_client_id, active_project_id, kotlin_client),
+            timeout=_TOOL_EXECUTION_TIMEOUT_S,
+        )
 
+    except asyncio.TimeoutError:
+        logger.warning("Chat tool %s timed out after %ds", tool_name, _TOOL_EXECUTION_TIMEOUT_S)
+        return f"Error: Tool '{tool_name}' timed out after {_TOOL_EXECUTION_TIMEOUT_S}s."
     except Exception as e:
         logger.warning("Chat tool %s failed: %s", tool_name, e)
-        return f"Tool error: {e}"
+        return f"Error executing {tool_name}: {e}"
 
 
 # ---------------------------------------------------------------------------

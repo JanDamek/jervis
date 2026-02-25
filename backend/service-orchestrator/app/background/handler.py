@@ -25,9 +25,10 @@ from app.background.escalation import EscalationTracker, needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
 from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
-from app.models import ModelTier, OrchestrateRequest, ProjectRules
+from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
+from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     )
 
     # --- Build system prompt for background ---
-    system_prompt = _build_background_prompt(request)
+    system_prompt = await _build_background_prompt(request)
 
     # --- Load conversation context if available ---
     messages: list[dict] = [
@@ -198,7 +199,6 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 max_tokens=4096,
                 temperature=0.2,
                 tools=ALL_BACKGROUND_TOOLS,
-                extra_headers={"X-Priority": "NORMAL"},
             )
         except Exception as e:
             logger.warning("LLM call failed: %s (tier=%s)", e, tier.value)
@@ -221,12 +221,8 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         choice = response.choices[0]
         message_obj = choice.message
 
-        # Check for tool calls
-        tool_calls = getattr(message_obj, "tool_calls", None)
-
-        # Ollama JSON workaround
-        if not tool_calls and message_obj.content:
-            tool_calls = _parse_ollama_tool_calls(message_obj)
+        # Check for tool calls (shared Ollama JSON workaround)
+        tool_calls, _remaining = extract_tool_calls(message_obj)
 
         if not tool_calls:
             # Final answer
@@ -264,12 +260,21 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
             try:
                 if tool_name == "dispatch_coding_agent":
-                    # Special handling: dispatch via chat tool handler
-                    from app.chat.handler_tools import execute_chat_tool as _execute_chat_tool
-                    result = await asyncio.wait_for(
-                        _execute_chat_tool(tool_name, arguments, client_id, project_id),
-                        timeout=_TOOL_EXECUTION_TIMEOUT_S,
-                    )
+                    # Dispatch coding agent directly via kotlin_client
+                    effective_client = arguments.get("client_id") or client_id
+                    effective_project = arguments.get("project_id") or project_id
+                    if not effective_client or not effective_project:
+                        result = "Chyba: client_id a project_id jsou povinné pro dispatch coding agenta."
+                    else:
+                        dispatch_result = await asyncio.wait_for(
+                            kotlin_client.dispatch_coding_agent(
+                                task_description=arguments.get("task_description", ""),
+                                client_id=effective_client,
+                                project_id=effective_project,
+                            ),
+                            timeout=_TOOL_EXECUTION_TIMEOUT_S,
+                        )
+                        result = f"Coding agent dispatched: {dispatch_result}"
                     step_results.append({
                         "step_index": total_tool_calls,
                         "success": "dispatched" in result.lower(),
@@ -390,7 +395,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_background_prompt(request: OrchestrateRequest) -> str:
+async def _build_background_prompt(request: OrchestrateRequest) -> str:
     """Build system prompt for background tasks."""
     parts = [
         "Jsi Jervis, AI asistent pracující na pozadí bez přímé interakce s uživatelem.",
@@ -423,62 +428,16 @@ def _build_background_prompt(request: OrchestrateRequest) -> str:
         if rules_info:
             parts.append(f"\nProject rules: {', '.join(rules_info)}")
 
-    # Add guidelines (loaded from cache — non-blocking)
+    # Add guidelines via proper resolver (cached, non-blocking)
     try:
-        from app.context.guidelines_resolver import _guidelines_cache
-        cache_key = f"{request.client_id or 'null'}:{request.project_id or 'null'}"
-        cached = _guidelines_cache.get(cache_key)
-        if cached:
-            import time as _time
-            data, expiry = cached
-            if _time.time() < expiry:
-                from app.context.guidelines_resolver import format_guidelines_for_prompt
-                gl_text = format_guidelines_for_prompt(data)
-                if gl_text:
-                    parts.append(f"\n{gl_text}")
+        from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_prompt
+        guidelines = await resolve_guidelines(request.client_id, request.project_id)
+        gl_text = format_guidelines_for_prompt(guidelines)
+        if gl_text:
+            parts.append(f"\n{gl_text}")
     except Exception as e:
         logger.debug("Guidelines injection failed for background task: %s", e)
 
     return "\n".join(parts)
 
 
-def _parse_ollama_tool_calls(message):
-    """Parse Ollama JSON tool_calls from content (same as chat handler)."""
-    try:
-        content_json = json.loads(message.content.strip())
-        if isinstance(content_json, dict) and "tool_calls" in content_json:
-            raw_calls = content_json["tool_calls"]
-            if not isinstance(raw_calls, list):
-                return None
-
-            class _TC:
-                def __init__(self, tc):
-                    if not isinstance(tc, dict):
-                        raise ValueError("not dict")
-                    self.id = tc.get("id", f"call_{uuid.uuid4().hex[:8]}")
-                    self.type = tc.get("type", "function")
-                    func = tc.get("function")
-                    if not isinstance(func, dict) or "name" not in func:
-                        raise ValueError("invalid function")
-
-                    class _F:
-                        def __init__(self, f):
-                            self.name = f["name"]
-                            args = f.get("arguments", {})
-                            self.arguments = json.dumps(args) if isinstance(args, dict) else str(args)
-
-                    self.function = _F(func)
-
-            validated = []
-            for tc in raw_calls:
-                try:
-                    validated.append(_TC(tc))
-                except (ValueError, KeyError, TypeError):
-                    pass
-
-            if validated:
-                message.content = None
-                return validated
-    except (json.JSONDecodeError, KeyError, TypeError):
-        pass
-    return None
