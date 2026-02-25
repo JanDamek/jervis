@@ -82,7 +82,10 @@ class WikiContinuousIndexer(
         try {
             // Fetch complete page details from Confluence API
             val connection = connectionService.findById(doc.connectionDocumentId)
-                ?: throw IllegalStateException("Connection ${doc.connectionDocumentId} not found")
+            if (connection == null) {
+                logger.warn { "Connection ${doc.connectionDocumentId} not found for wiki page ${doc.pageId} — skipping (stale reference)" }
+                return
+            }
 
             val pageRequest =
                 ConfluencePageRequest(

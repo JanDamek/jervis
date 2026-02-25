@@ -86,7 +86,10 @@ class BugTrackerContinuousIndexer(
         }
 
         val connection = connectionService.findById(doc.connectionId)
-            ?: throw IllegalStateException("Connection ${doc.connectionId} not found")
+        if (connection == null) {
+            logger.warn { "Connection ${doc.connectionId} not found for issue ${doc.issueKey} — skipping (stale reference)" }
+            return
+        }
 
         when (connection.provider) {
             ProviderEnum.GITHUB -> indexGitHubIssue(doc, connection)
