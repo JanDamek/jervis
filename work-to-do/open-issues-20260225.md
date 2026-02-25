@@ -7,23 +7,13 @@
 
 ## A. Orchestrátor
 
-### A4. Notifikace selhání úlohy jsou nepoužitelné (HIGH)
+### ~~A4. Notifikace selhání úlohy jsou nepoužitelné (FIXED)~~
 
-Dialog "Úloha vyžaduje odpověď" zobrazí jen `"Úloha na pozadí selhala: MEETING_PROCESSING"` — bez
-kontextu co se stalo, bez error detailu, bez akčních tlačítek. Push notifikace stejně neužitečná.
-Uživatel nemůže ani odpovědět, ani schválit, ani retry.
+Opraveno v commitu `3d61d6d` — error mode, lidské labels, retry/discard tlačítka.
 
-5 dílčích bugů: chybí error message z Pythonu, špatný dialog mode, chybí lidské názvy task typů,
-push text nerozlišuje error/approval/clarification, chybí Retry/Zahodit tlačítka.
+### ~~A5. ImportError: `_TIER_INDEX` crash v background handleru (FIXED)~~
 
-**Detail:** `work-to-do/notification-quality-bug-20260225.md`
-
-### A5. ImportError: `_TIER_INDEX` crash v background handleru (FIXED)
-
-`handler.py:60` importoval `_TIER_INDEX` z `handler_agentic.py`, který byl refaktorem přesunut do
-`provider.py`. Způsobovalo crash VŠECH background tasků.
-
-**Fix:** Nahrazeno `clamp_tier()` z `provider.py` — už nasazeno.
+Nahrazeno `clamp_tier()` z `provider.py` — nasazeno.
 
 ### A2. Halucinované Jira issues v brain projektu (MEDIUM)
 
@@ -34,10 +24,8 @@ Rate limiting pro search tools je opravený (max 3× za task), ale halucinované
 
 ### A3. WORKAROUND: Ollama tool_calls parsing (LOW)
 
-`respond.py:282` — Ollama `qwen3-coder-tool:30b` nepodporuje nativní tool_calls, tak se
-ručně parsuje JSON z content fieldu. Workaround, ne bug — přehodnotit při upgradu modelu.
-
-**Soubor**: `backend/service-orchestrator/app/graph/nodes/respond.py`
+Respond.py nyní používá sdílený `extract_tool_calls()` z `ollama_parsing.py`.
+Workaround zůstává — přehodnotit při upgradu modelu na verzi s nativními tool_calls.
 
 ---
 
@@ -52,22 +40,19 @@ spotřebu CPU/RAM podů.
 
 ---
 
-## D. Dokumentace
+## ~~D. Dokumentace~~
 
-### D1. Epic plán není v repo (MEDIUM)
+### ~~D1. Epic plán není v repo (FIXED)~~
 
-`docs/epic-plan-autonomous.md` je jen stub ("Kompletní EPIC plán je uložen v Claude chat kontextu").
-Plán by měl být verzovaný v repo.
-
-**Řešení**: Zapsat plný EPIC plán z Claude session do souboru.
+Kompletní EPIC plán zapsán do `docs/epic-plan-autonomous.md` (335 řádků).
 
 ---
 
 ## Priorita
 
-1. **A4** — Notifikace selhání úlohy — nepoužitelné (HIGH)
-2. **A2** — Ruční cleanup halucinovaných Jira issues JI-1 až JI-15
-3. **D1** — Epic plán do repo
-4. **C1** — Metrics server
-5. **A3** — Ollama tool_calls workaround (čeká na model upgrade)
-6. ~~**A5**~~ — _TIER_INDEX crash (FIXED, nasazeno)
+1. **A2** — Ruční cleanup halucinovaných Jira issues JI-1 až JI-15
+2. **C1** — Metrics server
+3. **A3** — Ollama tool_calls workaround (čeká na model upgrade)
+4. ~~**A4**~~ — FIXED
+5. ~~**A5**~~ — FIXED
+6. ~~**D1**~~ — FIXED
