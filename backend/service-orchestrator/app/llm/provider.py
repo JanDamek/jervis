@@ -339,6 +339,42 @@ class LLMProvider:
                 config, messages, temperature, max_tokens, extra_headers,
             )
 
+    @staticmethod
+    async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:
+        """Call LLM function with retry for transient Ollama errors.
+
+        Retries on: connection errors, "Operation not allowed", 503/429 status.
+        Uses exponential backoff: 2s, 4s.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1 + max_retries):
+            try:
+                return await fn(**kwargs)
+            except (OSError, ConnectionError) as e:
+                last_exc = e
+                logger.warning("LLM connection error (attempt %d/%d, model=%s): %s",
+                               attempt + 1, 1 + max_retries, model, e)
+            except Exception as e:
+                err_str = str(e).lower()
+                retryable = (
+                    "operation not allowed" in err_str
+                    or "service unavailable" in err_str
+                    or "rate limit" in err_str
+                    or "503" in err_str
+                    or "429" in err_str
+                )
+                if not retryable or attempt >= max_retries:
+                    raise
+                last_exc = e
+                logger.warning("LLM transient error (attempt %d/%d, model=%s): %s",
+                               attempt + 1, 1 + max_retries, model, e)
+
+            delay = 2 ** (attempt + 1)
+            logger.info("LLM retry in %ds (model=%s)", delay, model)
+            await asyncio.sleep(delay)
+
+        raise last_exc  # type: ignore[misc]
+
     async def _streaming_completion(
         self,
         config: dict,
@@ -367,7 +403,7 @@ class LLMProvider:
 
         logger.info("LLM streaming call: model=%s headers=%s", config["model"], extra_headers or {})
 
-        response = await litellm.acompletion(**kwargs)
+        response = await self._call_with_retry(litellm.acompletion, kwargs, config["model"])
 
         # Accumulate streamed content with token-arrival timeout
         content_parts: list[str] = []
@@ -424,7 +460,7 @@ class LLMProvider:
         logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
         try:
             response = await asyncio.wait_for(
-                litellm.acompletion(**kwargs),
+                self._call_with_retry(litellm.acompletion, kwargs, config["model"]),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
