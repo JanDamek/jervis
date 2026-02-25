@@ -118,4 +118,18 @@ sealed class JervisEvent {
         val artifacts: List<String> = emptyList(),
         override val timestamp: String,
     ) : JervisEvent()
+
+    /**
+     * EPIC 5: Approval required event — emitted when an action needs user approval.
+     */
+    @Serializable
+    data class ApprovalRequired(
+        val clientId: String,
+        val taskId: String,
+        val action: String,
+        val preview: String,
+        val context: String = "",
+        val riskLevel: String = "MEDIUM",
+        override val timestamp: String,
+    ) : JervisEvent()
 }

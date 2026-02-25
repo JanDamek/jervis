@@ -156,15 +156,18 @@ class TaskService(
     }
 
     /**
-     * Get next BACKGROUND task (autonomous) ordered by createdAt (oldest first).
-     * Background tasks process in FIFO order (creation time).
+     * Get next BACKGROUND task ordered by priority score DESC, then createdAt ASC.
+     *
+     * EPIC 2 change: Background tasks now use priority-based scheduling instead of FIFO.
+     * Tasks with higher priorityScore are processed first. Tasks without a score
+     * (null priorityScore) are treated as priority 50 (default) and fall back to FIFO.
      *
      * @return Next BACKGROUND task to process, or null if no tasks
      */
     suspend fun getNextBackgroundTask(): TaskDocument? {
         val now = java.time.Instant.now()
         return taskRepository
-            .findByProcessingModeAndStateOrderByCreatedAtAsc(
+            .findByProcessingModeAndStateOrderByPriorityScoreDescCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.READY_FOR_GPU,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }

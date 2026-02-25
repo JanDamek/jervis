@@ -3,6 +3,10 @@ package com.jervis.knowledgebase.model
 /**
  * Result of full document ingestion with routing hints.
  * Contains summary and actionability flags for qualification routing.
+ *
+ * EPIC 2 extension: Added structured fields (actionType, estimatedComplexity, etc.)
+ * for autonomous pipeline routing. These are optional — when not provided by KB,
+ * they are inferred from existing fields by [ActionTypeInferrer].
  */
 data class FullIngestResult(
     val success: Boolean,
@@ -23,4 +27,16 @@ data class FullIngestResult(
     val isAssignedToMe: Boolean = false,
     val urgency: String = "normal", // "urgent" | "normal" | "low"
     val error: String? = null,
+
+    // --- EPIC 2: Enhanced qualifier output for autonomous pipeline ---
+    /** Typed action category (inferred from suggestedActions if not provided by KB). */
+    val actionType: String? = null, // ActionType enum name (CODE_FIX, CODE_REVIEW, etc.)
+    /** Estimated task complexity (inferred from suggestedActions if not provided by KB). */
+    val estimatedComplexity: String? = null, // EstimatedComplexity enum name (TRIVIAL, SIMPLE, etc.)
+    /** Recommended agent type: "coding", "orchestrator", "none". */
+    val suggestedAgent: String? = null,
+    /** Files likely affected by the change (paths relative to repo root). */
+    val affectedFiles: List<String> = emptyList(),
+    /** Related KB node IDs for context enrichment. */
+    val relatedKbNodes: List<String> = emptyList(),
 )

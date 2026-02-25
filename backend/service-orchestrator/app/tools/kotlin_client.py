@@ -260,14 +260,34 @@ class KotlinServerClient:
         task_description: str,
         client_id: str,
         project_id: str,
+        plan: dict | None = None,
+        guidelines_text: str | None = None,
+        review_checklist: list[str] | None = None,
     ) -> str:
-        """Dispatch coding agent via Kotlin internal API."""
+        """Dispatch coding agent via Kotlin internal API.
+
+        EPIC 2-S5: Enhanced with guidelines, plan, and review checklist injection.
+        These are appended to the task description so the coding agent sees them
+        in its workspace instructions.
+        """
         try:
+            # Build enhanced workspace instructions
+            workspace_instructions = task_description
+            if guidelines_text:
+                workspace_instructions += f"\n\n{guidelines_text}"
+            if plan:
+                from app.background.handler import _format_plan_for_context
+                plan_text = _format_plan_for_context(plan)
+                workspace_instructions += f"\n\n## Plan\n{plan_text}"
+            if review_checklist:
+                workspace_instructions += "\n\n## Review Checklist\n"
+                workspace_instructions += "\n".join(f"- [ ] {item}" for item in review_checklist)
+
             client = await self._get_client()
             resp = await client.post(
                 "/internal/dispatch-coding-agent",
                 json={
-                    "taskDescription": task_description,
+                    "taskDescription": workspace_instructions,
                     "clientId": client_id,
                     "projectId": project_id,
                 },

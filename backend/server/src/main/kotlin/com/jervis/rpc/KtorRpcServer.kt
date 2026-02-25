@@ -976,6 +976,12 @@ class KtorRpcServer(
                                                 suggestedDeadline = r.suggestedDeadline,
                                                 isAssignedToMe = r.isAssignedToMe,
                                                 urgency = r.urgency,
+                                                // EPIC 2: Enhanced qualifier output
+                                                actionType = r.actionType,
+                                                estimatedComplexity = r.estimatedComplexity,
+                                                suggestedAgent = r.suggestedAgent,
+                                                affectedFiles = r.affectedFiles,
+                                                relatedKbNodes = r.relatedKbNodes,
                                             )
 
                                             // Emit progress for routing step via callback
@@ -1363,6 +1369,12 @@ data class KbCompletionResult(
     val suggestedDeadline: String? = null,
     val isAssignedToMe: Boolean = false,
     val urgency: String = "normal",
+    // EPIC 2: Enhanced qualifier output (optional — inferred if not provided by KB)
+    @kotlinx.serialization.SerialName("action_type") val actionType: String? = null,
+    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String? = null,
+    @kotlinx.serialization.SerialName("suggested_agent") val suggestedAgent: String? = null,
+    @kotlinx.serialization.SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
+    @kotlinx.serialization.SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
 )
 
 @kotlinx.serialization.Serializable
