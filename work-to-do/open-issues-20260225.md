@@ -29,14 +29,12 @@ Workaround zůstává — přehodnotit při upgradu modelu na verzi s nativními
 
 ---
 
-## C. Infrastruktura
+## ~~C. Infrastruktura~~
 
-### C1. Metrics server není nainstalovaný (LOW)
+### ~~C1. Metrics server není nainstalovaný (FIXED)~~
 
-`kubectl top pods` vrací "Metrics API not available". Bez metrics serveru nelze monitorovat
-spotřebu CPU/RAM podů.
-
-**Řešení**: Nainstalovat metrics-server do K8s clusteru.
+Nainstalován `metrics-server` z oficiálního release + `--kubelet-insecure-tls` pro self-signed cluster.
+`kubectl top pods/nodes` funguje.
 
 ---
 
@@ -51,8 +49,8 @@ Kompletní EPIC plán zapsán do `docs/epic-plan-autonomous.md` (335 řádků).
 ## Priorita
 
 1. **A2** — Ruční cleanup halucinovaných Jira issues JI-1 až JI-15
-2. **C1** — Metrics server
-3. **A3** — Ollama tool_calls workaround (čeká na model upgrade)
-4. ~~**A4**~~ — FIXED
-5. ~~**A5**~~ — FIXED
+2. **A3** — Ollama tool_calls workaround (čeká na model upgrade)
+3. ~~**A4**~~ — FIXED
+4. ~~**A5**~~ — FIXED
+5. ~~**C1**~~ — FIXED
 6. ~~**D1**~~ — FIXED
