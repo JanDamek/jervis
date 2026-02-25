@@ -520,11 +520,11 @@ Text: {text}
             direction = "OUTBOUND"
 
         aql = f"""
-        FOR v, e IN @minDepth..@maxDepth {direction}
+        FOR v, e, p IN @minDepth..@maxDepth {direction}
         @startNode
         KnowledgeEdges
         FILTER {filter_expr}
-        RETURN v
+        RETURN {{vertex: v, depth: LENGTH(p.edges)}}
         """
 
         logger.info("GRAPH_READ: QUERY aql=%s bind_vars=%s", aql.strip(), bind_vars)
@@ -533,11 +533,15 @@ Text: {text}
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             nodes = []
             for doc in cursor:
+                vertex = doc["vertex"] if isinstance(doc, dict) and "vertex" in doc else doc
+                depth = doc.get("depth", 1) if isinstance(doc, dict) else 1
+                props = dict(vertex) if isinstance(vertex, dict) else {}
+                props["_depth"] = depth
                 nodes.append(GraphNode(
-                    id=doc["_id"],
-                    key=doc["_key"],
-                    label=doc.get("label", ""),
-                    properties=doc
+                    id=vertex.get("_id", "") if isinstance(vertex, dict) else doc.get("_id", ""),
+                    key=vertex.get("_key", "") if isinstance(vertex, dict) else doc.get("_key", ""),
+                    label=vertex.get("label", "") if isinstance(vertex, dict) else doc.get("label", ""),
+                    properties=props
                 ))
             return nodes
 

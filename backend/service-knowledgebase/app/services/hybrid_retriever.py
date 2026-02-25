@@ -324,8 +324,8 @@ class HybridRetriever:
                         visited_chunks.add(chunk_id)
 
                         # Calculate graph score based on distance
-                        # Closer nodes get higher scores
-                        distance = 1  # TODO: Get actual distance from traversal
+                        # Closer nodes get higher scores (depth from traversal)
+                        distance = node.properties.get("_depth", 1)
                         distance_factor = 1.0 / (distance + 1)
                         graph_score = 0.8 * seed_priority_factor * distance_factor
 
