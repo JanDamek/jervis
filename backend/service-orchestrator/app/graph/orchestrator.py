@@ -306,48 +306,6 @@ def build_orchestrator_graph() -> StateGraph:
     return graph
 
 
-def build_delegation_graph() -> StateGraph:
-    """Build 7-node delegation graph (new multi-agent system).
-
-    Graph structure:
-        intake → evidence_pack → plan_delegations → execute_delegation
-            → route: more_delegations → execute_delegation (loop)
-            → route: synthesize → synthesize → finalize → END
-
-    Feature flag: settings.use_delegation_graph must be True.
-    """
-    graph = StateGraph(OrchestratorState)
-
-    # --- Add nodes ---
-    graph.add_node("intake", intake)                       # Reuse: classify + language detect
-    graph.add_node("evidence_pack", evidence_pack)         # Reuse: KB + tracker fetch
-    graph.add_node("plan_delegations", plan_delegations)   # NEW: LLM selects agents
-    graph.add_node("execute_delegation", execute_delegation)  # NEW: dispatch to agents
-    graph.add_node("synthesize", synthesize)                # NEW: merge results
-    graph.add_node("finalize", finalize)                   # Reuse: final summary
-
-    # --- Edges ---
-    graph.set_entry_point("intake")
-    graph.add_edge("intake", "evidence_pack")
-    graph.add_edge("evidence_pack", "plan_delegations")
-    graph.add_edge("plan_delegations", "execute_delegation")
-
-    # After execution: loop back if more delegations, else synthesize
-    graph.add_conditional_edges(
-        "execute_delegation",
-        _route_after_execution,
-        {
-            "execute_delegation": "execute_delegation",
-            "synthesize": "synthesize",
-        },
-    )
-
-    graph.add_edge("synthesize", "finalize")
-    graph.add_edge("finalize", END)
-
-    return graph
-
-
 def _route_after_execution(state: dict) -> str:
     """Route after execute_delegation node.
 

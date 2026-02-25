@@ -1,14 +1,16 @@
 """FastAPI application – Python Orchestrator Service.
 
-Accepts requests from Kotlin server, runs LangGraph orchestration,
-pushes progress via callbacks, handles approval flow via LangGraph interrupt().
+Accepts requests from Kotlin server, runs orchestration,
+pushes progress via callbacks.
 
-Communication architecture (push-based, no SSE):
+Communication architecture (push-based):
 - Kotlin → Python: POST /orchestrate/v2 (fire-and-forget, returns thread_id)
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress, real-time)
-- Python → Kotlin: POST /internal/orchestrator-status (completion/error/interrupt)
-- Kotlin → Python: POST /approve/{thread_id} (fire-and-forget, resumes graph)
+- Python → Kotlin: POST /internal/orchestrator-status (completion/error)
 - Kotlin → Python: GET /status/{thread_id} (safety-net fallback polling, 60s)
+
+Foreground chat:
+- Kotlin → Python: POST /chat (SSE streaming)
 
 Python pushes progress and status changes to Kotlin via HTTP callbacks.
 Kotlin broadcasts to UI via Flow-based event subscriptions.
@@ -27,7 +29,6 @@ import atexit
 import json
 import logging
 import signal
-import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -35,26 +36,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.graph.orchestrator import (
-    run_orchestration,
-    run_orchestration_streaming,
-    resume_orchestration,
-    resume_orchestration_streaming,
     get_graph_state,
     init_checkpointer,
     close_checkpointer,
-)
-from app.models import (
-    ApprovalResponse,
-    OrchestrateRequest,
-    OrchestrateResponse,
-    StepResult,
 )
 from app.context.context_store import context_store
 from app.context.distributed_lock import distributed_lock, task_checkpoint_lock
 from app.context.session_memory import session_memory_store
 from app.monitoring.delegation_metrics import metrics_collector
-from app.llm.provider import llm_provider
-from app.models import ModelTier
 from app.tools.kotlin_client import kotlin_client
 from app.chat.context import chat_context_assembler
 from app.chat.router import router as chat_router
@@ -246,55 +235,9 @@ async def lifespan(app: FastAPI):
     logger.info("Orchestrator stopped")
 
 
-def _register_agents() -> None:
-    """Register all specialist agents in the AgentRegistry.
-
-    Called during lifespan startup when use_delegation_graph is enabled.
-    Each agent is instantiated and registered with the singleton registry.
-    """
-    from app.agents.registry import AgentRegistry
-    from app.agents.legacy_agent import LegacyAgent
-
-    registry = AgentRegistry.instance()
-
-    # Always register LegacyAgent as fallback
-    registry.register(LegacyAgent())
-
-    if settings.use_specialist_agents:
-        from app.agents.specialists import (
-            CodingAgent, GitAgent, CodeReviewAgent, TestAgent, ResearchAgent,
-            IssueTrackerAgent, WikiAgent, DocumentationAgent, DevOpsAgent,
-            ProjectManagementAgent, SecurityAgent,
-            CommunicationAgent, EmailAgent, CalendarAgent, AdministrativeAgent,
-            LegalAgent, FinancialAgent, PersonalAgent, LearningAgent,
-        )
-
-        agents = [
-            # Tier 1 — Core
-            CodingAgent(), GitAgent(), CodeReviewAgent(), TestAgent(), ResearchAgent(),
-            # Tier 2 — DevOps & Project Management
-            IssueTrackerAgent(), WikiAgent(), DocumentationAgent(), DevOpsAgent(),
-            ProjectManagementAgent(), SecurityAgent(),
-            # Tier 3 — Communication & Administrative
-            CommunicationAgent(), EmailAgent(), CalendarAgent(), AdministrativeAgent(),
-            # Tier 4 — Business Support
-            LegalAgent(), FinancialAgent(), PersonalAgent(), LearningAgent(),
-        ]
-
-        for agent in agents:
-            registry.register(agent)
-
-        logger.info(
-            "Registered %d specialist agents + LegacyAgent (total: %d)",
-            len(agents), len(agents) + 1,
-        )
-    else:
-        logger.info("Specialist agents disabled — using LegacyAgent only")
-
-
 app = FastAPI(
     title="Jervis Orchestrator",
-    description="Python orchestrator service (LangGraph) for Jervis AI Assistant",
+    description="Python orchestrator service for Jervis AI Assistant",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -456,224 +399,6 @@ async def status(thread_id: str):
     return {"status": "unknown", "thread_id": thread_id}
 
 
-@app.post("/orchestrate")
-async def orchestrate(request: OrchestrateRequest):
-    """Start orchestration workflow (blocking).
-
-    Called by Kotlin server when a user sends a coding task.
-    Returns final result after all steps complete.
-
-    If the graph hits an interrupt (approval required), the response
-    will have status="interrupted" with the approval request details.
-    The Kotlin server should then present the approval to the user
-    and call POST /approve/{thread_id} with the response.
-
-    Returns 429 if another orchestration is already running.
-    """
-    if _orchestration_semaphore.locked():
-        raise HTTPException(
-            status_code=429,
-            detail="Orchestrator busy – another orchestration is running",
-        )
-
-    try:
-        async with _orchestration_semaphore:
-            # Use task_id as thread_id for persistent state across messages
-            thread_id = f"thread-{request.task_id}"
-            final_state = await run_orchestration(request, thread_id=thread_id)
-
-            # Check if graph was interrupted (approval required)
-            graph_state = await get_graph_state(thread_id)
-            if graph_state and graph_state.next:
-                # Graph is paused at an interrupt – extract interrupt value
-                interrupt_data = None
-                if graph_state.tasks:
-                    for task in graph_state.tasks:
-                        if hasattr(task, "interrupts") and task.interrupts:
-                            interrupt_data = task.interrupts[0].value
-                            break
-
-                return {
-                    "task_id": request.task_id,
-                    "status": "interrupted",
-                    "thread_id": thread_id,
-                    "interrupt": interrupt_data,
-                    "summary": "Waiting for user approval",
-                }
-
-            step_results = [
-                StepResult(**r) for r in final_state.get("step_results", [])
-            ]
-
-            return OrchestrateResponse(
-                task_id=request.task_id,
-                success=all(r.success for r in step_results) if step_results else False,
-                summary=final_state.get("final_result", "No result"),
-                branch=final_state.get("branch"),
-                artifacts=final_state.get("artifacts", []),
-                step_results=step_results,
-                thread_id=thread_id,
-            ).model_dump()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Orchestration failed for task %s", request.task_id)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Human-readable node messages for progress reporting
-_NODE_MESSAGES = {
-    # Legacy graph nodes
-    "intake": "Analyzing task intent...",
-    "evidence_pack": "Gathering evidence from KB...",
-    "respond": "Generating response...",
-    "plan": "Planning task execution...",
-    "select_goal": "Selecting next goal...",
-    "plan_steps": "Planning execution steps...",
-    "execute_step": "Executing step...",
-    "evaluate": "Evaluating results...",
-    "advance_step": "Moving to next step...",
-    "advance_goal": "Moving to next goal...",
-    "git_operations": "Handling git operations...",
-    "finalize": "Generating final report...",
-    "plan_epic": "Planning epic execution waves...",
-    "design": "Designing implementation structure...",
-    # Delegation graph nodes (multi-agent system)
-    "plan_delegations": "Planning agent delegations...",
-    "execute_delegation": "Executing agent delegations...",
-    "synthesize": "Synthesizing agent results...",
-    # Memory Agent nodes
-    "memory_load": "Loading memory context...",
-    "memory_flush": "Persisting memory...",
-}
-
-
-async def _run_and_push(
-    request: OrchestrateRequest,
-    thread_id: str,
-):
-    """Background task: run orchestration, push progress/status to Kotlin via callbacks.
-
-    Push-based communication (no SSE):
-    - Each node_start event is pushed to Kotlin via report_progress()
-    - Completion/error/interrupt is pushed via report_status_change()
-    - Kotlin broadcasts to UI via Flow-based event subscriptions
-
-    CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
-    to prevent blocking subsequent requests. Status pushing happens outside lock.
-    """
-    query_preview = str(request.query)[:100] if request.query else "NO_QUERY"
-    logger.info("ORCHESTRATION_START | thread_id=%s | task_id=%s | query=%s", thread_id, request.task_id, query_preview)
-    try:
-        # Acquire semaphore ONLY for graph execution — release immediately after
-        async with _orchestration_semaphore:
-            async for event in run_orchestration_streaming(request, thread_id):
-                # Push progress to Kotlin server on each node transition
-                if event.get("type") == "node_start":
-                    node = event.get("node", "")
-                    logger.info("ORCHESTRATION_NODE_START | thread_id=%s | node=%s | message=%s", thread_id, node, _NODE_MESSAGES.get(node, f"Running {node}..."))
-                    await kotlin_client.report_progress(
-                        task_id=request.task_id,
-                        client_id=request.client_id,
-                        node=node,
-                        message=_NODE_MESSAGES.get(node, f"Running {node}..."),
-                        goal_index=event.get("current_goal_index", 0),
-                        total_goals=event.get("total_goals", 0),
-                        step_index=event.get("current_step_index", 0),
-                        total_steps=event.get("total_steps", 0),
-                    )
-                elif event.get("type") == "node_end":
-                    node = event.get("node", "")
-                    logger.info("ORCHESTRATION_NODE_END | thread_id=%s | node=%s", thread_id, node)
-        # Semaphore RELEASED here! Other requests can now proceed.
-
-        # Handle completion/interrupt OUTSIDE semaphore lock
-        graph_state = await get_graph_state(thread_id)
-        if graph_state and graph_state.next:
-            interrupt_data = None
-            if graph_state.tasks:
-                for task in graph_state.tasks:
-                    if hasattr(task, "interrupts") and task.interrupts:
-                        interrupt_data = task.interrupts[0].value
-                        break
-            logger.info("ORCHESTRATION_INTERRUPTED | thread_id=%s | action=%s", thread_id, interrupt_data.get("action") if interrupt_data else "unknown")
-
-            # Push interrupted status to Kotlin
-            await kotlin_client.report_status_change(
-                task_id=request.task_id,
-                thread_id=thread_id,
-                status="interrupted",
-                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
-            )
-        else:
-            values = graph_state.values if graph_state else {}
-            final_result = values.get("final_result", "")
-            logger.info("ORCHESTRATION_DONE | thread_id=%s | result_len=%d | branch=%s | artifacts=%d",
-                       thread_id, len(final_result), values.get("branch", "none"), len(values.get("artifacts", [])))
-
-            # Push done status to Kotlin with final state
-            await kotlin_client.report_status_change(
-                task_id=request.task_id,
-                thread_id=thread_id,
-                status="done",
-                summary=final_result,
-                branch=values.get("branch"),
-                artifacts=values.get("artifacts", []),
-            )
-
-            # Fire-and-forget: compress chat history if needed
-            try:
-                await chat_context_assembler.maybe_compress(request.task_id)
-            except Exception as compress_err:
-                logger.warning("Chat compression failed for conversation %s: %s", request.task_id, compress_err)
-    except Exception as e:
-        logger.error("ORCHESTRATION_ERROR | thread_id=%s | error_type=%s | error=%s", thread_id, type(e).__name__, str(e))
-        logger.exception("Full exception traceback:")
-
-        # Push error status to Kotlin
-        await kotlin_client.report_status_change(
-            task_id=request.task_id,
-            thread_id=thread_id,
-            status="error",
-            error=str(e),
-        )
-    finally:
-        _active_tasks.pop(thread_id, None)
-        logger.info("ORCHESTRATION_CLEANUP | thread_id=%s | task_removed", thread_id)
-
-
-@app.post("/approve/{thread_id}")
-async def approve(thread_id: str, response: ApprovalResponse):
-    """Handle approval response from user and resume graph (fire-and-forget).
-
-    Called by Kotlin server when user approves/rejects a risky action.
-    Resumes the graph in background via asyncio.create_task.
-    Returns immediately – Kotlin polls GET /status/{thread_id} for result.
-    """
-    logger.info(
-        "Approval for thread %s: approved=%s reason=%s",
-        thread_id,
-        response.approved,
-        response.reason,
-    )
-
-    resume_value = {
-        "approved": response.approved,
-        "reason": response.reason,
-        "modification": response.modification,
-    }
-
-    # Convert chat history to dict for graph state update
-    chat_history_dict = response.chat_history.model_dump() if response.chat_history else None
-
-    # Fire-and-forget: resume in background, result polled via GET /status
-    task = asyncio.create_task(_resume_in_background(thread_id, resume_value, chat_history=chat_history_dict))
-    _active_tasks[thread_id] = task
-
-    return {"status": "resuming", "thread_id": thread_id}
-
-
 @app.post("/interrupt/{thread_id}")
 async def interrupt(thread_id: str):
     """Interrupt a running orchestration to allow higher-priority task to run.
@@ -723,119 +448,6 @@ async def cancel(thread_id: str):
         error="Orchestrace zrušena uživatelem",
     )
     return {"status": "cancelled"}
-
-
-async def _resume_in_background(thread_id: str, resume_value: dict, chat_history: dict | None = None):
-    """Background task: resume orchestration from interrupt with semaphore.
-
-    Uses streaming to push real-time progress to Kotlin (same as _run_and_stream).
-    After resumption completes, pushes status change to Kotlin.
-
-    CRITICAL: Semaphore is released IMMEDIATELY after graph execution completes
-    to prevent blocking subsequent requests. Status pushing happens outside lock.
-
-    Args:
-        chat_history: Fresh chat history from Kotlin, merged into graph state before resume
-                      to ensure the LLM sees the latest conversation context.
-    """
-    # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
-    parts = thread_id.split("-")
-    task_id = parts[1] if len(parts) >= 3 else ""
-    # task_id from thread_id is the MongoDB ObjectId — use it for progress
-    # Also try to get client_id from graph state
-    client_id = ""
-    try:
-        graph_state = await get_graph_state(thread_id)
-        if graph_state and graph_state.values:
-            task_data = graph_state.values.get("task", {})
-            task_id = task_data.get("id", task_id)
-            client_id = task_data.get("client_id", "")
-    except Exception as e:
-        logger.warning(
-            "Failed to extract task context from graph state for thread=%s: %s",
-            thread_id, e,
-        )
-
-    try:
-        # Acquire semaphore ONLY for graph execution — release immediately after
-        async with _orchestration_semaphore:
-            # Stream events to push progress to Kotlin in real-time
-            async for event in resume_orchestration_streaming(thread_id, resume_value, chat_history=chat_history):
-                # Push progress to Kotlin on each node transition
-                if event.get("type") == "node_start":
-                    node = event.get("node", "")
-                    await kotlin_client.report_progress(
-                        task_id=task_id,
-                        client_id=client_id,
-                        node=node,
-                        message=_NODE_MESSAGES.get(node, f"Running {node}..."),
-                        goal_index=event.get("current_goal_index", 0),
-                        total_goals=event.get("total_goals", 0),
-                        step_index=event.get("current_step_index", 0),
-                        total_steps=event.get("total_steps", 0),
-                    )
-
-            logger.info("Resume completed for thread %s", thread_id)
-        # Semaphore RELEASED here! Other requests can now proceed.
-
-        # Handle completion/interrupt OUTSIDE semaphore lock
-        graph_state = await get_graph_state(thread_id)
-
-        if graph_state and graph_state.next:
-            # Graph paused at interrupt again
-            interrupt_data = None
-            if graph_state.tasks:
-                for task in graph_state.tasks:
-                    if hasattr(task, "interrupts") and task.interrupts:
-                        interrupt_data = task.interrupts[0].value
-                        break
-
-            await kotlin_client.report_status_change(
-                task_id=task_id,
-                thread_id=thread_id,
-                status="interrupted",
-                interrupt_action=interrupt_data.get("action") if interrupt_data else None,
-                interrupt_description=interrupt_data.get("description") if interrupt_data else None,
-            )
-        else:
-            # Completed
-            values = graph_state.values if graph_state else {}
-            error = values.get("error")
-            if error:
-                await kotlin_client.report_status_change(
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    status="error",
-                    error=error,
-                )
-            else:
-                await kotlin_client.report_status_change(
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    status="done",
-                    summary=values.get("final_result"),
-                    branch=values.get("branch"),
-                    artifacts=values.get("artifacts", []),
-                )
-
-                # Fire-and-forget: compress chat history if needed
-                if task_id:
-                    try:
-                        await chat_context_assembler.maybe_compress(task_id)
-                    except Exception as compress_err:
-                        logger.warning("Chat compression failed for conversation %s: %s", task_id, compress_err)
-    except Exception as e:
-        logger.exception("Background resume failed for thread %s: %s", thread_id, e)
-
-        await kotlin_client.report_status_change(
-            task_id=task_id,
-            thread_id=thread_id,
-            status="error",
-            error=str(e),
-        )
-    finally:
-        _active_tasks.pop(thread_id, None)
-        logger.info("RESUME_CLEANUP | thread_id=%s | task_removed", thread_id)
 
 
 # --- Entry point ---
