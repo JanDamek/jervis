@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.config import foreground_headers, estimate_tokens, KB_TIMEOUT_FAST, KB_TIMEOUT_STANDARD
+from app.config import foreground_headers, estimate_tokens, KB_TIMEOUT_STANDARD
 from app.graph.nodes._helpers import parse_json_response
 from app.memory.lqm import LocalQuickMemory
 from app.memory.models import (
@@ -118,7 +118,7 @@ async def resume_affair(
     """Resume a parked affair.
 
     1. Check LQM hot cache (fast path)
-    2. Fallback: load from KB via semantic search
+    2. Load from KB via semantic search (cold path)
     3. Update status to ACTIVE in LQM
     """
     # Fast path: LQM
@@ -130,7 +130,7 @@ async def resume_affair(
         logger.info("Resumed affair from LQM: %s", affair.title)
         return affair
 
-    # Fallback: load from KB
+    # Cold path: load from KB
     try:
         affair = await _load_affair_from_kb(affair_id, kb_url, client_id, processing_mode)
         if affair:
@@ -186,19 +186,7 @@ async def load_affairs_from_kb(
     kb_url: str,
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
-    """Cold start: load ACTIVE+PARKED affairs from KB.
-
-    Tries dedicated endpoint first, falls back to semantic search.
-    """
-    # Try dedicated endpoint
-    try:
-        affairs = await _load_affairs_via_endpoint(client_id, project_id, kb_url)
-        if affairs is not None:
-            return affairs
-    except Exception as e:
-        logger.debug("Dedicated affairs endpoint not available: %s", e)
-
-    # Fallback: semantic search with kind=affair
+    """Cold start: load ACTIVE+PARKED affairs from KB via semantic search."""
     try:
         return await _load_affairs_via_search(client_id, kb_url, processing_mode)
     except Exception as e:
@@ -288,33 +276,12 @@ async def _load_affair_from_kb(
         return _chunk_to_affair(chunks[0], client_id)
 
 
-async def _load_affairs_via_endpoint(
-    client_id: str,
-    project_id: str | None,
-    kb_url: str,
-) -> list[Affair] | None:
-    """Try dedicated /api/v1/affairs endpoint."""
-    params = {"client_id": client_id, "status": "ACTIVE,PARKED"}
-    if project_id:
-        params["project_id"] = project_id
-
-    async with httpx.AsyncClient(timeout=KB_TIMEOUT_FAST) as client:
-        resp = await client.get(f"{kb_url}/api/v1/affairs", params=params)
-        if resp.status_code == 404:
-            return None  # Endpoint not yet deployed
-        if resp.status_code != 200:
-            return None
-
-        data = resp.json()
-        return [Affair(**a) for a in data.get("affairs", [])]
-
-
 async def _load_affairs_via_search(
     client_id: str,
     kb_url: str,
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
-    """Fallback: load affairs via semantic search with kind=affair."""
+    """Load affairs via semantic search with kind=affair."""
     headers = foreground_headers(processing_mode)
     async with httpx.AsyncClient(timeout=KB_TIMEOUT_STANDARD) as client:
         resp = await client.post(
