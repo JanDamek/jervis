@@ -59,6 +59,8 @@ class NotificationRpcImpl : INotificationService {
         interruptDescription: String? = null,
         isApproval: Boolean = false,
         projectId: String? = null,
+        isError: Boolean = false,
+        errorDetail: String? = null,
     ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
@@ -69,6 +71,8 @@ class NotificationRpcImpl : INotificationService {
             interruptDescription = interruptDescription,
             isApproval = isApproval,
             projectId = projectId,
+            isError = isError,
+            errorDetail = errorDetail,
         ))
     }
 

@@ -30,12 +30,22 @@ class UserTaskService(
         task: TaskDocument,
         reason: String,
         error: Throwable? = null,
+        errorMessage: String? = null,
         pendingQuestion: String? = null,
         questionContext: String? = null,
         interruptAction: String? = null,
         isApproval: Boolean = false,
     ) {
-        val title = pendingQuestion ?: "Úloha na pozadí selhala: ${task.type}"
+        val isError = pendingQuestion == null  // no question → it's a failure, not clarification
+        val taskTypeLabel = TASK_TYPE_LABELS[task.type] ?: task.type.name
+        val errorText = errorMessage ?: error?.message
+
+        val title = when {
+            pendingQuestion != null -> pendingQuestion
+            errorText != null -> "$taskTypeLabel selhalo: ${errorText.take(100)}"
+            else -> "$taskTypeLabel selhalo"
+        }
+
         val description =
             buildString {
                 if (pendingQuestion != null) {
@@ -50,9 +60,9 @@ class UserTaskService(
                     appendLine("Původní úloha:")
                     appendLine(task.content)
                 } else {
-                    appendLine("Úloha ${task.id} selhala ve stavu ${task.state}")
+                    appendLine("$taskTypeLabel selhalo")
                     appendLine("Důvod: $reason")
-                    error?.message?.let { appendLine("Chyba: $it") }
+                    errorText?.let { appendLine("Chyba: $it") }
                     appendLine()
                     appendLine("Obsah úlohy:")
                     appendLine(task.content)
@@ -71,7 +81,7 @@ class UserTaskService(
             )
         userTaskRepository.save(updatedTask)
 
-        // Notify client via kRPC stream (with approval metadata for push notifications)
+        // Notify client via kRPC stream
         notificationRpc.emitUserTaskCreated(
             clientId = task.clientId.toString(),
             taskId = task.id.toString(),
@@ -80,16 +90,31 @@ class UserTaskService(
             interruptDescription = pendingQuestion,
             isApproval = isApproval,
             projectId = task.projectId?.toString(),
+            isError = isError,
+            errorDetail = if (isError) description else null,
         )
 
         // Send push notifications to all platforms (broadcast — first responder wins)
         val activeCount = countActiveTasksByClient(task.clientId)
-        val pushTitle = if (isApproval) "Schválení vyžadováno" else "Nová úloha"
+        val pushTitle = when {
+            isError -> "Úloha selhala"
+            isApproval -> "Schválení vyžadováno"
+            else -> "Úloha potřebuje odpověď"
+        }
+        val pushBody = when {
+            isError -> "$taskTypeLabel: ${errorText?.take(80) ?: reason}"
+            else -> title
+        }
         val pushData = buildMap {
             put("taskId", task.id.toString())
-            put("type", if (isApproval) "approval" else "user_task")
+            put("type", when {
+                isError -> "error"
+                isApproval -> "approval"
+                else -> "user_task"
+            })
             interruptAction?.let { put("interruptAction", it) }
             put("isApproval", isApproval.toString())
+            put("isError", isError.toString())
             put("badgeCount", activeCount.toString())
         }
 
@@ -98,7 +123,7 @@ class UserTaskService(
             fcmPushService.sendPushNotification(
                 clientId = task.clientId.toString(),
                 title = pushTitle,
-                body = title,
+                body = pushBody,
                 data = pushData,
             )
         } catch (e: Exception) {
@@ -110,14 +135,30 @@ class UserTaskService(
             apnsPushService.sendPushNotification(
                 clientId = task.clientId.toString(),
                 title = pushTitle,
-                body = title,
+                body = pushBody,
                 data = pushData,
             )
         } catch (e: Exception) {
             logger.warn { "APNs push failed for task ${task.id}: ${e.message}" }
         }
 
-        logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason pendingQuestion=${pendingQuestion != null}" }
+        logger.info { "TASK_FAILED_ESCALATED: id=${task.id} reason=$reason isError=$isError pendingQuestion=${pendingQuestion != null}" }
+    }
+
+    companion object {
+        /** Human-readable Czech labels for task types. */
+        val TASK_TYPE_LABELS = mapOf(
+            com.jervis.dto.TaskTypeEnum.MEETING_PROCESSING to "Zpracování schůzky",
+            com.jervis.dto.TaskTypeEnum.EMAIL_PROCESSING to "Zpracování emailu",
+            com.jervis.dto.TaskTypeEnum.IDLE_REVIEW to "Pravidelný přehled",
+            com.jervis.dto.TaskTypeEnum.BUGTRACKER_PROCESSING to "Zpracování Jira issue",
+            com.jervis.dto.TaskTypeEnum.WIKI_PROCESSING to "Zpracování Confluence stránky",
+            com.jervis.dto.TaskTypeEnum.GIT_PROCESSING to "Zpracování Git repozitáře",
+            com.jervis.dto.TaskTypeEnum.LINK_PROCESSING to "Zpracování odkazu",
+            com.jervis.dto.TaskTypeEnum.USER_INPUT_PROCESSING to "Zpracování uživatelského vstupu",
+            com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK to "Naplánovaná úloha",
+            com.jervis.dto.TaskTypeEnum.USER_TASK to "Uživatelská úloha",
+        )
     }
 
     data class PagedTasks(

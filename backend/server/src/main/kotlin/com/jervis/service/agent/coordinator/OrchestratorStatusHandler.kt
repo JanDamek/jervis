@@ -279,6 +279,7 @@ class OrchestratorStatusHandler(
         userTaskService.failAndEscalateToUserTask(
             task = task,
             reason = "PYTHON_ORCHESTRATOR_ERROR",
+            errorMessage = errorMsg,
         )
         taskService.updateState(task, TaskStateEnum.ERROR)
 

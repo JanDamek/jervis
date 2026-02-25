@@ -1,5 +1,6 @@
 package com.jervis.ui.notification
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.events.JervisEvent
 import com.jervis.ui.design.JDestructiveButton
@@ -24,13 +26,16 @@ import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JTextField
 
 /**
- * In-app user task dialog — handles both approval and clarification tasks.
+ * In-app user task dialog — handles approval, clarification, and error tasks.
  *
  * **Approval mode** (event.isApproval == true):
  *   Shows interrupt action/description with Approve/Deny buttons.
  *   On deny, expands a text field for alternative instructions.
  *
- * **Clarification mode** (event.isApproval == false):
+ * **Error mode** (event.isError == true):
+ *   Shows error detail with Dismiss/Retry buttons. No text input.
+ *
+ * **Clarification mode** (event.isApproval == false, event.isError == false):
  *   Shows task title/description with a text field for the user's reply.
  *   Send button submits the reply, Dismiss closes without action.
  *
@@ -43,11 +48,27 @@ fun UserTaskNotificationDialog(
     onDeny: (taskId: String, reason: String) -> Unit,
     onReply: (taskId: String, reply: String) -> Unit,
     onDismiss: () -> Unit,
+    onRetry: (taskId: String) -> Unit = {},
+    onDiscard: (taskId: String) -> Unit = {},
 ) {
-    if (event.isApproval) {
-        ApprovalContent(event = event, onApprove = onApprove, onDeny = onDeny, onDismiss = onDismiss)
-    } else {
-        ClarificationContent(event = event, onReply = onReply, onDismiss = onDismiss)
+    when {
+        event.isError -> ErrorContent(
+            event = event,
+            onRetry = onRetry,
+            onDiscard = onDiscard,
+            onDismiss = onDismiss,
+        )
+        event.isApproval -> ApprovalContent(
+            event = event,
+            onApprove = onApprove,
+            onDeny = onDeny,
+            onDismiss = onDismiss,
+        )
+        else -> ClarificationContent(
+            event = event,
+            onReply = onReply,
+            onDismiss = onDismiss,
+        )
     }
 }
 
@@ -67,6 +88,84 @@ fun ApprovalNotificationDialog(
         onDeny = onDeny,
         onReply = { _, _ -> },
         onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun ErrorContent(
+    event: JervisEvent.UserTaskCreated,
+    onRetry: (taskId: String) -> Unit,
+    onDiscard: (taskId: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var showDetail by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = event.title,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            Column {
+                if (event.errorDetail != null) {
+                    // Short summary (first line of error detail)
+                    val summary = event.errorDetail.lineSequence().take(3).joinToString("\n")
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+
+                    // Expandable full detail
+                    if (event.errorDetail.lines().size > 3) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        JSecondaryButton(
+                            onClick = { showDetail = !showDetail },
+                        ) {
+                            Text(if (showDetail) "Skrýt detail" else "Zobrazit detail")
+                        }
+                        AnimatedVisibility(visible = showDetail) {
+                            Column {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = event.errorDetail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Úloha selhala bez dalších detailů.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                JDestructiveButton(
+                    onClick = { onDiscard(event.taskId) },
+                ) {
+                    Text("Zahodit")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                JPrimaryButton(
+                    onClick = { onRetry(event.taskId) },
+                ) {
+                    Text("Zkusit znovu")
+                }
+            }
+        },
+        dismissButton = null,
     )
 }
 

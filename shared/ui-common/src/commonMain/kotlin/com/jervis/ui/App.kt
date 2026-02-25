@@ -282,6 +282,8 @@ fun App(
                     }
                 },
                 onDismiss = { viewModel.notification.dismissUserTaskDialog() },
+                onRetry = { taskId -> viewModel.notification.retryTask(taskId, viewModel::reportError) },
+                onDiscard = { taskId -> viewModel.notification.discardTask(taskId, viewModel::reportError) },
             )
         }
 

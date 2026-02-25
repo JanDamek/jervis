@@ -17,6 +17,9 @@ sealed class JervisEvent {
         val interruptDescription: String? = null,
         val isApproval: Boolean = false,
         val projectId: String? = null,
+        // Error mode — task failed, show error detail + retry/discard
+        val isError: Boolean = false,
+        val errorDetail: String? = null,
     ) : JervisEvent()
 
     @Serializable

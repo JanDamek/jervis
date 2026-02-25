@@ -128,6 +128,37 @@ class NotificationViewModel(
         }
     }
 
+    fun discardTask(taskId: String, onError: (String) -> Unit = {}) {
+        scope.launch {
+            try {
+                repository.userTasks.cancel(taskId)
+                _userTaskDialogEvent.value = null
+                notificationManager.cancelNotification(taskId)
+                refreshUserTaskCount()
+            } catch (e: Exception) {
+                onError("Zahození selhalo: ${e.message}")
+            }
+        }
+    }
+
+    fun retryTask(taskId: String, onError: (String) -> Unit = {}) {
+        scope.launch {
+            try {
+                // Re-route to agent without additional input → agent re-processes from scratch
+                repository.userTasks.sendToAgent(
+                    taskId = taskId,
+                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                    additionalInput = null,
+                )
+                _userTaskDialogEvent.value = null
+                notificationManager.cancelNotification(taskId)
+                refreshUserTaskCount()
+            } catch (e: Exception) {
+                onError("Opakování selhalo: ${e.message}")
+            }
+        }
+    }
+
     fun dismissUserTaskDialog() {
         _userTaskDialogEvent.value = null
     }
@@ -138,8 +169,13 @@ class NotificationViewModel(
     fun handleUserTaskCreated(event: JervisEvent.UserTaskCreated) {
         _notifications.value = _notifications.value + event
         refreshUserTaskCount()
+        val notifTitle = when {
+            event.isError -> "Úloha selhala"
+            event.isApproval -> "Schválení vyžadováno"
+            else -> "Úloha potřebuje odpověď"
+        }
         notificationManager.showNotification(
-            title = if (event.isApproval) "Schválení vyžadováno" else "Nová úloha",
+            title = notifTitle,
             body = event.title,
             taskId = event.taskId,
             isApproval = event.isApproval,
