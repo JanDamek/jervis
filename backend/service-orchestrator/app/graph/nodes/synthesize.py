@@ -14,7 +14,7 @@ import logging
 from app.context.retention_policy import extract_kb_facts, should_persist_to_kb
 from app.context.summarizer import summarize_agent_output
 from app.graph.nodes._helpers import llm_with_cloud_fallback
-from app.models import AgentOutput, CodingTask, ExecutionPlan
+from app.models import AgentOutput, CodingTask
 from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)

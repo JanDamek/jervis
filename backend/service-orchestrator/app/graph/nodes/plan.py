@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 
+from app.config import settings
 from app.models import (
     CodingStep,
     CodingTask,
@@ -209,8 +210,7 @@ async def _plan_coding_task(state: dict, task: CodingTask, context_block: str) -
         },
     ]
 
-    # Agentic loop (max 25 iterations for planning)
-    _MAX_PLANNING_ITERATIONS = 25
+    _MAX_PLANNING_ITERATIONS = settings.plan_max_iterations
     iteration = 0
 
     while iteration < _MAX_PLANNING_ITERATIONS:

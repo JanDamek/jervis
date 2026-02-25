@@ -132,6 +132,13 @@ class Settings(BaseSettings):
     # Background handler constants
     background_max_iterations: int = 15      # Max agentic loop iterations for background
 
+    # Graph node constants (respond, plan, design)
+    respond_max_iterations: int = 8          # Max tool iterations in respond node
+    respond_min_answer_chars: int = 40       # W-13: Minimum acceptable answer length
+    respond_max_short_retries: int = 1       # W-13: Max retries for short answers
+    plan_max_iterations: int = 25            # Max planning iterations
+    design_max_iterations: int = 25          # Max design iterations
+
     # Ollama Router priority header (FOREGROUND = "0" → CRITICAL)
     foreground_priority_level: str = "0"     # Value for X-Ollama-Priority header
 

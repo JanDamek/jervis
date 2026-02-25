@@ -30,9 +30,9 @@ from app.tools.kotlin_client import kotlin_client
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_ITERATIONS = 8  # Increased from 5 to give agent more room for complex queries
-_MIN_ANSWER_CHARS = 40    # W-13: Minimum acceptable answer length (short answer retry)
-_MAX_SHORT_RETRIES = 1    # W-13: Max retries for short answers
+_MAX_TOOL_ITERATIONS = settings.respond_max_iterations
+_MIN_ANSWER_CHARS = settings.respond_min_answer_chars
+_MAX_SHORT_RETRIES = settings.respond_max_short_retries
 
 
 async def respond(state: dict) -> dict:

@@ -14,6 +14,7 @@ import logging
 
 from langgraph.types import interrupt
 
+from app.config import settings
 from app.models import CodingTask, Goal, Complexity
 from app.graph.nodes._helpers import (
     llm_with_cloud_fallback,
@@ -104,13 +105,12 @@ async def design(state: dict) -> dict:
             "role": "user",
             "content": (
                 f"Goal: {task.query}\n\n"
-                f"{'Project context:\\n' + kb_context if kb_context else ''}"
+                + (f"Project context:\n{kb_context}" if kb_context else "")
             ),
         },
     ]
 
-    # Agentic loop (max 25 iterations for design)
-    _MAX_DESIGN_ITERATIONS = 25
+    _MAX_DESIGN_ITERATIONS = settings.design_max_iterations
     iteration = 0
 
     while iteration < _MAX_DESIGN_ITERATIONS:
