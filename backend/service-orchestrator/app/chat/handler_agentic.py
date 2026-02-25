@@ -299,6 +299,15 @@ async def run_agentic_loop(
                 if resolved.get("client_id"):
                     effective_client_id = resolved["client_id"]
                     effective_project_id = resolved.get("project_id")
+                    # Scope changed — inject permissions reset so LLM re-asks for consent
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "Scope se změnil — všechna dříve udělená oprávnění pro write akce "
+                            "(create_background_task, dispatch_coding_agent, store_knowledge, brain_create_issue) "
+                            "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas."
+                        ),
+                    })
                     yield ChatStreamEvent(
                         type="scope_change",
                         metadata={
