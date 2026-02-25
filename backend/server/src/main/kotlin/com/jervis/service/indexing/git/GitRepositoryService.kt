@@ -33,6 +33,9 @@ import kotlin.io.path.exists
 
 private val logger = KotlinLogging.logger {}
 
+/** Track already-warned stale connections to avoid repeating the warning every polling cycle. */
+private val _warnedStaleConnections = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
 /**
  * Type of git workspace.
  */
@@ -197,7 +200,10 @@ class GitRepositoryService(
     ) {
         val initialConnection = connectionService.findById(ConnectionId(resource.connectionId))
         if (initialConnection == null) {
-            logger.warn { "Connection ${resource.connectionId} not found for resource ${resource.resourceIdentifier}" }
+            val key = "${resource.connectionId}:${resource.resourceIdentifier}"
+            if (_warnedStaleConnections.add(key)) {
+                logger.warn { "Connection ${resource.connectionId} not found for resource ${resource.resourceIdentifier} (this warning will not repeat)" }
+            }
             return
         }
 
