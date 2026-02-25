@@ -26,7 +26,7 @@ from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
 from app.graph.nodes._helpers import detect_tool_loop
-from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
+from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy, clamp_tier
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
@@ -57,9 +57,7 @@ def _estimate_and_select_tier(
     estimated = message_tokens + tools_tokens + output_tokens
     tier = _escalation_policy.select_local_tier(estimated)
     # Clamp to BG max tier
-    from app.chat.handler_agentic import _TIER_INDEX
-    if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(_BG_MAX_TIER, 4):
-        tier = _BG_MAX_TIER
+    tier = clamp_tier(tier, max_tier=_BG_MAX_TIER)
     return estimated, tier
 
 
