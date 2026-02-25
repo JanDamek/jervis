@@ -281,12 +281,12 @@ CPU: Overflow fallback
 **Cíl:** Monitoring, testy, metriky, resilience.
 
 **V řešení:**
-- [ ] K8s metrics-server instalace (C1)
 - [ ] Comprehensive memory agent testy (Phase 5)
-- [ ] Git branch validace (regex → git_branch_list tool)
-- [ ] Session memory TTL optimalizace
+- [ ] Session memory TTL optimalizace (již konfigurovatelné přes env, default 7d)
 
 **Dokončeno:**
+- [x] Git branch validace — evidence_pack validuje `target_branch` proti KB (exact/case/suffix match)
+- [x] K8s metrics-server instalace (C1)
 - [x] Legacy dead code removal (~440 řádků: /orchestrate, /approve, _run_and_push, _resume_in_background, duplicate build_delegation_graph)
 - [x] Tool loop detection (centralizovaný `detect_tool_loop`)
 - [x] Search rate limiting (max 3× per tool per task)
