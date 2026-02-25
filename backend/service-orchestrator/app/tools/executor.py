@@ -1438,7 +1438,7 @@ async def _get_workspace_path(client_id: str, project_id: str | None) -> str | N
             workspace_path = repos[0].get("properties", {}).get("workspacePath")
             return workspace_path
     except Exception as e:
-        logger.error(f"Failed to get workspace path: {e}")
+        logger.error("Failed to get workspace path: %s", e)
         return None
 
 

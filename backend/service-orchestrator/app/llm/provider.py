@@ -28,7 +28,7 @@ from typing import AsyncIterator
 import litellm
 
 from app.config import settings
-from app.models import Complexity, ModelTier
+from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -283,17 +283,6 @@ class EscalationPolicy:
             context_tokens, self.get_available_providers(), task_type,
         )
 
-    def select_tier(
-        self,
-        task_type: str = "general",
-        complexity: Complexity = Complexity.MEDIUM,
-        context_tokens: int = 0,
-        user_preference: str = "balanced",
-    ) -> ModelTier:
-        """Backward-compatible: always returns local tier."""
-        return self.select_local_tier(context_tokens)
-
-
 class LLMProvider:
     """Unified LLM provider using litellm.
 
@@ -454,10 +443,9 @@ class LLMProvider:
             kwargs["extra_headers"] = extra_headers
 
         timeout = TIER_TIMEOUT_SECONDS.get(tier, TOKEN_TIMEOUT_SECONDS)
-        logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds api_base=%s headers=%s",
-                     config["model"], tier.value, timeout, config.get("api_base"), extra_headers or {})
-        logger.info("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
-        logger.info("LLM request has tools: %s, num_tools: %d", bool(kwargs.get("tools")), len(kwargs.get("tools", [])))
+        logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds",
+                     config["model"], tier.value, timeout)
+        logger.debug("LLM request kwargs: %s", {k: v for k, v in kwargs.items() if k not in ["messages"]})
         try:
             response = await asyncio.wait_for(
                 self._call_with_retry(litellm.acompletion, kwargs, config["model"]),
@@ -468,32 +456,19 @@ class LLMProvider:
                 f"LLM blocking call timed out after {timeout}s (tier={tier.value})"
             )
 
-        # DEBUG: Log RAW response to debug tool_calls parsing
-        try:
-            import json
-            raw_response = response.model_dump() if hasattr(response, "model_dump") else dict(response)
-            logger.info("LLM RAW response: %s", json.dumps(raw_response, default=str)[:1000])
-        except Exception as e:
-            logger.warning("Failed to log raw response: %s", e)
-
-        # DEBUG: Log response details
+        # Log response summary
         try:
             choice = response.choices[0] if response.choices else None
             if choice:
                 msg = choice.message
                 logger.info(
-                    "LLM blocking response: finish_reason=%s, has_content=%s, content_len=%d, has_tool_calls=%s",
+                    "LLM blocking response: finish_reason=%s, content_len=%d, has_tool_calls=%s",
                     choice.finish_reason,
-                    bool(msg.content),
                     len(msg.content or ""),
                     bool(getattr(msg, "tool_calls", None)),
                 )
-                if msg.content:
-                    logger.info("LLM blocking content: %s", msg.content[:500])
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    logger.info("LLM tool_calls: %s", msg.tool_calls)
         except Exception as e:
-            logger.warning("Failed to log response details: %s", e)
+            logger.debug("Failed to log response summary: %s", e)
 
         return response
 
@@ -525,8 +500,13 @@ class LLMProvider:
         max_tokens: int = 8192,
         extra_headers: dict[str, str] | None = None,
     ) -> AsyncIterator:
-        """Stream LLM response (raw chunks for caller to process)."""
+        """Stream LLM response (raw chunks for caller to process).
+
+        Rate-limited via semaphore. Pre-trims oversized messages for local tiers.
+        """
         config = TIER_CONFIG[tier]
+        is_cloud = tier.value.startswith("cloud_")
+        semaphore = _SEMAPHORE_CLOUD if is_cloud else _SEMAPHORE_LOCAL
 
         kwargs: dict = {
             "model": config["model"],
@@ -540,27 +520,13 @@ class LLMProvider:
             kwargs["api_base"] = config["api_base"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
+            kwargs["messages"] = _trim_messages_for_context(messages, config["num_ctx"], max_tokens)
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
 
-        response = await litellm.acompletion(**kwargs)
+        async with semaphore:
+            response = await self._call_with_retry(litellm.acompletion, kwargs, config["model"])
         return response
-
-    def select_tier(
-        self,
-        task_type: str = "general",
-        complexity: Complexity = Complexity.MEDIUM,
-        context_tokens: int = 0,
-        user_preference: str = "balanced",
-    ) -> ModelTier:
-        """Select model tier based on task characteristics."""
-        return self.escalation.select_tier(
-            task_type=task_type,
-            complexity=complexity,
-            context_tokens=context_tokens,
-            user_preference=user_preference,
-        )
-
 
 def _build_response(content: str, model: str) -> object:
     """Build a litellm-compatible response object from streamed content."""

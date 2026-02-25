@@ -13,13 +13,13 @@ import logging
 import time
 
 from app.chat.system_prompt import RuntimeContext
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Runtime context cache (clients-projects, TTL 5min)
+# Runtime context cache (clients-projects)
 _clients_cache: list[dict] = []
 _clients_cache_at: float = 0
-_CLIENTS_CACHE_TTL = 300  # 5 min
 
 # Learned procedures cache (same TTL)
 _procedures_cache: list[str] = []
@@ -36,7 +36,7 @@ async def load_runtime_context() -> RuntimeContext:
     global _clients_cache, _clients_cache_at
 
     now = time.monotonic()
-    if now - _clients_cache_at > _CLIENTS_CACHE_TTL or not _clients_cache:
+    if now - _clients_cache_at > settings.guidelines_cache_ttl or not _clients_cache:
         try:
             _clients_cache = await kotlin_client.get_clients_projects()
             _clients_cache_at = now
@@ -94,7 +94,7 @@ async def _load_learned_procedures() -> list[str]:
     global _procedures_cache, _procedures_cache_at
 
     now = time.monotonic()
-    if now - _procedures_cache_at < _CLIENTS_CACHE_TTL and _procedures_cache:
+    if now - _procedures_cache_at < settings.guidelines_cache_ttl and _procedures_cache:
         return _procedures_cache
 
     try:
