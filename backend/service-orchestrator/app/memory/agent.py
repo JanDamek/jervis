@@ -370,38 +370,19 @@ class MemoryAgent:
 
         for write in writes:
             try:
-                # Select endpoint based on priority
-                if write.priority == WritePriority.CRITICAL:
-                    endpoint = f"{kb_write_url}/api/v1/ingest-immediate"
-                else:
-                    endpoint = f"{kb_write_url}/api/v1/ingest"
-
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
-                        endpoint,
+                        f"{kb_write_url}/api/v1/ingest",
                         json={
                             "sourceUrn": write.source_urn,
                             "clientId": write.metadata.get("client_id", self.client_id),
                             "content": write.content,
                             "kind": write.kind,
                             "metadata": write.metadata,
+                            "priority": write.priority.value,
                         },
                         headers=self._kb_headers,
                     )
-
-                    if resp.status_code == 404 and write.priority == WritePriority.CRITICAL:
-                        # Fallback: /ingest-immediate not deployed yet
-                        resp = await client.post(
-                            f"{kb_write_url}/api/v1/ingest",
-                            json={
-                                "sourceUrn": write.source_urn,
-                                "clientId": write.metadata.get("client_id", self.client_id),
-                                "content": write.content,
-                                "kind": write.kind,
-                                "metadata": write.metadata,
-                            },
-                            headers=self._kb_headers,
-                        )
 
                     if resp.status_code in (200, 201, 202):
                         self.lqm.mark_synced(write.source_urn)
