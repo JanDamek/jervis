@@ -69,17 +69,30 @@ s nesmyslným výstupem.
 - Background tasks (zejména IDLE_REVIEW) s velkými tool results selhávají tiše
 - Výsledek tasku je chybový JSON místo smysluplné odpovědi
 
-### Možná řešení
-1. **Zvýšit num_ctx pro background tier** — 8192 → 16384 nebo 32768 v TIER_CONFIG
-2. **Detekce context overflow v handler** — pokud response content obsahuje `"Operation not allowed"`,
-   nepoužívat jako final answer ale logovat warning a ukončit task s chybou
-3. **Redukce tool definitions** — pro background tasks posílat jen relevantní subset tools (ne všech 31)
-4. **Truncate tool results** — omezit velikost JSON výsledků z brain_search_issues
+### Existující vzor — dynamický kontext
+Chat (`handler_agentic.py`) a orchestrátor simple agent pro KB **již používají dynamické určení
+velikosti kontextu** — odhadují tokeny (system prompt + messages + tools + output) a vybírají
+tier s dostatečným `num_ctx`. Background handler toto nepoužívá — hardcoded `local_fast` (8k).
+
+### Řešení
+Aplikovat stejný dynamický context estimation jako chat/KB agent:
+1. **Před prvním LLM voláním** odhadnout potřebný kontext (system prompt + tool defs + expected output)
+2. **Po každé iteraci** přepočítat — tool results zvyšují kontext
+3. **Tier escalation** — pokud odhad překročí aktuální num_ctx, eskalovat na vyšší tier
+4. **Detekce context overflow v response** — pokud `prompt_tokens >= num_ctx` a content obsahuje
+   `"Operation not allowed"`, nepoužívat jako final answer ale logovat warning a ukončit s chybou
+5. **Truncate tool results** — omezit velikost JSON výsledků z brain_search_issues
 
 ### Soubory
-- `backend/service-orchestrator/app/llm/provider.py` — TIER_CONFIG, num_ctx
-- `backend/service-orchestrator/app/background/handler.py` — detekce overflow v response
+- `backend/service-orchestrator/app/llm/provider.py` — TIER_CONFIG, num_ctx, dynamický výběr
+- `backend/service-orchestrator/app/background/handler.py` — context estimation + tier escalation + overflow detekce
+- `backend/service-orchestrator/app/chat/handler_agentic.py` — referenční implementace dynamického kontextu
 - `backend/service-orchestrator/app/chat/tools.py` — tool subset pro background
+
+### Dokumentace
+Po implementaci aktualizovat:
+- `docs/guidelines.md` — sekce o LLM tier selection a context estimation
+- `docs/orchestrator-detailed.md` — background handler context management
 
 ---
 
