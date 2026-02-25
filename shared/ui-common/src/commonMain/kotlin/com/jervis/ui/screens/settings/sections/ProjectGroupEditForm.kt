@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -150,11 +149,10 @@ internal fun ProjectGroupEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        SelectionContainer {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(scrollState),
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 JSection(title = "Základní informace") {
@@ -307,7 +305,6 @@ internal fun ProjectGroupEditForm(
 
                 Spacer(Modifier.height(16.dp))
             }
-        }
     }
 
     ConfirmDialog(
