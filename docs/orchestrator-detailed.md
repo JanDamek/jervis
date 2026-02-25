@@ -3185,13 +3185,29 @@ Phase 4: FINALIZE
   └─ Log quality metrics
 ```
 
+**Context management (dynamic tier selection):**
+
+Background handler dynamically estimates context size before each LLM call
+(same pattern as chat `handler_agentic.estimate_and_select_tier`):
+1. Estimates tokens: `(messages + tools + output_reserve) // 4`
+2. Selects tier via `EscalationPolicy.select_local_tier()`, clamped to `LOCAL_XLARGE` (128k max)
+3. Re-estimates after each iteration — tool results grow the context
+4. Auto-escalates if context exceeds 85% of current tier's `num_ctx`
+5. Detects Ollama context overflow ("Operation not allowed" as text response) and escalates
+
+**Search tool rate limiting:**
+
+Search tools (`brain_search_issues`, `kb_search`, `web_search`, `brain_search_pages`)
+are limited to max 3 calls per task. After 3 calls, a STOP message forces the LLM
+to conclude with available results. Prevents IDLE_REVIEW loops.
+
 **Key differences from foreground chat:**
 
 | Aspect | Foreground (chat) | Background (v2) |
 |--------|-------------------|------------------|
 | Streaming | SSE tokens via kotlin_client | No streaming (status push only) |
 | Tools | 45 (37 base + 8 chat) | ~30 (subset, no ask_user/memory/list_affairs) |
-| Model selection | Single tier from project config | Escalation on failure |
+| Model selection | Dynamic + clamped to LOCAL_LARGE | Dynamic + clamped to LOCAL_XLARGE |
 | Execution | Synchronous (awaited) | Fire-and-forget (asyncio.create_task) |
 | System prompt | Dynamic runtime context | Basic task context |
 | Compression | Fire-and-forget after answer | At finalize |

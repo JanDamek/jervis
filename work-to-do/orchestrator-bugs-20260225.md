@@ -47,7 +47,9 @@ Opraveno:
 
 ---
 
-## Bug 5: Context overflow — num_ctx=8192 nestačí pro background tasks
+## ~~Bug 5: Context overflow — num_ctx=8192 nestačí pro background tasks~~ ✅ OPRAVENO
+
+Opraveno: Dynamický context estimation + tier escalation + overflow detection v `background/handler.py`.
 
 ### Symptom
 IDLE_REVIEW task volá `brain_search_issues` → vrací velký JSON → kontext naroste na 8192 tokenů
@@ -102,4 +104,4 @@ Po implementaci aktualizovat:
 2. ~~**Bug 2** (tool loop)~~ ✅ HOTOVO
 3. ~~**Bug 3** (Operation not allowed — exception retry)~~ ✅ HOTOVO
 4. ~~**Info** (stale connection)~~ ✅ HOTOVO
-5. **Bug 5** (context overflow num_ctx) — OTEVŘENO
+5. ~~**Bug 5** (context overflow num_ctx)~~ ✅ HOTOVO
