@@ -1,6 +1,6 @@
 # Architecture - Complete System Overview
 
-**Status:** Production Documentation (2026-02-20)
+**Status:** Production Documentation (2026-02-25)
 **Purpose:** Comprehensive architecture guide for all major components and frameworks
 
 ---
@@ -1945,6 +1945,12 @@ Hierarchical rules engine that provides configurable guidelines at three scope l
 │    → format_guidelines_for_prompt() — system prompt section │
 │    → format_guidelines_for_coding_agent() — CLAUDE.md       │
 │                                                             │
+│  Injection Points:                                          │
+│    1. Foreground chat system prompt (RuntimeContext)         │
+│    2. Background task system prompt (handler.py)            │
+│    3. Delegation planner (plan_delegations.py)              │
+│    4. Specialist agent agentic loop (BaseAgent)             │
+│                                                             │
 │  Chat Tools:                                                │
 │    get_guidelines / update_guideline                        │
 └─────────────────────────────────────────────────────────────┘
@@ -1974,5 +1980,13 @@ Six categories, each with typed rules: `coding`, `git`, `review`, `communication
 ### Caching
 
 - **Kotlin server**: `GuidelinesService` uses `ConcurrentHashMap` with 5-min TTL
-- **Python orchestrator**: `guidelines_resolver._guidelines_cache` with 5-min TTL
+- **Python orchestrator**: `guidelines_resolver._guidelines_cache` with configurable TTL (`ORCHESTRATOR_GUIDELINES_CACHE_TTL`, default 300s)
 - Cache invalidation: on any write via `updateGuidelines()` or `update_guideline` tool
+
+### Delegation Integration
+
+When the multi-agent delegation system is enabled (`use_delegation_graph=true`):
+1. **plan_delegations** node resolves guidelines and includes them in the LLM planning prompt
+2. Guidelines constraints (forbidden patterns, forbidden files, test requirements) are extracted and propagated to each `DelegationMessage.constraints`
+3. **BaseAgent._agentic_loop** enriches the specialist agent's system prompt with formatted guidelines
+4. All injection is non-blocking — guideline resolution failures are logged at debug level and do not block execution

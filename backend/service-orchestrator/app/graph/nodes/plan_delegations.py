@@ -13,6 +13,7 @@ import uuid
 
 from app.agents.registry import AgentRegistry
 from app.config import settings
+from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_prompt
 from app.context.procedural_memory import procedural_memory
 from app.context.session_memory import session_memory_store
 from app.graph.nodes._helpers import llm_with_cloud_fallback, parse_json_response
@@ -68,6 +69,13 @@ async def plan_delegations(state: dict) -> dict:
                     trigger, procedure.success_rate, procedure.usage_count,
                 )
 
+    # --- Load guidelines ---
+    guidelines = await resolve_guidelines(
+        client_id=task.client_id,
+        project_id=task.project_id,
+    )
+    guidelines_constraints = _extract_guidelines_constraints(guidelines)
+
     # --- Build the LLM planning prompt ---
     registry = AgentRegistry.instance()
     capabilities = registry.get_capability_summary()
@@ -79,6 +87,7 @@ async def plan_delegations(state: dict) -> dict:
         session_entries=session_entries,
         procedure=procedure,
         response_language=response_language,
+        guidelines=guidelines,
     )
 
     messages = [
@@ -106,13 +115,15 @@ async def plan_delegations(state: dict) -> dict:
 
     for i, d in enumerate(plan_data.get("delegations", [])):
         did = f"d-{task.id}-{i}-{uuid.uuid4().hex[:6]}"
+        # Merge LLM-planned constraints with guidelines-derived constraints
+        delegation_constraints = d.get("constraints", []) + guidelines_constraints
         msg = DelegationMessage(
             delegation_id=did,
             depth=0,
             agent_name=d.get("agent", "legacy"),
             task_summary=d.get("task", ""),
             context=d.get("context", ""),
-            constraints=d.get("constraints", []),
+            constraints=delegation_constraints,
             expected_output=d.get("expected_output", ""),
             response_language=response_language,
             client_id=task.client_id,
@@ -232,6 +243,7 @@ def _build_user_prompt(
     session_entries: list[dict],
     procedure,
     response_language: str,
+    guidelines: dict | None = None,
 ) -> str:
     parts = [
         f"## Task\nQuery: {task.query}",
@@ -261,7 +273,42 @@ def _build_user_prompt(
             parts.append(f"- {step.agent}: {step.action}")
         parts.append(f"Success rate: {procedure.success_rate:.0%}, Used {procedure.usage_count}×")
 
+    # Include guidelines so the planner can respect coding/review/git rules
+    if guidelines:
+        gl_text = format_guidelines_for_prompt(guidelines)
+        if gl_text:
+            parts.append(f"\n{gl_text}")
+
     return "\n".join(parts)
+
+
+def _extract_guidelines_constraints(guidelines: dict) -> list[str]:
+    """Extract actionable constraints from guidelines for delegation messages."""
+    constraints = []
+    if not guidelines:
+        return constraints
+
+    coding = guidelines.get("coding", {})
+    if coding.get("forbiddenPatterns"):
+        patterns = [p.get("pattern", "") for p in coding["forbiddenPatterns"] if p.get("pattern")]
+        if patterns:
+            constraints.append(f"Forbidden code patterns: {', '.join(patterns)}")
+
+    review = guidelines.get("review", {})
+    if review.get("forbiddenFileChanges"):
+        constraints.append(f"Do NOT modify these files: {', '.join(review['forbiddenFileChanges'])}")
+    if review.get("mustHaveTests"):
+        constraints.append("All changes MUST include tests")
+    if review.get("mustPassLint"):
+        constraints.append("All changes MUST pass lint")
+    if review.get("maxChangedFiles"):
+        constraints.append(f"Max {review['maxChangedFiles']} changed files per delegation")
+
+    git = guidelines.get("git", {})
+    if git.get("protectedBranches"):
+        constraints.append(f"Protected branches (no direct push): {', '.join(git['protectedBranches'])}")
+
+    return constraints
 
 
 def _fallback_plan(task: CodingTask, response_language: str) -> dict:
@@ -305,5 +352,5 @@ async def _report(task: CodingTask, message: str, percent: int) -> None:
             message=message,
             percent=percent,
         )
-    except Exception:
-        pass  # Non-critical
+    except Exception as e:
+        logger.debug("Progress report failed for task=%s: %s", task.id, e)

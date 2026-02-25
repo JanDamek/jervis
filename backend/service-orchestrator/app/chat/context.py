@@ -41,23 +41,24 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Configuration — driven by Settings (env vars with ORCHESTRATOR_ prefix).
+# All values are configurable via ORCHESTRATOR_<FIELD> environment variables.
 # ---------------------------------------------------------------------------
 
-TOTAL_CONTEXT_WINDOW = 32_768          # Qwen3-30B default
-SYSTEM_PROMPT_RESERVE = 2_000          # System prompt + tools
-RESPONSE_RESERVE = 4_000               # Leave room for LLM response
+# Evaluated at import time from settings singleton (immutable after startup).
+TOTAL_CONTEXT_WINDOW = settings.total_context_window
+SYSTEM_PROMPT_RESERVE = settings.system_prompt_reserve
+RESPONSE_RESERVE = settings.response_reserve
 CONTEXT_BUDGET = TOTAL_CONTEXT_WINDOW - SYSTEM_PROMPT_RESERVE - RESPONSE_RESERVE
 
-RECENT_MESSAGE_COUNT = 20              # Max recent verbatim messages
-MAX_SUMMARY_BLOCKS = 15                # Max compressed summary blocks to load
-COMPRESS_THRESHOLD = 20                # Compress when >=N unsummarized messages
-COMPRESS_MAX_RETRIES = 2               # W-15: Max compression retries on LLM failure
-MAX_TOOL_RESULT_IN_MSG = 2000          # W-10: Max chars for tool results stored in messages
+RECENT_MESSAGE_COUNT = settings.recent_message_count
+MAX_SUMMARY_BLOCKS = settings.max_summary_blocks
+COMPRESS_THRESHOLD = settings.compress_threshold
+COMPRESS_MAX_RETRIES = settings.compress_max_retries
+MAX_TOOL_RESULT_IN_MSG = settings.max_tool_result_in_msg
 
-# Token estimation: chars/4 is rough but works for mixed cs/en text.
-# TODO: Replace with tiktoken when model-specific tokenizer is available.
-TOKEN_ESTIMATE_RATIO = 4
+# Token estimation: chars/N is rough but works for mixed cs/en text.
+TOKEN_ESTIMATE_RATIO = settings.token_estimate_ratio
 
 
 # ---------------------------------------------------------------------------

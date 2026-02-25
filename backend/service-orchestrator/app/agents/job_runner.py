@@ -150,8 +150,11 @@ class JobRunner:
         if result_file.exists():
             try:
                 return json.loads(result_file.read_text())
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Malformed result.json for job=%s task=%s: %s",
+                    job_name, task_id, e,
+                )
 
         return {
             "taskId": task_id,
@@ -317,8 +320,11 @@ class JobRunner:
         if result_file.exists():
             try:
                 return json.loads(result_file.read_text())
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Malformed result.json in collect_result for job=%s task=%s: %s",
+                    job_name, task_id, e,
+                )
 
         status = self.get_job_status(job_name)
         return {

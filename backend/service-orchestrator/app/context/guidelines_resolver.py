@@ -10,11 +10,12 @@ import logging
 import time
 from typing import Any
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # In-memory cache for merged guidelines (client:project → (data, expiry))
 _guidelines_cache: dict[str, tuple[dict, float]] = {}
-_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 async def resolve_guidelines(
@@ -38,7 +39,7 @@ async def resolve_guidelines(
     try:
         from app.tools.kotlin_client import kotlin_client
         data = await kotlin_client.get_merged_guidelines(client_id, project_id)
-        _guidelines_cache[cache_key] = (data, time.time() + _CACHE_TTL_SECONDS)
+        _guidelines_cache[cache_key] = (data, time.time() + settings.guidelines_cache_ttl)
         return data
     except Exception as e:
         logger.warning("Failed to resolve guidelines for %s/%s: %s", client_id, project_id, e)

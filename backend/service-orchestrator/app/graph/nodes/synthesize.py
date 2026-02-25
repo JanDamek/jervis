@@ -216,5 +216,5 @@ async def _report(task: CodingTask, message: str, percent: int) -> None:
             message=message,
             percent=percent,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Progress report failed for task=%s: %s", task.id, e)

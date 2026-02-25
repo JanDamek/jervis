@@ -110,6 +110,20 @@ class Settings(BaseSettings):
     token_budget_depth_2: int = 8000
     token_budget_depth_3: int = 4000
 
+    # Context budgeting (ChatContextAssembler)
+    total_context_window: int = 32_768       # Model context window (Qwen3-30B default)
+    system_prompt_reserve: int = 2_000       # Tokens reserved for system prompt + tools
+    response_reserve: int = 4_000            # Tokens reserved for LLM response
+    recent_message_count: int = 20           # Max recent verbatim messages to keep
+    max_summary_blocks: int = 15             # Max compressed summary blocks to load
+    compress_threshold: int = 20             # Compress when >=N unsummarized messages
+    compress_max_retries: int = 2            # Max compression retries on LLM failure
+    max_tool_result_in_msg: int = 2_000      # Max chars for tool results in stored messages
+    token_estimate_ratio: int = 4            # Chars-per-token ratio (rough, for cs/en)
+
+    # Guidelines cache
+    guidelines_cache_ttl: int = 300          # TTL in seconds for guidelines cache
+
     # Session memory
     session_memory_ttl_days: int = 7
     session_memory_max_entries: int = 50

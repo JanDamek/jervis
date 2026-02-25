@@ -1718,8 +1718,8 @@ async def _execute_file_info(
             try:
                 item_count = len(list(full_path.iterdir()))
                 lines.append(f"Items: {item_count}")
-            except Exception:
-                pass
+            except PermissionError:
+                lines.append("Items: (permission denied)")
 
         return "\n".join(lines)
     except Exception as e:

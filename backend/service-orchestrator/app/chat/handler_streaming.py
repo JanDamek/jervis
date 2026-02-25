@@ -75,5 +75,5 @@ async def save_assistant_message(
     if compress:
         try:
             await chat_context_assembler.maybe_compress(session_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Chat compression failed for session=%s: %s", session_id, e)

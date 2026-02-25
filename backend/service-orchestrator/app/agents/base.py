@@ -79,8 +79,13 @@ class BaseAgent(ABC):
         The loop ends when the LLM produces a text response without any
         tool calls, or when ``max_iterations`` is reached.
         """
+        # Inject guidelines into agent system prompt
+        enriched_prompt = await self._enrich_with_guidelines(
+            system_prompt, msg.client_id, msg.project_id,
+        )
+
         messages: list[dict] = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": enriched_prompt},
             {"role": "user", "content": self._build_user_message(msg)},
         ]
 
@@ -340,6 +345,33 @@ class BaseAgent(ABC):
                 result=f"Sub-delegation failed: {exc}",
                 confidence=0.0,
             )
+
+    # ------------------------------------------------------------------
+    # Guidelines injection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _enrich_with_guidelines(
+        system_prompt: str,
+        client_id: str | None,
+        project_id: str | None,
+    ) -> str:
+        """Append resolved guidelines to the system prompt.
+
+        Non-blocking — returns original prompt on any failure.
+        """
+        try:
+            from app.context.guidelines_resolver import (
+                resolve_guidelines,
+                format_guidelines_for_prompt,
+            )
+            guidelines = await resolve_guidelines(client_id, project_id)
+            gl_text = format_guidelines_for_prompt(guidelines)
+            if gl_text:
+                return f"{system_prompt}\n\n{gl_text}"
+        except Exception as e:
+            logger.debug("Guidelines enrichment skipped: %s", e)
+        return system_prompt
 
     # ------------------------------------------------------------------
     # Helpers

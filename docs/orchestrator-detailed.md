@@ -2,7 +2,7 @@
 
 > Kompletní referenční dokument pro Python orchestrátor a jeho integraci s Kotlin serverem.
 > Základ pro analýzu, rozšiřování a debugging celé orchestrační vrstvy.
-> **Automaticky aktualizováno:** 2026-02-21
+> **Automaticky aktualizováno:** 2026-02-25
 
 ---
 
@@ -2408,10 +2408,26 @@ class Settings:
     token_budget_depth_2: int = 8000
     token_budget_depth_3: int = 4000
 
+    # Context budgeting (ChatContextAssembler)
+    total_context_window: int = 32_768    # Model context window
+    system_prompt_reserve: int = 2_000    # Tokens for system prompt + tools
+    response_reserve: int = 4_000         # Tokens for LLM response
+    recent_message_count: int = 20        # Max verbatim messages
+    max_summary_blocks: int = 15          # Max compressed summaries
+    compress_threshold: int = 20          # Compress at >=N unsummarized msgs
+    compress_max_retries: int = 2         # Compression retry limit
+    max_tool_result_in_msg: int = 2_000   # Max chars per tool result
+    token_estimate_ratio: int = 4         # Chars-per-token ratio
+
+    # Guidelines cache
+    guidelines_cache_ttl: int = 300       # TTL seconds (5 min)
+
     # Session memory
     session_memory_ttl_days: int = 7
     session_memory_max_entries: int = 50
 ```
+
+> **All settings use env prefix `ORCHESTRATOR_`**, e.g. `ORCHESTRATOR_TOTAL_CONTEXT_WINDOW=65536`.
 
 ### 27.2 K8s Deployment
 

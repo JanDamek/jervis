@@ -342,8 +342,8 @@ def _build_background_prompt(request: OrchestrateRequest) -> str:
                 gl_text = format_guidelines_for_prompt(data)
                 if gl_text:
                     parts.append(f"\n{gl_text}")
-    except Exception:
-        pass  # Best-effort, don't block background tasks
+    except Exception as e:
+        logger.debug("Guidelines injection failed for background task: %s", e)
 
     return "\n".join(parts)
 

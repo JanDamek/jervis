@@ -750,8 +750,11 @@ async def _resume_in_background(thread_id: str, resume_value: dict, chat_history
             task_data = graph_state.values.get("task", {})
             task_id = task_data.get("id", task_id)
             client_id = task_data.get("client_id", "")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(
+            "Failed to extract task context from graph state for thread=%s: %s",
+            thread_id, e,
+        )
 
     try:
         # Acquire semaphore ONLY for graph execution — release immediately after
