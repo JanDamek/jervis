@@ -283,11 +283,11 @@ CPU: Overflow fallback
 **V řešení:**
 - [ ] K8s metrics-server instalace (C1)
 - [ ] Comprehensive memory agent testy (Phase 5)
-- [ ] Background handler v2 — odstranění legacy LangGraph fallbacku
 - [ ] Git branch validace (regex → git_branch_list tool)
 - [ ] Session memory TTL optimalizace
 
 **Dokončeno:**
+- [x] Legacy dead code removal (~440 řádků: /orchestrate, /approve, _run_and_push, _resume_in_background, duplicate build_delegation_graph)
 - [x] Tool loop detection (centralizovaný `detect_tool_loop`)
 - [x] Search rate limiting (max 3× per tool per task)
 - [x] Dynamic context estimation (`estimate_tokens`)
