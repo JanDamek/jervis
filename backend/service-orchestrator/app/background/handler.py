@@ -299,16 +299,34 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "content": result,
             })
 
-            # Loop detection
+            # Loop detection — exact duplicate and semantic duplicate
             call_key = (tool_name, json.dumps(arguments, sort_keys=True))
             tool_call_history.append(call_key)
             if tool_call_history.count(call_key) >= 2:
-                logger.warning("Background: tool loop detected: %s", tool_name)
+                logger.warning("Background: exact tool loop detected: %s", tool_name)
                 messages.append({
                     "role": "system",
-                    "content": f"STOP: {tool_name} called repeatedly. Provide final result.",
+                    "content": f"STOP: {tool_name} called repeatedly with same arguments. Provide final result.",
                 })
                 break
+
+            # Semantic duplicate: same search tool called 3+ times (even with different args)
+            search_tools = {"brain_search_issues", "kb_search", "web_search", "brain_search_pages"}
+            if tool_name in search_tools:
+                same_tool_count = sum(1 for name, _ in tool_call_history if name == tool_name)
+                if same_tool_count >= 3:
+                    logger.warning(
+                        "Background: search tool '%s' called %d times — forcing conclusion",
+                        tool_name, same_tool_count,
+                    )
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            f"STOP: {tool_name} already called {same_tool_count} times. "
+                            "Use the results you already have. Provide final result NOW."
+                        ),
+                    })
+                    break
 
     # --- Finalize ---
     if not final_answer and iteration >= _MAX_ITERATIONS:
