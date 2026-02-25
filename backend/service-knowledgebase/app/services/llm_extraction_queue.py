@@ -110,10 +110,8 @@ class LLMExtractionQueue:
         self.queue_dir.mkdir(parents=True, exist_ok=True)
 
         self.db_path = self.queue_dir / "extraction_queue.db"
-        self.old_json_path = self.queue_dir / "extraction-queue.json"
 
         self._init_db()
-        self._migrate_from_json_if_needed()
 
         logger.info("Initialized SQLite extraction queue at %s", self.db_path)
 
@@ -575,96 +573,3 @@ class LLMExtractionQueue:
         finally:
             conn.close()
 
-    def _migrate_from_json_if_needed(self) -> None:
-        """Migrate tasks from old JSON file to SQLite (one-time migration).
-
-        TEMPORARY: This migration code will be removed after successful deployment.
-        """
-        if not self.old_json_path.exists():
-            logger.info("No old JSON queue found - skipping migration")
-            return
-
-        try:
-            # Read old JSON queue
-            with open(self.old_json_path, "r") as f:
-                old_tasks = json.load(f)
-
-            if not old_tasks:
-                logger.info("Old JSON queue is empty - skipping migration")
-                self._backup_and_delete_json()
-                return
-
-            # Import into SQLite
-            conn = self._get_conn()
-            try:
-                migrated = 0
-                skipped = 0
-
-                for task_dict in old_tasks:
-                    task_id = task_dict.get("task_id")
-                    if not task_id:
-                        skipped += 1
-                        continue
-
-                    # Check if already exists (migration was partially done)
-                    exists = conn.execute(
-                        "SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)
-                    ).fetchone()
-
-                    if exists:
-                        skipped += 1
-                        continue
-
-                    # Insert task
-                    try:
-                        conn.execute("""
-                            INSERT INTO tasks (
-                                task_id, source_urn, content, client_id, project_id, kind,
-                                chunk_ids, created_at, status, attempts, last_attempt_at,
-                                worker_id, error
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            task_dict.get("task_id"),
-                            task_dict.get("source_urn"),
-                            task_dict.get("content"),
-                            task_dict.get("client_id"),
-                            task_dict.get("project_id"),
-                            task_dict.get("kind"),
-                            json.dumps(task_dict.get("chunk_ids", [])),
-                            task_dict.get("created_at"),
-                            task_dict.get("status", TaskStatus.PENDING),
-                            task_dict.get("attempts", 0),
-                            task_dict.get("last_attempt_at"),
-                            task_dict.get("worker_id"),
-                            task_dict.get("error"),
-                        ))
-                        migrated += 1
-                    except sqlite3.IntegrityError:
-                        # Duplicate task_id
-                        skipped += 1
-                        continue
-
-                conn.commit()
-                logger.info(
-                    "Migration complete: %d tasks migrated, %d skipped from old JSON queue",
-                    migrated, skipped
-                )
-
-                # Backup and delete old JSON file
-                self._backup_and_delete_json()
-
-            finally:
-                conn.close()
-
-        except Exception as e:
-            logger.error("Failed to migrate from JSON queue: %s", e)
-            # Don't fail startup - continue with empty SQLite queue
-
-    def _backup_and_delete_json(self) -> None:
-        """Backup old JSON file and delete it."""
-        try:
-            backup_path = self.old_json_path.with_suffix(".json.backup")
-            self.old_json_path.rename(backup_path)
-            logger.info("Old JSON queue backed up to %s", backup_path)
-        except Exception as e:
-            logger.warning("Failed to backup old JSON queue: %s", e)
