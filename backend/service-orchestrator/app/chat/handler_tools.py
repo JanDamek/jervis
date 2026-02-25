@@ -238,6 +238,39 @@ async def _handle_list_unclassified_meetings(_args, _client_id, _project_id, kot
     return await kotlin_client.list_unclassified_meetings()
 
 
+async def _handle_get_guidelines(args, client_id, project_id, kotlin_client):
+    effective_client_id = args.get("client_id") or client_id
+    effective_project_id = args.get("project_id") or project_id
+    return await kotlin_client.get_guidelines(
+        scope="GLOBAL" if not effective_client_id else ("CLIENT" if not effective_project_id else "PROJECT"),
+        client_id=effective_client_id,
+        project_id=effective_project_id,
+    )
+
+
+async def _handle_update_guideline(args, client_id, project_id, kotlin_client):
+    scope = args.get("scope", "GLOBAL")
+    category = args.get("category")
+    rules = args.get("rules", {})
+    effective_client_id = args.get("client_id") or client_id
+    effective_project_id = args.get("project_id") or project_id
+
+    if not category:
+        return "Chyba: category je povinný parametr."
+    if scope in ("CLIENT", "PROJECT") and not effective_client_id:
+        return "Chyba: client_id je povinný pro CLIENT/PROJECT scope."
+    if scope == "PROJECT" and not effective_project_id:
+        return "Chyba: project_id je povinný pro PROJECT scope."
+
+    return await kotlin_client.update_guideline(
+        scope=scope,
+        category=category,
+        rules=rules,
+        client_id=effective_client_id,
+        project_id=effective_project_id,
+    )
+
+
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
@@ -248,6 +281,8 @@ _TOOL_HANDLER_MAP = {
     "respond_to_user_task": _handle_respond_to_user_task,
     "classify_meeting": _handle_classify_meeting,
     "list_unclassified_meetings": _handle_list_unclassified_meetings,
+    "get_guidelines": _handle_get_guidelines,
+    "update_guideline": _handle_update_guideline,
 }
 
 

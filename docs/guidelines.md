@@ -1062,6 +1062,72 @@ All design components remain `public` — they are the shared design system.
 
 ---
 
-**Document Version:** 3.0
-**Last Updated:** 2026-02-12
+## Guidelines Engine (EPIC 1)
+
+### Overview
+
+Hierarchical rules engine: **Global → Client → Project**, where lower scopes override/extend higher ones via deep merge.
+
+### Data Model
+
+- **MongoDB collection:** `guidelines`
+- **Compound unique index:** `clientId + projectId`
+- **Scope resolution:** `clientId=null, projectId=null` = GLOBAL; `clientId=set, projectId=null` = CLIENT; both set = PROJECT
+
+### Categories
+
+| Category | Key Fields |
+|----------|-----------|
+| `coding` | `forbiddenPatterns`, `requiredPatterns`, `maxFileLines`, `maxFunctionLines`, `namingConventions`, `languageSpecific` |
+| `git` | `commitMessageTemplate`, `commitMessageValidators`, `branchNameTemplate`, `requireJiraReference`, `squashOnMerge`, `protectedBranches` |
+| `review` | `mustHaveTests`, `mustPassLint`, `maxChangedFiles`, `maxChangedLines`, `forbiddenFileChanges`, `focusAreas`, `checklistItems` |
+| `communication` | `emailResponseLanguage`, `emailSignature`, `jiraCommentLanguage`, `formalityLevel`, `customRules` |
+| `approval` | Per-action `ApprovalRule` with `enabled`, `whenRiskLevelBelow`, `whenConfidenceAbove` for: commit, push, email, jira, PR, chat, confluence, coding dispatch |
+| `general` | `customRules`, `notes` |
+
+### Merge Semantics
+
+- **Lists:** concatenated (e.g., forbiddenPatterns from all scopes are combined)
+- **Scalars (non-null):** lower scope overrides (e.g., project's `maxFileLines` overrides global)
+- **Booleans (require_*):** OR semantics (if ANY scope requires tests, tests are required)
+- **Maps:** merged with lower scope winning on key conflicts
+
+### Source Files
+
+| File | Purpose |
+|------|---------|
+| `shared/common-dto/.../guidelines/GuidelinesDtos.kt` | All DTO types |
+| `shared/common-api/.../IGuidelinesService.kt` | RPC interface |
+| `backend/server/.../entity/GuidelinesDocument.kt` | MongoDB entity + merge logic |
+| `backend/server/.../repository/GuidelinesRepository.kt` | Spring Data repository |
+| `backend/server/.../service/guidelines/GuidelinesService.kt` | Business logic with 5-min cache |
+| `backend/server/.../rpc/GuidelinesRpcImpl.kt` | RPC implementation |
+| `backend/server/.../rpc/internal/InternalGuidelinesRouting.kt` | REST endpoints for Python orchestrator |
+| `shared/ui-common/.../screens/settings/sections/GuidelinesSettings.kt` | Settings UI |
+| `backend/service-orchestrator/app/context/guidelines_resolver.py` | Python resolver + formatter |
+| `backend/service-orchestrator/app/chat/tools.py` | `get_guidelines`, `update_guideline` tools |
+
+### Chat Tools
+
+- `get_guidelines(client_id?, project_id?)` — returns merged guidelines for scope
+- `update_guideline(scope, category, rules, client_id?, project_id?)` — updates single category
+
+### Orchestrator Integration
+
+- `GuidelinesResolver` loads merged guidelines via internal REST API
+- Formatted guidelines injected into both foreground chat system prompt and background handler prompt
+- `format_guidelines_for_coding_agent()` produces CLAUDE.md-compatible output for coding agent workspaces
+
+### Settings UI
+
+New settings category "Pravidla a směrnice" with:
+- Three-tab scope selector (Globální / Klient / Projekt)
+- Client/project dropdowns for non-global scopes
+- Form sections for each category (coding, git, review, communication, approval, general)
+- Scope inheritance indicator
+
+---
+
+**Document Version:** 4.0
+**Last Updated:** 2026-02-25
 **Applies To:** All engineering, architecture, and UI development in Jervis

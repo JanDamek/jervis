@@ -329,6 +329,22 @@ def _build_background_prompt(request: OrchestrateRequest) -> str:
         if rules_info:
             parts.append(f"\nProject rules: {', '.join(rules_info)}")
 
+    # Add guidelines (loaded from cache — non-blocking)
+    try:
+        from app.context.guidelines_resolver import _guidelines_cache
+        cache_key = f"{request.client_id or 'null'}:{request.project_id or 'null'}"
+        cached = _guidelines_cache.get(cache_key)
+        if cached:
+            import time as _time
+            data, expiry = cached
+            if _time.time() < expiry:
+                from app.context.guidelines_resolver import format_guidelines_for_prompt
+                gl_text = format_guidelines_for_prompt(data)
+                if gl_text:
+                    parts.append(f"\n{gl_text}")
+    except Exception:
+        pass  # Best-effort, don't block background tasks
+
     return "\n".join(parts)
 
 

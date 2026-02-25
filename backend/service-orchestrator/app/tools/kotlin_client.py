@@ -470,6 +470,84 @@ class KotlinServerClient:
             logger.warning("Failed to list recent tasks: %s", e)
             return f"Error: {e}"
 
+    # -------------------------------------------------------------------
+    # Guidelines API
+    # -------------------------------------------------------------------
+
+    async def get_merged_guidelines(
+        self,
+        client_id: str | None = None,
+        project_id: str | None = None,
+    ) -> dict:
+        """Get merged guidelines for a client+project context (GLOBAL → CLIENT → PROJECT)."""
+        try:
+            client = await self._get_client()
+            params: dict = {}
+            if client_id:
+                params["clientId"] = client_id
+            if project_id:
+                params["projectId"] = project_id
+            resp = await client.get("/internal/guidelines/merged", params=params)
+            if resp.status_code == 200:
+                return resp.json()
+            logger.warning("Failed to get merged guidelines: %s", resp.status_code)
+            return {}
+        except Exception as e:
+            logger.warning("Failed to get merged guidelines: %s", e)
+            return {}
+
+    async def get_guidelines(
+        self,
+        scope: str = "GLOBAL",
+        client_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
+        """Get guidelines for a specific scope (raw, unmerged)."""
+        try:
+            import json as _json
+            client = await self._get_client()
+            params: dict = {"scope": scope}
+            if client_id:
+                params["clientId"] = client_id
+            if project_id:
+                params["projectId"] = project_id
+            resp = await client.get("/internal/guidelines", params=params)
+            if resp.status_code == 200:
+                return _json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to get guidelines: %s", e)
+            return f"Error: {e}"
+
+    async def update_guideline(
+        self,
+        scope: str,
+        category: str,
+        rules: dict,
+        client_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
+        """Update a single category of guidelines for a given scope."""
+        try:
+            import json as _json
+            client = await self._get_client()
+            payload = {
+                "scope": scope,
+                "clientId": client_id,
+                "projectId": project_id,
+                category: rules,
+            }
+            resp = await client.post(
+                "/internal/guidelines",
+                json=payload,
+            )
+            if resp.status_code == 200:
+                return _json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code} - {resp.text}"
+        except Exception as e:
+            logger.warning("Failed to update guideline: %s", e)
+            return f"Error: {e}"
+
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()

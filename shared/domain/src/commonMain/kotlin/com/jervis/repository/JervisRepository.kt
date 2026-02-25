@@ -21,6 +21,7 @@ import com.jervis.service.IRagSearchService
 import com.jervis.service.ITaskSchedulingService
 import com.jervis.service.IUserTaskService
 import com.jervis.service.IChatService
+import com.jervis.service.IGuidelinesService
 import com.jervis.service.ISystemConfigService
 
 /**
@@ -54,4 +55,5 @@ class JervisRepository(
     val environmentResources: IEnvironmentResourceService get() = servicesProvider().environmentResourceService
     val systemConfig: ISystemConfigService get() = servicesProvider().systemConfigService
     val chat: IChatService get() = servicesProvider().chatService
+    val guidelines: IGuidelinesService get() = servicesProvider().guidelinesService
 }

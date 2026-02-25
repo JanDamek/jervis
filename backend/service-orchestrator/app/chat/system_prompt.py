@@ -17,6 +17,7 @@ class RuntimeContext:
     pending_user_tasks: dict = field(default_factory=lambda: {"count": 0, "tasks": []})
     unclassified_meetings_count: int = 0
     learned_procedures: list[str] = field(default_factory=list)  # Dynamic: loaded from KB at chat start
+    guidelines_text: str = ""  # Formatted guidelines from GuidelinesResolver
 
 
 def build_system_prompt(
@@ -48,6 +49,7 @@ def build_system_prompt(
     pending_section = _build_pending_tasks_section(ctx.pending_user_tasks)
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
+    guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
 
@@ -58,7 +60,7 @@ def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 - Hledej: kb_search (interní znalosti) → web_search (internet) → zeptej se

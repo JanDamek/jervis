@@ -282,6 +282,78 @@ TOOL_LIST_UNCLASSIFIED_MEETINGS: dict = {
 
 
 # ---------------------------------------------------------------------------
+# Guidelines tools
+# ---------------------------------------------------------------------------
+
+TOOL_GET_GUIDELINES: dict = {
+    "type": "function",
+    "function": {
+        "name": "get_guidelines",
+        "description": (
+            "Získej pravidla a směrnice (guidelines) pro daný scope. "
+            "Vrací sloučená pravidla (global → client → project). "
+            "Kategorie: coding, git, review, communication, approval, general."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (volitelné, pro client/project scope).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (volitelné, pro project scope).",
+                },
+            },
+        },
+    },
+}
+
+TOOL_UPDATE_GUIDELINE: dict = {
+    "type": "function",
+    "function": {
+        "name": "update_guideline",
+        "description": (
+            "Aktualizuj pravidla pro daný scope a kategorii. "
+            "Scope: GLOBAL, CLIENT, PROJECT. "
+            "Kategorie: coding, git, review, communication, approval, general. "
+            "Příklad: 'pro projekt X chci conventional commits' → "
+            "update_guideline(scope=PROJECT, category=git, rules={commitMessageTemplate: '...'})"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["GLOBAL", "CLIENT", "PROJECT"],
+                    "description": "Scope pravidla.",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["coding", "git", "review", "communication", "approval", "general"],
+                    "description": "Kategorie pravidla.",
+                },
+                "rules": {
+                    "type": "object",
+                    "description": "JSON s pravidly pro danou kategorii.",
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (povinný pro CLIENT/PROJECT scope).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (povinný pro PROJECT scope).",
+                },
+            },
+            "required": ["scope", "category", "rules"],
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Combined tool lists for chat handler
 # ---------------------------------------------------------------------------
 
@@ -295,6 +367,8 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_CLASSIFY_MEETING,
     TOOL_LIST_UNCLASSIFIED_MEETINGS,
     TOOL_SWITCH_CONTEXT,
+    TOOL_GET_GUIDELINES,
+    TOOL_UPDATE_GUIDELINE,
 ]
 
 # All tools available in foreground chat = base research + brain + memory + chat-specific
@@ -360,6 +434,8 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_STORE_KNOWLEDGE,
         TOOL_SWITCH_CONTEXT,
         TOOL_MEMORY_STORE,
+        TOOL_GET_GUIDELINES,
+        TOOL_UPDATE_GUIDELINE,
     ],
 }
 
@@ -377,4 +453,5 @@ TOOL_DOMAINS: dict[str, str] = {
     "list_recent_tasks": "task", "respond_to_user_task": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
     "switch_context": "scope",
+    "get_guidelines": "guidelines", "update_guideline": "guidelines",
 }

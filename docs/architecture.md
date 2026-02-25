@@ -23,6 +23,7 @@
 14. [Dual-Queue System & Inline Message Delivery](#dual-queue-system--inline-message-delivery)
 15. [Notification System](#notification-system)
 16. [Foreground Chat (ChatSession)](#foreground-chat-chatsession)
+17. [Guidelines Engine](#guidelines-engine)
 
 ---
 
@@ -1904,3 +1905,74 @@ The old foreground chat flow (`IAgentOrchestratorService.subscribeToChat/sendMes
 - **`OrchestratorStatusHandler`**: Removed `emitToChatStream()` calls in handleInterrupted/handleDone/handleError (message persistence kept)
 - **`/internal/streaming-token`**: Now a no-op endpoint (returns ok but doesn't relay tokens)
 - **`IAgentOrchestratorService`** retains: queue management (`subscribeToQueueStatus`, `getPendingTasks`, `reorderTask`, `moveTask`, `cancelOrchestration`) and task history (`getTaskHistory`)
+
+---
+
+## Guidelines Engine
+
+### Overview
+
+Hierarchical rules engine that provides configurable guidelines at three scope levels: **Global → Client → Project**. Lower scopes override/extend higher ones via deep merge.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Settings UI                               │
+│  (GuidelinesSettings.kt — three-tab scope selector)         │
+└────────────────────────────┬────────────────────────────────┘
+                             │ kRPC
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Kotlin Server                                │
+│                                                             │
+│  IGuidelinesService → GuidelinesRpcImpl                     │
+│        → GuidelinesService (5-min cache)                    │
+│        → GuidelinesRepository (MongoDB: guidelines)         │
+│                                                             │
+│  Internal REST API:                                         │
+│    GET  /internal/guidelines/merged?clientId=&projectId=    │
+│    GET  /internal/guidelines?scope=&clientId=&projectId=    │
+│    POST /internal/guidelines                                │
+└────────────────────────────┬────────────────────────────────┘
+                             │ HTTP
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Python Orchestrator                             │
+│                                                             │
+│  GuidelinesResolver (context/guidelines_resolver.py)        │
+│    → resolve_guidelines() — cached merged load              │
+│    → format_guidelines_for_prompt() — system prompt section │
+│    → format_guidelines_for_coding_agent() — CLAUDE.md       │
+│                                                             │
+│  Chat Tools:                                                │
+│    get_guidelines / update_guideline                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Scope Resolution
+
+```
+PROJECT guidelines  (most specific, clientId + projectId)
+    ↑ overrides
+CLIENT guidelines   (clientId, no projectId)
+    ↑ overrides
+GLOBAL guidelines   (no clientId, no projectId)
+```
+
+### Categories
+
+Six categories, each with typed rules: `coding`, `git`, `review`, `communication`, `approval`, `general`.
+
+### Merge Rules
+
+- **Lists** (forbiddenPatterns, protectedBranches): concatenated from all scopes
+- **Nullable scalars** (maxFileLines, commitMessageTemplate): lower scope wins
+- **Booleans** (mustHaveTests, requireJiraReference): OR — if any scope enables, it's enabled
+- **Maps** (namingConventions, languageSpecific): merged, lower scope keys win
+
+### Caching
+
+- **Kotlin server**: `GuidelinesService` uses `ConcurrentHashMap` with 5-min TTL
+- **Python orchestrator**: `guidelines_resolver._guidelines_cache` with 5-min TTL
+- Cache invalidation: on any write via `updateGuidelines()` or `update_guideline` tool

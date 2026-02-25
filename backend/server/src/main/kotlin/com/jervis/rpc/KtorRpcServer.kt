@@ -19,6 +19,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalChatContextApi
+import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -66,6 +67,8 @@ class KtorRpcServer(
     private val userTaskService: com.jervis.service.task.UserTaskService,
     private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
     private val chatRpcImpl: ChatRpcImpl,
+    private val guidelinesRpcImpl: GuidelinesRpcImpl,
+    private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
     private val clientService: com.jervis.service.client.ClientService,
     private val projectService: com.jervis.service.project.ProjectService,
@@ -94,6 +97,7 @@ class KtorRpcServer(
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)
                             installInternalTaskApi(taskRepository, taskService, userTaskService)
+                            installInternalGuidelinesApi(guidelinesService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
@@ -1267,6 +1271,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IEnvironmentResourceService> { environmentResourceRpcImpl }
                                 registerService<com.jervis.service.ISystemConfigService> { systemConfigRpcImpl }
                                 registerService<com.jervis.service.IChatService> { chatRpcImpl }
+                                registerService<com.jervis.service.IGuidelinesService> { guidelinesRpcImpl }
                             }
                         }
                     }

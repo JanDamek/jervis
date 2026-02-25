@@ -498,6 +498,7 @@ enum class SettingsCategory(
     CLIENTS("Klienti a projekty", Icons.Default.Business, "Sprava klientu, projektu a jejich konfigurace."),
     PROJECT_GROUPS("Skupiny projektu", Icons.Default.Folder, "Logicke seskupeni projektu se sdilenou KB."),
     CONNECTIONS("Pripojeni", Icons.Default.Power, "Technicke parametry pripojeni (Atlassian, Git, Email)."),
+    GUIDELINES("Pravidla a smernice", Icons.Default.Gavel, "Coding standards, Git pravidla, review checklist, approval pravidla."),
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automaticke kontroly novych polozek (Git, Jira, Wiki, Email)."),
     ENVIRONMENTS("Prostredi", Icons.Default.Language, "Definice K8s prostredi pro testovani."),
     CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastaveni API klicu a konfigurace coding agentu."),

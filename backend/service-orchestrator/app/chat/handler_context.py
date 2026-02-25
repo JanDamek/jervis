@@ -64,11 +64,21 @@ async def load_runtime_context() -> RuntimeContext:
     except Exception as e:
         logger.warning("Failed to load learned procedures: %s", e)
 
+    # Guidelines — from Kotlin server (cached in resolver, 5min TTL)
+    guidelines_text = ""
+    try:
+        from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_prompt
+        guidelines_data = await resolve_guidelines()  # Global guidelines for chat
+        guidelines_text = format_guidelines_for_prompt(guidelines_data)
+    except Exception as e:
+        logger.warning("Failed to load guidelines: %s", e)
+
     return RuntimeContext(
         clients_projects=_clients_cache,
         pending_user_tasks=pending,
         unclassified_meetings_count=unclassified,
         learned_procedures=learned_procedures,
+        guidelines_text=guidelines_text,
     )
 
 
