@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -208,12 +207,11 @@ internal fun ClientEditForm(
     ) {
         val scrollState = rememberScrollState()
 
-        SelectionContainer {
-            Column(
-                modifier = androidx.compose.ui.Modifier
-                    .weight(1f)
-                    .verticalScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+        Column(
+            modifier = androidx.compose.ui.Modifier
+                .weight(1f)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 JSection(title = "Základní údaje") {
                     JTextField(
@@ -437,7 +435,6 @@ internal fun ClientEditForm(
                 // Bottom spacing
                 Spacer(androidx.compose.ui.Modifier.height(16.dp))
             }
-        }
 
         // Git Analysis Results Dialog
         if (showGitAnalysisDialog && gitAnalysisResult != null) {
