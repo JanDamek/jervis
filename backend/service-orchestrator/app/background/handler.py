@@ -25,6 +25,7 @@ from app.background.escalation import EscalationTracker, needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
+from app.graph.nodes._helpers import detect_tool_loop
 from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
@@ -303,15 +304,10 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "content": result,
             })
 
-            # Loop detection — exact duplicate and semantic duplicate
-            call_key = (tool_name, json.dumps(arguments, sort_keys=True))
-            tool_call_history.append(call_key)
-            if tool_call_history.count(call_key) >= 2:
-                logger.warning("Background: exact tool loop detected: %s", tool_name)
-                messages.append({
-                    "role": "system",
-                    "content": f"STOP: {tool_name} called repeatedly with same arguments. Provide final result.",
-                })
+            # Loop detection (shared helper — exact duplicate detection)
+            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
+            if loop_reason:
+                messages.append({"role": "system", "content": loop_reason})
                 break
 
             # Semantic duplicate: same search tool called 3+ times (even with different args)

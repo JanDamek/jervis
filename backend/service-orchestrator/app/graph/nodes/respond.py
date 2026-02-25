@@ -23,7 +23,7 @@ from langgraph.types import interrupt
 from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
 from app.models import CodingTask
-from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message
+from app.graph.nodes._helpers import llm_with_cloud_fallback, is_error_message, detect_tool_loop
 from app.llm.provider import TIER_CONFIG, llm_provider
 from app.tools.definitions import ALL_RESPOND_TOOLS_FULL
 from app.tools.executor import execute_tool, AskUserInterrupt, _TOOL_EXECUTION_TIMEOUT_S
@@ -34,6 +34,78 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_ITERATIONS = settings.respond_max_iterations
 _MIN_ANSWER_CHARS = settings.respond_min_answer_chars
 _MAX_SHORT_RETRIES = settings.respond_max_short_retries
+
+
+def _build_respond_context(state: dict) -> str:
+    """Assemble context block from state for the respond node."""
+    project_context = state.get("project_context", "")
+    clarification = state.get("clarification_response")
+    evidence = state.get("evidence_pack", {})
+    parts: list[str] = []
+
+    # Task identity
+    client_name = state.get("client_name")
+    project_name = state.get("project_name")
+    identity_parts = []
+    if client_name:
+        identity_parts.append(f"Client: {client_name}")
+    if project_name:
+        identity_parts.append(f"Project: {project_name}")
+    if identity_parts:
+        parts.append("## Task Context\n" + "\n".join(identity_parts))
+
+    # User context — auto-prefetched knowledge
+    user_context = state.get("user_context")
+    if user_context:
+        parts.append(f"## User Context (learned from previous conversations)\n{user_context}")
+
+    # Memory Agent context
+    memory_context = state.get("memory_context")
+    if memory_context:
+        parts.append(f"## Working Memory (affairs & context)\n{memory_context}")
+
+    if project_context:
+        parts.append(f"## Project Context (from Knowledge Base)\n{project_context[:4000]}")
+
+    # Evidence pack KB results
+    if evidence:
+        for kr in evidence.get("kb_results", []):
+            content = kr.get("content", "")
+            if content:
+                parts.append(f"## Knowledge Base\n{content[:4000]}")
+        tracker_artifacts = evidence.get("tracker_artifacts", [])
+        if tracker_artifacts:
+            parts.append("## Referenced Items")
+            for ta in tracker_artifacts:
+                ref = ta.get("ref", "?")
+                content = ta.get("content", "")[:1000]
+                parts.append(f"### {ref}\n{content}")
+
+    # Chat history
+    chat_history = state.get("chat_history")
+    if chat_history:
+        history_parts = []
+        for block in (chat_history.get("summary_blocks") or []):
+            prefix = "[CHECKPOINT] " if block.get("is_checkpoint") else ""
+            history_parts.append(f"{prefix}Messages {block['sequence_range']}: {block['summary']}")
+        for msg in (chat_history.get("recent_messages") or []):
+            content = msg.get("content", "")
+            if is_error_message(content):
+                logger.debug("Filtering out error message from chat history: %s", content[:100])
+                continue
+            label = {"user": "Uživatel", "assistant": "Jervis"}.get(msg["role"], msg["role"])
+            history_parts.append(f"{label}: {content}")
+        if history_parts:
+            parts.append("## Conversation History\n" + "\n\n".join(history_parts))
+
+    if clarification:
+        parts.append(f"## User Clarification\n{json.dumps(clarification, default=str, indent=2)}")
+
+    env_data = state.get("environment")
+    if env_data:
+        parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:500]}")
+
+    return "\n\n".join(parts)
 
 
 async def respond(state: dict) -> dict:
@@ -49,85 +121,7 @@ async def respond(state: dict) -> dict:
         return {"final_result": "Background task completed."}
 
     task = CodingTask(**state["task"])
-    project_context = state.get("project_context", "")
-    clarification = state.get("clarification_response")
-    evidence = state.get("evidence_pack", {})
-
-    # Build context
-    context_parts: list[str] = []
-
-    # Task identity — client/project names from top-level state
-    client_name = state.get("client_name")
-    project_name = state.get("project_name")
-    identity_parts = []
-    if client_name:
-        identity_parts.append(f"Client: {client_name}")
-    if project_name:
-        identity_parts.append(f"Project: {project_name}")
-    if identity_parts:
-        context_parts.append("## Task Context\n" + "\n".join(identity_parts))
-
-    # User context — auto-prefetched knowledge from previous conversations
-    user_context = state.get("user_context")
-    if user_context:
-        context_parts.append(f"## User Context (learned from previous conversations)\n{user_context}")
-
-    # Memory Agent context — affair-aware working memory
-    memory_context = state.get("memory_context")
-    if memory_context:
-        context_parts.append(f"## Working Memory (affairs & context)\n{memory_context}")
-
-    if project_context:
-        context_parts.append(f"## Project Context (from Knowledge Base)\n{project_context[:4000]}")
-
-    # Evidence pack KB results
-    if evidence:
-        kb_results = evidence.get("kb_results", [])
-        for kr in kb_results:
-            content = kr.get("content", "")
-            if content:
-                context_parts.append(f"## Knowledge Base\n{content[:4000]}")
-
-        tracker_artifacts = evidence.get("tracker_artifacts", [])
-        if tracker_artifacts:
-            context_parts.append("## Referenced Items")
-            for ta in tracker_artifacts:
-                ref = ta.get("ref", "?")
-                content = ta.get("content", "")[:1000]
-                context_parts.append(f"### {ref}\n{content}")
-
-    # Chat history — full conversation context (summaries + recent)
-    chat_history = state.get("chat_history")
-    if chat_history:
-        history_parts = []
-        # Summary blocks (older compressed history)
-        for block in (chat_history.get("summary_blocks") or []):
-            prefix = "[CHECKPOINT] " if block.get("is_checkpoint") else ""
-            history_parts.append(
-                f"{prefix}Messages {block['sequence_range']}: {block['summary']}"
-            )
-        # Recent messages (verbatim) — FILTER OUT ERROR MESSAGES
-        for msg in (chat_history.get("recent_messages") or []):
-            content = msg.get("content", "")
-            # Skip error messages (JSON error objects or error text)
-            if is_error_message(content):
-                logger.debug("Filtering out error message from chat history: %s", content[:100])
-                continue
-            label = {"user": "Uživatel", "assistant": "Jervis"}.get(msg["role"], msg["role"])
-            history_parts.append(f"{label}: {content}")
-        if history_parts:
-            context_parts.append("## Conversation History\n" + "\n\n".join(history_parts))
-
-    if clarification:
-        context_parts.append(
-            f"## User Clarification\n{json.dumps(clarification, default=str, indent=2)}"
-        )
-
-    env_data = state.get("environment")
-    if env_data:
-        context_parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:500]}")
-
-    context_block = "\n\n".join(context_parts) if context_parts else ""
+    context_block = _build_respond_context(state)
 
     messages = [
         {
@@ -415,23 +409,10 @@ async def respond(state: dict) -> dict:
             messages.append(tool_result_msg)
             logger.debug("Respond: appended tool result message: %s", tool_result_msg)
 
-            # Tool loop detection: track (name, args) and detect repeats
-            call_key = (tool_name, json.dumps(arguments, sort_keys=True))
-            tool_call_history.append(call_key)
-            repeat_count = tool_call_history.count(call_key)
-            if repeat_count >= 2:
-                logger.warning(
-                    "Tool loop detected: %s called %dx with same args, breaking",
-                    tool_name, repeat_count,
-                )
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        f"STOP: Voláš {tool_name} opakovaně se stejnými argumenty. "
-                        f"Tento nástroj ti nedá jiný výsledek. "
-                        f"Odpověz uživateli na základě informací které už máš."
-                    ),
-                })
+            # Tool loop detection
+            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
+            if loop_reason:
+                messages.append({"role": "system", "content": loop_reason})
                 tool_loop_break = True
                 break
         if tool_loop_break:
@@ -445,7 +426,7 @@ async def respond(state: dict) -> dict:
         logger.warning("Respond: max iterations (%d) reached, forcing final answer", _MAX_TOOL_ITERATIONS)
     final_messages = messages + [{
         "role": "system",
-        "content": "Provide your final answer now based on the information gathered. Do not call more tools."
+        "content": "Poskytni finální odpověď na základě shromážděných informací. Nevolej další nástroje."
     }]
     final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + 4096
 

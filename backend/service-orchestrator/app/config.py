@@ -171,6 +171,13 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# --- Context & LLM limits ---
+LOCAL_CONTEXT_LIMIT = 256_000          # qwen3 max context (tokens)
+DEFAULT_TIER_CONTEXT = 262_144         # fallback when tier config missing num_ctx
+CONTENT_TRUNCATION_CHARS = 200         # in-place content truncation threshold
+KB_TIMEOUT_FAST = 10.0                 # dedicated KB endpoints (cached)
+KB_TIMEOUT_STANDARD = 15.0             # semantic search via /retrieve
+
 
 def estimate_tokens(text: str) -> int:
     """Estimate token count from text using chars/token ratio.

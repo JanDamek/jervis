@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 
 import httpx
 
-from app.config import foreground_headers, estimate_tokens
+from app.config import foreground_headers, estimate_tokens, KB_TIMEOUT_FAST, KB_TIMEOUT_STANDARD
+from app.graph.nodes._helpers import parse_json_response
 from app.memory.lqm import LocalQuickMemory
 from app.memory.models import (
     Affair,
@@ -254,20 +255,8 @@ Odpověz POUZE validním JSON:
     )
 
     content = response.choices[0].message.content or ""
-
-    # Strip markdown fences
-    text = content.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("Failed to parse parking summary JSON, using raw content")
-        return {"summary": content[:500]}
+    result = parse_json_response(content)
+    return result if result else {"summary": content[:500]}
 
 
 async def _load_affair_from_kb(
@@ -278,7 +267,7 @@ async def _load_affair_from_kb(
 ) -> Affair | None:
     """Load a single affair from KB by its source_urn."""
     headers = foreground_headers(processing_mode)
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=KB_TIMEOUT_STANDARD) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",
             json={
@@ -309,7 +298,7 @@ async def _load_affairs_via_endpoint(
     if project_id:
         params["project_id"] = project_id
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=KB_TIMEOUT_FAST) as client:
         resp = await client.get(f"{kb_url}/api/v1/affairs", params=params)
         if resp.status_code == 404:
             return None  # Endpoint not yet deployed
@@ -327,7 +316,7 @@ async def _load_affairs_via_search(
 ) -> list[Affair]:
     """Fallback: load affairs via semantic search with kind=affair."""
     headers = foreground_headers(processing_mode)
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=KB_TIMEOUT_STANDARD) as client:
         resp = await client.post(
             f"{kb_url}/api/v1/retrieve",
             json={

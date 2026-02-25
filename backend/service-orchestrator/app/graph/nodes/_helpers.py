@@ -15,7 +15,13 @@ import re
 
 from langgraph.types import interrupt
 
-from app.config import foreground_headers, estimate_tokens
+from app.config import (
+    foreground_headers,
+    estimate_tokens,
+    LOCAL_CONTEXT_LIMIT,
+    DEFAULT_TIER_CONTEXT,
+    CONTENT_TRUNCATION_CHARS,
+)
 from app.llm.provider import llm_provider, TIER_CONFIG
 from app.models import (
     CodingTask,
@@ -117,17 +123,17 @@ async def llm_with_cloud_fallback(
     if allow_cloud_prompt:
         auto = auto | escalation.get_available_providers()
 
-    # Safety: context exceeds qwen3 max (256k)?
-    if context_tokens > 256_000:
-        # Try cloud if enabled, otherwise fail
+    # Safety: context exceeds local model max?
+    if context_tokens > LOCAL_CONTEXT_LIMIT:
+        limit_k = LOCAL_CONTEXT_LIMIT // 1000
         if auto:
             return await _escalate_to_cloud(
                 task, auto, escalation, context_tokens, task_type,
                 messages, max_tokens, temperature, tools,
-                reason=f"Context příliš velký ({context_tokens//1000}k tokenů, qwen3 max je 256k)",
+                reason=f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k)",
             )
         raise RuntimeError(
-            f"Context příliš velký ({context_tokens//1000}k tokenů, qwen3 max je 256k). "
+            f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k). "
             "Cloud modely nejsou povoleny v projektu."
         )
 
@@ -139,7 +145,7 @@ async def llm_with_cloud_fallback(
 
     # W-14: Context overflow guard — ensure messages fit selected tier
     tier_config = TIER_CONFIG.get(local_tier, {})
-    tier_ctx_limit = tier_config.get("num_ctx", 262144)
+    tier_ctx_limit = tier_config.get("num_ctx", DEFAULT_TIER_CONTEXT)
     if context_tokens > tier_ctx_limit:
         logger.warning(
             "CONTEXT_OVERFLOW | estimated=%d tokens > tier %s limit=%d | truncating messages",
@@ -266,6 +272,33 @@ def parse_json_response(content: str) -> dict:
     return {}
 
 
+# --- Tool loop detection ---
+
+
+def detect_tool_loop(
+    tool_call_history: list[tuple[str, str]],
+    tool_name: str,
+    arguments: dict,
+) -> str | None:
+    """Track tool calls and detect repeated invocations with identical args.
+
+    Appends the call to *tool_call_history* (mutates in-place) and returns a
+    stop-reason string when the same (name, args) pair appears ≥ 2 times, or
+    ``None`` if no loop is detected.
+    """
+    call_key = (tool_name, json.dumps(arguments, sort_keys=True))
+    tool_call_history.append(call_key)
+    repeat_count = tool_call_history.count(call_key)
+    if repeat_count >= 2:
+        logger.warning("Tool loop detected: %s called %dx with same args", tool_name, repeat_count)
+        return (
+            f"STOP: Voláš {tool_name} opakovaně se stejnými argumenty. "
+            f"Tento nástroj ti nedá jiný výsledek. "
+            f"Odpověz uživateli na základě informací které už máš."
+        )
+    return None
+
+
 # --- W-14: Context overflow guard ---
 
 
@@ -305,8 +338,8 @@ def _truncate_messages_to_budget(messages: list, token_budget: int) -> list:
             tokens = _estimate_tokens(msg)
             # Truncate content instead of removing entirely
             content = msg.get("content", "")
-            if len(content) > 200:
-                msg["content"] = content[:200] + " [truncated for context budget]"
+            if len(content) > CONTENT_TRUNCATION_CHARS:
+                msg["content"] = content[:CONTENT_TRUNCATION_CHARS] + " [truncated for context budget]"
                 saved = tokens - _estimate_tokens(msg)
                 total -= saved
                 removed += saved
