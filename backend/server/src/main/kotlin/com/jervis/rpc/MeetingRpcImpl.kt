@@ -274,7 +274,9 @@ class MeetingRpcImpl(
                     title = meeting.title,
                 )
                 knowledgeService.purge(sourceUrn.toString())
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                logger.warn { "Failed to purge KB data for meeting ${meeting.id}: ${e.message}" }
+            }
         }
 
         meetingRepository.deleteById(id)
