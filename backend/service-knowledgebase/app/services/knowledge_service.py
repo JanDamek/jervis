@@ -177,6 +177,71 @@ class KnowledgeService:
             entity_keys=[],
         )
 
+    async def ingest_immediate(self, request: IngestRequest, embedding_priority: int | None = None) -> IngestResult:
+        """Synchronous ingest — RAG + LLM extraction in one call.
+
+        Unlike regular ingest() which queues LLM extraction for background
+        processing, this method runs the full pipeline synchronously:
+        1. RAG ingest (embedding + Weaviate)
+        2. LLM entity extraction (graph nodes + edges)
+        3. Bidirectional chunk↔entity linking
+
+        Use for critical writes (affair parking, user memory) where the caller
+        needs the data searchable immediately.
+        """
+        logger.info(
+            "KB_WRITE: INGEST_IMMEDIATE_START sourceUrn=%s kind=%s clientId=%s content_len=%d",
+            request.sourceUrn, request.kind or "?", request.clientId, len(request.content or ""),
+        )
+
+        # 1. RAG ingest (fast)
+        rag_start = time.time()
+        chunks_count, chunk_ids = await self.rag_service.ingest(request, embedding_priority=embedding_priority)
+        rag_ingest_duration.observe(time.time() - rag_start)
+        rag_ingest_total.labels(status="success").inc()
+        rag_ingest_chunks.observe(chunks_count)
+
+        nodes_created = 0
+        edges_created = 0
+        entity_keys: list[str] = []
+
+        # 2. LLM entity extraction — synchronous (skip queue)
+        if chunk_ids:
+            try:
+                nodes_created, edges_created, entity_keys = await self.graph_service.ingest(
+                    request=request,
+                    chunk_ids=chunk_ids,
+                    embedding_priority=embedding_priority or 0,
+                )
+
+                # 3. Bidirectional chunk↔entity linking
+                if entity_keys:
+                    for chunk_id in chunk_ids:
+                        try:
+                            await self.rag_service.update_chunk_graph_refs(chunk_id, entity_keys)
+                        except Exception as e:
+                            logger.warning("Failed to link chunk %s to entities: %s", chunk_id, e)
+
+            except Exception as e:
+                logger.warning(
+                    "KB_WRITE: INGEST_IMMEDIATE_EXTRACTION_FAILED sourceUrn=%s: %s",
+                    request.sourceUrn, e,
+                )
+
+        logger.info(
+            "KB_WRITE: INGEST_IMMEDIATE_COMPLETE sourceUrn=%s chunks=%d nodes=%d edges=%d entities=%d",
+            request.sourceUrn, chunks_count, nodes_created, edges_created, len(entity_keys),
+        )
+
+        return IngestResult(
+            status="success",
+            chunks_count=chunks_count,
+            nodes_created=nodes_created,
+            edges_created=edges_created,
+            chunk_ids=chunk_ids,
+            entity_keys=entity_keys,
+        )
+
     async def _enqueue_extraction(self, request: IngestRequest, chunk_ids: list[str], priority: int):
         """Enqueue LLM extraction task for background processing."""
         import uuid
