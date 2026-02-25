@@ -219,7 +219,12 @@ class MeetingViewModel(
             _expandedGroups.value = _expandedGroups.value - key
             return
         }
-        val clientId = lastClientId ?: return
+        val clientId = lastClientId
+        if (clientId == null) {
+            println("[Meeting] toggleGroup: lastClientId is null, cannot expand group key=$key")
+            _error.value = "Nelze rozbalit skupinu — není vybrán klient"
+            return
+        }
         scope.launch {
             _loadingGroups.value = _loadingGroups.value + key
             try {
@@ -355,8 +360,10 @@ class MeetingViewModel(
         title: String? = null,
         meetingType: MeetingTypeEnum? = null,
     ) {
-        lastClientId = clientId
-        lastProjectId = projectId
+        // Only overwrite scope IDs if explicitly provided — preserves timeline context
+        // for toggleGroup when quick recording is started without scope
+        if (clientId != null) lastClientId = clientId
+        if (projectId != null) lastProjectId = projectId
         pendingTitle = title
         pendingMeetingType = meetingType
         scope.launch {
