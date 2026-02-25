@@ -32,8 +32,8 @@ fun Routing.installInternalGuidelinesApi(
 ) {
     get("/internal/guidelines/merged") {
         try {
-            val clientId = call.parameters["clientId"]?.let { ClientId(it) }
-            val projectId = call.parameters["projectId"]?.let { ProjectId(it) }
+            val clientId = call.parameters["clientId"]?.let { ClientId.fromString(it) }
+            val projectId = call.parameters["projectId"]?.let { ProjectId.fromString(it) }
             val merged = guidelinesService.getMergedGuidelines(clientId, projectId)
             call.respondText(json.encodeToString(merged), ContentType.Application.Json)
         } catch (e: Exception) {
@@ -51,8 +51,8 @@ fun Routing.installInternalGuidelinesApi(
             val scope = GuidelinesScope.valueOf(
                 call.parameters["scope"] ?: "GLOBAL",
             )
-            val clientId = call.parameters["clientId"]?.let { ClientId(it) }
-            val projectId = call.parameters["projectId"]?.let { ProjectId(it) }
+            val clientId = call.parameters["clientId"]?.let { ClientId.fromString(it) }
+            val projectId = call.parameters["projectId"]?.let { ProjectId.fromString(it) }
             val doc = guidelinesService.getGuidelines(scope, clientId, projectId)
             call.respondText(json.encodeToString(doc.toDto()), ContentType.Application.Json)
         } catch (e: Exception) {

@@ -63,8 +63,8 @@ class GuidelinesService(
      * Update guidelines for a specific scope. Only non-null categories in the request are updated.
      */
     suspend fun updateGuidelines(request: GuidelinesUpdateRequest): GuidelinesDocument {
-        val clientId = request.clientId?.let { ClientId(it) }
-        val projectId = request.projectId?.let { ProjectId(it) }
+        val clientId = request.clientId?.let { ClientId.fromString(it) }
+        val projectId = request.projectId?.let { ProjectId.fromString(it) }
 
         val existing = getGuidelines(request.scope, clientId, projectId)
 

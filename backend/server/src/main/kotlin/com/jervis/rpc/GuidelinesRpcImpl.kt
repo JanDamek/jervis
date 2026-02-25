@@ -25,8 +25,8 @@ class GuidelinesRpcImpl(
         val guidelinesScope = GuidelinesScope.valueOf(scope)
         val doc = guidelinesService.getGuidelines(
             scope = guidelinesScope,
-            clientId = clientId?.let { ClientId(it) },
-            projectId = projectId?.let { ProjectId(it) },
+            clientId = clientId?.let { ClientId.fromString(it) },
+            projectId = projectId?.let { ProjectId.fromString(it) },
         )
         return doc.toDto()
     }
@@ -41,8 +41,8 @@ class GuidelinesRpcImpl(
         projectId: String?,
     ): MergedGuidelinesDto {
         return guidelinesService.getMergedGuidelines(
-            clientId = clientId?.let { ClientId(it) },
-            projectId = projectId?.let { ProjectId(it) },
+            clientId = clientId?.let { ClientId.fromString(it) },
+            projectId = projectId?.let { ProjectId.fromString(it) },
         )
     }
 
@@ -54,8 +54,8 @@ class GuidelinesRpcImpl(
         val guidelinesScope = GuidelinesScope.valueOf(scope)
         return guidelinesService.deleteGuidelines(
             scope = guidelinesScope,
-            clientId = clientId?.let { ClientId(it) },
-            projectId = projectId?.let { ProjectId(it) },
+            clientId = clientId?.let { ClientId.fromString(it) },
+            projectId = projectId?.let { ProjectId.fromString(it) },
         )
     }
 }

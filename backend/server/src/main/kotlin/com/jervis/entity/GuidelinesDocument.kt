@@ -52,8 +52,8 @@ data class GuidelinesDocument(
     fun toDto(): GuidelinesDocumentDto = GuidelinesDocumentDto(
         id = id,
         scope = scope,
-        clientId = clientId?.value,
-        projectId = projectId?.value,
+        clientId = clientId?.toString(),
+        projectId = projectId?.toString(),
         coding = coding,
         git = git,
         review = review,
