@@ -14,20 +14,17 @@ import json
 import logging
 import re
 
+from app.chat.drift import detect_drift
 from app.chat.handler_context import build_messages
 from app.chat.handler_streaming import call_llm
 from app.chat.handler_tools import extract_tool_calls, execute_chat_tool
 from app.chat.models import ChatStreamEvent, SubTopic, SubTopicResult
 from app.chat.tools import TOOL_DOMAINS
+from app.config import settings
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
-
-# Thresholds
-DECOMPOSE_THRESHOLD = 8000       # chars (~2k tokens)
-SUBTOPIC_MAX_ITERATIONS = 3
-MAX_SUBTOPICS = 5
 
 # LLM system prompts for decomposition pipeline
 _CLASSIFIER_SYSTEM = (
@@ -153,7 +150,7 @@ async def maybe_decompose(message: str) -> list[SubTopic] | None:
     Returns list of SubTopic if multi-topic, None if single-topic or on failure.
     """
     msg_len = len(message)
-    if msg_len < DECOMPOSE_THRESHOLD:
+    if msg_len < settings.decompose_threshold:
         return None
 
     head = message[:1500]
@@ -199,7 +196,7 @@ async def maybe_decompose(message: str) -> list[SubTopic] | None:
             return None
 
         topics_raw = parsed.get("topics", [])
-        if not topics_raw or len(topics_raw) > MAX_SUBTOPICS:
+        if not topics_raw or len(topics_raw) > settings.max_subtopics:
             logger.warning("Chat decompose: invalid topic count %d, fallback", len(topics_raw))
             return None
 
@@ -254,7 +251,6 @@ async def process_sub_topic(
     project_id: str | None = None,
 ) -> SubTopicResult:
     """Process one sub-topic through a mini agentic loop."""
-    from app.chat.handler_agentic import detect_drift
 
     section = request.message[topic.char_start:topic.char_end]
     scoped_message = (
@@ -280,7 +276,7 @@ async def process_sub_topic(
     tool_call_history: list[tuple[str, str]] = []
 
     try:
-        for iteration in range(SUBTOPIC_MAX_ITERATIONS):
+        for iteration in range(settings.subtopic_max_iterations):
             message_chars = sum(len(str(m)) for m in messages)
             estimated_tokens = message_chars // 4 + sum(len(str(t)) for t in selected_tools) // 4 + 4096
 
@@ -364,7 +360,7 @@ async def process_sub_topic(
 
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
 
-            remaining_iters = SUBTOPIC_MAX_ITERATIONS - iteration - 1
+            remaining_iters = settings.subtopic_max_iterations - iteration - 1
             messages.append({
                 "role": "system",
                 "content": f'[FOCUS] Téma: "{topic.title}". Zbývá {remaining_iters} iterací. Pokud máš dost info, ODPOVĚZ.',

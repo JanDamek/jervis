@@ -28,7 +28,6 @@ from app.chat.context import chat_context_assembler
 from app.chat.handler_agentic import run_agentic_loop
 from app.chat.handler_context import load_runtime_context, build_messages, load_task_context_message
 from app.chat.handler_decompose import (
-    DECOMPOSE_THRESHOLD,
     save_original_to_kb,
     summarize_long_message,
     maybe_decompose,
@@ -40,12 +39,10 @@ from app.chat.intent import classify_intent, select_tools
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt
 from app.chat.tools import CHAT_TOOLS, ToolCategory
+from app.config import settings
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
-
-# Summarization threshold — messages above this get pre-summarized
-SUMMARIZE_THRESHOLD = 16000
 
 
 async def handle_chat(
@@ -79,7 +76,7 @@ async def handle_chat(
 
         # Anti-dump: remove storage tools for long messages
         _STORAGE_TOOL_NAMES = {"store_knowledge", "memory_store"}
-        if len(request.message) > DECOMPOSE_THRESHOLD:
+        if len(request.message) > settings.decompose_threshold:
             before_count = len(selected_tools)
             selected_tools = [t for t in selected_tools if t["function"]["name"] not in _STORAGE_TOOL_NAMES]
             if len(selected_tools) < before_count:
@@ -114,7 +111,7 @@ async def handle_chat(
 
         # 5. Long message pre-processing
         is_summarized = False
-        is_long_message = msg_len > SUMMARIZE_THRESHOLD
+        is_long_message = msg_len > settings.summarize_threshold
 
         if is_long_message:
             yield ChatStreamEvent(type="thinking", content="Analyzuji obsah dlouhé zprávy...")
@@ -166,7 +163,7 @@ async def handle_chat(
                 return
 
         # 6. Try decomposition for long messages
-        if msg_len > DECOMPOSE_THRESHOLD:
+        if msg_len > settings.decompose_threshold:
             async for event in _try_decompose(
                 request, context, runtime_ctx, selected_tools, system_prompt_text,
                 messages, msg_len, disconnect_event, is_summarized, is_long_message,
@@ -284,7 +281,7 @@ async def _try_decompose(
         return
 
     # Decompose skipped or single-topic → add focus hints and fall through
-    if msg_len > DECOMPOSE_THRESHOLD:
+    if msg_len > settings.decompose_threshold:
         focus_hint = (
             "[FOCUS] Toto je dlouhá zpráva — ODPOVĚZ na ni stručně a věcně. "
             "NEUKLÁDEJ celou zprávu ani její části do KB/memory/knowledge. "

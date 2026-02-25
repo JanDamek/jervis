@@ -1,10 +1,11 @@
-"""Agentic loop and drift detection for chat handler.
+"""Agentic loop for chat handler.
 
 Responsibilities:
 - Run the main agentic loop (LLM → tools → iterate)
-- Multi-signal drift detection
 - Tool execution within the loop (with scope_change events)
 - Focus reminders between iterations
+
+Drift detection: app.chat.drift (shared with handler_decompose).
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from typing import AsyncIterator
 
 from bson import ObjectId
 
+from app.chat.drift import detect_drift
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message, STREAM_CHUNK_SIZE
 from app.chat.handler_tools import (
     extract_tool_calls,
@@ -28,15 +30,11 @@ from app.chat.handler_tools import (
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import RuntimeContext
 from app.chat.tools import TOOL_DOMAINS
+from app.config import settings
 from app.llm.provider import llm_provider
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
-
-# Tier constants
-MAX_ITERATIONS = 6
-MAX_ITERATIONS_LONG = 3
-DECOMPOSE_THRESHOLD = 8000
 
 # Tier ordering for clamping
 CHAT_MAX_TIER = ModelTier.LOCAL_LARGE
@@ -67,73 +65,6 @@ def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[i
 
 
 # ---------------------------------------------------------------------------
-# Drift detection
-# ---------------------------------------------------------------------------
-
-
-def detect_drift(
-    consecutive_same: int,
-    domain_history: list[set[str]],
-    distinct_tools_used: set[str],
-    iteration: int,
-    tool_call_history: list[tuple[str, str]] | None = None,
-) -> str | None:
-    """Multi-signal drift detection.
-
-    Returns human-readable reason if drift detected, None otherwise.
-
-    Signals:
-    1. Consecutive same: 2× identical tool+args → stuck in loop
-    2. Same tool repeated: 3+ times across ANY iterations
-    3. Alternating tool pair: A→B→A→B pattern (same-domain ping-pong)
-    4. Domain drift: 3 iterations with 3+ distinct domains, no common domain
-    5. Excessive tools: 8+ distinct tools after 4+ iterations
-    """
-    # Signal 1: Identical tool+args in consecutive iterations
-    if consecutive_same >= 2:
-        return "opakovaně voláš stejný tool se stejnými argumenty"
-
-    if tool_call_history and len(tool_call_history) >= 3:
-        from collections import Counter
-
-        # Signal 2: Same tool called 3+ times total
-        tool_name_counts = Counter(name for name, _ in tool_call_history)
-        for tool_name, count in tool_name_counts.items():
-            if count >= 3:
-                return f"tool '{tool_name}' volán {count}× — opakuješ se, odpověz s tím co máš"
-
-        # Signal 3: Alternating tool pair pattern (A→B→A→B)
-        # Detects when 2 tools keep alternating, even with different args
-        if len(tool_call_history) >= 4:
-            names = [name for name, _ in tool_call_history]
-            last_four = names[-4:]
-            if (last_four[0] == last_four[2] and last_four[1] == last_four[3]
-                    and last_four[0] != last_four[1]):
-                return (
-                    f"tools '{last_four[0]}' a '{last_four[1]}' se opakují v cyklu "
-                    f"— odpověz s tím co máš"
-                )
-
-    # Signal 4: Domain drift across iterations
-    if len(domain_history) >= 3:
-        last_three = domain_history[-3:]
-        all_domains = set()
-        for d in last_three:
-            all_domains.update(d)
-        common = last_three[0]
-        for d in last_three[1:]:
-            common = common & d
-        if not common and len(all_domains) >= 3:
-            return f"tool calls přeskakují mezi nesouvisejícími oblastmi ({', '.join(sorted(all_domains))})"
-
-    # Signal 5: Too many distinct tools
-    if iteration >= 4 and len(distinct_tools_used) >= 8:
-        return f"použito {len(distinct_tools_used)} různých toolů — příliš rozptýlené"
-
-    return None
-
-
-# ---------------------------------------------------------------------------
 # Main agentic loop
 # ---------------------------------------------------------------------------
 
@@ -151,7 +82,7 @@ async def run_agentic_loop(
 
     Yields ChatStreamEvent objects for SSE streaming.
     """
-    effective_max_iterations = MAX_ITERATIONS_LONG if msg_len > DECOMPOSE_THRESHOLD else MAX_ITERATIONS
+    effective_max_iterations = settings.chat_max_iterations_long if msg_len > settings.decompose_threshold else settings.chat_max_iterations
 
     created_tasks: list[dict] = []
     responded_tasks: list[str] = []

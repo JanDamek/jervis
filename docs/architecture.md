@@ -1886,12 +1886,19 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 | `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession) |
 | `backend/server/.../entity/ChatSessionDocument.kt` | MongoDB session entity |
 | `backend/server/.../repository/ChatSessionRepository.kt` | Spring Data repo |
-| `backend/service-orchestrator/app/chat/handler.py` | Python agentic loop (thinking, streaming, stop, error recovery) |
+| `backend/service-orchestrator/app/chat/handler.py` | Chat entry-point: context, intent, decompose, agentic loop |
+| `backend/service-orchestrator/app/chat/handler_agentic.py` | Main agentic loop (LLM → tools → iterate) |
+| `backend/service-orchestrator/app/chat/handler_decompose.py` | Long message processing: summarize, decompose, sub-topics |
+| `backend/service-orchestrator/app/chat/handler_tools.py` | Tool execution, descriptions, switch_context resolution |
+| `backend/service-orchestrator/app/chat/handler_streaming.py` | LLM calls, token streaming, message saving |
+| `backend/service-orchestrator/app/chat/handler_context.py` | Runtime context loading, message building |
+| `backend/service-orchestrator/app/chat/drift.py` | Multi-signal drift detection (shared by agentic + decompose) |
 | `backend/service-orchestrator/app/chat/models.py` | ChatRequest, ChatStreamEvent models |
 | `backend/service-orchestrator/app/chat/tools.py` | Chat tool definitions (26 tools) |
 | `backend/service-orchestrator/app/chat/context.py` | ChatContextAssembler (MongoDB motor) |
 | `backend/service-orchestrator/app/chat/system_prompt.py` | System prompt builder + RuntimeContext |
 | `backend/service-orchestrator/app/chat/router.py` | Tool routing |
+| `backend/service-orchestrator/app/tools/ollama_parsing.py` | Shared Ollama JSON tool-call parsing |
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Python HTTP client for Kotlin internal API |
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints incl. /chat, /chat/stop |
 

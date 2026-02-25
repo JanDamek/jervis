@@ -24,6 +24,7 @@ import uuid
 from app.background.escalation import EscalationTracker, needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
+from app.config import settings
 from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
@@ -34,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 _escalation_policy = EscalationPolicy()
 
-_MAX_ITERATIONS = 15
 _MAX_ESCALATION_RETRIES = 3  # max times to retry with escalated model
 
 # Background tasks can use higher tiers than chat (no VRAM contention with streaming)
@@ -170,11 +170,11 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     final_answer = ""
     step_results: list[dict] = []
 
-    while iteration < _MAX_ITERATIONS:
+    while iteration < settings.background_max_iterations:
         iteration += 1
         logger.info(
             "Background: iteration %d/%d | tier=%s",
-            iteration, _MAX_ITERATIONS, tracker.current_tier.value,
+            iteration, settings.background_max_iterations, tracker.current_tier.value,
         )
 
         # Re-estimate context size and escalate tier if needed
@@ -334,7 +334,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                     break
 
     # --- Finalize ---
-    if not final_answer and iteration >= _MAX_ITERATIONS:
+    if not final_answer and iteration >= settings.background_max_iterations:
         # Force a final answer
         try:
             final_messages = messages + [{

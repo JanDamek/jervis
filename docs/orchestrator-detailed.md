@@ -2419,6 +2419,17 @@ class Settings:
     max_tool_result_in_msg: int = 2_000   # Max chars per tool result
     token_estimate_ratio: int = 4         # Chars-per-token ratio
 
+    # Chat handler constants
+    chat_max_iterations: int = 6          # Max agentic loop iters (normal)
+    chat_max_iterations_long: int = 3     # Max iters for long messages
+    decompose_threshold: int = 8000       # Chars to trigger decomposition
+    summarize_threshold: int = 16000      # Chars to trigger summarization
+    subtopic_max_iterations: int = 3      # Max iters per sub-topic
+    max_subtopics: int = 5               # Max sub-topics from decomposition
+
+    # Background handler constants
+    background_max_iterations: int = 15   # Max agentic loop iters for bg
+
     # Guidelines cache
     guidelines_cache_ttl: int = 300       # TTL seconds (5 min)
 
