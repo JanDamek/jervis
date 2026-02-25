@@ -19,10 +19,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT_WEB_SEARCH = 15.0  # seconds
-_TIMEOUT_KB_SEARCH = 10.0   # seconds
-MAX_TOOL_RESULT_CHARS = 8000  # W-11: Cap tool results to prevent context explosion
-_TOOL_EXECUTION_TIMEOUT_S = 120  # W-22: Max seconds for any single tool execution
+_TIMEOUT_WEB_SEARCH = settings.timeout_web_search
+_TIMEOUT_KB_SEARCH = settings.timeout_kb_search
+MAX_TOOL_RESULT_CHARS = settings.max_tool_result_chars
+_TOOL_EXECUTION_TIMEOUT_S = settings.tool_execution_timeout
 
 
 class AskUserInterrupt(Exception):

@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     affair_max_hot: int = 100
     context_switch_confidence_threshold: float = 0.7
 
+    # Tool execution timeouts (seconds)
+    timeout_web_search: float = 15.0
+    timeout_kb_search: float = 10.0
+    max_tool_result_chars: int = 8000
+    tool_execution_timeout: int = 120
+
     class Config:
         env_prefix = "ORCHESTRATOR_"
 
