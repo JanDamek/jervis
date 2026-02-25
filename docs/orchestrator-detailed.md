@@ -638,7 +638,7 @@ class OrchestratorState(TypedDict, total=False):
 **Agentic tool-use loop** (max 8 iterations): LLM call → tool calls → execute → repeat.
 Tools: `web_search`, `kb_search`, `kb_delete`, `store_knowledge`, `ask_user`, `create_scheduled_task`, + KB stats, git, filesystem, terminal tools.
 
-**Tool loop detection**: Sleduje historii `(tool_name, args_json)`. Pokud se stejný tool se stejnými argumenty zavolá 2×, loop se přeruší, injektuje se system message "STOP", a vynutí se finální odpověď. Sdílí forced-answer path s max iterations.
+**Tool loop detection** (5 signals): Sleduje historii `(tool_name, args_json)`. Signály: (1) Consecutive same — 2× identický tool+args. (2) Same tool 3×+ — jeden tool volán celkově 3+×. (3) **Alternating pair** — A→B→A→B pattern (detekuje ping-pong mezi dvěma tools, např. brain_search + brain_update). (4) Domain drift — 3 iterace s 3+ různými doménami bez průniku. (5) Excessive tools — 8+ distinct tools po 4+ iteracích. Při detekci se injektuje system message "STOP" a vynutí finální odpověď.
 
 **ask_user tool**: Pokud agent potřebuje upřesnění od uživatele, zavolá `ask_user(question)`. Executor vyhodí `AskUserInterrupt`, respond node zachytí → volá `interrupt()` → graf se zastaví → uživatel odpoví v chatu → graf pokračuje s odpovědí jako tool result. Viz [§13 Approval Flow](#13-approval-flow--interruptresume-mechanismus).
 

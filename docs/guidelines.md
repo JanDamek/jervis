@@ -65,6 +65,8 @@ Errors must not be hidden. An exception is better than masking an error.
 - Let exceptions propagate to top-level handler
 - For Tools: Tools throw exceptions, caller handles as tool error
 - Validate input (fail-fast), not defensive programming everywhere
+- Background/batch jobs: skip + warn on missing references (stale IDs) instead of crashing the whole batch
+- External service calls (LLM, APIs): retry transient errors with exponential backoff before escalating
 
 ### Kotlin-First & Idiomatic Code
 

@@ -42,64 +42,12 @@ Opraveno:
 
 ---
 
-## Feature 4: Chat permissions scope — scope-based akční oprávnění
+## ~~Feature 4: Chat permissions scope — scope-based akční oprávnění~~ ✅ OPRAVENO
 
-### Motivace
-Současný přístup (Bug 2 fix) je příliš striktní — chat se VŽDY ptá na souhlas. Ale pokud uživatel řekne
-"vytvoř background task pro tohle" a pak v rámci téhož scope pokračuje s další prací, měl by chat mít
-povolení vytvářet background tasky bez opětovného ptaní.
-
-### Koncept
-Chat si udržuje **permissions mapu** vázanou na **aktuální scope** (client_id + project_id):
-
-```python
-# V run_agentic_loop nebo na úrovni ChatRequest
-chat_permissions = {
-    "scope": {"client_id": "abc", "project_id": "xyz"},
-    "granted": {
-        "create_background_task": True,       # user povolil
-        "store_knowledge": False,             # default: zakázáno
-        "dispatch_coding_agent": False,
-    }
-}
-```
-
-### Pravidla
-1. **Default: všechny write akce vyžadují souhlas** (create_background_task, dispatch_coding_agent, store_knowledge, brain_create_issue)
-2. **Po udělení souhlasu**: oprávnění platí pro daný scope (client_id + project_id)
-3. **Při změně scope** (switch_context): permissions se resetují
-4. **Read akce** (kb_search, brain_search, web_search, memory_recall): vždy povolené
-5. **Permissions jsou viditelné v UI** (viz níže)
-
-### Implementace
-
-#### Python (orchestrátor)
-- `handler_agentic.py`: Nová struktura `ChatPermissions` — inicializována z `ChatRequest`
-- Při `switch_context` → reset permissions
-- Při pokusu o write akci → kontrola permissions → pokud nemá, vrátit LLM zprávu "Zeptej se uživatele na souhlas"
-- Po souhlasu uživatele → aktualizovat permissions
-
-#### Kotlin (server) — persistence
-- `ChatSession` v MongoDB: nové pole `permissions: Map<String, Boolean>`
-- Scope (client_id, project_id) součástí session state
-
-#### UI — zobrazení permissions
-- V chat panelu (sidebar nebo header): indikátor aktivních permissions
-- Např. štítky: "BG tasks ✓", "KB write ✓"
-- Klik na štítek → revoke permission
-
-### Alternativní přístup (jednodušší)
-Místo plné permissions mapy stačí **system prompt enhancement**:
-- Chat si v conversation context udržuje jaké akce user povolil
-- Při switch_context přidat system message "Permissions resetovány — nový scope"
-- Toto nevyžaduje DB změny ani UI, jen system prompt + agentic loop logiku
-
-### Soubory
-- `backend/service-orchestrator/app/chat/handler_agentic.py` — permissions checking
-- `backend/service-orchestrator/app/chat/system_prompt.py` — instructions
-- `backend/service-orchestrator/app/chat/models.py` — ChatPermissions model
-- `backend/server/.../entity/ChatSessionDocument.kt` — persistence (pokud plná verze)
-- UI chat panel — permissions display
+Implementován alternativní (jednodušší) přístup — system prompt + agentic loop:
+- **system_prompt.py**: Write akce vyžadují souhlas, ale po udělení platí pro celý scope. Při změně scope se resetují.
+- **handler_agentic.py**: Při `switch_context` se injektuje system message o resetu permissions.
+- Bez DB změn, bez UI změn — čistě LLM-based tracking v conversation context.
 
 ---
 
@@ -108,7 +56,7 @@ Místo plné permissions mapy stačí **system prompt enhancement**:
 1. ~~**Bug 2** (system prompt — background task pravidla)~~ ✅ HOTOVO
 2. ~~**Bug 1** (system prompt + context — označení historie)~~ ✅ HOTOVO
 3. ~~**Feature 3** (kb_delete tool)~~ ✅ HOTOVO
-4. **Feature 4** (chat permissions scope) — scope-based write permissions + UI indikátor
+4. ~~**Feature 4** (chat permissions scope)~~ ✅ HOTOVO (system prompt approach)
 
 ## Ověření
 

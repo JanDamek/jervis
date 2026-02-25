@@ -10,92 +10,46 @@ Nálezy z logů orchestrátoru a serveru po nasazení (25.2.2025).
 
 ---
 
-## Bug 1: save_message() — neočekávaný keyword argument 'task_id'
+## ~~Bug 1: save_message() — neočekávaný keyword argument 'task_id'~~ ✅ OPRAVENO
 
-### Symptom
-```
-Failed to save background result: ChatContextAssembler.save_message() got an unexpected keyword argument 'task_id'
-```
-
-### Příčina
-Background handler volá `save_message()` s parametrem `task_id`, ale `ChatContextAssembler.save_message()` tento parametr nepřijímá. Buď se signatura změnila a caller nebyl aktualizován, nebo caller předává extra argument.
-
-### Dopad
-Background task výsledky se neukládají do chat historie — uživatel nevidí výsledky backgroundu.
-
-### Soubory k prozkoumání
-- `backend/service-orchestrator/app/chat/context.py` — `ChatContextAssembler.save_message()` signatura
-- `backend/service-orchestrator/app/chat/handler_background.py` — volání `save_message()`
+Opraveno: 3 callers používaly `task_id=` místo správného `conversation_id=`:
+- `background/handler.py` (background task result saving)
+- `graph/nodes/respond.py` (user message + assistant message saving)
 
 ---
 
-## Bug 2: Tool loop — brain_search_issues + brain_update_issue
+## ~~Bug 2: Tool loop — brain_search_issues + brain_update_issue~~ ✅ OPRAVENO
 
-### Symptom
-Orchestrátor detekuje tool loop pro `brain_search_issues` a `brain_update_issue` — LLM opakovaně volá tytéž tools v cyklu.
-
-### Příčina
-LLM se zasekne v cyklu hledání + aktualizace Jira issues. Drift detection se aktivuje ale nemusí problém zastavit včas.
-
-### Dopad
-Zbytečné API volání na Jira, spotřeba GPU tokenu, potenciálně nežádoucí změny v Jira.
-
-### Řešení
-- Zlepšit drift detection — ukončit loop dříve
-- System prompt: instrukce pro brain tools — max 2 opakování stejného volání
-
-### Soubory
-- `backend/service-orchestrator/app/chat/handler_agentic.py` — drift detection
-- `backend/service-orchestrator/app/chat/system_prompt.py` — brain tool instrukce
+Opraveno:
+- **handler_agentic.py**: Nový Signal 3 v drift detection — detekuje alternující tool pair pattern (A→B→A→B) kde A != B.
+- **system_prompt.py**: Přidána instrukce pro brain tools — max 1 hledání + 1 akce, pak odpověz uživateli.
 
 ---
 
-## Bug 3: LLM "Operation not allowed" error
+## ~~Bug 3: LLM "Operation not allowed" error~~ ✅ OPRAVENO
 
-### Symptom
-```
-{"error": {"type": "llm_call_failed", "message": "Operation not allowed"}}
-```
-
-### Příčina
-Ollama vrací "Operation not allowed" — pravděpodobně:
-1. Model není načtený a nelze načíst (VRAM plná)
-2. Rate limiting / concurrent request limit
-3. Nově přidaný security check v Ollama
-
-### Dopad
-Chat request selže bez smysluplné chybové zprávy pro uživatele.
-
-### Řešení
-- Přidat retry logiku pro tento typ chyby
-- Logovat plný response body pro diagnostiku
-- Zobrazit uživateli srozumitelnou chybu ("LLM je momentálně zaneprázdněn")
-
-### Soubory
-- `backend/service-orchestrator/app/llm/provider.py` — LLM volání, error handling
+Opraveno:
+- **provider.py**: Nová metoda `_call_with_retry()` s exponential backoff (2s, 4s) pro transient errory:
+  - Connection errors (OSError, ConnectionError)
+  - "Operation not allowed" (Ollama VRAM pressure)
+  - HTTP 503 (service unavailable) a 429 (rate limit)
+- Non-retryable errory propagují okamžitě.
+- Aplikováno na streaming i blocking completion paths.
 
 ---
 
-## Info: Stale connection reference (LOW priority)
+## ~~Info: Stale connection reference~~ ✅ OPRAVENO
 
-### Symptom
-```
-Connection 6986002d8bf32b35197e2bf2 not found
-```
-Pro 8 zdrojů mazlusek/moneta/ufo_* projektů.
-
-### Příčina
-Projekty odkazují na connection ID, která byla smazána nebo přejmenována.
-
-### Řešení
-- Vyčistit stale reference v projektech přes UI (odebrat neexistující zdroje)
-- Nebo přidat graceful handling — skip missing connections místo error logu
+Opraveno:
+- **BugTrackerContinuousIndexer.kt**: `throw IllegalStateException` → skip + warn log
+- **WikiContinuousIndexer.kt**: `throw IllegalStateException` → skip + warn log
+- Chybějící connection nyní nepřeruší celý indexing batch — jen přeskočí dokument.
 
 ---
 
 ## Pořadí oprav
 
-1. **Bug 1** (save_message task_id) — jednoduchý fix, vysoký dopad
-2. **Bug 2** (tool loop) — vylepšit drift detection
-3. **Bug 3** (Operation not allowed) — diagnostika + retry
-4. **Info** (stale connection) — cleanup
+1. ~~**Bug 1** (save_message task_id)~~ ✅ HOTOVO
+2. ~~**Bug 2** (tool loop)~~ ✅ HOTOVO
+3. ~~**Bug 3** (Operation not allowed)~~ ✅ HOTOVO
+4. ~~**Info** (stale connection)~~ ✅ HOTOVO
