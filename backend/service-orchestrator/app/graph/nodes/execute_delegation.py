@@ -125,8 +125,8 @@ async def execute_delegation(state: dict) -> dict:
                         task_id=task.id,
                     ),
                 )
-            except Exception:
-                pass  # Non-critical
+            except Exception as e:
+                logger.debug("Session memory write skipped: %s", e)
 
             await _report(
                 task,
