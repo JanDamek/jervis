@@ -307,8 +307,8 @@ class OllamaRouter:
                     )
                     await self._preempt_all(target_gpu)
 
-                # Unload ALL models (orchestrator :30b fills entire GPU)
-                await self.gpu_pool.unload_all(target_gpu, self._mgmt_client)
+                # Unload ALL models except the target (no point unloading what we're about to load)
+                await self.gpu_pool.unload_all(target_gpu, self._mgmt_client, except_models={model})
             else:
                 # GPU already reserved — update activity timestamp
                 self._last_critical_activity[target_gpu.name] = time.monotonic()
