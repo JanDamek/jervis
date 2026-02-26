@@ -42,6 +42,7 @@ class ActionExecutorService(
     private val notificationRpc: NotificationRpcImpl,
     private val userTaskService: UserTaskService,
     private val guidelinesService: GuidelinesService,
+    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -344,36 +345,141 @@ class ActionExecutorService(
     }
 
     private suspend fun dispatchEmailAction(request: ActionExecutionRequest): ActionExecutionResult {
-        // Email dispatch would integrate with EmailService
-        // For now, records approval — orchestrator handles actual send
+        // TODO: Wire EmailService.sendEmail() when SMTP is implemented
+        logger.warn { "EMAIL_DISPATCH: Email send not yet implemented — action recorded as approved" }
         return ActionExecutionResult(
             success = true,
-            message = "Email action approved for execution",
+            message = "Email action approved (SMTP delivery pending implementation)",
             action = request.action,
         )
     }
 
     private suspend fun dispatchJiraAction(request: ActionExecutionRequest): ActionExecutionResult {
-        // Jira actions route through brain_client in Python orchestrator
-        return ActionExecutionResult(
-            success = true,
-            message = "Jira action approved for execution",
-            action = request.action,
-        )
+        val payload = request.payload
+        return when (request.action) {
+            ApprovalAction.JIRA_CREATE_ISSUE -> {
+                val issue = brainWriteService.createIssue(
+                    summary = payload["summary"] ?: "Untitled",
+                    description = payload["description"],
+                    issueType = payload["issue_type"] ?: "Task",
+                    priority = payload["priority"],
+                    labels = payload["labels"]?.split(",")?.map { it.trim() } ?: emptyList(),
+                    epicKey = payload["epic_key"],
+                )
+                logger.info { "JIRA_CREATED: ${issue.key} — ${issue.summary}" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Created Jira issue: ${issue.key}",
+                    action = request.action,
+                    artifactId = issue.key,
+                )
+            }
+
+            ApprovalAction.JIRA_UPDATE_ISSUE -> {
+                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
+                val issue = brainWriteService.updateIssue(
+                    issueKey = issueKey,
+                    summary = payload["summary"],
+                    description = payload["description"],
+                    assignee = payload["assignee"],
+                    priority = payload["priority"],
+                    labels = payload["labels"]?.split(",")?.map { it.trim() },
+                )
+                logger.info { "JIRA_UPDATED: ${issue.key}" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Updated Jira issue: ${issue.key}",
+                    action = request.action,
+                    artifactId = issue.key,
+                )
+            }
+
+            ApprovalAction.JIRA_COMMENT -> {
+                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
+                val comment = brainWriteService.addComment(
+                    issueKey = issueKey,
+                    comment = payload["comment"] ?: payload["body"] ?: "",
+                )
+                logger.info { "JIRA_COMMENTED: $issueKey (${comment.id})" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Added comment to $issueKey",
+                    action = request.action,
+                    artifactId = issueKey,
+                )
+            }
+
+            ApprovalAction.JIRA_TRANSITION -> {
+                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
+                val transition = payload["transition"] ?: error("Missing transition")
+                brainWriteService.transitionIssue(issueKey, transition)
+                logger.info { "JIRA_TRANSITIONED: $issueKey → $transition" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Transitioned $issueKey → $transition",
+                    action = request.action,
+                    artifactId = issueKey,
+                )
+            }
+
+            else -> ActionExecutionResult(
+                success = false,
+                message = "Unknown Jira action: ${request.action}",
+                action = request.action,
+            )
+        }
     }
 
     private suspend fun dispatchConfluenceAction(request: ActionExecutionRequest): ActionExecutionResult {
-        return ActionExecutionResult(
-            success = true,
-            message = "Confluence action approved for execution",
-            action = request.action,
-        )
+        val payload = request.payload
+        return when (request.action) {
+            ApprovalAction.CONFLUENCE_CREATE_PAGE -> {
+                val page = brainWriteService.createPage(
+                    title = payload["title"] ?: "Untitled",
+                    content = payload["content"] ?: "",
+                    parentPageId = payload["parent_page_id"],
+                )
+                logger.info { "CONFLUENCE_CREATED: ${page.id} — ${page.title}" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Created Confluence page: ${page.title}",
+                    action = request.action,
+                    artifactId = page.id,
+                )
+            }
+
+            ApprovalAction.CONFLUENCE_UPDATE_PAGE -> {
+                val pageId = payload["page_id"] ?: error("Missing page_id")
+                val version = payload["version"]?.toIntOrNull() ?: 1
+                val page = brainWriteService.updatePage(
+                    pageId = pageId,
+                    title = payload["title"] ?: "",
+                    content = payload["content"] ?: "",
+                    version = version,
+                )
+                logger.info { "CONFLUENCE_UPDATED: ${page.id} — ${page.title}" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Updated Confluence page: ${page.title}",
+                    action = request.action,
+                    artifactId = page.id,
+                )
+            }
+
+            else -> ActionExecutionResult(
+                success = false,
+                message = "Unknown Confluence action: ${request.action}",
+                action = request.action,
+            )
+        }
     }
 
     private suspend fun dispatchPrAction(request: ActionExecutionRequest): ActionExecutionResult {
+        // TODO: Wire GitWriteService when PR create/comment/merge API is implemented
+        logger.warn { "PR_DISPATCH: PR operations not yet implemented — action recorded as approved" }
         return ActionExecutionResult(
             success = true,
-            message = "PR action approved for execution",
+            message = "PR action approved (Git write API pending implementation)",
             action = request.action,
         )
     }
