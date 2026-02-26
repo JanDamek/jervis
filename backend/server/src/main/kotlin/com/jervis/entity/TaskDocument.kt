@@ -7,7 +7,9 @@ import com.jervis.common.types.TaskId
 import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
+import org.springframework.data.annotation.PersistenceCreator
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
@@ -164,7 +166,91 @@ data class TaskDocument(
     val actionType: String? = null,
     /** Inferred complexity from qualifier (e.g., TRIVIAL, SIMPLE, MEDIUM, COMPLEX). */
     val estimatedComplexity: String? = null,
-)
+) {
+    companion object {
+        /**
+         * Spring Data factory with primitive types to work around Kotlin inline value class
+         * parameter name mangling. Value class parameters get mangled names in bytecode
+         * (e.g. `id` → `id-<hash>`), which breaks Spring Data's constructor resolution.
+         * This factory uses raw ObjectId/String so Spring Data can match parameter names.
+         */
+        @PersistenceCreator
+        @JvmStatic
+        fun create(
+            id: ObjectId,
+            type: TaskTypeEnum,
+            taskName: String?,
+            content: String,
+            projectId: ObjectId?,
+            clientId: ObjectId,
+            createdAt: Instant?,
+            state: TaskStateEnum?,
+            processingMode: ProcessingMode?,
+            queuePosition: Int?,
+            correlationId: String?,
+            sourceUrn: String,
+            errorMessage: String?,
+            qualificationRetries: Int?,
+            nextQualificationRetryAt: Instant?,
+            attachments: List<AttachmentMetadata>?,
+            scheduledAt: Instant?,
+            cronExpression: String?,
+            agentCheckpointJson: String?,
+            orchestratorThreadId: String?,
+            orchestrationStartedAt: Instant?,
+            dispatchRetryCount: Int?,
+            nextDispatchRetryAt: Instant?,
+            pendingUserQuestion: String?,
+            userQuestionContext: String?,
+            agentJobName: String?,
+            agentJobState: String?,
+            agentJobStartedAt: Instant?,
+            qualificationStartedAt: Instant?,
+            qualificationSteps: List<QualificationStepRecord>?,
+            orchestratorSteps: List<OrchestratorStepRecord>?,
+            priorityScore: Int?,
+            priorityReason: String?,
+            actionType: String?,
+            estimatedComplexity: String?,
+        ): TaskDocument = TaskDocument(
+            id = TaskId(id),
+            type = type,
+            taskName = taskName ?: "Unnamed Task",
+            content = content,
+            projectId = projectId?.let { ProjectId(it) },
+            clientId = ClientId(clientId),
+            createdAt = createdAt ?: Instant.now(),
+            state = state ?: TaskStateEnum.NEW,
+            processingMode = processingMode ?: ProcessingMode.BACKGROUND,
+            queuePosition = queuePosition,
+            correlationId = correlationId ?: id.toHexString(),
+            sourceUrn = SourceUrn(sourceUrn),
+            errorMessage = errorMessage,
+            qualificationRetries = qualificationRetries ?: 0,
+            nextQualificationRetryAt = nextQualificationRetryAt,
+            attachments = attachments ?: emptyList(),
+            scheduledAt = scheduledAt,
+            cronExpression = cronExpression,
+            agentCheckpointJson = agentCheckpointJson,
+            orchestratorThreadId = orchestratorThreadId,
+            orchestrationStartedAt = orchestrationStartedAt,
+            dispatchRetryCount = dispatchRetryCount ?: 0,
+            nextDispatchRetryAt = nextDispatchRetryAt,
+            pendingUserQuestion = pendingUserQuestion,
+            userQuestionContext = userQuestionContext,
+            agentJobName = agentJobName,
+            agentJobState = agentJobState,
+            agentJobStartedAt = agentJobStartedAt,
+            qualificationStartedAt = qualificationStartedAt,
+            qualificationSteps = qualificationSteps ?: emptyList(),
+            orchestratorSteps = orchestratorSteps ?: emptyList(),
+            priorityScore = priorityScore,
+            priorityReason = priorityReason,
+            actionType = actionType,
+            estimatedComplexity = estimatedComplexity,
+        )
+    }
+}
 
 /**
  * ProcessingMode - determines how task is processed and queued.
