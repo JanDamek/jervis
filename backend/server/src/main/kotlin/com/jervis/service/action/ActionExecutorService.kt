@@ -11,6 +11,10 @@ import com.jervis.dto.pipeline.ApprovalDecision
 import com.jervis.dto.pipeline.ApprovalQueueItem
 import com.jervis.dto.guidelines.ApprovalRule
 import com.jervis.entity.TaskDocument
+import com.jervis.entity.ApprovalQueueDocument
+import com.jervis.entity.ApprovalStatisticsDocument
+import com.jervis.repository.ApprovalQueueRepository
+import com.jervis.repository.ApprovalStatisticsRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.guidelines.GuidelinesService
@@ -43,6 +47,8 @@ class ActionExecutorService(
     private val userTaskService: UserTaskService,
     private val guidelinesService: GuidelinesService,
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
+    private val approvalQueueRepository: ApprovalQueueRepository,
+    private val approvalStatisticsRepository: ApprovalStatisticsRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -112,6 +118,21 @@ class ActionExecutorService(
                 message = "Task is not in USER_TASK state: ${task.state}",
                 action = ApprovalAction.CHAT_REPLY,
             )
+        }
+
+        // E4-S3: Update MongoDB queue status
+        try {
+            val queueDoc = approvalQueueRepository.findByTaskId(taskId.toString())
+            if (queueDoc != null) {
+                approvalQueueRepository.save(
+                    queueDoc.copy(
+                        status = if (approved) "APPROVED" else "DENIED",
+                        respondedAt = java.time.Instant.now(),
+                    ),
+                )
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to update approval queue status (non-blocking)" }
         }
 
         if (!approved) {
@@ -280,6 +301,25 @@ class ActionExecutorService(
             riskLevel = "MEDIUM",
             payload = request.payload,
         )
+
+        // E4-S3: Persist to MongoDB for restart resilience
+        try {
+            approvalQueueRepository.save(
+                ApprovalQueueDocument(
+                    taskId = queueItem.taskId,
+                    clientId = request.clientId,
+                    projectId = request.projectId,
+                    action = request.action.name,
+                    preview = preview,
+                    context = request.approvalContext ?: "Action requires approval",
+                    riskLevel = "MEDIUM",
+                    payload = request.payload,
+                    status = "PENDING",
+                ),
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to persist approval queue item (non-blocking)" }
+        }
 
         // Emit approval notification to connected clients
         notificationRpc.emitEvent(
@@ -579,63 +619,81 @@ class ActionExecutorService(
         clientId: String,
         approved: Boolean,
     ) {
-        val key = "${clientId}:${action.name}"
-        val stats = approvalStats.getOrPut(key) { ApprovalStats() }
-        if (approved) stats.approvedCount++ else stats.deniedCount++
-        stats.lastDecisionAt = java.time.Instant.now().toString()
-
-        logger.info {
-            "APPROVAL_STATS: action=${action.name} client=$clientId " +
-                "approved=${stats.approvedCount} denied=${stats.deniedCount}"
-        }
-
-        // E4-S5: Auto-approve suggestion when ratio is high enough
-        if (!approved) return
-        val total = stats.approvedCount + stats.deniedCount
-        if (total >= 10 && stats.deniedCount == 0) {
-            logger.info {
-                "TRUST_SUGGESTION: action=${action.name} client=$clientId " +
-                    "all $total actions approved — consider enabling auto-approve"
+        // E4-S5: Persist to MongoDB
+        try {
+            val existing = approvalStatisticsRepository.findByClientIdAndAction(clientId, action.name)
+            val doc = if (existing != null) {
+                existing.copy(
+                    approvedCount = existing.approvedCount + if (approved) 1 else 0,
+                    deniedCount = existing.deniedCount + if (!approved) 1 else 0,
+                    lastDecisionAt = java.time.Instant.now(),
+                )
+            } else {
+                ApprovalStatisticsDocument(
+                    clientId = clientId,
+                    action = action.name,
+                    approvedCount = if (approved) 1 else 0,
+                    deniedCount = if (!approved) 1 else 0,
+                    lastDecisionAt = java.time.Instant.now(),
+                )
             }
+            approvalStatisticsRepository.save(doc)
+
+            logger.info {
+                "APPROVAL_STATS: action=${action.name} client=$clientId " +
+                    "approved=${doc.approvedCount} denied=${doc.deniedCount}"
+            }
+
+            // E4-S5: Auto-approve suggestion when ratio is high enough
+            if (approved) {
+                val total = doc.approvedCount + doc.deniedCount
+                if (total >= 10 && doc.deniedCount == 0) {
+                    logger.info {
+                        "TRUST_SUGGESTION: action=${action.name} client=$clientId " +
+                            "all $total actions approved — consider enabling auto-approve"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to persist approval statistics (non-blocking)" }
         }
     }
 
     /**
      * Get approval statistics for a client (for UI display / suggestion engine).
      */
-    fun getApprovalStats(clientId: String): Map<ApprovalAction, ApprovalStats> {
-        return approvalStats
-            .filter { it.key.startsWith("$clientId:") }
-            .mapKeys { (key, _) ->
+    suspend fun getApprovalStats(clientId: String): Map<ApprovalAction, ApprovalStatisticsDocument> {
+        val result = mutableMapOf<ApprovalAction, ApprovalStatisticsDocument>()
+        try {
+            approvalStatisticsRepository.findByClientId(clientId).collect { doc ->
                 try {
-                    ApprovalAction.valueOf(key.substringAfter(":"))
+                    val action = ApprovalAction.valueOf(doc.action)
+                    result[action] = doc
                 } catch (_: Exception) {
-                    null
+                    // Unknown action name, skip
                 }
             }
-            .filterKeys { it != null }
-            .mapKeys { it.key!! }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to load approval statistics for client=$clientId" }
+        }
+        return result
     }
 
     /**
      * Check if an auto-approve suggestion should be shown for a given action.
      * Returns true if all recent approvals were approved (≥10 total, 0 denied).
      */
-    fun shouldSuggestAutoApprove(clientId: String, action: ApprovalAction): Boolean {
-        val key = "${clientId}:${action.name}"
-        val stats = approvalStats[key] ?: return false
-        val total = stats.approvedCount + stats.deniedCount
-        return total >= 10 && stats.deniedCount == 0
+    suspend fun shouldSuggestAutoApprove(clientId: String, action: ApprovalAction): Boolean {
+        return try {
+            val doc = approvalStatisticsRepository.findByClientIdAndAction(clientId, action.name)
+                ?: return false
+            val total = doc.approvedCount + doc.deniedCount
+            total >= 10 && doc.deniedCount == 0
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to check auto-approve suggestion" }
+            false
+        }
     }
-
-    data class ApprovalStats(
-        var approvedCount: Int = 0,
-        var deniedCount: Int = 0,
-        var lastDecisionAt: String? = null,
-    )
-
-    // In-memory analytics — will be backed by MongoDB for persistence
-    private val approvalStats = java.util.concurrent.ConcurrentHashMap<String, ApprovalStats>()
 
     // --- E5-S6: Action Result Tracking ---
 
