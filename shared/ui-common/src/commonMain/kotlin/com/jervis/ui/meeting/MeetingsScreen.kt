@@ -29,6 +29,7 @@ import com.jervis.dto.ClientDto
 import com.jervis.dto.ProjectDto
 import com.jervis.dto.meeting.AudioInputType
 import com.jervis.dto.meeting.MeetingDto
+import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.dto.meeting.MeetingGroupDto
 import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTypeEnum
@@ -83,6 +84,7 @@ fun MeetingsScreen(
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
     var classifyTarget by remember { mutableStateOf<MeetingDto?>(null) }
+    var editTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var interruptedRecordings by remember { mutableStateOf<List<RecordingState>>(emptyList()) }
@@ -145,6 +147,7 @@ fun MeetingsScreen(
             errorMessage = error,
             onDismissViewError = { viewModel.clearError() },
             onBack = { viewModel.selectMeeting(null) },
+            onEdit = { editTarget = currentDetail },
             onDelete = { showDeleteConfirmDialog = currentDetail.id },
             onRefresh = { viewModel.refreshMeeting(currentDetail.id) },
             onPlayToggle = { viewModel.playAudio(currentDetail.id) },
@@ -490,6 +493,27 @@ fun MeetingsScreen(
             onDismiss = { classifyTarget = null },
         )
     }
+
+    // Edit meeting dialog
+    editTarget?.let { meeting ->
+        EditMeetingDialog(
+            meeting = meeting,
+            clients = clients,
+            projects = vmProjects,
+            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
+            onSave = { clientId, projectId, title, meetingType ->
+                viewModel.updateMeeting(
+                    meetingId = meeting.id,
+                    clientId = clientId,
+                    projectId = projectId,
+                    title = title,
+                    meetingType = meetingType,
+                )
+                editTarget = null
+            },
+            onDismiss = { editTarget = null },
+        )
+    }
 }
 
 /**
@@ -685,6 +709,157 @@ private fun getMeetingTypeLabel(type: MeetingTypeEnum): String = when (type) {
     MeetingTypeEnum.REVIEW -> "Review"
     MeetingTypeEnum.OTHER -> "Ostatní"
     MeetingTypeEnum.AD_HOC -> "Ad-hoc"
+}
+
+/**
+ * Dialog for editing an already-classified meeting — change name, type, client, project.
+ * If client/project changes, the backend will purge old KB data and re-index.
+ */
+@Composable
+private fun EditMeetingDialog(
+    meeting: MeetingDto,
+    clients: List<ClientDto>,
+    projects: List<ProjectDto>,
+    onLoadProjects: (String) -> Unit,
+    onSave: (clientId: String, projectId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedClientId by remember { mutableStateOf(meeting.clientId) }
+    var selectedProjectId by remember { mutableStateOf(meeting.projectId) }
+    var title by remember { mutableStateOf(meeting.title ?: "") }
+    var selectedMeetingType by remember { mutableStateOf(meeting.meetingType) }
+
+    val clientChanged = selectedClientId != meeting.clientId
+    val projectChanged = selectedProjectId != meeting.projectId
+    val reassign = clientChanged || projectChanged
+
+    // Load projects when client changes
+    LaunchedEffect(selectedClientId) {
+        selectedClientId?.let { onLoadProjects(it) }
+    }
+
+    val filteredProjects = projects.filter { it.clientId == selectedClientId }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editovat meeting") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                // Title
+                androidx.compose.material3.OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Název") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                // Meeting type selector
+                Text("Typ meetingu", style = MaterialTheme.typography.labelMedium)
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MeetingTypeEnum.entries.forEach { type ->
+                        FilterChip(
+                            selected = selectedMeetingType == type,
+                            onClick = { selectedMeetingType = type },
+                            label = { Text(getMeetingTypeLabel(type)) },
+                        )
+                    }
+                }
+
+                // Client selector
+                Text("Klient", style = MaterialTheme.typography.labelMedium)
+                Column {
+                    clients.forEach { client ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedClientId == client.id,
+                                onClick = {
+                                    selectedClientId = client.id
+                                    selectedProjectId = null
+                                },
+                            )
+                            Text(
+                                text = client.name,
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Project selector
+                if (filteredProjects.isNotEmpty()) {
+                    Text("Projekt (volitelný)", style = MaterialTheme.typography.labelMedium)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = selectedProjectId == null,
+                                onClick = { selectedProjectId = null },
+                            )
+                            Text("(Žádný)", modifier = Modifier.padding(start = 4.dp))
+                        }
+                        filteredProjects.forEach { project ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.RadioButton(
+                                    selected = selectedProjectId == project.id,
+                                    onClick = { selectedProjectId = project.id },
+                                )
+                                Text(
+                                    text = project.name,
+                                    modifier = Modifier.padding(start = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Reassignment warning
+                if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
+                    Text(
+                        text = "Přeřazení smaže indexované informace a znovu je vytvoří pro nového klienta/projekt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    val clientId = selectedClientId ?: return@TextButton
+                    onSave(
+                        clientId,
+                        selectedProjectId,
+                        title.takeIf { it.isNotBlank() },
+                        selectedMeetingType,
+                    )
+                },
+                enabled = selectedClientId != null,
+            ) {
+                Text("Uložit")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Zrušit")
+            }
+        },
+    )
 }
 
 /**

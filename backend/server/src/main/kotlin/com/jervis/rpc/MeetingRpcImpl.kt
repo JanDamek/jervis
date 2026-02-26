@@ -558,6 +558,77 @@ class MeetingRpcImpl(
         return saved.toDto()
     }
 
+    override suspend fun updateMeeting(request: MeetingClassifyDto): MeetingDto {
+        val id = ObjectId(request.meetingId)
+        val meeting = meetingRepository.findById(id)
+            ?: throw IllegalStateException("Meeting not found: ${request.meetingId}")
+
+        val newClientId = ClientId.fromString(request.clientId)
+        val newProjectId = request.projectId?.let { ProjectId.fromString(it) }
+
+        val clientChanged = meeting.clientId != null && newClientId != meeting.clientId
+        val projectChanged = newProjectId != meeting.projectId
+        val reassign = clientChanged || projectChanged
+
+        // If reassigning and meeting was indexed, purge old KB data
+        if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
+            try {
+                val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
+                    meetingId = meeting.id.toHexString(),
+                    title = meeting.title,
+                )
+                knowledgeService.purge(sourceUrn.toString())
+                logger.info { "Purged KB data for meeting ${request.meetingId} before reassignment" }
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to purge KB data for meeting ${request.meetingId}" }
+            }
+        }
+
+        // Move audio file if client/project changed
+        val newAudioFilePath = if (reassign) {
+            meeting.audioFilePath?.let { oldPath ->
+                val targetDir = if (newProjectId != null) {
+                    directoryStructureService.projectMeetingsDir(newClientId, newProjectId)
+                } else {
+                    directoryStructureService.clientAudioDir(newClientId)
+                }
+                val oldFile = java.nio.file.Paths.get(oldPath)
+                val newFile = targetDir.resolve(oldFile.fileName)
+                withContext(Dispatchers.IO) {
+                    if (Files.exists(oldFile)) {
+                        Files.move(oldFile, newFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                        newFile.toString()
+                    } else {
+                        oldPath
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
+        val updated = meeting.copy(
+            clientId = newClientId,
+            projectId = newProjectId,
+            title = request.title ?: meeting.title,
+            meetingType = request.meetingType ?: meeting.meetingType,
+            audioFilePath = newAudioFilePath ?: meeting.audioFilePath,
+            // Reset to CORRECTED if reassigned + was INDEXED, so pipeline re-indexes with new context
+            state = if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
+                MeetingStateEnum.CORRECTED
+            } else {
+                meeting.state
+            },
+        )
+
+        val saved = meetingRepository.save(updated)
+        logger.info {
+            "Updated meeting ${request.meetingId}: title=${request.title}, " +
+                "client=${request.clientId}, project=${request.projectId}, reassign=$reassign"
+        }
+        return saved.toDto()
+    }
+
     override suspend fun listUnclassifiedMeetings(): List<MeetingDto> {
         return meetingRepository.findByClientIdIsNullAndDeletedIsFalseOrderByStartedAtDesc()
             .toList()

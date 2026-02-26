@@ -1031,12 +1031,14 @@ Compact (<600dp):
 **RPC methods:**
 - `getMeetingTimeline(clientId, projectId?)` -- Returns current week items + older group metadata
 - `listMeetingsByRange(clientId, projectId?, fromIso, toIso)` -- Returns `List<MeetingSummaryDto>` for a date range (called when expanding a group)
+- `updateMeeting(MeetingClassifyDto)` -- Updates meeting metadata; if client/project changes on INDEXED meeting, purges KB + moves audio + resets to CORRECTED
 
 **Key components:**
 - `MeetingsScreen` -- List + detail, manages setup/finalize dialogs, timeline groups
 - `MeetingViewModel` -- State: currentWeekMeetings, olderGroups, expandedGroups, loadingGroups, isRecording, recordingDuration, selectedMeeting
 - `RecordingSetupDialog` -- Client, project, audio device selection, system audio toggle
 - `RecordingFinalizeDialog` -- Meeting type (radio buttons), optional title
+- `EditMeetingDialog` -- Edit name, type, client, project of classified meeting (with reassignment warning)
 - `RecordingIndicator` -- Animated red dot + elapsed time + stop button (shown during recording)
 
 **State icons:** RECORDING, UPLOADING, UPLOADED/TRANSCRIBING/CORRECTING, TRANSCRIBED/CORRECTED/INDEXED, FAILED
@@ -1094,10 +1096,13 @@ Same layout but chat panel has fixed 180dp height (no interactive splitter).
 | CORRECTED / INDEXED | `FilterChip` toggle (Opraveny / Surovy) + "Prepsat znovu" button + `TranscriptPanel` |
 
 **MeetingDetailView** actions bar includes:
+- Edit icon -> opens `EditMeetingDialog` (only for classified meetings with `clientId != null`)
 - Play/Stop toggle (full audio playback)
 - Book icon -> navigates to `CorrectionsScreen` sub-view (managed as `showCorrections` state)
 - JRefreshButton, JDeleteButton
 - When `state == CORRECTION_REVIEW`: `CorrectionQuestionsCard` is shown below the pipeline progress
+
+**EditMeetingDialog** — allows changing meeting name, type, client, and project after creation. Pre-fills current values. If client/project changes and meeting was INDEXED, shows a warning that KB data will be purged and re-indexed. Backend `updateMeeting()` handles: KB purge (SourceUrn-based), audio file move, state reset to CORRECTED for re-indexing.
 
 **TranscriptPanel** -- composable with `FilterChip` toggle, action buttons, and `LazyColumn` wrapped in `SelectionContainer` for text copy support.
 
