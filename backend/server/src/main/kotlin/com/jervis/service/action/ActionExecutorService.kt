@@ -49,6 +49,7 @@ class ActionExecutorService(
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val approvalQueueRepository: ApprovalQueueRepository,
     private val approvalStatisticsRepository: ApprovalStatisticsRepository,
+    private val chatReplyService: com.jervis.integration.chat.ChatReplyService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -251,12 +252,8 @@ class ActionExecutorService(
                 ApprovalAction.PR_MERGE,
                 -> dispatchPrAction(request)
 
-                // Chat reply (auto-approved, just logs)
-                ApprovalAction.CHAT_REPLY -> ActionExecutionResult(
-                    success = true,
-                    message = "Chat reply approved",
-                    action = request.action,
-                )
+                // Chat reply via ChatReplyService (E11-S5)
+                ApprovalAction.CHAT_REPLY -> dispatchChatReply(request)
 
                 // KB operations
                 ApprovalAction.KB_DELETE,
@@ -530,6 +527,36 @@ class ActionExecutorService(
             message = "KB action approved for execution",
             action = request.action,
         )
+    }
+
+    /**
+     * E11-S5: Dispatch chat reply via ChatReplyService.
+     */
+    private suspend fun dispatchChatReply(request: ActionExecutionRequest): ActionExecutionResult {
+        return try {
+            val platform = com.jervis.dto.integration.ChatPlatform.valueOf(
+                request.payload["platform"] ?: "SLACK",
+            )
+            val replyRequest = com.jervis.dto.integration.ChatReplyRequest(
+                platform = platform,
+                channelId = request.payload["channelId"] ?: "",
+                threadId = request.payload["threadId"],
+                content = request.preview,
+                clientId = request.clientId.value,
+            )
+            val result = chatReplyService.sendReply(replyRequest)
+            ActionExecutionResult(
+                success = result.success,
+                message = if (result.success) "Chat reply sent (${result.messageId})" else "Chat reply failed: ${result.error}",
+                action = request.action,
+            )
+        } catch (e: Exception) {
+            ActionExecutionResult(
+                success = false,
+                message = "Chat reply dispatch failed: ${e.message}",
+                action = request.action,
+            )
+        }
     }
 
     // --- E4-S4: Batch Approval ---
