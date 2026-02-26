@@ -3,8 +3,10 @@ package com.jervis.service.background
 import com.jervis.configuration.PythonOrchestratorClient
 import com.jervis.configuration.properties.BackgroundProperties
 import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.maintenance.IdleTaskType
 import com.jervis.entity.TaskDocument
 import com.jervis.service.agent.coordinator.AgentOrchestratorService
+import com.jervis.service.maintenance.IdleTaskRegistry
 import com.jervis.service.task.UserTaskService
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -77,6 +79,7 @@ class BackgroundEngine(
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val projectRepository: com.jervis.repository.ProjectRepository,
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
+    private val idleTaskRegistry: IdleTaskRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -916,12 +919,6 @@ class BackgroundEngine(
                     continue
                 }
 
-                // Check if brain is configured
-                if (!brainWriteService.isConfigured()) {
-                    logger.debug { "IDLE_REVIEW: Brain not configured, skipping" }
-                    continue
-                }
-
                 // Check if there are active tasks (system is busy)
                 val activeStates = listOf(
                     TaskStateEnum.QUALIFYING,
@@ -933,7 +930,7 @@ class BackgroundEngine(
                     taskRepository.countByState(state)
                 }
                 if (totalActive > 0) {
-                    logger.debug { "IDLE_REVIEW: System busy ($totalActive active tasks), skipping" }
+                    logger.debug { "IDLE_TASK: System busy ($totalActive active tasks), skipping" }
                     continue
                 }
 
@@ -949,7 +946,7 @@ class BackgroundEngine(
                     ),
                 )
                 if (existingIdleReview != null) {
-                    logger.debug { "IDLE_REVIEW: Already exists (${existingIdleReview.id}), skipping" }
+                    logger.debug { "IDLE_TASK: Already exists (${existingIdleReview.id}), skipping" }
                     continue
                 }
 
@@ -964,66 +961,184 @@ class BackgroundEngine(
                 }
 
                 if (defaultClientId == null) {
-                    logger.debug { "IDLE_REVIEW: No client found, skipping" }
+                    logger.debug { "IDLE_TASK: No client found, skipping" }
                     continue
                 }
 
                 val defaultClient = clientRepository.getById(defaultClientId)
                 if (defaultClient == null || defaultClient.archived) {
-                    logger.debug { "IDLE_REVIEW: Client $defaultClientId not found or archived, skipping" }
+                    logger.debug { "IDLE_TASK: Client $defaultClientId not found or archived, skipping" }
                     continue
                 }
 
-                // Create idle review task
-                val idleReviewTask = TaskDocument(
+                // EPIC 7: Consult IdleTaskRegistry for the next eligible task
+                val lastRunTimes = buildLastRunTimes()
+                val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
+
+                if (nextTask == null) {
+                    logger.debug { "IDLE_TASK: All tasks ran recently, skipping" }
+                    continue
+                }
+
+                // Brain-dependent tasks need brain configured
+                if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
+                    logger.debug { "IDLE_TASK: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
+                    continue
+                }
+
+                val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
+                val prompt = buildIdleTaskPrompt(nextTask.type)
+
+                val idleTask = TaskDocument(
                     type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                    taskName = "Idle Review",
-                    content = buildIdleReviewPrompt(),
+                    taskName = taskName,
+                    content = prompt,
                     clientId = defaultClientId,
-                    state = TaskStateEnum.READY_FOR_GPU, // Skip qualification, go directly to orchestrator
+                    state = TaskStateEnum.READY_FOR_GPU,
                     processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
-                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-review"),
+                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
                 )
-                taskRepository.save(idleReviewTask)
+                taskRepository.save(idleTask)
                 taskNotifier.notifyNewTask()
 
-                logger.info { "IDLE_REVIEW: Created idle review task ${idleReviewTask.id} for client $defaultClientId" }
+                logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} for client $defaultClientId" }
             } catch (e: CancellationException) {
-                logger.info { "Idle review loop cancelled" }
+                logger.info { "Idle task loop cancelled" }
                 throw e
             } catch (e: Exception) {
-                logger.error(e) { "Error in idle review loop" }
+                logger.error(e) { "Error in idle task loop" }
                 delay(backgroundProperties.idleReviewInterval)
             }
         }
     }
 
     /**
-     * Build the prompt for the idle review orchestrator task.
-     * The orchestrator will use brain tools to check project statuses.
+     * Build lastRunTimes map by scanning recent completed IDLE_REVIEW tasks.
+     * Matches task type from sourceUrn prefix (system:idle-task:<type>).
      */
-    private fun buildIdleReviewPrompt(): String = """
-        |You are performing a proactive idle review of all projects managed by Jervis.
-        |
-        |Using the brain tools, perform the following review:
-        |
-        |1. **Check open issues**: Use brain_search_issues to find all open issues.
-        |   Review their status, check for overdue items, and update priorities if needed.
-        |
-        |2. **Review recent activity**: Check for issues that haven't been updated recently.
-        |   Add comments or transition stale issues as needed.
-        |
-        |3. **Check KB for new information**: Use kb_search to check if there's new
-        |   information that should be reflected in brain issues or wiki pages.
-        |
-        |4. **Summarize findings**: Create or update a summary page in Confluence
-        |   with the current status of all tracked work.
-        |
-        |5. **Create issues for any gaps**: If you find projects without proper tracking,
-        |   create new issues to ensure nothing falls through the cracks.
-        |
-        |Be concise and actionable. Focus on what needs attention.
-    """.trimMargin()
+    private suspend fun buildLastRunTimes(): Map<IdleTaskType, String> {
+        val result = mutableMapOf<IdleTaskType, String>()
+        try {
+            val recentDone = taskRepository.findByTypeAndStateOrderByCreatedAtAsc(
+                type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+                state = TaskStateEnum.DONE,
+            ).toList().filter {
+                it.createdAt.isAfter(java.time.Instant.now().minus(Duration.ofDays(7)))
+            }
+
+            for (task in recentDone) {
+                val urn = task.sourceUrn.value
+                val taskType = when {
+                    urn.contains("review_brain_issues") || urn == "system:idle-review" -> IdleTaskType.REVIEW_BRAIN_ISSUES
+                    urn.contains("kb_consistency_check") -> IdleTaskType.KB_CONSISTENCY_CHECK
+                    urn.contains("vulnerability_scan") -> IdleTaskType.VULNERABILITY_SCAN
+                    urn.contains("code_quality_scan") -> IdleTaskType.CODE_QUALITY_SCAN
+                    urn.contains("documentation_freshness") -> IdleTaskType.DOCUMENTATION_FRESHNESS
+                    urn.contains("learning_best_practices") -> IdleTaskType.LEARNING_BEST_PRACTICES
+                    else -> null
+                } ?: continue
+                // Keep the latest (list ordered by createdAt ASC, last wins)
+                result[taskType] = task.createdAt.toString()
+            }
+        } catch (e: Exception) {
+            logger.debug(e) { "IDLE_TASK: Failed to build lastRunTimes, treating all as never-run" }
+        }
+        return result
+    }
+
+    /**
+     * EPIC 7: Build the prompt for a specific idle task type.
+     * Each type gets a specialized prompt that the Python orchestrator
+     * executes using its existing tool set (kb_search, brain_*, code_search, etc.).
+     */
+    private fun buildIdleTaskPrompt(type: IdleTaskType): String = when (type) {
+        IdleTaskType.REVIEW_BRAIN_ISSUES -> """
+            |You are performing a proactive idle review of all projects managed by Jervis.
+            |
+            |Using the brain tools, perform the following review:
+            |
+            |1. **Check open issues**: Use brain_search_issues to find all open issues.
+            |   Review their status, check for overdue items, and update priorities if needed.
+            |
+            |2. **Review recent activity**: Check for issues that haven't been updated recently.
+            |   Add comments or transition stale issues as needed.
+            |
+            |3. **Check KB for new information**: Use kb_search to check if there's new
+            |   information that should be reflected in brain issues or wiki pages.
+            |
+            |4. **Summarize findings**: Create or update a summary page in Confluence
+            |   with the current status of all tracked work.
+            |
+            |5. **Create issues for any gaps**: If you find projects without proper tracking,
+            |   create new issues to ensure nothing falls through the cracks.
+            |
+            |Be concise and actionable. Focus on what needs attention.
+        """.trimMargin()
+
+        IdleTaskType.KB_CONSISTENCY_CHECK -> """
+            |You are performing a Knowledge Base consistency check.
+            |
+            |Using kb_search, check for:
+            |1. **Duplicate content**: Search for similar topics and flag redundant entries.
+            |2. **Contradictions**: Look for conflicting information across KB articles.
+            |3. **Stale references**: Find KB entries referencing deleted or moved content.
+            |4. **Orphaned nodes**: Identify KB entries with no connections to other content.
+            |
+            |For each finding, create a brain issue or update the KB entry directly.
+            |Summarize your findings at the end.
+        """.trimMargin()
+
+        IdleTaskType.VULNERABILITY_SCAN -> """
+            |You are performing a dependency vulnerability scan across all projects.
+            |
+            |Using code_search and kb_search:
+            |1. **Find dependency manifests**: Search for package.json, build.gradle.kts,
+            |   requirements.txt, pom.xml, Gemfile, go.mod files.
+            |2. **Check versions**: Look for outdated or known-vulnerable dependency versions.
+            |3. **Report findings**: For each vulnerability found, create a brain issue
+            |   with severity, affected package, and recommended action.
+            |
+            |Focus on critical and high-severity issues. Be specific about versions.
+        """.trimMargin()
+
+        IdleTaskType.CODE_QUALITY_SCAN -> """
+            |You are performing a basic code quality scan across all projects.
+            |
+            |Using code_search and kb_search:
+            |1. **TODO/FIXME audit**: Search for TODO and FIXME comments, categorize by urgency.
+            |2. **Dead code**: Look for unused imports, unreachable code, empty catch blocks.
+            |3. **Complexity hotspots**: Identify overly complex functions or classes.
+            |
+            |For significant findings, create brain issues. Summarize at the end.
+        """.trimMargin()
+
+        IdleTaskType.DOCUMENTATION_FRESHNESS -> """
+            |You are checking documentation freshness across all projects.
+            |
+            |Using kb_search and code_search:
+            |1. **Find documentation**: Search for README, docs/, wiki pages in KB.
+            |2. **Compare with code**: Check if documented APIs/configs match current code.
+            |3. **Flag stale docs**: Identify documentation that hasn't been updated
+            |   but references code that has changed significantly.
+            |
+            |For each stale document found, create a brain issue with specific
+            |sections that need updating. Summarize findings at the end.
+        """.trimMargin()
+
+        IdleTaskType.LEARNING_BEST_PRACTICES -> """
+            |You are searching for relevant best practices for the managed projects.
+            |
+            |Using kb_search and code_search:
+            |1. **Detect tech stack**: Identify languages, frameworks, and tools used.
+            |2. **Find improvement opportunities**: Based on the tech stack, suggest
+            |   best practices that are not yet followed.
+            |3. **Check recent issues**: Look at recent bug fixes and suggest preventive
+            |   patterns or tools.
+            |
+            |Create a summary with actionable recommendations. If any recommendation
+            |is critical, create a brain issue for tracking.
+        """.trimMargin()
+    }
 
     private suspend fun runWorkspaceRetryLoop() {
         while (scope.isActive) {
