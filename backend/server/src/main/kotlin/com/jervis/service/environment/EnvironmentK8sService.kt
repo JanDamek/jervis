@@ -27,6 +27,7 @@ import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder
 import io.fabric8.kubernetes.client.ConfigBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.KubernetesClientBuilder
+import io.fabric8.kubernetes.client.KubernetesClientException
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -200,6 +201,9 @@ class EnvironmentK8sService(
         logger.info { "Syncing resources for environment: ${env.name} (ns=${env.namespace})" }
 
         try {
+            // Ensure namespace exists before syncing (auto-create if missing — BUG FIX)
+            ensureNamespaceExists(env.namespace)
+
             val infraComponents = env.components
                 .filter { it.type != ComponentType.PROJECT && it.autoStart }
                 .sortedBy { it.startOrder }
@@ -299,6 +303,21 @@ class EnvironmentK8sService(
             .build()
     }
 
+    /**
+     * Check if namespace exists and auto-create it if missing.
+     * Prevents "namespace not found" errors when syncing ConfigMaps/Deployments
+     * for environments whose namespace was deleted or never created.
+     */
+    private fun ensureNamespaceExists(namespace: String) {
+        buildK8sClient().use { client ->
+            val ns = client.namespaces().withName(namespace).get()
+            if (ns == null) {
+                logger.warn { "K8s: Namespace $namespace does not exist — auto-creating for environment sync" }
+                createNamespace(namespace)
+            }
+        }
+    }
+
     private fun createNamespace(namespace: String) {
         buildK8sClient().use { client ->
             val ns = NamespaceBuilder()
@@ -391,12 +410,22 @@ class EnvironmentK8sService(
                 .also { builder -> envVars.forEach { (k, v) -> builder.addToData(k, v) } }
                 .build()
 
-            client.configMaps()
-                .inNamespace(namespace)
-                .resource(configMap)
-                .serverSideApply()
-
-            logger.info { "K8s: Applied ConfigMap $configMapName in $namespace" }
+            try {
+                client.configMaps()
+                    .inNamespace(namespace)
+                    .resource(configMap)
+                    .serverSideApply()
+                logger.info { "K8s: Applied ConfigMap $configMapName in $namespace" }
+            } catch (e: io.fabric8.kubernetes.client.KubernetesClientException) {
+                if (e.code == 404) {
+                    throw IllegalStateException(
+                        "Namespace '$namespace' does not exist in K8s cluster. " +
+                            "Provision the environment first or verify the namespace was created correctly.",
+                        e,
+                    )
+                }
+                throw e
+            }
         }
     }
 
