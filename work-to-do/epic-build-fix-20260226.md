@@ -57,6 +57,18 @@ return winner.action
 - `maxBy` je safe (non-nullable) protože list je neprázdný
 - Alternativně `maxByOrNull` + `?.action` pokud preferujete defenzivní styl
 
+## Architekturální problém: in-memory filtering místo DB
+
+`FilteringRulesService` používá `ConcurrentHashMap` pro ukládání pravidel a filtruje/řadí
+v aplikační paměti (`rules.values.filter { ... }.sortedByDescending { ... }`).
+
+**Pravidlo projektu: "DB filtering, NEVER app filtering"** — filtrování a řazení musí být v DB dotazu,
+ne v Kotlin kódu. Celý service by měl být přepsán na MongoDB backed s Spring Data derived queries:
+- `findByEnabledTrueAndSourceTypeIn(types)` místo `.filter { it.enabled }.filter { it.sourceType == ... }`
+- Řazení přes `OrderByActionDesc` místo `.maxBy { it.action.ordinal }`
+
+Viz MEMORY.md: "DB filtering, NEVER app filtering — always filter in DB query, never fetch + filter in Kotlin"
+
 ## Dopad
 
 - Server se nezkompiluje → nelze nasadit
