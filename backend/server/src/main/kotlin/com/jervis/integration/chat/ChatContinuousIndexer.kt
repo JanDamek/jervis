@@ -10,6 +10,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
@@ -48,10 +50,11 @@ class ChatContinuousIndexer(
     private suspend fun indexContinuously() {
         while (true) {
             try {
-                val chatConnections = connectionService.findAllActive()
+                val chatConnections = connectionService.findAllValid()
                     .filter { conn ->
-                        conn.capabilities.any { it in setOf(ConnectionCapability.CHAT_READ) }
+                        conn.availableCapabilities.contains(ConnectionCapability.CHAT_READ)
                     }
+                    .toList()
 
                 for (conn in chatConnections) {
                     try {

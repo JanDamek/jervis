@@ -118,14 +118,17 @@ class EnvironmentAgentService {
                 val tailLines = parameters["tailLines"]?.toIntOrNull() ?: 100
                 val container = parameters["container"]
 
-                val logRequest = client.pods().inNamespace(namespace)
-                    .withName(podName)
-                    .tailingLines(tailLines)
-
                 if (container != null) {
-                    logRequest.inContainer(container).log
+                    client.pods().inNamespace(namespace)
+                        .withName(podName)
+                        .inContainer(container)
+                        .tailingLines(tailLines)
+                        .log
                 } else {
-                    logRequest.log
+                    client.pods().inNamespace(namespace)
+                        .withName(podName)
+                        .tailingLines(tailLines)
+                        .log
                 }
             }
         } catch (e: Exception) {

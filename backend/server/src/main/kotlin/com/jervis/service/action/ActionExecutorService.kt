@@ -541,8 +541,8 @@ class ActionExecutorService(
                 platform = platform,
                 channelId = request.payload["channelId"] ?: "",
                 threadId = request.payload["threadId"],
-                content = request.preview,
-                clientId = request.clientId.value,
+                content = request.payload["content"] ?: buildApprovalPreview(request),
+                clientId = request.clientId,
             )
             val result = chatReplyService.sendReply(replyRequest)
             ActionExecutionResult(
