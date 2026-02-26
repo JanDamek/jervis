@@ -27,6 +27,7 @@ from bson import ObjectId
 from app.chat.context import chat_context_assembler
 from app.chat.handler_agentic import run_agentic_loop
 from app.chat.handler_context import load_runtime_context, build_messages, load_task_context_message
+from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_decompose import (
     save_original_to_kb,
     summarize_long_message,
@@ -283,6 +284,9 @@ async def _try_decompose(
         yield ChatStreamEvent(type="thinking", content="Sestavuji odpověď...")
         final_text = await combine_results(all_results, request.message[:200])
 
+        # EPIC 14-S1: Fact-check post-processing
+        fc_result = await run_fact_check(final_text, request.active_client_id, request.active_project_id)
+
         async for event in stream_text(final_text):
             yield event
 
@@ -294,6 +298,7 @@ async def _try_decompose(
                 **({"used_tools": ",".join(all_used_tools)} if all_used_tools else {}),
                 **({"created_tasks": ",".join(str(t.get("title", "")) for t in all_created_tasks)} if all_created_tasks else {}),
                 **({"responded_tasks": ",".join(all_responded_tasks)} if all_responded_tasks else {}),
+                **fact_check_metadata(fc_result),
             },
         )
         yield ChatStreamEvent(type="done", metadata={
@@ -301,6 +306,7 @@ async def _try_decompose(
             "topics": [t.title for t in subtopics],
             "used_tools": all_used_tools, "created_tasks": all_created_tasks,
             "responded_tasks": all_responded_tasks,
+            **confidence_badge(fc_result),
         })
         return
 
@@ -355,10 +361,17 @@ async def _try_greeting_fast_path(
 
         if direct_text.strip() and not has_tool_markers and not has_fake_tools:
             logger.info("Chat: direct answer accepted (%d chars)", len(direct_text))
+            # EPIC 14-S1: Fact-check post-processing
+            fc_result = await run_fact_check(direct_text, request.active_client_id, request.active_project_id)
             async for event in stream_text(direct_text):
                 yield event
-            await save_assistant_message(request.session_id, direct_text, {"direct_answer": "true"})
-            yield ChatStreamEvent(type="done", metadata={"direct_answer": True, "iterations": 0})
+            await save_assistant_message(
+                request.session_id, direct_text,
+                {"direct_answer": "true", **fact_check_metadata(fc_result)},
+            )
+            yield ChatStreamEvent(type="done", metadata={
+                "direct_answer": True, "iterations": 0, **confidence_badge(fc_result),
+            })
         else:
             logger.info("Chat: direct answer rejected (tool_markers=%s, fake_tools=%s), falling through",
                         has_tool_markers, has_fake_tools)

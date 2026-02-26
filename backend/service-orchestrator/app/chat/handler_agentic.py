@@ -17,6 +17,7 @@ from typing import AsyncIterator
 from bson import ObjectId
 
 from app.chat.drift import detect_drift
+from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.handler_tools import (
     extract_tool_calls,
@@ -107,6 +108,9 @@ async def run_agentic_loop(
             final_text = remaining_text or choice.message.content or ""
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
 
+            # EPIC 14-S1: Fact-check post-processing
+            fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
+
             async for event in stream_text(final_text):
                 yield event
 
@@ -117,12 +121,14 @@ async def run_agentic_loop(
                     **({"created_tasks": ",".join(str(t.get("title", "")) for t in created_tasks)} if created_tasks else {}),
                     **({"responded_tasks": ",".join(responded_tasks)} if responded_tasks else {}),
                     **({"summarized": "true", "original_length": str(msg_len)} if is_summarized else {}),
+                    **fact_check_metadata(fc_result),
                 },
             )
 
             yield ChatStreamEvent(type="done", metadata={
                 "created_tasks": created_tasks, "responded_tasks": responded_tasks,
                 "used_tools": used_tools, "iterations": iteration + 1,
+                **confidence_badge(fc_result),
             })
             return
 
@@ -156,14 +162,19 @@ async def run_agentic_loop(
             break_response = await call_llm(messages=messages, tier=tier)
             final_text = break_response.choices[0].message.content or "Nemám dostatek informací pro odpověď."
 
+            # EPIC 14-S1: Fact-check post-processing
+            fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
+
             async for event in stream_text(final_text):
                 yield event
 
             await save_assistant_message(
                 request.session_id, final_text,
-                {"drift_break": drift_reason, "used_tools": ",".join(used_tools)},
+                {"drift_break": drift_reason, "used_tools": ",".join(used_tools), **fact_check_metadata(fc_result)},
             )
-            yield ChatStreamEvent(type="done", metadata={"drift_break": drift_reason, "iterations": iteration + 1})
+            yield ChatStreamEvent(type="done", metadata={
+                "drift_break": drift_reason, "iterations": iteration + 1, **confidence_badge(fc_result),
+            })
             return
 
         # --- Execute tool calls ---
@@ -316,14 +327,19 @@ async def run_agentic_loop(
         final_resp = await call_llm(messages=messages, tier=clamp_tier(tier))
         final_text = final_resp.choices[0].message.content or "Omlouvám se, vyčerpal jsem limit operací."
 
+        # EPIC 14-S1: Fact-check post-processing
+        fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
+
         async for event in stream_text(final_text):
             yield event
 
         await save_assistant_message(
             request.session_id, final_text,
-            {"max_iterations": "true", "used_tools": ",".join(used_tools)},
+            {"max_iterations": "true", "used_tools": ",".join(used_tools), **fact_check_metadata(fc_result)},
         )
-        yield ChatStreamEvent(type="done", metadata={"max_iterations": True, "iterations": effective_max_iterations})
+        yield ChatStreamEvent(type="done", metadata={
+            "max_iterations": True, "iterations": effective_max_iterations, **confidence_badge(fc_result),
+        })
     except Exception as e:
         logger.error("Chat: failed to generate max-iterations response: %s", e)
         yield ChatStreamEvent(type="error", content="Vyčerpán limit operací.")
