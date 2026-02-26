@@ -55,6 +55,7 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        javaParameters.set(true)
         freeCompilerArgs.add("-Xjsr305=strict")
     }
 }

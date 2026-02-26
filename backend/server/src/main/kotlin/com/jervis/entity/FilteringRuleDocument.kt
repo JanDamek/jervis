@@ -16,9 +16,9 @@ import java.time.Instant
 data class FilteringRuleDocument(
     @Id val id: ObjectId = ObjectId(),
     @Indexed val scope: String = "CLIENT",
-    @Indexed val sourceType: String,
-    val conditionType: String,
-    val conditionValue: String,
+    @Indexed val sourceType: String = "",
+    val conditionType: String = "",
+    val conditionValue: String = "",
     @Indexed val action: String = "IGNORE",
     val description: String? = null,
     @Indexed val clientId: String? = null,
