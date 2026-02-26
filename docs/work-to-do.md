@@ -4,37 +4,22 @@
 
 ---
 
-## CRITICAL — Blokuje autonomní provoz
+## ~~CRITICAL — Blokuje autonomní provoz~~ ✅ DONE (2026-02-26)
 
-### 1. Wiring: E7 idle task services → BackgroundEngine
-**Problém:** VulnerabilityScannerService, KbConsistencyCheckerService, LearningEngineService, DocFreshnessService existují jako `@Service` beany, ale BackgroundEngine je **nevolá**. Idle review loop dělá jen brain JIRA review.
-**Řešení:** Rozšířit `BackgroundEngine.runIdleReviewLoop()` — konzultovat `IdleTaskRegistry.getNextIdleTask()` a dispatchnout příslušný service.
-**Soubory:** `BackgroundEngine.kt`, `IdleTaskRegistry.kt`
+### ~~1. Wiring: E7 idle task services → BackgroundEngine~~ ✅
+**Hotovo:** `BackgroundEngine.runIdleReviewLoop()` nyní konzultuje `IdleTaskRegistry.getNextIdleTask()` a dispatchuje 6 typů idle tasků (REVIEW_BRAIN_ISSUES, KB_CONSISTENCY_CHECK, VULNERABILITY_SCAN, CODE_QUALITY_SCAN, DOCUMENTATION_FRESHNESS, LEARNING_BEST_PRACTICES) se specializovanými prompty pro orchestrátor.
 
-### 2. Wiring: E8 DeadlineTrackerService → periodický scheduler
-**Problém:** `DeadlineTrackerService` + `ProactivePreparationService` existují ale nikdo je periodicky nevolá. Žádný scheduler neskenuje KB/JIRA na deadlines.
-**Řešení:** Přidat deadline scan do BackgroundEngine scheduler loop nebo jako idle task.
-**Soubory:** `BackgroundEngine.kt`, `DeadlineTrackerService.kt`
+### ~~2. Wiring: E8 DeadlineTrackerService → periodický scheduler~~ ✅
+**Hotovo:** Deadline scan přidán do `BackgroundEngine.runSchedulerLoop()` — každých 5 minut dispatchuje SCHEDULED_TASK s deadline-scanning promptem pro orchestrátor. Skenuje JIRA due dates i KB deadline references.
 
-### 3. Wiring: E14-S1 fact_checker → agentic loop
-**Problém:** `fact_check_response()` je kompletně naimplementovaný ale **nikdy se nevolá**. Měl by běžet jako post-processing po každé LLM odpovědi.
-**Řešení:** Zavolat `fact_check_response()` v chat handler po finální odpovědi (aspoň v FOREGROUND módu). Přidat confidence badge do response.
-**Soubory:** `handler_agentic.py` nebo `handler_streaming.py`, `fact_checker.py`
+### ~~3. Wiring: E14-S1 fact_checker → agentic loop~~ ✅
+**Hotovo:** `fact_check_response()` volán na 5 finalizačních bodech v `handler_agentic.py` (normal exit, drift break, max iterations) a `handler.py` (decompose, greeting). Nový `handler_fact_check.py` helper. Confidence badge metadata ve streamu pro UI.
 
-### 4. Wiring: E10-S3 FilteringRulesService → qualifier pipeline
-**Problém:** `FilteringRulesService.evaluate()` má kompletní logiku (source type matching, condition evaluation včetně regexu) ale **qualifier ji nevolá**.
-**Řešení:** Přidat volání `filteringRulesService.evaluate()` do `KbResultRouter` před/po actionability assessment.
-**Soubory:** `KbResultRouter.kt`, `FilteringRulesService.kt`
+### ~~4. Wiring: E10-S3 FilteringRulesService → qualifier pipeline~~ ✅
+**Hotovo:** `FilteringRulesService.evaluate()` integrován do `KbResultRouter.routeTask()` mezi actionability check a complexity assessment. IGNORE → task DONE, URGENT/HIGH → force complex routing. SourceUrn auto-mapován na FilterSourceType.
 
-### 5. E5-S2/S3/S4/S5: Action dispatch stubs → reálné implementace
-**Problém:** `dispatchEmailAction()`, `dispatchJiraAction()`, `dispatchPrAction()`, `dispatchConfluenceAction()` v ActionExecutorService jsou **stuby** — approval gate funguje, ale akce se reálně neprovádí.
-**Řešení:** Implementovat reálné volání:
-- Email: `EmailServiceImpl.kt` hází `UnsupportedOperationException("Write operations not allowed yet")` → implementovat SMTP send
-- Client JIRA: `AtlassianApiClient.kt` (1903 řádků) **už má** `createJiraIssue()`, `updateJiraIssue()`, `transitionJiraIssue()` → propojit s orchestrátorem (není wired do executor.py)
-- PR/MR: GitService je jen read-only interface → přidat write operations (GitHub/GitLab API)
-- Confluence: `AtlassianApiClient.kt` **už má** `createConfluencePage()`, `updateConfluencePage()` → propojit
-**Soubory:** `ActionExecutorService.kt`, `executor.py`, `AtlassianApiClient.kt`, `EmailServiceImpl.kt`
-**Poznámka:** Atlassian write ops existují ale nejsou propojeny s orchestrátorem. Stačí wiring, ne nová implementace.
+### ~~5. E5-S2/S3/S4/S5: Action dispatch stubs → reálné implementace~~ ✅ (částečně)
+**Hotovo:** JIRA a Confluence dispatch přes `BrainWriteService` (createIssue, updateIssue, addComment, transitionIssue, createPage, updatePage). Email a PR zůstávají stuby (SMTP a Git write API vyžadují novou implementaci).
 
 ---
 
