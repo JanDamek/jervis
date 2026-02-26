@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
@@ -437,6 +439,11 @@ private fun ChatMessageItem(
                         }
                     }
 
+                    // Confidence badge for assistant messages (E14-S4)
+                    if (!isMe) {
+                        ConfidenceBadge(message.metadata)
+                    }
+
                     // Show workflow steps for Assistant messages
                     if (!isMe && message.workflowSteps.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -539,5 +546,47 @@ private fun WorkflowStepsDisplay(
                 }
             }
         }
+    }
+}
+
+/**
+ * E14-S4: Confidence badge showing fact-check verification status.
+ * Reads fact_check_confidence, fact_check_claims, fact_check_verified from metadata.
+ */
+@Composable
+private fun ConfidenceBadge(
+    metadata: Map<String, String>,
+    modifier: Modifier = Modifier,
+) {
+    val confidenceStr = metadata["fact_check_confidence"] ?: return
+    val confidence = confidenceStr.toDoubleOrNull() ?: return
+    val claims = metadata["fact_check_claims"]?.toIntOrNull() ?: 0
+    val verified = metadata["fact_check_verified"]?.toIntOrNull() ?: 0
+    if (claims == 0) return
+
+    val badgeColor = when {
+        confidence >= 0.8 -> Color(0xFF4CAF50) // Green
+        confidence >= 0.5 -> Color(0xFFFFC107) // Amber
+        else -> Color(0xFFF44336)              // Red
+    }
+    val pct = (confidence * 100).toInt()
+
+    Spacer(modifier = Modifier.height(6.dp))
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Default.Verified,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = badgeColor,
+        )
+        Text(
+            text = "$pct% ($verified/$claims)",
+            style = MaterialTheme.typography.labelSmall,
+            color = badgeColor,
+        )
     }
 }
