@@ -190,9 +190,9 @@ enum class ProcessingMode {
  * A single qualification progress step, stored in TaskDocument for history.
  */
 data class QualificationStepRecord(
-    val timestamp: Instant,
-    val step: String,
-    val message: String,
+    val timestamp: Instant = Instant.EPOCH,
+    val step: String = "",
+    val message: String = "",
     val metadata: Map<String, String> = emptyMap(),
 )
 
@@ -200,9 +200,9 @@ data class QualificationStepRecord(
  * A single orchestrator progress step, stored in TaskDocument for history.
  */
 data class OrchestratorStepRecord(
-    val timestamp: Instant,
-    val node: String,
-    val message: String,
+    val timestamp: Instant = Instant.EPOCH,
+    val node: String = "",
+    val message: String = "",
     val goalIndex: Int = 0,
     val totalGoals: Int = 0,
     val stepIndex: Int = 0,
