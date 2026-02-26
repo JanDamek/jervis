@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # ── Model keep_alive ────────────────────────────────────────────────
     default_keep_alive: str = "10m"  # Must match Ollama server's OLLAMA_KEEP_ALIVE
 
+    # ── Request limits ──────────────────────────────────────────────────
+    max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
+
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish
     preempt_grace_s: float = 2.0        # grace before killing streaming

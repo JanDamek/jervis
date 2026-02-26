@@ -82,7 +82,7 @@ async def api_generate(request: Request):
     body = await request.json()
     priority = _get_priority_header(request)
     start = time.monotonic()
-    resp = await router.route_request("/api/generate", body, priority)
+    resp = await router.route_request("/api/generate", body, priority, http_request=request)
     duration = time.monotonic() - start
     model = body.get("model", "unknown")
     target = "gpu" if "running_gpu" in str(getattr(resp, '_body', '')) else "cpu"
@@ -96,7 +96,7 @@ async def api_chat(request: Request):
     body = await request.json()
     priority = _get_priority_header(request)
     start = time.monotonic()
-    resp = await router.route_request("/api/chat", body, priority)
+    resp = await router.route_request("/api/chat", body, priority, http_request=request)
     duration = time.monotonic() - start
     model = body.get("model", "unknown")
     m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
@@ -108,7 +108,7 @@ async def api_chat(request: Request):
 async def api_embeddings(request: Request):
     body = await request.json()
     priority = _get_priority_header(request)
-    resp = await router.route_request("/api/embeddings", body, priority)
+    resp = await router.route_request("/api/embeddings", body, priority, http_request=request)
     model = body.get("model", "unknown")
     m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
     return resp
@@ -118,7 +118,7 @@ async def api_embeddings(request: Request):
 async def api_embed(request: Request):
     body = await request.json()
     priority = _get_priority_header(request)
-    resp = await router.route_request("/api/embed", body, priority)
+    resp = await router.route_request("/api/embed", body, priority, http_request=request)
     model = body.get("model", "unknown")
     m.requests_total.labels(target="routed", model=model, priority=str(priority or "auto")).inc()
     return resp
