@@ -285,6 +285,123 @@ TOOL_LIST_UNCLASSIFIED_MEETINGS: dict = {
 # Guidelines tools
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Filtering rules tools (EPIC 10)
+# ---------------------------------------------------------------------------
+
+TOOL_SET_FILTER_RULE: dict = {
+    "type": "function",
+    "function": {
+        "name": "set_filter_rule",
+        "description": (
+            "Vytvoř filtrační pravidlo pro příchozí položky. "
+            "Příklad: 'ignoruj emaily od noreply@' → "
+            "set_filter_rule(source_type=EMAIL, condition_type=FROM_CONTAINS, "
+            "condition_value='noreply@', action=IGNORE)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_type": {
+                    "type": "string",
+                    "enum": ["EMAIL", "JIRA", "GIT", "WIKI", "CHAT", "ALL"],
+                    "description": "Typ zdroje (EMAIL, JIRA, GIT, WIKI, CHAT, ALL).",
+                },
+                "condition_type": {
+                    "type": "string",
+                    "enum": ["SUBJECT_CONTAINS", "FROM_CONTAINS", "BODY_CONTAINS", "LABEL_EQUALS", "REGEX_MATCH"],
+                    "description": "Typ podmínky.",
+                },
+                "condition_value": {
+                    "type": "string",
+                    "description": "Hodnota podmínky (text, regex).",
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["IGNORE", "LOW_PRIORITY", "NORMAL", "HIGH_PRIORITY", "URGENT"],
+                    "description": "Akce při shody (default: IGNORE).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Popis pravidla (volitelné).",
+                },
+            },
+            "required": ["source_type", "condition_type", "condition_value"],
+        },
+    },
+}
+
+TOOL_LIST_FILTER_RULES: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_filter_rules",
+        "description": "Zobraz aktivní filtrační pravidla.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
+TOOL_REMOVE_FILTER_RULE: dict = {
+    "type": "function",
+    "function": {
+        "name": "remove_filter_rule",
+        "description": "Odstraň filtrační pravidlo dle ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "rule_id": {
+                    "type": "string",
+                    "description": "ID pravidla (z list_filter_rules).",
+                },
+            },
+            "required": ["rule_id"],
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Action memory tools (EPIC 9-S4)
+# ---------------------------------------------------------------------------
+
+TOOL_QUERY_ACTION_LOG: dict = {
+    "type": "function",
+    "function": {
+        "name": "query_action_log",
+        "description": (
+            "Prohledej historii akcí — co jsem udělal pro uživatele. "
+            "Použij pro 'co jsi dělal minulý týden', 'jaké code reviews jsi provedl', "
+            "'ukaž mi poslední deploymenty'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Co hledáš v akčním logu (volitelné).",
+                },
+                "action_type": {
+                    "type": "string",
+                    "enum": ["BACKGROUND_TASK", "CODING_DISPATCH", "CODE_REVIEW", "KB_STORE", "DEPLOYMENT"],
+                    "description": "Filtr dle typu akce (volitelné).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximální počet výsledků (default 10).",
+                    "default": 10,
+                },
+            },
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Guidelines tools
+# ---------------------------------------------------------------------------
+
 TOOL_GET_GUIDELINES: dict = {
     "type": "function",
     "function": {
@@ -369,6 +486,10 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_SWITCH_CONTEXT,
     TOOL_GET_GUIDELINES,
     TOOL_UPDATE_GUIDELINE,
+    TOOL_SET_FILTER_RULE,
+    TOOL_LIST_FILTER_RULES,
+    TOOL_REMOVE_FILTER_RULE,
+    TOOL_QUERY_ACTION_LOG,
 ]
 
 # All tools available in foreground chat = base research + brain + memory + chat-specific
@@ -402,6 +523,7 @@ class ToolCategory(str, Enum):
     RESEARCH = "research"
     BRAIN = "brain"
     TASK_MGMT = "task_mgmt"
+    FILTERING = "filtering"
 
 
 TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
@@ -436,6 +558,12 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_MEMORY_STORE,
         TOOL_GET_GUIDELINES,
         TOOL_UPDATE_GUIDELINE,
+        TOOL_QUERY_ACTION_LOG,
+    ],
+    ToolCategory.FILTERING: [
+        TOOL_SET_FILTER_RULE,
+        TOOL_LIST_FILTER_RULES,
+        TOOL_REMOVE_FILTER_RULE,
     ],
 }
 
@@ -454,4 +582,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
     "switch_context": "scope",
     "get_guidelines": "guidelines", "update_guideline": "guidelines",
+    "set_filter_rule": "filtering", "list_filter_rules": "filtering",
+    "remove_filter_rule": "filtering",
+    "query_action_log": "memory",
 }

@@ -379,42 +379,134 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                     break
 
     # --- EPIC 3: Code Review Phase (after coding agent dispatch) ---
+    # E3-S2: Review with re-dispatch loop (max 2 rounds on REQUEST_CHANGES)
     review_report = None
     coding_dispatched = any(
         r.get("agent_type") == "claude" and r.get("success")
         for r in step_results
     )
+    _MAX_REVIEW_ROUNDS = 2
+    review_round = 0
+
     if coding_dispatched and rules and rules.require_review:
-        try:
-            await kotlin_client.report_progress(
-                task_id=task_id, client_id=client_id,
-                node="review", message="Running code review...",
-            )
-            review_report = await _run_code_review(
-                task_description=request.query,
-                step_results=step_results,
-                client_id=client_id,
-                project_id=project_id,
-            )
-            if review_report:
+        while review_round < _MAX_REVIEW_ROUNDS:
+            review_round += 1
+            try:
+                await kotlin_client.report_progress(
+                    task_id=task_id, client_id=client_id,
+                    node="review",
+                    message=f"Running code review (round {review_round})...",
+                )
+                review_report = await _run_code_review(
+                    task_description=request.query,
+                    step_results=step_results,
+                    client_id=client_id,
+                    project_id=project_id,
+                )
+                if not review_report:
+                    break
+
                 from app.review.review_engine import ReviewVerdict, format_review_report
                 review_text = format_review_report(review_report)
                 logger.info(
-                    "REVIEW_COMPLETE | task_id=%s | verdict=%s | score=%d",
-                    task_id, review_report.verdict.value, review_report.score,
+                    "REVIEW_COMPLETE | task_id=%s | round=%d | verdict=%s | score=%d",
+                    task_id, review_round, review_report.verdict.value, review_report.score,
                 )
-                # Inject review result into context
-                messages.append({
-                    "role": "system",
-                    "content": f"[Code Review Result]\n{review_text}",
-                })
-                if review_report.verdict == ReviewVerdict.REJECT:
-                    # Escalate to user task
-                    final_answer = f"Code review REJECTED (score: {review_report.score}/100).\n\n{review_text}"
+
+                if review_report.verdict == ReviewVerdict.APPROVE:
+                    # Review passed — inject result and continue to finalize
+                    messages.append({
+                        "role": "system",
+                        "content": f"[Code Review Result — APPROVED]\n{review_text}",
+                    })
+                    break
+
                 elif review_report.verdict == ReviewVerdict.REQUEST_CHANGES:
-                    final_answer = f"Code review requested changes (score: {review_report.score}/100).\n\n{review_text}"
-        except Exception as e:
-            logger.warning("Code review phase failed (non-fatal): %s", e)
+                    if review_round < _MAX_REVIEW_ROUNDS:
+                        # E3-S2: Re-dispatch coding agent with review feedback
+                        logger.info(
+                            "REVIEW_RE_DISPATCH | task_id=%s | round=%d",
+                            task_id, review_round,
+                        )
+                        await kotlin_client.report_progress(
+                            task_id=task_id, client_id=client_id,
+                            node="review",
+                            message=f"Review requested changes — re-dispatching coding agent...",
+                        )
+                        # Inject review feedback into context for next agentic iteration
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                f"[Code Review Feedback — Round {review_round}]\n"
+                                f"Verdict: REQUEST_CHANGES\n{review_text}\n\n"
+                                "Fix the issues listed above and re-dispatch the coding agent."
+                            ),
+                        })
+                        # Run a short agentic loop to re-dispatch with feedback
+                        re_dispatch_done = False
+                        for _ in range(3):
+                            try:
+                                resp = await llm_provider.completion(
+                                    messages=messages,
+                                    tier=tracker.current_tier,
+                                    max_tokens=settings.default_output_tokens,
+                                    temperature=0.2,
+                                    tools=ALL_BACKGROUND_TOOLS,
+                                )
+                                choice = resp.choices[0]
+                                tool_calls, _ = extract_tool_calls(choice.message)
+                                if not tool_calls:
+                                    break
+                                messages.append(choice.message.model_dump())
+                                for tc in tool_calls:
+                                    tn = tc.function.name
+                                    try:
+                                        args = json.loads(tc.function.arguments)
+                                    except json.JSONDecodeError:
+                                        args = {}
+                                    if tn == "dispatch_coding_agent":
+                                        re_dispatch_done = True
+                                    res = await asyncio.wait_for(
+                                        execute_tool(tn, args, client_id, project_id, "BACKGROUND"),
+                                        timeout=_TOOL_EXECUTION_TIMEOUT_S,
+                                    )
+                                    messages.append({
+                                        "role": "tool", "tool_call_id": tc.id,
+                                        "name": tn, "content": res,
+                                    })
+                                    step_results.append({
+                                        "step_index": total_tool_calls,
+                                        "success": "error" not in res.lower(),
+                                        "summary": res[:200],
+                                        "agent_type": "claude" if tn == "dispatch_coding_agent" else None,
+                                    })
+                                    total_tool_calls += 1
+                                if re_dispatch_done:
+                                    break
+                            except Exception as e:
+                                logger.warning("Re-dispatch iteration failed: %s", e)
+                                break
+                        # Continue loop → next review round
+                        continue
+                    else:
+                        # Max rounds reached — escalate
+                        final_answer = (
+                            f"Code review requested changes after {review_round} rounds "
+                            f"(score: {review_report.score}/100).\n\n{review_text}"
+                        )
+                        break
+
+                elif review_report.verdict == ReviewVerdict.REJECT:
+                    # E3-S2: Escalate REJECT to user
+                    final_answer = (
+                        f"Code review REJECTED (score: {review_report.score}/100).\n\n"
+                        f"{review_text}"
+                    )
+                    break
+
+            except Exception as e:
+                logger.warning("Code review phase failed (non-fatal): %s", e)
+                break
 
     # --- Finalize ---
     if not final_answer and iteration >= settings.background_max_iterations:
@@ -463,6 +555,21 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         "escalation=%s | %.1fs",
         task_id, success, iteration, total_tool_calls, tracker.history_str, elapsed,
     )
+
+    # EPIC 9-S4: Log completed action to KB action memory
+    try:
+        from app.memory.action_log import log_action
+        action_type = "CODING_DISPATCH" if coding_dispatched else "BACKGROUND_TASK"
+        await log_action(
+            action=action_type,
+            description=request.task_description[:200],
+            result="SUCCESS" if success else "FAILED",
+            client_id=request.client_id,
+            project_id=request.project_id,
+            related_task_id=task_id,
+        )
+    except Exception:
+        pass  # Non-critical
 
     return {
         "success": success,

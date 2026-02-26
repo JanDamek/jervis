@@ -19,6 +19,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalChatContextApi
+import com.jervis.rpc.internal.installInternalFilterRulesApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
@@ -69,6 +70,7 @@ class KtorRpcServer(
     private val chatRpcImpl: ChatRpcImpl,
     private val guidelinesRpcImpl: GuidelinesRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
+    private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
     private val clientService: com.jervis.service.client.ClientService,
     private val projectService: com.jervis.service.project.ProjectService,
@@ -98,6 +100,7 @@ class KtorRpcServer(
                             installInternalChatContextApi(clientService, projectService, userTaskService, meetingRpcImpl)
                             installInternalTaskApi(taskRepository, taskService, userTaskService)
                             installInternalGuidelinesApi(guidelinesService)
+                            installInternalFilterRulesApi(filteringRulesService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

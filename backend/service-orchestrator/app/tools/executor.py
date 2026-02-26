@@ -655,6 +655,22 @@ async def _execute_store_knowledge(
             "Summarize the essential information instead."
         )
 
+    # EPIC 14-S3: Check for contradictions before writing
+    try:
+        from app.guard.contradiction_detector import check_contradictions, ConflictSeverity
+        contradiction = await check_contradictions(subject, content, client_id, project_id)
+        if contradiction.severity == ConflictSeverity.CONFLICT:
+            return (
+                f"Warning: KB contradiction detected!\n{contradiction.message}\n\n"
+                "The new knowledge was NOT stored. Please resolve the contradiction first:\n"
+                "- Use kb_delete to remove outdated entries, then retry store_knowledge.\n"
+                "- Or rephrase the new knowledge to be consistent with existing data."
+            )
+        elif contradiction.severity == ConflictSeverity.WARNING:
+            content = f"{content}\n\n[Note: Potential conflict with existing KB content — {contradiction.message}]"
+    except Exception:
+        pass  # Fail open — don't block writes on check failure
+
     # Use KB write endpoint (separate deployment for write operations)
     kb_write_url = settings.knowledgebase_write_url or settings.knowledgebase_url
     url = f"{kb_write_url}/api/v1/ingest"

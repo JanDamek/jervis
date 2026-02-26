@@ -54,6 +54,10 @@ _TOOL_DESCRIPTIONS = {
     "classify_meeting": lambda a: f"Klasifikuji nahrávku: {a.get('meeting_id', '')}",
     "list_unclassified_meetings": lambda _: "Kontroluji neklasifikované nahrávky",
     "switch_context": lambda a: f"Přepínám na: {a.get('client', '')} {a.get('project', '')}".strip(),
+    "set_filter_rule": lambda a: f"Vytvářím filtr: {a.get('condition_type', '')} = {a.get('condition_value', '')}",
+    "list_filter_rules": lambda _: "Kontroluji filtrační pravidla",
+    "remove_filter_rule": lambda a: f"Odstraňuji pravidlo: {a.get('rule_id', '')}",
+    "query_action_log": lambda a: f"Prohledávám akční log: {a.get('query', 'vše')}",
 }
 
 
@@ -80,6 +84,10 @@ _CHAT_SPECIFIC_TOOLS = {
     "respond_to_user_task",
     "classify_meeting",
     "list_unclassified_meetings",
+    "set_filter_rule",
+    "list_filter_rules",
+    "remove_filter_rule",
+    "query_action_log",
 }
 
 
@@ -206,6 +214,54 @@ async def _handle_update_guideline(args, client_id, project_id, kotlin_client):
     )
 
 
+async def _handle_set_filter_rule(args, client_id, project_id, kotlin_client):
+    source_type = args.get("source_type", "ALL")
+    condition_type = args.get("condition_type")
+    condition_value = args.get("condition_value")
+    action = args.get("action", "IGNORE")
+    description = args.get("description")
+
+    if not condition_type or not condition_value:
+        return "Chyba: condition_type a condition_value jsou povinné."
+
+    return await kotlin_client.set_filter_rule(
+        source_type=source_type,
+        condition_type=condition_type,
+        condition_value=condition_value,
+        action=action,
+        description=description,
+        client_id=client_id,
+        project_id=project_id,
+    )
+
+
+async def _handle_list_filter_rules(_args, client_id, project_id, kotlin_client):
+    return await kotlin_client.list_filter_rules(
+        client_id=client_id,
+        project_id=project_id,
+    )
+
+
+async def _handle_remove_filter_rule(args, _client_id, _project_id, kotlin_client):
+    rule_id = args.get("rule_id")
+    if not rule_id:
+        return "Chyba: rule_id je povinný."
+    return await kotlin_client.remove_filter_rule(rule_id=rule_id)
+
+
+async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client):
+    if not client_id:
+        return "Chyba: client_id je povinný pro dotaz na akční log."
+    from app.memory.action_log import query_action_log
+    return await query_action_log(
+        client_id=client_id,
+        query=args.get("query", ""),
+        action_type=args.get("action_type"),
+        project_id=args.get("project_id", _project_id),
+        max_results=args.get("max_results", 10),
+    )
+
+
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
@@ -218,6 +274,10 @@ _TOOL_HANDLER_MAP = {
     "list_unclassified_meetings": _handle_list_unclassified_meetings,
     "get_guidelines": _handle_get_guidelines,
     "update_guideline": _handle_update_guideline,
+    "set_filter_rule": _handle_set_filter_rule,
+    "list_filter_rules": _handle_list_filter_rules,
+    "remove_filter_rule": _handle_remove_filter_rule,
+    "query_action_log": _handle_query_action_log,
 }
 
 

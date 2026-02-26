@@ -51,18 +51,18 @@
 |---|------|------|----------|-------|--------|----------|
 | 1 | Guidelines & Rules Engine | F1 | 🔴 CRITICAL | L | ✅ Done | Plně implementováno (DTOs, DB, UI, chat tools, resolver) |
 | 2 | Autonomous Task Pipeline | F1 | 🔴 CRITICAL | XL | ✅ Done | S1-S5: qualifier, auto-creation, priority, planner, dispatch |
-| 3 | Code Review Pipeline | F1 | 🔴 CRITICAL | L | ✅ Done | review_engine.py + wired into background handler |
-| 4 | Approval Framework (Rozšířený) | F1 | 🔴 CRITICAL | L | ✅ Done | approval_gate.py + wired into tool executor |
-| 5 | Action Execution Engine | F1 | 🔴 CRITICAL | L | ✅ Done | ActionExecutorService + DTOs + ApprovalRequired event |
+| 3 | Code Review Pipeline | F1 | 🔴 CRITICAL | L | ✅ Done | review_engine.py + re-dispatch loop + wired into background handler |
+| 4 | Approval Framework (Rozšířený) | F1 | 🔴 CRITICAL | L | ✅ Done | approval_gate.py + batch approval + analytics + wired into tool executor |
+| 5 | Action Execution Engine | F1 | 🔴 CRITICAL | L | ✅ Done | ActionExecutorService + result tracking + DTOs + ApprovalRequired event |
 | 6 | 2nd GPU Integration | F2 | 🟡 HIGH | M | 📋 Planned | HW dependent — dual P40, multi-backend |
-| 7 | Proaktivní KB Údržba & Učení | F2 | 🟡 HIGH | L | 🔄 Foundation | DTOs + IdleTaskRegistry service |
-| 8 | Deadline Monitoring | F2 | 🟡 HIGH | M | 🔄 Foundation | DTOs + DeadlineTrackerService |
-| 9 | Chat Intelligence & Memory | F2 | 🟡 HIGH | M | 🔄 Foundation | DTOs (topic tracker, action memory) |
-| 10 | Dynamic Filtering Rules | F2 | 🟢 MEDIUM | S | 🔄 Foundation | DTOs + FilteringRulesService |
+| 7 | Proaktivní KB Údržba & Učení | F2 | 🟡 HIGH | L | ✅ Done | DTOs + IdleTaskRegistry + VulnerabilityScanner + KbConsistencyChecker + LearningEngine + DocFreshness |
+| 8 | Deadline Monitoring | F2 | 🟡 HIGH | M | ✅ Done | DTOs + DeadlineTrackerService + ProactivePreparationService |
+| 9 | Chat Intelligence & Memory | F2 | 🟡 HIGH | M | ✅ Done | DTOs + action_log KB category + query_action_log chat tool |
+| 10 | Dynamic Filtering Rules | F2 | 🟢 MEDIUM | S | ✅ Done | DTOs + FilteringRulesService + chat tools (set/list/remove) + intent + internal API |
 | 11 | Slack / Teams / Discord | F3 | 🟢 MEDIUM | XL | 🔄 Foundation | DTOs (chat platform, messages) |
 | 12 | Google Calendar Integration | F3 | 🟢 MEDIUM | M | 🔄 Foundation | DTOs (calendar events, availability) |
 | 13 | System Prompt Self-Evolution | F3 | 🟢 MEDIUM | M | 🔄 Foundation | DTOs (prompt sections, learned behaviors) |
-| 14 | Anti-Hallucination Guard | F2 | 🟡 HIGH | M | ✅ Done | fact_checker.py + DTOs |
+| 14 | Anti-Hallucination Guard | F2 | 🟡 HIGH | M | ✅ Done | fact_checker.py + contradiction_detector.py + DTOs |
 | 15 | Apple Watch App | F3 | 🟢 MEDIUM | M | 📋 Planned | watchOS companion (needs native Swift) |
 | 16 | Brain Workflow Structure | F3 | 🟢 MEDIUM | S | 🔄 Foundation | DTOs (issue types, daily reports) |
 | 17 | Environment Agent Enhancement | F3 | 🟢 MEDIUM | S | 🔄 Foundation | DTOs (env agent jobs, validation) |

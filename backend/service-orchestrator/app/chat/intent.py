@@ -65,6 +65,18 @@ _RESEARCH_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_FILTERING_PATTERNS = re.compile(
+    r"(?:"
+    r"filtr|filter|ignoruj|ignore|priorit[auy]?\s+(?:vysok|nízk|vysokou|nízkou)|"
+    r"pravidl[ao]|rule[s]?|"
+    r"ignorovat\s+(?:email|mail|jir[au]|notifikac)|"
+    r"nastav\s+(?:filtr|pravidlo)|odstraň\s+(?:filtr|pravidlo)|"
+    r"zruš\s+(?:filtr|pravidlo)|smaž\s+(?:filtr|pravidlo)|"
+    r"nechci\s+(?:vidět|dostávat)|blokuj|block"
+    r")",
+    re.IGNORECASE,
+)
+
 _GREETING_PATTERNS = re.compile(
     r"(?:"
     r"ahoj|čau|zdravím|hej|dobr[éý]?\s+(?:ráno|den|odpoledne|večer)|"
@@ -117,6 +129,9 @@ def classify_intent(
 
     if _RESEARCH_PATTERNS.search(intent_text):
         categories.add(ToolCategory.RESEARCH)
+
+    if _FILTERING_PATTERNS.search(intent_text):
+        categories.add(ToolCategory.FILTERING)
 
     # Context-driven: responding to a user_task needs TASK_MGMT tools
     if has_context_task_id:
