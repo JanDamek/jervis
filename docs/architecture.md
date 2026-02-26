@@ -172,17 +172,17 @@ if (workspace != WorkspaceStatus.READY) {
                 │ • Request queuing     │
                 └───────────┬───────────┘
                             │
-              ┌─────────────┴─────────────┐
-              │                           │
-              ▼                           ▼
-    ┌─────────────────┐         ┌─────────────────┐
-    │  GPU Backend    │         │  CPU Backend    │
-    │  (port 11434)   │         │  (port 11435)   │
-    │                 │         │                 │
-    │  • P40 24GB     │         │  • 200GB RAM    │
-    │  • Fast         │         │  • Unlimited    │
-    │  • Limited VRAM │         │  • Slow         │
-    └─────────────────┘         └─────────────────┘
+              ┌─────────────┼─────────────┐
+              │             │             │
+              ▼             ▼             ▼
+    ┌─────────────────┐ ┌──────────────┐ ┌─────────────────┐
+    │  p40-local      │ │ p40-remote   │ │  CPU Backend    │
+    │  (:11434)       │ │ (ollama.     │ │  (port 11435)   │
+    │                 │ │ damek.local) │ │                 │
+    │  • P40 24GB     │ │ • P40 24GB   │ │  • 200GB RAM    │
+    │  • Fast         │ │ • Fast       │ │  • Unlimited    │
+    │  • Limited VRAM │ │ • LAN link   │ │  • Slow         │
+    └─────────────────┘ └──────────────┘ └─────────────────┘
 ```
 
 ### Priority Levels (2 levels)
