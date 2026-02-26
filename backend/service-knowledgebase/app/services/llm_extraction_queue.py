@@ -156,6 +156,13 @@ class LLMExtractionQueue:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add retry_after column for exponential backoff
+            try:
+                conn.execute("ALTER TABLE tasks ADD COLUMN retry_after TEXT")
+                logger.info("Added retry_after column to tasks table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Migration: add progress columns for extraction tracking
             for col, default in [("progress_current", "0"), ("progress_total", "0")]:
                 try:
@@ -232,13 +239,16 @@ class LLMExtractionQueue:
             # Atomic claim: SELECT + UPDATE in single transaction
             conn.execute("BEGIN IMMEDIATE")  # Write lock
 
-            # Find first PENDING task with attempts < max (priority 1 before 4)
+            # Find first PENDING task with attempts < max (priority 1 before 4).
+            # Respects retry_after: tasks with future retry_after are skipped (backoff).
+            now = datetime.utcnow().isoformat()
             row = conn.execute("""
                 SELECT * FROM tasks
                 WHERE status = ? AND attempts < ?
+                  AND (retry_after IS NULL OR retry_after <= ?)
                 ORDER BY priority ASC, created_at ASC
                 LIMIT 1
-            """, (TaskStatus.PENDING, max_attempts)).fetchone()
+            """, (TaskStatus.PENDING, max_attempts, now)).fetchone()
 
             if not row:
                 conn.rollback()
@@ -407,16 +417,19 @@ class LLMExtractionQueue:
                 conn.commit()
                 logger.error("Task %s FAILED after %d attempts: %s", task_id, attempts, error)
             else:
-                # Reset to PENDING for retry
+                # Reset to PENDING with exponential backoff via retry_after timestamp.
+                # Attempt 1 → 60s, attempt 2 → 180s (prevents retry loops every ~3 min).
+                backoff_seconds = 60 * (3 ** (attempts - 1))  # 60s, 180s
+                retry_after = (datetime.utcnow() + timedelta(seconds=backoff_seconds)).isoformat()
                 conn.execute("""
                     UPDATE tasks
-                    SET status = ?, worker_id = NULL, error = ?
+                    SET status = ?, worker_id = NULL, error = ?, retry_after = ?
                     WHERE task_id = ?
-                """, (TaskStatus.PENDING, error, task_id))
+                """, (TaskStatus.PENDING, error, retry_after, task_id))
                 conn.commit()
                 logger.warning(
-                    "Task %s failed (attempt %d/%d), resetting to PENDING: %s",
-                    task_id, attempts, max_attempts, error
+                    "Task %s failed (attempt %d/%d), retry after %ds: %s",
+                    task_id, attempts, max_attempts, backoff_seconds, error
                 )
 
             return True

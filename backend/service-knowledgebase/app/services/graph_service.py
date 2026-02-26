@@ -218,9 +218,11 @@ Text: {text}
                 request.sourceUrn, len(data.get("nodes", [])), len(data.get("edges", []))
             )
         except Exception as e:
+            error_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
             logger.warning(
                 "GRAPH_WRITE: LLM_EXTRACTION_FAILED sourceUrn=%s error=%s",
-                request.sourceUrn, e
+                request.sourceUrn, error_detail,
+                exc_info=True,
             )
             return 0, 0, []
 
