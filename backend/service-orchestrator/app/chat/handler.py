@@ -38,6 +38,7 @@ from app.chat.handler_decompose import (
 )
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.intent import classify_intent, select_tools
+from app.chat.intent_decomposer import decompose_intents, build_intent_focus_message, intent_metadata
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt
 from app.chat.tools import CHAT_TOOLS, ToolCategory
@@ -209,7 +210,17 @@ async def handle_chat(
             if event.type == "done":
                 return
 
-        # 8. Main agentic loop
+        # 8. Multi-intent decomposition (E9-S3)
+        # For medium-length messages that aren't already decomposed by topic
+        if msg_len < settings.decompose_threshold and msg_len > 50:
+            intents = await decompose_intents(request.message)
+            if intents and len(intents) > 1:
+                focus_msg = build_intent_focus_message(intents)
+                if focus_msg:
+                    messages.append({"role": "system", "content": focus_msg})
+                    logger.info("Chat: multi-intent detected (%d intents), injected focus message", len(intents))
+
+        # 9. Main agentic loop
         async for event in run_agentic_loop(
             request=request,
             messages=messages,
