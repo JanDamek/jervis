@@ -19,6 +19,14 @@ enum class ProviderEnum {
     GOOGLE_WORKSPACE,  // Gmail, Google Workspace
     MICROSOFT_365,     // Outlook, Office 365
     GENERIC_EMAIL,     // Generic IMAP/POP3/SMTP server (Zimbra, Exchange on-prem, etc.)
+
+    // Chat platforms (EPIC 11)
+    SLACK,
+    MICROSOFT_TEAMS,
+    DISCORD,
+
+    // Calendar (EPIC 12)
+    GOOGLE_CALENDAR,
 }
 
 /**
@@ -49,11 +57,15 @@ enum class AuthTypeEnum {
  */
 @Serializable
 enum class ConnectionCapability {
-    REPOSITORY,   // Git repo + PR/MR + branches + everything
-    BUGTRACKER,   // Issues, tickets
-    WIKI,         // Wiki pages, documentation
-    EMAIL_READ,   // Read emails
-    EMAIL_SEND,   // Send emails
+    REPOSITORY,      // Git repo + PR/MR + branches + everything
+    BUGTRACKER,      // Issues, tickets
+    WIKI,            // Wiki pages, documentation
+    EMAIL_READ,      // Read emails
+    EMAIL_SEND,      // Send emails
+    CHAT_READ,       // Read chat messages (Slack/Teams/Discord)
+    CHAT_SEND,       // Send chat messages
+    CALENDAR_READ,   // Read calendar events
+    CALENDAR_WRITE,  // Create/update calendar events
 }
 
 /**
