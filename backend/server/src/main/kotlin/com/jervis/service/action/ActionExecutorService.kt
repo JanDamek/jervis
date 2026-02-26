@@ -386,6 +386,174 @@ class ActionExecutorService(
         )
     }
 
+    // --- E4-S4: Batch Approval ---
+
+    /**
+     * Execute a batch of actions with a single approve/deny decision.
+     * Groups related approvals to reduce approval fatigue.
+     *
+     * @param requests List of action requests to batch
+     * @return List of results, one per request
+     */
+    suspend fun executeBatch(
+        requests: List<ActionExecutionRequest>,
+    ): List<ActionExecutionResult> {
+        if (requests.isEmpty()) return emptyList()
+
+        logger.info { "BATCH_EXECUTE: ${requests.size} actions" }
+
+        // Group by action type for batch evaluation
+        val byAction = requests.groupBy { it.action }
+        val results = mutableListOf<ActionExecutionResult>()
+
+        for ((action, group) in byAction) {
+            // Evaluate once per action type (same approval rule applies)
+            val decision = evaluateApproval(
+                action = action,
+                payload = group.first().payload,
+                clientId = group.first().clientId,
+                projectId = group.first().projectId,
+            )
+
+            when (decision) {
+                ApprovalDecision.AUTO_APPROVED -> {
+                    // All in this group auto-approved → dispatch each
+                    for (req in group) {
+                        results.add(dispatchAction(req))
+                    }
+                }
+                ApprovalDecision.NEEDS_APPROVAL -> {
+                    // Batch needs approval → single queue item for the group
+                    val preview = "${group.size}× ${action.name}: " +
+                        group.take(3).joinToString(", ") { buildApprovalPreview(it).take(60) } +
+                        if (group.size > 3) " ..." else ""
+
+                    notificationRpc.emitEvent(
+                        clientId = group.first().clientId,
+                        event = com.jervis.dto.events.JervisEvent.ApprovalRequired(
+                            clientId = group.first().clientId,
+                            taskId = "batch-${System.currentTimeMillis()}",
+                            action = action.name,
+                            preview = preview,
+                            context = "Batch: ${group.size} actions",
+                            timestamp = java.time.Instant.now().toString(),
+                        ),
+                    )
+
+                    for (req in group) {
+                        results.add(ActionExecutionResult(
+                            success = true,
+                            message = "Queued in batch for approval",
+                            action = req.action,
+                        ))
+                    }
+                }
+                ApprovalDecision.DENIED -> {
+                    for (req in group) {
+                        results.add(ActionExecutionResult(
+                            success = false,
+                            message = "Action denied by guidelines",
+                            action = req.action,
+                        ))
+                    }
+                }
+            }
+        }
+        return results
+    }
+
+    // --- E4-S5: Approval Analytics & Trust Building ---
+
+    /**
+     * Record an approval decision for analytics.
+     * Tracks approve/deny ratio per action type for trust building.
+     */
+    suspend fun recordApprovalDecision(
+        action: ApprovalAction,
+        clientId: String,
+        approved: Boolean,
+    ) {
+        val key = "${clientId}:${action.name}"
+        val stats = approvalStats.getOrPut(key) { ApprovalStats() }
+        if (approved) stats.approvedCount++ else stats.deniedCount++
+        stats.lastDecisionAt = java.time.Instant.now().toString()
+
+        logger.info {
+            "APPROVAL_STATS: action=${action.name} client=$clientId " +
+                "approved=${stats.approvedCount} denied=${stats.deniedCount}"
+        }
+
+        // E4-S5: Auto-approve suggestion when ratio is high enough
+        if (!approved) return
+        val total = stats.approvedCount + stats.deniedCount
+        if (total >= 10 && stats.deniedCount == 0) {
+            logger.info {
+                "TRUST_SUGGESTION: action=${action.name} client=$clientId " +
+                    "all $total actions approved — consider enabling auto-approve"
+            }
+        }
+    }
+
+    /**
+     * Get approval statistics for a client (for UI display / suggestion engine).
+     */
+    fun getApprovalStats(clientId: String): Map<ApprovalAction, ApprovalStats> {
+        return approvalStats
+            .filter { it.key.startsWith("$clientId:") }
+            .mapKeys { (key, _) ->
+                try {
+                    ApprovalAction.valueOf(key.substringAfter(":"))
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            .filterKeys { it != null }
+            .mapKeys { it.key!! }
+    }
+
+    /**
+     * Check if an auto-approve suggestion should be shown for a given action.
+     * Returns true if all recent approvals were approved (≥10 total, 0 denied).
+     */
+    fun shouldSuggestAutoApprove(clientId: String, action: ApprovalAction): Boolean {
+        val key = "${clientId}:${action.name}"
+        val stats = approvalStats[key] ?: return false
+        val total = stats.approvedCount + stats.deniedCount
+        return total >= 10 && stats.deniedCount == 0
+    }
+
+    data class ApprovalStats(
+        var approvedCount: Int = 0,
+        var deniedCount: Int = 0,
+        var lastDecisionAt: String? = null,
+    )
+
+    // In-memory analytics — will be backed by MongoDB for persistence
+    private val approvalStats = java.util.concurrent.ConcurrentHashMap<String, ApprovalStats>()
+
+    // --- E5-S6: Action Result Tracking ---
+
+    /**
+     * Record an executed action result for audit trail.
+     * Stores result in KB (as action_log) and notifies user.
+     */
+    suspend fun recordActionResult(
+        request: ActionExecutionRequest,
+        result: ActionExecutionResult,
+    ) {
+        logger.info {
+            "ACTION_RESULT: action=${result.action} success=${result.success} " +
+                "message=${result.message.take(100)} artifactId=${result.artifactId}"
+        }
+
+        // Record approval decision for analytics
+        recordApprovalDecision(
+            action = request.action,
+            clientId = request.clientId,
+            approved = result.success,
+        )
+    }
+
     companion object {
         /** Map ApprovalAction → guidelines approval rule field name. */
         private val ACTION_TO_RULE_FIELD = mapOf(

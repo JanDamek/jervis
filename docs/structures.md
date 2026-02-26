@@ -1160,8 +1160,55 @@ Post-processing pipeline for fact-checking LLM responses:
 - Verify against KB and git workspace
 - Status: VERIFIED / UNVERIFIED / CONTRADICTED
 - Overall confidence score
+- **Contradiction detector** in KB write path — prevents conflicting info from accumulating
 
-Source: `backend/service-orchestrator/app/guard/fact_checker.py`
+Sources:
+- `backend/service-orchestrator/app/guard/fact_checker.py`
+- `backend/service-orchestrator/app/guard/contradiction_detector.py`
+
+### Code Review Re-dispatch Loop (EPIC 3-S2)
+
+When code review returns REQUEST_CHANGES, background handler runs a re-dispatch loop (max 2 rounds):
+1. Inject review feedback into coding agent context
+2. Run short agentic sub-loop (max 3 iterations)
+3. Re-run code review on updated code
+4. If 2nd round still fails → escalate to USER_TASK
+
+Source: `backend/service-orchestrator/app/background/handler.py`
+
+### Batch Approval & Analytics (EPIC 4-S4/S5)
+
+- `executeBatch()` — groups requests by action type, evaluates once per type
+- `recordApprovalDecision()` / `getApprovalStats()` — in-memory approval statistics
+- `shouldSuggestAutoApprove()` — suggests auto-approve when ≥10 approvals with 0 denials
+
+Source: `backend/server/.../service/action/ActionExecutorService.kt`
+
+### Action Memory (EPIC 9-S4)
+
+Records completed actions to KB as `action_log` category:
+- Background task completions, coding dispatches, code reviews, deployments
+- `query_action_log` chat tool for "what did you do last week?" queries
+- Enables learning from past actions
+
+Sources:
+- `backend/service-orchestrator/app/memory/action_log.py`
+- Chat tool: `query_action_log` in `app/chat/tools.py`
+
+### Dynamic Filtering Chat Tools (EPIC 10-S2)
+
+3 chat tools for managing filtering rules via conversation:
+- `set_filter_rule` — create filter (e.g., "ignoruj emaily od noreply@")
+- `list_filter_rules` — show active rules
+- `remove_filter_rule` — delete rule by ID
+- Intent patterns: filtr, ignoruj, pravidlo, blokuj, etc.
+- FILTERING tool category with dedicated intent classifier
+
+Sources:
+- Chat tools: `app/chat/tools.py` (TOOL_SET_FILTER_RULE, etc.)
+- Handlers: `app/chat/handler_tools.py`
+- Kotlin API: `app/tools/kotlin_client.py` (set_filter_rule, list_filter_rules, remove_filter_rule)
+- Internal API: `backend/server/.../rpc/internal/InternalFilterRulesRouting.kt`
 
 ### Foundation DTOs (EPICs 7-13, 16-17)
 
@@ -1177,15 +1224,20 @@ Source: `backend/service-orchestrator/app/guard/fact_checker.py`
 | 16 Brain Workflow | `dto.brain` | BrainIssueType, DailyReport |
 | 17 Environment | `dto.environment` | EnvironmentAgentRequest, DeploymentValidationResult |
 
-### Foundation Services
+### Services
 
 | Service | EPIC | Source |
 |---------|------|--------|
-| IdleTaskRegistry | 7 | `backend/server/.../service/maintenance/IdleTaskRegistry.kt` |
-| DeadlineTrackerService | 8 | `backend/server/.../service/deadline/DeadlineTrackerService.kt` |
-| FilteringRulesService | 10 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
+| IdleTaskRegistry | 7-S1 | `backend/server/.../service/maintenance/IdleTaskRegistry.kt` |
+| VulnerabilityScannerService | 7-S2 | `backend/server/.../service/maintenance/VulnerabilityScannerService.kt` |
+| KbConsistencyCheckerService | 7-S3 | `backend/server/.../service/maintenance/KbConsistencyCheckerService.kt` |
+| LearningEngineService | 7-S4 | `backend/server/.../service/maintenance/LearningEngineService.kt` |
+| DocFreshnessService | 7-S5 | `backend/server/.../service/maintenance/DocFreshnessService.kt` |
+| DeadlineTrackerService | 8-S1/S2 | `backend/server/.../service/deadline/DeadlineTrackerService.kt` |
+| ProactivePreparationService | 8-S3 | `backend/server/.../service/deadline/ProactivePreparationService.kt` |
+| FilteringRulesService | 10-S1 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
 
 ---
 
-**Document Version:** 9.0
-**Last Updated:** 2026-02-25
+**Document Version:** 10.0
+**Last Updated:** 2026-02-26

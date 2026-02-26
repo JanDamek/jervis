@@ -567,6 +567,76 @@ class KotlinServerClient:
             logger.warning("Failed to update guideline: %s", e)
             return f"Error: {e}"
 
+    # -------------------------------------------------------------------
+    # Filtering Rules API (EPIC 10)
+    # -------------------------------------------------------------------
+
+    async def set_filter_rule(
+        self,
+        source_type: str,
+        condition_type: str,
+        condition_value: str,
+        action: str = "IGNORE",
+        description: str | None = None,
+        client_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
+        """Create a filtering rule via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            payload = {
+                "sourceType": source_type,
+                "conditionType": condition_type,
+                "conditionValue": condition_value,
+                "action": action,
+                "description": description,
+                "clientId": client_id,
+                "projectId": project_id,
+            }
+            resp = await client.post("/internal/filter-rules", json=payload)
+            if resp.status_code == 200:
+                return json.dumps(resp.json(), ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to create filter rule: %s", e)
+            return f"Error: {e}"
+
+    async def list_filter_rules(
+        self,
+        client_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
+        """List active filtering rules via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            params: dict = {}
+            if client_id:
+                params["clientId"] = client_id
+            if project_id:
+                params["projectId"] = project_id
+            resp = await client.get("/internal/filter-rules", params=params)
+            if resp.status_code == 200:
+                rules = resp.json()
+                if not rules:
+                    return "Žádná aktivní filtrační pravidla."
+                return json.dumps(rules, ensure_ascii=False, indent=2)
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to list filter rules: %s", e)
+            return f"Error: {e}"
+
+    async def remove_filter_rule(self, rule_id: str) -> str:
+        """Remove a filtering rule by ID via Kotlin internal API."""
+        try:
+            client = await self._get_client()
+            resp = await client.delete(f"/internal/filter-rules/{rule_id}")
+            if resp.status_code == 200:
+                return f"Pravidlo {rule_id} odstraněno."
+            return f"Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning("Failed to remove filter rule %s: %s", rule_id, e)
+            return f"Error: {e}"
+
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
