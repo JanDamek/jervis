@@ -1251,8 +1251,17 @@ Sources:
 | SourceAttribution | 14-S2 | `backend/service-orchestrator/app/chat/source_attribution.py` |
 | ApprovalQueueDocument | 4-S3 | `backend/server/.../entity/ApprovalQueueDocument.kt` |
 | ApprovalStatisticsDocument | 4-S5 | `backend/server/.../entity/ApprovalStatisticsDocument.kt` |
+| ChatContinuousIndexer | 11-S4 | `backend/server/.../integration/chat/ChatContinuousIndexer.kt` |
+| ChatReplyService | 11-S5 | `backend/server/.../integration/chat/ChatReplyService.kt` |
+| CalendarService | 12-S1–S5 | `backend/server/.../service/calendar/CalendarService.kt` |
+| CalendarIntegration | 12-S2/S5 | `backend/service-orchestrator/app/calendar/calendar_integration.py` |
+| PromptEvolutionService | 13-S1–S4 | `backend/server/.../service/selfevolution/PromptEvolutionService.kt` |
+| BehaviorLearning | 13-S2 | `backend/service-orchestrator/app/selfevolution/behavior_learning.py` |
+| UserCorrections | 13-S3 | `backend/service-orchestrator/app/selfevolution/user_corrections.py` |
+| BrainWorkflowService | 16-S1/S2 | `backend/server/.../service/brain/BrainWorkflowService.kt` |
+| EnvironmentAgentService | 17-S1–S3 | `backend/server/.../service/environment/EnvironmentAgentService.kt` |
 
 ---
 
-**Document Version:** 11.0
+**Document Version:** 12.0
 **Last Updated:** 2026-02-26

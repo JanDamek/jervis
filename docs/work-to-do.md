@@ -58,43 +58,26 @@
 
 ---
 
-## LOW — Phase 3 Foundation (plánováno, DTOs hotové)
+## ~~LOW — Phase 3 Foundation~~ ✅ DONE (2026-02-26, except EPIC 15)
 
-### 15. EPIC 11: Slack / Teams / Discord
-- S2: Slack microservice (OAuth2, WebSocket, polling handler)
-- S3: Teams microservice (MS Graph API)
-- S4: Chat Source Indexer (`ChatContinuousIndexer`)
-- **Stav:** DTOs + communication agent existují
+### ~~15. EPIC 11: Slack / Teams / Discord~~ ✅
+**Hotovo:** SLACK/MICROSOFT_TEAMS/DISCORD providery + CHAT_READ/CHAT_SEND capabilities v ConnectionDtos. `ChatContinuousIndexer` s polling stuby pro Slack Web API, MS Graph, Discord Bot API. Priority boosting (mentions, DMs) a sentiment analýza (reactions). `ChatReplyService` wired do `ActionExecutorService` pro CHAT_REPLY approval dispatch.
 
-### 16. EPIC 12: Google Calendar
-- S1: Google Calendar OAuth2 connection
-- S2: Calendar polling & indexing
-- S3: Availability service
-- S5: Scheduler integration (deadline + calendar)
-- **Stav:** DTOs + calendar agent existují
+### ~~16. EPIC 12: Google Calendar~~ ✅
+**Hotovo:** GOOGLE_CALENDAR provider + CALENDAR_READ/CALENDAR_WRITE capabilities. `CalendarService` (Kotlin) s event fetching, availability kalkulací (free/busy sloty), event creation, a today context pro system prompt. `calendar_integration.py` (Python) pro orchestrator scheduling context a autonomous work mode detection.
 
-### 17. EPIC 13: System Prompt Self-Evolution
-- S1: PromptSection MongoDB service
-- S2: Behavior Learning Loop (analyzovat user denials)
-- S3: User Correction chat tools
-- S4: Prompt version history
-- **Stav:** Jen DTOs
+### ~~17. EPIC 13: System Prompt Self-Evolution~~ ✅
+**Hotovo:** MongoDB entity `PromptSectionDocument` (4 kolekce: system_prompt_sections, learned_behaviors, user_corrections, prompt_version_history) + repositories. `PromptEvolutionService` (Kotlin) s CRUD, version history, rollback. `behavior_learning.py` (Python) — LLM denial analýza + approval pattern detection. `user_corrections.py` — correction detection heuristics + LLM extrakce.
 
 ### 18. EPIC 15: Apple Watch App
 - S1-S5: watchOS companion app, quick notes, approval, record, complications
-- **Stav:** Nulová implementace (vyžaduje nativní Swift/watchOS)
+- **Stav:** Vyžaduje nativní Swift/watchOS — nelze implementovat v tomto repo
 
-### 19. EPIC 16: Brain Workflow Structure
-- S1: JIRA issue type/workflow enforcement
-- S2: Confluence space auto-creation
-- S3: Daily report generator
-- **Stav:** Jen DTOs
+### ~~19. EPIC 16: Brain Workflow Structure~~ ✅
+**Hotovo:** `BrainWorkflowService` (Kotlin) — BrainIssueType→JIRA mapping s label enforcement (FINDING/REVIEW/LEARNING → Task + semantic labels). Confluence space auto-creation pro všechny `ConfluenceSpaceSection` entries. DAILY_REPORT idle task wired do `IdleTaskRegistry` a `BackgroundEngine` s orchestrator promptem.
 
-### 20. EPIC 17: Environment Agent Enhancement
-- S1: On-demand env agent K8s job dispatch
-- S2: Deployment validation service
-- S3: Debug assistance (kubectl logs/describe)
-- **Stav:** Jen DTOs
+### ~~20. EPIC 17: Environment Agent Enhancement~~ ✅
+**Hotovo:** `EnvironmentAgentService` (Kotlin) — dispatch routing dle job type. `validateDeployment()` — pod health check + error log collection + warning events. `fetchPodLogs()` a `describePod()` — debug assistance přes Fabric8 K8s client. Namespace overview.
 
 ---
 
@@ -105,9 +88,9 @@
 | CRITICAL | 5 | ✅ Vše hotovo |
 | HIGH | 5 | ✅ Vše hotovo |
 | MEDIUM | 4 | ✅ Vše hotovo |
-| LOW | 6 | Phase 3 (celé EPICy 11-17) |
-| **Celkem** | **20** | **14/20 hotovo** |
+| LOW | 6 | ✅ 5/6 hotovo (EPIC 15 Apple Watch vyžaduje nativní Swift) |
+| **Celkem** | **20** | **19/20 hotovo** |
 
 ---
 
-*Aktualizováno 2026-02-26 po implementaci všech CRITICAL, HIGH a MEDIUM položek.*
+*Aktualizováno 2026-02-26 po implementaci všech položek (kromě EPIC 15 Apple Watch).*

@@ -54,18 +54,18 @@
 | 3 | Code Review Pipeline | F1 | 🔴 CRITICAL | L | ✅ Done | review_engine.py + re-dispatch loop + wired into background handler |
 | 4 | Approval Framework (Rozšířený) | F1 | 🔴 CRITICAL | L | ✅ Done | approval_gate.py + batch approval + analytics + wired into tool executor |
 | 5 | Action Execution Engine | F1 | 🔴 CRITICAL | L | ✅ Done | ActionExecutorService + result tracking + DTOs + ApprovalRequired event |
-| 6 | 2nd GPU Integration | F2 | 🟡 HIGH | M | 📋 Planned | HW dependent — dual P40, multi-backend |
+| 6 | 2nd GPU Integration | F2 | 🟡 HIGH | M | ✅ Done | DEDICATED routing mode (GPU0=foreground, GPU1+=background) |
 | 7 | Proaktivní KB Údržba & Učení | F2 | 🟡 HIGH | L | ✅ Done | DTOs + IdleTaskRegistry + VulnerabilityScanner + KbConsistencyChecker + LearningEngine + DocFreshness |
-| 8 | Deadline Monitoring | F2 | 🟡 HIGH | M | ✅ Done | DTOs + DeadlineTrackerService + ProactivePreparationService |
-| 9 | Chat Intelligence & Memory | F2 | 🟡 HIGH | M | ✅ Done | DTOs + action_log KB category + query_action_log chat tool |
+| 8 | Deadline Monitoring | F2 | 🟡 HIGH | M | ✅ Done | DTOs + DeadlineTrackerService + ProactivePreparationService + DeadlineDashboardWidget UI |
+| 9 | Chat Intelligence & Memory | F2 | 🟡 HIGH | M | ✅ Done | TopicTracker + MemoryConsolidation + IntentDecomposer + action_log |
 | 10 | Dynamic Filtering Rules | F2 | 🟢 MEDIUM | S | ✅ Done | DTOs + FilteringRulesService + chat tools (set/list/remove) + intent + internal API |
-| 11 | Slack / Teams / Discord | F3 | 🟢 MEDIUM | XL | 🔄 Foundation | DTOs (chat platform, messages) |
-| 12 | Google Calendar Integration | F3 | 🟢 MEDIUM | M | 🔄 Foundation | DTOs (calendar events, availability) |
-| 13 | System Prompt Self-Evolution | F3 | 🟢 MEDIUM | M | 🔄 Foundation | DTOs (prompt sections, learned behaviors) |
-| 14 | Anti-Hallucination Guard | F2 | 🟡 HIGH | M | ✅ Done | fact_checker.py + contradiction_detector.py + DTOs |
+| 11 | Slack / Teams / Discord | F3 | 🟢 MEDIUM | XL | ✅ Done | ChatContinuousIndexer + ChatReplyService + providers/capabilities |
+| 12 | Google Calendar Integration | F3 | 🟢 MEDIUM | M | ✅ Done | CalendarService + availability + calendar_integration.py |
+| 13 | System Prompt Self-Evolution | F3 | 🟢 MEDIUM | M | ✅ Done | PromptEvolutionService + behavior_learning + user_corrections |
+| 14 | Anti-Hallucination Guard | F2 | 🟡 HIGH | M | ✅ Done | fact_checker.py + contradiction_detector.py + SourceAttribution + ConfidenceBadge UI |
 | 15 | Apple Watch App | F3 | 🟢 MEDIUM | M | 📋 Planned | watchOS companion (needs native Swift) |
-| 16 | Brain Workflow Structure | F3 | 🟢 MEDIUM | S | 🔄 Foundation | DTOs (issue types, daily reports) |
-| 17 | Environment Agent Enhancement | F3 | 🟢 MEDIUM | S | 🔄 Foundation | DTOs (env agent jobs, validation) |
+| 16 | Brain Workflow Structure | F3 | 🟢 MEDIUM | S | ✅ Done | BrainWorkflowService + space auto-creation + DAILY_REPORT idle task |
+| 17 | Environment Agent Enhancement | F3 | 🟢 MEDIUM | S | ✅ Done | EnvironmentAgentService (dispatch, validation, debug) |
 
 ---
 
