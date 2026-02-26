@@ -177,6 +177,38 @@ class ChatContextAssembler:
         summary_blocks = await self._load_summaries(conversation_id)
         total_count = await self._count_messages(conversation_id)
 
+        # EPIC 9-S2: Topic-aware memory consolidation
+        if len(summary_blocks) >= 12:
+            try:
+                from app.memory.consolidation import should_consolidate, consolidate_summaries
+                if await should_consolidate(conversation_id, len(summary_blocks)):
+                    block_dicts = [
+                        {
+                            "sequence_range": b.sequence_range,
+                            "summary": b.summary,
+                            "key_decisions": b.key_decisions,
+                            "topics": b.topics,
+                            "is_checkpoint": b.is_checkpoint,
+                            "checkpoint_reason": b.checkpoint_reason,
+                        }
+                        for b in summary_blocks
+                    ]
+                    consolidated = await consolidate_summaries(conversation_id, block_dicts)
+                    summary_blocks = [
+                        SummaryBlock(
+                            sequence_range=c.get("sequence_range", ""),
+                            summary=c.get("summary", ""),
+                            key_decisions=c.get("key_decisions", []),
+                            topics=c.get("topics", []),
+                            is_checkpoint=c.get("is_checkpoint", False),
+                            checkpoint_reason=c.get("checkpoint_reason"),
+                        )
+                        for c in consolidated
+                    ]
+                    logger.info("CONSOLIDATION_APPLIED | session=%s | blocks=%d", conversation_id, len(summary_blocks))
+            except Exception as e:
+                logger.warning("Memory consolidation failed (using original summaries): %s", e)
+
         remaining_budget = context_budget
 
         # Memory context (always included, deducted first)
