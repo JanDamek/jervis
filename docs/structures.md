@@ -140,15 +140,6 @@ GPU state when 30b active:
 4. **No model thrashing** - `loading_in_progress` prevents concurrent routing during swap
 5. **Transparent** - Services don't know about routing logic
 
-### Routing Modes (E6-S4)
-
-| Mode | Env Var | Behavior |
-|------|---------|----------|
-| **AUTO** (default) | `ROUTING_MODE=auto` | Intelligent multi-step routing with CPU fallback (current behavior) |
-| **DEDICATED** | `ROUTING_MODE=dedicated` | GPU0=foreground (CRITICAL), GPU1+=background (NORMAL). No CPU fallback. Requires ≥2 GPU backends. |
-
-DEDICATED mode partitions GPUs by priority: the first GPU backend handles all CRITICAL (foreground) requests, remaining GPUs handle NORMAL (background) requests. Falls back to AUTO if only 1 GPU configured.
-
 ---
 
 ## Graph-Based Routing Architecture

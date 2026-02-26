@@ -54,7 +54,7 @@
 | 3 | Code Review Pipeline | F1 | 🔴 CRITICAL | L | ✅ Done | review_engine.py + re-dispatch loop + wired into background handler |
 | 4 | Approval Framework (Rozšířený) | F1 | 🔴 CRITICAL | L | ✅ Done | approval_gate.py + batch approval + analytics + wired into tool executor |
 | 5 | Action Execution Engine | F1 | 🔴 CRITICAL | L | ✅ Done | ActionExecutorService + result tracking + DTOs + ApprovalRequired event |
-| 6 | 2nd GPU Integration | F2 | 🟡 HIGH | M | ✅ Done | DEDICATED routing mode (GPU0=foreground, GPU1+=background) |
+| 6 | 2nd GPU Integration | F2 | 🟡 HIGH | M | ⏸️ On hold | Single P40 — second card had hardware issues (overload/bus). Router stays AUTO mode. |
 | 7 | Proaktivní KB Údržba & Učení | F2 | 🟡 HIGH | L | ✅ Done | DTOs + IdleTaskRegistry + VulnerabilityScanner + KbConsistencyChecker + LearningEngine + DocFreshness |
 | 8 | Deadline Monitoring | F2 | 🟡 HIGH | M | ✅ Done | DTOs + DeadlineTrackerService + ProactivePreparationService + DeadlineDashboardWidget UI |
 | 9 | Chat Intelligence & Memory | F2 | 🟡 HIGH | M | ✅ Done | TopicTracker + MemoryConsolidation + IntentDecomposer + action_log |

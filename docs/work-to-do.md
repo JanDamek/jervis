@@ -53,8 +53,8 @@
 ### ~~13. E14-S4: Confidence Badge (UI)~~ ✅
 **Hotovo:** `ConfidenceBadge` composable v `ChatMessageDisplay.kt` — čte `fact_check_confidence`, `fact_check_claims`, `fact_check_verified` z message metadata. Zobrazuje colored Verified icon + procenta (green ≥80%, amber ≥50%, red <50%).
 
-### ~~14. E6-S4: Dedicated GPU routing mode~~ ✅
-**Hotovo:** `RoutingMode` enum (AUTO/DEDICATED) v `config.py`. Nová `_route_dedicated()` metoda v `router_core.py` — GPU0=foreground (CRITICAL), GPU1+=background (NORMAL). Vyžaduje ≥2 GPU backends, jinak fallback na AUTO.
+### 14. E6-S4: Dedicated GPU routing mode — ⏸️ On hold
+**Pozastaveno:** Druhá P40 měla HW problém (overload na sběrnici). Router zůstává v AUTO režimu s jednou P40. DEDICATED mode odstraněn z codebase.
 
 ---
 

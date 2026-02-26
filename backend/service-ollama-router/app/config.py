@@ -3,21 +3,9 @@
 from __future__ import annotations
 
 import json
-from enum import Enum
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
-
-
-class RoutingMode(str, Enum):
-    """GPU routing strategy.
-
-    AUTO: Current behavior — intelligent multi-step routing with CPU fallback.
-    DEDICATED: GPU0=foreground (CRITICAL), GPU1+=background (NORMAL). No CPU fallback.
-               Requires ≥2 GPU backends. Falls back to AUTO with single GPU.
-    """
-    AUTO = "auto"
-    DEDICATED = "dedicated"
 
 
 class GpuBackendConfig:
@@ -58,9 +46,6 @@ class Settings(BaseSettings):
 
     # ── Request limits ──────────────────────────────────────────────────
     max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
-
-    # ── Routing mode ────────────────────────────────────────────────────
-    routing_mode: RoutingMode = RoutingMode.AUTO  # "auto" or "dedicated"
 
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish
