@@ -1047,6 +1047,7 @@ class BackgroundEngine(
                     urn.contains("code_quality_scan") -> IdleTaskType.CODE_QUALITY_SCAN
                     urn.contains("documentation_freshness") -> IdleTaskType.DOCUMENTATION_FRESHNESS
                     urn.contains("learning_best_practices") -> IdleTaskType.LEARNING_BEST_PRACTICES
+                    urn.contains("daily_report") -> IdleTaskType.DAILY_REPORT
                     else -> null
                 } ?: continue
                 // Keep the latest (list ordered by createdAt ASC, last wins)
@@ -1149,6 +1150,25 @@ class BackgroundEngine(
             |
             |Create a summary with actionable recommendations. If any recommendation
             |is critical, create a brain issue for tracking.
+        """.trimMargin()
+
+        IdleTaskType.DAILY_REPORT -> """
+            |You are generating today's daily activity report for Jervis.
+            |
+            |Gather information:
+            |1. **Completed tasks**: Use brain_search_issues to find issues resolved today
+            |   (JQL: "status changed to Done DURING (startOfDay(), now())").
+            |2. **Pending approvals**: Use brain_search_issues to find issues in Open/Review state.
+            |3. **Upcoming deadlines**: Use kb_search to find deadline mentions in the next 7 days.
+            |4. **Errors**: Use brain_search_issues to find issues with label "error" created today.
+            |5. **Stuck tasks**: Find In Progress issues older than 3 days without updates.
+            |
+            |Then create a Confluence page under "Daily Reports" section:
+            |- Title: "Daily Report - {today's date}"
+            |- Include sections: Completed, Pending Approvals, Deadlines, Errors, Stuck Tasks
+            |- Use brain_create_page with the assembled HTML content
+            |
+            |Keep the report concise and actionable.
         """.trimMargin()
     }
 

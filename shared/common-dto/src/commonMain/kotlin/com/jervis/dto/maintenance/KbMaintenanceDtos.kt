@@ -26,6 +26,8 @@ enum class IdleTaskType {
     DOCUMENTATION_FRESHNESS,
     /** Search for best practices relevant to project technologies. */
     LEARNING_BEST_PRACTICES,
+    /** Generate daily activity report and post to Confluence. */
+    DAILY_REPORT,
 }
 
 /**

@@ -59,6 +59,12 @@ class IdleTaskRegistry {
             priority = 40,
             intervalHours = 168, // Weekly
         ),
+        IdleTaskConfig(
+            type = IdleTaskType.DAILY_REPORT,
+            enabled = true,
+            priority = 90, // High — runs daily
+            intervalHours = 24,
+        ),
     )
 
     /**
@@ -102,5 +108,6 @@ class IdleTaskRegistry {
         IdleTaskType.CODE_QUALITY_SCAN -> "Run basic code quality analysis"
         IdleTaskType.DOCUMENTATION_FRESHNESS -> "Check documentation freshness"
         IdleTaskType.LEARNING_BEST_PRACTICES -> "Search for relevant best practices"
+        IdleTaskType.DAILY_REPORT -> "Generate daily activity report"
     }
 }
