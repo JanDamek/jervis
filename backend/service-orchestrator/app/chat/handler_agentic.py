@@ -19,6 +19,7 @@ from bson import ObjectId
 from app.chat.drift import detect_drift
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
+from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
 from app.chat.handler_tools import (
     extract_tool_calls,
     describe_tool_call,
@@ -111,6 +112,10 @@ async def run_agentic_loop(
             # EPIC 14-S1: Fact-check post-processing
             fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
 
+            # EPIC 9-S1: Topic tracking
+            topics = await detect_topics(request.message, final_text, used_tools)
+            await update_conversation_topics(request.session_id, topics)
+
             async for event in stream_text(final_text):
                 yield event
 
@@ -122,6 +127,7 @@ async def run_agentic_loop(
                     **({"responded_tasks": ",".join(responded_tasks)} if responded_tasks else {}),
                     **({"summarized": "true", "original_length": str(msg_len)} if is_summarized else {}),
                     **fact_check_metadata(fc_result),
+                    **topic_metadata(topics),
                 },
             )
 
@@ -129,6 +135,7 @@ async def run_agentic_loop(
                 "created_tasks": created_tasks, "responded_tasks": responded_tasks,
                 "used_tools": used_tools, "iterations": iteration + 1,
                 **confidence_badge(fc_result),
+                **topic_metadata(topics),
             })
             return
 
@@ -165,15 +172,21 @@ async def run_agentic_loop(
             # EPIC 14-S1: Fact-check post-processing
             fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
 
+            # EPIC 9-S1: Topic tracking
+            drift_topics = await detect_topics(request.message, final_text, used_tools)
+            await update_conversation_topics(request.session_id, drift_topics)
+
             async for event in stream_text(final_text):
                 yield event
 
             await save_assistant_message(
                 request.session_id, final_text,
-                {"drift_break": drift_reason, "used_tools": ",".join(used_tools), **fact_check_metadata(fc_result)},
+                {"drift_break": drift_reason, "used_tools": ",".join(used_tools),
+                 **fact_check_metadata(fc_result), **topic_metadata(drift_topics)},
             )
             yield ChatStreamEvent(type="done", metadata={
-                "drift_break": drift_reason, "iterations": iteration + 1, **confidence_badge(fc_result),
+                "drift_break": drift_reason, "iterations": iteration + 1,
+                **confidence_badge(fc_result), **topic_metadata(drift_topics),
             })
             return
 
@@ -330,15 +343,21 @@ async def run_agentic_loop(
         # EPIC 14-S1: Fact-check post-processing
         fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
 
+        # EPIC 9-S1: Topic tracking
+        max_iter_topics = await detect_topics(request.message, final_text, used_tools)
+        await update_conversation_topics(request.session_id, max_iter_topics)
+
         async for event in stream_text(final_text):
             yield event
 
         await save_assistant_message(
             request.session_id, final_text,
-            {"max_iterations": "true", "used_tools": ",".join(used_tools), **fact_check_metadata(fc_result)},
+            {"max_iterations": "true", "used_tools": ",".join(used_tools),
+             **fact_check_metadata(fc_result), **topic_metadata(max_iter_topics)},
         )
         yield ChatStreamEvent(type="done", metadata={
-            "max_iterations": True, "iterations": effective_max_iterations, **confidence_badge(fc_result),
+            "max_iterations": True, "iterations": effective_max_iterations,
+            **confidence_badge(fc_result), **topic_metadata(max_iter_topics),
         })
     except Exception as e:
         logger.error("Chat: failed to generate max-iterations response: %s", e)

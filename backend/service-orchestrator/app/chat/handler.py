@@ -28,6 +28,7 @@ from app.chat.context import chat_context_assembler
 from app.chat.handler_agentic import run_agentic_loop
 from app.chat.handler_context import load_runtime_context, build_messages, load_task_context_message
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
+from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
 from app.chat.handler_decompose import (
     save_original_to_kb,
     summarize_long_message,
@@ -287,6 +288,10 @@ async def _try_decompose(
         # EPIC 14-S1: Fact-check post-processing
         fc_result = await run_fact_check(final_text, request.active_client_id, request.active_project_id)
 
+        # EPIC 9-S1: Topic tracking (decompose path uses subtopic titles as topics)
+        decompose_topics = [{"label": t.title, "type": t.topic_type} for t in subtopics]
+        await update_conversation_topics(request.session_id, decompose_topics)
+
         async for event in stream_text(final_text):
             yield event
 
@@ -363,14 +368,18 @@ async def _try_greeting_fast_path(
             logger.info("Chat: direct answer accepted (%d chars)", len(direct_text))
             # EPIC 14-S1: Fact-check post-processing
             fc_result = await run_fact_check(direct_text, request.active_client_id, request.active_project_id)
+            # EPIC 9-S1: Topic tracking
+            greeting_topics = await detect_topics(request.message, direct_text)
+            await update_conversation_topics(request.session_id, greeting_topics)
             async for event in stream_text(direct_text):
                 yield event
             await save_assistant_message(
                 request.session_id, direct_text,
-                {"direct_answer": "true", **fact_check_metadata(fc_result)},
+                {"direct_answer": "true", **fact_check_metadata(fc_result), **topic_metadata(greeting_topics)},
             )
             yield ChatStreamEvent(type="done", metadata={
                 "direct_answer": True, "iterations": 0, **confidence_badge(fc_result),
+                **topic_metadata(greeting_topics),
             })
         else:
             logger.info("Chat: direct answer rejected (tool_markers=%s, fake_tools=%s), falling through",
