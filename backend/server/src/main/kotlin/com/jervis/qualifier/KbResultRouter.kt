@@ -2,13 +2,17 @@ package com.jervis.qualifier
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
+import com.jervis.dto.filtering.FilterAction
+import com.jervis.dto.filtering.FilterSourceType
 import com.jervis.dto.pipeline.ActionType
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.FullIngestResult
 import com.jervis.service.background.AutoTaskCreationService
 import com.jervis.service.background.TaskService
+import com.jervis.service.filtering.FilteringRulesService
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Duration
@@ -29,6 +33,7 @@ class KbResultRouter(
     private val taskService: TaskService,
     private val actionTypeInferrer: ActionTypeInferrer,
     private val autoTaskCreationService: AutoTaskCreationService,
+    private val filteringRulesService: FilteringRulesService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -76,8 +81,29 @@ class KbResultRouter(
             return RoutingDecision(TaskStateEnum.DONE, "info_only")
         }
 
+        // EPIC 10-S3: Evaluate filtering rules before routing
+        val filterAction = evaluateFilters(task, result)
+        if (filterAction == FilterAction.IGNORE) {
+            logger.info {
+                "KB_ROUTE: taskId=${task.id} reason=filtered action=IGNORE"
+            }
+            onProgress(
+                "Filtrováno → ignorováno",
+                mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Filtrováno", "result" to "Ignorováno"),
+            )
+            onProgress("Hotovo", mapOf("step" to "done", "agent" to "simple_qualifier"))
+            return RoutingDecision(TaskStateEnum.DONE, "filtered_ignore")
+        }
+        if (filterAction != null && filterAction != FilterAction.NORMAL) {
+            logger.info {
+                "KB_ROUTE: taskId=${task.id} filterAction=$filterAction"
+            }
+        }
+
         // Step 2: Simple actions → handle locally without orchestrator
-        val hasComplex = result.suggestedActions.any { it in COMPLEX_ACTIONS }
+        // EPIC 10-S3: URGENT/HIGH_PRIORITY filter overrides → treat as complex
+        val hasComplex = filterAction in listOf(FilterAction.URGENT, FilterAction.HIGH_PRIORITY) ||
+            result.suggestedActions.any { it in COMPLEX_ACTIONS }
         if (!hasComplex) {
             handleSimpleAction(task, result, onProgress)
             logger.info {
@@ -237,6 +263,37 @@ class KbResultRouter(
         ).let { created ->
             val withSchedule = created.copy(scheduledAt = scheduledAt)
             taskService.updateState(withSchedule, TaskStateEnum.NEW)
+        }
+    }
+
+    /**
+     * EPIC 10-S3: Evaluate filtering rules for a task.
+     * Maps SourceUrn to FilterSourceType and calls FilteringRulesService.
+     */
+    private suspend fun evaluateFilters(task: TaskDocument, result: FullIngestResult): FilterAction? {
+        return try {
+            val sourceType = extractSourceType(task.sourceUrn)
+            filteringRulesService.evaluate(
+                sourceType = sourceType,
+                subject = result.summary.take(200),
+                body = task.content.take(2000),
+                labels = result.entities,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "FILTER_EVAL_FAILED: taskId=${task.id} (non-fatal, continuing)" }
+            null
+        }
+    }
+
+    private fun extractSourceType(sourceUrn: SourceUrn): FilterSourceType {
+        val urn = sourceUrn.value
+        return when {
+            urn.startsWith("email::") -> FilterSourceType.EMAIL
+            urn.startsWith("jira::") -> FilterSourceType.JIRA
+            urn.startsWith("github-issue::") || urn.startsWith("gitlab-issue::") || urn.startsWith("git::") -> FilterSourceType.GIT
+            urn.startsWith("confluence::") -> FilterSourceType.WIKI
+            urn.startsWith("chat::") -> FilterSourceType.CHAT
+            else -> FilterSourceType.ALL
         }
     }
 
