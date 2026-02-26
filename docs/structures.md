@@ -140,6 +140,15 @@ GPU state when 30b active:
 4. **No model thrashing** - `loading_in_progress` prevents concurrent routing during swap
 5. **Transparent** - Services don't know about routing logic
 
+### Routing Modes (E6-S4)
+
+| Mode | Env Var | Behavior |
+|------|---------|----------|
+| **AUTO** (default) | `ROUTING_MODE=auto` | Intelligent multi-step routing with CPU fallback (current behavior) |
+| **DEDICATED** | `ROUTING_MODE=dedicated` | GPU0=foreground (CRITICAL), GPU1+=background (NORMAL). No CPU fallback. Requires ≥2 GPU backends. |
+
+DEDICATED mode partitions GPUs by priority: the first GPU backend handles all CRITICAL (foreground) requests, remaining GPUs handle NORMAL (background) requests. Falls back to AUTO if only 1 GPU configured.
+
 ---
 
 ## Graph-Based Routing Architecture
@@ -1236,8 +1245,14 @@ Sources:
 | DeadlineTrackerService | 8-S1/S2 | `backend/server/.../service/deadline/DeadlineTrackerService.kt` |
 | ProactivePreparationService | 8-S3 | `backend/server/.../service/deadline/ProactivePreparationService.kt` |
 | FilteringRulesService | 10-S1 | `backend/server/.../service/filtering/FilteringRulesService.kt` |
+| TopicTracker | 9-S1 | `backend/service-orchestrator/app/chat/topic_tracker.py` |
+| MemoryConsolidation | 9-S2 | `backend/service-orchestrator/app/memory/consolidation.py` |
+| IntentDecomposer | 9-S3 | `backend/service-orchestrator/app/chat/intent_decomposer.py` |
+| SourceAttribution | 14-S2 | `backend/service-orchestrator/app/chat/source_attribution.py` |
+| ApprovalQueueDocument | 4-S3 | `backend/server/.../entity/ApprovalQueueDocument.kt` |
+| ApprovalStatisticsDocument | 4-S5 | `backend/server/.../entity/ApprovalStatisticsDocument.kt` |
 
 ---
 
-**Document Version:** 10.0
+**Document Version:** 11.0
 **Last Updated:** 2026-02-26

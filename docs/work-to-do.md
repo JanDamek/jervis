@@ -23,60 +23,38 @@
 
 ---
 
-## HIGH — Funkční mezery v "hotových" EPICech
+## ~~HIGH — Funkční mezery v "hotových" EPICech~~ ✅ DONE (2026-02-26)
 
-### 6. E9-S1: Topic Tracker (implementace)
-**Problém:** DTOs (`ConversationTopic`, `TopicSummary`) existují, ale žádný topic detection service. Konverzace nemají topic metadata.
-**Řešení:** Vytvořit `TopicTracker` v Python orchestrátoru — LLM-based topic detection z uživatelských zpráv, update topic metadata per konverzace.
-**Soubory:** Nový `app/chat/topic_tracker.py`
+### ~~6. E9-S1: Topic Tracker (implementace)~~ ✅
+**Hotovo:** Nový `app/chat/topic_tracker.py` — LLM-based topic detection z user+assistant zpráv s fallback na tool-domain heuristics. MongoDB upsert do `conversation_topics` kolekce. Wired do `handler_agentic.py` (3 finalizační body) a `handler.py` (greeting, decompose).
 
-### 7. E9-S2: Conversation Memory Consolidation
-**Problém:** DTOs existují ale žádný service pro topic-aware sumarizaci. Konverzace používají jen rolling block summaries.
-**Řešení:** Vytvořit memory consolidation service — při dosažení context limitu konsolidovat per-topic summaries místo generic bloků.
-**Soubory:** Nový `app/memory/consolidation.py`
+### ~~7. E9-S2: Conversation Memory Consolidation~~ ✅
+**Hotovo:** Nový `app/memory/consolidation.py` — topic-aware konsolidace rolling block summaries při překročení 12 bloků. Seskupení per-topic + LLM merge. Wired do `context.py` (ChatContextAssembler.assemble_context).
 
-### 8. E9-S3: Multi-Intent Decomposition
-**Problém:** `DecomposedIntent` + `SingleIntent` DTOs existují ale žádný intent decomposer. Když user pošle "udělej X, Y a Z", orchestrátor to zpracuje jako jeden intent.
-**Řešení:** Přidat pre-processing krok v chat handleru — detekce multi-intentů, rozklad na jednotlivé akce.
-**Soubory:** Nový `app/chat/intent_decomposer.py`, úprava `handler_agentic.py`
+### ~~8. E9-S3: Multi-Intent Decomposition~~ ✅
+**Hotovo:** Nový `app/chat/intent_decomposer.py` — regex pre-filter + LLM extrakce nezávislých intentů s dependency ordering. Wired do `handler.py` mezi greeting fast-path a agentic loop. Build focus message pro orchestrátor.
 
-### 9. E4-S3+S5: Approval queue + analytics persistence
-**Problém:** Approval queue i statistiky jsou jen v `ConcurrentHashMap` (in-memory). Po restartu serveru se ztratí pending approvals i historické statistiky. Žádné UI pro trust suggestions.
-**Řešení:**
-- Vytvořit MongoDB collection `approval_queue` pro pending approvals (ApprovalQueueItem)
-- Vytvořit MongoDB collection `approval_analytics` pro rozhodnutí (approve/deny ratios)
-- Přidat `ApprovalQueueRepository` s Spring Data
-- Přidat endpoint pro UI (trust suggestions dialog)
-**Soubory:** `ActionExecutorService.kt`, nový `ApprovalQueueRepository.kt`, nová MongoDB collection
+### ~~9. E4-S3+S5: Approval queue + analytics persistence~~ ✅
+**Hotovo:** MongoDB entity `ApprovalQueueDocument` (kolekce `approval_queue`) + `ApprovalStatisticsDocument` (kolekce `approval_statistics`). `ApprovalQueueRepository` + `ApprovalStatisticsRepository` s Spring Data. `ActionExecutorService` refaktorován z ConcurrentHashMap na MongoDB persistence.
 
-### 10. E14-S2: Source Attribution
-**Problém:** `SourceAttribution` DTO existuje ale žádná implementace nepřipojuje zdroje k jednotlivým segmentům odpovědi.
-**Řešení:** Při KB search výsledcích propagovat source URN do response metadata → UI zobrazí "[zdroj: wiki/architecture.md]" u relevantních částí.
-**Soubory:** `executor.py` (KB search), chat handler, response DTOs
+### ~~10. E14-S2: Source Attribution~~ ✅
+**Hotovo:** Nový `app/chat/source_attribution.py` se `SourceTracker` třídou — zachycuje kb_search/code_search/brain_search výsledky, extrahuje sourceUrn + score regex parserem. Metadata propagována do save_assistant_message a SSE done eventu.
 
 ---
 
-## MEDIUM — UI mezery, nice-to-have
+## ~~MEDIUM — UI mezery, nice-to-have~~ ✅ DONE (2026-02-26)
 
-### 11. E2-S7: Pipeline Monitoring Dashboard (UI)
-**Problém:** Backend loguje pipeline metriky ale žádná Compose obrazovka je nezobrazuje. Chybí funnel view (Polled → Qualified → Created → Executed).
-**Řešení:** Nová Compose screen `PipelineMonitoringScreen.kt` s `JAdaptiveSidebarLayout`.
-**Soubory:** Nový screen v `shared/ui-common/.../screens/`
+### ~~11. E2-S7: Pipeline Monitoring Dashboard (UI)~~ ✅
+**Hotovo:** Nový `PipelineMonitoringScreen.kt` — funnel view s auto-refresh 15s, fáze KB waiting/processing, execution waiting/running, completed. Používá `IIndexingQueueService.getIndexingDashboard()`. Komponenty: FunnelCard, StageHeader, PipelineItemCard.
 
-### 12. E8-S4: Deadline Dashboard Widget (UI)
-**Problém:** `DeadlineDashboard` DTO + `buildDashboard()` existují, ale žádný Compose widget.
-**Řešení:** Nová Compose komponenta `DeadlineDashboardWidget.kt` — color-coded urgency, countdown.
-**Soubory:** Nový widget v `shared/ui-common/.../screens/`
+### ~~12. E8-S4: Deadline Dashboard Widget (UI)~~ ✅
+**Hotovo:** Nový `DeadlineDashboardWidget.kt` — color-coded urgency overview (GREEN/YELLOW/ORANGE/RED/OVERDUE) s countdown. Přijímá `DeadlineDashboard` jako parameter pro embedding v parent screens. Summary card + individuální DeadlineItemCard.
 
-### 13. E14-S4: Confidence Badge (UI)
-**Problém:** `ResponseConfidence` se počítá v `fact_checker.py` ale nikde se nezobrazuje.
-**Řešení:** Přidat confidence badge do chat message bubble (e.g. "95% verified").
-**Soubory:** Chat UI components
+### ~~13. E14-S4: Confidence Badge (UI)~~ ✅
+**Hotovo:** `ConfidenceBadge` composable v `ChatMessageDisplay.kt` — čte `fact_check_confidence`, `fact_check_claims`, `fact_check_verified` z message metadata. Zobrazuje colored Verified icon + procenta (green ≥80%, amber ≥50%, red <50%).
 
-### 14. E6-S4: Dedicated GPU routing mode
-**Problém:** Ollama Router podporuje multi-backend ale nemá DEDICATED mód (GPU0=foreground, GPU1=background).
-**Řešení:** Přidat routing strategy "DEDICATED" vedle "AUTO" do `router_core.py`.
-**Soubory:** `router_core.py`, config
+### ~~14. E6-S4: Dedicated GPU routing mode~~ ✅
+**Hotovo:** `RoutingMode` enum (AUTO/DEDICATED) v `config.py`. Nová `_route_dedicated()` metoda v `router_core.py` — GPU0=foreground (CRITICAL), GPU1+=background (NORMAL). Vyžaduje ≥2 GPU backends, jinak fallback na AUTO.
 
 ---
 
@@ -122,14 +100,14 @@
 
 ## Přehled bodů
 
-| Priorita | Počet bodů | Popis |
-|----------|-----------|-------|
-| CRITICAL | 5 | Wiring existujících services, action dispatch stuby |
-| HIGH | 5 | Chybějící services (topic tracker, memory, attribution) |
-| MEDIUM | 4 | UI komponenty, GPU routing |
+| Priorita | Počet bodů | Stav |
+|----------|-----------|------|
+| CRITICAL | 5 | ✅ Vše hotovo |
+| HIGH | 5 | ✅ Vše hotovo |
+| MEDIUM | 4 | ✅ Vše hotovo |
 | LOW | 6 | Phase 3 (celé EPICy 11-17) |
-| **Celkem** | **20** | |
+| **Celkem** | **20** | **14/20 hotovo** |
 
 ---
 
-*Vygenerováno 2026-02-26 na základě hloubkového auditu codebase.*
+*Aktualizováno 2026-02-26 po implementaci všech CRITICAL, HIGH a MEDIUM položek.*

@@ -606,6 +606,7 @@ iMessage/WhatsApp-style chat with content-based width:
 - **Assistant messages**: Markdown rendering, `secondaryContainer` background, left-aligned, with Copy icon
 - **Markdown support**: Uses `multiplatform-markdown-renderer:0.29.0` with Material 3 theme colors
 - **Workflow steps**: Collapsible step list with status icons (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending) and tool usage
+- **Confidence badge** (E14-S4): Shown on assistant messages when fact-check metadata present. Reads `fact_check_confidence`, `fact_check_claims`, `fact_check_verified` from `ChatMessage.metadata`. Displays `Icons.Default.Verified` icon + "N% (X/Y)" text. Color: green (≥80%), amber (≥50%), red (<50%). Hidden when no claims.
 - **Timestamps**: Human-readable formatting via `formatMessageTime()` — today: "HH:mm", yesterday: "Včera HH:mm", this year: "d. M. HH:mm", older: "d. M. yyyy HH:mm"
 
 **Edit & Copy actions** (header row of each bubble):
@@ -1719,6 +1720,8 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (4 accordion sections + live qualification progress)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
+|   +-- PipelineMonitoringScreen.kt  <- Pipeline funnel view with auto-refresh (E2-S7)
+|   +-- DeadlineDashboardWidget.kt   <- Deadline urgency widget (E8-S4)
 +-- MainScreen.kt                      <- Chat content (no selectors — moved to PersistentTopBar)
 +-- PersistentTopBar.kt               <- Global top bar: back, menu, client/project, recording, agent, K8s, connection
 +-- MainViewModel.kt                   <- Coordinator: client/project selection, event routing
