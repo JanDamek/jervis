@@ -241,6 +241,19 @@ class MainViewModel(
             is JervisEvent.OrchestratorTaskStatusChange -> queue.handleOrchestratorStatusChange(event)
             is JervisEvent.QualificationProgress -> queue.handleQualificationProgress(event)
             is JervisEvent.PendingTaskCreated -> { /* Handled elsewhere if needed */ }
+            is JervisEvent.ApprovalRequired -> {
+                notification.handleUserTaskCreated(
+                    JervisEvent.UserTaskCreated(
+                        clientId = event.clientId,
+                        taskId = event.taskId,
+                        title = "Schválení: ${event.action}",
+                        isApproval = true,
+                        interruptAction = event.action,
+                        interruptDescription = event.preview,
+                        timestamp = event.timestamp,
+                    ),
+                )
+            }
         }
     }
 
