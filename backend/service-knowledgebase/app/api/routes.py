@@ -294,6 +294,24 @@ async def ingest(request: IngestRequest, http_request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/ingest-queue")
+async def ingest_queue(request: IngestRequest, http_request: Request):
+    """Fire-and-forget ingest — accepts data, queues processing, returns immediately.
+
+    Used by MCP kb_store — caller doesn't need to wait for embedding/extraction.
+    Processing (RAG embedding + LLM extraction) happens in background.
+    """
+    import asyncio
+
+    priority = http_request.headers.get("X-Ollama-Priority")
+    priority_int = int(priority) if priority and priority.isdigit() else None
+
+    asyncio.create_task(service.ingest(request, embedding_priority=priority_int))
+
+    from starlette.responses import JSONResponse
+    return JSONResponse(status_code=202, content={"accepted": True})
+
+
 @write_router.post("/ingest-immediate", response_model=IngestResult)
 async def ingest_immediate(request: IngestRequest, http_request: Request):
     """Synchronous ingest — RAG + LLM extraction in one call.

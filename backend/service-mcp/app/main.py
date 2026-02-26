@@ -47,7 +47,6 @@ else:
 mcp = FastMCP(
     "jervis-mcp",
     auth=auth,
-    stateless_http=True,  # Stateless for K8s horizontal scaling
 )
 
 # ── KB Tools ─────────────────────────────────────────────────────────────
@@ -294,11 +293,11 @@ async def kb_store(
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
-    # Priority 1 = skip indexing queue (same as orchestrator direct writes)
+    # Fire-and-forget: KB queues processing (embedding + extraction) in background
     headers = {"X-Ollama-Priority": "0"}
-    async with httpx.AsyncClient(timeout=300, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
         resp = await client.post(
-            f"{settings.knowledgebase_write_url}/api/v1/ingest",
+            f"{settings.knowledgebase_write_url}/api/v1/ingest-queue",
             json={
                 "clientId": cid,
                 "projectId": pid,
@@ -309,8 +308,7 @@ async def kb_store(
             },
         )
         resp.raise_for_status()
-        data = resp.json()
-        return f"Stored successfully."
+        return f"Queued for processing."
 
 
 # ── MongoDB Tools ────────────────────────────────────────────────────────
@@ -1148,7 +1146,7 @@ class AcceptHeaderFixMiddleware:
 
 # ── ASGI app for uvicorn ─────────────────────────────────────────────────
 
-_inner_app = mcp.http_app(path="/mcp")
+_inner_app = mcp.http_app(path="/mcp", stateless_http=True)
 app = AcceptHeaderFixMiddleware(_inner_app)
 
 
