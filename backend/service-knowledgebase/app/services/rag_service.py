@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class RagService:
+    # Max concurrent embedding requests to prevent GPU starvation.
+    # Without this, multiple simultaneous ingest calls can flood the GPU with
+    # embedding requests (e.g. 35 at once), starving CRITICAL chat requests.
+    MAX_CONCURRENT_EMBEDDINGS = 5
+
     def __init__(self):
         self.embeddings = OllamaEmbeddings(
             base_url=settings.OLLAMA_EMBEDDING_BASE_URL,
@@ -27,6 +32,7 @@ class RagService:
             chunk_size=1000,
             chunk_overlap=200
         )
+        self._embedding_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_EMBEDDINGS)
         self.client = get_weaviate_client()
         self._ensure_schema()
 
@@ -64,6 +70,9 @@ class RagService:
 
         Priority passed explicitly by callers (from X-Ollama-Priority header passthrough).
         If None, no header is sent (router defaults to NORMAL).
+
+        Uses a semaphore (MAX_CONCURRENT_EMBEDDINGS=5) to prevent GPU starvation
+        when many ingest requests arrive simultaneously.
         """
         is_batch = isinstance(text, list)
         prompt = text if is_batch else [text]
@@ -78,15 +87,17 @@ class RagService:
         }
         headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
 
-        logger.info("RAG: EMBEDDING model=%s priority=%s (explicit=%s default=%s)",
-                    settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority)
+        logger.info("RAG: EMBEDDING model=%s priority=%s (explicit=%s default=%s) semaphore_free=%d/%d",
+                    settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority,
+                    self._embedding_semaphore._value, self.MAX_CONCURRENT_EMBEDDINGS)
 
         try:
-            resp = await self.http_client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            embeddings = data.get("embeddings", [])
-            return embeddings if is_batch else embeddings[0]
+            async with self._embedding_semaphore:
+                resp = await self.http_client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                embeddings = data.get("embeddings", [])
+                return embeddings if is_batch else embeddings[0]
         except Exception as e:
             logger.error("Embedding failed: %s", e)
             raise
