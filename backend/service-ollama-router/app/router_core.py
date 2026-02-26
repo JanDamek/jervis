@@ -247,19 +247,35 @@ class OllamaRouter:
         """Route a CRITICAL request: auto-reserve GPU for :30b, or send non-:30b to reserved GPU/CPU."""
         model = request.model
 
-        # Non-:30b CRITICAL (e.g. embeddings): load onto reserved GPU alongside :30b
+        # Non-:30b CRITICAL (e.g. embeddings): prefer CPU when GPU busy with :30b inference
+        # to avoid GPU compute contention that slows both embedding and LLM response
         if ":30b" not in model:
             # Update activity timer for all reservations
             for gpu_name in self._reservations:
                 self._last_critical_activity[gpu_name] = time.monotonic()
-            # Try reserved GPU — load model if not present (embedding fits alongside :30b)
+
+            # If reserved GPU has active CRITICAL :30b inference, send embedding to CPU
+            # to avoid GPU contention (embedding on CPU is fast, ~10s vs 3x slowdown on GPU)
+            reserved_busy = False
+            for gpu_name in self._reservations:
+                gpu = self.gpu_pool.backends.get(gpu_name)
+                if gpu and gpu.has_active_critical():
+                    reserved_busy = True
+                    break
+            if reserved_busy:
+                logger.info(
+                    "CRITICAL embedding %s → CPU (reserved GPU busy with :30b inference)",
+                    model,
+                )
+                return await self._send_to_cpu(request)
+
+            # Reserved GPU idle — load embedding alongside :30b
             for gpu_name in self._reservations:
                 gpu = self.gpu_pool.backends.get(gpu_name)
                 if not gpu:
                     continue
                 if gpu.has_model(model):
                     return await self._send_to_gpu(gpu, request)
-                # Load embedding model alongside :30b (both fit in VRAM)
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
                 if loaded:
                     logger.info("Loaded %s alongside :30b on GPU %s for CRITICAL", model, gpu.name)
