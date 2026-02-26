@@ -51,8 +51,9 @@ class OllamaRouter:
         # HTTP client for internal management calls (load/unload/health)
         self._mgmt_client: httpx.AsyncClient | None = None
 
-        # Watchdog task
+        # Watchdog tasks
         self._watchdog_task: asyncio.Task | None = None
+        self._request_timeout_task: asyncio.Task | None = None
 
     async def startup(self) -> None:
         """Initialize router state on startup."""
@@ -62,12 +63,15 @@ class OllamaRouter:
         await self._check_cpu_health()
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
+        self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
         logger.info("Router started with %d GPU backend(s)", len(self.gpu_pool.all_backends))
 
     async def shutdown(self) -> None:
         """Cleanup on shutdown."""
         if self._watchdog_task:
             self._watchdog_task.cancel()
+        if self._request_timeout_task:
+            self._request_timeout_task.cancel()
         for task in self._bg_load_tasks.values():
             if not task.done():
                 task.cancel()
@@ -81,8 +85,13 @@ class OllamaRouter:
         api_path: str,
         body: dict,
         priority_header: int | None = None,
+        http_request=None,
     ) -> Response:
-        """Route an Ollama API request to the best backend."""
+        """Route an Ollama API request to the best backend.
+
+        If http_request (FastAPI Request) is provided, monitors client disconnect
+        and sets cancel_event to abort zombie requests early.
+        """
         model = self._extract_model(body)
         priority = self._resolve_priority(model, priority_header)
         request_id = str(uuid.uuid4())[:8]
@@ -100,6 +109,13 @@ class OllamaRouter:
             "REQUEST_IN: id=%s model=%s priority=%s path=%s",
             request_id, model, priority.name, api_path,
         )
+
+        # Start client disconnect monitor if http_request provided
+        disconnect_task = None
+        if http_request is not None:
+            disconnect_task = asyncio.create_task(
+                self._monitor_client_disconnect(http_request, request)
+            )
 
         start_time = time.monotonic()
         try:
@@ -119,9 +135,32 @@ class OllamaRouter:
             )
             raise
         finally:
+            # Cancel disconnect monitor
+            if disconnect_task and not disconnect_task.done():
+                disconnect_task.cancel()
+                try:
+                    await disconnect_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             # Cleanup active request tracking
             for backend in self.gpu_pool.all_backends:
                 backend.active_requests.pop(request_id, None)
+
+    @staticmethod
+    async def _monitor_client_disconnect(http_request, tracked_request: TrackedRequest) -> None:
+        """Monitor HTTP client disconnect and set cancel_event to abort zombie proxying."""
+        try:
+            while not await http_request.is_disconnected():
+                await asyncio.sleep(2)
+            # Client disconnected — signal cancellation
+            if not tracked_request.cancel_event.is_set():
+                logger.warning(
+                    "CLIENT_DISCONNECT: id=%s model=%s — setting cancel_event",
+                    tracked_request.request_id, tracked_request.model,
+                )
+                tracked_request.cancel_event.set()
+        except asyncio.CancelledError:
+            pass  # Normal cleanup when request completes before disconnect
 
     async def _do_route(self, request: TrackedRequest) -> Response:
         model = request.model
@@ -544,6 +583,38 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Watchdog error: %s", e)
+
+    async def _request_timeout_watchdog(self) -> None:
+        """Cancel requests exceeding max_request_timeout_s.
+
+        Runs every 15s. Detects zombie requests (client disconnected but
+        proxy still running) and cancels them to free GPU resources.
+        Also logs periodic active request counts for observability.
+        """
+        logger.info("Request timeout watchdog started (check every 15s, limit=%ds)", settings.max_request_timeout_s)
+        while True:
+            try:
+                await asyncio.sleep(15)
+                now = time.monotonic()
+                total_active = 0
+                for backend in self.gpu_pool.all_backends:
+                    total_active += backend.active_request_count()
+                    for req_id, req in list(backend.active_requests.items()):
+                        age_s = now - req.created_at
+                        if age_s > settings.max_request_timeout_s and not req.cancel_event.is_set():
+                            logger.warning(
+                                "REQUEST_TIMEOUT: id=%s model=%s age=%.0fs (limit=%ds) — cancelling",
+                                req_id, req.model, age_s, settings.max_request_timeout_s,
+                            )
+                            req.cancel_event.set()
+
+                if total_active > 0:
+                    logger.info("ACTIVE_REQUESTS: total=%d across %d GPU(s)", total_active, len(self.gpu_pool.all_backends))
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error("Request timeout watchdog error: %s", e)
 
     async def _check_cpu_health(self) -> None:
         try:

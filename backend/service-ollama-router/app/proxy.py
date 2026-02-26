@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import AsyncIterator
@@ -102,13 +103,46 @@ async def proxy_non_streaming(
     target_url: str,
     request: TrackedRequest,
 ) -> Response:
-    """Proxy a non-streaming Ollama request (embeddings, show, etc.)."""
+    """Proxy a non-streaming Ollama request (embeddings, show, etc.).
+
+    Supports cancellation via request.cancel_event — if the caller disconnects
+    or a CRITICAL preemption fires, the upstream request is cancelled to avoid
+    zombie requests consuming GPU time.
+    """
     async with httpx.AsyncClient(timeout=_build_timeout()) as client:
         try:
-            resp = await client.post(
-                f"{target_url}{request.api_path}",
-                json=request.body,
+            # Race the actual request against the cancel event
+            post_task = asyncio.create_task(
+                client.post(
+                    f"{target_url}{request.api_path}",
+                    json=request.body,
+                )
             )
+            cancel_task = asyncio.create_task(_wait_for_cancel(request.cancel_event))
+
+            done, pending = await asyncio.wait(
+                [post_task, cancel_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            if cancel_task in done:
+                logger.warning(
+                    "PROXY_NON_STREAM: id=%s CANCELLED (client disconnect or preemption)",
+                    request.request_id,
+                )
+                return JSONResponse(
+                    status_code=499,
+                    content={"error": "cancelled", "message": "Request cancelled"},
+                )
+
+            resp = post_task.result()
             logger.info(
                 "PROXY_NON_STREAM: id=%s status=%s",
                 request.request_id, resp.status_code,
@@ -138,6 +172,11 @@ async def proxy_non_streaming(
                 status_code=503,
                 content={"error": "backend_unavailable", "message": str(e)},
             )
+
+
+async def _wait_for_cancel(cancel_event: asyncio.Event) -> None:
+    """Wait until the cancel event is set."""
+    await cancel_event.wait()
 
 
 async def proxy_passthrough_get(
