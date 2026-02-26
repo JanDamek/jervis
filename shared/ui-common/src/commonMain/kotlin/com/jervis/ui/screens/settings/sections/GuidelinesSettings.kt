@@ -156,7 +156,7 @@ internal fun GuidelinesSettings(repository: JervisRepository) {
     LaunchedEffect(selectedClient) {
         val cid = selectedClient?.id ?: return@LaunchedEffect
         try {
-            projects = repository.projects.getProjectsByClientId(cid)
+            projects = repository.projects.listProjectsForClient(cid)
         } catch (_: Exception) {
             projects = emptyList()
         }
@@ -530,10 +530,11 @@ private fun ApprovalRuleRow(label: String, rule: ApprovalRule, onUpdate: (Approv
         modifier = Modifier.fillMaxWidth().height(JervisSpacing.touchTarget),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, modifier = Modifier.weight(1f))
         JSwitch(
+            label = label,
             checked = rule.enabled,
             onCheckedChange = { onUpdate(rule.copy(enabled = it)) },
+            modifier = Modifier.weight(1f),
         )
     }
 }

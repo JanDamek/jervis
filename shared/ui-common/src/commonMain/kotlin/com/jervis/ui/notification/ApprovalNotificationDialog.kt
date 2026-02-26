@@ -112,16 +112,17 @@ private fun ErrorContent(
         },
         text = {
             Column {
-                if (event.errorDetail != null) {
+                val errorDetail = event.errorDetail
+                if (errorDetail != null) {
                     // Short summary (first line of error detail)
-                    val summary = event.errorDetail.lineSequence().take(3).joinToString("\n")
+                    val summary = errorDetail.lineSequence().take(3).joinToString("\n")
                     Text(
                         text = summary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
 
                     // Expandable full detail
-                    if (event.errorDetail.lines().size > 3) {
+                    if (errorDetail.lines().size > 3) {
                         Spacer(modifier = Modifier.height(8.dp))
                         JSecondaryButton(
                             onClick = { showDetail = !showDetail },
@@ -132,7 +133,7 @@ private fun ErrorContent(
                             Column {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = event.errorDetail,
+                                    text = errorDetail,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
