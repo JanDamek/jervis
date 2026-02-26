@@ -19,6 +19,7 @@ from bson import ObjectId
 from app.chat.drift import detect_drift
 from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, confidence_badge
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
+from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
 from app.chat.handler_tools import (
     extract_tool_calls,
@@ -78,6 +79,7 @@ async def run_agentic_loop(
     distinct_tools_used: set[str] = set()
     tool_call_history: list[tuple[str, str]] = []
     tool_result_cache: dict[str, str] = {}  # "tool_name:args_json" → result
+    source_tracker = SourceTracker()  # EPIC 14-S2: Track KB sources for attribution
     effective_client_id = request.active_client_id
     effective_project_id = request.active_project_id
 
@@ -128,6 +130,7 @@ async def run_agentic_loop(
                     **({"summarized": "true", "original_length": str(msg_len)} if is_summarized else {}),
                     **fact_check_metadata(fc_result),
                     **topic_metadata(topics),
+                    **source_tracker.build_metadata(),
                 },
             )
 
@@ -136,6 +139,7 @@ async def run_agentic_loop(
                 "used_tools": used_tools, "iterations": iteration + 1,
                 **confidence_badge(fc_result),
                 **topic_metadata(topics),
+                **source_tracker.build_done_metadata(),
             })
             return
 
@@ -182,11 +186,13 @@ async def run_agentic_loop(
             await save_assistant_message(
                 request.session_id, final_text,
                 {"drift_break": drift_reason, "used_tools": ",".join(used_tools),
-                 **fact_check_metadata(fc_result), **topic_metadata(drift_topics)},
+                 **fact_check_metadata(fc_result), **topic_metadata(drift_topics),
+                 **source_tracker.build_metadata()},
             )
             yield ChatStreamEvent(type="done", metadata={
                 "drift_break": drift_reason, "iterations": iteration + 1,
                 **confidence_badge(fc_result), **topic_metadata(drift_topics),
+                **source_tracker.build_done_metadata(),
             })
             return
 
@@ -278,6 +284,9 @@ async def run_agentic_loop(
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result[:100]}")
 
+                # EPIC 14-S2: Track KB sources for attribution
+                source_tracker.add_tool_result(tool_name, result)
+
                 # Cache read-only tool results for deduplication
                 if tool_name not in _WRITE_TOOLS:
                     tool_result_cache[cache_key] = result
@@ -353,11 +362,13 @@ async def run_agentic_loop(
         await save_assistant_message(
             request.session_id, final_text,
             {"max_iterations": "true", "used_tools": ",".join(used_tools),
-             **fact_check_metadata(fc_result), **topic_metadata(max_iter_topics)},
+             **fact_check_metadata(fc_result), **topic_metadata(max_iter_topics),
+             **source_tracker.build_metadata()},
         )
         yield ChatStreamEvent(type="done", metadata={
             "max_iterations": True, "iterations": effective_max_iterations,
             **confidence_badge(fc_result), **topic_metadata(max_iter_topics),
+            **source_tracker.build_done_metadata(),
         })
     except Exception as e:
         logger.error("Chat: failed to generate max-iterations response: %s", e)
