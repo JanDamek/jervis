@@ -294,6 +294,24 @@ async def ingest(request: IngestRequest, http_request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/ingest-immediate", response_model=IngestResult)
+async def ingest_immediate(request: IngestRequest, http_request: Request):
+    """Synchronous ingest — RAG + LLM extraction in one call.
+
+    Unlike /ingest which queues LLM extraction for background processing,
+    this endpoint runs the full pipeline synchronously and returns complete
+    results (nodes, edges, entity keys).
+
+    Use for critical writes where data must be searchable immediately.
+    """
+    try:
+        priority = http_request.headers.get("X-Ollama-Priority")
+        priority_int = int(priority) if priority and priority.isdigit() else None
+        return await service.ingest_immediate(request, embedding_priority=priority_int)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/ingest/file", response_model=IngestResult)
 async def ingest_file(
     file: UploadFile = File(...),

@@ -363,18 +363,22 @@ class MemoryAgent:
         )
 
     async def _flush_write_buffer(self, kb_write_url: str) -> None:
-        """Drain write buffer and POST each entry to KB."""
+        """Drain write buffer and POST each entry to KB.
+
+        CRITICAL priority writes use /ingest-immediate (synchronous RAG + LLM).
+        Other writes use /ingest (queued LLM extraction).
+        """
         writes = await self.lqm.drain_write_buffer()
         if not writes:
             return
 
         for write in writes:
             try:
-                # Select endpoint based on priority
-                if write.priority == WritePriority.CRITICAL:
-                    endpoint = f"{kb_write_url}/api/v1/ingest-immediate"
-                else:
-                    endpoint = f"{kb_write_url}/api/v1/ingest"
+                endpoint = (
+                    f"{kb_write_url}/api/v1/ingest-immediate"
+                    if write.priority == WritePriority.CRITICAL
+                    else f"{kb_write_url}/api/v1/ingest"
+                )
 
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
@@ -388,20 +392,6 @@ class MemoryAgent:
                         },
                         headers=self._kb_headers,
                     )
-
-                    if resp.status_code == 404 and write.priority == WritePriority.CRITICAL:
-                        # Fallback: /ingest-immediate not deployed yet
-                        resp = await client.post(
-                            f"{kb_write_url}/api/v1/ingest",
-                            json={
-                                "sourceUrn": write.source_urn,
-                                "clientId": write.metadata.get("client_id", self.client_id),
-                                "content": write.content,
-                                "kind": write.kind,
-                                "metadata": write.metadata,
-                            },
-                            headers=self._kb_headers,
-                        )
 
                     if resp.status_code in (200, 201, 202):
                         self.lqm.mark_synced(write.source_urn)
