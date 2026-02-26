@@ -94,6 +94,7 @@ class BackgroundEngine(
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
     private val schedulerAdvance = Duration.ofMinutes(10)
+    private var lastDeadlineScan: java.time.Instant = java.time.Instant.EPOCH
 
     // Atomic flag to ensure @PostConstruct is called only once
     private val isInitialized =
@@ -673,6 +674,17 @@ class BackgroundEngine(
 
                 if (dispatched > 0) {
                     logger.info { "SCHEDULER_LOOP: dispatched $dispatched scheduled task(s)" }
+                }
+
+                // EPIC 8: Periodic deadline scan (every 5 minutes)
+                val now = java.time.Instant.now()
+                if (Duration.between(lastDeadlineScan, now) >= DEADLINE_SCAN_INTERVAL) {
+                    try {
+                        dispatchDeadlineScan()
+                        lastDeadlineScan = now
+                    } catch (e: Exception) {
+                        logger.error(e) { "Error in deadline scan" }
+                    }
                 }
 
                 delay(60_000) // Check every 60s
@@ -1415,6 +1427,52 @@ class BackgroundEngine(
      */
     fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
 
+    /**
+     * EPIC 8: Dispatch a deadline scan task to the Python orchestrator.
+     * Creates a SCHEDULED_TASK that scans KB and JIRA for approaching deadlines.
+     * Only creates if no pending deadline scan task exists.
+     */
+    private suspend fun dispatchDeadlineScan() {
+        // Check if a deadline scan task is already pending
+        val existing = taskRepository.findFirstByTypeAndStateIn(
+            type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
+            states = listOf(
+                TaskStateEnum.NEW,
+                TaskStateEnum.READY_FOR_QUALIFICATION,
+                TaskStateEnum.QUALIFYING,
+                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.PYTHON_ORCHESTRATING,
+            ),
+        )
+        if (existing != null && existing.sourceUrn.value == "system:deadline-scan") {
+            logger.debug { "DEADLINE_SCAN: Already pending (${existing.id}), skipping" }
+            return
+        }
+
+        val defaultClientId = try {
+            val projects = projectRepository.findAll().toList()
+            val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
+                ?: projects.firstOrNull()
+            jervisProject?.clientId
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        val scanTask = TaskDocument(
+            type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
+            taskName = "Deadline Scan",
+            content = DEADLINE_SCAN_PROMPT,
+            clientId = defaultClientId,
+            state = TaskStateEnum.READY_FOR_GPU,
+            processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
+            sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
+        )
+        taskRepository.save(scanTask)
+        taskNotifier.notifyNewTask()
+
+        logger.info { "DEADLINE_SCAN: Created deadline scan task ${scanTask.id}" }
+    }
+
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
 
@@ -1423,5 +1481,28 @@ class BackgroundEngine(
 
         /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
         val OVERDUE_ESCALATION_THRESHOLD: Duration = Duration.ofHours(24)
+
+        /** EPIC 8: Interval between deadline scans. */
+        val DEADLINE_SCAN_INTERVAL: Duration = Duration.ofMinutes(5)
+
+        /** EPIC 8: Prompt for the deadline scanning orchestrator task. */
+        private val DEADLINE_SCAN_PROMPT = """
+            |You are performing a periodic deadline scan across all projects.
+            |
+            |Using brain tools and kb_search:
+            |1. **JIRA deadlines**: Use brain_search_issues to find issues with due dates
+            |   in the next 7 days. Report urgency for each.
+            |2. **KB deadlines**: Use kb_search to find documents mentioning deadlines,
+            |   due dates, or milestones in the next 7 days.
+            |3. **Overdue items**: Find any items past their deadline that are still open.
+            |
+            |For each approaching deadline:
+            |- If < 1 day: Create a USER_TASK with urgency=URGENT
+            |- If 1-3 days: Add a comment on the JIRA issue as reminder
+            |- If 3-7 days: Log the finding (no action needed)
+            |- If overdue: Create a USER_TASK flagging the overdue item
+            |
+            |Summarize all findings at the end with a count of items per urgency level.
+        """.trimMargin()
     }
 }
