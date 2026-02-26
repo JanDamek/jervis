@@ -17,7 +17,7 @@ import uuid
 import httpx
 from starlette.responses import Response, JSONResponse
 
-from .config import settings
+from .config import settings, RoutingMode
 from .gpu_state import GpuBackend, GpuPool
 from .models import (
     EMBEDDING_MODELS,
@@ -166,6 +166,11 @@ class OllamaRouter:
         model = request.model
         priority = request.priority
 
+        # ── DEDICATED mode: strict GPU assignment ────────────────────
+        # GPU0 = foreground (CRITICAL), GPU1+ = background (NORMAL)
+        if settings.routing_mode == RoutingMode.DEDICATED and len(self.gpu_pool.all_backends) >= 2:
+            return await self._route_dedicated(request)
+
         # ── 1. NORMAL with reservations → use unreserved GPU or CPU ──
         if priority >= Priority.NORMAL and self._reservations:
             if not self.gpu_pool.find_unreserved():
@@ -240,6 +245,58 @@ class OllamaRouter:
                     return await self._send_to_gpu(gpu, request)
 
         return await self._send_to_cpu(request)
+
+    # ── DEDICATED routing mode (E6-S4) ──────────────────────────────────
+
+    async def _route_dedicated(self, request: TrackedRequest) -> Response:
+        """Dedicated GPU routing: GPU0=foreground, GPU1+=background.
+
+        CRITICAL requests always go to GPU0 (first backend).
+        NORMAL requests go to GPU1+ (remaining backends).
+        No CPU fallback — returns 503 if assigned GPU is unavailable.
+        """
+        model = request.model
+        priority = request.priority
+        backends = self.gpu_pool.all_backends
+
+        if priority <= Priority.CRITICAL:
+            # Foreground → GPU0
+            gpu = backends[0]
+            logger.info("DEDICATED_ROUTE: CRITICAL → GPU %s (foreground)", gpu.name)
+            await self._ensure_critical_reservation(gpu)
+            if model in gpu.loaded_models:
+                return await self._send_to_gpu(gpu, request)
+            loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+            if loaded:
+                return await self._send_to_gpu(gpu, request)
+            logger.warning("DEDICATED_ROUTE: GPU %s failed to load model %s", gpu.name, model)
+            return JSONResponse(
+                status_code=503,
+                content={"error": f"Foreground GPU {gpu.name} unable to load {model}"},
+            )
+        else:
+            # Background → GPU1+ (round-robin among available)
+            bg_backends = backends[1:]
+            # Try GPU with model already loaded
+            for gpu in bg_backends:
+                if model in gpu.loaded_models:
+                    logger.info("DEDICATED_ROUTE: NORMAL → GPU %s (has model)", gpu.name)
+                    return await self._send_to_gpu(gpu, request)
+
+            # Try first available background GPU
+            for gpu in bg_backends:
+                if not gpu.loading_in_progress:
+                    logger.info("DEDICATED_ROUTE: NORMAL → GPU %s (loading model)", gpu.name)
+                    loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                    if loaded:
+                        return await self._send_to_gpu(gpu, request)
+
+            # All background GPUs busy — no CPU fallback in DEDICATED mode
+            logger.warning("DEDICATED_ROUTE: No background GPU available for %s", model)
+            return JSONResponse(
+                status_code=503,
+                content={"error": "No background GPU available in DEDICATED mode"},
+            )
 
     # ── CRITICAL routing (step 3) ────────────────────────────────────────
 
