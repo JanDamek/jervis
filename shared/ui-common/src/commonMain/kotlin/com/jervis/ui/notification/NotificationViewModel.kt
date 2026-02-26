@@ -132,11 +132,12 @@ class NotificationViewModel(
         scope.launch {
             try {
                 repository.userTasks.cancel(taskId)
-                _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
                 refreshUserTaskCount()
             } catch (e: Exception) {
                 onError("Zahození selhalo: ${e.message}")
+            } finally {
+                _userTaskDialogEvent.value = null
             }
         }
     }
@@ -150,11 +151,12 @@ class NotificationViewModel(
                     routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
                     additionalInput = null,
                 )
-                _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
                 refreshUserTaskCount()
             } catch (e: Exception) {
                 onError("Opakování selhalo: ${e.message}")
+            } finally {
+                _userTaskDialogEvent.value = null
             }
         }
     }
