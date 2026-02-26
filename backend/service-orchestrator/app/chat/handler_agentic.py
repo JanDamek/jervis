@@ -75,6 +75,7 @@ async def run_agentic_loop(
     domain_history: list[set[str]] = []
     distinct_tools_used: set[str] = set()
     tool_call_history: list[tuple[str, str]] = []
+    tool_result_cache: dict[str, str] = {}  # "tool_name:args_json" → result
     effective_client_id = request.active_client_id
     effective_project_id = request.active_project_id
 
@@ -199,6 +200,20 @@ async def run_agentic_loop(
                 continue
 
             logger.info("Chat: calling tool %s with args: %s", tool_name, str(arguments)[:200])
+
+            # Tool result cache — return cached result for duplicate read-only calls
+            cache_key = f"{tool_name}:{tool_call.function.arguments}"
+            _WRITE_TOOLS = {"create_background_task", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "brain_create_issue", "switch_context"}
+            cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
+            if cached_result is not None:
+                logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
+                result = f"[Cached — tento tool se stejnými argumenty už byl volán] {cached_result}"
+                used_tools.append(tool_name)
+                tool_summaries.append(f"{tool_name}: (cached)")
+                yield ChatStreamEvent(type="tool_result", content=result[:500], metadata={"tool": tool_name, "cached": True})
+                messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                continue
+
             yield ChatStreamEvent(type="thinking", content=describe_tool_call(tool_name, arguments))
             yield ChatStreamEvent(type="tool_call", content=tool_name, metadata={"tool": tool_name, "args": arguments})
 
@@ -238,6 +253,10 @@ async def run_agentic_loop(
                 )
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result[:100]}")
+
+                # Cache read-only tool results for deduplication
+                if tool_name not in _WRITE_TOOLS:
+                    tool_result_cache[cache_key] = result
 
                 if tool_name == "create_background_task":
                     created_tasks.append(arguments)

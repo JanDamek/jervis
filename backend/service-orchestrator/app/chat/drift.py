@@ -33,10 +33,17 @@ def detect_drift(
     if consecutive_same >= 2:
         return "opakovaně voláš stejný tool se stejnými argumenty"
 
-    if tool_call_history and len(tool_call_history) >= 3:
+    if tool_call_history and len(tool_call_history) >= 2:
         from collections import Counter
 
-        # Signal 2: Same tool called 3+ times total
+        # Signal 2a: Identical tool+args called 2+ times (exact duplicate)
+        full_sig_counts = Counter(f"{name}:{args}" for name, args in tool_call_history)
+        for sig, count in full_sig_counts.items():
+            if count >= 2:
+                tool_name = sig.split(":")[0]
+                return f"tool '{tool_name}' volán {count}× se stejnými argumenty — odpověz s tím co máš"
+
+        # Signal 2b: Same tool called 3+ times total (even with different args)
         tool_name_counts = Counter(name for name, _ in tool_call_history)
         for tool_name, count in tool_name_counts.items():
             if count >= 3:
