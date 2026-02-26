@@ -907,6 +907,33 @@ class MeetingViewModel(
         }
     }
 
+    fun updateMeeting(
+        meetingId: String,
+        clientId: String,
+        projectId: String? = null,
+        title: String? = null,
+        meetingType: MeetingTypeEnum? = null,
+    ) {
+        scope.launch {
+            try {
+                val updated = repository.meetings.updateMeeting(
+                    MeetingClassifyDto(
+                        meetingId = meetingId,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    ),
+                )
+                _selectedMeeting.value = updated
+                // Refresh timeline in case client/project changed
+                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
+            } catch (e: Exception) {
+                _error.value = "Nepodařilo se aktualizovat meeting: ${e.message}"
+            }
+        }
+    }
+
     // ── Transcription / Correction ──────────────────────────────────────
 
     fun stopTranscription(meetingId: String) {

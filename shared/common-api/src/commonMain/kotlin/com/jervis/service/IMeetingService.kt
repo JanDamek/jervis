@@ -67,6 +67,8 @@ interface IMeetingService {
 
     suspend fun classifyMeeting(request: MeetingClassifyDto): MeetingDto
 
+    suspend fun updateMeeting(request: MeetingClassifyDto): MeetingDto
+
     suspend fun listUnclassifiedMeetings(): List<MeetingDto>
 
     suspend fun getMeetingTimeline(
