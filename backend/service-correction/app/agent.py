@@ -170,24 +170,35 @@ class CorrectionAgent:
 
         correction_prompt = self._format_corrections_for_prompt(corrections)
 
-        # Process in chunks
+        # Process chunks in parallel — router queue manages backend concurrency
+        total_chunks = (len(segments) + chunk_size - 1) // chunk_size
+        _correct_sem = asyncio.Semaphore(4)
+        _completed = 0
+
+        async def _correct_one(chunk_idx: int, chunk_segs: list):
+            nonlocal _completed
+            async with _correct_sem:
+                await self._emit_correction_progress(
+                    meeting_id, client_id, chunk_idx, total_chunks,
+                    f"Korekce chunk {chunk_idx + 1}/{total_chunks}",
+                )
+                result = await self._correct_chunk_interactive(
+                    chunk_segs, correction_prompt, all_text,
+                    meeting_id=meeting_id, client_id=client_id,
+                    chunk_idx=chunk_idx, total_chunks=total_chunks,
+                )
+                _completed += 1
+                return result
+
+        chunk_inputs = [
+            (idx, segments[start:start + chunk_size])
+            for idx, start in enumerate(range(0, len(segments), chunk_size))
+        ]
+        results = await asyncio.gather(*[_correct_one(idx, segs) for idx, segs in chunk_inputs])
+
         corrected_segments = []
         all_questions = []
-        total_chunks = (len(segments) + chunk_size - 1) // chunk_size
-        for chunk_idx, chunk_start in enumerate(range(0, len(segments), chunk_size)):
-            chunk = segments[chunk_start:chunk_start + chunk_size]
-
-            # Emit progress before processing this chunk
-            await self._emit_correction_progress(
-                meeting_id, client_id, chunk_idx, total_chunks,
-                f"Korekce chunk {chunk_idx + 1}/{total_chunks}",
-            )
-
-            chunk_result = await self._correct_chunk_interactive(
-                chunk, correction_prompt, all_text,
-                meeting_id=meeting_id, client_id=client_id,
-                chunk_idx=chunk_idx, total_chunks=total_chunks,
-            )
+        for chunk_result in results:
             corrected_segments.extend(chunk_result["segments"])
             all_questions.extend(chunk_result["questions"])
 

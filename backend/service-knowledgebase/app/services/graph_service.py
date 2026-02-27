@@ -131,22 +131,32 @@ class GraphService:
             request.sourceUrn, len(all_chunks), len(chunks), settings.LLM_MODEL
         )
 
-        # Process chunks sequentially (for LLM rate limiting)
-        for i, chunk in enumerate(chunks, 1):
-            logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", i, len(chunks), request.sourceUrn)
-            if on_progress:
-                try:
-                    await on_progress(i, len(chunks))
-                except Exception:
-                    pass  # Non-critical
-            n, e, keys = await self._process_chunk(chunk, request, chunk_ids, embedding_priority=embedding_priority)
+        # Process chunks in parallel — router queue manages backend concurrency
+        _extract_sem = asyncio.Semaphore(4)
+        _completed = 0
+
+        async def _process_one(idx: int, chunk_text: str):
+            nonlocal _completed
+            async with _extract_sem:
+                logger.info("GRAPH_WRITE: LLM_EXTRACT chunk %d/%d sourceUrn=%s", idx, len(chunks), request.sourceUrn)
+                n, e, keys = await self._process_chunk(chunk_text, request, chunk_ids, embedding_priority=embedding_priority)
+                _completed += 1
+                logger.info(
+                    "GRAPH_WRITE: CHUNK_DONE %d/%d nodes=%d edges=%d entities=%d",
+                    _completed, len(chunks), n, e, len(keys),
+                )
+                if on_progress:
+                    try:
+                        await on_progress(_completed, len(chunks))
+                    except Exception:
+                        pass
+                return n, e, keys
+
+        results = await asyncio.gather(*[_process_one(i, c) for i, c in enumerate(chunks, 1)])
+        for n, e, keys in results:
             nodes_created += n
             edges_created += e
             all_entity_keys.extend(keys)
-            logger.info(
-                "GRAPH_WRITE: CHUNK_DONE %d/%d nodes=%d edges=%d entities=%d",
-                i, len(chunks), n, e, len(keys)
-            )
 
         # Deduplicate entity keys
         all_entity_keys = list(set(all_entity_keys))

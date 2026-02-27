@@ -1,6 +1,17 @@
 # Calleři — přestat se omezovat, nechat router řídit
 
 **Priorita**: MEDIUM
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+- Orchestrator local semaphore: 2 → 6 (router manages concurrency)
+- KB Graph: sequential chunk loop → `asyncio.gather` + `Semaphore(4)`
+- KB ChatOllama timeout: 180s → 900s (requests may wait in router queue)
+- Correction: sequential chunk loop → `asyncio.gather` + `Semaphore(4)`
+- KB RAG embedding: kept at 5 (already adequate)
+
+---
 
 ## Problém
 

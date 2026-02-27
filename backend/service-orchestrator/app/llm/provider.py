@@ -37,7 +37,7 @@ TOKEN_TIMEOUT_SECONDS = 300  # 5 min
 
 # W-21: Rate limiting semaphores
 # Ollama can only handle limited concurrent requests
-_SEMAPHORE_LOCAL = asyncio.Semaphore(2)     # Max 2 concurrent local LLM calls
+_SEMAPHORE_LOCAL = asyncio.Semaphore(6)     # Router manages backend concurrency; this is just a safety limit
 _SEMAPHORE_CLOUD = asyncio.Semaphore(5)     # Max 5 concurrent cloud calls
 
 

@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
     TOKEN_ESTIMATE_RATIO: int = 4           # chars / 4 ≈ tokens (same heuristic as orchestrator)
     MAX_EXTRACTION_CHUNKS: int = 30         # Max chunks for LLM graph extraction per document
-    LLM_CALL_TIMEOUT: float = 180.0         # Max seconds for a single LLM call (3 min)
+    LLM_CALL_TIMEOUT: float = 900.0         # Max seconds for a single LLM call (router queue may hold request)
 
     # -- Image processing -------------------------------------------------------
     # OCR-first strategy: try Tika OCR, fall back to VLM if OCR output is poor.

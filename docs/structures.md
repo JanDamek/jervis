@@ -153,6 +153,17 @@ Total capacity: 2 GPU × 2 + 1 CPU × 2 = 6 slots
 (realistically :30b only on GPU → 4 GPU slots for large models)
 ```
 
+### Caller Concurrency
+
+Callers send requests freely — **router queue manages backend load**. Callers should NOT self-limit with tight semaphores or sequential processing.
+
+| Caller | Concurrency | Timeout | Notes |
+|--------|-------------|---------|-------|
+| **Orchestrator** (provider.py) | Semaphore(6) | 300-1200s per tier | Safety limit only; router manages actual concurrency |
+| **KB Graph** (graph_service.py) | `gather` + Semaphore(4) | 900s per LLM call | Parallel chunk extraction, 4 concurrent |
+| **KB RAG** (rag_service.py) | Semaphore(5) | 3600s HTTP | Embedding-specific, OK as-is |
+| **Correction** (agent.py) | `gather` + Semaphore(4) | 3600s token | Parallel chunk correction, 4 concurrent |
+
 ### Key Files
 
 | File | Purpose |
