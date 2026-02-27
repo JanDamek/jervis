@@ -76,6 +76,11 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Whisper runner: `backend/service-whisper/whisper_runner.py`, `backend/service-whisper/entrypoint-whisper-job.sh`
 - Whisper REST server: `backend/service-whisper/whisper_rest_server.py`, `backend/service-whisper/Dockerfile.rest`
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
+- Environment Manager: `shared/ui-common/.../screens/environment/` (EnvironmentManagerScreen, OverviewTab, ComponentsTab, ComponentEditPanel, K8sResourcesTab, LogsEventsTab)
+- Environment services: `backend/server/.../service/environment/` (EnvironmentService, EnvironmentK8sService, EnvironmentResourceService, ComponentDefaults)
+- Environment internal API: `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` (CRUD REST for MCP/orchestrator)
+- Environment MCP tools: `backend/service-mcp/app/main.py` (environment_list, _get, _create, _deploy, etc.)
+- Environment orchestrator tools: `backend/service-orchestrator/app/tools/definitions.py` (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS)
 
 ## Build Notes
 

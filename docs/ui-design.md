@@ -1457,12 +1457,12 @@ Expanded (>=600dp):
 - `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
 - `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
 - `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
-- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config
+- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config, source/build pipeline (sourceRepo, sourceBranch, dockerfilePath — visible for PROJECT type)
 - `K8sResourcesTab` — namespace health summary, collapsible pods/deployments/services sections, pod log dialog, deployment detail dialog, restart
 - `LogsEventsTab` — pod log viewer (dropdown pod selector, tail lines, monospace text area) + K8s events list (Warning/Normal coloring)
 
 **Navigation:**
-- `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link from Settings
+- `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link
 - Menu item: "Správa prostředí" (Icons.Default.Dns)
 - Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt`
 - Reuses `EnvironmentStateBadge` from `EnvironmentTreeComponents.kt`

@@ -1232,12 +1232,17 @@ EnvironmentDocument (MongoDB: environments)
 │   ├── type: ComponentType      ← POSTGRESQL, REDIS, PROJECT, etc.
 │   ├── image: String?           ← Docker image (infra) or null (project)
 │   ├── ports, envVars, autoStart, startOrder
+│   ├── sourceRepo, sourceBranch, dockerfilePath  ← Build pipeline (git→build→deploy)
+│   ├── deploymentYaml, serviceYaml              ← Stored K8s manifests for recreate
+│   ├── configMapData: Map<String, String>       ← Complex config files
+│   └── componentState: ComponentState           ← PENDING, DEPLOYING, RUNNING, ERROR, STOPPED
 ├── componentLinks: List<ComponentLink>
 │   ├── sourceComponentId → targetComponentId
 ├── propertyMappings: List<PropertyMapping>
 │   ├── projectComponentId, propertyName, targetComponentId, valueTemplate
 ├── agentInstructions: String?
-└── state: EnvironmentState      ← PENDING, CREATING, RUNNING, etc.
+├── state: EnvironmentState      ← PENDING, CREATING, RUNNING, etc.
+└── yamlManifests: Map<String, String>  ← Stored YAML for namespace recreate from DB
 ```
 
 ### Inheritance (Client → Group → Project)
@@ -1295,7 +1300,22 @@ Agent (Claude Code)
 **Single HTTP MCP server** (`service-mcp`) exposes all tools over Streamable HTTP.
 Agents connect via HTTP instead of stdio subprocesses — smaller Docker images, one server for all tools.
 
-**Environment Tools (namespace as parameter):**
+**Environment CRUD Tools (MCP + Orchestrator DevOps agent):**
+
+| Tool | Purpose |
+|------|---------|
+| `environment_list(client_id?)` | List environments (optionally by client) |
+| `environment_get(environment_id)` | Get environment detail (components, links, state) |
+| `environment_create(client_id, name, ...)` | Create environment definition (PENDING state) |
+| `environment_add_component(environment_id, name, type, ...)` | Add infra or project component |
+| `environment_configure(environment_id, component_name, ...)` | Update component config |
+| `environment_deploy(environment_id)` | Provision K8s namespace + deploy components |
+| `environment_stop(environment_id)` | Deprovision (stop deployments, keep DB definition) |
+| `environment_status(environment_id)` | Per-component readiness and replica status |
+| `environment_sync(environment_id)` | Re-apply manifests from DB to running K8s |
+| `environment_delete(environment_id)` | Delete environment + namespace |
+
+**K8s Resource Inspection Tools (namespace as parameter):**
 
 | Tool | Purpose |
 |------|---------|
@@ -1306,9 +1326,29 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `restart_deployment(namespace, name)` | Trigger rolling restart |
 | `get_namespace_status(namespace)` | Overall namespace health (pod counts, crashing pods) |
 
+**Tool Loading Strategy:**
+- CRUD tools are in `ENVIRONMENT_TOOLS` list + `DEVOPS_AGENT_TOOLS` (NOT in ALL_RESPOND_TOOLS_FULL)
+- Chat respond node does NOT load environment tools (saves ~40k context tokens)
+- DevOps agent gets them via delegation when user requests environment management
+- MCP server always exposes all tools (external agents decide what to use)
+
 **Internal REST Endpoints (KtorRpcServer):**
 
 ```
+# Environment CRUD (InternalEnvironmentRouting.kt)
+GET    /internal/environments?clientId=...
+GET    /internal/environments/{id}
+POST   /internal/environments                     → CreateEnvironmentRequest
+DELETE /internal/environments/{id}
+POST   /internal/environments/{id}/components     → AddComponentRequest
+PUT    /internal/environments/{id}/components/{name} → ConfigureComponentRequest
+POST   /internal/environments/{id}/deploy
+POST   /internal/environments/{id}/stop
+POST   /internal/environments/{id}/sync
+GET    /internal/environments/{id}/status
+GET    /internal/environments/templates
+
+# K8s resource inspection (existing)
 GET  /internal/environment/{ns}/resources?type=pods|deployments|services|all
 GET  /internal/environment/{ns}/pods/{name}/logs?tail=100
 GET  /internal/environment/{ns}/deployments/{name}
@@ -1333,12 +1373,15 @@ GET  /internal/environment/{ns}/status
 
 | File | Purpose |
 |------|---------|
-| `backend/service-mcp/app/main.py` | Unified HTTP MCP server (KB + env + mongo + orchestrator) |
+| `backend/service-mcp/app/main.py` | Unified HTTP MCP server (KB + env CRUD + resource inspection + mongo + orchestrator) |
 | `backend/server/.../environment/EnvironmentResourceService.kt` | K8s resource inspection via fabric8 |
 | `backend/server/.../environment/EnvironmentK8sService.kt` | Namespace/deployment/service lifecycle |
-| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints for MCP |
+| `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` | Internal REST endpoints for environment CRUD |
+| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints routing + resource inspection |
+| `backend/service-orchestrator/app/tools/definitions.py` | Tool definitions (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS) |
+| `backend/service-orchestrator/app/tools/executor.py` | Tool execution (environment_* handlers) |
 | `backend/service-orchestrator/app/agents/workspace_manager.py` | MCP config injection |
-| `k8s/app_server.yaml` | ClusterRole for cross-namespace access |
+| `k8s/orchestrator-rbac.yaml` | ClusterRole for cross-namespace access (jervis-environment-manager) |
 
 ---
 
