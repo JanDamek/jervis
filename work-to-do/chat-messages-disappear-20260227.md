@@ -1,6 +1,15 @@
 # Chat — zprávy zmizí při příchodu odpovědi
 
 **Priorita**: HIGH (uživatel viditelný bug)
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+- `reloadHistory()` now merges DB history with in-flight messages instead of replacing
+- In-flight = USER_MESSAGE with `sequence == null` (optimistic) + PROGRESS messages
+- These persist across reconnects until the server confirms them in DB
+
+---
 
 ## Problém
 

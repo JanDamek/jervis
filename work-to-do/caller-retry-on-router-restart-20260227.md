@@ -1,6 +1,15 @@
 # KB + Correction — chybí retry při výpadku routeru
 
 **Priorita**: MEDIUM
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+- KB Graph `_llm_call()`: retry 2× with backoff 2-4s on ConnectError/RemoteProtocolError/OSError
+- KB RAG `_embed_with_priority()`: retry 2× with backoff 2-4s, semaphore re-acquired on retry
+- Correction `_call_ollama()`: extracted `_call_ollama_stream()`, retry 2× with backoff 2-4s
+
+---
 
 ## Problém
 
