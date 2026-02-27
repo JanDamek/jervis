@@ -322,6 +322,9 @@ private fun ComponentReadOnlyDetail(
         val isInfra = component.type != ComponentTypeEnum.PROJECT
         val isRunning = environmentState == EnvironmentStateEnum.RUNNING
         if (isInfra && isRunning && repository != null && environmentId.isNotBlank()) {
+            val defaultTargetDir = component.volumeMountPath ?: "/tmp"
+            var targetDir by remember { mutableStateOf(defaultTargetDir) }
+
             Spacer(Modifier.height(JervisSpacing.fieldGap))
             androidx.compose.material3.HorizontalDivider()
             Spacer(Modifier.height(JervisSpacing.fieldGap))
@@ -332,9 +335,16 @@ private fun ComponentReadOnlyDetail(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "SQL dump, konfigurace, seed data — soubor bude nahrán do /tmp v běžícím podu.",
+                "SQL dump, konfigurace, seed data — soubor bude nahrán do zvoleného adresáře v běžícím podu.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            com.jervis.ui.design.JTextField(
+                value = targetDir,
+                onValueChange = { targetDir = it },
+                label = "Cílový adresář",
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(4.dp))
             Row(
@@ -355,7 +365,7 @@ private fun ComponentReadOnlyDetail(
                                         componentName = component.name,
                                         fileName = pickedFile.filename,
                                         fileBase64 = base64,
-                                        targetDir = "/tmp",
+                                        targetDir = targetDir.ifBlank { "/tmp" },
                                     )
                                     uploadStatus = "Nahráno: ${result.targetPath} (${result.sizeBytes / 1024} KB)"
                                 } catch (e: Exception) {

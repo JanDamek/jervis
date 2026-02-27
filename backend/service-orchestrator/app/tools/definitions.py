@@ -1215,6 +1215,10 @@ TOOL_ENVIRONMENT_ADD_COMPONENT: dict = {
                     "type": "string",
                     "description": "Git branch (for PROJECT type).",
                 },
+                "dockerfile_path": {
+                    "type": "string",
+                    "description": "Path to Dockerfile in repo (for PROJECT type).",
+                },
             },
             "required": ["environment_id", "name", "component_type"],
         },
@@ -1255,6 +1259,18 @@ TOOL_ENVIRONMENT_CONFIGURE: dict = {
                 "memory_limit": {
                     "type": "string",
                     "description": "K8s memory limit (e.g., '512Mi').",
+                },
+                "source_repo": {
+                    "type": "string",
+                    "description": "Git repo URL (for PROJECT type).",
+                },
+                "source_branch": {
+                    "type": "string",
+                    "description": "Git branch (for PROJECT type).",
+                },
+                "dockerfile_path": {
+                    "type": "string",
+                    "description": "Path to Dockerfile in repo (for PROJECT type).",
                 },
             },
             "required": ["environment_id", "component_name"],

@@ -176,4 +176,5 @@ data class FileUploadResultDto(
 data class ExecResultDto(
     val output: String,
     val componentName: String,
+    val exitCode: Int? = null,
 )

@@ -2580,7 +2580,7 @@ async def _execute_environment_add_component(
     environment_id: str, name: str, component_type: str,
     image: str | None = None, version: str | None = None,
     env_vars: str | None = None, source_repo: str | None = None,
-    source_branch: str | None = None,
+    source_branch: str | None = None, dockerfile_path: str | None = None,
 ) -> str:
     """Add component to environment."""
     if not environment_id or not name or not component_type:
@@ -2600,6 +2600,8 @@ async def _execute_environment_add_component(
         body["sourceRepo"] = source_repo
     if source_branch:
         body["sourceBranch"] = source_branch
+    if dockerfile_path:
+        body["dockerfilePath"] = dockerfile_path
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -2618,6 +2620,8 @@ async def _execute_environment_configure(
     environment_id: str, component_name: str,
     image: str | None = None, env_vars: str | None = None,
     cpu_limit: str | None = None, memory_limit: str | None = None,
+    source_repo: str | None = None, source_branch: str | None = None,
+    dockerfile_path: str | None = None,
 ) -> str:
     """Update component configuration."""
     if not environment_id or not component_name:
@@ -2635,6 +2639,12 @@ async def _execute_environment_configure(
         body["cpuLimit"] = cpu_limit
     if memory_limit:
         body["memoryLimit"] = memory_limit
+    if source_repo:
+        body["sourceRepo"] = source_repo
+    if source_branch:
+        body["sourceBranch"] = source_branch
+    if dockerfile_path:
+        body["dockerfilePath"] = dockerfile_path
     if not body:
         return "Error: No configuration changes provided."
     try:

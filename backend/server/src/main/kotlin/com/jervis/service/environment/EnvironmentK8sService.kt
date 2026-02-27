@@ -125,11 +125,16 @@ class EnvironmentK8sService(
                 if (targetComponent != null) {
                     val host = "${targetComponent.name}.${env.namespace}.svc.cluster.local"
                     val port = targetComponent.ports.firstOrNull()?.let { it.servicePort ?: it.containerPort }
-                    val resolved = mapping.valueTemplate
+                    var resolved = mapping.valueTemplate
                         .replace("{host}", host)
                         .replace("{port}", port?.toString() ?: "")
                         .replace("{name}", targetComponent.name)
                         .replace("{namespace}", env.namespace)
+                    // Resolve {env:VAR_NAME} placeholders from target component's env vars
+                    resolved = Regex("\\{env:([^}]+)}").replace(resolved) { matchResult ->
+                        val varName = matchResult.groupValues[1]
+                        targetComponent.envVars[varName] ?: matchResult.value
+                    }
                     mapping.copy(resolvedValue = resolved)
                 } else {
                     mapping
@@ -672,6 +677,11 @@ class EnvironmentK8sService(
         fileName: String,
         targetDir: String = "/tmp",
     ): String {
+        // Validate targetDir to prevent shell injection
+        require(targetDir.matches(Regex("^/[a-zA-Z0-9/_.-]+$"))) {
+            "Invalid target directory: must be an absolute path with alphanumeric characters, slashes, dots, hyphens, underscores only"
+        }
+
         buildK8sClient().use { client ->
             val podName = findRunningPod(client, namespace, componentName)
             val sanitizedFileName = fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
@@ -780,6 +790,9 @@ class EnvironmentK8sService(
         componentName: String,
         directory: String,
     ): String {
+        require(directory.matches(Regex("^/[a-zA-Z0-9/_.-]*$"))) {
+            "Invalid directory path: must be an absolute path with safe characters only"
+        }
         buildK8sClient().use { client ->
             val podName = findRunningPod(client, namespace, componentName)
             val outputStream = java.io.ByteArrayOutputStream()
