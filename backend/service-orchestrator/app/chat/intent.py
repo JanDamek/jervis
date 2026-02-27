@@ -46,7 +46,10 @@ _TASK_MGMT_PATTERNS = re.compile(
     r"jdeme\s+na|pojďme\s+na|pojdme\s+na|přejdi\s+na|prejdi\s+na|"
     r"switch|přepnout|prepnout|zapamatuj\s+si|"
     # memory_store triggers (learning new procedures)
-    r"nauč\s+se|pamatuj\s+si|konvence|postup"
+    r"nauč\s+se|pamatuj\s+si|konvence|postup|"
+    # git/coding operations → dispatch_coding_agent
+    r"git\b|branch|větv[ei]|vetv[ei]|commit|push\b|pull\b|merge|rebase|"
+    r"checkout|stash|cherry.?pick|deploy|build|kompil|sestav"
     r")",
     re.IGNORECASE,
 )
@@ -60,7 +63,9 @@ _RESEARCH_PATTERNS = re.compile(
     r"co\s+víš\s+o|co\s+vis\s+o|co\s+máš\s+o|co\s+mas\s+o|"
     r"přehled|prehled|overview|"
     r"analýz|analyz|bug|chyb[auy]?|error|tracing|debug|"
-    r"affair|záležitost|zalezitost|téma[ta]?|tema[ta]?"
+    r"affair|záležitost|zalezitost|téma[ta]?|tema[ta]?|"
+    # git/code operations also need code_search
+    r"git\b|branch|větv[ei]|vetv[ei]|commit|repo|repozitář|repozitar"
     r")",
     re.IGNORECASE,
 )
