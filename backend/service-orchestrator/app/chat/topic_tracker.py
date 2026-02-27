@@ -48,7 +48,8 @@ async def detect_topics(
         if topics:
             return topics
     except Exception as e:
-        logger.warning("Topic detection LLM failed: %s", e)
+        logger.warning("Topic detection LLM failed: %r (%s)", e, type(e).__name__)
+        logger.debug("Topic detection LLM traceback:", exc_info=True)
 
     # Fallback: tool-domain based topics
     if used_tools:
