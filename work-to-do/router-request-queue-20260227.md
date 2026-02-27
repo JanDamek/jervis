@@ -55,10 +55,10 @@ Router je **jediný kdo rozhoduje** o přidělení GPU/CPU. Logika:
 
 ### CPU backend
 
-- CPU backend JE součástí poolu pro modely kde to dává smysl (7b, embedding)
-- CPU backend se nepoužívá pro :30b (příliš pomalé)
-- CRITICAL :30b → vždy GPU (preemptne NORMAL pokud třeba)
-- CRITICAL embedding → CPU pokud GPU dělá :30b inference (existující logika)
+- CPU backend JE součástí poolu **pouze pro NORMAL** requesty (7b, embedding)
+- **CRITICAL NIKDY na CPU** — ani embedding, ani :30b, nic
+- CRITICAL vždy GPU — preemptne NORMAL pokud třeba
+- CPU = jen background práce (KB ingest, qualification)
 
 ## Návrh implementace
 
