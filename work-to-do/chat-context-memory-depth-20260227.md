@@ -36,9 +36,15 @@ CONTEXT_ASSEMBLED | messages=20/20 | summaries=1/1 | tokens~3192/26768 | totalDb
      v historii/summary/KB relevantní kontext
    - Nový tool `recall_conversation` — hledá v chat historii podle query
 
-3. **Kvalitnější summary bloky**
-   - Zachovat klíčové entity (projekt, klient, rozhodnutí) strukturovaně
-   - Ne jen text, ale i metadata: `projects_discussed`, `decisions_made`, `action_items`
+3. **Kvalitnější summary bloky — obsahově dostačující + KB vodítka**
+   - **NE 500 znaků** — summary musí být obsahově kompletní, ne arbitrárně oříznutý
+   - Velikost summary dle obsahu, ne dle limitu — důležitá konverzace = delší summary
+   - **KB vodítka u každého tématu** — sourceUrn, correlationId, project/client ID,
+     aby se z summary dalo najít detail v KB
+   - Strukturovaně: témata, rozhodnutí, akce, zmíněné entity s identifikátory
+   - Příklad: "Řešili jsme deployment nUFO (project:6915dcab, client:MMB) — rozhodnutí:
+     použít PostgreSQL 16 + Redis 7. Detail viz email:69a1b0d2, task:69a17e49"
+   - Chat musí z summary umět najít detail přes KB search pokud potřebuje víc
 
 ## Pozorované logy
 
