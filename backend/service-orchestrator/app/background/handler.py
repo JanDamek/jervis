@@ -228,6 +228,14 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 tools=ALL_BACKGROUND_TOOLS,
             )
         except Exception as e:
+            err_msg = str(e).lower()
+            if "cancelled" in err_msg or "client disconnected" in err_msg:
+                logger.info(
+                    "Background LLM call cancelled (preemption): %s (tier=%s)",
+                    e, tier.value,
+                )
+                final_answer = "Background task aborted: preempted by foreground chat."
+                break
             logger.warning("LLM call failed: %s (tier=%s)", e, tier.value)
             if tracker.escalate():
                 continue
