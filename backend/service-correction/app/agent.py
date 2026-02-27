@@ -151,6 +151,11 @@ class CorrectionAgent:
         """
         Correct transcript segments using KB-stored corrections + Ollama GPU.
 
+        Context-aware sequential processing:
+        1. Load correction rules + project context from KB
+        2. First pass: identify meeting phases, speakers, topics
+        3. Sequential chunk correction with cumulative context
+
         Returns dict with:
           - segments: list of corrected segments (best-effort)
           - questions: list of questions when agent is uncertain
@@ -170,37 +175,41 @@ class CorrectionAgent:
 
         correction_prompt = self._format_corrections_for_prompt(corrections)
 
-        # Process chunks in parallel — router queue manages backend concurrency
-        total_chunks = (len(segments) + chunk_size - 1) // chunk_size
-        _correct_sem = asyncio.Semaphore(4)
-        _completed = 0
+        # Load project context from KB (people, technologies, terminology)
+        project_context = await self._load_project_context(client_id, project_id)
 
-        async def _correct_one(chunk_idx: int, chunk_segs: list):
-            nonlocal _completed
-            async with _correct_sem:
-                await self._emit_correction_progress(
-                    meeting_id, client_id, chunk_idx, total_chunks,
-                    f"Korekce chunk {chunk_idx + 1}/{total_chunks}",
-                )
-                result = await self._correct_chunk_interactive(
-                    chunk_segs, correction_prompt, all_text,
-                    meeting_id=meeting_id, client_id=client_id,
-                    chunk_idx=chunk_idx, total_chunks=total_chunks,
-                )
-                _completed += 1
-                return result
+        # First pass: identify meeting phases, speakers, topics
+        phase_analysis = await self._identify_meeting_phases(all_text, meeting_id, client_id)
 
-        chunk_inputs = [
-            (idx, segments[start:start + chunk_size])
-            for idx, start in enumerate(range(0, len(segments), chunk_size))
-        ]
-        results = await asyncio.gather(*[_correct_one(idx, segs) for idx, segs in chunk_inputs])
-
+        # Sequential chunk correction with cumulative context
         corrected_segments = []
         all_questions = []
-        for chunk_result in results:
-            corrected_segments.extend(chunk_result["segments"])
-            all_questions.extend(chunk_result["questions"])
+        running_context = ""
+        total_chunks = (len(segments) + chunk_size - 1) // chunk_size
+
+        for chunk_idx, chunk_start in enumerate(range(0, len(segments), chunk_size)):
+            chunk = segments[chunk_start:chunk_start + chunk_size]
+
+            await self._emit_correction_progress(
+                meeting_id, client_id, chunk_idx, total_chunks,
+                f"Korekce chunk {chunk_idx + 1}/{total_chunks}",
+            )
+
+            result = await self._correct_chunk_interactive(
+                chunk, correction_prompt, all_text,
+                meeting_id=meeting_id, client_id=client_id,
+                chunk_idx=chunk_idx, total_chunks=total_chunks,
+                running_context=running_context,
+                phase_analysis=phase_analysis,
+                project_context=project_context,
+            )
+            corrected_segments.extend(result["segments"])
+            all_questions.extend(result["questions"])
+
+            # Update cumulative context from this chunk's corrections
+            running_context = self._update_running_context(
+                running_context, chunk, result,
+            )
 
         # Filter out questions whose originals are already known KB corrections
         all_questions = self._filter_known_questions(all_questions, corrections)
@@ -479,6 +488,108 @@ class CorrectionAgent:
         except Exception as e:
             logger.debug("Failed to emit correction progress: %s", e)
 
+    async def _load_project_context(
+        self, client_id: str, project_id: str | None,
+    ) -> str:
+        """Load project-specific context from KB (people, technologies, terminology).
+
+        Used to provide domain knowledge for more accurate corrections.
+        Returns formatted context string, empty if unavailable.
+        """
+        if not project_id:
+            return ""
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
+                resp = await http.post(
+                    f"{self.kb_url}/search",
+                    json={
+                        "clientId": client_id,
+                        "projectId": project_id,
+                        "query": "team members people names technologies project terminology",
+                        "maxResults": 10,
+                    },
+                )
+                if resp.status_code == 200:
+                    results = resp.json().get("results", [])
+                    if results:
+                        parts = [r.get("text", "")[:500] for r in results[:10] if r.get("text")]
+                        context = "\n".join(parts)
+                        logger.info(
+                            "Loaded project context from KB: %d results, %d chars",
+                            len(results), len(context),
+                        )
+                        return context
+        except Exception as e:
+            logger.warning("Failed to load project context from KB: %s", e)
+        return ""
+
+    async def _identify_meeting_phases(
+        self, full_text: str, meeting_id: str | None, client_id: str | None,
+    ) -> str:
+        """First pass: analyze transcript to identify phases, speakers, and topics.
+
+        Returns a short analysis string that provides context for chunk correction.
+        """
+        # Truncate to reasonable length for analysis prompt
+        analysis_text = full_text[:12000] if len(full_text) > 12000 else full_text
+
+        system_prompt = (
+            "You analyze meeting transcripts (Czech/Slovak). "
+            "Identify the structure and participants.\n\n"
+            "Return a brief analysis in this format:\n"
+            "SPEAKERS: [list identified speakers/roles]\n"
+            "PHASES: [meeting phases in order]\n"
+            "TOPICS: [main topics discussed]\n"
+            "TERMINOLOGY: [domain-specific terms used]\n\n"
+            "Keep it concise — max 10 lines total. "
+            "This analysis helps correct Whisper transcription errors."
+        )
+        user_prompt = f"TRANSCRIPT:\n{analysis_text}"
+
+        try:
+            analysis = await self._call_ollama(
+                system_prompt, user_prompt,
+                meeting_id=meeting_id, client_id=client_id,
+            )
+            logger.info("Meeting phase analysis: %d chars", len(analysis))
+            return analysis.strip()
+        except Exception as e:
+            logger.warning("Meeting phase analysis failed: %s", e)
+            return ""
+
+    def _update_running_context(
+        self,
+        running_context: str,
+        original_chunk: list[dict],
+        result: dict,
+    ) -> str:
+        """Build cumulative context from corrections made in previous chunks.
+
+        Keeps a rolling summary of key corrections (names, terms) that should
+        be consistently applied in subsequent chunks.
+        """
+        corrections_made = []
+        corrected_segments = result.get("segments", [])
+
+        for i, seg in enumerate(corrected_segments):
+            if i < len(original_chunk):
+                original_text = original_chunk[i].get("text", "")
+                corrected_text = seg.get("text", "")
+                if original_text != corrected_text:
+                    corrections_made.append(f'"{original_text[:80]}" → "{corrected_text[:80]}"')
+
+        if not corrections_made:
+            return running_context
+
+        new_context = "\n".join(corrections_made[-10:])  # Keep last 10 corrections
+        if running_context:
+            # Keep manageable size — trim old context
+            lines = running_context.split("\n")
+            if len(lines) > 20:
+                lines = lines[-20:]
+            return "\n".join(lines) + "\n" + new_context
+        return new_context
+
     async def _correct_chunk_interactive(
         self,
         segments: list[dict],
@@ -488,9 +599,17 @@ class CorrectionAgent:
         client_id: str | None = None,
         chunk_idx: int = 0,
         total_chunks: int = 1,
+        running_context: str = "",
+        phase_analysis: str = "",
+        project_context: str = "",
     ) -> dict:
         """Send a chunk of segments to Ollama for interactive correction."""
-        system_prompt = self._build_system_prompt_interactive(correction_prompt)
+        system_prompt = self._build_system_prompt_interactive(
+            correction_prompt,
+            running_context=running_context,
+            phase_analysis=phase_analysis,
+            project_context=project_context,
+        )
         user_prompt = self._build_user_prompt(segments, full_transcript)
         seg_indices = [s.get("i", i) for i, s in enumerate(segments)]
 
@@ -714,7 +833,13 @@ class CorrectionAgent:
 
         return "\n".join(lines)
 
-    def _build_system_prompt_interactive(self, correction_prompt: str) -> str:
+    def _build_system_prompt_interactive(
+        self,
+        correction_prompt: str,
+        running_context: str = "",
+        phase_analysis: str = "",
+        project_context: str = "",
+    ) -> str:
         """Build system prompt with interactive question generation."""
         base = (
             "You correct Whisper speech-to-text transcripts. "
@@ -736,7 +861,8 @@ class CorrectionAgent:
             "beyond what helps readability\n"
             "- Do NOT translate between languages\n"
             "- Each corrected segment MUST make sense in context of the full "
-            "conversation\n\n"
+            "conversation\n"
+            "- Be CONSISTENT with corrections from previous chunks\n\n"
             "INTERACTIVE MODE:\n"
             "- Always provide your best correction for every segment\n"
             "- If you encounter unknown proper nouns or domain terms that are NOT "
@@ -751,12 +877,24 @@ class CorrectionAgent:
             '[{"i":0,"t":"text"},{"i":1,"t":"text"},...]\n'
         )
 
+        if phase_analysis:
+            base += f"\nMEETING ANALYSIS (identified from full transcript):\n{phase_analysis}\n"
+
+        if project_context:
+            base += f"\nPROJECT CONTEXT (from knowledge base):\n{project_context}\n"
+
         if correction_prompt:
             base += f"\nCORRECTION RULES (always apply these):\n{correction_prompt}"
         else:
             base += (
                 "\nNo correction rules stored yet. "
                 "Use context and phonetic reasoning to fix errors.\n"
+            )
+
+        if running_context:
+            base += (
+                f"\nPREVIOUS CHUNK CORRECTIONS (be consistent with these):\n"
+                f"{running_context}\n"
             )
 
         return base

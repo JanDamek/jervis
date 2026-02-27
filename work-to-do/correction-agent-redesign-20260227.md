@@ -1,6 +1,22 @@
 # Correction Agent — redesign na kontextově-vědomou korekci
 
 **Priorita**: HIGH
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+- Reverted parallel `asyncio.gather` → sequential loop with cumulative `running_context`
+- Added `_identify_meeting_phases()` — first-pass LLM to identify speakers, phases, topics
+- Added `_load_project_context()` — KB search for project entities/terminology
+- System prompt enriched with: phase analysis, project context, running context
+- Retry on connection errors (2× with backoff)
+- Pipeline reordered: TRANSCRIBED → INDEXED (raw) → (qualified) → CORRECTING → CORRECTED → re-index
+- MeetingDocument: added `qualified: Boolean` field
+- MeetingContinuousIndexer: pipeline 2=index raw, pipeline 3=correct after qualification
+- TranscriptCorrectionService: accepts INDEXED state, error recovery resets to INDEXED
+- Stuck meeting detection: CORRECTING → reset to INDEXED (not TRANSCRIBED)
+
+---
 
 ## Problém
 

@@ -15,14 +15,18 @@ import java.time.Instant
 /**
  * Meeting recording document.
  *
- * STATE MACHINE: RECORDING -> UPLOADED -> TRANSCRIBING -> TRANSCRIBED -> CORRECTING -> CORRECTED (or CORRECTION_REVIEW if questions) -> INDEXED (or FAILED at any step)
+ * STATE MACHINE: RECORDING -> UPLOADED -> TRANSCRIBING -> TRANSCRIBED -> INDEXED
+ *   -> (after qualification) CORRECTING -> CORRECTED (or CORRECTION_REVIEW) -> re-indexed
+ *   (or FAILED at any step)
  *
  * FLOW:
  * 1. Client calls startRecording -> creates RECORDING document + empty audio file on PVC
  * 2. Client uploads audio chunks via uploadAudioChunk -> appended to file on disk
  * 3. Client calls finalizeRecording -> state becomes UPLOADED, metadata set
  * 4. MeetingContinuousIndexer picks up UPLOADED -> runs Whisper K8s Job -> TRANSCRIBED
- * 5. MeetingContinuousIndexer creates PendingTask for KB ingest -> INDEXED
+ * 5. MeetingContinuousIndexer indexes raw transcript -> INDEXED (creates MEETING_PROCESSING task)
+ * 6. After qualification (client/project known, qualified=true) -> LLM correction -> CORRECTED
+ * 7. Re-indexing with corrected text
  */
 @Document(collection = "meetings")
 @CompoundIndexes(
@@ -54,6 +58,7 @@ data class MeetingDocument(
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
     val correctionChatHistory: List<CorrectionChatMessage> = emptyList(),
+    val qualified: Boolean = false,
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,
 )

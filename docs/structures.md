@@ -178,6 +178,44 @@ Callers send requests freely — **router queue manages backend load**. Callers 
 
 ---
 
+## Meeting Transcript Correction Pipeline
+
+### Pipeline Flow
+
+```
+RECORDING → UPLOADED → TRANSCRIBING → TRANSCRIBED → INDEXED (raw text)
+  → (after qualification, qualified=true)
+  → CORRECTING → CORRECTED (or CORRECTION_REVIEW) → re-indexed
+```
+
+### Context-Aware Correction Agent
+
+The correction agent (`backend/service-correction/app/agent.py`) processes transcripts sequentially with cumulative context:
+
+1. **Load correction rules** from KB (client/project-specific)
+2. **Load project context** from KB (people, technologies, terminology)
+3. **First pass**: Identify meeting phases, speakers, topics (LLM analysis)
+4. **Sequential chunk correction**: Each chunk gets context from previous corrections
+5. **Interactive questions**: Unknown terms generate questions for user review
+
+### Key Design Decisions
+
+- **Sequential, not parallel**: Chunks must be processed in order — each chunk needs context from previous corrections for consistency
+- **Correction after qualification**: Pipeline indexes raw transcript first, then corrects after client/project is known (provides domain context)
+- **Cumulative running context**: Previous corrections (name spellings, terms) are passed to subsequent chunks
+- **Retry on connection errors**: 2× with exponential backoff (2-4s) for router restarts
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/service-correction/app/agent.py` | CorrectionAgent — KB context, phase analysis, sequential correction |
+| `backend/server/.../meeting/MeetingContinuousIndexer.kt` | Pipeline orchestration (index raw → correct qualified → re-index) |
+| `backend/server/.../meeting/TranscriptCorrectionService.kt` | State transitions, error recovery |
+| `backend/server/.../entity/meeting/MeetingDocument.kt` | Meeting entity with `qualified` flag |
+
+---
+
 ## Graph-Based Routing Architecture
 
 ### Problem Solved

@@ -36,8 +36,8 @@ class TranscriptCorrectionService(
     private val whisperJobRunner: WhisperJobRunner,
 ) {
     suspend fun correct(meeting: MeetingDocument): MeetingDocument {
-        require(meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTION_REVIEW)) {
-            "Can only correct TRANSCRIBED or CORRECTION_REVIEW meetings, got: ${meeting.state}"
+        require(meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.INDEXED, MeetingStateEnum.CORRECTION_REVIEW)) {
+            "Can only correct TRANSCRIBED, INDEXED, or CORRECTION_REVIEW meetings, got: ${meeting.state}"
         }
 
         val meetingIdStr = meeting.id.toHexString()
@@ -137,17 +137,17 @@ class TranscriptCorrectionService(
             }
             return corrected
         } catch (e: Exception) {
-            // Connection errors → reset to TRANSCRIBED for auto-retry (orchestrator may be restarting)
+            // Connection errors → reset to INDEXED for auto-retry (correction agent may be restarting)
             if (isConnectionError(e)) {
-                logger.warn(e) { "Connection error during correction for meeting ${meeting.id}, resetting to TRANSCRIBED for retry" }
+                logger.warn(e) { "Connection error during correction for meeting ${meeting.id}, resetting to INDEXED for retry" }
                 val retryable = meetingRepository.save(
                     correcting.copy(
-                        state = MeetingStateEnum.TRANSCRIBED,
+                        state = MeetingStateEnum.INDEXED,
                         stateChangedAt = java.time.Instant.now(),
                         errorMessage = null,
                     ),
                 )
-                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title)
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.INDEXED.name, meeting.title)
                 return retryable
             }
 

@@ -50,8 +50,8 @@ private val jsonParser = Json { ignoreUnknownKeys = true }
  *
  * PIPELINES:
  * 1. Poll for UPLOADED meetings -> run Whisper transcription -> TRANSCRIBED
- * 2. Poll for TRANSCRIBED meetings -> LLM correction -> CORRECTED
- * 3. Poll for CORRECTED meetings -> create MEETING_PROCESSING task for KB ingest -> INDEXED
+ * 2. Poll for TRANSCRIBED meetings -> index raw transcript -> INDEXED
+ * 3. Poll for INDEXED+qualified meetings -> LLM correction -> CORRECTED -> re-index
  * 4. Trash auto-purge (30-day retention)
  */
 @Service
@@ -107,16 +107,16 @@ class MeetingContinuousIndexer(
                 .onFailure { e -> logger.error(e) { "Meeting transcription pipeline crashed" } }
         }
 
-        // Pipeline 2: TRANSCRIBED -> LLM correction -> CORRECTED
-        scope.launch {
-            runCatching { correctContinuously() }
-                .onFailure { e -> logger.error(e) { "Meeting correction pipeline crashed" } }
-        }
-
-        // Pipeline 3: CORRECTED -> create task -> INDEXED
+        // Pipeline 2: TRANSCRIBED -> index raw transcript -> INDEXED
         scope.launch {
             runCatching { indexContinuously() }
                 .onFailure { e -> logger.error(e) { "Meeting indexing pipeline crashed" } }
+        }
+
+        // Pipeline 3: INDEXED + qualified -> LLM correction -> CORRECTED -> re-index
+        scope.launch {
+            runCatching { correctContinuously() }
+                .onFailure { e -> logger.error(e) { "Meeting correction pipeline crashed" } }
         }
 
         // Pipeline 4: Trash auto-purge (30-day retention)
@@ -440,30 +440,10 @@ class MeetingContinuousIndexer(
         }
     }
 
-    // ===== Pipeline 2: LLM Correction =====
-
-    private suspend fun correctContinuously() {
-        continuousMeetingsInState(MeetingStateEnum.TRANSCRIBED).collect { meeting ->
-            val meetingIdStr = meeting.id.toHexString()
-            if (!processingMeetingIds.add(meetingIdStr)) {
-                logger.debug { "Meeting $meetingIdStr already being processed, skipping correction" }
-                return@collect
-            }
-            try {
-                transcriptCorrectionService.correct(meeting)
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to correct meeting ${meeting.id}" }
-                markAsFailed(meeting, "Correction error: ${e.message}")
-            } finally {
-                processingMeetingIds.remove(meetingIdStr)
-            }
-        }
-    }
-
-    // ===== Pipeline 3: KB Indexing =====
+    // ===== Pipeline 2: KB Indexing (raw transcript) =====
 
     private suspend fun indexContinuously() {
-        continuousMeetingsInState(MeetingStateEnum.CORRECTED).collect { meeting ->
+        continuousMeetingsInState(MeetingStateEnum.TRANSCRIBED).collect { meeting ->
             try {
                 indexMeeting(meeting)
             } catch (e: Exception) {
@@ -474,23 +454,27 @@ class MeetingContinuousIndexer(
     }
 
     private suspend fun indexMeeting(meeting: MeetingDocument) {
-        require(meeting.state == MeetingStateEnum.CORRECTED) {
-            "Can only index CORRECTED meetings, got: ${meeting.state}"
+        require(meeting.state == MeetingStateEnum.TRANSCRIBED || meeting.state == MeetingStateEnum.CORRECTED) {
+            "Can only index TRANSCRIBED or CORRECTED meetings, got: ${meeting.state}"
         }
 
-        // Use corrected transcript, fall back to raw
+        // Use corrected transcript if available, fall back to raw
         val transcript = meeting.correctedTranscriptText ?: meeting.transcriptText
         if (transcript.isNullOrBlank()) {
             logger.warn { "Meeting ${meeting.id} has no transcript text, marking as FAILED" }
-            markAsFailed(meeting, "No transcript text after correction")
+            markAsFailed(meeting, "No transcript text")
             return
         }
 
         // Skip KB indexing for unclassified meetings (no clientId) — classify first
         val clientId = meeting.clientId
         if (clientId == null) {
-            logger.info { "Skipping KB indexing for unclassified meeting ${meeting.id} (no clientId)" }
-            meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTED))
+            // Mark as INDEXED without KB task — will be indexed later when client is assigned
+            logger.info { "Skipping KB indexing for unclassified meeting ${meeting.id} (no clientId), marking INDEXED" }
+            meetingRepository.save(meeting.copy(
+                state = MeetingStateEnum.INDEXED,
+                stateChangedAt = Instant.now(),
+            ))
             return
         }
 
@@ -509,11 +493,73 @@ class MeetingContinuousIndexer(
             taskName = (meeting.title ?: "Meeting ${meeting.id}").take(120),
         )
 
-        meetingRepository.save(meeting.copy(state = MeetingStateEnum.INDEXED))
+        // Auto-qualify meetings that already have clientId (user assigned project)
+        val isQualified = meeting.qualified || meeting.clientId != null
+
+        meetingRepository.save(meeting.copy(
+            state = MeetingStateEnum.INDEXED,
+            qualified = isQualified,
+            stateChangedAt = Instant.now(),
+        ))
         notificationRpc.emitMeetingStateChanged(
             meeting.id.toHexString(), clientId.toString(), MeetingStateEnum.INDEXED.name, meeting.title,
         )
-        logger.info { "Created MEETING_PROCESSING task for meeting: ${meeting.title ?: meeting.id}" }
+        logger.info { "Indexed meeting (raw transcript): ${meeting.title ?: meeting.id}, qualified=$isQualified" }
+    }
+
+    // ===== Pipeline 3: LLM Correction (after qualification) =====
+
+    private suspend fun correctContinuously() {
+        // Poll for INDEXED meetings that have been qualified
+        continuousMeetingsInState(MeetingStateEnum.INDEXED).collect { meeting ->
+            // Only correct qualified meetings with clientId
+            if (!meeting.qualified || meeting.clientId == null) {
+                return@collect
+            }
+            val meetingIdStr = meeting.id.toHexString()
+            if (!processingMeetingIds.add(meetingIdStr)) {
+                logger.debug { "Meeting $meetingIdStr already being processed, skipping correction" }
+                return@collect
+            }
+            try {
+                transcriptCorrectionService.correct(meeting)
+                // After correction, re-index with corrected text
+                val correctedMeeting = meetingRepository.findById(meeting.id)
+                if (correctedMeeting != null && correctedMeeting.state == MeetingStateEnum.CORRECTED) {
+                    reindexCorrectedMeeting(correctedMeeting)
+                }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to correct meeting ${meeting.id}" }
+                markAsFailed(meeting, "Correction error: ${e.message}")
+            } finally {
+                processingMeetingIds.remove(meetingIdStr)
+            }
+        }
+    }
+
+    private suspend fun reindexCorrectedMeeting(meeting: MeetingDocument) {
+        val clientId = meeting.clientId ?: return
+        val transcript = meeting.correctedTranscriptText ?: return
+
+        if (transcript.isBlank()) return
+
+        val meetingContent = buildMeetingContent(meeting)
+
+        // Create re-indexing task with corrected content
+        taskService.createTask(
+            taskType = TaskTypeEnum.MEETING_PROCESSING,
+            content = meetingContent,
+            clientId = clientId,
+            correlationId = "meeting:${meeting.id}",
+            sourceUrn = SourceUrn.meeting(
+                meetingId = meeting.id.toHexString(),
+                title = meeting.title,
+            ),
+            projectId = meeting.projectId,
+            taskName = "Re-index: ${(meeting.title ?: "Meeting ${meeting.id}").take(110)}",
+        )
+
+        logger.info { "Re-indexed meeting with corrected text: ${meeting.title ?: meeting.id}" }
     }
 
     // ===== Pipeline 4: Trash Auto-Purge =====
@@ -684,19 +730,19 @@ class MeetingContinuousIndexer(
                             return@collect
                         }
 
-                        // In CORRECTING state too long and not actively processing → stuck, reset
-                        logger.warn { "Meeting $meetingIdStr stuck in CORRECTING for ${minutesInState}min, resetting to TRANSCRIBED for retry" }
+                        // In CORRECTING state too long and not actively processing → stuck, reset to INDEXED for retry
+                        logger.warn { "Meeting $meetingIdStr stuck in CORRECTING for ${minutesInState}min, resetting to INDEXED for retry" }
                         processingMeetingIds.remove(meetingIdStr)
                         meetingRepository.save(
                             meeting.copy(
-                                state = MeetingStateEnum.TRANSCRIBED,
+                                state = MeetingStateEnum.INDEXED,
                                 stateChangedAt = now,
                                 errorMessage = null,
                             ),
                         )
                         notificationRpc.emitMeetingStateChanged(
                             meetingIdStr, meeting.clientId?.toString().orEmpty(),
-                            MeetingStateEnum.TRANSCRIBED.name, meeting.title,
+                            MeetingStateEnum.INDEXED.name, meeting.title,
                         )
                     }
             } catch (e: Exception) {
