@@ -176,9 +176,8 @@ if (workspace != WorkspaceStatus.READY) {
               │             │             │
               ▼             ▼             ▼
     ┌─────────────────┐ ┌──────────────┐ ┌─────────────────┐
-    │  p40-local      │ │ p40-remote   │ │  CPU Backend    │
-    │  (:11434)       │ │ (ollama.     │ │  (port 11435)   │
-    │                 │ │ damek.local) │ │                 │
+    │ GPU_BACKENDS[0] │ │GPU_BACKENDS[1]│ │ CPU_BACKEND_URL │
+    │                 │ │              │ │                 │
     │  • P40 24GB     │ │ • P40 24GB   │ │  • 200GB RAM    │
     │  • Fast         │ │ • Fast       │ │  • Unlimited    │
     │  • Limited VRAM │ │ • LAN link   │ │  • Slow         │

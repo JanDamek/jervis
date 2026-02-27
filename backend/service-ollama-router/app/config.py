@@ -25,10 +25,11 @@ class Settings(BaseSettings):
     router_port: int = 11430
     router_host: str = "0.0.0.0"
 
-    # ── Backends ────────────────────────────────────────────────────────
-    # JSON list: [{"url":"...","vram_gb":24,"name":"p40-local"},{"url":"...","vram_gb":24,"name":"p40-remote"}]
-    gpu_backends: str = '[{"url":"http://127.0.0.1:11434","vram_gb":24,"name":"p40-local"},{"url":"http://ollama.damek.local:11434","vram_gb":24,"name":"p40-remote"}]'
-    cpu_backend_url: str = "http://127.0.0.1:11435"
+    # ── Backends (override via env vars / K8s ConfigMap) ────────────────
+    # GPU_BACKENDS: JSON array of GPU Ollama instances
+    # Example: [{"url":"http://gpu1:11434","vram_gb":24,"name":"p40-1"},{"url":"http://gpu2:11434","vram_gb":24,"name":"p40-2"}]
+    gpu_backends: str = "[]"
+    cpu_backend_url: str = ""
 
     # ── Model sets ──────────────────────────────────────────────────────
     orchestrator_model: str = "qwen3-coder-tool:30b"

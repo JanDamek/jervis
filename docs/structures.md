@@ -53,11 +53,11 @@
        ▼             ▼                ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
 │ GPU Backend 1│ │ GPU Backend 2│ │  CPU Backend     │
-│ p40-local    │ │ p40-remote   │ │  (port 11435)    │
-│ (:11434)     │ │ (ollama.     │ │                  │
-│              │ │  damek.local)│ │ • 200GB RAM      │
-│ • P40 24GB   │ │ • P40 24GB   │ │ • Slow           │
-│ • Fast       │ │ • Fast       │ │ • Unlimited cap. │
+│ (from        │ │ (from        │ │  (from           │
+│ GPU_BACKENDS │ │ GPU_BACKENDS │ │ CPU_BACKEND_URL) │
+│ env var)     │ │ env var)     │ │                  │
+│ • P40 24GB   │ │ • P40 24GB   │ │ • 200GB RAM      │
+│ • Fast       │ │ • Fast       │ │ • Slow           │
 └──────────────┘ └──────────────┘ └──────────────────┘
 ```
 
@@ -681,30 +681,28 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 All services call a single endpoint – the **Ollama Router** (:11430) – which transparently proxies to GPU or CPU Ollama based on priority and model availability.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│               NAS Server (2×24 cores, 200GB RAM, 2× P40 24GB GPU)                   │
-│                                                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐    │
-│  │  Ollama Router (:11430)   Python FastAPI                                     │    │
-│  │  • Priority routing (CRITICAL / NORMAL)                                       │    │
-│  │  • VRAM priority (bigger model = higher VRAM priority)                        │    │
-│  │  • Multi-GPU pool with per-GPU reservations                                   │    │
-│  │  • Preemption (background → CPU on orchestrator request)                     │    │
-│  │  • Auto-reservation (60s idle timeout, no announce/release API)              │    │
-│  └──────┬──────────────────────────┬──────────────────────┬─────────────────────┘    │
-│         │                          │                      │                          │
-│  ┌──────▼──────────────────┐ ┌─────▼────────────────┐ ┌──▼───────────────────────┐  │
-│  │ p40-local (:11434)      │ │ p40-remote            │ │ CPU Instance (:11435)    │  │
-│  │ P40 24GB VRAM           │ │ ollama.damek.local    │ │ Fallback for preempted   │  │
-│  │                         │ │ P40 24GB VRAM         │ │                          │  │
-│  │ 30b + embedding:        │ │ 30b + embedding:      │ │ OLLAMA_NUM_PARALLEL=10   │  │
-│  │   qwen3-coder-tool:30b  │ │   qwen3-coder-tool:30b│ │ OLLAMA_NUM_THREADS=18    │  │
-│  │   qwen3-embedding:8b    │ │   qwen3-embedding:8b  │ │ OLLAMA_MAX_LOADED_MODELS=3│  │
-│  │                         │ │                       │ │ qwen2.5:7b + embed:8b    │  │
-│  │ Concurrent CRITICAL #1  │ │ Concurrent CRITICAL #2│ │                          │  │
-│  │ or NORMAL when free     │ │ or NORMAL when free   │ │ Always available fallback│  │
-│  └──────────────────────────┘ └───────────────────────┘ └──────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Ollama Router (K8s pod, :11430)   Python FastAPI                              │
+│  • Priority routing (CRITICAL / NORMAL)                                         │
+│  • VRAM priority (bigger model = higher VRAM priority)                          │
+│  • Multi-GPU pool with per-GPU reservations                                     │
+│  • Preemption (background → CPU on orchestrator request)                       │
+│  • Auto-reservation (60s idle timeout, no announce/release API)                │
+│  └──────┬──────────────────────────┬──────────────────────┬────────────────────│
+│         │                          │                      │                    │
+└─────────┼──────────────────────────┼──────────────────────┼────────────────────┘
+          │                          │                      │
+   ┌──────▼──────────────────┐ ┌─────▼────────────────┐ ┌──▼───────────────────────┐
+   │ GPU_BACKENDS[0]         │ │ GPU_BACKENDS[1]       │ │ CPU_BACKEND_URL          │
+   │ P40 24GB VRAM           │ │ P40 24GB VRAM         │ │ Fallback for preempted   │
+   │                         │ │                       │ │                          │
+   │ 30b + embedding:        │ │ 30b + embedding:      │ │ OLLAMA_NUM_PARALLEL=10   │
+   │   qwen3-coder-tool:30b  │ │   qwen3-coder-tool:30b│ │ OLLAMA_NUM_THREADS=18    │
+   │   qwen3-embedding:8b    │ │   qwen3-embedding:8b  │ │ OLLAMA_MAX_LOADED_MODELS=3│
+   │                         │ │                       │ │ qwen2.5:7b + embed:8b    │
+   │ Concurrent CRITICAL #1  │ │ Concurrent CRITICAL #2│ │                          │
+   │ or NORMAL when free     │ │ or NORMAL when free   │ │ Always available fallback│
+   └──────────────────────────┘ └───────────────────────┘ └──────────────────────────┘
 ```
 
 ### Priority Levels (2 levels)
@@ -745,11 +743,11 @@ No orchestrator announce/release calls needed. The router tracks `last_critical_
 
 Router manages a pool of GPU backends (`GPU_BACKENDS` JSON env var). Reservations are **per-GPU**, supporting multiple concurrent CRITICAL sessions.
 
-**Current setup (2× P40):**
+**Current setup (2× P40, configured via K8s ConfigMap):**
 ```
-p40-local  (127.0.0.1:11434):     :30b reserved for CRITICAL #1
-p40-remote (ollama.damek.local):   :30b reserved for CRITICAL #2 or NORMAL
-CPU (127.0.0.1:11435):             fallback for overflow
+p40-1 (GPU_BACKENDS[0]):  :30b reserved for CRITICAL #1
+p40-2 (GPU_BACKENDS[1]):  :30b reserved for CRITICAL #2 or NORMAL
+CPU   (CPU_BACKEND_URL):  fallback for overflow
 ```
 - Single CRITICAL → auto-reserves one GPU, other GPU serves NORMAL
 - Two concurrent CRITICALs → each GPU serves one CRITICAL session

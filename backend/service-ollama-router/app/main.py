@@ -53,7 +53,19 @@ router: OllamaRouter | None = None
 async def lifespan(app: FastAPI):
     global router
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckAccessFilter())
-    gpu_pool = GpuPool(settings.parsed_gpu_backends())
+    backends = settings.parsed_gpu_backends()
+    if not backends:
+        raise RuntimeError(
+            "GPU_BACKENDS env var is empty or not set. "
+            "Configure it as JSON array, e.g.: "
+            '[{"url":"http://gpu1:11434","vram_gb":24,"name":"p40-1"}]'
+        )
+    if not settings.cpu_backend_url:
+        raise RuntimeError(
+            "CPU_BACKEND_URL env var is not set. "
+            "Configure it with the CPU Ollama URL, e.g.: http://cpu-host:11435"
+        )
+    gpu_pool = GpuPool(backends)
     router = OllamaRouter(gpu_pool)
     await router.startup()
     yield
