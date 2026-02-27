@@ -9,6 +9,7 @@ import com.jervis.entity.MessageRole
 import com.jervis.service.IChatService
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
+import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -78,6 +79,8 @@ class ChatRpcImpl(
                     ),
                 )
             }
+        } catch (e: CancellationException) {
+            logger.debug(e) { "Chat subscription cancelled by client (reconnect)" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to load chat history for subscription" }
             emit(
