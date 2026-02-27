@@ -39,9 +39,18 @@ import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JRemoveIconButton
 import com.jervis.ui.design.JervisSpacing
+import com.jervis.dto.environment.ComponentStateEnum
 import com.jervis.ui.screens.settings.sections.AddComponentDialog
 import com.jervis.ui.screens.settings.sections.componentTypeLabel
 import kotlinx.coroutines.launch
+
+private fun componentStateLabel(state: ComponentStateEnum): String = when (state) {
+    ComponentStateEnum.PENDING -> "Čekající"
+    ComponentStateEnum.DEPLOYING -> "Nasazování"
+    ComponentStateEnum.RUNNING -> "Běží"
+    ComponentStateEnum.ERROR -> "Chyba"
+    ComponentStateEnum.STOPPED -> "Zastaveno"
+}
 
 /**
  * Components tab for Environment Manager.
@@ -195,6 +204,10 @@ private fun ComponentCard(
                     if (component.envVars.isNotEmpty()) {
                         add("${component.envVars.size} ENV")
                     }
+                    component.sourceRepo?.let { add("git: ${it.substringAfterLast("/")}") }
+                    if (component.componentState != ComponentStateEnum.PENDING) {
+                        add("[${componentStateLabel(component.componentState)}]")
+                    }
                 }
                 if (summaryParts.isNotEmpty()) {
                     Text(
@@ -269,6 +282,17 @@ private fun ComponentReadOnlyDetail(
         com.jervis.ui.design.JKeyValueRow("Auto start", if (component.autoStart) "Ano" else "Ne")
         if (component.startOrder != 0) {
             com.jervis.ui.design.JKeyValueRow("Pořadí", "${component.startOrder}")
+        }
+        // Source/build pipeline fields
+        component.sourceRepo?.let { com.jervis.ui.design.JKeyValueRow("Git repo", it) }
+        component.sourceBranch?.let { com.jervis.ui.design.JKeyValueRow("Git branch", it) }
+        component.dockerfilePath?.let { com.jervis.ui.design.JKeyValueRow("Dockerfile", it) }
+        // Per-component state
+        if (component.componentState != com.jervis.dto.environment.ComponentStateEnum.PENDING) {
+            com.jervis.ui.design.JKeyValueRow("Stav komponenty", componentStateLabel(component.componentState))
+        }
+        if (component.configMapData.isNotEmpty()) {
+            com.jervis.ui.design.JKeyValueRow("Config soubory", "${component.configMapData.size} definováno")
         }
 
         Spacer(Modifier.height(JervisSpacing.fieldGap))

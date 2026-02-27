@@ -62,6 +62,9 @@ fun ComponentEditPanel(
     var startOrder by remember { mutableStateOf(component.startOrder.toString()) }
     var ports by remember { mutableStateOf(component.ports.toMutableList()) }
     var envVars by remember { mutableStateOf(component.envVars.entries.map { it.key to it.value }.toMutableList()) }
+    var sourceRepo by remember { mutableStateOf(component.sourceRepo ?: "") }
+    var sourceBranch by remember { mutableStateOf(component.sourceBranch ?: "") }
+    var dockerfilePath by remember { mutableStateOf(component.dockerfilePath ?: "") }
 
     Column(
         modifier = modifier.padding(JervisSpacing.sectionPadding),
@@ -215,6 +218,38 @@ fun ComponentEditPanel(
             }
         }
 
+        // Source / build pipeline (for PROJECT type or any component with source repo)
+        if (type == ComponentTypeEnum.PROJECT || sourceRepo.isNotBlank()) {
+            JSection(title = "Zdrojový kód (build pipeline)") {
+                JTextField(
+                    value = sourceRepo,
+                    onValueChange = { sourceRepo = it },
+                    label = "Git repozitář URL",
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(JervisSpacing.fieldGap))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap),
+                ) {
+                    JTextField(
+                        value = sourceBranch,
+                        onValueChange = { sourceBranch = it },
+                        label = "Git branch (např. main)",
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    JTextField(
+                        value = dockerfilePath,
+                        onValueChange = { dockerfilePath = it },
+                        label = "Cesta k Dockerfile",
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
         // Resource limits
         JSection(title = "Resource limity") {
             Row(
@@ -292,6 +327,9 @@ fun ComponentEditPanel(
                             envVars = envVars
                                 .filter { (k, _) -> k.isNotBlank() }
                                 .associate { (k, v) -> k to v },
+                            sourceRepo = sourceRepo.ifBlank { null },
+                            sourceBranch = sourceBranch.ifBlank { null },
+                            dockerfilePath = dockerfilePath.ifBlank { null },
                         ),
                     )
                 },
