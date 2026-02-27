@@ -132,8 +132,35 @@ Když backend dokončí request → `_dispatch_event.set()` → dispatcher zkont
 self._queue._dispatch_event.set()
 ```
 
+## Omezení: max 2 concurrent requesty na backend
+
+Ollama zvládne 2 paralelní requesty rozumně (context splitting). Víc degraduje výkon
+všech requestů — nesmí se posílat víc než 2 na jeden backend.
+
+```
+max_concurrent_per_backend = 2
+
+Celková kapacita = 2 GPU × 2 + 1 CPU × 2 = 6 slotů
+(reálně :30b jen na GPU → 4 sloty pro velké modely)
+```
+
+Dispatcher kontroluje `backend.active_request_count() < max_concurrent_per_backend`
+před přidělením.
+
+## Timeouty callerů
+
+Protože request teď může čekat v queue, calleři musí mít **dostatečný timeout**:
+
+- Orchestrátor/KB volají router přes HTTP — timeout musí pokrýt:
+  `čekání v queue + inference time`
+- Aktuálně orchestrátor má 300s (`HEARTBEAT_DEAD_SECONDS`) — to by mělo stačit
+- KB má `proxy_connect_timeout_s: 10` — **příliš krátké** pro queue, zvýšit na 30+
+- Router sám timeout nemá — request čeká v queue dokud se nezpracuje nebo caller nedisconnectne
+- Client disconnect monitoring (existující `_monitor_client_disconnect`) funguje i pro
+  queued requesty — pokud caller zruší HTTP spojení, request se odstraní z queue
+
 ## Soubory
 
 - `app/router_core.py` — přidat `RequestQueue`, nahradit `_do_route` za `queue.submit()`
 - `app/gpu_state.py` — callback při dokončení requestu (event pro dispatcher)
-- `app/config.py` — `normal_queue_max: int = 10`, `max_concurrent_per_backend: int = 1`
+- `app/config.py` — `normal_queue_max: int = 10`, `max_concurrent_per_backend: int = 2`
