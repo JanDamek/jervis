@@ -101,4 +101,107 @@ class GitLabBugTrackerService(
             },
         )
     }
+
+    override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest): BugTrackerIssueResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+
+        val issue = apiClient.createIssue(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = request.projectKey,
+            title = request.summary,
+            description = request.description,
+            labels = request.labels,
+            assigneeId = request.assignee,
+        )
+
+        return BugTrackerIssueResponse(
+            issue = issue.toBugTrackerDto(request.projectKey),
+        )
+    }
+
+    override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest): BugTrackerIssueResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        val (projectPath, iid) = parseIssueKey(request.issueKey)
+
+        val issue = apiClient.updateIssue(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = projectPath,
+            issueIid = iid,
+            title = request.summary,
+            description = request.description,
+            assigneeId = request.assignee,
+            labels = request.labels,
+        )
+
+        return BugTrackerIssueResponse(
+            issue = issue.toBugTrackerDto(projectPath),
+        )
+    }
+
+    override suspend fun addComment(request: BugTrackerAddCommentRpcRequest): BugTrackerCommentResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        val (projectPath, iid) = parseIssueKey(request.issueKey)
+
+        val note = apiClient.addIssueNote(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = projectPath,
+            issueIid = iid,
+            body = request.body,
+        )
+
+        return BugTrackerCommentResponse(
+            id = note.id.toString(),
+            author = note.author?.username,
+            body = note.body,
+            created = note.created_at,
+        )
+    }
+
+    override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+        val (projectPath, iid) = parseIssueKey(request.issueKey)
+
+        // GitLab uses state_event: "close" or "reopen"
+        val stateEvent = when (request.transitionName.lowercase()) {
+            "close", "closed", "done", "resolved" -> "close"
+            "open", "reopen", "reopened" -> "reopen"
+            else -> throw IllegalArgumentException(
+                "Unknown transition '${request.transitionName}'. GitLab supports: close, reopen"
+            )
+        }
+
+        apiClient.updateIssue(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = projectPath,
+            issueIid = iid,
+            stateEvent = stateEvent,
+        )
+    }
+
+    private fun GitLabIssue.toBugTrackerDto(projectKey: String) = BugTrackerIssueDto(
+        id = id.toString(),
+        key = "#$iid",
+        title = title,
+        description = description,
+        status = state,
+        priority = null,
+        assignee = null,
+        reporter = null,
+        created = created_at,
+        updated = updated_at,
+        url = web_url,
+        projectKey = projectKey,
+    )
+
+    /** Parse issue key in format "projectPath#iid" */
+    private fun parseIssueKey(issueKey: String): Pair<String, Int> {
+        val parts = issueKey.split("#")
+        if (parts.size != 2) throw IllegalArgumentException("Issue key must be in format 'projectPath#iid', got: $issueKey")
+        val iid = parts[1].toIntOrNull() ?: throw IllegalArgumentException("Invalid issue IID: ${parts[1]}")
+        return parts[0] to iid
+    }
 }

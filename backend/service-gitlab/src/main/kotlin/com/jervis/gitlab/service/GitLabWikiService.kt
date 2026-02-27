@@ -91,4 +91,57 @@ class GitLabWikiService(
             },
         )
     }
+
+    override suspend fun createPage(request: WikiCreatePageRpcRequest): WikiPageResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+
+        val page = apiClient.createWikiPage(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = request.spaceKey,
+            title = request.title,
+            content = request.content,
+        )
+
+        return WikiPageResponse(
+            page = WikiPageDto(
+                id = page.slug,
+                title = page.title,
+                content = page.content,
+                spaceKey = request.spaceKey,
+                url = "",
+                created = "",
+                updated = "",
+            ),
+        )
+    }
+
+    override suspend fun updatePage(request: WikiUpdatePageRpcRequest): WikiPageResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitLab")
+
+        // pageId format: "projectPath/slug"
+        val parts = request.pageId.split("/", limit = 2)
+        if (parts.size != 2) throw IllegalArgumentException("Page ID must be in format 'projectPath/slug'")
+
+        val page = apiClient.updateWikiPage(
+            baseUrl = request.baseUrl,
+            token = token,
+            projectId = parts[0],
+            slug = parts[1],
+            title = request.title,
+            content = request.content,
+        )
+
+        return WikiPageResponse(
+            page = WikiPageDto(
+                id = page.slug,
+                title = page.title,
+                content = page.content,
+                spaceKey = parts[0],
+                url = "",
+                created = "",
+                updated = "",
+            ),
+        )
+    }
 }

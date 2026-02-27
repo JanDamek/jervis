@@ -6,10 +6,17 @@ import com.jervis.common.ratelimit.DomainRateLimiter
 import com.jervis.common.ratelimit.UrlUtils
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import mu.KotlinLogging
 
 /**
@@ -141,6 +148,138 @@ class GitLabApiClient(
         val responseText = response.checkProviderResponse("GitLab", "getFile($filePath)")
         return json.decodeFromString(GitLabFile.serializer(), responseText)
     }
+
+    // ── Issue write operations ────────────────────────────────────────
+
+    suspend fun createIssue(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        title: String,
+        description: String? = null,
+        labels: List<String> = emptyList(),
+        assigneeId: String? = null,
+    ): GitLabIssue {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("title", title)
+            description?.let { put("description", it) }
+            if (labels.isNotEmpty()) put("labels", labels.joinToString(","))
+            assigneeId?.let { put("assignee_ids", it) }
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "createIssue($projectId)")
+        return json.decodeFromString(GitLabIssue.serializer(), responseText)
+    }
+
+    suspend fun updateIssue(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        issueIid: Int,
+        title: String? = null,
+        description: String? = null,
+        stateEvent: String? = null,
+        labels: List<String>? = null,
+        assigneeId: String? = null,
+    ): GitLabIssue {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            title?.let { put("title", it) }
+            description?.let { put("description", it) }
+            stateEvent?.let { put("state_event", it) }
+            labels?.let { put("labels", it.joinToString(",")) }
+            assigneeId?.let { put("assignee_ids", it) }
+        }
+        val response = httpClient.put(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "updateIssue(#$issueIid)")
+        return json.decodeFromString(GitLabIssue.serializer(), responseText)
+    }
+
+    suspend fun addIssueNote(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        issueIid: Int,
+        body: String,
+    ): GitLabNote {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/issues/$issueIid/notes"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("body", body)
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "addIssueNote(#$issueIid)")
+        return json.decodeFromString(GitLabNote.serializer(), responseText)
+    }
+
+    // ── Wiki write operations ─────────────────────────────────────────
+
+    suspend fun createWikiPage(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        title: String,
+        content: String,
+    ): GitLabWikiPage {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/wikis"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("title", title)
+            put("content", content)
+            put("format", "markdown")
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "createWikiPage($title)")
+        return json.decodeFromString(GitLabWikiPage.serializer(), responseText)
+    }
+
+    suspend fun updateWikiPage(
+        baseUrl: String,
+        token: String,
+        projectId: String,
+        slug: String,
+        title: String,
+        content: String,
+    ): GitLabWikiPage {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/projects/${projectId.encodeURLParameter()}/wikis/$slug"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("title", title)
+            put("content", content)
+            put("format", "markdown")
+        }
+        val response = httpClient.put(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitLab", "updateWikiPage($slug)")
+        return json.decodeFromString(GitLabWikiPage.serializer(), responseText)
+    }
 }
 
 @Serializable
@@ -185,6 +324,19 @@ data class GitLabWikiPage(
     val content: String? = null,
     val format: String = "markdown",
     val encoding: String? = null
+)
+
+@Serializable
+data class GitLabNote(
+    val id: Long,
+    val body: String,
+    val created_at: String,
+    val author: GitLabNoteAuthor? = null,
+)
+
+@Serializable
+data class GitLabNoteAuthor(
+    val username: String,
 )
 
 @Serializable
