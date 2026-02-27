@@ -67,18 +67,26 @@ Toto je OK, neměnit.
 
 Sekvenční zpracování chunků. Stejný pattern jako KB Graph — přidat paralelizaci.
 
-### 5. Timeouty callerů — zvýšit pro queue
+### 5. Timeouty callerů — výrazně zvýšit
 
-Router teď může request chvíli držet v queue před zpracováním. Calleři musí mít
-dostatečný timeout:
+Router teď může request držet v queue minuty. Calleři musí mít dostatečný timeout —
+klidně velký, router sám řídí kdy request zpracuje.
 
 | Caller | Aktuálně | Doporučení |
 |--------|----------|------------|
 | Orchestrátor blocking | 300-1200s (tier) | OK |
 | KB Graph httpx | 600s | OK |
-| KB LLM (ChatOllama) | 180s | **Zvýšit na 300s** |
+| KB LLM (ChatOllama) | 180s | **Zvýšit na 900s** |
 | Correction httpx | None (unlimited) | OK |
 | KB RAG embedding | 3600s | OK |
+
+## Queue persistence — NENÍ POTŘEBA
+
+Router queue je in-memory. Při restartu routeru se ztratí. To je OK:
+- Jen 1 instance routeru
+- Při restartu calleři dostanou connection error → retry sami
+- SQLite/FS persistence by přidala složitost bez reálného benefitu
+- Restart routeru je rychlý (~10s) — calleři přečkají
 
 ## Princip
 
@@ -87,6 +95,7 @@ Router queue + priority + preemption zajistí:
 - CRITICAL (chat) nikdy nečeká za background
 - Obě GPU se využijí
 - CPU dostane malé modely
+- Hlavní bottleneck je embedding, ne queue
 
 ## Soubory
 
