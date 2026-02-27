@@ -1,10 +1,9 @@
-"""OllamaRouter – multi-GPU routing logic, preemption, auto-reservation.
+"""OllamaRouter – multi-GPU routing with two-tier request queue.
 
 Two priority levels: CRITICAL (0) and NORMAL (1).
-GPU reservations are fully automatic — no announce/release API needed:
-- CRITICAL request arrives → auto-reserves GPU, resets 60s inactivity timer
-- 60s without CRITICAL activity → watchdog auto-releases reservation
-- NORMAL requests use unreserved GPUs or CPU fallback
+All requests go through RequestQueue — router NEVER rejects.
+CRITICAL always GPU (never CPU), preempts NORMAL if needed.
+GPU reservations are fully automatic for CRITICAL orchestrator requests.
 """
 
 from __future__ import annotations
@@ -21,14 +20,11 @@ from .config import settings
 from .gpu_state import GpuBackend, GpuPool
 from .models import (
     EMBEDDING_MODELS,
-    EMBEDDING_PATHS,
     MODEL_TO_PRIORITY,
-    MODEL_TO_SET,
     Priority,
-    RequestState,
     TrackedRequest,
 )
-from .proxy import is_streaming_request, proxy_non_streaming, proxy_streaming
+from .request_queue import RequestQueue
 
 logger = logging.getLogger("ollama-router.core")
 
@@ -38,6 +34,9 @@ class OllamaRouter:
         self.gpu_pool = gpu_pool
         self.cpu_url = settings.cpu_backend_url.rstrip("/")
         self.cpu_healthy = True
+
+        # Request queue (initialized in startup)
+        self._queue: RequestQueue | None = None
 
         # Per-GPU reservation state (supports multiple concurrent reservations)
         self._reservations: dict[str, str] = {}            # gpu_name → session_id
@@ -61,13 +60,18 @@ class OllamaRouter:
         # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
         await self._check_cpu_health()
+        # Start request queue
+        self._queue = RequestQueue(self.gpu_pool, self.cpu_url, self)
+        await self._queue.start()
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
         self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
-        logger.info("Router started with %d GPU backend(s)", len(self.gpu_pool.all_backends))
+        logger.info("Router started with %d GPU backend(s), queue enabled", len(self.gpu_pool.all_backends))
 
     async def shutdown(self) -> None:
         """Cleanup on shutdown."""
+        if self._queue:
+            await self._queue.stop()
         if self._watchdog_task:
             self._watchdog_task.cancel()
         if self._request_timeout_task:
@@ -87,10 +91,14 @@ class OllamaRouter:
         priority_header: int | None = None,
         http_request=None,
     ) -> Response:
-        """Route an Ollama API request to the best backend.
+        """Route an Ollama API request via the request queue.
+
+        Router ALWAYS accepts. Request is queued and dispatched when a
+        backend slot becomes available. Never returns 503/reject (except
+        when NORMAL queue is full → 429 back-pressure).
 
         If http_request (FastAPI Request) is provided, monitors client disconnect
-        and sets cancel_event to abort zombie requests early.
+        and sets cancel_event to abort zombie requests / dequeue.
         """
         model = self._extract_model(body)
         priority = self._resolve_priority(model, priority_header)
@@ -105,9 +113,10 @@ class OllamaRouter:
         )
 
         # ── Entry logging ──
+        qdepth = self._queue.queue_depth if self._queue else {}
         logger.info(
-            "REQUEST_IN: id=%s model=%s priority=%s path=%s",
-            request_id, model, priority.name, api_path,
+            "REQUEST_IN: id=%s model=%s priority=%s path=%s queue=%s",
+            request_id, model, priority.name, api_path, qdepth,
         )
 
         # Start client disconnect monitor if http_request provided
@@ -119,11 +128,8 @@ class OllamaRouter:
 
         start_time = time.monotonic()
         try:
-            response = await self._do_route(request)
+            response = await self._queue.submit(request)
             duration = time.monotonic() - start_time
-            # ── Exit logging ──
-            # For streaming responses, duration here is only routing time (not generation).
-            # Actual stream duration is logged by PROXY_STREAM in proxy.py.
             if isinstance(response, StreamingResponse):
                 logger.info(
                     "REQUEST_OUT: id=%s routing=%.2fs (streaming — see PROXY_STREAM for total)",
@@ -150,9 +156,9 @@ class OllamaRouter:
                     await disconnect_task
                 except (asyncio.CancelledError, Exception):
                     pass
-            # Cleanup active request tracking
-            for backend in self.gpu_pool.all_backends:
-                backend.active_requests.pop(request_id, None)
+            # Notify queue that a slot may have been freed
+            if self._queue:
+                self._queue.notify_slot_freed()
 
     @staticmethod
     async def _monitor_client_disconnect(http_request, tracked_request: TrackedRequest) -> None:
@@ -170,396 +176,44 @@ class OllamaRouter:
         except asyncio.CancelledError:
             pass  # Normal cleanup when request completes before disconnect
 
-    async def _do_route(self, request: TrackedRequest) -> Response:
-        model = request.model
-        priority = request.priority
+    # ── CRITICAL reservation management ─────────────────────────────────
+    # Reservations are managed here (not in RequestQueue) because they're
+    # tied to the orchestrator's session lifecycle, not individual requests.
+    # The queue calls notify_critical_activity() when dispatching CRITICAL
+    # to a GPU, which creates/refreshes reservations automatically.
 
-        # ── 1. NORMAL with reservations → use unreserved GPU or CPU ──
-        if priority >= Priority.NORMAL and self._reservations:
-            if not self.gpu_pool.find_unreserved():
-                return await self._send_to_cpu(request)
+    def notify_critical_activity(self, gpu_name: str) -> None:
+        """Called by RequestQueue when a CRITICAL request is dispatched to a GPU.
 
-        # ── 2. CRITICAL: always go through _route_critical ─────────────
-        # _route_critical handles reservation, preemption, and multi-GPU
-        # selection properly. Skipping it (via find_with_model shortcut)
-        # caused all CRITICAL requests to land on the first GPU.
-        if priority <= Priority.CRITICAL:
-            return await self._route_critical(request)
-
-        # ── 3. Find GPU that already has this model loaded (NORMAL) ────
-        gpu = self.gpu_pool.find_with_model(model)
-        if gpu and not gpu.reserved_by:
-            return await self._send_to_gpu(gpu, request)
-
-        # ── 4. Find unreserved GPU with model or free VRAM ──────────────
-        gpu = self.gpu_pool.find_unreserved_with_model(model)
-        if gpu:
-            return await self._send_to_gpu(gpu, request)
-
-        gpu = self.gpu_pool.find_unreserved_with_free_vram(model)
-        if gpu:
-            loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-            if loaded:
-                return await self._send_to_gpu(gpu, request)
-
-        # ── 5. Unreserved GPU (swap models) or CPU ────────────────────────
-        # Bigger model = higher VRAM priority.  When a larger model is requested,
-        # unload current models, load the big one first, then reload previous
-        # models alongside it (Ollama handles CPU offload for layers that don't fit).
-        # unload_all() waits for active requests to complete before unloading.
-        gpu = self.gpu_pool.find_unreserved_least_busy()
-        if gpu:
-            from .gpu_state import estimate_vram
-            requested_vram = estimate_vram(model)
-            current_max_vram = max(gpu.loaded_models.values()) if gpu.loaded_models else 0
-
-            if requested_vram > current_max_vram:
-                # Bigger model arriving — unload, load big, reload ONLY embeddings alongside
-                # (non-embedding models like 14b cause too much CPU offload → 30b timeouts)
-                previous_embeddings = [m for m in gpu.loaded_models if m in EMBEDDING_MODELS]
-                logger.info(
-                    "VRAM_PRIORITY: GPU %s — bigger model %s (%.0fGB) > current max %.0fGB, "
-                    "unloading all → load %s → reload embeddings %s",
-                    gpu.name, model, requested_vram, current_max_vram,
-                    model, previous_embeddings,
-                )
-                gpu.loading_in_progress = True
-                try:
-                    await self.gpu_pool.unload_all(gpu, self._mgmt_client)
-                    loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                    if loaded:
-                        # Only reload embedding models alongside (small, won't hurt perf)
-                        for emb_model in previous_embeddings:
-                            await self.gpu_pool.load_model(gpu, emb_model, self._mgmt_client)
-                finally:
-                    # Clear flag after loading completes — NOT after request finishes.
-                    # Keeping it True during the request blocks other requests from
-                    # using this GPU (find_unreserved* filters loading_in_progress).
-                    gpu.loading_in_progress = False
-                if loaded:
-                    return await self._send_to_gpu(gpu, request)
-            elif model in EMBEDDING_MODELS:
-                # Embedding model — always safe to co-locate (small)
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    return await self._send_to_gpu(gpu, request)
-            elif current_max_vram <= requested_vram:
-                # Same-size or smaller non-embedding — load alongside if no big model present
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    return await self._send_to_gpu(gpu, request)
-
-        # ── 6. Large models: wait for GPU instead of CPU fallback ──────────
-        # Running :30b on CPU is pointless (too slow). Wait briefly for a GPU.
-        from .gpu_state import estimate_vram
-        if estimate_vram(model) >= 20.0:
-            gpu = await self._wait_for_gpu(request, timeout_s=60)
-            if gpu:
-                return await self._send_to_gpu(gpu, request)
-            logger.warning(
-                "REQUEST_REJECT: id=%s model=%s — no GPU available after wait, refusing CPU for large model",
-                request.request_id, model,
-            )
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "error": "no_gpu_available",
-                    "message": f"Model {model} is too large for CPU. All GPUs busy, try again later.",
-                },
-            )
-
-        return await self._send_to_cpu(request)
-
-    # ── Wait for GPU availability ────────────────────────────────────────
-
-    async def _wait_for_gpu(self, request: TrackedRequest, timeout_s: int = 60) -> GpuBackend | None:
-        """Wait up to timeout_s for an unreserved GPU with the model (or free to load it)."""
-        model = request.model
-        deadline = time.monotonic() + timeout_s
-        logger.info(
-            "WAIT_FOR_GPU: id=%s model=%s — waiting up to %ds for GPU",
-            request.request_id, model, timeout_s,
-        )
-        while time.monotonic() < deadline:
-            if request.cancel_event.is_set():
-                return None
-
-            # Check for unreserved GPU with model already loaded
-            gpu = self.gpu_pool.find_unreserved_with_model(model)
-            if gpu:
-                return gpu
-
-            # Check for any unreserved GPU (will need model load)
-            gpu = self.gpu_pool.find_unreserved_least_busy()
-            if gpu:
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    return gpu
-
-            await asyncio.sleep(3)
-        return None
-
-    # ── CRITICAL routing (step 3) ────────────────────────────────────────
-
-    async def _route_critical(self, request: TrackedRequest) -> Response:
-        """Route a CRITICAL request: auto-reserve GPU for :30b, or send non-:30b to reserved GPU/CPU."""
-        model = request.model
-
-        # Non-:30b CRITICAL (e.g. embeddings): prefer CPU when GPU busy with :30b inference
-        # to avoid GPU compute contention that slows both embedding and LLM response
-        if ":30b" not in model:
-            # Update activity timer for all reservations
-            for gpu_name in self._reservations:
-                self._last_critical_activity[gpu_name] = time.monotonic()
-
-            # If reserved GPU has active CRITICAL :30b inference, send embedding to CPU
-            # to avoid GPU contention (embedding on CPU is fast, ~10s vs 3x slowdown on GPU)
-            reserved_busy = False
-            for gpu_name in self._reservations:
-                gpu = self.gpu_pool.backends.get(gpu_name)
-                if gpu and gpu.has_active_critical():
-                    reserved_busy = True
-                    break
-            if reserved_busy:
-                logger.info(
-                    "CRITICAL embedding %s → CPU (reserved GPU busy with :30b inference)",
-                    model,
-                )
-                return await self._send_to_cpu(request)
-
-            # Reserved GPU idle — load embedding alongside :30b
-            for gpu_name in self._reservations:
-                gpu = self.gpu_pool.backends.get(gpu_name)
-                if not gpu:
-                    continue
-                if gpu.has_model(model):
-                    return await self._send_to_gpu(gpu, request)
-                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
-                if loaded:
-                    logger.info("Loaded %s alongside :30b on GPU %s for CRITICAL", model, gpu.name)
-                    return await self._send_to_gpu(gpu, request)
-            # No reservation yet — use any GPU, try loading, then CPU
-            for gpu in self.gpu_pool.healthy_backends:
-                if gpu.has_model(model):
-                    return await self._send_to_gpu(gpu, request)
-            # Model not loaded anywhere — try to load on least-busy GPU
-            target = self.gpu_pool.find_least_busy()
-            if target:
-                loaded = await self.gpu_pool.load_model(target, model, self._mgmt_client)
-                if loaded:
-                    return await self._send_to_gpu(target, request)
-            return await self._send_to_cpu(request)
-
-        target_gpu = None
-        async with self._reservation_lock:
-            target_gpu = self._find_best_gpu_for_critical(model)
-
-            if not target_gpu:
-                logger.error("CRITICAL: No healthy GPU available - REFUSING to run on CPU")
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "no_gpu_available", "message": "CRITICAL requests require GPU, no GPU available"},
-                )
-
-            # Auto-reserve if not already reserved
-            if target_gpu.name not in self._reservations:
-                logger.info(
-                    "Auto-reserving GPU %s for CRITICAL request %s (model=%s)",
-                    target_gpu.name, request.request_id, model,
-                )
-
-                # Cancel background load on this GPU
-                bg_task = self._bg_load_tasks.get(target_gpu.name)
-                if bg_task and not bg_task.done():
-                    bg_task.cancel()
-
-                self._reservations[target_gpu.name] = "critical"
-                self._reservation_times[target_gpu.name] = time.monotonic()
-                self._last_critical_activity[target_gpu.name] = time.monotonic()
-                target_gpu.reserved_by = "critical"
-                target_gpu.reserved_at = time.monotonic()
-
-                # Preempt all non-CRITICAL work
-                if target_gpu.active_request_count() > 0:
-                    logger.warning(
-                        "GPU %s has %d active request(s), preempting for CRITICAL",
-                        target_gpu.name, target_gpu.active_request_count(),
-                    )
-                    await self._preempt_all(target_gpu)
-
-                # Unload ALL models except the target (no point unloading what we're about to load)
-                await self.gpu_pool.unload_all(target_gpu, self._mgmt_client, except_models={model})
-            else:
-                # GPU already reserved — update activity timestamp
-                self._last_critical_activity[target_gpu.name] = time.monotonic()
-
-        # Load :30b if not present
-        if not target_gpu.has_model(model):
-            loaded = await self.gpu_pool.load_model(target_gpu, model, self._mgmt_client)
-            if not loaded:
-                # Aggressive retry: unload from ALL GPUs
-                logger.error(
-                    "CRITICAL: Failed to load %s on GPU %s, retrying with aggressive cleanup",
-                    model, target_gpu.name,
-                )
-                for backend in self.gpu_pool.all_backends:
-                    if backend.name != target_gpu.name:
-                        await self.gpu_pool.unload_all(backend, self._mgmt_client)
-                loaded = await self.gpu_pool.load_model(target_gpu, model, self._mgmt_client)
-                if not loaded:
-                    logger.error("CRITICAL: Failed to load %s even after aggressive cleanup - REFUSING CPU fallback", model)
-                    return JSONResponse(
-                        status_code=503,
-                        content={"error": "model_load_failed", "message": f"Failed to load {model} on GPU, CRITICAL cannot run on CPU"},
-                    )
-        elif len(target_gpu.loaded_models) > 1:
-            # :30b is loaded but other models too - unload extras
-            logger.warning("GPU %s has :30b + other models, unloading extras", target_gpu.name)
-            await self.gpu_pool.unload_all(target_gpu, self._mgmt_client, except_models={model})
-
-        self._last_critical_activity[target_gpu.name] = time.monotonic()
-        return await self._send_to_gpu(target_gpu, request)
-
-    async def _ensure_critical_reservation(self, gpu: GpuBackend) -> None:
-        """Ensure GPU has a CRITICAL reservation (creates one if missing).
-
-        Needed when router restarts but model is still loaded on GPU — step 2
-        routes CRITICAL there directly, but the reservation dict is empty.
-        Without this, subsequent CRITICAL requests won't find the reservation.
+        Creates or refreshes the reservation for this GPU. The watchdog will
+        auto-release it after orchestrator_idle_timeout_s of no CRITICAL activity.
+        Also cancels any background model loading on the GPU.
         """
-        if gpu.name in self._reservations:
-            self._last_critical_activity[gpu.name] = time.monotonic()
+        now = time.monotonic()
+        gpu = self.gpu_pool.backends.get(gpu_name)
+
+        if gpu_name in self._reservations:
+            # Refresh existing reservation
+            self._last_critical_activity[gpu_name] = now
             return
-        async with self._reservation_lock:
-            if gpu.name in self._reservations:  # Double-check after lock
-                self._last_critical_activity[gpu.name] = time.monotonic()
-                return
-            self._reservations[gpu.name] = "critical"
-            self._reservation_times[gpu.name] = time.monotonic()
-            self._last_critical_activity[gpu.name] = time.monotonic()
+
+        # Create new reservation
+        self._reservations[gpu_name] = "critical"
+        self._reservation_times[gpu_name] = now
+        self._last_critical_activity[gpu_name] = now
+        if gpu:
             gpu.reserved_by = "critical"
-            gpu.reserved_at = time.monotonic()
-            logger.info("Auto-created reservation for GPU %s (CRITICAL fast-path)", gpu.name)
+            gpu.reserved_at = now
 
-    def _find_best_gpu_for_critical(self, model: str) -> GpuBackend | None:
-        """Find best GPU for CRITICAL request, preferring to spread across GPUs.
+        # Cancel background model loading if running on this GPU
+        bg_task = self._bg_load_tasks.pop(gpu_name, None)
+        if bg_task and not bg_task.done():
+            bg_task.cancel()
+            logger.info("Cancelled background model loading on GPU %s (CRITICAL reservation)", gpu_name)
 
-        Priority order:
-        1. GPU with model loaded and NO active CRITICAL (ideal: zero wait)
-        2. Unreserved GPU (will load model, but no contention)
-        3. GPU with model loaded, least busy (serialize behind other CRITICAL)
-        4. Any healthy GPU, least busy
-        """
-        # 1. GPU with model loaded and NO active CRITICAL
-        for b in self.gpu_pool.healthy_backends:
-            if b.has_model(model) and not b.has_active_critical():
-                return b
+        logger.info("GPU %s reserved for CRITICAL (auto-created by queue dispatch)", gpu_name)
 
-        # 2. Unreserved GPU (will need to load model)
-        for b in self.gpu_pool.healthy_backends:
-            if b.name not in self._reservations:
-                return b
-
-        # 3. GPU with model loaded, least busy (serialize)
-        candidates = [b for b in self.gpu_pool.healthy_backends if b.has_model(model)]
-        if candidates:
-            return min(candidates, key=lambda b: b.active_request_count())
-
-        # 4. Any healthy GPU
-        if self.gpu_pool.healthy_backends:
-            return min(self.gpu_pool.healthy_backends, key=lambda b: b.active_request_count())
-
-        return None
-
-    # ── Send to backend ─────────────────────────────────────────────────
-
-    async def _send_to_gpu(self, gpu: GpuBackend, request: TrackedRequest) -> Response:
-        request.state = RequestState.RUNNING_GPU
-        request.target_gpu = gpu.name
-        gpu.active_requests[request.request_id] = request
-        gpu.last_activity = time.monotonic()
-
-        target_url = gpu.url
-        # ── Proxy logging ──
-        logger.info(
-            "REQUEST_PROXY: id=%s → GPU %s (%s) model=%s priority=%s",
-            request.request_id, gpu.name, target_url, request.model, request.priority.name,
-        )
-
-        if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
-            return await proxy_non_streaming(target_url, request)
-        return await proxy_streaming(target_url, request)
-
-    async def _send_to_cpu(self, request: TrackedRequest) -> Response:
-        request.state = RequestState.RUNNING_CPU
-
-        if not self.cpu_healthy:
-            logger.error(
-                "REQUEST_PROXY: id=%s → CPU unavailable (no healthy backend)",
-                request.request_id,
-            )
-            return JSONResponse(
-                status_code=503,
-                content={"error": "no_backend_available", "message": "Both GPU and CPU backends are unavailable"},
-            )
-
-        # ── Proxy logging ──
-        logger.info(
-            "REQUEST_PROXY: id=%s → CPU (%s) model=%s priority=%s",
-            request.request_id, self.cpu_url, request.model, request.priority.name,
-        )
-
-        if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
-            return await proxy_non_streaming(self.cpu_url, request)
-        return await proxy_streaming(self.cpu_url, request)
-
-    # ── Preemption ──────────────────────────────────────────────────────
-
-    async def _preempt_background(self, gpu: GpuBackend) -> None:
-        """Preempt all background requests running on a GPU backend."""
-        preempted = []
-        for req_id, req in list(gpu.active_requests.items()):
-            if req.priority >= Priority.NORMAL:
-                # Don't preempt short embedding requests
-                if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
-                    continue
-                req.cancel_event.set()
-                req.state = RequestState.PREEMPTED
-                preempted.append((req_id, req.priority.name))
-
-        if preempted:
-            logger.info(
-                "Preempted %d background request(s) on GPU %s: %s",
-                len(preempted), gpu.name, preempted,
-            )
-            # Give a brief grace period for streams to close
-            await asyncio.sleep(settings.preempt_grace_s)
-
-    async def _preempt_all(self, gpu: GpuBackend) -> None:
-        """Preempt ALL non-CRITICAL requests running on a GPU backend."""
-        preempted = []
-        for req_id, req in list(gpu.active_requests.items()):
-            # Never preempt CRITICAL requests (they take precedence)
-            if req.priority <= Priority.CRITICAL:
-                continue
-            # Don't preempt short embedding requests
-            if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
-                continue
-            req.cancel_event.set()
-            req.state = RequestState.PREEMPTED
-            preempted.append((req_id, req.model, req.priority.name))
-            logger.warning(
-                "PREEMPT: id=%s model=%s priority=%s → killed by CRITICAL request",
-                req_id, req.model, req.priority.name,
-            )
-
-        if preempted:
-            logger.warning(
-                "Preempted %d request(s) on GPU %s for CRITICAL work: %s",
-                len(preempted), gpu.name, preempted,
-            )
-            # Give a brief grace period for streams to close
-            await asyncio.sleep(settings.preempt_grace_s)
+    # ── Reservation lifecycle ───────────────────────────────────────────
 
     def _clear_reservation(self, gpu_name: str) -> None:
         """Clear reservation for a specific GPU."""
@@ -688,8 +342,17 @@ class OllamaRouter:
                             )
                             req.cancel_event.set()
 
-                if total_active > 0:
-                    logger.info("ACTIVE_REQUESTS: total=%d across %d GPU(s)", total_active, len(self.gpu_pool.all_backends))
+                # Also check CPU active requests via queue
+                cpu_active = 0
+                if self._queue:
+                    cpu_active = self._queue._cpu_active_count()
+
+                if total_active > 0 or cpu_active > 0:
+                    qdepth = self._queue.queue_depth if self._queue else {}
+                    logger.info(
+                        "ACTIVE_REQUESTS: gpu=%d cpu=%d queue=%s",
+                        total_active, cpu_active, qdepth,
+                    )
 
             except asyncio.CancelledError:
                 return
@@ -720,10 +383,6 @@ class OllamaRouter:
             except ValueError:
                 pass
         return MODEL_TO_PRIORITY.get(model, Priority.NORMAL)
-
-    def _is_reserved_by_other(self, gpu: GpuBackend) -> bool:
-        """Check if GPU is reserved."""
-        return gpu.reserved_by is not None
 
     @property
     def is_reserved(self) -> bool:

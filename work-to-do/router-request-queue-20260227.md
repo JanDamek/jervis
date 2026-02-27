@@ -1,6 +1,22 @@
 # Router — interní request queue
 
 **Priorita**: HIGH
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+Implemented in `app/request_queue.py` (new) + refactored `app/router_core.py`:
+- Two-tier queue: unlimited CRITICAL + bounded NORMAL (max 10)
+- Max 2 concurrent requests per backend
+- CRITICAL always GPU, preempts NORMAL if needed
+- NORMAL gets GPU or CPU (small models <20GB only)
+- Fast-path dispatch (skip queuing if slot available)
+- Background dispatcher assigns queued requests to freed slots
+- CRITICAL auto-creates GPU reservations, watchdog auto-releases after idle
+- Client disconnect monitoring dequeues/cancels zombie requests
+- Queue depth exposed in health + status endpoints
+
+---
 
 ## Problém
 

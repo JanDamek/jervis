@@ -24,7 +24,9 @@
 
 ### Overview
 
-**All LLM requests** in the system (Orchestrator, KB, Correction Agent) now route through **Ollama Router** (port 11430), which intelligently distributes requests between GPU and CPU backends based on priority and availability.
+**All LLM requests** in the system (Orchestrator, KB, Correction Agent) route through **Ollama Router** (port 11430), which uses a **two-tier request queue** to distribute requests between GPU and CPU backends based on priority and availability.
+
+**Router ALWAYS accepts requests.** Never returns 503/reject. Each request is queued and dispatched when a backend slot becomes available.
 
 ### Architecture
 
@@ -40,12 +42,20 @@
                          ▼
               ┌──────────────────────┐
               │   Ollama Router      │  Port: 11430
-              │   (Priority Proxy)   │  Host: 192.168.100.117
+              │   (Queue + Proxy)    │  Host: 192.168.100.117
               │                      │
-              │  Request Analysis:   │
-              │  • Check priority    │
-              │  • Check GPU state   │
-              │  • Route to backend  │
+              │  ┌────────────────┐  │
+              │  │ CRITICAL queue │  │  Unlimited, GPU-only
+              │  │ (priority 0)  │  │  Preempts NORMAL
+              │  ├────────────────┤  │
+              │  │ NORMAL queue   │  │  Max 10, GPU+CPU
+              │  │ (priority 1)  │  │  Back-pressure at limit
+              │  └────────────────┘  │
+              │                      │
+              │  Dispatcher:         │
+              │  • CRITICAL first    │
+              │  • Max 2 per backend │
+              │  • Least-busy GPU    │
               └──────┬───────────────┘
                      │
        ┌─────────────┼────────────────┐
@@ -53,49 +63,57 @@
        ▼             ▼                ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
 │ GPU Backend 1│ │ GPU Backend 2│ │  CPU Backend     │
-│ (from        │ │ (from        │ │  (from           │
-│ GPU_BACKENDS │ │ GPU_BACKENDS │ │ CPU_BACKEND_URL) │
-│ env var)     │ │ env var)     │ │                  │
-│ • P40 24GB   │ │ • P40 24GB   │ │ • 200GB RAM      │
-│ • Fast       │ │ • Fast       │ │ • Slow           │
+│ (P40 24GB)   │ │ (P40 24GB)   │ │  (200GB RAM)     │
+│ Max 2 slots  │ │ Max 2 slots  │ │  Max 2 slots     │
+│ CRIT+NORMAL  │ │ CRIT+NORMAL  │ │  NORMAL only     │
 └──────────────┘ └──────────────┘ └──────────────────┘
 ```
 
+### Request Queue
+
+Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
+
+- **CRITICAL queue**: Unlimited — chat, foreground, interactive (orchestrator). Always GPU, never CPU. Preempts NORMAL if all GPU slots busy.
+- **NORMAL queue**: Bounded (max 10) — background, KB ingest, qualification. GPU preferred, CPU fallback for small models. Returns 429 back-pressure when full.
+- **Dispatch**: Fast-path (immediate) if slot available, otherwise queued. Background dispatcher assigns queued requests to freed slots. CRITICAL always dispatched first.
+- **Concurrency**: Max 2 concurrent requests per backend (Ollama handles 2 parallel well; more degrades all).
+- **Client disconnect**: Monitored via `cancel_event` — request dequeued or proxy cancelled on disconnect.
+
 ### Priority Levels
 
-| Priority | Value | Source | GPU Behavior | Preemption |
-|----------|-------|--------|--------------|------------|
-| **CRITICAL** | 0 | Orchestrator FOREGROUND (via `X-Ollama-Priority: 0`) | Reserved GPU, always GPU | Cannot be preempted |
-| **NORMAL** | 1 | Everything else (no header) | GPU when free, CPU fallback | Preempted by CRITICAL |
+| Priority | Value | Source | Routing | Preemption |
+|----------|-------|--------|---------|------------|
+| **CRITICAL** | 0 | Orchestrator FOREGROUND (via `X-Ollama-Priority: 0`) | GPU only, auto-reserves GPU | Cannot be preempted, preempts NORMAL |
+| **NORMAL** | 1 | Everything else (no header) | GPU preferred, CPU fallback | Preempted by CRITICAL |
 
-### Request Flow Example
+### GPU Reservations
+
+When a CRITICAL request is dispatched to a GPU, the router automatically creates a reservation for that GPU. Reservations prevent NORMAL requests from using the GPU while the orchestrator session is active.
+
+- **Auto-created**: On first CRITICAL dispatch to a GPU
+- **Refreshed**: On each subsequent CRITICAL dispatch to the same GPU
+- **Idle timeout**: Auto-released after 60s of no CRITICAL activity (configurable)
+- **Absolute timeout**: Safety net at 600s (configurable)
+- **On release**: Background model set is loaded onto the freed GPU after a 5s delay
+
+### Request Flow
 
 ```python
 # 1. Orchestrator makes LLM request (FOREGROUND)
-response = await llm_provider.completion(
-    messages=[...],
-    tier=ModelTier.LOCAL_STANDARD,
-)
-# Internally calls: http://192.168.100.117:11430/api/generate
-# With header: X-Ollama-Priority: 0 (CRITICAL, FOREGROUND only)
+# → X-Ollama-Priority: 0 header → CRITICAL queue
+# → Immediate dispatch if GPU slot available (fast path)
+# → Otherwise queued, NORMAL preempted if needed
+# → GPU auto-reserved for orchestrator session
 
-# 2. Ollama Router receives request
-#    → Checks priority header (0 = CRITICAL)
-#    → Auto-reserves GPU, loads :30b model
-#    → Routes to GPU backend
+# 2. KB makes embedding request (no priority header)
+# → NORMAL queue
+# → GPU if slot available and no CRITICAL reservation blocks it
+# → CPU fallback for small models (<20GB VRAM estimate)
+# → Queued if all backends busy
 
-# 3. KB makes embedding request
-embedding = await ollama.embed(
-    model="nomic-embed-text",
-    input="Sample text",
-)
-# Calls: http://192.168.100.117:11430/api/embed
-# No priority header → Auto routing
-
-# 4. Ollama Router receives embedding request
-#    → No priority header → Auto mode
-#    → If GPU idle → route to GPU (fast)
-#    → If GPU busy with orchestrator → route to CPU (slower but works)
+# 3. Backend finishes a request
+# → Dispatcher wakes up, checks queues (CRITICAL first)
+# → Assigns next request to freed slot
 ```
 
 ### Configuration (All Services)
@@ -108,37 +126,44 @@ embedding = await ollama.embed(
 | | `OLLAMA_INGEST_BASE_URL` | `http://192.168.100.117:11430` |
 | **KB (write)** | Same as KB read | |
 
+### Router Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_concurrent_per_backend` | 2 | Max parallel requests per Ollama instance |
+| `normal_queue_max` | 10 | NORMAL queue limit (429 when full) |
+| `orchestrator_idle_timeout_s` | 60 | Auto-release GPU reservation after idle |
+| `orchestrator_reservation_timeout_s` | 600 | Absolute reservation timeout (safety net) |
+| `max_request_timeout_s` | 300 | Cancel zombie requests after this |
+| `background_load_delay_s` | 5 | Delay before loading bg models after release |
+
 **Key point:** All services transparently use Ollama Router. No code changes needed – just updated environment variables.
 
-### VRAM Priority Routing (Step 5)
+### VRAM Management
 
-Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). KB extraction now uses :30b (same model as orchestrator) — CRITICAL extraction shares GPU with orchestrator (no model swap needed).
-
-When a **bigger** model is requested (e.g., 30B arrives while 14B is loaded):
-
-1. Marks GPU as `loading_in_progress` (other requests → CPU during swap)
-2. Waits for active requests to complete
-3. Unloads all models
-4. Loads the bigger model first (VRAM priority)
-5. Reloads only **embedding** models alongside (not 14b — too much CPU offload)
-6. Clears `loading_in_progress` flag
-
-When an **embedding** model is requested, it loads alongside existing models. Non-embedding smaller models (14b) with :30b loaded → CPU fallback.
+Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). KB extraction uses :30b (same model as orchestrator).
 
 ```
 GPU state when 30b active:
-  qwen3-coder-tool:30b  (~25GB)  → GPU (VRAM priority, orchestrator + KB extraction)
-  qwen3-embedding:8b    (~5GB)   → GPU (alongside)
+  qwen3-coder-tool:30b  (~25GB)  → GPU (orchestrator + KB extraction)
+  qwen3-embedding:8b    (~5GB)   → GPU (alongside, ~0.3s)
   qwen2.5:7b                     → CPU (simple classification only)
+
+Total capacity: 2 GPU × 2 + 1 CPU × 2 = 6 slots
+(realistically :30b only on GPU → 4 GPU slots for large models)
 ```
 
-### Benefits
+### Key Files
 
-1. **VRAM priority for big models** - 30B always gets GPU, loaded first
-2. **Selective co-location** - Only embedding alongside 30b (14b → CPU)
-3. **Automatic fallback** - Non-embedding requests use CPU when 30b loaded
-4. **No model thrashing** - `loading_in_progress` prevents concurrent routing during swap
-5. **Transparent** - Services don't know about routing logic
+| File | Purpose |
+|------|---------|
+| `app/router_core.py` | OllamaRouter — entry point, reservation management, watchdogs |
+| `app/request_queue.py` | RequestQueue — two-tier queue, dispatcher, slot finding, execution |
+| `app/gpu_state.py` | GpuPool, GpuBackend — GPU state tracking, model load/unload |
+| `app/proxy.py` | HTTP proxy — streaming and non-streaming with cancellation |
+| `app/config.py` | Settings via environment variables |
+| `app/models.py` | Priority, TrackedRequest, model sets |
+| `app/main.py` | FastAPI endpoints |
 
 ---
 

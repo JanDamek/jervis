@@ -336,12 +336,13 @@ async def router_health():
     else:
         status = "unhealthy"
 
+    qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
     return HealthResponse(
         status=status,
         gpu_backends=gpu_backends,
         cpu_backend={"healthy": router.cpu_healthy, "url": router.cpu_url},
         orchestrator_reserved=router.is_reserved,
-        queue_depth=0,
+        queue_depth=qdepth["critical"] + qdepth["normal"],
     )
 
 
@@ -390,6 +391,7 @@ async def router_status():
             "last_activity": {k: v for k, v in router._last_critical_activity.items()},
         },
         metrics={
+            "queue_depth": router._queue.queue_depth if router._queue else {},
             "note": "See /router/metrics for Prometheus format",
         },
     )
