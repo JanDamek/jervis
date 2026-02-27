@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     total_context_window: int = 32_768       # Model context window (Qwen3-30B default)
     system_prompt_reserve: int = 2_000       # Tokens reserved for system prompt + tools
     response_reserve: int = 4_000            # Tokens reserved for LLM response
-    recent_message_count: int = 20           # Max recent verbatim messages to keep
+    recent_message_count: int = 100          # Max recent verbatim messages to load (budget limits actual inclusion)
     max_summary_blocks: int = 15             # Max compressed summary blocks to load
     compress_threshold: int = 20             # Compress when >=N unsummarized messages
     compress_max_retries: int = 2            # Max compression retries on LLM failure

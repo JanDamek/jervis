@@ -522,6 +522,8 @@ class ChatContextAssembler:
                     "- Piš česky\n"
                     "- Souhrn: zachyť VŠECHNA hlavní témata, rozhodnutí a akce — délka dle potřeby obsahu (ne max 500 znaků)\n"
                     "- U každého tématu uveď kontext: název projektu/klienta, zmíněné entity (issue ID, soubory, služby)\n"
+                    "- Zachovej identifikátory z konverzace: sourceUrn, correlationId, project/client ID, ticket ID\n"
+                    "- Příklad: '[Projekt nUFO]: Řešili deployment — rozhodnutí: PostgreSQL 16. Detail viz TPT-12345'\n"
                     "- Pokud konverzace zahrnuje VÍCE projektů, jasně odděluj: '[Projekt X]: ..., [Projekt Y]: ...'\n"
                     "- Pokud najdeš zprávu '[KONTEXT PŘEPNUT]', je to boundary mezi projekty — odděluj je v souhrnu\n"
                     "- Klíčová rozhodnutí: důležitá rozhodnutí učiněná v konverzaci\n"
