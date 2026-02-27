@@ -18,10 +18,27 @@ import json
 import logging
 
 import httpx
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ── Async MongoDB handle (motor) ────────────────────────────────────────
+
+_motor_client: AsyncIOMotorClient | None = None
+
+
+async def get_mongo_db():
+    """Return async MongoDB database handle for orchestrator collections.
+
+    Uses motor (async) since callers are async (topic_tracker, consolidation).
+    Reuses a single motor client across calls.
+    """
+    global _motor_client
+    if _motor_client is None:
+        _motor_client = AsyncIOMotorClient(settings.mongodb_url)
+    return _motor_client.get_default_database()
 
 
 class KotlinServerClient:
