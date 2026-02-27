@@ -144,4 +144,17 @@ data class ComponentTemplateDto(
     val defaultEnvVars: Map<String, String> = emptyMap(),
     val defaultPorts: List<PortMappingDto> = emptyList(),
     val defaultVolumeMountPath: String? = null,
+    val propertyMappingTemplates: List<PropertyMappingTemplateDto> = emptyList(),
+)
+
+/**
+ * Predefined property mapping template for a component type.
+ * Describes how to auto-generate ENV vars when linking project → infra.
+ * Template syntax: {host}, {port}, {name}, {env:VAR_NAME}
+ */
+@Serializable
+data class PropertyMappingTemplateDto(
+    val envVarName: String,
+    val valueTemplate: String,
+    val description: String,
 )

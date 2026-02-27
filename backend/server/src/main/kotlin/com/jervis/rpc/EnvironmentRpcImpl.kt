@@ -9,11 +9,13 @@ import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.dto.environment.PortMappingDto
+import com.jervis.dto.environment.PropertyMappingTemplateDto
 import com.jervis.mapper.toDocument
 import com.jervis.mapper.toDto
 import com.jervis.service.IEnvironmentService
 import com.jervis.service.environment.COMPONENT_DEFAULTS
 import com.jervis.service.environment.EnvironmentK8sService
+import com.jervis.service.environment.PROPERTY_MAPPING_TEMPLATES
 import com.jervis.service.environment.EnvironmentService
 import com.jervis.service.error.ErrorLogService
 import org.bson.types.ObjectId
@@ -81,12 +83,20 @@ class EnvironmentRpcImpl(
     override suspend fun getComponentTemplates(): List<ComponentTemplateDto> =
         executeWithErrorHandling("getComponentTemplates") {
             COMPONENT_DEFAULTS.map { (type, defaults) ->
+                val mappingTemplates = PROPERTY_MAPPING_TEMPLATES[type]?.map {
+                    PropertyMappingTemplateDto(
+                        envVarName = it.envVarName,
+                        valueTemplate = it.valueTemplate,
+                        description = it.description,
+                    )
+                } ?: emptyList()
                 ComponentTemplateDto(
                     type = ComponentTypeEnum.valueOf(type.name),
                     versions = defaults.versions.map { ComponentVersionDto(label = it.label, image = it.image) },
                     defaultEnvVars = defaults.defaultEnvVars,
                     defaultPorts = defaults.ports.map { PortMappingDto(it.containerPort, it.servicePort, it.name) },
                     defaultVolumeMountPath = defaults.defaultVolumeMountPath,
+                    propertyMappingTemplates = mappingTemplates,
                 )
             }
         }
