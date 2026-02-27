@@ -3,8 +3,6 @@ package com.jervis.service
 import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
-import com.jervis.dto.environment.ExecResultDto
-import com.jervis.dto.environment.FileUploadResultDto
 import kotlinx.rpc.annotations.Rpc
 
 /**
@@ -46,32 +44,4 @@ interface IEnvironmentService {
 
     /** Sync K8s resources (ConfigMaps, re-apply deployments) for a RUNNING environment. */
     suspend fun syncEnvironmentResources(id: String): EnvironmentDto
-
-    /**
-     * Upload a file to a running component pod.
-     * @param id Environment ID
-     * @param componentName Component name or ID
-     * @param fileName Original file name
-     * @param fileBase64 File content encoded as Base64
-     * @param targetDir Target directory in pod (default /tmp)
-     */
-    suspend fun uploadFileToComponent(
-        id: String,
-        componentName: String,
-        fileName: String,
-        fileBase64: String,
-        targetDir: String = "/tmp",
-    ): FileUploadResultDto
-
-    /**
-     * Execute a command inside a running component pod.
-     * @param id Environment ID
-     * @param componentName Component name or ID
-     * @param command Command as list of strings (e.g., ["psql", "-f", "/tmp/dump.sql"])
-     */
-    suspend fun execInComponent(
-        id: String,
-        componentName: String,
-        command: List<String>,
-    ): ExecResultDto
 }

@@ -1338,6 +1338,12 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `restart_deployment(namespace, name)` | Trigger rolling restart |
 | `get_namespace_status(namespace)` | Overall namespace health (pod counts, crashing pods) |
 
+**Design Philosophy: Chat-First Orchestration**
+- File upload, exec, and list-files are **orchestrator-only** operations (NOT exposed in UI)
+- User attaches files in chat → orchestrator picks them up and uploads to pods via MCP tools
+- UI (ComponentsTab, EnvironmentManagerScreen) is for **configuration and monitoring only**
+- All operational actions (deploy, stop, sync, upload, exec) flow through chat → orchestrator → internal REST
+
 **Tool Loading Strategy:**
 - CRUD tools are in `ENVIRONMENT_TOOLS` list + `DEVOPS_AGENT_TOOLS` (NOT in ALL_RESPOND_TOOLS_FULL)
 - Chat respond node does NOT load environment tools (saves ~40k context tokens)

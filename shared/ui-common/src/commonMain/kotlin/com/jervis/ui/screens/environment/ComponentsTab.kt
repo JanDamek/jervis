@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,24 +31,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.environment.ComponentStateEnum
 import com.jervis.dto.environment.ComponentTemplateDto
-import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
-import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JRemoveIconButton
-import com.jervis.ui.design.JSecondaryButton
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.screens.settings.sections.AddComponentDialog
 import com.jervis.ui.screens.settings.sections.componentTypeLabel
-import com.jervis.ui.util.pickFile
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 private fun componentStateLabel(state: ComponentStateEnum): String = when (state) {
     ComponentStateEnum.PENDING -> "Čekající"
@@ -121,8 +113,6 @@ fun ComponentsTab(
                         component = component,
                         isExpanded = isExpanded,
                         isEditing = isEditing,
-                        environment = environment,
-                        repository = repository,
                         onToggleExpand = {
                             expandedComponentId = if (isExpanded) null else component.id
                             if (isExpanded) editingComponentId = null
@@ -173,8 +163,6 @@ private fun ComponentCard(
     component: EnvironmentComponentDto,
     isExpanded: Boolean,
     isEditing: Boolean,
-    environment: EnvironmentDto,
-    repository: JervisRepository,
     onToggleExpand: () -> Unit,
     onEdit: () -> Unit,
     onSave: (EnvironmentComponentDto) -> Unit,
@@ -249,13 +237,9 @@ private fun ComponentCard(
                         onCancel = onCancelEdit,
                     )
                 } else {
-                    // Read-only detail + Edit button + upload
                     ComponentReadOnlyDetail(
                         component = component,
                         onEdit = onEdit,
-                        environmentId = environment.id,
-                        environmentState = environment.state,
-                        repository = repository,
                     )
                 }
             }
@@ -265,21 +249,12 @@ private fun ComponentCard(
 
 /**
  * Read-only detail view of a component (shown when expanded but not editing).
- * Includes file upload section for infrastructure components in RUNNING environments.
  */
-@OptIn(ExperimentalEncodingApi::class)
 @Composable
 private fun ComponentReadOnlyDetail(
     component: EnvironmentComponentDto,
     onEdit: () -> Unit,
-    environmentId: String = "",
-    environmentState: EnvironmentStateEnum = EnvironmentStateEnum.PENDING,
-    repository: JervisRepository? = null,
 ) {
-    val scope = rememberCoroutineScope()
-    var uploadStatus by remember { mutableStateOf<String?>(null) }
-    var isUploading by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier.padding(start = 28.dp, end = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -316,82 +291,6 @@ private fun ComponentReadOnlyDetail(
         }
         if (component.configMapData.isNotEmpty()) {
             com.jervis.ui.design.JKeyValueRow("Config soubory", "${component.configMapData.size} definováno")
-        }
-
-        // File upload section — available for infra components in RUNNING environments
-        val isInfra = component.type != ComponentTypeEnum.PROJECT
-        val isRunning = environmentState == EnvironmentStateEnum.RUNNING
-        if (isInfra && isRunning && repository != null && environmentId.isNotBlank()) {
-            val defaultTargetDir = component.volumeMountPath ?: "/tmp"
-            var targetDir by remember { mutableStateOf(defaultTargetDir) }
-
-            Spacer(Modifier.height(JervisSpacing.fieldGap))
-            androidx.compose.material3.HorizontalDivider()
-            Spacer(Modifier.height(JervisSpacing.fieldGap))
-
-            Text(
-                "Nahrát soubor do podu",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                "SQL dump, konfigurace, seed data — soubor bude nahrán do zvoleného adresáře v běžícím podu.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            com.jervis.ui.design.JTextField(
-                value = targetDir,
-                onValueChange = { targetDir = it },
-                label = "Cílový adresář",
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(4.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                JSecondaryButton(
-                    onClick = {
-                        val pickedFile = pickFile("Vybrat soubor pro upload")
-                        if (pickedFile != null) {
-                            isUploading = true
-                            uploadStatus = "Nahrávám ${pickedFile.filename} (${pickedFile.sizeBytes / 1024} KB)..."
-                            scope.launch(Dispatchers.Default) {
-                                try {
-                                    val base64 = Base64.encode(pickedFile.contentBytes)
-                                    val result = repository.environments.uploadFileToComponent(
-                                        id = environmentId,
-                                        componentName = component.name,
-                                        fileName = pickedFile.filename,
-                                        fileBase64 = base64,
-                                        targetDir = targetDir.ifBlank { "/tmp" },
-                                    )
-                                    uploadStatus = "Nahráno: ${result.targetPath} (${result.sizeBytes / 1024} KB)"
-                                } catch (e: Exception) {
-                                    uploadStatus = "Chyba: ${e.message}"
-                                } finally {
-                                    isUploading = false
-                                }
-                            }
-                        }
-                    },
-                    enabled = !isUploading,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (isUploading) "Nahrávám..." else "Vybrat soubor")
-                }
-            }
-            uploadStatus?.let { status ->
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (status.startsWith("Chyba")) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
 
         Spacer(Modifier.height(JervisSpacing.fieldGap))
