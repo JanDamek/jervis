@@ -76,6 +76,9 @@ class RequestQueue:
 
         self._max_per_backend = settings.max_concurrent_per_backend
 
+        # Round-robin counter for tie-breaking when multiple GPUs have same load
+        self._rr_counter: int = 0
+
     async def start(self) -> None:
         self._dispatcher_task = asyncio.create_task(self._dispatch_loop())
         logger.info(
@@ -283,12 +286,12 @@ class RequestQueue:
         # Prefer GPU that already has the model
         with_model = [b for b in gpu_candidates if b.has_model(model)]
         if with_model:
-            best = min(with_model, key=lambda b: b.active_request_count())
+            best = self._pick_least_busy_rr(with_model)
             return f"gpu:{best.name}"
 
         # GPU without model but available (will need load)
         if gpu_candidates:
-            best = min(gpu_candidates, key=lambda b: b.active_request_count())
+            best = self._pick_least_busy_rr(gpu_candidates)
             return f"gpu:{best.name}"
 
         # CRITICAL never goes to CPU
@@ -300,6 +303,14 @@ class RequestQueue:
             return "cpu"
 
         return None
+
+    def _pick_least_busy_rr(self, candidates: list[GpuBackend]) -> GpuBackend:
+        """Pick least busy GPU. Round-robin tie-break when equal load."""
+        min_count = min(b.active_request_count() for b in candidates)
+        tied = [b for b in candidates if b.active_request_count() == min_count]
+        pick = tied[self._rr_counter % len(tied)]
+        self._rr_counter += 1
+        return pick
 
     def _cpu_active_count(self) -> int:
         # Clean up finished requests

@@ -60,6 +60,8 @@ class OllamaRouter:
         # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
         await self._check_cpu_health()
+        # Preload orchestrator model on all GPUs that don't have it
+        await self._preload_model_on_all_gpus(settings.orchestrator_model)
         # Start request queue
         self._queue = RequestQueue(self.gpu_pool, self.cpu_url, self)
         await self._queue.start()
@@ -81,6 +83,24 @@ class OllamaRouter:
                 task.cancel()
         if self._mgmt_client:
             await self._mgmt_client.aclose()
+
+    async def _preload_model_on_all_gpus(self, model: str) -> None:
+        """Preload model on all healthy GPUs that don't have it yet.
+
+        Ensures both GPUs are ready to accept requests from the start,
+        preventing all traffic from going to the single GPU that happens
+        to have the model loaded.
+        """
+        for backend in self.gpu_pool.healthy_backends:
+            if backend.has_model(model):
+                logger.info("GPU %s already has %s loaded", backend.name, model)
+                continue
+            logger.info("Preloading %s on GPU %s ...", model, backend.name)
+            ok = await self.gpu_pool.load_model(backend, model, self._mgmt_client)
+            if ok:
+                logger.info("Preloaded %s on GPU %s", model, backend.name)
+            else:
+                logger.warning("Failed to preload %s on GPU %s", model, backend.name)
 
     # ── Main routing entry point ────────────────────────────────────────
 
