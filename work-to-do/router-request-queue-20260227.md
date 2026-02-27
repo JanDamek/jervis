@@ -5,8 +5,8 @@
 ## Problém
 
 Router aktuálně funguje **fire-through**: každý request se okamžitě routuje na backend
-nebo vrátí 503/CPU fallback. Pokud jsou obě GPU busy (reservace, active requesty),
-request buď čeká v `_wait_for_gpu` (blokuje caller 60s) nebo jde na CPU (pomalé pro :30b).
+nebo vrátí 503/CPU fallback. Pokud jsou obě GPU busy, request buď čeká v `_wait_for_gpu`
+(blokuje caller 60s) nebo jde na CPU (pomalé pro :30b).
 
 KB a orchestrátor neví a nemají vědět o backendu. Chtějí poslat request a dostat odpověď.
 Router by měl fungovat jako **transparent proxy s frontou**.
@@ -16,6 +16,22 @@ Router by měl fungovat jako **transparent proxy s frontou**.
 **Router VŽDY přijme request.** Nikdy nevrací 503/reject. Každý request se zařadí do queue
 a router sám řídí vytížení backendů. Calleři (KB, orchestrátor, chat) neřeší routing —
 pošlou request a dostanou odpověď.
+
+## Benchmark backendů (2026-02-27)
+
+Měřeno s `qwen3-embedding:8b` (model předem načtený, měříme čistý výkon):
+
+| Backend | Short (~5 tokenů) | Long (~100 tokenů) | Cold load |
+|---------|-------------------|---------------------|-----------|
+| **GPU-1** (p40-1) | **~0.23s** | **~0.36s** | ~5s |
+| **GPU-2** (p40-2) | **~0.30s** | **~0.43s** | ~5s |
+| **CPU** | ~0.65s | **~2.9s** | ~47s |
+
+**Závěr:**
+- GPU embedding = **~0.3s** — zanedbatelné, neblokuje :30b inference
+- CPU embedding = **~3s** — 8× pomalejší, jen pro background
+- Cold load na CPU = **47s** — nepřijatelné pro CRITICAL
+- Auto-benchmark při startu routeru zbytečná komplikace — výkon je stabilní a známý
 
 ## Požadavek
 
@@ -27,8 +43,15 @@ NORMAL queue:    [max N]     — background, KB ingest, qualification
 ```
 
 - **CRITICAL se NESMÍ nikdy ztratit ani odmítnout** — queue je neomezená
-- NORMAL queue má limit (např. 10) — při překročení vrátí back-pressure calleru
+- NORMAL queue má limit (např. 10) — při překročení back-pressure na callera
 - Router podle stavu obou front řídí přidělování backendů
+
+### CRITICAL = vždy GPU, nikdy CPU
+
+- **CRITICAL NIKDY na CPU** — ani embedding, ani :30b, nic
+- CRITICAL embedding na GPU jako **druhý request** vedle :30b — 0.3s je zanedbatelné
+- CRITICAL vždy GPU — preemptne NORMAL pokud třeba
+- CPU = **výhradně background** práce (KB ingest, qualification)
 
 ### Řízení backendů podle queue
 
@@ -53,12 +76,27 @@ Router je **jediný kdo rozhoduje** o přidělení GPU/CPU. Logika:
 - Nesmí stát GPU idle když jsou requesty v queue
 - `find_with_model` vrací least-busy (opraveno) — queue to doplní o buffering
 
-### CPU backend
+## Omezení: max 2 concurrent requesty na backend
 
-- CPU backend JE součástí poolu **pouze pro NORMAL** requesty (7b, embedding)
-- **CRITICAL NIKDY na CPU** — ani embedding, ani :30b, nic
-- CRITICAL vždy GPU — preemptne NORMAL pokud třeba
-- CPU = jen background práce (KB ingest, qualification)
+Ollama zvládne 2 paralelní requesty rozumně (context splitting). Víc degraduje výkon
+všech requestů — nesmí se posílat víc než 2 na jeden backend.
+
+```
+max_concurrent_per_backend = 2
+
+Celková kapacita = 2 GPU × 2 + 1 CPU × 2 = 6 slotů
+(reálně :30b jen na GPU → 4 GPU sloty pro velké modely)
+```
+
+## Timeouty callerů
+
+Protože request teď může čekat v queue, calleři musí mít **dostatečný timeout**:
+
+- Orchestrátor: 300s (`HEARTBEAT_DEAD_SECONDS`) — OK
+- KB: `proxy_connect_timeout_s: 10` — **příliš krátké**, zvýšit na 30+
+- Router sám timeout nemá — request čeká v queue dokud se nezpracuje nebo caller nedisconnectne
+- Client disconnect monitoring (existující `_monitor_client_disconnect`) — pokud caller
+  zruší HTTP spojení, request vypadne z queue
 
 ## Návrh implementace
 
@@ -131,33 +169,6 @@ Když backend dokončí request → `_dispatch_event.set()` → dispatcher zkont
 # V route_request finally bloku (po cleanup active_requests):
 self._queue._dispatch_event.set()
 ```
-
-## Omezení: max 2 concurrent requesty na backend
-
-Ollama zvládne 2 paralelní requesty rozumně (context splitting). Víc degraduje výkon
-všech requestů — nesmí se posílat víc než 2 na jeden backend.
-
-```
-max_concurrent_per_backend = 2
-
-Celková kapacita = 2 GPU × 2 + 1 CPU × 2 = 6 slotů
-(reálně :30b jen na GPU → 4 sloty pro velké modely)
-```
-
-Dispatcher kontroluje `backend.active_request_count() < max_concurrent_per_backend`
-před přidělením.
-
-## Timeouty callerů
-
-Protože request teď může čekat v queue, calleři musí mít **dostatečný timeout**:
-
-- Orchestrátor/KB volají router přes HTTP — timeout musí pokrýt:
-  `čekání v queue + inference time`
-- Aktuálně orchestrátor má 300s (`HEARTBEAT_DEAD_SECONDS`) — to by mělo stačit
-- KB má `proxy_connect_timeout_s: 10` — **příliš krátké** pro queue, zvýšit na 30+
-- Router sám timeout nemá — request čeká v queue dokud se nezpracuje nebo caller nedisconnectne
-- Client disconnect monitoring (existující `_monitor_client_disconnect`) funguje i pro
-  queued requesty — pokud caller zruší HTTP spojení, request se odstraní z queue
 
 ## Soubory
 
