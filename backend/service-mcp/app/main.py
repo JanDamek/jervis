@@ -903,6 +903,403 @@ async def cancel_scheduled_task(task_id: str) -> str:
     return f"Error: Cannot cancel task in state={doc.get('state')} (already processing or finished)."
 
 
+# ── Environment Management Tools (CRUD) ──────────────────────────────────
+# Phase 4: Chat-first environment management.
+# Agents can create, configure, deploy, and inspect environments via MCP.
+# These call the Kotlin backend's /internal/environments/* REST endpoints.
+
+
+@mcp.tool
+async def environment_list(client_id: str = "") -> str:
+    """List all environments, optionally filtered by client.
+
+    Returns environment IDs, names, namespaces, states, and component counts.
+
+    Args:
+        client_id: Filter by client ID (leave empty for all environments)
+    """
+    params = {}
+    if client_id:
+        params["clientId"] = client_id
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/environments",
+            params=params,
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        envs = resp.json()
+        if not envs:
+            return "No environments found."
+        lines = []
+        for env in envs:
+            components = env.get("components", [])
+            infra = sum(1 for c in components if c.get("type") != "PROJECT")
+            apps = sum(1 for c in components if c.get("type") == "PROJECT")
+            lines.append(
+                f"- {env['name']} (id={env['id']})\n"
+                f"  namespace={env['namespace']}, state={env['state']}\n"
+                f"  components: {len(components)} ({infra} infra, {apps} app)"
+            )
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def environment_get(environment_id: str) -> str:
+    """Get detailed information about a specific environment.
+
+    Shows all configuration including components, links, property mappings,
+    agent instructions, and current state.
+
+    Args:
+        environment_id: The environment ID
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+
+        lines = [
+            f"Environment: {env['name']}",
+            f"ID: {env['id']}",
+            f"Namespace: {env['namespace']}",
+            f"State: {env['state']}",
+            f"Client: {env['clientId']}",
+        ]
+        if env.get("groupId"):
+            lines.append(f"Group: {env['groupId']}")
+        if env.get("projectId"):
+            lines.append(f"Project: {env['projectId']}")
+        if env.get("description"):
+            lines.append(f"Description: {env['description']}")
+        lines.append(f"Storage: {env.get('storageSizeGi', 5)}Gi")
+
+        components = env.get("components", [])
+        if components:
+            lines.append(f"\nComponents ({len(components)}):")
+            for comp in components:
+                state_str = f" [{comp.get('componentState', 'PENDING')}]" if comp.get("componentState") else ""
+                img = comp.get("image") or "(no image)"
+                lines.append(f"  - {comp['name']} ({comp['type']}){state_str}")
+                lines.append(f"    image: {img}")
+                if comp.get("ports"):
+                    ports_str = ", ".join(
+                        f"{p['containerPort']}" + (f":{p['servicePort']}" if p.get('servicePort') else "")
+                        for p in comp["ports"]
+                    )
+                    lines.append(f"    ports: {ports_str}")
+                if comp.get("envVars"):
+                    lines.append(f"    env: {len(comp['envVars'])} vars")
+                if comp.get("sourceRepo"):
+                    lines.append(f"    source: {comp['sourceRepo']}@{comp.get('sourceBranch', 'main')}")
+                if comp.get("dockerfilePath"):
+                    lines.append(f"    dockerfile: {comp['dockerfilePath']}")
+
+        if env.get("agentInstructions"):
+            lines.append(f"\nAgent Instructions:\n{env['agentInstructions']}")
+
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def environment_create(
+    client_id: str,
+    name: str,
+    namespace: str = "",
+    description: str = "",
+    agent_instructions: str = "",
+    storage_size_gi: int = 5,
+) -> str:
+    """Create a new environment definition.
+
+    Creates the environment in DB (state=PENDING). Use environment_deploy to
+    actually provision K8s resources.
+
+    Args:
+        client_id: Client ID this environment belongs to
+        name: Human-readable environment name
+        namespace: K8s namespace (auto-generated from name if empty)
+        description: Optional description
+        agent_instructions: Free-text instructions for agents about this environment
+        storage_size_gi: PVC storage size in Gi (default 5)
+    """
+    body = {
+        "clientId": client_id,
+        "name": name,
+        "description": description or None,
+        "agentInstructions": agent_instructions or None,
+        "storageSizeGi": storage_size_gi,
+    }
+    if namespace:
+        body["namespace"] = namespace
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        return (
+            f"Environment created: {env['name']} (id={env['id']})\n"
+            f"Namespace: {env['namespace']}\n"
+            f"State: {env['state']}\n"
+            f"Use environment_add_component to add infrastructure, then environment_deploy to provision."
+        )
+
+
+@mcp.tool
+async def environment_delete(environment_id: str) -> str:
+    """Delete an environment and deprovision its K8s resources.
+
+    WARNING: This will delete the K8s namespace and all resources in it.
+
+    Args:
+        environment_id: The environment ID to delete
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.delete(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        return f"Environment {environment_id} deleted."
+
+
+@mcp.tool
+async def environment_add_component(
+    environment_id: str,
+    name: str,
+    component_type: str,
+    image: str = "",
+    version: str = "",
+    env_vars: str = "{}",
+    source_repo: str = "",
+    source_branch: str = "",
+    dockerfile_path: str = "",
+) -> str:
+    """Add a component to an environment.
+
+    Component types: POSTGRESQL, MONGODB, REDIS, RABBITMQ, KAFKA, ELASTICSEARCH,
+    ORACLE, MYSQL, MINIO, CUSTOM_INFRA, PROJECT.
+
+    Infrastructure components get default images, ports, and env vars from templates.
+    Use version parameter to pick a specific version (e.g., "17" for PostgreSQL 17).
+
+    For PROJECT type, provide source_repo and source_branch for build pipeline.
+
+    Args:
+        environment_id: The environment ID
+        name: Component name (also used as K8s service/deployment name)
+        component_type: One of the supported component types
+        image: Docker image override (uses template default if empty)
+        version: Version hint to pick from template (e.g., "17", "8.0")
+        env_vars: Additional env vars as JSON string (merged with defaults)
+        source_repo: Git repo URL (for PROJECT type)
+        source_branch: Git branch (for PROJECT type)
+        dockerfile_path: Path to Dockerfile in repo (for PROJECT type)
+    """
+    body: dict = {
+        "name": name,
+        "type": component_type.upper(),
+    }
+    if image:
+        body["image"] = image
+    if version:
+        body["version"] = version
+    try:
+        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else None
+        if extra_env:
+            body["envVars"] = extra_env
+    except json.JSONDecodeError:
+        return f"Error: Invalid JSON for env_vars: {env_vars}"
+    if source_repo:
+        body["sourceRepo"] = source_repo
+    if source_branch:
+        body["sourceBranch"] = source_branch
+    if dockerfile_path:
+        body["dockerfilePath"] = dockerfile_path
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/components",
+            json=body,
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        comp = next((c for c in env.get("components", []) if c["name"] == name), None)
+        if comp:
+            return (
+                f"Component added: {comp['name']} ({comp['type']})\n"
+                f"Image: {comp.get('image', '(none)')}\n"
+                f"Ports: {', '.join(str(p['containerPort']) for p in comp.get('ports', []))}\n"
+                f"Total components: {len(env['components'])}"
+            )
+        return f"Component added. Total components: {len(env.get('components', []))}"
+
+
+@mcp.tool
+async def environment_configure(
+    environment_id: str,
+    component_name: str,
+    image: str = "",
+    env_vars: str = "{}",
+    cpu_limit: str = "",
+    memory_limit: str = "",
+    source_repo: str = "",
+    source_branch: str = "",
+    dockerfile_path: str = "",
+) -> str:
+    """Update configuration of an existing component.
+
+    Only provided fields are updated; others remain unchanged.
+
+    Args:
+        environment_id: The environment ID
+        component_name: Name or ID of the component to configure
+        image: New Docker image
+        env_vars: Additional env vars as JSON string (merged with existing)
+        cpu_limit: K8s CPU limit (e.g., "500m", "1")
+        memory_limit: K8s memory limit (e.g., "512Mi", "1Gi")
+        source_repo: Git repository URL
+        source_branch: Git branch
+        dockerfile_path: Path to Dockerfile
+    """
+    body: dict = {}
+    if image:
+        body["image"] = image
+    try:
+        extra_env = json.loads(env_vars) if env_vars and env_vars != "{}" else None
+        if extra_env:
+            body["envVars"] = extra_env
+    except json.JSONDecodeError:
+        return f"Error: Invalid JSON for env_vars: {env_vars}"
+    if cpu_limit:
+        body["cpuLimit"] = cpu_limit
+    if memory_limit:
+        body["memoryLimit"] = memory_limit
+    if source_repo:
+        body["sourceRepo"] = source_repo
+    if source_branch:
+        body["sourceBranch"] = source_branch
+    if dockerfile_path:
+        body["dockerfilePath"] = dockerfile_path
+
+    if not body:
+        return "Error: No configuration changes provided."
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.put(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/components/{component_name}",
+            json=body,
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        return f"Component '{component_name}' updated."
+
+
+@mcp.tool
+async def environment_deploy(environment_id: str) -> str:
+    """Provision/deploy an environment to Kubernetes.
+
+    Creates K8s namespace, PVC, and deploys infrastructure components.
+    Environment must be in PENDING, STOPPED, or ERROR state.
+
+    Args:
+        environment_id: The environment ID to deploy
+    """
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/deploy",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        return (
+            f"Environment deployed: {env['name']}\n"
+            f"Namespace: {env['namespace']}\n"
+            f"State: {env['state']}\n"
+            f"Use get_namespace_status('{env['namespace']}') to check health."
+        )
+
+
+@mcp.tool
+async def environment_stop(environment_id: str) -> str:
+    """Stop/deprovision an environment (tear down K8s resources).
+
+    Stops all deployments. The environment definition is preserved in DB
+    and can be re-deployed with environment_deploy.
+
+    Args:
+        environment_id: The environment ID to stop
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/stop",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        return f"Environment stopped: {env['name']} (state={env['state']})"
+
+
+@mcp.tool
+async def environment_status(environment_id: str) -> str:
+    """Get deployment status of an environment and its components.
+
+    Shows per-component readiness, replica counts, and any error messages.
+
+    Args:
+        environment_id: The environment ID
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/status",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        status = resp.json()
+
+        lines = [
+            f"Environment Status:",
+            f"Namespace: {status['namespace']}",
+            f"State: {status['state']}",
+        ]
+        for comp in status.get("componentStatuses", []):
+            ready = "READY" if comp.get("ready") else "NOT READY"
+            avail = comp.get("availableReplicas", 0)
+            total = comp.get("replicas", 0)
+            lines.append(f"  - {comp['name']}: {ready} ({avail}/{total})")
+            if comp.get("message"):
+                lines.append(f"    {comp['message']}")
+        return "\n".join(lines)
+
+
+@mcp.tool
+async def environment_sync(environment_id: str) -> str:
+    """Sync environment resources — re-apply K8s manifests from DB.
+
+    Use after modifying component configuration to apply changes to
+    running deployments. Environment must be in RUNNING state.
+
+    Args:
+        environment_id: The environment ID to sync
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/sync",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        return f"Environment synced: {env['name']} (state={env['state']})"
+
+
 # ── Environment / K8s Tools ──────────────────────────────────────────────
 # These tools call the Kotlin backend's internal REST endpoints which perform
 # the actual fabric8 K8s operations. K8s credentials stay server-side.
