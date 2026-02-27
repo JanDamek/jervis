@@ -107,11 +107,7 @@ class GpuPool:
         return [b for b in self.backends.values() if b.healthy]
 
     def find_with_model(self, model: str) -> GpuBackend | None:
-        """Find a healthy GPU backend that already has this model loaded.
-
-        When multiple GPUs have the model, returns the least busy one
-        for load balancing (prevents always picking the first GPU).
-        """
+        """Find healthy GPU with model loaded — prefer least busy for load balancing."""
         candidates = [b for b in self.healthy_backends if b.has_model(model)]
         if not candidates:
             return None
