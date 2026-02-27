@@ -340,6 +340,10 @@ private fun CapabilityChip(capability: ConnectionCapability) {
         ConnectionCapability.REPOSITORY -> "Repo" to MaterialTheme.colorScheme.primary
         ConnectionCapability.EMAIL_READ -> "Email Read" to MaterialTheme.colorScheme.secondary
         ConnectionCapability.EMAIL_SEND -> "Email Send" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CHAT_READ -> "Chat Read" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CHAT_SEND -> "Chat Send" to MaterialTheme.colorScheme.secondary
+        ConnectionCapability.CALENDAR_READ -> "Calendar Read" to MaterialTheme.colorScheme.tertiary
+        ConnectionCapability.CALENDAR_WRITE -> "Calendar Write" to MaterialTheme.colorScheme.tertiary
     }
     SuggestionChip(
         onClick = {},

@@ -21,6 +21,10 @@ internal fun getCapabilityLabel(capability: ConnectionCapability): String {
         ConnectionCapability.REPOSITORY -> "Repository"
         ConnectionCapability.EMAIL_READ -> "Email (Read)"
         ConnectionCapability.EMAIL_SEND -> "Email (Send)"
+        ConnectionCapability.CHAT_READ -> "Chat (čtení)"
+        ConnectionCapability.CHAT_SEND -> "Chat (odesílání)"
+        ConnectionCapability.CALENDAR_READ -> "Kalendář (čtení)"
+        ConnectionCapability.CALENDAR_WRITE -> "Kalendář (zápis)"
     }
 }
 
@@ -31,6 +35,10 @@ internal fun getIndexAllLabel(capability: ConnectionCapability): String {
         ConnectionCapability.EMAIL_READ -> "Indexovat celou schránku"
         ConnectionCapability.EMAIL_SEND -> "Použít všechny odesílatele"
         ConnectionCapability.REPOSITORY -> "Indexovat všechny repozitáře"
+        ConnectionCapability.CHAT_READ -> "Indexovat všechny kanály"
+        ConnectionCapability.CHAT_SEND -> "Použít všechny kanály"
+        ConnectionCapability.CALENDAR_READ -> "Indexovat všechny kalendáře"
+        ConnectionCapability.CALENDAR_WRITE -> "Spravovat všechny kalendáře"
     }
 }
 
