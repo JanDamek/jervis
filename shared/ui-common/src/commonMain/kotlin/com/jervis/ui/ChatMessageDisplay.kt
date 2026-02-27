@@ -410,8 +410,11 @@ private fun ChatMessageItem(
                             )
                         } else {
                             // Assistant messages - Markdown rendering
+                            // Stabilize text with remember to prevent AST/text mismatch
+                            // during recomposition (StringIndexOutOfBoundsException)
+                            val stableContent = remember(message.text) { message.text }
                             Markdown(
-                                content = message.text,
+                                content = stableContent,
                                 colors = markdownColor(
                                     text = MaterialTheme.colorScheme.onSecondaryContainer,
                                     codeBackground = MaterialTheme.colorScheme.surfaceVariant,

@@ -1,6 +1,15 @@
 # UI — Markdown renderer crash při recomposition
 
 **Priorita**: MEDIUM
+**Status**: RESOLVED (2026-02-27)
+
+### Implementation summary
+
+- Stabilized `message.text` with `remember(message.text)` before passing to `Markdown()`
+- Prevents AST/text mismatch during recomposition triggered by global events
+- Varianta A (quick fix) — `remember` with key on text content
+
+---
 
 ## Problém
 
