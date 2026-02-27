@@ -522,7 +522,13 @@ class ChatViewModel(
                     sequence = msg.sequence,
                 )
             }
-            _chatMessages.value = newMessages
+            // Merge: preserve in-flight messages (optimistic user msg + progress)
+            // that aren't in DB yet, so they don't vanish on reconnect
+            val inFlight = _chatMessages.value.filter { msg ->
+                (msg.messageType == ChatMessage.MessageType.USER_MESSAGE && msg.sequence == null) ||
+                    msg.messageType == ChatMessage.MessageType.PROGRESS
+            }
+            _chatMessages.value = newMessages + inFlight
             _hasMore.value = history.hasMore
             oldestSequence = history.oldestSequence
             _compressionBoundaries.value = history.compressionBoundaries
