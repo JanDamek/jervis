@@ -45,6 +45,7 @@ internal fun ConnectionCapabilityCard(
     capabilities: List<ClientConnectionCapabilityDto>,
     availableResources: Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>,
     loadingResources: Set<Pair<String, ConnectionCapability>>,
+    errorResources: Set<Pair<String, ConnectionCapability>> = emptySet(),
     onLoadResources: (ConnectionCapability) -> Unit,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
     onRemoveConfig: (ConnectionCapability) -> Unit,
@@ -97,6 +98,7 @@ internal fun ConnectionCapabilityCard(
                     config = getConfig(capability),
                     resources = availableResources[Pair(connection.id, capability)] ?: emptyList(),
                     isLoadingResources = Pair(connection.id, capability) in loadingResources,
+                    hasError = Pair(connection.id, capability) in errorResources,
                     onLoadResources = { onLoadResources(capability) },
                     onUpdateConfig = onUpdateConfig,
                     onRemoveConfig = { onRemoveConfig(capability) },
@@ -114,6 +116,7 @@ private fun CapabilityConfigItem(
     config: ClientConnectionCapabilityDto?,
     resources: List<ConnectionResourceDto>,
     isLoadingResources: Boolean,
+    hasError: Boolean = false,
     onLoadResources: () -> Unit,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
     onRemoveConfig: () -> Unit,
@@ -244,6 +247,12 @@ private fun CapabilityConfigItem(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                        } else if (hasError && resources.isEmpty()) {
+                            Text(
+                                "Chyba načítání zdrojů — zkontrolujte připojení a token.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         } else if (resources.isEmpty()) {
                             Text(
                                 "Žádné zdroje k dispozici.",

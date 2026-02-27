@@ -83,6 +83,7 @@ internal fun ClientEditForm(
         mutableStateOf<Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>>(emptyMap())
     }
     var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
+    var errorResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
 
     // Projects
     var projects by remember { mutableStateOf<List<ProjectDto>>(emptyList()) }
@@ -123,10 +124,12 @@ internal fun ClientEditForm(
             try {
                 val resources = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to resources)
+                errorResources = errorResources - key
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
+                errorResources = errorResources + key
             } finally {
                 loadingResources = loadingResources - key
             }
@@ -266,6 +269,7 @@ internal fun ClientEditForm(
                                     capabilities = connectionCapabilities,
                                     availableResources = availableResources,
                                     loadingResources = loadingResources,
+                                    errorResources = errorResources,
                                     onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
                                     onUpdateConfig = { config -> updateCapabilityConfig(config) },
                                     onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
@@ -300,6 +304,7 @@ internal fun ClientEditForm(
                                     connection = connection,
                                     availableResources = availableResources,
                                     loadingResources = loadingResources,
+                                    errorResources = errorResources,
                                     findLinkedProject = { capability, resourceId ->
                                         findLinkedProject(connId, capability, resourceId)
                                     },

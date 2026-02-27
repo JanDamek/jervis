@@ -132,6 +132,7 @@ abstract class BugTrackerPollingHandlerBase<TIssue : Any>(
      * Detect authentication/authorization errors from HTTP exceptions.
      */
     private fun isAuthenticationError(e: Exception): Boolean {
+        if (e is com.jervis.common.http.ProviderAuthException) return true
         val message = e.message ?: return false
         return message.contains("401") ||
             message.contains("403") ||

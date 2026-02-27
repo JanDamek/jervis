@@ -40,6 +40,7 @@ internal fun ProviderResourcesCard(
     connection: ConnectionResponseDto,
     availableResources: Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>,
     loadingResources: Set<Pair<String, ConnectionCapability>>,
+    errorResources: Set<Pair<String, ConnectionCapability>> = emptySet(),
     findLinkedProject: (ConnectionCapability, String) -> ProjectDto?,
     onCreateProject: (ConnectionResourceDto, ConnectionCapability) -> Unit,
 ) {
@@ -50,6 +51,9 @@ internal fun ProviderResourcesCard(
     }
     val isAnyLoading = connection.capabilities.any { cap ->
         Pair(connection.id, cap) in loadingResources
+    }
+    val hasAnyError = connection.capabilities.any { cap ->
+        Pair(connection.id, cap) in errorResources
     }
 
     JCard(
@@ -66,11 +70,19 @@ internal fun ProviderResourcesCard(
                     connection.name,
                     style = MaterialTheme.typography.titleSmall,
                 )
-                Text(
-                    "${connection.provider.name} · $totalResources zdrojů",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (hasAnyError) {
+                    Text(
+                        "${connection.provider.name} · Chyba načítání zdrojů",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text(
+                        "${connection.provider.name} · $totalResources zdrojů",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (isAnyLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -103,6 +115,7 @@ internal fun ProviderResourcesCard(
                 val key = Pair(connection.id, capability)
                 val resources = availableResources[key] ?: emptyList()
                 val isLoading = key in loadingResources
+                val hasError = key in errorResources
 
                 val sortedFiltered = resources
                     .sortedBy { it.name.lowercase() }
@@ -124,6 +137,13 @@ internal fun ProviderResourcesCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                } else if (hasError && resources.isEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Chyba načítání ${getCapabilityLabel(capability)} — zkontrolujte připojení a token.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 } else if (sortedFiltered.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider()

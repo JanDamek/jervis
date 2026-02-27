@@ -235,6 +235,9 @@ class CentralPoller(
             val totalResult =
                 try {
                     handler.poll(effectiveConnection, context)
+                } catch (e: com.jervis.common.http.ProviderAuthException) {
+                    logger.error { "Auth error in handler $handlerName for connection ${effectiveConnection.name}: ${e.message}" }
+                    PollingResult(errors = 1, authenticationError = true)
                 } catch (e: Exception) {
                     logger.error(e) { "Error in handler $handlerName for connection ${effectiveConnection.name}" }
                     PollingResult(errors = 1)
@@ -248,8 +251,17 @@ class CentralPoller(
                     "Skipped: ${totalResult.itemsSkipped}, Errors: ${totalResult.errors}"
             }
 
-            // Handle authentication errors - set connectionDocument to INVALID and create UserTask for manual fix
+            // Handle authentication errors — attempt reactive token refresh before escalating
             if (totalResult.authenticationError) {
+                if (effectiveConnection.authType == AuthTypeEnum.OAUTH2 && effectiveConnection.refreshToken != null) {
+                    val refreshed = oauth2Service.refreshAccessToken(effectiveConnection, force = true)
+                    if (refreshed) {
+                        logger.info { "OAuth2 token refreshed for '${connectionDocument.name}' after auth error, will retry next cycle" }
+                        // Token refreshed — don't mark as invalid, the next poll cycle will use the fresh token
+                        lastPollTimes.remove(connectionId) // Force immediate re-poll in next cycle
+                        return
+                    }
+                }
                 handlePollingError(connectionDocument, context, totalResult)
             }
 

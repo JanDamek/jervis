@@ -176,7 +176,7 @@ class ConnectionRpcImpl(
             connectionService.findById(ConnectionId.fromString(id))
                 ?: throw IllegalArgumentException("Connection not found: $id")
 
-        // Attempt token refresh for OAuth2 connections before making API call
+        // Attempt proactive token refresh for OAuth2 connections before making API call
         val refreshedConnection = refreshTokenIfNeeded(connection)
 
         return try {
@@ -184,6 +184,26 @@ class ConnectionRpcImpl(
             refreshedConnection.state = if (result.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
             connectionService.save(refreshedConnection)
             result
+        } catch (e: com.jervis.common.http.ProviderAuthException) {
+            // Token expired or revoked — attempt reactive refresh and retry once
+            logger.warn { "Auth error testing connection ${refreshedConnection.name}: ${e.message}" }
+            val retryConnection = attemptReactiveRefresh(refreshedConnection)
+            if (retryConnection != null) {
+                try {
+                    val retryResult = providerRegistry.withClient(retryConnection.provider) { it.testConnection(retryConnection.toTestRequest()) }
+                    retryConnection.state = if (retryResult.success) ConnectionStateEnum.VALID else ConnectionStateEnum.INVALID
+                    connectionService.save(retryConnection)
+                    return retryResult
+                } catch (retryEx: Exception) {
+                    logger.warn { "Retry after token refresh also failed for ${retryConnection.name}: ${retryEx.message}" }
+                }
+            }
+            // Refresh failed or retry failed — mark as AUTH_EXPIRED
+            connectionService.save(refreshedConnection.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
+            ConnectionTestResultDto(
+                success = false,
+                message = "Token expiroval. Proveďte re-autorizaci OAuth2 připojení.",
+            )
         } catch (e: Exception) {
             logger.error(e) { "Connection test failed for ${refreshedConnection.name}" }
             refreshedConnection.state = ConnectionStateEnum.INVALID
@@ -210,39 +230,30 @@ class ConnectionRpcImpl(
             connectionService.findById(ConnectionId.fromString(connectionId))
                 ?: throw IllegalArgumentException("Connection not found: $connectionId")
 
-        // Attempt token refresh for OAuth2 connections before making API call
+        // Attempt proactive token refresh for OAuth2 connections before making API call
         val refreshedConnection = refreshTokenIfNeeded(connection)
 
         return try {
             val resources = providerRegistry.withClient(refreshedConnection.provider) {
                 it.listResources(refreshedConnection.toListResourcesRequest(capability))
             }
-            // Filter out brain-reserved resources (Jira project / Confluence space used by orchestrator)
-            // Skip filtering when includeBrainReserved = true (used by GeneralSettings brain config UI)
-            if (!includeBrainReserved) {
-                val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID)
-                if (config != null && refreshedConnection.id.toString() == (
-                        when (capability) {
-                            ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
-                            ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
-                            else -> null
-                        }
-                    )
-                ) {
-                    val excludeKey = when (capability) {
-                        ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
-                        ConnectionCapability.WIKI -> config.brainWikiSpaceKey
-                        else -> null
+            filterBrainReservedResources(resources, refreshedConnection, capability, includeBrainReserved)
+        } catch (e: com.jervis.common.http.ProviderAuthException) {
+            // Token expired or revoked — attempt reactive refresh and retry once
+            logger.warn { "Auth error for connection ${refreshedConnection.id} (${refreshedConnection.provider}): ${e.message}" }
+            val retryConnection = attemptReactiveRefresh(refreshedConnection)
+            if (retryConnection != null) {
+                try {
+                    val retryResources = providerRegistry.withClient(retryConnection.provider) {
+                        it.listResources(retryConnection.toListResourcesRequest(capability))
                     }
-                    if (excludeKey != null) {
-                        return resources.filter { it.id != excludeKey }
-                    }
+                    logger.info { "Retry after token refresh succeeded for connection ${retryConnection.id}" }
+                    return filterBrainReservedResources(retryResources, retryConnection, capability, includeBrainReserved)
+                } catch (retryEx: Exception) {
+                    logger.warn { "Retry after token refresh also failed for ${retryConnection.id}: ${retryEx.message}" }
                 }
             }
-            resources
-        } catch (e: com.jervis.common.http.ProviderAuthException) {
-            // Token expired or revoked — mark connection as AUTH_EXPIRED
-            logger.warn { "Auth expired for connection ${refreshedConnection.id} (${refreshedConnection.provider}): ${e.message}" }
+            // Refresh failed or retry failed — mark connection as AUTH_EXPIRED
             try {
                 connectionService.save(refreshedConnection.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
             } catch (saveErr: Exception) {
@@ -256,7 +267,7 @@ class ConnectionRpcImpl(
     }
 
     /**
-     * Refresh OAuth2 access token if needed and return the updated connection.
+     * Proactive refresh: refresh OAuth2 access token if it's about to expire.
      * Returns the same connection if no refresh is needed or refresh fails.
      */
     private suspend fun refreshTokenIfNeeded(connection: ConnectionDocument): ConnectionDocument {
@@ -265,7 +276,7 @@ class ConnectionRpcImpl(
             return connection
         }
 
-        // Attempt token refresh
+        // Attempt token refresh (proactive, time-based check)
         val refreshed = oauth2Service.refreshAccessToken(connection)
         if (!refreshed) {
             // Token refresh not needed or failed, return original connection
@@ -274,6 +285,52 @@ class ConnectionRpcImpl(
 
         // Reload connection to get the updated token
         return connectionService.findById(connection.id) ?: connection
+    }
+
+    /**
+     * Reactive refresh: force-refresh the OAuth2 token after a 401 error.
+     * Returns the refreshed connection or null if refresh is not possible/failed.
+     */
+    private suspend fun attemptReactiveRefresh(connection: ConnectionDocument): ConnectionDocument? {
+        if (connection.authType != com.jervis.dto.connection.AuthTypeEnum.OAUTH2) return null
+
+        logger.info { "Attempting reactive token refresh for connection ${connection.id} (${connection.name})" }
+        val refreshed = oauth2Service.refreshAccessToken(connection, force = true)
+        if (!refreshed) {
+            logger.warn { "Reactive token refresh failed for connection ${connection.id}" }
+            return null
+        }
+
+        return connectionService.findById(connection.id)
+    }
+
+    /**
+     * Filter out brain-reserved resources (Jira project / Confluence space used by orchestrator).
+     */
+    private suspend fun filterBrainReservedResources(
+        resources: List<ConnectionResourceDto>,
+        connection: ConnectionDocument,
+        capability: ConnectionCapability,
+        includeBrainReserved: Boolean,
+    ): List<ConnectionResourceDto> {
+        if (includeBrainReserved) return resources
+
+        val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID) ?: return resources
+        if (connection.id.toString() != when (capability) {
+                ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
+                ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
+                else -> null
+            }
+        ) {
+            return resources
+        }
+        val excludeKey = when (capability) {
+            ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
+            ConnectionCapability.WIKI -> config.brainWikiSpaceKey
+            else -> null
+        } ?: return resources
+
+        return resources.filter { it.id != excludeKey }
     }
 
     override suspend fun listImportableProjects(connectionId: String): List<com.jervis.dto.connection.ConnectionImportProjectDto> {

@@ -64,6 +64,7 @@ internal fun ProjectEditForm(
         mutableStateOf<Map<Pair<String, ConnectionCapability>, List<ConnectionResourceDto>>>(emptyMap())
     }
     var loadingResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
+    var errorResources by remember { mutableStateOf<Set<Pair<String, ConnectionCapability>>>(emptySet()) }
 
     // Dialogs
     var showAddResourceDialog by remember { mutableStateOf(false) }
@@ -128,10 +129,12 @@ internal fun ProjectEditForm(
             try {
                 val res = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to res)
+                errorResources = errorResources - key
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (_: Exception) {
                 availableResources = availableResources + (key to emptyList())
+                errorResources = errorResources + key
             } finally {
                 loadingResources = loadingResources - key
             }
