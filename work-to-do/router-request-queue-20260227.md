@@ -28,10 +28,20 @@ Router by měl fungovat jako **transparent proxy s malou frontou**.
 - Nesmí stát GPU idle když jsou requesty v queue
 - `find_with_model` už vrací least-busy (opraveno), ale queue zajistí lepší throughput
 
-### Prioritní řazení v queue
+### Prioritní řazení v queue — CRITICAL nesmí čekat na background
 
-- CRITICAL requesty jdou na začátek fronty (před NORMAL)
+**Klíčové**: CRITICAL = chat (uživatel čeká) → NESMÍ být blokován background requestem.
+
+- CRITICAL requesty jdou **na začátek** fronty (před NORMAL)
 - CRITICAL embedding → CPU pokud GPU dělá :30b inference (existující logika)
+- **Preemption v queue**: Když přijde CRITICAL a všechny GPU sloty obsazeny NORMAL requestem:
+  - Dispatcher PREEMPTNE nejstarší NORMAL request na GPU (existující `_preempt_all` logika)
+  - Uvolněný slot okamžitě přidělí CRITICAL requestu
+  - Preemptnutý NORMAL request se vrátí do queue (re-queue na začátek NORMAL)
+- **Garance**: CRITICAL request nikdy nečeká v queue za NORMAL — buď dostane slot okamžitě,
+  nebo se NORMAL preemptne
+- Tím se zajistí, že background (KB ingest, qualification) nemůže obsadit všechny GPU
+  a zablokovat chat
 
 ### CPU backend
 
