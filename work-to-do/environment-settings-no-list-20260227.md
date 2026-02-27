@@ -1,28 +1,20 @@
-# Bug: Nastavení Prostředí — nejde se vrátit na seznam
+# Refactor: Odebrat záložku "Prostředí" z Nastavení
 
-**Priority**: HIGH
+**Priority**: MEDIUM
 **Area**: UI → Settings → Prostředí (EnvironmentSettings)
 
 ## Problem
 
-Po kliknutí na prostředí v seznamu se zobrazí detail (např. "BMS-Commerzbank"),
-ale nelze se vrátit zpět na seznam prostředí. Chybí navigace zpět / seznam není
-dostupný z detailu.
+Záložka "Prostředí" v Nastavení je zbytečná — veškerá funkcionalita (CRUD, detail,
+komponenty, konfigurace) bude v Environment Manageru. Tato záložka je duplicitní
+a navíc nefunkční (nejde se vrátit na seznam ze zobrazení detailu).
 
-Uživatel vidí detail prostředí se sekcemi Základní informace, Komponenty, Konfigurace,
-ale nemůže procházet ostatní prostředí.
+## Řešení
 
-## Screenshot
-
-Detail prostředí "BMS-Commerzbank" (namespace: bms-commerzbank, stav: Běží,
-1 infra komponenta, 0 projektů). Šipka zpět v horní liště pravděpodobně
-nefunguje nebo chybí list/detail navigace.
-
-## Expected Behavior
-
-- Klik na šipku zpět → návrat na seznam prostředí
-- Nebo: list-detail layout kde seznam zůstává viditelný (expanded mode)
+Odebrat záložku "Prostředí" ze SettingsScreen sidebaru. Veškerá správa prostředí
+se provádí přes Environment Manager (samostatná obrazovka).
 
 ## Files
 
-- `shared/ui-common/.../settings/sections/EnvironmentSettings.kt`
+- `shared/ui-common/.../screens/settings/SettingsScreen.kt` — odebrat "Prostředí" z navigace
+- `shared/ui-common/.../settings/sections/EnvironmentSettings.kt` — smazat soubor
