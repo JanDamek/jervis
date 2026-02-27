@@ -47,6 +47,7 @@ internal fun ConnectionCapabilityCard(
     loadingResources: Set<Pair<String, ConnectionCapability>>,
     errorResources: Set<Pair<String, ConnectionCapability>> = emptySet(),
     onLoadResources: (ConnectionCapability) -> Unit,
+    onRetryResources: (ConnectionCapability) -> Unit = onLoadResources,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
     onRemoveConfig: (ConnectionCapability) -> Unit,
     getConfig: (ConnectionCapability) -> ClientConnectionCapabilityDto?,
@@ -100,6 +101,7 @@ internal fun ConnectionCapabilityCard(
                     isLoadingResources = Pair(connection.id, capability) in loadingResources,
                     hasError = Pair(connection.id, capability) in errorResources,
                     onLoadResources = { onLoadResources(capability) },
+                    onRetryResources = { onRetryResources(capability) },
                     onUpdateConfig = onUpdateConfig,
                     onRemoveConfig = { onRemoveConfig(capability) },
                 )
@@ -118,6 +120,7 @@ private fun CapabilityConfigItem(
     isLoadingResources: Boolean,
     hasError: Boolean = false,
     onLoadResources: () -> Unit,
+    onRetryResources: () -> Unit = onLoadResources,
     onUpdateConfig: (ClientConnectionCapabilityDto) -> Unit,
     onRemoveConfig: () -> Unit,
 ) {
@@ -252,6 +255,15 @@ private fun CapabilityConfigItem(
                                 "Chyba načítání zdrojů — zkontrolujte připojení a token.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Zkusit znovu",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .clickable { onRetryResources() }
+                                    .padding(vertical = 4.dp),
                             )
                         } else if (resources.isEmpty()) {
                             Text(

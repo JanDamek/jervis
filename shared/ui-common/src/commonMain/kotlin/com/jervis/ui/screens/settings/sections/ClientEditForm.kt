@@ -121,19 +121,25 @@ internal fun ClientEditForm(
 
         scope.launch {
             loadingResources = loadingResources + key
+            errorResources = errorResources - key
             try {
                 val resources = repository.connections.listAvailableResources(connectionId, capability)
                 availableResources = availableResources + (key to resources)
-                errorResources = errorResources - key
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (_: Exception) {
-                availableResources = availableResources + (key to emptyList())
                 errorResources = errorResources + key
             } finally {
                 loadingResources = loadingResources - key
             }
         }
+    }
+
+    fun retryResourcesForCapability(connectionId: String, capability: ConnectionCapability) {
+        val key = Pair(connectionId, capability)
+        errorResources = errorResources - key
+        availableResources = availableResources - key
+        loadResourcesForCapability(connectionId, capability)
     }
 
     fun getCapabilityConfig(connectionId: String, capability: ConnectionCapability): ClientConnectionCapabilityDto? {
@@ -271,6 +277,7 @@ internal fun ClientEditForm(
                                     loadingResources = loadingResources,
                                     errorResources = errorResources,
                                     onLoadResources = { capability -> loadResourcesForCapability(connId, capability) },
+                                    onRetryResources = { capability -> retryResourcesForCapability(connId, capability) },
                                     onUpdateConfig = { config -> updateCapabilityConfig(config) },
                                     onRemoveConfig = { capability -> removeCapabilityConfig(connId, capability) },
                                     getConfig = { capability -> getCapabilityConfig(connId, capability) },
