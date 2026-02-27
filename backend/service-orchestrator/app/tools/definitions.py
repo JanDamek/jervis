@@ -1367,6 +1367,66 @@ TOOL_ENVIRONMENT_DELETE: dict = {
     },
 }
 
+TOOL_ENVIRONMENT_UPLOAD_FILE: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_upload_file",
+        "description": (
+            "Upload a file to a running component pod (e.g., SQL dump, seed data, config). "
+            "The file is placed in target_dir inside the pod. Use before running import commands."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {"type": "string", "description": "Environment ID"},
+                "component_name": {"type": "string", "description": "Component name (must be running)"},
+                "file_content_base64": {"type": "string", "description": "File content as Base64"},
+                "file_name": {"type": "string", "description": "File name (e.g., dump.sql)"},
+                "target_dir": {"type": "string", "description": "Target dir in pod", "default": "/tmp"},
+            },
+            "required": ["environment_id", "component_name", "file_content_base64", "file_name"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_EXEC: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_exec",
+        "description": (
+            "Execute a command in a running component pod. "
+            "Use after uploading files to run import commands: "
+            "psql -f /tmp/dump.sql, mongorestore, mysql < /tmp/dump.sql, etc."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {"type": "string", "description": "Environment ID"},
+                "component_name": {"type": "string", "description": "Component name (must be running)"},
+                "command": {"type": "string", "description": "Shell command to execute (via sh -c)"},
+            },
+            "required": ["environment_id", "component_name", "command"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_LIST_FILES: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_list_files",
+        "description": "List files in a directory inside a running component pod.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {"type": "string", "description": "Environment ID"},
+                "component_name": {"type": "string", "description": "Component name"},
+                "directory": {"type": "string", "description": "Directory to list", "default": "/tmp"},
+            },
+            "required": ["environment_id", "component_name"],
+        },
+    },
+}
+
 ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_LIST,
     TOOL_ENVIRONMENT_GET,
@@ -1378,6 +1438,9 @@ ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_STATUS,
     TOOL_ENVIRONMENT_SYNC,
     TOOL_ENVIRONMENT_DELETE,
+    TOOL_ENVIRONMENT_UPLOAD_FILE,
+    TOOL_ENVIRONMENT_EXEC,
+    TOOL_ENVIRONMENT_LIST_FILES,
 ]
 
 ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + BRAIN_TOOLS

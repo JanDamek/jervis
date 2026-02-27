@@ -8,6 +8,8 @@ import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStatusDto
+import com.jervis.dto.environment.ExecResultDto
+import com.jervis.dto.environment.FileUploadResultDto
 import com.jervis.dto.environment.PortMappingDto
 import com.jervis.dto.environment.PropertyMappingTemplateDto
 import com.jervis.mapper.toDocument
@@ -104,5 +106,56 @@ class EnvironmentRpcImpl(
     override suspend fun syncEnvironmentResources(id: String): EnvironmentDto =
         executeWithErrorHandling("syncEnvironmentResources") {
             environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(id))).toDto()
+        }
+
+    override suspend fun uploadFileToComponent(
+        id: String,
+        componentName: String,
+        fileName: String,
+        fileBase64: String,
+        targetDir: String,
+    ): FileUploadResultDto =
+        executeWithErrorHandling("uploadFileToComponent") {
+            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
+            val component = env.components.find { it.name == componentName || it.id == componentName }
+                ?: throw IllegalArgumentException("Component '$componentName' not found")
+
+            val fileBytes = java.util.Base64.getDecoder().decode(fileBase64)
+
+            val targetPath = environmentK8sService.uploadFileToPod(
+                namespace = env.namespace,
+                componentName = component.name,
+                fileBytes = fileBytes,
+                fileName = fileName,
+                targetDir = targetDir,
+            )
+
+            FileUploadResultDto(
+                targetPath = targetPath,
+                sizeBytes = fileBytes.size.toLong(),
+                componentName = component.name,
+            )
+        }
+
+    override suspend fun execInComponent(
+        id: String,
+        componentName: String,
+        command: List<String>,
+    ): ExecResultDto =
+        executeWithErrorHandling("execInComponent") {
+            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
+            val component = env.components.find { it.name == componentName || it.id == componentName }
+                ?: throw IllegalArgumentException("Component '$componentName' not found")
+
+            val output = environmentK8sService.execInPod(
+                namespace = env.namespace,
+                componentName = component.name,
+                command = command,
+            )
+
+            ExecResultDto(
+                output = output,
+                componentName = component.name,
+            )
         }
 }
