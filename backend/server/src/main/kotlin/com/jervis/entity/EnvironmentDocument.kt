@@ -49,6 +49,8 @@ data class EnvironmentDocument(
     val state: EnvironmentState = EnvironmentState.PENDING,
     /** PVC storage size in Gi (shared by all components) */
     val storageSizeGi: Int = 5,
+    /** Stored YAML manifests for recreating the namespace from DB */
+    val yamlManifests: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -81,6 +83,22 @@ data class EnvironmentComponent(
     val healthCheckPath: String? = null,
     /** Persistent volume mount path (e.g., "/var/lib/postgresql/data") */
     val volumeMountPath: String? = null,
+    // --- Application component fields (git → build → deploy pipeline) ---
+    /** Git repository URL for APPLICATION/PROJECT type components */
+    val sourceRepo: String? = null,
+    /** Git branch to deploy from */
+    val sourceBranch: String? = null,
+    /** Path to Dockerfile within the repository */
+    val dockerfilePath: String? = null,
+    // --- Stored K8s manifests for recreate from DB ---
+    /** Generated/applied deployment YAML manifest */
+    val deploymentYaml: String? = null,
+    /** Generated/applied service YAML manifest */
+    val serviceYaml: String? = null,
+    /** ConfigMap data stored separately from envVars (for complex config files) */
+    val configMapData: Map<String, String> = emptyMap(),
+    /** Per-component lifecycle state */
+    val componentState: ComponentState = ComponentState.PENDING,
 )
 
 enum class ComponentType {
@@ -138,4 +156,12 @@ enum class EnvironmentState {
     STOPPING,
     STOPPED,
     ERROR,
+}
+
+enum class ComponentState {
+    PENDING,
+    DEPLOYING,
+    RUNNING,
+    ERROR,
+    STOPPED,
 }

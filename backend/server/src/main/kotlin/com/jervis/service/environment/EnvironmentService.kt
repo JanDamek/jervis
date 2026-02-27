@@ -48,6 +48,8 @@ class EnvironmentService(
             componentLinks = env.componentLinks,
             propertyMappings = env.propertyMappings,
             agentInstructions = env.agentInstructions,
+            storageSizeGi = env.storageSizeGi,
+            yamlManifests = env.yamlManifests,
         ) ?: env
 
         val saved = environmentRepository.save(merged)

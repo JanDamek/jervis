@@ -27,6 +27,7 @@ fun EnvironmentDocument.toDto(): EnvironmentDto =
         agentInstructions = this.agentInstructions,
         state = EnvironmentStateEnum.valueOf(this.state.name),
         storageSizeGi = this.storageSizeGi,
+        yamlManifests = this.yamlManifests,
     )
 
 fun EnvironmentDto.toDocument(): EnvironmentDocument {
@@ -46,6 +47,7 @@ fun EnvironmentDto.toDocument(): EnvironmentDocument {
         agentInstructions = this.agentInstructions,
         state = EnvironmentState.valueOf(this.state.name),
         storageSizeGi = this.storageSizeGi,
+        yamlManifests = this.yamlManifests,
     )
 }
 
@@ -74,6 +76,10 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
                 "envVars" to (comp.envVars + resolved),
                 "autoStart" to comp.autoStart,
                 "startOrder" to comp.startOrder,
+                "sourceRepo" to comp.sourceRepo,
+                "sourceBranch" to comp.sourceBranch,
+                "dockerfilePath" to comp.dockerfilePath,
+                "componentState" to comp.componentState.name,
             )
         },
         "componentLinks" to componentLinks.map {
@@ -118,6 +124,10 @@ fun EnvironmentDocument.toAgentContextJson(): JsonObject = buildJsonObject {
                 })
                 put("autoStart", comp.autoStart)
                 put("startOrder", comp.startOrder)
+                put("sourceRepo", comp.sourceRepo)
+                put("sourceBranch", comp.sourceBranch)
+                put("dockerfilePath", comp.dockerfilePath)
+                put("componentState", comp.componentState.name)
             })
         }
     })
@@ -149,6 +159,13 @@ fun EnvironmentComponent.toDto(): EnvironmentComponentDto =
         startOrder = this.startOrder,
         healthCheckPath = this.healthCheckPath,
         volumeMountPath = this.volumeMountPath,
+        sourceRepo = this.sourceRepo,
+        sourceBranch = this.sourceBranch,
+        dockerfilePath = this.dockerfilePath,
+        deploymentYaml = this.deploymentYaml,
+        serviceYaml = this.serviceYaml,
+        configMapData = this.configMapData,
+        componentState = ComponentStateEnum.valueOf(this.componentState.name),
     )
 
 fun EnvironmentComponentDto.toEntity(): EnvironmentComponent =
@@ -166,6 +183,13 @@ fun EnvironmentComponentDto.toEntity(): EnvironmentComponent =
         startOrder = this.startOrder,
         healthCheckPath = this.healthCheckPath,
         volumeMountPath = this.volumeMountPath,
+        sourceRepo = this.sourceRepo,
+        sourceBranch = this.sourceBranch,
+        dockerfilePath = this.dockerfilePath,
+        deploymentYaml = this.deploymentYaml,
+        serviceYaml = this.serviceYaml,
+        configMapData = this.configMapData,
+        componentState = ComponentState.valueOf(this.componentState.name),
     )
 
 fun PortMapping.toDto(): PortMappingDto =

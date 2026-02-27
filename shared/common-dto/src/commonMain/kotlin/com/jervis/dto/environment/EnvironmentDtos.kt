@@ -18,6 +18,7 @@ data class EnvironmentDto(
     val agentInstructions: String? = null,
     val state: EnvironmentStateEnum = EnvironmentStateEnum.PENDING,
     val storageSizeGi: Int = 5,
+    val yamlManifests: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -35,6 +36,15 @@ data class EnvironmentComponentDto(
     val startOrder: Int = 0,
     val healthCheckPath: String? = null,
     val volumeMountPath: String? = null,
+    // Application component fields (git → build → deploy pipeline)
+    val sourceRepo: String? = null,
+    val sourceBranch: String? = null,
+    val dockerfilePath: String? = null,
+    // Stored K8s manifests for recreate from DB
+    val deploymentYaml: String? = null,
+    val serviceYaml: String? = null,
+    val configMapData: Map<String, String> = emptyMap(),
+    val componentState: ComponentStateEnum = ComponentStateEnum.PENDING,
 )
 
 @Serializable
@@ -60,6 +70,15 @@ enum class EnvironmentStateEnum {
     STOPPING,
     STOPPED,
     ERROR,
+}
+
+@Serializable
+enum class ComponentStateEnum {
+    PENDING,
+    DEPLOYING,
+    RUNNING,
+    ERROR,
+    STOPPED,
 }
 
 @Serializable
