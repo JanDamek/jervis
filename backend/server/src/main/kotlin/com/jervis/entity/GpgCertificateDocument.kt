@@ -7,7 +7,8 @@ import java.time.Instant
 
 /**
  * Stores GPG private keys for coding agent commit signing.
- * One certificate per client (used by all coding agents for that client).
+ * Keys are global — any key can be used by any client/project.
+ * clientId is kept for backwards compatibility but no longer required.
  */
 @Document(collection = "gpg_certificates")
 data class GpgCertificateDocument(

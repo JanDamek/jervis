@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -53,33 +52,20 @@ fun GpgCertificateSettings(repository: JervisRepository) {
 
     var certificates by remember { mutableStateOf<List<GpgCertificateDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var selectedClientId by remember { mutableStateOf("") }
 
-    // Load clients to select from
-    var clientNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-
-    LaunchedEffect(Unit) {
+    suspend fun loadCertificates() {
         try {
-            val clients = repository.clients.getAllClients()
-            clientNames = clients.associate { it.id to it.name }
-            if (clients.isNotEmpty() && selectedClientId.isBlank()) {
-                selectedClientId = clients.first().id
-            }
+            certificates = repository.gpgCertificates.getAllCertificates()
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            snackbarHostState.showSnackbar("Chyba načítání klientů: ${e.message}")
+            snackbarHostState.showSnackbar("Chyba načítání certifikátů: ${e.message}")
         }
-        isLoading = false
     }
 
-    // Load certificates when client changes
-    LaunchedEffect(selectedClientId) {
-        if (selectedClientId.isNotBlank()) {
-            try {
-                certificates = repository.gpgCertificates.getCertificates(selectedClientId)
-            } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Chyba načítání certifikátů: ${e.message}")
-            }
-        }
+    LaunchedEffect(Unit) {
+        loadCertificates()
+        isLoading = false
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -90,25 +76,7 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                // Client selector
-                item {
-                    JSection(title = "Klient") {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.heightIn(min = JervisSpacing.touchTarget),
-                        ) {
-                            clientNames.forEach { (id, name) ->
-                                FilterChip(
-                                    selected = id == selectedClientId,
-                                    onClick = { selectedClientId = id },
-                                    label = { Text(name) },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Existing certificates
+                // Existing certificates (global list — not per-client)
                 if (certificates.isEmpty()) {
                     item {
                         JEmptyState(
@@ -126,7 +94,7 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                                         repository.gpgCertificates.deleteCertificate(
                                             GpgCertificateDeleteDto(id = cert.id),
                                         )
-                                        certificates = repository.gpgCertificates.getCertificates(selectedClientId)
+                                        loadCertificates()
                                         snackbarHostState.showSnackbar("Certifikát smazán")
                                     } catch (e: Exception) {
                                         snackbarHostState.showSnackbar("Chyba: ${e.message}")
@@ -145,7 +113,6 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                                 try {
                                     repository.gpgCertificates.uploadCertificate(
                                         GpgCertificateUploadDto(
-                                            clientId = selectedClientId,
                                             keyId = keyId,
                                             userName = userName,
                                             userEmail = userEmail,
@@ -153,7 +120,7 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                                             passphrase = passphrase.ifBlank { null },
                                         ),
                                     )
-                                    certificates = repository.gpgCertificates.getCertificates(selectedClientId)
+                                    loadCertificates()
                                     snackbarHostState.showSnackbar("GPG certifikát nahrán")
                                 } catch (e: Exception) {
                                     snackbarHostState.showSnackbar("Chyba: ${e.message}")

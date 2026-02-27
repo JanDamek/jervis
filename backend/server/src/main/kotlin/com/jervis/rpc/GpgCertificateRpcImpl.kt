@@ -24,6 +24,12 @@ class GpgCertificateRpcImpl(
             .toList()
     }
 
+    override suspend fun getAllCertificates(): List<GpgCertificateDto> {
+        return gpgCertificateRepository.findAllByOrderByCreatedAtDesc()
+            .map { it.toDto() }
+            .toList()
+    }
+
     override suspend fun uploadCertificate(request: GpgCertificateUploadDto): GpgCertificateDto {
         logger.info { "Uploading GPG certificate for client ${request.clientId}, keyId=${request.keyId}" }
 

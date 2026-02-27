@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository
 interface GpgCertificateRepository : CoroutineCrudRepository<GpgCertificateDocument, String> {
     fun findByClientId(clientId: String): Flow<GpgCertificateDocument>
     suspend fun findFirstByClientId(clientId: String): GpgCertificateDocument?
+    fun findAllByOrderByCreatedAtDesc(): Flow<GpgCertificateDocument>
 }

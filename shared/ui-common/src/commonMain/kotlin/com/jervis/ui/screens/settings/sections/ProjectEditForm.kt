@@ -113,7 +113,7 @@ internal fun ProjectEditForm(
                     client?.connectionIds?.contains(conn.id) == true
                 }
                 clientGroups = repository.projectGroups.listGroupsForClient(cid)
-                gpgCertificates = repository.gpgCertificates.getCertificates(cid)
+                gpgCertificates = repository.gpgCertificates.getAllCertificates()
             }
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e

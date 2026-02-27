@@ -15,7 +15,7 @@ data class GpgCertificateDto(
 
 @Serializable
 data class GpgCertificateUploadDto(
-    val clientId: String,
+    val clientId: String = "",
     val keyId: String,
     val userName: String,
     val userEmail: String,

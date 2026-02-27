@@ -163,7 +163,7 @@ internal fun ClientEditForm(
         loadConnections()
         loadProjects()
         try {
-            gpgCertificates = repository.gpgCertificates.getCertificates(client.id)
+            gpgCertificates = repository.gpgCertificates.getAllCertificates()
         } catch (_: Exception) {}
     }
 
