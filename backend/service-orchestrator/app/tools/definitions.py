@@ -1082,6 +1082,304 @@ TOOL_LIST_AFFAIRS: dict = {
 }
 
 MEMORY_TOOLS: list[dict] = [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL, TOOL_LIST_AFFAIRS]
+
+# ============================================================
+# Environment management tools (K8s test environments)
+# ============================================================
+
+TOOL_ENVIRONMENT_LIST: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_list",
+        "description": (
+            "List K8s test environments. Shows environment names, namespaces, states, "
+            "and component counts. Use to find existing environments before creating new ones."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Filter by client ID (optional, uses current client if empty).",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_GET: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_get",
+        "description": (
+            "Get detailed information about a specific environment including all components, "
+            "ports, env vars, property mappings, and agent instructions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_CREATE: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_create",
+        "description": (
+            "Create a new K8s test environment. Creates the definition in DB (state=PENDING). "
+            "Add components with environment_add_component, then deploy with environment_deploy."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable environment name.",
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "K8s namespace (auto-generated from name if empty).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional environment description.",
+                },
+                "agent_instructions": {
+                    "type": "string",
+                    "description": "Free-text instructions for agents working with this environment.",
+                },
+                "storage_size_gi": {
+                    "type": "integer",
+                    "description": "PVC storage size in Gi (default 5).",
+                    "default": 5,
+                },
+            },
+            "required": ["name"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_ADD_COMPONENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_add_component",
+        "description": (
+            "Add a component to an environment. Types: POSTGRESQL, MONGODB, REDIS, RABBITMQ, "
+            "KAFKA, ELASTICSEARCH, ORACLE, MYSQL, MINIO, CUSTOM_INFRA, PROJECT. "
+            "Infrastructure components get default images, ports, and env vars from templates."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Component name (used as K8s service/deployment name).",
+                },
+                "component_type": {
+                    "type": "string",
+                    "description": "Component type.",
+                    "enum": [
+                        "POSTGRESQL", "MONGODB", "REDIS", "RABBITMQ", "KAFKA",
+                        "ELASTICSEARCH", "ORACLE", "MYSQL", "MINIO", "CUSTOM_INFRA", "PROJECT",
+                    ],
+                },
+                "image": {
+                    "type": "string",
+                    "description": "Docker image override (uses template default if empty).",
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Version hint to pick from template (e.g., '17', '8.0').",
+                },
+                "env_vars": {
+                    "type": "string",
+                    "description": "Additional env vars as JSON string (merged with defaults).",
+                },
+                "source_repo": {
+                    "type": "string",
+                    "description": "Git repo URL (for PROJECT type).",
+                },
+                "source_branch": {
+                    "type": "string",
+                    "description": "Git branch (for PROJECT type).",
+                },
+            },
+            "required": ["environment_id", "name", "component_type"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_CONFIGURE: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_configure",
+        "description": (
+            "Update configuration of an existing component in an environment. "
+            "Only provided fields are updated. Use environment_sync after to apply changes."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+                "component_name": {
+                    "type": "string",
+                    "description": "Name or ID of the component to configure.",
+                },
+                "image": {
+                    "type": "string",
+                    "description": "New Docker image.",
+                },
+                "env_vars": {
+                    "type": "string",
+                    "description": "Additional env vars as JSON string (merged with existing).",
+                },
+                "cpu_limit": {
+                    "type": "string",
+                    "description": "K8s CPU limit (e.g., '500m').",
+                },
+                "memory_limit": {
+                    "type": "string",
+                    "description": "K8s memory limit (e.g., '512Mi').",
+                },
+            },
+            "required": ["environment_id", "component_name"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_DEPLOY: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_deploy",
+        "description": (
+            "Provision/deploy an environment to K8s. Creates namespace, PVC, "
+            "and deploys infrastructure components. Environment must be PENDING, STOPPED, or ERROR."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID to deploy.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_STOP: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_stop",
+        "description": (
+            "Stop/deprovision an environment. Tears down K8s resources but "
+            "preserves the definition in DB for re-deployment."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID to stop.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_STATUS: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_status",
+        "description": (
+            "Get deployment status of an environment: per-component readiness, "
+            "replica counts, and error messages."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_SYNC: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_sync",
+        "description": (
+            "Re-apply K8s manifests from DB for a running environment. "
+            "Use after modifying component config to apply changes to running deployments."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID to sync.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_DELETE: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_delete",
+        "description": (
+            "Delete an environment and its K8s namespace. WARNING: Permanently removes "
+            "all K8s resources in the namespace."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID to delete.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
+ENVIRONMENT_TOOLS: list[dict] = [
+    TOOL_ENVIRONMENT_LIST,
+    TOOL_ENVIRONMENT_GET,
+    TOOL_ENVIRONMENT_CREATE,
+    TOOL_ENVIRONMENT_ADD_COMPONENT,
+    TOOL_ENVIRONMENT_CONFIGURE,
+    TOOL_ENVIRONMENT_DEPLOY,
+    TOOL_ENVIRONMENT_STOP,
+    TOOL_ENVIRONMENT_STATUS,
+    TOOL_ENVIRONMENT_SYNC,
+    TOOL_ENVIRONMENT_DELETE,
+]
+
 ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + BRAIN_TOOLS
 
 
@@ -1122,8 +1420,8 @@ DOCUMENTATION_AGENT_TOOLS: list[dict] = [
     TOOL_GET_REPOSITORY_STRUCTURE,
 ]
 
-# DevOpsAgent — no tools (uses k8s API via executor)
-DEVOPS_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS]
+# DevOpsAgent — environment management + KB
+DEVOPS_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS] + ENVIRONMENT_TOOLS
 
 # ProjectManagementAgent — KB search + brain tools for planning
 PROJECT_MANAGEMENT_AGENT_TOOLS: list[dict] = [TOOL_KB_SEARCH, TOOL_GET_KB_STATS] + BRAIN_TOOLS
