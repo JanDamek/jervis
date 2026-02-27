@@ -6,9 +6,16 @@ import com.jervis.common.ratelimit.DomainRateLimiter
 import com.jervis.common.ratelimit.UrlUtils
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.setBody
 import io.ktor.http.*
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import mu.KotlinLogging
 
 /**
@@ -114,6 +121,99 @@ class GitHubApiClient(
         val responseText = response.checkProviderResponse("GitHub", "getFile($path)")
         return json.decodeFromString(GitHubFile.serializer(), responseText)
     }
+
+    // ── Write operations ──────────────────────────────────────────────
+
+    suspend fun createIssue(
+        token: String,
+        owner: String,
+        repo: String,
+        title: String,
+        body: String? = null,
+        labels: List<String> = emptyList(),
+        assignee: String? = null,
+        baseUrl: String? = null,
+    ): GitHubIssue {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("title", title)
+            body?.let { put("body", it) }
+            if (labels.isNotEmpty()) {
+                putJsonArray("labels") { labels.forEach { add(it) } }
+            }
+            assignee?.let {
+                putJsonArray("assignees") { add(it) }
+            }
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitHub", "createIssue($owner/$repo)")
+        return json.decodeFromString(GitHubIssue.serializer(), responseText)
+    }
+
+    suspend fun updateIssue(
+        token: String,
+        owner: String,
+        repo: String,
+        issueNumber: Int,
+        title: String? = null,
+        body: String? = null,
+        state: String? = null,
+        labels: List<String>? = null,
+        assignee: String? = null,
+        baseUrl: String? = null,
+    ): GitHubIssue {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues/$issueNumber"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            title?.let { put("title", it) }
+            body?.let { put("body", it) }
+            state?.let { put("state", it) }
+            assignee?.let { put("assignee", it) }
+            labels?.let { list ->
+                putJsonArray("labels") { list.forEach { add(it) } }
+            }
+        }
+        val response = httpClient.patch(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitHub", "updateIssue(#$issueNumber)")
+        return json.decodeFromString(GitHubIssue.serializer(), responseText)
+    }
+
+    suspend fun addComment(
+        token: String,
+        owner: String,
+        repo: String,
+        issueNumber: Int,
+        body: String,
+        baseUrl: String? = null,
+    ): GitHubComment {
+        val apiUrl = getApiUrl(baseUrl)
+        val url = "$apiUrl/repos/$owner/$repo/issues/$issueNumber/comments"
+        rateLimit(url)
+        val payload = buildJsonObject {
+            put("body", body)
+        }
+        val response = httpClient.post(url) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        val responseText = response.checkProviderResponse("GitHub", "addComment(#$issueNumber)")
+        return json.decodeFromString(GitHubComment.serializer(), responseText)
+    }
 }
 
 @Serializable
@@ -166,4 +266,17 @@ data class GitHubFile(
     val content: String? = null,
     val encoding: String? = null,
     val download_url: String? = null
+)
+
+@Serializable
+data class GitHubComment(
+    val id: Long,
+    val body: String,
+    val created_at: String,
+    val user: GitHubCommentUser? = null,
+)
+
+@Serializable
+data class GitHubCommentUser(
+    val login: String,
 )

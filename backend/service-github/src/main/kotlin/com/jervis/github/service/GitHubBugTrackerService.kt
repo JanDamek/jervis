@@ -36,23 +36,7 @@ class GitHubBugTrackerService(
         val issues = apiClient.listIssues(token, parts[0], parts[1], request.baseUrl.takeIf { it.isNotBlank() })
 
         return BugTrackerSearchResponse(
-            issues =
-                issues.map { issue ->
-                    BugTrackerIssueDto(
-                        id = issue.id.toString(),
-                        key = "#${issue.number}",
-                        title = issue.title,
-                        description = issue.body,
-                        status = issue.state,
-                        priority = null,
-                        assignee = null,
-                        reporter = null,
-                        created = issue.created_at,
-                        updated = issue.updated_at,
-                        url = issue.html_url,
-                        projectKey = projectKey,
-                    )
-                },
+            issues = issues.map { it.toBugTrackerDto(projectKey) },
             total = issues.size,
         )
     }
@@ -75,20 +59,7 @@ class GitHubBugTrackerService(
         val issue = apiClient.getIssue(token, ownerRepo.first, ownerRepo.second, issueNumber)
 
         return BugTrackerIssueResponse(
-            issue = BugTrackerIssueDto(
-                id = issue.id.toString(),
-                key = "#${issue.number}",
-                title = issue.title,
-                description = issue.body,
-                status = issue.state,
-                priority = null,
-                assignee = null,
-                reporter = null,
-                created = issue.created_at,
-                updated = issue.updated_at,
-                url = issue.html_url,
-                projectKey = "${ownerRepo.first}/${ownerRepo.second}",
-            ),
+            issue = issue.toBugTrackerDto("${ownerRepo.first}/${ownerRepo.second}"),
         )
     }
 
@@ -107,6 +78,123 @@ class GitHubBugTrackerService(
                 )
             },
         )
+    }
+
+    override suspend fun createIssue(request: BugTrackerCreateIssueRpcRequest): BugTrackerIssueResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val (owner, repo) = parseOwnerRepo(request.projectKey)
+
+        val issue = apiClient.createIssue(
+            token = token,
+            owner = owner,
+            repo = repo,
+            title = request.summary,
+            body = request.description,
+            labels = request.labels,
+            assignee = request.assignee,
+            baseUrl = request.baseUrl.takeIf { it.isNotBlank() },
+        )
+
+        return BugTrackerIssueResponse(
+            issue = issue.toBugTrackerDto("$owner/$repo"),
+        )
+    }
+
+    override suspend fun updateIssue(request: BugTrackerUpdateIssueRpcRequest): BugTrackerIssueResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val issueNumber = request.issueKey.removePrefix("#").toIntOrNull()
+            ?: throw IllegalArgumentException("Invalid issue key: ${request.issueKey}")
+        val (owner, repo) = parseOwnerRepoFromBaseUrl(request.baseUrl)
+
+        val issue = apiClient.updateIssue(
+            token = token,
+            owner = owner,
+            repo = repo,
+            issueNumber = issueNumber,
+            title = request.summary,
+            body = request.description,
+            assignee = request.assignee,
+            labels = request.labels,
+            baseUrl = request.baseUrl.takeIf { it.isNotBlank() },
+        )
+
+        return BugTrackerIssueResponse(
+            issue = issue.toBugTrackerDto("$owner/$repo"),
+        )
+    }
+
+    override suspend fun addComment(request: BugTrackerAddCommentRpcRequest): BugTrackerCommentResponse {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val issueNumber = request.issueKey.removePrefix("#").toIntOrNull()
+            ?: throw IllegalArgumentException("Invalid issue key: ${request.issueKey}")
+        val (owner, repo) = parseOwnerRepoFromBaseUrl(request.baseUrl)
+
+        val comment = apiClient.addComment(
+            token = token,
+            owner = owner,
+            repo = repo,
+            issueNumber = issueNumber,
+            body = request.body,
+            baseUrl = request.baseUrl.takeIf { it.isNotBlank() },
+        )
+
+        return BugTrackerCommentResponse(
+            id = comment.id.toString(),
+            author = comment.user?.login,
+            body = comment.body,
+            created = comment.created_at,
+        )
+    }
+
+    override suspend fun transitionIssue(request: BugTrackerTransitionRpcRequest) {
+        val token = request.bearerToken ?: throw IllegalArgumentException("Bearer token required for GitHub")
+        val issueNumber = request.issueKey.removePrefix("#").toIntOrNull()
+            ?: throw IllegalArgumentException("Invalid issue key: ${request.issueKey}")
+        val (owner, repo) = parseOwnerRepoFromBaseUrl(request.baseUrl)
+
+        // GitHub Issues only have two states: "open" and "closed"
+        val state = when (request.transitionName.lowercase()) {
+            "close", "closed", "done", "resolved" -> "closed"
+            "open", "reopen", "reopened" -> "open"
+            else -> throw IllegalArgumentException(
+                "Unknown transition '${request.transitionName}'. GitHub supports: open, close"
+            )
+        }
+
+        apiClient.updateIssue(
+            token = token,
+            owner = owner,
+            repo = repo,
+            issueNumber = issueNumber,
+            state = state,
+            baseUrl = request.baseUrl.takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun GitHubIssue.toBugTrackerDto(projectKey: String) = BugTrackerIssueDto(
+        id = id.toString(),
+        key = "#$number",
+        title = title,
+        description = body,
+        status = state,
+        priority = null,
+        assignee = null,
+        reporter = null,
+        created = created_at,
+        updated = updated_at,
+        url = html_url,
+        projectKey = projectKey,
+    )
+
+    private fun parseOwnerRepo(projectKey: String): Pair<String, String> {
+        val parts = projectKey.split("/")
+        if (parts.size != 2) throw IllegalArgumentException("Project key must be in format 'owner/repo', got: $projectKey")
+        return parts[0] to parts[1]
+    }
+
+    private fun parseOwnerRepoFromBaseUrl(baseUrl: String): Pair<String, String> {
+        return extractOwnerRepo(baseUrl.trimEnd('/'))
+            ?: throw IllegalArgumentException("Cannot determine repository from baseUrl: $baseUrl. Use format 'https://github.com/owner/repo'")
     }
 
     /**
