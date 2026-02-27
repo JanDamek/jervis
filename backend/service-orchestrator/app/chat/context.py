@@ -506,7 +506,7 @@ class ChatContextAssembler:
         formatted = []
         for m in messages:
             label = {"user": "Uživatel", "assistant": "Jervis"}.get(m.role, m.role)
-            formatted.append(f"[{label}]: {m.content[:500]}")
+            formatted.append(f"[{label}]: {m.content[:2000]}")
         conversation_text = "\n".join(formatted)
 
         previous_context = ""
@@ -517,12 +517,15 @@ class ChatContextAssembler:
             {
                 "role": "system",
                 "content": (
-                    "Jsi analytik konverzací. Tvůj úkol je shrnout blok konverzace do stručného souhrnu.\n\n"
+                    "Jsi analytik konverzací. Tvůj úkol je shrnout blok konverzace do obsahově kompletního souhrnu.\n\n"
                     "Pravidla:\n"
                     "- Piš česky\n"
-                    "- Souhrn: 2-3 věty shrnující hlavní téma a průběh (max 500 znaků)\n"
+                    "- Souhrn: zachyť VŠECHNA hlavní témata, rozhodnutí a akce — délka dle potřeby obsahu (ne max 500 znaků)\n"
+                    "- U každého tématu uveď kontext: název projektu/klienta, zmíněné entity (issue ID, soubory, služby)\n"
+                    "- Pokud konverzace zahrnuje VÍCE projektů, jasně odděluj: '[Projekt X]: ..., [Projekt Y]: ...'\n"
+                    "- Pokud najdeš zprávu '[KONTEXT PŘEPNUT]', je to boundary mezi projekty — odděluj je v souhrnu\n"
                     "- Klíčová rozhodnutí: důležitá rozhodnutí učiněná v konverzaci\n"
-                    "- Témata: hlavní témata diskuze (stručné štítky)\n"
+                    "- Témata: hlavní témata diskuze (stručné štítky včetně názvu projektu)\n"
                     "- Pokud se směr konverzace ZÁSADNĚ změnil oproti předchozímu kontextu, "
                     "nastav is_checkpoint=true a uveď důvod\n\n"
                     "Odpověz POUZE validním JSON (bez markdown backticks):\n"
@@ -558,13 +561,13 @@ class ChatContextAssembler:
                 parsed = _parse_json_response(content)
                 if not parsed:
                     logger.warning("COMPRESS_PARSE_FAILED | conversationId=%s | attempt=%d", conversation_id, attempt)
-                    parsed = {"summary": content[:500]}
+                    parsed = {"summary": content[:2000]}
 
                 await self._save_summary(
                     conversation_id=conversation_id,
                     sequence_start=messages[0].sequence,
                     sequence_end=messages[-1].sequence,
-                    summary=parsed.get("summary", content[:500]),
+                    summary=parsed.get("summary", content[:2000]),
                     key_decisions=parsed.get("key_decisions", []),
                     topics=parsed.get("topics", []),
                     is_checkpoint=parsed.get("is_checkpoint", False),

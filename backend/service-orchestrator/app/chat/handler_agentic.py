@@ -257,13 +257,28 @@ async def run_agentic_loop(
                 if resolved.get("client_id"):
                     effective_client_id = resolved["client_id"]
                     effective_project_id = resolved.get("project_id")
+
+                    # Save project boundary to conversation history so summaries
+                    # and context assembly can distinguish project contexts
+                    boundary_text = (
+                        f"[KONTEXT PŘEPNUT] Klient: {resolved.get('client_name', effective_client_id)}"
+                        + (f", Projekt: {resolved.get('project_name', effective_project_id)}" if effective_project_id else "")
+                        + ". Předchozí kontext uzavřen — následující zprávy patří k novému projektu."
+                    )
+                    try:
+                        await save_assistant_message(request.session_id, boundary_text, {"scope_boundary": "true"}, compress=False)
+                    except Exception as e:
+                        logger.warning("Failed to save scope boundary message: %s", e)
+
                     # Scope changed — inject permissions reset so LLM re-asks for consent
                     messages.append({
                         "role": "system",
                         "content": (
-                            "Scope se změnil — všechna dříve udělená oprávnění pro write akce "
+                            f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
+                            "Všechna dříve udělená oprávnění pro write akce "
                             "(create_background_task, dispatch_coding_agent, store_knowledge, brain_create_issue) "
-                            "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas."
+                            "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
+                            "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),
                     })
                     yield ChatStreamEvent(
