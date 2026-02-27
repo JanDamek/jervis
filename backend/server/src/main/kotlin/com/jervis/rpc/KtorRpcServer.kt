@@ -19,6 +19,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalChatContextApi
+import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalFilterRulesApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalTaskApi
@@ -57,6 +58,8 @@ class KtorRpcServer(
     private val environmentResourceRpcImpl: EnvironmentResourceRpcImpl,
     private val gpgCertificateRpcImpl: GpgCertificateRpcImpl,
     private val environmentResourceService: com.jervis.service.environment.EnvironmentResourceService,
+    private val environmentService: com.jervis.service.environment.EnvironmentService,
+    private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
     private val brainWriteService: com.jervis.service.brain.BrainWriteService,
@@ -101,6 +104,7 @@ class KtorRpcServer(
                             installInternalTaskApi(taskRepository, taskService, userTaskService)
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
+                            installInternalEnvironmentApi(environmentService, environmentK8sService)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
