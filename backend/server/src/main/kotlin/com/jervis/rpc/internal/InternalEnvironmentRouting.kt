@@ -13,10 +13,7 @@ import com.jervis.service.environment.EnvironmentK8sService
 import com.jervis.service.environment.EnvironmentService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.PartData
-import io.ktor.http.content.forEachPart
 import io.ktor.server.request.receive
-import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.delete
@@ -351,156 +348,6 @@ fun Routing.installInternalEnvironmentApi(
         }
     }
 
-    // --- Upload file to a running component pod ---
-    post("/internal/environments/{id}/components/{componentName}/upload") {
-        try {
-            val id = call.parameters["id"] ?: return@post call.respondText(
-                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val componentName = call.parameters["componentName"] ?: return@post call.respondText(
-                "{\"error\":\"Missing componentName\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
-            val component = env.components.find { it.name == componentName || it.id == componentName }
-                ?: return@post call.respondText(
-                    "{\"error\":\"Component '$componentName' not found\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.NotFound,
-                )
-
-            var fileName = "upload"
-            var fileBytes: ByteArray? = null
-            var targetDir = "/tmp"
-
-            val multipart = call.receiveMultipart()
-            multipart.forEachPart { part ->
-                when (part) {
-                    is PartData.FileItem -> {
-                        fileName = part.originalFileName ?: "upload"
-                        fileBytes = part.provider().readBytes()
-                    }
-                    is PartData.FormItem -> {
-                        when (part.name) {
-                            "targetDir" -> targetDir = part.value
-                            "fileName" -> fileName = part.value
-                        }
-                    }
-                    else -> {}
-                }
-                part.dispose()
-            }
-
-            val bytes = fileBytes ?: return@post call.respondText(
-                "{\"error\":\"No file provided\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-
-            // Max 100MB
-            if (bytes.size > 100 * 1024 * 1024) {
-                return@post call.respondText(
-                    "{\"error\":\"File too large (max 100MB)\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.BadRequest,
-                )
-            }
-
-            val targetPath = environmentK8sService.uploadFileToPod(
-                namespace = env.namespace,
-                componentName = component.name,
-                fileBytes = bytes,
-                fileName = fileName,
-                targetDir = targetDir,
-            )
-
-            call.respondText(
-                "{\"ok\":true,\"targetPath\":\"$targetPath\",\"sizeBytes\":${bytes.size}}",
-                ContentType.Application.Json,
-            )
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to upload file to component" }
-            call.respondText(
-                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                ContentType.Application.Json,
-                HttpStatusCode.InternalServerError,
-            )
-        }
-    }
-
-    // --- Execute command in a running component pod ---
-    post("/internal/environments/{id}/components/{componentName}/exec") {
-        try {
-            val id = call.parameters["id"] ?: return@post call.respondText(
-                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val componentName = call.parameters["componentName"] ?: return@post call.respondText(
-                "{\"error\":\"Missing componentName\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val body = call.receive<ExecCommandRequest>()
-            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
-            val component = env.components.find { it.name == componentName || it.id == componentName }
-                ?: return@post call.respondText(
-                    "{\"error\":\"Component '$componentName' not found\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.NotFound,
-                )
-
-            val output = environmentK8sService.execInPod(
-                namespace = env.namespace,
-                componentName = component.name,
-                command = body.command,
-            )
-
-            call.respondText(
-                internalJson.encodeToString(ExecCommandResponse.serializer(), ExecCommandResponse(output = output)),
-                ContentType.Application.Json,
-            )
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to exec in component pod" }
-            call.respondText(
-                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                ContentType.Application.Json,
-                HttpStatusCode.InternalServerError,
-            )
-        }
-    }
-
-    // --- List files in a component pod directory ---
-    get("/internal/environments/{id}/components/{componentName}/files") {
-        try {
-            val id = call.parameters["id"] ?: return@get call.respondText(
-                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val componentName = call.parameters["componentName"] ?: return@get call.respondText(
-                "{\"error\":\"Missing componentName\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
-            )
-            val directory = call.request.queryParameters["dir"] ?: "/tmp"
-            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
-            val component = env.components.find { it.name == componentName || it.id == componentName }
-                ?: return@get call.respondText(
-                    "{\"error\":\"Component '$componentName' not found\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.NotFound,
-                )
-
-            val listing = environmentK8sService.listFilesInPod(
-                namespace = env.namespace,
-                componentName = component.name,
-                directory = directory,
-            )
-
-            call.respondText(
-                "{\"directory\":\"$directory\",\"listing\":${internalJson.encodeToString(kotlinx.serialization.builtins.serializer<String>(), listing)}}",
-                ContentType.Application.Json,
-            )
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to list files in component pod" }
-            call.respondText(
-                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                ContentType.Application.Json,
-                HttpStatusCode.InternalServerError,
-            )
-        }
-    }
-
     // --- Get component templates ---
     get("/internal/environments/templates") {
         try {
@@ -587,14 +434,4 @@ data class ConfigureComponentRequest(
     val sourceRepo: String? = null,
     val sourceBranch: String? = null,
     val dockerfilePath: String? = null,
-)
-
-@Serializable
-data class ExecCommandRequest(
-    val command: List<String>,
-)
-
-@Serializable
-data class ExecCommandResponse(
-    val output: String,
 )

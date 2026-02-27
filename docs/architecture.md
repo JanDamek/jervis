@@ -1323,9 +1323,6 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `environment_status(environment_id)` | Per-component readiness and replica status |
 | `environment_sync(environment_id)` | Re-apply manifests from DB to running K8s |
 | `environment_delete(environment_id)` | Delete environment + namespace |
-| `environment_upload_file(env_id, component, base64, name, dir)` | Upload file (SQL dump, seed data) to running pod |
-| `environment_exec(env_id, component, command)` | Execute command in running pod (e.g., psql import) |
-| `environment_list_files(env_id, component, dir)` | List files in pod directory |
 
 **K8s Resource Inspection Tools (namespace as parameter):**
 
@@ -1338,11 +1335,13 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `restart_deployment(namespace, name)` | Trigger rolling restart |
 | `get_namespace_status(namespace)` | Overall namespace health (pod counts, crashing pods) |
 
-**Design Philosophy: Chat-First Orchestration**
-- File upload, exec, and list-files are **orchestrator-only** operations (NOT exposed in UI)
-- User attaches files in chat → orchestrator picks them up and uploads to pods via MCP tools
+**Design Philosophy: Chat-First, CLI-Based Operations**
 - UI (ComponentsTab, EnvironmentManagerScreen) is for **configuration and monitoring only**
-- All operational actions (deploy, stop, sync, upload, exec) flow through chat → orchestrator → internal REST
+- Operational actions (deploy, stop, sync) flow through: chat → orchestrator → internal REST
+- **Data operations (DB import, seed data):** Agent connects to K8s services directly via DNS
+  (`psql -h postgres.env-ns.svc.cluster.local -f /path/to/dump.sql`) — no pod exec needed
+- Files come from chat attachments → stored via `DirectoryStructureService` → agent uses CLI tools
+- Environment context in `CLAUDE.md` provides K8s DNS hostnames, ports, ENV vars for direct connectivity
 
 **Tool Loading Strategy:**
 - CRUD tools are in `ENVIRONMENT_TOOLS` list + `DEVOPS_AGENT_TOOLS` (NOT in ALL_RESPOND_TOOLS_FULL)
@@ -1365,9 +1364,6 @@ POST   /internal/environments/{id}/stop
 POST   /internal/environments/{id}/sync
 GET    /internal/environments/{id}/status
 GET    /internal/environments/templates
-POST   /internal/environments/{id}/components/{name}/upload  → multipart file upload to pod
-POST   /internal/environments/{id}/components/{name}/exec    → ExecCommandRequest
-GET    /internal/environments/{id}/components/{name}/files?dir=...
 
 # K8s resource inspection (existing)
 GET  /internal/environment/{ns}/resources?type=pods|deployments|services|all

@@ -464,26 +464,6 @@ async def execute_tool(
             result = await _execute_environment_delete(
                 environment_id=arguments.get("environment_id", ""),
             )
-        elif tool_name == "environment_upload_file":
-            result = await _execute_environment_upload_file(
-                environment_id=arguments.get("environment_id", ""),
-                component_name=arguments.get("component_name", ""),
-                file_content_base64=arguments.get("file_content_base64", ""),
-                file_name=arguments.get("file_name", "upload"),
-                target_dir=arguments.get("target_dir", "/tmp"),
-            )
-        elif tool_name == "environment_exec":
-            result = await _execute_environment_exec(
-                environment_id=arguments.get("environment_id", ""),
-                component_name=arguments.get("component_name", ""),
-                command=arguments.get("command", ""),
-            )
-        elif tool_name == "environment_list_files":
-            result = await _execute_environment_list_files(
-                environment_id=arguments.get("environment_id", ""),
-                component_name=arguments.get("component_name", ""),
-                directory=arguments.get("directory", "/tmp"),
-            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2738,81 +2718,3 @@ async def _execute_environment_delete(environment_id: str) -> str:
         return f"Error deleting environment: {str(e)[:300]}"
 
 
-async def _execute_environment_upload_file(
-    environment_id: str,
-    component_name: str,
-    file_content_base64: str,
-    file_name: str,
-    target_dir: str = "/tmp",
-) -> str:
-    """Upload file to a running component pod."""
-    if not environment_id or not component_name or not file_content_base64:
-        return "Error: environment_id, component_name, and file_content_base64 are required."
-    try:
-        import base64
-        import io
-        file_bytes = base64.b64decode(file_content_base64)
-        async with httpx.AsyncClient(timeout=120) as client:
-            files = {"file": (file_name, io.BytesIO(file_bytes), "application/octet-stream")}
-            data = {"targetDir": target_dir, "fileName": file_name}
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/components/{component_name}/upload",
-                files=files,
-                data=data,
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            result = resp.json()
-            if result.get("error"):
-                return f"Error: {result['error']}"
-            return f"Uploaded {file_name} to {result.get('targetPath', '?')} ({result.get('sizeBytes', 0)} bytes)"
-    except Exception as e:
-        return f"Error uploading file: {str(e)[:300]}"
-
-
-async def _execute_environment_exec(
-    environment_id: str,
-    component_name: str,
-    command: str,
-) -> str:
-    """Execute command in a running component pod."""
-    if not environment_id or not component_name or not command:
-        return "Error: environment_id, component_name, and command are required."
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/components/{component_name}/exec",
-                json={"command": ["sh", "-c", command]},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            result = resp.json()
-            if result.get("error"):
-                return f"Error: {result['error']}"
-            return result.get("output", "(no output)")
-    except Exception as e:
-        return f"Error executing command: {str(e)[:300]}"
-
-
-async def _execute_environment_list_files(
-    environment_id: str,
-    component_name: str,
-    directory: str = "/tmp",
-) -> str:
-    """List files in a component pod directory."""
-    if not environment_id or not component_name:
-        return "Error: environment_id and component_name are required."
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/components/{component_name}/files",
-                params={"dir": directory},
-            )
-            if resp.status_code != 200:
-                return f"Error ({resp.status_code}): {resp.text[:300]}"
-            result = resp.json()
-            if result.get("error"):
-                return f"Error: {result['error']}"
-            return f"Directory: {result.get('directory', '?')}\n{result.get('listing', '')}"
-    except Exception as e:
-        return f"Error listing files: {str(e)[:300]}"

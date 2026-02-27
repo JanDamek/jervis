@@ -159,22 +159,3 @@ data class PropertyMappingTemplateDto(
     val description: String,
 )
 
-/**
- * Result of uploading a file to a component pod.
- */
-@Serializable
-data class FileUploadResultDto(
-    val targetPath: String,
-    val sizeBytes: Long,
-    val componentName: String,
-)
-
-/**
- * Result of executing a command in a component pod.
- */
-@Serializable
-data class ExecResultDto(
-    val output: String,
-    val componentName: String,
-    val exitCode: Int? = null,
-)
