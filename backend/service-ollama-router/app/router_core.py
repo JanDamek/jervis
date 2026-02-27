@@ -15,7 +15,7 @@ import time
 import uuid
 
 import httpx
-from starlette.responses import Response, JSONResponse
+from starlette.responses import Response, JSONResponse, StreamingResponse
 
 from .config import settings
 from .gpu_state import GpuBackend, GpuPool
@@ -122,10 +122,18 @@ class OllamaRouter:
             response = await self._do_route(request)
             duration = time.monotonic() - start_time
             # ── Exit logging ──
-            logger.info(
-                "REQUEST_OUT: id=%s duration=%.2fs",
-                request_id, duration,
-            )
+            # For streaming responses, duration here is only routing time (not generation).
+            # Actual stream duration is logged by PROXY_STREAM in proxy.py.
+            if isinstance(response, StreamingResponse):
+                logger.info(
+                    "REQUEST_OUT: id=%s routing=%.2fs (streaming — see PROXY_STREAM for total)",
+                    request_id, duration,
+                )
+            else:
+                logger.info(
+                    "REQUEST_OUT: id=%s duration=%.2fs",
+                    request_id, duration,
+                )
             return response
         except Exception as e:
             duration = time.monotonic() - start_time
@@ -225,9 +233,13 @@ class OllamaRouter:
                         # Only reload embedding models alongside (small, won't hurt perf)
                         for emb_model in previous_embeddings:
                             await self.gpu_pool.load_model(gpu, emb_model, self._mgmt_client)
-                        return await self._send_to_gpu(gpu, request)
                 finally:
+                    # Clear flag after loading completes — NOT after request finishes.
+                    # Keeping it True during the request blocks other requests from
+                    # using this GPU (find_unreserved* filters loading_in_progress).
                     gpu.loading_in_progress = False
+                if loaded:
+                    return await self._send_to_gpu(gpu, request)
             elif model in EMBEDDING_MODELS:
                 # Embedding model — always safe to co-locate (small)
                 loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
@@ -239,7 +251,55 @@ class OllamaRouter:
                 if loaded:
                     return await self._send_to_gpu(gpu, request)
 
+        # ── 6. Large models: wait for GPU instead of CPU fallback ──────────
+        # Running :30b on CPU is pointless (too slow). Wait briefly for a GPU.
+        from .gpu_state import estimate_vram
+        if estimate_vram(model) >= 20.0:
+            gpu = await self._wait_for_gpu(request, timeout_s=60)
+            if gpu:
+                return await self._send_to_gpu(gpu, request)
+            logger.warning(
+                "REQUEST_REJECT: id=%s model=%s — no GPU available after wait, refusing CPU for large model",
+                request.request_id, model,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "no_gpu_available",
+                    "message": f"Model {model} is too large for CPU. All GPUs busy, try again later.",
+                },
+            )
+
         return await self._send_to_cpu(request)
+
+    # ── Wait for GPU availability ────────────────────────────────────────
+
+    async def _wait_for_gpu(self, request: TrackedRequest, timeout_s: int = 60) -> GpuBackend | None:
+        """Wait up to timeout_s for an unreserved GPU with the model (or free to load it)."""
+        model = request.model
+        deadline = time.monotonic() + timeout_s
+        logger.info(
+            "WAIT_FOR_GPU: id=%s model=%s — waiting up to %ds for GPU",
+            request.request_id, model, timeout_s,
+        )
+        while time.monotonic() < deadline:
+            if request.cancel_event.is_set():
+                return None
+
+            # Check for unreserved GPU with model already loaded
+            gpu = self.gpu_pool.find_unreserved_with_model(model)
+            if gpu:
+                return gpu
+
+            # Check for any unreserved GPU (will need model load)
+            gpu = self.gpu_pool.find_unreserved_least_busy()
+            if gpu:
+                loaded = await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
+                if loaded:
+                    return gpu
+
+            await asyncio.sleep(3)
+        return None
 
     # ── CRITICAL routing (step 3) ────────────────────────────────────────
 
@@ -280,10 +340,16 @@ class OllamaRouter:
                 if loaded:
                     logger.info("Loaded %s alongside :30b on GPU %s for CRITICAL", model, gpu.name)
                     return await self._send_to_gpu(gpu, request)
-            # No reservation yet — use any GPU or CPU
+            # No reservation yet — use any GPU, try loading, then CPU
             for gpu in self.gpu_pool.healthy_backends:
                 if gpu.has_model(model):
                     return await self._send_to_gpu(gpu, request)
+            # Model not loaded anywhere — try to load on least-busy GPU
+            target = self.gpu_pool.find_least_busy()
+            if target:
+                loaded = await self.gpu_pool.load_model(target, model, self._mgmt_client)
+                if loaded:
+                    return await self._send_to_gpu(target, request)
             return await self._send_to_cpu(request)
 
         target_gpu = None
