@@ -12,6 +12,9 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download tiktoken BPE data (avoids runtime download behind SSL proxy)
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 # Copy application code
 COPY app/ ./app/
 

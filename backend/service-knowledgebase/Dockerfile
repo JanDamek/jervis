@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download tiktoken BPE data (avoids runtime download behind SSL proxy)
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 COPY . .
 
 # Expose port 8080 (matching the Kotlin service port if possible, or standard 8080)
