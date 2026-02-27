@@ -107,11 +107,15 @@ class GpuPool:
         return [b for b in self.backends.values() if b.healthy]
 
     def find_with_model(self, model: str) -> GpuBackend | None:
-        """Find a healthy GPU backend that already has this model loaded."""
-        for b in self.healthy_backends:
-            if b.has_model(model):
-                return b
-        return None
+        """Find a healthy GPU backend that already has this model loaded.
+
+        When multiple GPUs have the model, returns the least busy one
+        for load balancing (prevents always picking the first GPU).
+        """
+        candidates = [b for b in self.healthy_backends if b.has_model(model)]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda b: b.active_request_count())
 
     def find_with_free_vram(self, model: str) -> GpuBackend | None:
         """Find a healthy GPU backend with enough free VRAM for the model."""

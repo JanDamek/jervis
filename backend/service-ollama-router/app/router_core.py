@@ -179,19 +179,17 @@ class OllamaRouter:
             if not self.gpu_pool.find_unreserved():
                 return await self._send_to_cpu(request)
 
-        # ── 2. Find GPU that already has this model loaded ──────────────
-        gpu = self.gpu_pool.find_with_model(model)
-        if gpu:
-            if priority <= Priority.CRITICAL:
-                if not gpu.has_active_critical():
-                    await self._ensure_critical_reservation(gpu)
-                    return await self._send_to_gpu(gpu, request)
-            elif not gpu.reserved_by:
-                return await self._send_to_gpu(gpu, request)
-
-        # ── 3. CRITICAL: auto-reserve GPU, ensure model loaded ──────────
+        # ── 2. CRITICAL: always go through _route_critical ─────────────
+        # _route_critical handles reservation, preemption, and multi-GPU
+        # selection properly. Skipping it (via find_with_model shortcut)
+        # caused all CRITICAL requests to land on the first GPU.
         if priority <= Priority.CRITICAL:
             return await self._route_critical(request)
+
+        # ── 3. Find GPU that already has this model loaded (NORMAL) ────
+        gpu = self.gpu_pool.find_with_model(model)
+        if gpu and not gpu.reserved_by:
+            return await self._send_to_gpu(gpu, request)
 
         # ── 4. Find unreserved GPU with model or free VRAM ──────────────
         gpu = self.gpu_pool.find_unreserved_with_model(model)
