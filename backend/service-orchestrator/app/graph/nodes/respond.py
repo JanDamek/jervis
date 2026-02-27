@@ -286,6 +286,19 @@ async def respond(state: dict) -> dict:
             except json.JSONDecodeError:
                 arguments = {}
 
+            # Tool loop detection BEFORE execution — skip duplicate calls
+            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
+            if loop_reason:
+                logger.warning("Respond: tool loop for %s — skipping execution", tool_name)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": f"ERROR: {loop_reason}",
+                })
+                tool_loop_break = True
+                break
+
             logger.info("Respond: calling tool %s with args: %s", tool_name, arguments)
 
             # Execute tool — may raise AskUserInterrupt for ask_user tool
@@ -341,12 +354,6 @@ async def respond(state: dict) -> dict:
             messages.append(tool_result_msg)
             logger.debug("Respond: appended tool result message: %s", tool_result_msg)
 
-            # Tool loop detection
-            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
-            if loop_reason:
-                messages.append({"role": "system", "content": loop_reason})
-                tool_loop_break = True
-                break
         if tool_loop_break:
             break
         # Continue loop - will call LLM again with tool results

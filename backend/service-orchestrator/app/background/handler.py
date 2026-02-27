@@ -275,6 +275,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         logger.info("Background: executing %d tool calls", len(tool_calls))
         messages.append(message_obj.model_dump())
 
+        loop_break = False
         for tool_call in tool_calls:
             tool_name = tool_call.function.name
             try:
@@ -284,6 +285,43 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 tool_parse_failures += 1
 
             total_tool_calls += 1
+
+            # Loop detection BEFORE execution — don't waste GPU time on duplicate calls
+            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
+            if loop_reason:
+                logger.warning(
+                    "Background: tool loop detected for %s — skipping execution, breaking iteration",
+                    tool_name,
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": f"ERROR: {loop_reason}",
+                })
+                loop_break = True
+                break
+
+            # Semantic duplicate: same search tool called 3+ times (even with different args)
+            search_tools = {"brain_search_issues", "kb_search", "web_search", "brain_search_pages"}
+            if tool_name in search_tools:
+                same_tool_count = sum(1 for name, _ in tool_call_history if name == tool_name)
+                if same_tool_count >= 3:
+                    logger.warning(
+                        "Background: search tool '%s' called %d times — forcing conclusion",
+                        tool_name, same_tool_count,
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": (
+                            f"ERROR: STOP: {tool_name} already called {same_tool_count} times. "
+                            "Use the results you already have. Provide final result NOW."
+                        ),
+                    })
+                    loop_break = True
+                    break
 
             try:
                 if tool_name == "dispatch_coding_agent":
@@ -354,29 +392,10 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "content": result,
             })
 
-            # Loop detection (shared helper — exact duplicate detection)
-            loop_reason = detect_tool_loop(tool_call_history, tool_name, arguments)
-            if loop_reason:
-                messages.append({"role": "system", "content": loop_reason})
-                break
-
-            # Semantic duplicate: same search tool called 3+ times (even with different args)
-            search_tools = {"brain_search_issues", "kb_search", "web_search", "brain_search_pages"}
-            if tool_name in search_tools:
-                same_tool_count = sum(1 for name, _ in tool_call_history if name == tool_name)
-                if same_tool_count >= 3:
-                    logger.warning(
-                        "Background: search tool '%s' called %d times — forcing conclusion",
-                        tool_name, same_tool_count,
-                    )
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            f"STOP: {tool_name} already called {same_tool_count} times. "
-                            "Use the results you already have. Provide final result NOW."
-                        ),
-                    })
-                    break
+        # If tool loop or search saturation detected, stop the outer iteration loop
+        if loop_break:
+            logger.info("Background: breaking iteration loop due to tool loop/saturation")
+            break
 
     # --- EPIC 3: Code Review Phase (after coding agent dispatch) ---
     # E3-S2: Review with re-dispatch loop (max 2 rounds on REQUEST_CHANGES)
