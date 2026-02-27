@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -35,6 +37,7 @@ import com.jervis.dto.coding.GpgCertificateUploadDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
+import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JEmptyState
 import com.jervis.ui.design.JervisSpacing
 import com.jervis.ui.design.JPrimaryButton
@@ -43,7 +46,12 @@ import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JSnackbarHost
 import com.jervis.ui.design.JStatusBadge
 import com.jervis.ui.design.JTextField
+import com.jervis.ui.util.SystemGpgKey
+import com.jervis.ui.util.exportSystemGpgKey
+import com.jervis.ui.util.listSystemGpgKeys
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun GpgCertificateSettings(repository: JervisRepository) {
@@ -76,7 +84,33 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                // Existing certificates (global list — not per-client)
+                // System GPG import (Desktop only — returns empty on Android/iOS)
+                item {
+                    GpgSystemImport(
+                        onImport = { keyId, userName, userEmail, armoredKey, passphrase ->
+                            scope.launch {
+                                try {
+                                    repository.gpgCertificates.uploadCertificate(
+                                        GpgCertificateUploadDto(
+                                            keyId = keyId,
+                                            userName = userName,
+                                            userEmail = userEmail,
+                                            privateKeyArmored = armoredKey,
+                                            passphrase = passphrase.ifBlank { null },
+                                        ),
+                                    )
+                                    loadCertificates()
+                                    snackbarHostState.showSnackbar("GPG klíč importován ze systému")
+                                } catch (e: Exception) {
+                                    snackbarHostState.showSnackbar("Chyba importu: ${e.message}")
+                                }
+                            }
+                        },
+                        snackbarHostState = snackbarHostState,
+                    )
+                }
+
+                // Existing certificates (global list)
                 if (certificates.isEmpty()) {
                     item {
                         JEmptyState(
@@ -105,7 +139,7 @@ fun GpgCertificateSettings(repository: JervisRepository) {
                     }
                 }
 
-                // Upload new certificate
+                // Manual upload form
                 item {
                     GpgUploadForm(
                         onUpload = { keyId, userName, userEmail, privateKey, passphrase ->
@@ -136,6 +170,107 @@ fun GpgCertificateSettings(repository: JervisRepository) {
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
         )
+    }
+}
+
+@Composable
+private fun GpgSystemImport(
+    onImport: (keyId: String, userName: String, userEmail: String, armoredKey: String, passphrase: String) -> Unit,
+    snackbarHostState: SnackbarHostState,
+) {
+    val scope = rememberCoroutineScope()
+    var systemKeys by remember { mutableStateOf<List<SystemGpgKey>>(emptyList()) }
+    var selectedKey by remember { mutableStateOf<SystemGpgKey?>(null) }
+    var passphrase by remember { mutableStateOf("") }
+    var isDetecting by remember { mutableStateOf(true) }
+    var isExporting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        systemKeys = withContext(Dispatchers.Default) { listSystemGpgKeys() }
+        isDetecting = false
+    }
+
+    // Don't show this section if GPG is not available (Android/iOS)
+    if (!isDetecting && systemKeys.isEmpty()) return
+
+    JCard {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Import ze systému", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Importovat GPG klíč z lokálního keyringu",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (isDetecting) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Načítám systémové GPG klíče...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                JDropdown(
+                    items = systemKeys,
+                    selectedItem = selectedKey,
+                    onItemSelected = { selectedKey = it },
+                    label = "Systémový GPG klíč",
+                    itemLabel = { "${it.userName} <${it.userEmail}> (${it.keyId.takeLast(8)})" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                JTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it },
+                    label = "Passphrase (volitelné)",
+                    placeholder = "Pouze pokud je klíč chráněný heslem",
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                JPrimaryButton(
+                    onClick = {
+                        val key = selectedKey ?: return@JPrimaryButton
+                        isExporting = true
+                        scope.launch {
+                            val armored = withContext(Dispatchers.Default) {
+                                exportSystemGpgKey(key.keyId)
+                            }
+                            isExporting = false
+                            if (armored != null) {
+                                onImport(key.keyId, key.userName, key.userEmail, armored, passphrase)
+                                selectedKey = null
+                                passphrase = ""
+                            } else {
+                                snackbarHostState.showSnackbar("Export GPG klíče selhal — zkontrolujte gpg a passphrase")
+                            }
+                        }
+                    },
+                    enabled = selectedKey != null && !isExporting,
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text("Importovat klíč")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -194,7 +329,7 @@ private fun GpgUploadForm(
 
     JCard {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Nahrát nový GPG certifikát", style = MaterialTheme.typography.titleMedium)
+            Text("Ruční nahrání GPG certifikátu", style = MaterialTheme.typography.titleMedium)
 
             Spacer(Modifier.height(12.dp))
 
