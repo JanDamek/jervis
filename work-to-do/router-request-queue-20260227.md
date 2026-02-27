@@ -9,89 +9,131 @@ nebo vrátí 503/CPU fallback. Pokud jsou obě GPU busy (reservace, active reque
 request buď čeká v `_wait_for_gpu` (blokuje caller 60s) nebo jde na CPU (pomalé pro :30b).
 
 KB a orchestrátor neví a nemají vědět o backendu. Chtějí poslat request a dostat odpověď.
-Router by měl fungovat jako **transparent proxy s malou frontou**.
+Router by měl fungovat jako **transparent proxy s frontou**.
+
+## Klíčový princip
+
+**Router VŽDY přijme request.** Nikdy nevrací 503/reject. Každý request se zařadí do queue
+a router sám řídí vytížení backendů. Calleři (KB, orchestrátor, chat) neřeší routing —
+pošlou request a dostanou odpověď.
 
 ## Požadavek
 
-### Interní queue (buffer)
+### Dvě fronty: CRITICAL (neomezená) + NORMAL (omezená)
 
-- Router má **N slotů** kde N = počet backendů (2 GPU + 1 CPU = 3)
-- Každý slot = 1 concurrent request per backend
-- Příchozí request:
-  1. Volný backend → route okamžitě (jako teď)
-  2. Všechny backendy busy, ale queue má místo → přidat do queue, čekat na volný backend
-  3. Queue plná → teprve teď caller čeká (back-pressure)
+```
+CRITICAL queue:  [neomezená] — chat, foreground, interaktivní
+NORMAL queue:    [max N]     — background, KB ingest, qualification
+```
+
+- **CRITICAL se NESMÍ nikdy ztratit ani odmítnout** — queue je neomezená
+- NORMAL queue má limit (např. 10) — při překročení vrátí back-pressure calleru
+- Router podle stavu obou front řídí přidělování backendů
+
+### Řízení backendů podle queue
+
+Router je **jediný kdo rozhoduje** o přidělení GPU/CPU. Logika:
+
+1. **CRITICAL request v queue** → okamžitě přidělit GPU:
+   - Volný GPU slot → přidělit
+   - Všechny GPU obsazeny NORMAL → **preemptne** nejstarší NORMAL, uvolní slot
+   - Preemptnutý NORMAL se vrátí do NORMAL queue
+   - CRITICAL **nikdy nečeká** za NORMAL
+
+2. **Jen NORMAL requesty v queue** → distribuovat na volné backendy:
+   - Volný GPU → přidělit
+   - Volný CPU (pro 7b/embedding) → přidělit
+   - Všechny busy → NORMAL čeká v queue
+
+3. **Obě fronty mají requesty** → CRITICAL first, NORMAL na zbylé kapacity
 
 ### Distribuce
 
-- Když je fronta, práce se MUSÍ distribuovat na všechny backendy
+- Když je fronta, práce se MUSÍ distribuovat na **všechny** backendy
 - Nesmí stát GPU idle když jsou requesty v queue
-- `find_with_model` už vrací least-busy (opraveno), ale queue zajistí lepší throughput
-
-### Prioritní řazení v queue — CRITICAL nesmí čekat na background
-
-**Klíčové**: CRITICAL = chat (uživatel čeká) → NESMÍ být blokován background requestem.
-
-- CRITICAL requesty jdou **na začátek** fronty (před NORMAL)
-- CRITICAL embedding → CPU pokud GPU dělá :30b inference (existující logika)
-- **Preemption v queue**: Když přijde CRITICAL a všechny GPU sloty obsazeny NORMAL requestem:
-  - Dispatcher PREEMPTNE nejstarší NORMAL request na GPU (existující `_preempt_all` logika)
-  - Uvolněný slot okamžitě přidělí CRITICAL requestu
-  - Preemptnutý NORMAL request se vrátí do queue (re-queue na začátek NORMAL)
-- **Garance**: CRITICAL request nikdy nečeká v queue za NORMAL — buď dostane slot okamžitě,
-  nebo se NORMAL preemptne
-- Tím se zajistí, že background (KB ingest, qualification) nemůže obsadit všechny GPU
-  a zablokovat chat
+- `find_with_model` vrací least-busy (opraveno) — queue to doplní o buffering
 
 ### CPU backend
 
 - CPU backend JE součástí poolu pro modely kde to dává smysl (7b, embedding)
-- CPU backend se nepoužívá pro :30b (existující logika step 6)
+- CPU backend se nepoužívá pro :30b (příliš pomalé)
+- CRITICAL :30b → vždy GPU (preemptne NORMAL pokud třeba)
+- CRITICAL embedding → CPU pokud GPU dělá :30b inference (existující logika)
 
 ## Návrh implementace
 
+### RequestQueue
+
 ```python
 class RequestQueue:
-    """Internal request buffer — distributes across backends as they become available."""
+    """Two-tier queue: unlimited CRITICAL + bounded NORMAL."""
 
-    def __init__(self, max_per_backend: int = 1):
-        self._queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
-        self._max_per_backend = max_per_backend
+    def __init__(self, normal_max: int = 10):
+        self._critical: asyncio.Queue = asyncio.Queue()      # neomezená
+        self._normal: asyncio.Queue = asyncio.Queue(normal_max)
+        self._dispatch_event = asyncio.Event()
 
     async def submit(self, request: TrackedRequest) -> Response:
-        """Submit request — routes immediately if backend available, else queues."""
-        # Try immediate routing first
+        """Always accepts. Routes immediately or queues for dispatch."""
+        # Try immediate routing
         backend = self._find_available_backend(request)
         if backend:
             return await self._execute(backend, request)
 
-        # Queue and wait for backend
-        event = asyncio.Event()
-        self._queue.put_nowait((request.priority.value, time.monotonic(), request, event))
-        await event.wait()
-        # backend assigned by dispatcher
-        return await self._execute(request.assigned_backend, request)
+        # Queue — CRITICAL always accepted, NORMAL may block at limit
+        future = asyncio.get_event_loop().create_future()
+        entry = (request, future)
+        if request.priority <= Priority.CRITICAL:
+            self._critical.put_nowait(entry)  # neomezená — nikdy nefailne
+        else:
+            await self._normal.put(entry)     # blokuje při plné frontě
+
+        self._dispatch_event.set()  # probudit dispatcher
+
+        # Pokud CRITICAL a všechny GPU obsazeny NORMAL → preemptne
+        if request.priority <= Priority.CRITICAL:
+            self._preempt_normal_if_needed()
+
+        return await future  # čeká na přidělení backendu a výsledek
 ```
 
 ### Dispatcher loop
 
-Background task sleduje backendy. Když backend dokončí request → vezme další z queue:
-
 ```python
 async def _dispatch_loop(self):
+    """Background task — přiřazuje requesty z queue na volné backendy."""
     while True:
-        # Wait for any backend to become available
-        await self._backend_available_event.wait()
+        await self._dispatch_event.wait()
+        self._dispatch_event.clear()
 
-        # Pop highest priority request from queue
-        _, _, request, event = await self._queue.get()
-        backend = self._find_available_backend(request)
-        request.assigned_backend = backend
-        event.set()  # unblock the waiting submit()
+        while True:
+            # 1. Vždy nejdřív CRITICAL
+            entry = self._try_get(self._critical) or self._try_get(self._normal)
+            if not entry:
+                break
+
+            request, future = entry
+            backend = self._find_available_backend(request)
+            if not backend:
+                # Vrátit zpět do fronty, čekat na uvolnění
+                self._requeue(request, future)
+                break
+
+            # Spustit na backendu, výsledek předat do future
+            asyncio.create_task(self._execute_and_resolve(backend, request, future))
+```
+
+### Signalizace uvolnění backendu
+
+Když backend dokončí request → `_dispatch_event.set()` → dispatcher zkontroluje frontu:
+
+```python
+# V route_request finally bloku (po cleanup active_requests):
+self._queue._dispatch_event.set()
 ```
 
 ## Soubory
 
-- `app/router_core.py` — přidat `RequestQueue`, integrovat do `_do_route`
-- `app/gpu_state.py` — signalizace když backend dokončí request (callback/event)
-- `app/config.py` — `max_concurrent_per_backend: int = 1` (konfigurovatelné)
+- `app/router_core.py` — přidat `RequestQueue`, nahradit `_do_route` za `queue.submit()`
+- `app/gpu_state.py` — callback při dokončení requestu (event pro dispatcher)
+- `app/config.py` — `normal_queue_max: int = 10`, `max_concurrent_per_backend: int = 1`
