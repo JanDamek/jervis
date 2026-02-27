@@ -1,6 +1,9 @@
 # Provider services — Interface Segregation (SOLID)
 
 **Priorita**: VERY LOW
+**Status**: DEFERRED — current `else -> emptyList()` is safe, refactor when adding new providers (Slack, Google Calendar)
+
+---
 
 ## Problém
 
