@@ -6,6 +6,7 @@ package com.jervis.ui.screens.environment
 enum class EnvironmentManagerTab(val label: String) {
     OVERVIEW("Přehled"),
     COMPONENTS("Komponenty"),
+    PROPERTY_MAPPINGS("Mapování"),
     K8S_RESOURCES("K8s zdroje"),
     LOGS_EVENTS("Logy & Události"),
 }

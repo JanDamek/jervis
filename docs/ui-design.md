@@ -1446,8 +1446,9 @@ Expanded (>=600dp):
 ```
 
 **Tabs (EnvironmentManagerTab enum):**
-- Přehled — name, namespace, state badge, assignment, component summary, actions (Provision/Stop/Delete)
+- Přehled — name, namespace, state badge, assignment, component summary, property mappings summary, actions (Provision/Stop/Delete)
 - Komponenty — expandable JCards with inline editing (ComponentsTab + ComponentEditPanel)
+- Mapování — property mappings management: auto-suggest from templates, manual add, expandable cards per mapping (PropertyMappingsTab)
 - K8s zdroje — pod/deployment/service inspection (migrated from EnvironmentViewerScreen)
 - Logy & Události — pod logs + K8s events
 
@@ -1455,9 +1456,10 @@ Expanded (>=600dp):
 - `EnvironmentManagerScreen` — `JListDetailLayout` with list header ("Nové prostředí" button)
 - `EnvironmentListItem` — `JCard` with name, namespace (monospace), component count, `EnvironmentStateBadge`
 - `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
-- `OverviewTab` — `JSection` blocks (basic info, assignment, components summary), action buttons
+- `OverviewTab` — `JSection` blocks (basic info, assignment, components summary, property mappings summary), action buttons
 - `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
 - `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config, source/build pipeline (sourceRepo, sourceBranch, dockerfilePath — visible for PROJECT type)
+- `PropertyMappingsTab` — manages `PropertyMappingDto` entries: auto-suggest from `ComponentTemplateDto.propertyMappingTemplates`, manual form, expandable cards with resolved values
 - `K8sResourcesTab` — namespace health summary, collapsible pods/deployments/services sections, pod log dialog, deployment detail dialog, restart
 - `LogsEventsTab` — pod log viewer (dropdown pod selector, tail lines, monospace text area) + K8s events list (Warning/Normal coloring)
 
@@ -1466,6 +1468,30 @@ Expanded (>=600dp):
 - Menu item: "Správa prostředí" (Icons.Default.Dns)
 - Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt`
 - Reuses `EnvironmentStateBadge` from `EnvironmentTreeComponents.kt`
+
+### 5.11) Environment Panel (Chat Sidebar) (`EnvironmentPanel.kt`)
+
+Right-side panel in the main chat screen showing environment tree with live status.
+Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-screen.
+
+**Features:**
+- Tree: EnvironmentTreeNode → ComponentTreeNode (expandable)
+- Context indicator: shows which environment the chat/agent is aware of (green dot + summary)
+- Resolved env highlighted (auto-detected from selected project)
+- User-selected env tracked via `selectedEnvironmentId` in EnvironmentViewModel
+- Settings icon → opens Environment Manager (deep-link)
+- Refresh button + auto-polling (30s for RUNNING/CREATING)
+
+**Chat context bridge:**
+- `EnvironmentViewModel.activeEnvironmentId` — resolved (from project) or user-selected
+- `EnvironmentViewModel.getActiveEnvironmentSummary()` — short string for display
+- Backend resolves environment from `projectId` automatically (server-side in AgentOrchestratorService)
+- Panel shows "Chat kontext: ..." indicator so user sees what the agent knows
+
+**Key files:**
+- `EnvironmentPanel.kt` — panel composable
+- `EnvironmentTreeComponents.kt` — EnvironmentTreeNode, ComponentTreeNode, EnvironmentStateBadge
+- `EnvironmentViewModel.kt` — state management, polling, selection tracking
 
 ---
 
@@ -1711,10 +1737,11 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- WhisperSettings.kt      <- Whisper transcription config
 |   +-- environment/
 |   |   +-- EnvironmentManagerScreen.kt  <- JListDetailLayout + tabbed detail (Správa prostředí)
-|   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, K8S_RESOURCES, LOGS_EVENTS)
+|   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, PROPERTY_MAPPINGS, K8S_RESOURCES, LOGS_EVENTS)
 |   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
 |   |   +-- ComponentsTab.kt            <- Components tab: expandable JCards with inline editing
 |   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
+|   |   +-- PropertyMappingsTab.kt      <- Property mappings tab: auto-suggest, manual add, expandable cards
 |   |   +-- K8sResourcesTab.kt          <- K8s resources tab: pods, deployments, services (migrated from EnvironmentViewerScreen)
 |   |   +-- LogsEventsTab.kt            <- Logs & Events tab: pod log viewer + K8s namespace events
 |   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (4 accordion sections + live qualification progress)

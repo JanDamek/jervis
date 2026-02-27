@@ -746,7 +746,7 @@ and delegates domain logic to specialized sub-ViewModels:
 | `MainViewModel` | `ui/` | Client/project selection, event routing, workspace status |
 | `ChatViewModel` | `ui/chat/` | Chat messages, streaming, history, attachments, pending retry |
 | `QueueViewModel` | `ui/queue/` | Orchestrator queue, task history, progress tracking |
-| `EnvironmentViewModel` | `ui/environment/` | Environment panel, polling, status |
+| `EnvironmentViewModel` | `ui/environment/` | Environment panel, polling, status, selection tracking, chat context |
 | `NotificationViewModel` | `ui/notification/` | User tasks, approve/deny/reply |
 | `ConnectionViewModel` | `ui/` | Connection state, offline detection |
 
@@ -1268,6 +1268,15 @@ When a coding task is dispatched to the Python orchestrator:
    - Project components with ENV vars
    - Agent instructions
    - Component topology
+
+### UI → Chat Context Bridge
+
+`EnvironmentViewModel` tracks which environment the user is currently inspecting:
+- `resolvedEnvId` — auto-detected from selected project (server-side resolution)
+- `selectedEnvironmentId` — user-expanded environment in the sidebar panel
+- `activeEnvironmentId` — resolved OR selected (priority: resolved > selected)
+- `EnvironmentPanel` shows "Chat kontext: ..." indicator so user sees what the agent knows
+- `PropertyMappingsTab` in Environment Manager allows managing property mappings with auto-suggest from `PROPERTY_MAPPING_TEMPLATES`
 
 ### Key Files
 

@@ -55,7 +55,36 @@ class EnvironmentViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** ID of the environment the user last expanded/selected in the panel. */
+    private val _selectedEnvironmentId = MutableStateFlow<String?>(null)
+    val selectedEnvironmentId: StateFlow<String?> = _selectedEnvironmentId.asStateFlow()
+
     val hasEnvironment: Boolean get() = _environments.value.isNotEmpty()
+
+    /**
+     * Returns the "active" environment ID for chat context purposes.
+     * Priority: resolvedEnvId (auto-detected from project) > selectedEnvironmentId (user click).
+     */
+    val activeEnvironmentId: String?
+        get() = _resolvedEnvId.value ?: _selectedEnvironmentId.value
+
+    /**
+     * Returns a short summary of the active environment for chat context.
+     * Used by ChatViewModel to inform the orchestrator about the current environment.
+     */
+    fun getActiveEnvironmentSummary(): String? {
+        val envId = activeEnvironmentId ?: return null
+        val env = _environments.value.find { it.id == envId } ?: return null
+        val status = _environmentStatuses.value[envId]
+        val state = status?.state ?: env.state
+        val componentNames = env.components.joinToString(", ") { "${it.name}(${it.type.name})" }
+        val mappingCount = env.propertyMappings.size
+        return buildString {
+            append("name=${env.name}, namespace=${env.namespace}, state=$state")
+            if (env.components.isNotEmpty()) append(", components=[$componentNames]")
+            if (mappingCount > 0) append(", propertyMappings=$mappingCount")
+        }
+    }
 
     private var pollingJob: Job? = null
 
@@ -119,7 +148,12 @@ class EnvironmentViewModel(
 
     fun toggleEnvExpanded(envId: String) {
         val current = _expandedEnvIds.value
-        _expandedEnvIds.value = if (current.contains(envId)) current - envId else current + envId
+        val willExpand = !current.contains(envId)
+        _expandedEnvIds.value = if (willExpand) current + envId else current - envId
+        // Track last expanded environment for chat context
+        if (willExpand) {
+            _selectedEnvironmentId.value = envId
+        }
     }
 
     fun toggleComponentExpanded(componentId: String) {
@@ -139,6 +173,7 @@ class EnvironmentViewModel(
     fun resetForClient() {
         _environments.value = emptyList()
         _resolvedEnvId.value = null
+        _selectedEnvironmentId.value = null
         _environmentStatuses.value = emptyMap()
         closePanel()
     }

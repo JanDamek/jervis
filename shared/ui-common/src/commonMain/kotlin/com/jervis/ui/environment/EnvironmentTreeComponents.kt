@@ -26,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.environment.ComponentStateEnum
 import com.jervis.dto.environment.ComponentStatusDto
+import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
@@ -74,6 +76,22 @@ fun EnvironmentTreeNode(
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.primary,
                 )
+                // Summary: component count + mapping count
+                val infraCount = environment.components.count { it.type != ComponentTypeEnum.PROJECT }
+                val projectCount = environment.components.count { it.type == ComponentTypeEnum.PROJECT }
+                val mappingCount = environment.propertyMappings.size
+                val summaryParts = buildList {
+                    if (infraCount > 0) add("$infraCount infra")
+                    if (projectCount > 0) add("$projectCount projekt")
+                    if (mappingCount > 0) add("$mappingCount mapování")
+                }
+                if (summaryParts.isNotEmpty()) {
+                    Text(
+                        summaryParts.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             EnvironmentStateBadge(currentState)
             if (onManage != null) {
@@ -196,6 +214,15 @@ fun ComponentTreeNode(
                         },
                     )
                 }
+                if (component.envVars.isNotEmpty()) {
+                    DetailRow("ENV", "${component.envVars.size} proměnných")
+                }
+                if (component.componentState != ComponentStateEnum.PENDING) {
+                    DetailRow("Stav komponenty", componentStateLabelTree(component.componentState))
+                }
+                component.sourceRepo?.let { repo ->
+                    DetailRow("Git", repo.substringAfterLast("/"))
+                }
                 if (status != null) {
                     DetailRow("Repliky", "${status.availableReplicas}/${status.replicas}")
                     status.message?.let { msg ->
@@ -232,6 +259,14 @@ private fun DetailRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+private fun componentStateLabelTree(state: ComponentStateEnum): String = when (state) {
+    ComponentStateEnum.PENDING -> "Čekající"
+    ComponentStateEnum.DEPLOYING -> "Nasazování"
+    ComponentStateEnum.RUNNING -> "Běží"
+    ComponentStateEnum.ERROR -> "Chyba"
+    ComponentStateEnum.STOPPED -> "Zastaveno"
 }
 
 /**

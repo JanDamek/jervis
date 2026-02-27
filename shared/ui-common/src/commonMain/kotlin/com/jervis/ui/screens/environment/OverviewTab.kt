@@ -103,6 +103,28 @@ fun OverviewTab(
             }
         }
 
+        // Property mappings summary
+        if (environment.propertyMappings.isNotEmpty()) {
+            JSection(title = "Mapování vlastností") {
+                JKeyValueRow("Celkem mapování", "${environment.propertyMappings.size}")
+                environment.propertyMappings.take(5).forEach { mapping ->
+                    val target = environment.components.find { it.id == mapping.targetComponentId }
+                    JKeyValueRow(
+                        mapping.propertyName,
+                        if (mapping.resolvedValue != null) mapping.resolvedValue!!
+                        else "${mapping.valueTemplate} \u2192 ${target?.name ?: "?"}",
+                    )
+                }
+                if (environment.propertyMappings.size > 5) {
+                    Text(
+                        "... a ${environment.propertyMappings.size - 5} dalších",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
         // Storage section
         JSection(title = "Úložiště") {
             JKeyValueRow("Strategie", "Jeden PVC na prostředí")

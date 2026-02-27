@@ -3,6 +3,7 @@ package com.jervis.ui.screens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
@@ -40,6 +41,17 @@ fun MainScreen(
     val expandedComponentIds by viewModel.environment.expandedComponentIds.collectAsState()
     val environmentLoading by viewModel.environment.loading.collectAsState()
     val environmentError by viewModel.environment.error.collectAsState()
+    val selectedEnvironmentId by viewModel.environment.selectedEnvironmentId.collectAsState()
+
+    // Compute active environment summary reactively from collected state
+    val activeEnvId = resolvedEnvId ?: selectedEnvironmentId
+    val activeEnvSummary = remember(activeEnvId, environments, environmentStatuses) {
+        if (activeEnvId == null) return@remember null
+        val env = environments.find { it.id == activeEnvId } ?: return@remember null
+        val status = environmentStatuses[activeEnvId]
+        val state = status?.state ?: env.state
+        "${env.name} (${env.namespace}) — $state"
+    }
 
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
@@ -87,6 +99,7 @@ fun MainScreen(
                 onClose = viewModel.environment::closePanel,
                 onRefresh = viewModel.environment::refreshEnvironments,
                 onOpenInManager = onOpenEnvironmentManager,
+                activeEnvironmentSummary = activeEnvSummary,
             )
         },
     )

@@ -307,6 +307,15 @@ private fun EnvironmentDetail(
                 )
             }
 
+            EnvironmentManagerTab.PROPERTY_MAPPINGS -> {
+                PropertyMappingsTab(
+                    environment = environment,
+                    repository = repository,
+                    templates = templates,
+                    onUpdated = onUpdated,
+                )
+            }
+
             EnvironmentManagerTab.K8S_RESOURCES -> {
                 K8sResourcesTab(
                     environment = environment,
