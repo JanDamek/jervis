@@ -522,13 +522,20 @@ class ChatViewModel(
                     sequence = msg.sequence,
                 )
             }
-            // Merge: preserve in-flight messages (optimistic user msg + progress)
-            // that aren't in DB yet, so they don't vanish on reconnect
+            // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
+            // Stream-delivered messages have no sequence — DB messages always have one.
             val inFlight = _chatMessages.value.filter { msg ->
-                (msg.messageType == ChatMessage.MessageType.USER_MESSAGE && msg.sequence == null) ||
-                    msg.messageType == ChatMessage.MessageType.PROGRESS
+                msg.sequence == null &&
+                    msg.metadata["streaming"] != "true" &&
+                    (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
+                        msg.messageType == ChatMessage.MessageType.PROGRESS ||
+                        msg.messageType == ChatMessage.MessageType.FINAL)
             }
-            _chatMessages.value = newMessages + inFlight
+            // Deduplicate: drop in-flight if DB already has a message with same text+sender
+            val deduped = inFlight.filter { flight ->
+                newMessages.none { db -> db.text == flight.text && db.from == flight.from }
+            }
+            _chatMessages.value = newMessages + deduped
             _hasMore.value = history.hasMore
             oldestSequence = history.oldestSequence
             _compressionBoundaries.value = history.compressionBoundaries

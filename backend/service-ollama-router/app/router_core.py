@@ -53,6 +53,7 @@ class OllamaRouter:
         # Watchdog tasks
         self._watchdog_task: asyncio.Task | None = None
         self._request_timeout_task: asyncio.Task | None = None
+        self._gpu_recovery_task: asyncio.Task | None = None
 
     async def startup(self) -> None:
         """Initialize router state on startup."""
@@ -68,6 +69,9 @@ class OllamaRouter:
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
         self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
+        # Start GPU recovery only if any backend failed initial sync
+        if any(not b.healthy for b in self.gpu_pool.all_backends):
+            self._start_gpu_recovery()
         logger.info("Router started with %d GPU backend(s), queue enabled", len(self.gpu_pool.all_backends))
 
     async def shutdown(self) -> None:
@@ -78,6 +82,8 @@ class OllamaRouter:
             self._watchdog_task.cancel()
         if self._request_timeout_task:
             self._request_timeout_task.cancel()
+        if self._gpu_recovery_task:
+            self._gpu_recovery_task.cancel()
         for task in self._bg_load_tasks.values():
             if not task.done():
                 task.cancel()
@@ -391,6 +397,52 @@ class OllamaRouter:
             if self.cpu_healthy:
                 logger.warning("CPU backend is unhealthy")
             self.cpu_healthy = False
+
+    # ── GPU recovery (on-demand, not heartbeat) ──────────────────────────
+
+    def _start_gpu_recovery(self) -> None:
+        """Start GPU recovery loop if not already running.
+
+        Called when a GPU is detected as unhealthy (startup sync failure,
+        proxy error, etc.). The loop stops automatically once all GPUs recover.
+        """
+        if self._gpu_recovery_task and not self._gpu_recovery_task.done():
+            return  # Already recovering
+        self._gpu_recovery_task = asyncio.create_task(self._gpu_recovery_loop())
+
+    async def _gpu_recovery_loop(self) -> None:
+        """Check unhealthy GPU backends every 60s until all recover.
+
+        NOT a permanent heartbeat — only runs when triggered by a failure,
+        stops as soon as all backends are healthy again.
+        """
+        unhealthy_names = [b.name for b in self.gpu_pool.all_backends if not b.healthy]
+        logger.info("GPU_RECOVERY: started for %s (checking every 60s)", unhealthy_names)
+        while True:
+            try:
+                await asyncio.sleep(60)
+                unhealthy = [b for b in self.gpu_pool.all_backends if not b.healthy]
+                if not unhealthy:
+                    logger.info("GPU_RECOVERY: all backends healthy, stopping")
+                    return
+
+                logger.info("GPU_RECOVERY: checking %d unhealthy backend(s): %s",
+                            len(unhealthy), [b.name for b in unhealthy])
+                await self.gpu_pool.check_health(self._mgmt_client)
+
+                # Preload model on any newly recovered GPUs
+                for backend in unhealthy:
+                    if backend.healthy:
+                        logger.info("GPU_RECOVERY: %s is back — preloading %s",
+                                    backend.name, settings.orchestrator_model)
+                        await self.gpu_pool.load_model(
+                            backend, settings.orchestrator_model, self._mgmt_client
+                        )
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error("GPU recovery loop error: %s", e)
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

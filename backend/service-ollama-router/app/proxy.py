@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 import httpx
 from starlette.responses import StreamingResponse, JSONResponse, Response
@@ -28,6 +28,7 @@ def _build_timeout() -> httpx.Timeout:
 async def proxy_streaming(
     target_url: str,
     request: TrackedRequest,
+    on_connect_error: Callable[[str], None] | None = None,
 ) -> StreamingResponse:
     """Proxy a streaming Ollama request. Supports preemption via cancel_event."""
 
@@ -77,6 +78,18 @@ async def proxy_streaming(
                     request.request_id,
                 )
                 raise
+        except httpx.ConnectError as e:
+            error_occurred = True
+            logger.error(
+                "PROXY_STREAM: id=%s connection failed to %s: %s",
+                request.request_id, target_url, e,
+            )
+            if on_connect_error:
+                on_connect_error(str(e))
+            yield (json.dumps({
+                "error": "backend_unavailable",
+                "message": str(e),
+            }) + "\n").encode()
         except httpx.HTTPStatusError as e:
             error_occurred = True
             logger.error(
@@ -102,6 +115,7 @@ async def proxy_streaming(
 async def proxy_non_streaming(
     target_url: str,
     request: TrackedRequest,
+    on_connect_error: Callable[[str], None] | None = None,
 ) -> Response:
     """Proxy a non-streaming Ollama request (embeddings, show, etc.).
 
@@ -168,6 +182,8 @@ async def proxy_non_streaming(
                 "PROXY_NON_STREAM: id=%s connection failed to %s: %s",
                 request.request_id, target_url, e,
             )
+            if on_connect_error:
+                on_connect_error(str(e))
             return JSONResponse(
                 status_code=503,
                 content={"error": "backend_unavailable", "message": str(e)},

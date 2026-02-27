@@ -404,9 +404,19 @@ class RequestQueue:
             request.request_id, gpu.name, gpu.url, request.model, request.priority.name,
         )
 
+        def on_gpu_connect_error(error_msg: str) -> None:
+            """Mark GPU unhealthy and trigger recovery on connection failure."""
+            if gpu.healthy:
+                logger.warning(
+                    "GPU %s unreachable during request: %s — marking unhealthy, starting recovery",
+                    gpu.name, error_msg,
+                )
+                gpu.healthy = False
+                self._router._start_gpu_recovery()
+
         if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
-            return await proxy_non_streaming(gpu.url, request)
-        return await proxy_streaming(gpu.url, request)
+            return await proxy_non_streaming(gpu.url, request, on_connect_error=on_gpu_connect_error)
+        return await proxy_streaming(gpu.url, request, on_connect_error=on_gpu_connect_error)
 
     async def _send_to_cpu(self, request: TrackedRequest) -> Response:
         request.state = RequestState.RUNNING_CPU
