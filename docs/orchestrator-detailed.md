@@ -2438,7 +2438,7 @@ class Settings:
     total_context_window: int = 32_768    # Model context window
     system_prompt_reserve: int = 2_000    # Tokens for system prompt + tools
     response_reserve: int = 4_000         # Tokens for LLM response
-    recent_message_count: int = 20        # Max verbatim messages
+    recent_message_count: int = 100       # Max verbatim messages (budget limits actual inclusion)
     max_summary_blocks: int = 15          # Max compressed summaries
     compress_threshold: int = 20          # Compress at >=N unsummarized msgs
     compress_max_retries: int = 2         # Compression retry limit
@@ -3000,7 +3000,7 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 
 #### `app/chat/context.py`
 - **W-20: Sequence Number Race** — `get_next_sequence()` uses atomic `findOneAndUpdate` on `chat_sequence_counters` collection instead of `count_documents + 1`.
-- **W-15: Compression Error Handling** — `_compress_block()` retries `COMPRESS_MAX_RETRIES = 2` times with exponential backoff. On exhaustion, saves placeholder marker so block isn't re-attempted. `maybe_compress()` accepts `done_callback` for completion notification.
+- **W-15: Compression Error Handling** — `_compress_block()` retries `COMPRESS_MAX_RETRIES = 2` times with exponential backoff. On exhaustion, saves placeholder marker so block isn't re-attempted. `maybe_compress()` accepts `done_callback` for completion notification. Compression prompt is content-complete (no arbitrary char limit), preserves KB references (sourceUrn, correlationId, ticket IDs), and tags multi-project summaries with `[Projekt X]:` prefixes. Input messages are truncated to 2000 chars (not 500).
 - **W-10: Checkpoint Message Growth** — `save_message()` truncates TOOL role messages to `MAX_TOOL_RESULT_IN_MSG = 2000` chars before MongoDB write.
 
 #### `app/llm/provider.py`
@@ -3113,6 +3113,7 @@ v6 introduces **two dedicated handlers**, independent from LangGraph, with purpo
    - Detect tool loop (same tool+args 3× → force answer)
    - Append results → next iteration
    - **Scope tracking:** `effective_client_id`/`effective_project_id` initialized from request, updated by `switch_context` and tool arguments. All tool calls use effective scope, not stale request scope.
+   - **Project boundary:** On `switch_context`, a `[KONTEXT PŘEPNUT]` boundary message is saved to MongoDB so summaries and context assembly can distinguish project contexts. The LLM is instructed to not carry information from previous project to the new one.
 7. **Stream answer** — chunked tokens via `kotlin_client.emit_streaming_token()`
 8. **Short answer retry** — if < 40 chars, retry once with "expand" instruction
 9. **Save assistant message** to MongoDB
@@ -3400,7 +3401,7 @@ classify_intent(user_message, has_pending_user_tasks, has_unclassified_meetings,
 → set[ToolCategory]   # always includes CORE
 ```
 
-Patterns: `_BRAIN_PATTERNS` (Czech+English), `_TASK_MGMT_PATTERNS`, `_RESEARCH_PATTERNS`, `_GREETING_PATTERNS`. Context-driven: greeting + pending tasks → TASK_MGMT. User_task response → TASK_MGMT.
+Patterns: `_BRAIN_PATTERNS` (Czech+English), `_TASK_MGMT_PATTERNS`, `_RESEARCH_PATTERNS`, `_FILTERING_PATTERNS`, `_GREETING_PATTERNS`. Git/coding keywords (git, branch, commit, push, merge, deploy, build) match both `_TASK_MGMT_PATTERNS` (for `dispatch_coding_agent`) and `_RESEARCH_PATTERNS` (for `code_search`). Context-driven: greeting + pending tasks → TASK_MGMT. User_task response → TASK_MGMT.
 
 `select_tools(categories)` builds deduplicated tool list from matched categories.
 
