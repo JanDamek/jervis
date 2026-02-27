@@ -91,16 +91,29 @@ class RagService:
                     settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority,
                     self._embedding_semaphore._value, self.MAX_CONCURRENT_EMBEDDINGS)
 
-        try:
-            async with self._embedding_semaphore:
-                resp = await self.http_client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                embeddings = data.get("embeddings", [])
-                return embeddings if is_batch else embeddings[0]
-        except Exception as e:
-            logger.error("Embedding failed: %s", e)
-            raise
+        max_retries = 2
+        for attempt in range(1 + max_retries):
+            try:
+                async with self._embedding_semaphore:
+                    resp = await self.http_client.post(url, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    embeddings = data.get("embeddings", [])
+                    return embeddings if is_batch else embeddings[0]
+            except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
+                if attempt < max_retries:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "Embedding failed (attempt %d/%d): %s, retrying in %ds",
+                        attempt + 1, max_retries + 1, e, wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error("Embedding failed after %d attempts: %s", max_retries + 1, e)
+                    raise
+            except Exception as e:
+                logger.error("Embedding failed: %s", e)
+                raise
 
     async def ingest(
         self,

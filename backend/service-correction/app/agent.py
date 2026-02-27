@@ -566,15 +566,42 @@ class CorrectionAgent:
             self.model, num_ctx, num_predict, input_tokens_est, input_chars,
         )
 
+        # Retry on connection errors (router restart, network blip)
+        max_retries = 2
+        for attempt in range(1 + max_retries):
+            try:
+                return await self._call_ollama_stream(
+                    payload, meeting_id, client_id, chunk_idx, total_chunks,
+                )
+            except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
+                if attempt < max_retries:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "Ollama call failed (attempt %d/%d): %s, retrying in %ds",
+                        attempt + 1, max_retries + 1, e, wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+        # Unreachable — loop always returns or raises
+        raise RuntimeError("retry loop exited unexpectedly")
+
+    async def _call_ollama_stream(
+        self,
+        payload: dict,
+        meeting_id: str | None,
+        client_id: str | None,
+        chunk_idx: int,
+        total_chunks: int,
+    ) -> str:
+        """Stream Ollama chat response. Separated for retry wrapper."""
+        num_predict = payload["options"]["num_predict"]
         content_parts: list[str] = []
         token_count = 0
         done_reason = "?"
         eval_count = "?"
         last_progress_emit = time.monotonic()
 
-        # Correction does NOT reserve GPU - only orchestrator agent has that privilege
-        # Correction requests use NORMAL priority (no header = router default NORMAL)
-        # Will use CPU if GPU is reserved by orchestrator, or GPU if available
         async with httpx.AsyncClient(timeout=None) as http_client:
             async with http_client.stream(
                 "POST",
@@ -592,18 +619,15 @@ class CorrectionAgent:
                         logger.debug("Non-JSON streaming line: %s", raw_line[:200])
                         continue
 
-                    # Accumulate content tokens
                     chunk_content = data.get("message", {}).get("content", "")
                     if chunk_content:
                         content_parts.append(chunk_content)
                         token_count += 1
 
-                    # Final message with metadata
                     if data.get("done"):
                         done_reason = data.get("done_reason", "?")
                         eval_count = data.get("eval_count", "?")
 
-                    # Emit intra-chunk progress periodically
                     now = time.monotonic()
                     if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
                         last_progress_emit = now
@@ -619,19 +643,16 @@ class CorrectionAgent:
                         )
 
         content = "".join(content_parts)
-
         logger.info(
             "Ollama streaming complete: %d chars, %d tokens, eval_count=%s, done_reason=%s",
             len(content), token_count, eval_count, done_reason,
         )
-
         if done_reason == "length":
             logger.warning(
                 "OUTPUT TRUNCATED: model hit num_predict=%d limit. "
                 "Response may be incomplete (raw=%d chars). First 500 chars: %s",
                 num_predict, len(content), content.strip()[:500],
             )
-
         return content
 
     async def _iter_lines_with_timeout(self, response: httpx.Response):

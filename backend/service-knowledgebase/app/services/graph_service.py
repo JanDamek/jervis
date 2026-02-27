@@ -34,7 +34,7 @@ class GraphService:
         if not self.db.has_collection("KnowledgeEdges"):
             self.db.create_collection("KnowledgeEdges", edge=True)
 
-    async def _llm_call(self, prompt: str, priority: int | None = None) -> str:
+    async def _llm_call(self, prompt: str, priority: int | None = None, max_retries: int = 2) -> str:
         """Direct httpx call to Ollama Router with X-Ollama-Priority header.
 
         Same pattern as rag_service._embed_with_priority() — direct httpx gives
@@ -42,6 +42,8 @@ class GraphService:
 
         Uses explicit num_ctx to prevent Ollama's small default (often 2048)
         from silently truncating the prompt — same fix as chat/orchestrator context management.
+
+        Retries on connection errors (router restart, network blip).
         """
         url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
         effective_priority = priority if priority is not None else None  # default: no header (NORMAL)
@@ -56,9 +58,21 @@ class GraphService:
                 "num_ctx": settings.INGEST_CONTEXT_WINDOW,
             },
         }
-        resp = await self.http_client.post(url, json=payload, headers=headers, timeout=settings.LLM_CALL_TIMEOUT)
-        resp.raise_for_status()
-        return resp.json()["response"]
+        for attempt in range(1 + max_retries):
+            try:
+                resp = await self.http_client.post(url, json=payload, headers=headers, timeout=settings.LLM_CALL_TIMEOUT)
+                resp.raise_for_status()
+                return resp.json()["response"]
+            except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
+                if attempt < max_retries:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d): %s, retrying in %ds",
+                        attempt + 1, max_retries + 1, e, wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
     async def ingest(
         self,
