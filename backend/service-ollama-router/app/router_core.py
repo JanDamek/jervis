@@ -133,10 +133,11 @@ class OllamaRouter:
         )
 
         # ── Entry logging ──
+        num_ctx = body.get("options", {}).get("num_ctx") if isinstance(body.get("options"), dict) else None
         qdepth = self._queue.queue_depth if self._queue else {}
         logger.info(
-            "REQUEST_IN: id=%s model=%s priority=%s path=%s queue=%s",
-            request_id, model, priority.name, api_path, qdepth,
+            "REQUEST_IN: id=%s model=%s priority=%s path=%s num_ctx=%s queue=%s",
+            request_id, model, priority.name, api_path, num_ctx, qdepth,
         )
 
         # Start client disconnect monitor if http_request provided

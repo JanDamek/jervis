@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     # ── Request limits ──────────────────────────────────────────────────
     max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
-    max_concurrent_per_backend: int = 2  # Ollama handles 2 parallel reasonably; more degrades all
+    max_concurrent_per_backend: int = 1  # Serial is faster than parallel when VRAM spills to RAM
     normal_queue_max: int = 10           # NORMAL queue limit (back-pressure when full)
 
     # ── Preemption ──────────────────────────────────────────────────────
