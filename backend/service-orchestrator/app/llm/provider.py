@@ -27,7 +27,7 @@ from typing import AsyncIterator
 
 import litellm
 
-from app.config import settings
+from app.config import settings, estimate_tokens
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -114,32 +114,33 @@ def _estimate_max_user_chars(num_ctx: int, messages: list[dict], max_tokens: int
 
     Returns None if no trimming is needed (everything fits).
     Returns max char count for user message content if trimming is needed.
+    Uses tiktoken for accurate token counting.
     """
     if not num_ctx:
         return None
 
-    # Total budget in chars (1 token ≈ 4 chars)
-    total_chars = num_ctx * 4
-
-    # Subtract non-user overhead + output reserve
-    overhead = max_tokens * 4  # output reserve
+    # Count non-user tokens + output reserve
+    overhead_tokens = max_tokens  # output reserve
     for msg in messages:
         if msg.get("role") != "user":
-            overhead += len(msg.get("content", "") or "") + 20  # +20 for role/formatting
+            overhead_tokens += estimate_tokens(msg.get("content", "") or "") + 5  # +5 for role/formatting
 
-    available = total_chars - overhead
-    if available < 4000:
-        available = 4000  # absolute minimum
+    available_tokens = num_ctx - overhead_tokens
+    if available_tokens < 1000:
+        available_tokens = 1000  # absolute minimum
+
+    # Convert to approximate chars (conservative: 1 token ≈ 3 chars for mixed content)
+    available_chars = available_tokens * 3
 
     # Check if any user message exceeds budget
     max_user_len = max(
         (len(msg.get("content", "") or "") for msg in messages if msg.get("role") == "user"),
         default=0,
     )
-    if max_user_len <= available:
+    if max_user_len <= available_chars:
         return None
 
-    return available
+    return available_chars
 
 
 def _trim_content(content: str, max_chars: int) -> str:

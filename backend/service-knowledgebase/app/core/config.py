@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # Chat/orchestrator uses: TOTAL_CONTEXT_WINDOW=32768, RESPONSE_RESERVE=4000,
     # TOKEN_ESTIMATE_RATIO=4, _truncate_messages_to_budget().
     # Indexing must do the same to prevent silent truncation / model hangs.
-    INGEST_CONTEXT_WINDOW: int = 32_768     # num_ctx for ingest models (must match model capability)
+    INGEST_CONTEXT_CAP: int = 49_152         # Max num_ctx (P40 VRAM limit for 30b model)
     INGEST_RESPONSE_RESERVE: int = 2_000    # Reserve tokens for JSON response generation
     INGEST_PROMPT_RESERVE: int = 1_500      # Reserve tokens for instruction/system part of prompt
-    TOKEN_ESTIMATE_RATIO: int = 4           # chars / 4 ≈ tokens (same heuristic as orchestrator)
+    TOKEN_ESTIMATE_RATIO: float = 2.5       # chars / 2.5 ≈ tokens (Czech text heuristic)
     MAX_EXTRACTION_CHUNKS: int = 30         # Max chunks for LLM graph extraction per document
     LLM_CALL_TIMEOUT: float = 900.0         # Max seconds for a single LLM call (router queue may hold request)
 

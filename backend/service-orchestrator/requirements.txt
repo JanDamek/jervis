@@ -9,4 +9,5 @@ kubernetes>=31.0.0
 motor>=3.6.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
+tiktoken>=0.7.0
 sse-starlette>=2.2.0

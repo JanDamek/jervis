@@ -3,6 +3,7 @@ import asyncio
 import logging
 
 import httpx
+import tiktoken
 from app.db.arango import get_arango_db
 from app.api.models import IngestRequest, TraversalRequest, GraphNode, TraversalSpec
 from app.services.normalizer import (
@@ -26,6 +27,7 @@ class GraphService:
             chunk_size=2000,
             chunk_overlap=200
         )
+        self._tokenizer = tiktoken.get_encoding("cl100k_base")
         self._ensure_schema()
 
     def _ensure_schema(self):
@@ -40,14 +42,21 @@ class GraphService:
         Same pattern as rag_service._embed_with_priority() — direct httpx gives
         full control over the X-Ollama-Priority header, which ChatOllama doesn't expose.
 
-        Uses explicit num_ctx to prevent Ollama's small default (often 2048)
-        from silently truncating the prompt — same fix as chat/orchestrator context management.
+        Dynamic num_ctx: sized to actual prompt + response reserve, rounded to 4k,
+        capped at INGEST_CONTEXT_CAP (P40 VRAM limit). Avoids wasting VRAM on
+        small chunks (typical chunk ~800 tokens needs ~4k, not 32k).
 
         Retries on connection errors (router restart, network blip).
         """
         url = f"{settings.OLLAMA_INGEST_BASE_URL}/api/generate"
         effective_priority = priority if priority is not None else None  # default: no header (NORMAL)
         headers = {"X-Ollama-Priority": str(effective_priority)} if effective_priority is not None else {}
+
+        # Dynamic num_ctx: tiktoken count + response reserve, rounded up to 4k
+        input_tokens = len(self._tokenizer.encode(prompt))
+        num_ctx = input_tokens + settings.INGEST_RESPONSE_RESERVE
+        num_ctx = min(((num_ctx + 4095) // 4096) * 4096, settings.INGEST_CONTEXT_CAP)
+
         payload = {
             "model": settings.LLM_MODEL,
             "prompt": prompt,
@@ -55,7 +64,7 @@ class GraphService:
             "stream": False,
             "options": {
                 "temperature": 0,
-                "num_ctx": settings.INGEST_CONTEXT_WINDOW,
+                "num_ctx": num_ctx,
             },
         }
         for attempt in range(1 + max_retries):

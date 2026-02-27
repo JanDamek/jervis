@@ -1,7 +1,11 @@
 """Configuration for the Python Orchestrator service."""
 
 import os
+
+import tiktoken
 from pydantic_settings import BaseSettings
+
+_tokenizer = tiktoken.get_encoding("cl100k_base")
 
 
 class Settings(BaseSettings):
@@ -184,12 +188,12 @@ KB_TIMEOUT_STANDARD = 15.0             # semantic search via /retrieve
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate token count from text using chars/token ratio.
+    """Count tokens using tiktoken (cl100k_base encoding).
 
-    Uses settings.token_estimate_ratio (default 4 chars/token).
-    Consistent estimator for all modules — avoids scattered // 4 magic.
+    Fast (~1ms per call), much more accurate than chars/N heuristic.
+    Consistent estimator for all modules.
     """
-    return max(1, len(text) // settings.token_estimate_ratio)
+    return max(1, len(_tokenizer.encode(text)))
 
 
 def foreground_headers(processing_mode: str) -> dict[str, str]:

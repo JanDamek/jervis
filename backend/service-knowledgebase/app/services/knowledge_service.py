@@ -58,14 +58,14 @@ class KnowledgeService:
             model=settings.INGEST_MODEL_SIMPLE,
             format="json",
             temperature=0,
-            num_ctx=settings.INGEST_CONTEXT_WINDOW,
+            num_ctx=8192,  # Link relevance check — short prompts (~3k chars)
             timeout=settings.LLM_CALL_TIMEOUT,
         )
         self.ingest_llm_complex = ChatOllama(
             base_url=settings.OLLAMA_INGEST_BASE_URL,
             model=settings.INGEST_MODEL_COMPLEX,
             format="json",
-            num_ctx=settings.INGEST_CONTEXT_WINDOW,
+            num_ctx=8192,  # Summary extraction — truncated input fits in 8k
             timeout=settings.LLM_CALL_TIMEOUT,
         )
 
@@ -477,8 +477,8 @@ class KnowledgeService:
         Uses CPU ingest instance with simple (7B) model for fast classification."""
         llm = self.ingest_llm_simple
 
-        # Simple model uses same context window; keep truncation conservative for speed
-        max_chars = min(3000, (settings.INGEST_CONTEXT_WINDOW - 1000) * settings.TOKEN_ESTIMATE_RATIO)
+        # Simple model uses 8k context; keep truncation conservative for speed
+        max_chars = 3000
         truncated = text[:max_chars] if len(text) > max_chars else text
         prompt = f"""You are evaluating whether a web page is relevant for indexing in a knowledge base.
 
@@ -993,13 +993,10 @@ Respond with JSON: {{"relevant": true/false, "reason": "brief reason"}}"""
         # Use complex model for accurate entity extraction (30B via router)
         llm = self.ingest_llm_complex
 
-        # Token-aware truncation (same heuristic as orchestrator: chars / 4 ≈ tokens)
-        content_budget_tokens = (
-            settings.INGEST_CONTEXT_WINDOW
-            - settings.INGEST_PROMPT_RESERVE
-            - settings.INGEST_RESPONSE_RESERVE
-        )
-        max_content_chars = content_budget_tokens * settings.TOKEN_ESTIMATE_RATIO
+        # Token-aware truncation: 8k context - prompt reserve - response reserve
+        content_budget_tokens = 8192 - settings.INGEST_PROMPT_RESERVE - settings.INGEST_RESPONSE_RESERVE
+        # ~2.5 chars per token for Czech text
+        max_content_chars = int(content_budget_tokens * settings.TOKEN_ESTIMATE_RATIO)
         truncated = content[:max_content_chars] if len(content) > max_content_chars else content
         if len(content) > max_content_chars:
             logger.info(

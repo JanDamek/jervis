@@ -21,8 +21,11 @@ import uuid
 from typing import Any
 
 import httpx
+import tiktoken
 
 from app.config import settings
+
+_tokenizer = tiktoken.get_encoding("cl100k_base")
 
 logger = logging.getLogger(__name__)
 
@@ -658,11 +661,10 @@ class CorrectionAgent:
         total_chunks: int = 1,
     ) -> str:
         """Call Ollama chat API with streaming + token-arrival timeout."""
-        # Estimate input tokens (~1 token per 2.5 chars for Czech)
-        input_chars = len(system_prompt) + len(user_prompt)
-        input_tokens_est = int(input_chars / 2.5)
+        # Count input tokens with tiktoken (fast, ~1ms)
+        input_tokens = len(_tokenizer.encode(system_prompt)) + len(_tokenizer.encode(user_prompt))
         # num_ctx = input + output budget (JSON corrections for chunk)
-        num_ctx = input_tokens_est + OUTPUT_BUDGET
+        num_ctx = input_tokens + OUTPUT_BUDGET
         # Round up to nearest 4k, cap at GPU VRAM limit
         num_ctx = min(((num_ctx + 4095) // 4096) * 4096, GPU_CTX_CAP)
         num_predict = OUTPUT_BUDGET
@@ -681,8 +683,8 @@ class CorrectionAgent:
             },
         }
         logger.info(
-            "Calling Ollama %s streaming (num_ctx=%d, num_predict=%d, input≈%d tokens, input_chars=%d)",
-            self.model, num_ctx, num_predict, input_tokens_est, input_chars,
+            "Calling Ollama %s streaming (num_ctx=%d, num_predict=%d, input_tokens=%d)",
+            self.model, num_ctx, num_predict, input_tokens,
         )
 
         # Retry on connection errors (router restart, network blip)
