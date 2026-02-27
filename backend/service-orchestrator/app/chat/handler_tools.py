@@ -160,8 +160,12 @@ async def _handle_list_recent_tasks(args, _client_id, _project_id, kotlin_client
 
 
 async def _handle_respond_to_user_task(args, _client_id, _project_id, kotlin_client):
+    # LLM sometimes sends user_task_id instead of task_id — accept both
+    task_id = args.get("task_id") or args.get("user_task_id")
+    if not task_id:
+        return "Error: task_id is required"
     result = await kotlin_client.respond_to_user_task(
-        task_id=args["task_id"],
+        task_id=task_id,
         response=args["response"],
     )
     return f"User task responded: {result}"
