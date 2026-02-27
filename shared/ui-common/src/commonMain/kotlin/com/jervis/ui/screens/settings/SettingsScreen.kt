@@ -8,7 +8,6 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -72,7 +71,6 @@ enum class SettingsCategory(
     CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení (Atlassian, Git, Email)."),
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek (Git, Jira, Wiki, Email)."),
     GUIDELINES("Pravidla a směrnice", Icons.Default.Gavel, "Coding standards, Git pravidla, review checklist, approval pravidla."),
-    ENVIRONMENTS("Prostředí", Icons.Default.Language, "Definice K8s prostředí pro testování."),
     GPG_CERTIFICATES("GPG Certifikáty", Icons.Default.Lock, "Správa GPG klíčů pro podepisování commitů coding agentů."),
 }
 
@@ -267,12 +265,6 @@ private fun SettingsContent(
         SettingsCategory.CONNECTIONS -> ConnectionsSettings(repository)
         SettingsCategory.GUIDELINES -> GuidelinesSettings(repository)
         SettingsCategory.INDEXING -> IndexingSettings(repository)
-        SettingsCategory.ENVIRONMENTS -> EnvironmentsSettings(
-            repository = repository,
-            onOpenInManager = { environmentId ->
-                onNavigate(Screen.EnvironmentManager(initialEnvironmentId = environmentId))
-            },
-        )
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
     }
 }
