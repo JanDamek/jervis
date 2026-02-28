@@ -333,10 +333,10 @@ class EnvironmentK8sService(
 
     /**
      * Check if namespace exists and auto-create it if missing.
-     * Prevents "namespace not found" errors when syncing ConfigMaps/Deployments
-     * for environments whose namespace was deleted or never created.
+     * Called on environment save to ensure K8s resources tab can list resources,
+     * and on sync to recover from deleted namespaces.
      */
-    private fun ensureNamespaceExists(namespace: String) {
+    fun ensureNamespaceExists(namespace: String) {
         buildK8sClient().use { client ->
             val ns = client.namespaces().withName(namespace).get()
             if (ns == null) {

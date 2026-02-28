@@ -47,12 +47,26 @@ class EnvironmentRpcImpl(
 
     override suspend fun saveEnvironment(environment: EnvironmentDto): EnvironmentDto =
         executeWithErrorHandling("saveEnvironment") {
-            environmentService.saveEnvironment(environment.toDocument()).toDto()
+            val saved = environmentService.saveEnvironment(environment.toDocument())
+            // Ensure K8s namespace exists so K8s resources tab works immediately
+            try {
+                environmentK8sService.ensureNamespaceExists(saved.namespace)
+            } catch (e: Exception) {
+                logger.warn { "Failed to ensure namespace on save: ${e.message}" }
+            }
+            saved.toDto()
         }
 
     override suspend fun updateEnvironment(id: String, environment: EnvironmentDto): EnvironmentDto =
         executeWithErrorHandling("updateEnvironment") {
-            environmentService.saveEnvironment(environment.copy(id = id).toDocument()).toDto()
+            val saved = environmentService.saveEnvironment(environment.copy(id = id).toDocument())
+            // Ensure K8s namespace exists so K8s resources tab works immediately
+            try {
+                environmentK8sService.ensureNamespaceExists(saved.namespace)
+            } catch (e: Exception) {
+                logger.warn { "Failed to ensure namespace on update: ${e.message}" }
+            }
+            saved.toDto()
         }
 
     override suspend fun deleteEnvironment(id: String) {
