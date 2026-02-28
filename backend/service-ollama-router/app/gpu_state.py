@@ -232,12 +232,18 @@ class GpuPool:
         if keep_alive is None:
             keep_alive = settings.default_keep_alive
 
+        # Ollama needs integer for numeric keep_alive (e.g. -1), string only with unit (e.g. "5m")
+        try:
+            keep_alive_value: int | str = int(keep_alive)
+        except (ValueError, TypeError):
+            keep_alive_value = keep_alive
+
         # Use correct endpoint based on model type
         is_embedding = model in EMBEDDING_MODELS
         endpoint = "/api/embeddings" if is_embedding else "/api/generate"
         payload = {
             "model": model,
-            "keep_alive": keep_alive,
+            "keep_alive": keep_alive_value,
         }
 
         if is_embedding:
