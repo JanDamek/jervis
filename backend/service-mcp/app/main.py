@@ -311,6 +311,140 @@ async def kb_store(
         return f"Queued for processing."
 
 
+# ── KB Document Tools ───────────────────────────────────────────────────
+
+import base64
+
+
+@mcp.tool
+async def kb_document_upload(
+    file_path: str,
+    client_id: str = "",
+    project_id: str = "",
+    title: str = "",
+    description: str = "",
+    category: str = "OTHER",
+    tags: str = "",
+) -> str:
+    """Upload a document to the Knowledge Base.
+
+    Stores the file on shared FS, extracts text (via Tika/OCR), and indexes
+    the content into RAG + knowledge graph. Supports PDF, DOCX, TXT, images, etc.
+
+    Args:
+        file_path: Absolute path to the file on local disk or shared PVC
+        client_id: Client ID (leave empty for default)
+        project_id: Project ID (leave empty for default)
+        title: Human-readable document title (defaults to filename)
+        description: Optional description / notes about the document
+        category: TECHNICAL, BUSINESS, LEGAL, PROCESS, MEETING_NOTES, REPORT, SPECIFICATION, OTHER
+        tags: Comma-separated tags for filtering (e.g. "api,design,v2")
+    """
+    import os
+    import mimetypes
+
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or None
+
+    if not os.path.exists(file_path):
+        return f"Error: File not found: {file_path}"
+
+    filename = os.path.basename(file_path)
+    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type = mime_type or "application/octet-stream"
+
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+
+    # Upload to KB service via Kotlin internal API
+    async with httpx.AsyncClient(timeout=300) as client:
+        resp = await client.post(
+            f"{settings.knowledgebase_write_url}/api/v1/documents/upload",
+            files={"file": (filename, file_bytes, mime_type)},
+            data={
+                "clientId": cid,
+                "projectId": pid or "",
+                "filename": filename,
+                "mimeType": mime_type,
+                "storagePath": "",
+                "title": title or filename,
+                "description": description,
+                "category": category,
+                "tags": tags,
+            },
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+    state = result.get("state", "UNKNOWN")
+    doc_id = result.get("id", "")
+    return (
+        f"Document uploaded successfully.\n"
+        f"  ID: {doc_id}\n"
+        f"  Filename: {filename}\n"
+        f"  State: {state}\n"
+        f"  Size: {len(file_bytes)} bytes"
+    )
+
+
+@mcp.tool
+async def kb_document_list(
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """List all documents in the Knowledge Base.
+
+    Args:
+        client_id: Client ID (leave empty for default)
+        project_id: Project ID (leave empty for default, empty = all projects)
+    """
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or None
+
+    url = f"{settings.knowledgebase_url}/api/v1/documents?clientId={cid}"
+    if pid:
+        url += f"&projectId={pid}"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        docs = resp.json()
+
+    if not docs:
+        return "No documents found."
+
+    lines = [f"Found {len(docs)} document(s):\n"]
+    for doc in docs:
+        state_icon = {"INDEXED": "+", "EXTRACTED": "~", "UPLOADED": ".", "FAILED": "!"}
+        icon = state_icon.get(doc.get("state", ""), "?")
+        size_kb = doc.get("sizeBytes", 0) / 1024
+        lines.append(
+            f"  [{icon}] {doc.get('id', '')[:8]}  "
+            f"{doc.get('title') or doc.get('filename', 'unknown')}  "
+            f"({size_kb:.0f} KB, {doc.get('state', '?')}, {doc.get('category', '?')})"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool
+async def kb_document_delete(doc_id: str) -> str:
+    """Delete a document from the Knowledge Base.
+
+    Removes the file from storage, purges RAG chunks, and deletes the graph node.
+
+    Args:
+        doc_id: Document ID (from kb_document_list)
+    """
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.delete(
+            f"{settings.knowledgebase_write_url}/api/v1/documents/{doc_id}"
+        )
+        if resp.status_code == 404:
+            return f"Document not found: {doc_id}"
+        resp.raise_for_status()
+        return f"Document {doc_id} deleted successfully."
+
+
 # ── MongoDB Tools ────────────────────────────────────────────────────────
 
 from datetime import datetime

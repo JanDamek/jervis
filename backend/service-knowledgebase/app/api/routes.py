@@ -18,6 +18,8 @@ from app.api.models import (
     GitCommitIngestRequest, GitCommitIngestResult,
     CpgIngestRequest, CpgIngestResult,
     JoernScanRequest, JoernScanResult,
+    KbDocumentUploadRequest, KbDocumentDto, KbDocumentUpdateRequest,
+    KbDocumentCategoryEnum,
 )
 from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
@@ -584,6 +586,174 @@ async def merge_aliases(
     try:
         count = await service.graph_service.alias_registry.merge(clientId, sourceKey, targetKey)
         return {"merged": count, "source": sourceKey, "target": targetKey}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# KB Document Upload & Management
+# ---------------------------------------------------------------------------
+
+
+@write_router.post("/documents/upload", response_model=KbDocumentDto)
+async def upload_kb_document(
+    file: UploadFile = File(...),
+    clientId: str = Form(...),
+    projectId: str = Form(None),
+    filename: str = Form(None),
+    mimeType: str = Form(None),
+    storagePath: str = Form(""),
+    title: str = Form(None),
+    description: str = Form(None),
+    category: str = Form("OTHER"),
+    tags: str = Form(""),
+    contentHash: str = Form(None),
+):
+    """Upload a document to KB.
+
+    The file binary is sent via multipart. If storagePath is provided,
+    it means the Kotlin server already stored the file on shared FS
+    and we only need to create the graph node + extract/ingest content.
+    If storagePath is empty, the file is ingested directly from the upload.
+    """
+    try:
+        actual_filename = filename or file.filename or "unknown"
+        actual_mime = mimeType or file.content_type or "application/octet-stream"
+        file_bytes = await file.read()
+        actual_size = len(file_bytes)
+
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+        try:
+            cat_enum = KbDocumentCategoryEnum(category)
+        except ValueError:
+            cat_enum = KbDocumentCategoryEnum.OTHER
+
+        request = KbDocumentUploadRequest(
+            clientId=clientId,
+            projectId=projectId,
+            filename=actual_filename,
+            mimeType=actual_mime,
+            sizeBytes=actual_size,
+            storagePath=storagePath,
+            title=title,
+            description=description,
+            category=cat_enum,
+            tags=tag_list,
+            contentHash=contentHash,
+        )
+
+        return await service.upload_kb_document(request, file_bytes=file_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/documents/register", response_model=KbDocumentDto)
+async def register_kb_document(request: KbDocumentUploadRequest):
+    """Register a document already stored on shared FS.
+
+    No file binary is sent — the Kotlin server already stored the file.
+    Reads the file from storagePath on the shared PVC for extraction.
+    """
+    import os
+
+    try:
+        file_bytes = None
+        data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
+        full_path = os.path.join(data_root, request.storagePath)
+        if os.path.exists(full_path):
+            with open(full_path, "rb") as f:
+                file_bytes = f.read()
+
+        return await service.upload_kb_document(request, file_bytes=file_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@read_router.get("/documents", response_model=List[KbDocumentDto])
+async def list_kb_documents(clientId: str, projectId: str = None):
+    """List all KB documents for a client."""
+    try:
+        return await service.list_kb_documents(clientId, projectId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@read_router.get("/documents/{doc_id}", response_model=KbDocumentDto)
+async def get_kb_document(doc_id: str):
+    """Get a single KB document by ID."""
+    try:
+        doc = await service.get_kb_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return doc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.put("/documents/{doc_id}", response_model=KbDocumentDto)
+async def update_kb_document(doc_id: str, request: KbDocumentUpdateRequest):
+    """Update document metadata (title, description, category, tags)."""
+    try:
+        doc = await service.update_kb_document(
+            doc_id=doc_id,
+            title=request.title,
+            description=request.description,
+            category=request.category.value if request.category else None,
+            tags=request.tags,
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return doc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.delete("/documents/{doc_id}")
+async def delete_kb_document(doc_id: str):
+    """Delete a KB document (purges RAG data + graph node).
+
+    Note: The Kotlin server is responsible for deleting the file from shared FS.
+    """
+    try:
+        deleted = await service.delete_kb_document(doc_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"ok": True, "deleted": doc_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@write_router.post("/documents/{doc_id}/reindex")
+async def reindex_kb_document(doc_id: str):
+    """Re-extract and re-index a document from its file on shared FS."""
+    import os
+
+    try:
+        doc = await service.get_kb_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        data_root = os.environ.get("DATA_ROOT_DIR", "/opt/jervis/data")
+        full_path = os.path.join(data_root, doc.storagePath)
+        if not os.path.exists(full_path):
+            raise HTTPException(status_code=404, detail="Document file not found on disk")
+
+        with open(full_path, "rb") as f:
+            file_bytes = f.read()
+
+        success = await service.reindex_kb_document(doc_id, file_bytes)
+        if not success:
+            raise HTTPException(status_code=500, detail="Reindex failed")
+        return {"ok": True, "reindexed": doc_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

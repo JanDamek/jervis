@@ -495,10 +495,82 @@ class JoernScanRequest(BaseModel):
 
 
 class JoernScanResult(BaseModel):
-    """Result of Joern quick scan."""
+    """Result of Joern quick scan.
+
+    Contains findings as a list of raw dicts from Joern analysis.
+    """
     status: str  # "success" | "error"
     scanType: str
     output: str  # Scan findings (stdout from Joern)
     warnings: Optional[str] = None  # stderr from Joern
     exitCode: int = 0
+
+
+# === KB Document Upload Models ===
+
+class KbDocumentStateEnum(str, Enum):
+    """Document lifecycle state."""
+    UPLOADED = "UPLOADED"
+    EXTRACTED = "EXTRACTED"
+    INDEXED = "INDEXED"
+    FAILED = "FAILED"
+
+
+class KbDocumentCategoryEnum(str, Enum):
+    """Document classification category."""
+    TECHNICAL = "TECHNICAL"
+    BUSINESS = "BUSINESS"
+    LEGAL = "LEGAL"
+    PROCESS = "PROCESS"
+    MEETING_NOTES = "MEETING_NOTES"
+    REPORT = "REPORT"
+    SPECIFICATION = "SPECIFICATION"
+    OTHER = "OTHER"
+
+
+class KbDocumentUploadRequest(BaseModel):
+    """Request to register an uploaded document in KB."""
+    clientId: str
+    projectId: Optional[str] = None
+    filename: str
+    mimeType: str
+    sizeBytes: int
+    storagePath: str  # Relative path from workspace root on shared FS
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: KbDocumentCategoryEnum = KbDocumentCategoryEnum.OTHER
+    tags: List[str] = []
+    contentHash: Optional[str] = None
+
+
+class KbDocumentUpdateRequest(BaseModel):
+    """Update document metadata."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[KbDocumentCategoryEnum] = None
+    tags: Optional[List[str]] = None
+
+
+class KbDocumentDto(BaseModel):
+    """Full document details returned by KB service."""
+    id: str  # ArangoDB _key
+    clientId: str
+    projectId: Optional[str] = None
+    filename: str
+    mimeType: str
+    sizeBytes: int
+    storagePath: str
+    state: KbDocumentStateEnum = KbDocumentStateEnum.UPLOADED
+    category: KbDocumentCategoryEnum = KbDocumentCategoryEnum.OTHER
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: List[str] = []
+    extractedTextPreview: Optional[str] = None
+    pageCount: Optional[int] = None
+    contentHash: Optional[str] = None
+    sourceUrn: str = ""
+    errorMessage: Optional[str] = None
+    ragChunks: List[str] = []
+    uploadedAt: str = ""
+    indexedAt: Optional[str] = None
 

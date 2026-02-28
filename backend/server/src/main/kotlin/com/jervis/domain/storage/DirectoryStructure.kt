@@ -10,6 +10,7 @@ import java.nio.file.Paths
  * Root structure: {workspaceRoot}/
  *   - clients/{clientId}/
  *     - audio/
+ *     - kb-documents/
  *     - projects/{projectId}/
  *       - git/
  *       - uploads/
@@ -44,6 +45,7 @@ data class DirectoryStructure(
 
     val clientDir: Path? = clientId?.let { clientsRoot.resolve(it.toString()) }
     val clientAudioDir: Path? = clientDir?.resolve(AUDIO_SUBDIR)
+    val clientKbDocumentsDir: Path? = clientDir?.resolve(KB_DOCUMENTS_SUBDIR)
     val clientProjectsRoot: Path? = clientDir?.resolve(PROJECTS_SUBDIR)
 
     val projectDir: Path? = projectId?.let { clientProjectsRoot?.resolve(it.toString()) }
@@ -65,6 +67,7 @@ data class DirectoryStructure(
         const val SCRAPING_SUBDIR = "scraping"
         const val PROCESSING_SUBDIR = "processing"
         const val AUDIO_SUBDIR = "audio"
+        const val KB_DOCUMENTS_SUBDIR = "kb-documents"
         const val PROJECTS_SUBDIR = "projects"
 
         const val GIT_SUBDIR = "git"

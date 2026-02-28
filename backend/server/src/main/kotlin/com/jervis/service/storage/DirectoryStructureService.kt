@@ -25,6 +25,7 @@ import kotlin.io.path.exists
  * Workspace structure: {workspaceRoot}/
  *   - clients/{clientId}/
  *     - audio/
+ *     - kb-documents/
  *     - projects/{projectId}/
  *       - git/
  *       - uploads/
@@ -87,6 +88,7 @@ class DirectoryStructureService(
 
             structure.clientDir?.let { createDirectoryIfNotExists(it) }
             structure.clientAudioDir?.let { createDirectoryIfNotExists(it) }
+            structure.clientKbDocumentsDir?.let { createDirectoryIfNotExists(it) }
             structure.clientProjectsRoot?.let { createDirectoryIfNotExists(it) }
 
             logger.info("Ensured client directories for client=$clientId")
@@ -187,6 +189,13 @@ class DirectoryStructureService(
         }
 
     fun clientAudioDir(client: ClientDocument): Path = clientAudioDir(client.id)
+
+    fun clientKbDocumentsDir(clientId: ClientId): Path =
+        clientDir(clientId).resolve(DirectoryStructure.KB_DOCUMENTS_SUBDIR).also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun clientKbDocumentsDir(client: ClientDocument): Path = clientKbDocumentsDir(client.id)
 
     fun clientGitDir(clientId: ClientId): Path =
         clientDir(clientId).resolve("git").also {
@@ -411,6 +420,72 @@ class DirectoryStructureService(
             }
         return Paths.get(expanded).toAbsolutePath().normalize()
     }
+
+    // ========== KB Document Storage ==========
+
+    /**
+     * Store a KB document file and return relative storage path.
+     *
+     * @param clientId Client ID for directory structure
+     * @param filename Original filename
+     * @param binaryData Binary content
+     * @return Relative path from workspace root (e.g., "clients/{clientId}/kb-documents/{uuid}_{filename}")
+     */
+    suspend fun storeKbDocument(
+        clientId: ClientId,
+        filename: String,
+        binaryData: ByteArray,
+    ): String =
+        withContext(Dispatchers.IO) {
+            val kbDocsDir = clientKbDocumentsDir(clientId)
+
+            val uuid = java.util.UUID.randomUUID().toString()
+            val sanitizedFilename = filename.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val uniqueFilename = "${uuid}_$sanitizedFilename"
+
+            val filePath = kbDocsDir.resolve(uniqueFilename)
+            Files.write(filePath, binaryData)
+
+            logger.debug("Stored KB document: $filePath (${binaryData.size} bytes)")
+
+            workspaceRoot.relativize(filePath).toString()
+        }
+
+    /**
+     * Read a KB document file from its storage path.
+     *
+     * @param storagePath Relative path returned by storeKbDocument()
+     * @return Binary content
+     */
+    suspend fun readKbDocument(storagePath: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            val fullPath = workspaceRoot.resolve(storagePath)
+            if (!fullPath.exists()) {
+                throw IllegalStateException("KB document not found: $storagePath")
+            }
+            Files.readAllBytes(fullPath)
+        }
+
+    /**
+     * Delete a KB document file from storage.
+     *
+     * @param storagePath Relative path returned by storeKbDocument()
+     */
+    suspend fun deleteKbDocument(storagePath: String) {
+        withContext(Dispatchers.IO) {
+            val fullPath = workspaceRoot.resolve(storagePath)
+            if (fullPath.exists()) {
+                Files.delete(fullPath)
+                logger.debug("Deleted KB document: $storagePath")
+            }
+        }
+    }
+
+    /**
+     * Resolve the absolute path of a KB document from its relative storage path.
+     */
+    fun resolveKbDocumentPath(storagePath: String): Path =
+        workspaceRoot.resolve(storagePath)
 
     // ========== Attachment Storage for Vision Analysis ==========
 

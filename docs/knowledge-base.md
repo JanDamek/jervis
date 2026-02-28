@@ -13,10 +13,11 @@
 4. [Continuous Indexers](#continuous-indexers)
 5. [RAG Integration](#rag-integration)
 6. [Task Outcome Ingestion](#task-outcome-ingestion)
-7. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
-8. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
-9. [Knowledge Base Best Practices](#knowledge-base-best-practices)
-10. [Monitoring & Metrics](#monitoring--metrics)
+7. [KB Document Upload](#kb-document-upload)
+8. [Procedural Memory (Multi-Agent System)](#procedural-memory-multi-agent-system)
+9. [Session Memory (Multi-Agent System)](#session-memory-multi-agent-system)
+10. [Knowledge Base Best Practices](#knowledge-base-best-practices)
+11. [Monitoring & Metrics](#monitoring--metrics)
 
 ---
 
@@ -876,6 +877,128 @@ Next conversation:
   → state["user_context"] = "### Domain Context\n- **BMS**: Brokerage Management System\n..."
   → respond node includes in LLM context → personalized answer
 ```
+
+---
+
+## KB Document Upload
+
+### Overview
+
+Users can upload documents (PDF, DOCX, TXT, images, etc.) directly into the Knowledge Base.
+Uploaded documents are:
+
+1. **Archived** on the shared filesystem (`/opt/jervis/data/clients/{clientId}/kb-documents/`)
+2. **Tracked** as `kb_document` nodes in ArangoDB (metadata, state, storage path)
+3. **Extracted** via Tika (text extraction from binary formats) or VLM (for images)
+4. **Indexed** into RAG (Weaviate) for semantic search
+5. **Graph-linked** via LLM entity extraction (same as other KB content)
+
+This means the KB has full overview of all uploaded documents: their metadata,
+classification, extracted content, and the original file is always available for download.
+
+### Architecture
+
+```
+┌─────────────┐     KRPC      ┌──────────────────┐     REST     ┌─────────────────┐
+│  Client UI  │ ───────────►  │  KbDocumentRpc   │ ──────────►  │  KB Python Svc  │
+│  (Desktop)  │               │  (Kotlin Server) │              │  (FastAPI)      │
+└─────────────┘               └──────────────────┘              └─────────────────┘
+                                     │                                │
+                              Store file on FS              Create ArangoDB node
+                              (DirectoryStructureService)   Extract text (Tika)
+                                     │                      Ingest into RAG
+                                     ▼                            │
+                              /opt/jervis/data/                   ▼
+                              clients/{clientId}/           Weaviate + ArangoDB
+                              kb-documents/
+                              {uuid}_{filename}
+
+┌─────────────┐   direct REST  ┌─────────────────┐
+│  MCP Server │ ──────────────►│  KB Python Svc  │  (reads file from shared PVC)
+│  (Claude)   │                └─────────────────┘
+└─────────────┘
+```
+
+### Document State Machine
+
+```
+UPLOADED → EXTRACTED → INDEXED
+    │           │
+    └───────────┴──→ FAILED
+```
+
+- **UPLOADED**: File stored on FS, graph node created, awaiting text extraction
+- **EXTRACTED**: Text extracted via Tika/VLM, ready for RAG ingest
+- **INDEXED**: Content ingested into RAG + graph. Fully searchable.
+- **FAILED**: Extraction or indexing failed (error stored in node)
+
+### Document Categories
+
+| Category | Description |
+|----------|------------|
+| TECHNICAL | Technical documentation, API specs, architecture docs |
+| BUSINESS | Business requirements, proposals, contracts |
+| LEGAL | Legal documents, compliance, policies |
+| PROCESS | Process documentation, workflows, SOPs |
+| MEETING_NOTES | Meeting minutes, agendas |
+| REPORT | Reports, analyses, summaries |
+| SPECIFICATION | Product/feature specifications |
+| OTHER | Uncategorized |
+
+### Storage Path Convention
+
+Documents are stored at the **client level** (not project level) since KB documents
+can be cross-project. The directory structure managed by `DirectoryStructureService`:
+
+```
+{DATA_ROOT_DIR}/clients/{clientId}/kb-documents/{uuid}_{sanitized_filename}
+```
+
+- UUID ensures uniqueness
+- Sanitized filename preserves readability
+- Relative path stored in ArangoDB node (`storagePath` field)
+
+### SourceUrn Format
+
+```
+doc::id:{uuid}
+```
+
+Matches the existing `SourceUrn.document()` factory in Kotlin.
+
+### API Endpoints (Python KB Service)
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/v1/documents/upload` | Upload file + create node + extract + ingest |
+| POST | `/api/v1/documents/register` | Register file already on FS (Kotlin stored it) |
+| GET | `/api/v1/documents?clientId=&projectId=` | List documents |
+| GET | `/api/v1/documents/{docId}` | Get document details |
+| PUT | `/api/v1/documents/{docId}` | Update metadata (title, category, tags) |
+| DELETE | `/api/v1/documents/{docId}` | Delete (purges RAG + graph node) |
+| POST | `/api/v1/documents/{docId}/reindex` | Re-extract and re-ingest |
+
+### MCP Tools
+
+| Tool | Description |
+|------|------------|
+| `kb_document_upload` | Upload a file from local disk / PVC into KB |
+| `kb_document_list` | List all KB documents for a client |
+| `kb_document_delete` | Delete a document from KB |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `shared/common-dto/.../kb/KbDocumentDtos.kt` | Document DTOs (state, category, upload/update/delete) |
+| `shared/common-api/.../IKbDocumentService.kt` | KRPC service interface |
+| `backend/server/.../rpc/KbDocumentRpcImpl.kt` | Kotlin RPC implementation (stores on FS, calls KB REST) |
+| `backend/server/.../storage/DirectoryStructureService.kt` | FS storage methods (`storeKbDocument`, `readKbDocument`, `deleteKbDocument`) |
+| `backend/server/.../configuration/KnowledgeServiceRestClient.kt` | REST client to Python KB (document CRUD methods) |
+| `backend/service-knowledgebase/app/api/routes.py` | Python endpoints (`/documents/*`) |
+| `backend/service-knowledgebase/app/services/knowledge_service.py` | Document business logic (upload, extract, list, delete) |
+| `backend/service-knowledgebase/app/services/graph_service.py` | ArangoDB node management (`kb_document` type) |
+| `backend/service-mcp/app/main.py` | MCP tools (`kb_document_upload`, `kb_document_list`, `kb_document_delete`) |
 
 ---
 

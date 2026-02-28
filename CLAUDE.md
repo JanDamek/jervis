@@ -83,6 +83,11 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Environment internal API: `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` (CRUD REST for MCP/orchestrator)
 - Environment MCP tools: `backend/service-mcp/app/main.py` (environment_list, _get, _create, _deploy, etc.)
 - Environment orchestrator tools: `backend/service-orchestrator/app/tools/definitions.py` (ENVIRONMENT_TOOLS, DEVOPS_AGENT_TOOLS)
+- KB document DTOs: `shared/common-dto/.../kb/KbDocumentDtos.kt`
+- KB document service: `shared/common-api/.../IKbDocumentService.kt`, `backend/server/.../rpc/KbDocumentRpcImpl.kt`
+- KB document storage: `backend/server/.../storage/DirectoryStructureService.kt` (storeKbDocument, readKbDocument, deleteKbDocument)
+- KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*)
+- KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload, kb_document_list, kb_document_delete)
 
 ## Build Notes
 

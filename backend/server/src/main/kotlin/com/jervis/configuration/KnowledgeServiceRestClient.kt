@@ -532,6 +532,183 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    // -----------------------------------------------------------------------
+    // KB Document Upload & Management
+    // -----------------------------------------------------------------------
+
+    /**
+     * Register a document in KB and trigger extraction/indexing.
+     *
+     * The binary file is sent along with metadata via multipart form.
+     * KB service creates a graph node and ingests the content into RAG.
+     */
+    suspend fun uploadKbDocument(
+        clientId: String,
+        projectId: String?,
+        filename: String,
+        mimeType: String,
+        storagePath: String,
+        fileBytes: ByteArray,
+        title: String? = null,
+        description: String? = null,
+        category: String = "OTHER",
+        tags: List<String> = emptyList(),
+        contentHash: String? = null,
+    ): PythonKbDocumentDto {
+        logger.info { "KB document upload: filename=$filename client=$clientId" }
+
+        val httpResponse = client.submitFormWithBinaryData(
+            url = "$apiBaseUrl/documents/upload",
+            formData = formData {
+                append("clientId", clientId)
+                projectId?.let { append("projectId", it) }
+                append("filename", filename)
+                append("mimeType", mimeType)
+                append("storagePath", storagePath)
+                title?.let { append("title", it) }
+                description?.let { append("description", it) }
+                append("category", category)
+                if (tags.isNotEmpty()) append("tags", tags.joinToString(","))
+                contentHash?.let { append("contentHash", it) }
+                append(
+                    "file",
+                    fileBytes,
+                    Headers.build {
+                        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                        append(HttpHeaders.ContentType, mimeType)
+                    },
+                )
+            },
+        )
+
+        if (!httpResponse.status.isSuccess()) {
+            val errorBody = httpResponse.bodyAsText()
+            throw RuntimeException("KB document upload failed ${httpResponse.status}: $errorBody")
+        }
+
+        return httpResponse.body()
+    }
+
+    /**
+     * Register a document already on shared FS (no binary upload).
+     * KB reads the file from storagePath on the PVC.
+     */
+    suspend fun registerKbDocument(
+        clientId: String,
+        projectId: String?,
+        filename: String,
+        mimeType: String,
+        sizeBytes: Long,
+        storagePath: String,
+        title: String? = null,
+        description: String? = null,
+        category: String = "OTHER",
+        tags: List<String> = emptyList(),
+        contentHash: String? = null,
+    ): PythonKbDocumentDto {
+        logger.info { "KB document register: filename=$filename client=$clientId storagePath=$storagePath" }
+
+        val request = PythonKbDocumentRegisterRequest(
+            clientId = clientId,
+            projectId = projectId,
+            filename = filename,
+            mimeType = mimeType,
+            sizeBytes = sizeBytes,
+            storagePath = storagePath,
+            title = title,
+            description = description,
+            category = category,
+            tags = tags,
+            contentHash = contentHash,
+        )
+
+        val httpResponse = client.post("$apiBaseUrl/documents/register") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+
+        if (!httpResponse.status.isSuccess()) {
+            val errorBody = httpResponse.bodyAsText()
+            throw RuntimeException("KB document register failed ${httpResponse.status}: $errorBody")
+        }
+
+        return httpResponse.body()
+    }
+
+    suspend fun listKbDocuments(clientId: String, projectId: String?): List<PythonKbDocumentDto> {
+        val url = buildString {
+            append("$apiBaseUrl/documents?clientId=$clientId")
+            if (projectId != null) append("&projectId=$projectId")
+        }
+        return try {
+            client.get(url).body()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to list KB documents: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    suspend fun getKbDocument(docId: String): PythonKbDocumentDto? {
+        return try {
+            client.get("$apiBaseUrl/documents/$docId").body()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to get KB document $docId: ${e.message}" }
+            null
+        }
+    }
+
+    suspend fun updateKbDocument(
+        docId: String,
+        title: String? = null,
+        description: String? = null,
+        category: String? = null,
+        tags: List<String>? = null,
+    ): PythonKbDocumentDto? {
+        return try {
+            val request = PythonKbDocumentUpdateRequest(
+                title = title,
+                description = description,
+                category = category,
+                tags = tags,
+            )
+            val httpResponse = client.post("$apiBaseUrl/documents/$docId") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            if (!httpResponse.status.isSuccess()) return null
+            httpResponse.body()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to update KB document $docId: ${e.message}" }
+            null
+        }
+    }
+
+    suspend fun deleteKbDocument(docId: String): Boolean {
+        return try {
+            val httpResponse = client.post("$apiBaseUrl/documents/$docId/delete") {
+                contentType(ContentType.Application.Json)
+                setBody("{}")
+            }
+            httpResponse.status.isSuccess()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to delete KB document $docId: ${e.message}" }
+            false
+        }
+    }
+
+    suspend fun reindexKbDocument(docId: String): Boolean {
+        return try {
+            val httpResponse = client.post("$apiBaseUrl/documents/$docId/reindex") {
+                contentType(ContentType.Application.Json)
+                setBody("{}")
+            }
+            httpResponse.status.isSuccess()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to reindex KB document $docId: ${e.message}" }
+            false
+        }
+    }
+
     fun close() {
         client.close()
     }
@@ -777,6 +954,55 @@ private data class PythonCpgIngestResult(
     val callsEdges: Int = 0,
     @SerialName("uses_type_edges")
     val usesTypeEdges: Int = 0,
+)
+
+// KB document DTOs (internal REST models)
+
+@Serializable
+data class PythonKbDocumentDto(
+    val id: String = "",
+    val clientId: String = "",
+    val projectId: String? = null,
+    val filename: String = "",
+    val mimeType: String = "",
+    val sizeBytes: Long = 0,
+    val storagePath: String = "",
+    val state: String = "UPLOADED",
+    val category: String = "OTHER",
+    val title: String? = null,
+    val description: String? = null,
+    val tags: List<String> = emptyList(),
+    val extractedTextPreview: String? = null,
+    val pageCount: Int? = null,
+    val contentHash: String? = null,
+    val sourceUrn: String = "",
+    val errorMessage: String? = null,
+    val ragChunks: List<String> = emptyList(),
+    val uploadedAt: String = "",
+    val indexedAt: String? = null,
+)
+
+@Serializable
+private data class PythonKbDocumentRegisterRequest(
+    val clientId: String,
+    val projectId: String? = null,
+    val filename: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val storagePath: String,
+    val title: String? = null,
+    val description: String? = null,
+    val category: String = "OTHER",
+    val tags: List<String> = emptyList(),
+    val contentHash: String? = null,
+)
+
+@Serializable
+private data class PythonKbDocumentUpdateRequest(
+    val title: String? = null,
+    val description: String? = null,
+    val category: String? = null,
+    val tags: List<String>? = null,
 )
 
 // KB extraction queue DTOs (used by IndexingQueueRpcImpl)

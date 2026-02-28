@@ -12,6 +12,7 @@ from app.api.models import (
     GitCommitIngestRequest, GitCommitIngestResult,
     CpgIngestRequest, CpgIngestResult,
     JoernScanRequest, JoernScanResult,
+    KbDocumentUploadRequest, KbDocumentDto,
 )
 from app.services.rag_service import RagService
 from app.services.graph_service import GraphService
@@ -1431,4 +1432,255 @@ Respond ONLY with valid JSON."""
                 warnings=str(e),
                 exitCode=1,
             )
+
+    # -----------------------------------------------------------------------
+    # KB Document Upload & Management
+    # -----------------------------------------------------------------------
+
+    async def upload_kb_document(
+        self,
+        request: KbDocumentUploadRequest,
+        file_bytes: bytes | None = None,
+    ) -> KbDocumentDto:
+        """Register an uploaded document in KB and trigger content extraction.
+
+        The binary file is already stored on the shared FS by the Kotlin server.
+        This method:
+        1. Creates a kb_document node in ArangoDB.
+        2. If file_bytes provided, extracts text via Tika and ingests into RAG.
+        3. Updates the node with extraction results.
+
+        Args:
+            request: Upload metadata.
+            file_bytes: Optional binary content for text extraction.
+                        If None, the Kotlin server must trigger extraction separately.
+
+        Returns:
+            KbDocumentDto with node details.
+        """
+        import uuid
+        doc_id = str(uuid.uuid4())
+        source_urn = f"doc::id:{doc_id}"
+
+        # 1. Create the graph node
+        node = await self.graph_service.create_kb_document_node(
+            doc_id=doc_id,
+            client_id=request.clientId,
+            project_id=request.projectId,
+            filename=request.filename,
+            mime_type=request.mimeType,
+            size_bytes=request.sizeBytes,
+            storage_path=request.storagePath,
+            source_urn=source_urn,
+            title=request.title,
+            description=request.description,
+            category=request.category.value if hasattr(request.category, 'value') else request.category,
+            tags=request.tags,
+            content_hash=request.contentHash,
+        )
+
+        # 2. If binary data provided, extract and ingest
+        if file_bytes:
+            try:
+                await self._extract_and_ingest_document(
+                    doc_id=doc_id,
+                    file_bytes=file_bytes,
+                    filename=request.filename,
+                    source_urn=source_urn,
+                    client_id=request.clientId,
+                    project_id=request.projectId,
+                )
+            except Exception as e:
+                logger.error("Document extraction failed doc_id=%s: %s", doc_id, e)
+                await self.graph_service.update_kb_document_node(doc_id, {
+                    "state": "FAILED",
+                    "errorMessage": str(e)[:500],
+                })
+
+        return self._node_to_dto(node)
+
+    async def _extract_and_ingest_document(
+        self,
+        doc_id: str,
+        file_bytes: bytes,
+        filename: str,
+        source_urn: str,
+        client_id: str,
+        project_id: str | None,
+    ):
+        """Extract text from file and ingest into RAG + graph.
+
+        Updates the kb_document node with extraction results.
+        """
+        # Extract text via Tika
+        is_image = filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
+
+        if is_image:
+            text = await self.tika_client.process_file(file_bytes, filename)
+            if not text or len(text.strip()) < settings.OCR_TEXT_THRESHOLD:
+                try:
+                    text = await self.image_service.describe_image(file_bytes)
+                except Exception:
+                    pass
+            kind = "image"
+        else:
+            text = await self.tika_client.process_file(file_bytes, filename)
+            kind = "document"
+
+        if not text:
+            raise ValueError(f"No text could be extracted from {filename}")
+
+        # Update node with extraction status
+        preview = text[:500].strip() if text else None
+        await self.graph_service.update_kb_document_node(doc_id, {
+            "state": "EXTRACTED",
+            "extractedTextPreview": preview,
+        })
+
+        # Ingest into RAG (creates chunks + links to graph nodes)
+        ingest_request = IngestRequest(
+            clientId=client_id,
+            projectId=project_id,
+            sourceUrn=source_urn,
+            kind=kind,
+            content=text,
+            metadata={"filename": filename, "docId": doc_id},
+        )
+        result = await self.ingest(ingest_request)
+
+        # Update node with RAG chunk links and mark as indexed
+        updates = {
+            "state": "INDEXED",
+            "ragChunks": result.chunk_ids,
+            "indexedAt": datetime.utcnow().isoformat(),
+        }
+        await self.graph_service.update_kb_document_node(doc_id, updates)
+
+        logger.info(
+            "KB document indexed doc_id=%s filename=%s chunks=%d",
+            doc_id, filename, result.chunks_count,
+        )
+
+    async def list_kb_documents(
+        self,
+        client_id: str,
+        project_id: str | None = None,
+    ) -> list[KbDocumentDto]:
+        """List all KB documents for a client."""
+        nodes = await self.graph_service.list_kb_document_nodes(client_id, project_id)
+        return [self._node_to_dto(n) for n in nodes]
+
+    async def get_kb_document(self, doc_id: str) -> KbDocumentDto | None:
+        """Get a single KB document by ID."""
+        node = await self.graph_service.get_kb_document_node(doc_id)
+        if not node:
+            return None
+        return self._node_to_dto(node)
+
+    async def update_kb_document(
+        self,
+        doc_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        category: str | None = None,
+        tags: list[str] | None = None,
+    ) -> KbDocumentDto | None:
+        """Update document metadata."""
+        updates = {}
+        if title is not None:
+            updates["title"] = title
+            updates["label"] = title
+        if description is not None:
+            updates["description"] = description
+        if category is not None:
+            updates["category"] = category
+        if tags is not None:
+            updates["tags"] = tags
+
+        if not updates:
+            node = await self.graph_service.get_kb_document_node(doc_id)
+        else:
+            node = await self.graph_service.update_kb_document_node(doc_id, updates)
+
+        if not node:
+            return None
+        return self._node_to_dto(node)
+
+    async def delete_kb_document(self, doc_id: str) -> bool:
+        """Delete a KB document: purge RAG chunks, remove graph node."""
+        node = await self.graph_service.get_kb_document_node(doc_id)
+        if not node:
+            return False
+
+        source_urn = node.get("sourceUrn", "")
+        if source_urn:
+            try:
+                await self.purge(source_urn)
+            except Exception as e:
+                logger.warning("Failed to purge RAG for doc %s: %s", doc_id, e)
+
+        return await self.graph_service.delete_kb_document_node(doc_id)
+
+    async def reindex_kb_document(
+        self,
+        doc_id: str,
+        file_bytes: bytes,
+    ) -> bool:
+        """Re-extract and re-ingest a document's content."""
+        node = await self.graph_service.get_kb_document_node(doc_id)
+        if not node:
+            return False
+
+        # Purge old RAG data
+        source_urn = node.get("sourceUrn", "")
+        if source_urn:
+            try:
+                await self.purge(source_urn)
+            except Exception:
+                pass
+
+        # Re-extract and ingest
+        try:
+            await self._extract_and_ingest_document(
+                doc_id=doc_id,
+                file_bytes=file_bytes,
+                filename=node["filename"],
+                source_urn=source_urn,
+                client_id=node["clientId"],
+                project_id=node.get("projectId"),
+            )
+            return True
+        except Exception as e:
+            logger.error("Reindex failed doc_id=%s: %s", doc_id, e)
+            await self.graph_service.update_kb_document_node(doc_id, {
+                "state": "FAILED",
+                "errorMessage": str(e)[:500],
+            })
+            return False
+
+    @staticmethod
+    def _node_to_dto(node: dict) -> KbDocumentDto:
+        """Convert ArangoDB node dict to KbDocumentDto."""
+        return KbDocumentDto(
+            id=node.get("docId", node.get("_key", "")),
+            clientId=node.get("clientId", ""),
+            projectId=node.get("projectId") or None,
+            filename=node.get("filename", ""),
+            mimeType=node.get("mimeType", ""),
+            sizeBytes=node.get("sizeBytes", 0),
+            storagePath=node.get("storagePath", ""),
+            state=node.get("state", "UPLOADED"),
+            category=node.get("category", "OTHER"),
+            title=node.get("title"),
+            description=node.get("description"),
+            tags=node.get("tags", []),
+            extractedTextPreview=node.get("extractedTextPreview"),
+            pageCount=node.get("pageCount"),
+            contentHash=node.get("contentHash"),
+            sourceUrn=node.get("sourceUrn", ""),
+            errorMessage=node.get("errorMessage"),
+            ragChunks=node.get("ragChunks", []),
+            uploadedAt=node.get("uploadedAt", ""),
+            indexedAt=node.get("indexedAt"),
+        )
 

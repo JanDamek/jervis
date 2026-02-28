@@ -1468,3 +1468,151 @@ Text: {text}
             "nodes_created": nodes_created,
             "edges_created": edges_created,
         }
+
+    # -----------------------------------------------------------------------
+    # KB Document management (uploaded documents stored on shared FS)
+    # -----------------------------------------------------------------------
+
+    def _make_kb_document_key(self, doc_id: str) -> str:
+        return self._safe_arango_key(["kbdoc", doc_id])
+
+    async def create_kb_document_node(
+        self,
+        doc_id: str,
+        client_id: str,
+        project_id: str | None,
+        filename: str,
+        mime_type: str,
+        size_bytes: int,
+        storage_path: str,
+        source_urn: str,
+        title: str | None = None,
+        description: str | None = None,
+        category: str = "OTHER",
+        tags: list[str] | None = None,
+        content_hash: str | None = None,
+    ) -> dict:
+        """Create a kb_document node in ArangoDB. No LLM involved."""
+        from datetime import datetime
+
+        key = self._make_kb_document_key(doc_id)
+        node_data = {
+            "_key": key,
+            "canonicalKey": f"kbdoc:{doc_id}",
+            "label": title or filename,
+            "type": "kb_document",
+            "docId": doc_id,
+            "filename": filename,
+            "mimeType": mime_type,
+            "sizeBytes": size_bytes,
+            "storagePath": storage_path,
+            "sourceUrn": source_urn,
+            "state": "UPLOADED",
+            "category": category,
+            "title": title,
+            "description": description,
+            "tags": tags or [],
+            "contentHash": content_hash,
+            "extractedTextPreview": None,
+            "pageCount": None,
+            "errorMessage": None,
+            "ragChunks": [],
+            "clientId": client_id,
+            "projectId": project_id or "",
+            "groupId": "",
+            "uploadedAt": datetime.utcnow().isoformat(),
+            "indexedAt": None,
+        }
+
+        def _insert():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            nodes_col.insert(node_data)
+            return node_data
+
+        result = await asyncio.to_thread(_insert)
+        logger.info("Created kb_document node key=%s filename=%s", key, filename)
+        return result
+
+    async def update_kb_document_node(
+        self,
+        doc_id: str,
+        updates: dict,
+    ) -> dict | None:
+        """Update fields on a kb_document node."""
+        key = self._make_kb_document_key(doc_id)
+
+        def _update():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            if not nodes_col.has(key):
+                return None
+            updates["_key"] = key
+            nodes_col.update(updates)
+            return nodes_col.get(key)
+
+        return await asyncio.to_thread(_update)
+
+    async def get_kb_document_node(self, doc_id: str) -> dict | None:
+        """Get a kb_document node by doc ID."""
+        key = self._make_kb_document_key(doc_id)
+
+        def _get():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            if not nodes_col.has(key):
+                return None
+            return nodes_col.get(key)
+
+        return await asyncio.to_thread(_get)
+
+    async def list_kb_document_nodes(
+        self,
+        client_id: str,
+        project_id: str | None = None,
+    ) -> list[dict]:
+        """List all kb_document nodes for a client (optionally filtered by project)."""
+
+        def _list():
+            aql = """
+                FOR v IN KnowledgeNodes
+                    FILTER v.type == "kb_document"
+                    FILTER v.clientId == @clientId
+            """
+            bind_vars = {"clientId": client_id}
+
+            if project_id:
+                aql += '    FILTER v.projectId == @projectId\n'
+                bind_vars["projectId"] = project_id
+
+            aql += '    SORT v.uploadedAt DESC\n    RETURN v'
+
+            cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
+            return list(cursor)
+
+        return await asyncio.to_thread(_list)
+
+    async def delete_kb_document_node(self, doc_id: str) -> bool:
+        """Delete a kb_document node and its edges."""
+        key = self._make_kb_document_key(doc_id)
+
+        def _delete():
+            nodes_col = self.db.collection("KnowledgeNodes")
+            edges_col = self.db.collection("KnowledgeEdges")
+            if not nodes_col.has(key):
+                return False
+
+            # Delete edges referencing this node
+            full_id = f"KnowledgeNodes/{key}"
+            edge_aql = """
+                FOR e IN KnowledgeEdges
+                    FILTER e._from == @id OR e._to == @id
+                    REMOVE e IN KnowledgeEdges
+            """
+            self.db.aql.execute(edge_aql, bind_vars={"id": full_id})
+
+            # Delete the node itself
+            nodes_col.delete(key)
+            return True
+
+        deleted = await asyncio.to_thread(_delete)
+        if deleted:
+            logger.info("Deleted kb_document node key=%s", key)
+        return deleted

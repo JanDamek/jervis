@@ -72,6 +72,7 @@ class KtorRpcServer(
     private val backgroundEngine: com.jervis.service.background.BackgroundEngine,
     private val chatRpcImpl: ChatRpcImpl,
     private val guidelinesRpcImpl: GuidelinesRpcImpl,
+    private val kbDocumentRpcImpl: KbDocumentRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
@@ -1305,6 +1306,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.ISystemConfigService> { systemConfigRpcImpl }
                                 registerService<com.jervis.service.IChatService> { chatRpcImpl }
                                 registerService<com.jervis.service.IGuidelinesService> { guidelinesRpcImpl }
+                                registerService<com.jervis.service.IKbDocumentService> { kbDocumentRpcImpl }
                             }
                         }
                     }
