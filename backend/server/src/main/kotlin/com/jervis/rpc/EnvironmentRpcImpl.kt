@@ -2,6 +2,7 @@ package com.jervis.rpc
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.EnvironmentId
+import com.jervis.common.types.ProjectGroupId
 import com.jervis.common.types.ProjectId
 import com.jervis.dto.environment.ComponentTemplateDto
 import com.jervis.dto.environment.ComponentTypeEnum
@@ -104,5 +105,26 @@ class EnvironmentRpcImpl(
     override suspend fun syncEnvironmentResources(id: String): EnvironmentDto =
         executeWithErrorHandling("syncEnvironmentResources") {
             environmentK8sService.syncEnvironmentResources(EnvironmentId(ObjectId(id))).toDto()
+        }
+
+    override suspend fun cloneEnvironment(
+        sourceId: String,
+        newName: String,
+        newNamespace: String,
+        targetClientId: String?,
+        targetGroupId: String?,
+        targetProjectId: String?,
+        newTier: String?,
+    ): EnvironmentDto =
+        executeWithErrorHandling("cloneEnvironment") {
+            environmentService.cloneEnvironment(
+                sourceId = EnvironmentId(ObjectId(sourceId)),
+                newName = newName,
+                newNamespace = newNamespace,
+                targetClientId = targetClientId?.let { ClientId(ObjectId(it)) },
+                targetGroupId = targetGroupId?.let { ProjectGroupId(ObjectId(it)) },
+                targetProjectId = targetProjectId?.let { ProjectId(ObjectId(it)) },
+                newTier = newTier?.let { com.jervis.entity.EnvironmentTier.valueOf(it.uppercase()) },
+            ).toDto()
         }
 }

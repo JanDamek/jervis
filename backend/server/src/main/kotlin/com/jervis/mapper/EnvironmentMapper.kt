@@ -20,6 +20,7 @@ fun EnvironmentDocument.toDto(): EnvironmentDto =
         projectId = this.projectId?.toString(),
         name = this.name,
         description = this.description,
+        tier = EnvironmentTierEnum.valueOf(this.tier.name),
         namespace = this.namespace,
         components = this.components.map { it.toDto() },
         componentLinks = this.componentLinks.map { it.toDto() },
@@ -40,6 +41,7 @@ fun EnvironmentDto.toDocument(): EnvironmentDocument {
         projectId = this.projectId?.let { ProjectId(ObjectId(it)) },
         name = this.name,
         description = this.description,
+        tier = EnvironmentTier.valueOf(this.tier.name),
         namespace = this.namespace,
         components = this.components.map { it.toEntity() },
         componentLinks = this.componentLinks.map { it.toEntity() },
@@ -60,6 +62,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
 
     return mapOf(
         "namespace" to namespace,
+        "tier" to tier.name,
         "state" to state.name,
         "components" to components.map { comp ->
             val resolved = propertyMappings
@@ -97,6 +100,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
  */
 fun EnvironmentDocument.toAgentContextJson(): JsonObject = buildJsonObject {
     put("namespace", namespace)
+    put("tier", tier.name)
     put("state", state.name)
     put("groupId", groupId?.toString())
     put("agentInstructions", agentInstructions)

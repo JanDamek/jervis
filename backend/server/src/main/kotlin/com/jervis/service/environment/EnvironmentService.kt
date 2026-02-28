@@ -41,6 +41,7 @@ class EnvironmentService(
         val merged = existing?.copy(
             name = env.name,
             description = env.description,
+            tier = env.tier,
             namespace = env.namespace,
             groupId = env.groupId,
             projectId = env.projectId,
@@ -91,6 +92,39 @@ class EnvironmentService(
 
         // 3. Check client-level environment
         return environmentRepository.findByClientIdAndGroupIdIsNullAndProjectIdIsNull(project.clientId)
+    }
+
+    /**
+     * Clone an environment to a new scope (different client, group, or project).
+     * Creates a fresh copy with PENDING state, new namespace, and no stored manifests.
+     */
+    suspend fun cloneEnvironment(
+        sourceId: EnvironmentId,
+        newName: String,
+        newNamespace: String,
+        targetClientId: ClientId? = null,
+        targetGroupId: ProjectGroupId? = null,
+        targetProjectId: ProjectId? = null,
+        newTier: com.jervis.entity.EnvironmentTier? = null,
+    ): EnvironmentDocument {
+        val source = getEnvironmentById(sourceId)
+        val clone = source.copy(
+            id = com.jervis.common.types.EnvironmentId.generate(),
+            clientId = targetClientId ?: source.clientId,
+            groupId = targetGroupId ?: source.groupId,
+            projectId = targetProjectId ?: source.projectId,
+            name = newName,
+            namespace = newNamespace,
+            tier = newTier ?: source.tier,
+            state = com.jervis.entity.EnvironmentState.PENDING,
+            // Reset runtime state — clone is a fresh definition
+            yamlManifests = emptyMap(),
+            components = source.components.map { it.copy(componentState = com.jervis.entity.ComponentState.PENDING) },
+            propertyMappings = source.propertyMappings.map { it.copy(resolvedValue = null) },
+        )
+        val saved = environmentRepository.save(clone)
+        logger.info { "Cloned environment: ${source.name} -> ${saved.name} (ns=${saved.namespace})" }
+        return saved
     }
 
     /**

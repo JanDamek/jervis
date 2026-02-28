@@ -44,4 +44,15 @@ interface IEnvironmentService {
 
     /** Sync K8s resources (ConfigMaps, re-apply deployments) for a RUNNING environment. */
     suspend fun syncEnvironmentResources(id: String): EnvironmentDto
+
+    /** Clone an environment to a new scope (different client, group, or project). */
+    suspend fun cloneEnvironment(
+        sourceId: String,
+        newName: String,
+        newNamespace: String,
+        targetClientId: String? = null,
+        targetGroupId: String? = null,
+        targetProjectId: String? = null,
+        newTier: String? = null,
+    ): EnvironmentDto
 }

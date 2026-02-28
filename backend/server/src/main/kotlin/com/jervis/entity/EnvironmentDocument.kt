@@ -35,6 +35,8 @@ data class EnvironmentDocument(
     val projectId: ProjectId? = null,
     val name: String,
     val description: String? = null,
+    /** Environment tier: DEV, STAGING, PROD */
+    val tier: EnvironmentTier = EnvironmentTier.DEV,
     /** K8s namespace for this environment */
     val namespace: String,
     /** Infrastructure and project components */
@@ -148,6 +150,12 @@ data class PropertyMapping(
     /** Resolved value (filled by server when namespace is provisioned) */
     val resolvedValue: String? = null,
 )
+
+enum class EnvironmentTier {
+    DEV,
+    STAGING,
+    PROD,
+}
 
 enum class EnvironmentState {
     PENDING,

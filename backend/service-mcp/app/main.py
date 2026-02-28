@@ -936,8 +936,9 @@ async def environment_list(client_id: str = "") -> str:
             components = env.get("components", [])
             infra = sum(1 for c in components if c.get("type") != "PROJECT")
             apps = sum(1 for c in components if c.get("type") == "PROJECT")
+            tier = env.get("tier", "DEV")
             lines.append(
-                f"- {env['name']} (id={env['id']})\n"
+                f"- {env['name']} [{tier}] (id={env['id']})\n"
                 f"  namespace={env['namespace']}, state={env['state']}\n"
                 f"  components: {len(components)} ({infra} infra, {apps} app)"
             )
@@ -965,6 +966,7 @@ async def environment_get(environment_id: str) -> str:
         lines = [
             f"Environment: {env['name']}",
             f"ID: {env['id']}",
+            f"Tier: {env.get('tier', 'DEV')}",
             f"Namespace: {env['namespace']}",
             f"State: {env['state']}",
             f"Client: {env['clientId']}",
@@ -1009,6 +1011,7 @@ async def environment_create(
     client_id: str,
     name: str,
     namespace: str = "",
+    tier: str = "DEV",
     description: str = "",
     agent_instructions: str = "",
     storage_size_gi: int = 5,
@@ -1022,6 +1025,7 @@ async def environment_create(
         client_id: Client ID this environment belongs to
         name: Human-readable environment name
         namespace: K8s namespace (auto-generated from name if empty)
+        tier: Environment tier: DEV, STAGING, or PROD (default DEV)
         description: Optional description
         agent_instructions: Free-text instructions for agents about this environment
         storage_size_gi: PVC storage size in Gi (default 5)
@@ -1029,6 +1033,7 @@ async def environment_create(
     body = {
         "clientId": client_id,
         "name": name,
+        "tier": tier.upper(),
         "description": description or None,
         "agentInstructions": agent_instructions or None,
         "storageSizeGi": storage_size_gi,
@@ -1298,6 +1303,58 @@ async def environment_sync(environment_id: str) -> str:
             return f"Error ({resp.status_code}): {resp.text}"
         env = resp.json()
         return f"Environment synced: {env['name']} (state={env['state']})"
+
+
+@mcp.tool
+async def environment_clone(
+    environment_id: str,
+    new_name: str,
+    new_namespace: str = "",
+    new_tier: str = "",
+    target_client_id: str = "",
+    target_group_id: str = "",
+    target_project_id: str = "",
+) -> str:
+    """Clone an environment to a new scope (different client, group, or project).
+
+    Creates a fresh copy with PENDING state, new namespace, and reset runtime state.
+    All components and property mappings are copied but resolved values are cleared.
+    Use environment_deploy on the clone to provision it.
+
+    Args:
+        environment_id: Source environment ID to clone from
+        new_name: Name for the cloned environment
+        new_namespace: K8s namespace for the clone (auto-generated from name if empty)
+        new_tier: Tier for the clone: DEV, STAGING, PROD (inherits from source if empty)
+        target_client_id: Move clone to a different client (uses source client if empty)
+        target_group_id: Assign clone to a group (uses source group if empty)
+        target_project_id: Assign clone to a project (uses source project if empty)
+    """
+    body: dict = {"newName": new_name}
+    if new_namespace:
+        body["newNamespace"] = new_namespace
+    if new_tier:
+        body["newTier"] = new_tier.upper()
+    if target_client_id:
+        body["targetClientId"] = target_client_id
+    if target_group_id:
+        body["targetGroupId"] = target_group_id
+    if target_project_id:
+        body["targetProjectId"] = target_project_id
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/clone",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        return (
+            f"Environment cloned: {env['name']} (id={env['id']})\n"
+            f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
+            f"State: {env['state']} — use environment_deploy to provision."
+        )
 
 
 # ── Environment / K8s Tools ──────────────────────────────────────────────

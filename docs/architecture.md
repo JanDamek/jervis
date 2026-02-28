@@ -1227,6 +1227,7 @@ EnvironmentDocument (MongoDB: environments)
 ├── clientId: ClientId
 ├── groupId: ProjectGroupId?     ← Scoped to group (optional)
 ├── projectId: ProjectId?        ← Scoped to project (optional)
+├── tier: EnvironmentTier        ← DEV, STAGING, PROD
 ├── namespace: String            ← K8s namespace
 ├── components: List<EnvironmentComponent>
 │   ├── type: ComponentType      ← POSTGRESQL, REDIS, PROJECT, etc.
@@ -1322,6 +1323,7 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `environment_stop(environment_id)` | Deprovision (stop deployments, keep DB definition) |
 | `environment_status(environment_id)` | Per-component readiness and replica status |
 | `environment_sync(environment_id)` | Re-apply manifests from DB to running K8s |
+| `environment_clone(environment_id, new_name, ...)` | Clone environment to new scope/tier |
 | `environment_delete(environment_id)` | Delete environment + namespace |
 
 **K8s Resource Inspection Tools (namespace as parameter):**
@@ -1362,6 +1364,7 @@ PUT    /internal/environments/{id}/components/{name} → ConfigureComponentReque
 POST   /internal/environments/{id}/deploy
 POST   /internal/environments/{id}/stop
 POST   /internal/environments/{id}/sync
+POST   /internal/environments/{id}/clone           → CloneEnvironmentRequest
 GET    /internal/environments/{id}/status
 GET    /internal/environments/templates
 

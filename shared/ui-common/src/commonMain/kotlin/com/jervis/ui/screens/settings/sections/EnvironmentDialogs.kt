@@ -21,6 +21,7 @@ import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.ComponentVersionDto
 import com.jervis.dto.environment.EnvironmentComponentDto
 import com.jervis.dto.environment.EnvironmentDto
+import com.jervis.dto.environment.EnvironmentTierEnum
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JFormDialog
@@ -171,6 +172,12 @@ fun componentTypeLabel(type: ComponentTypeEnum): String = when (type) {
     ComponentTypeEnum.PROJECT -> "Projekt"
 }
 
+fun environmentTierLabel(tier: EnvironmentTierEnum): String = when (tier) {
+    EnvironmentTierEnum.DEV -> "Development"
+    EnvironmentTierEnum.STAGING -> "Staging"
+    EnvironmentTierEnum.PROD -> "Production"
+}
+
 enum class EnvironmentScope {
     CLIENT, GROUP, PROJECT
 }
@@ -183,6 +190,7 @@ fun NewEnvironmentDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var namespace by remember { mutableStateOf("") }
+    var selectedTier by remember { mutableStateOf(EnvironmentTierEnum.DEV) }
     var clients by remember { mutableStateOf<List<ClientDto>>(emptyList()) }
     var selectedClientId by remember { mutableStateOf<String?>(null) }
     var selectedScope by remember { mutableStateOf(EnvironmentScope.CLIENT) }
@@ -236,6 +244,7 @@ fun NewEnvironmentDialog(
                             groupId = if (selectedScope == EnvironmentScope.GROUP) selectedGroupId else null,
                             projectId = if (selectedScope == EnvironmentScope.PROJECT) selectedProjectId else null,
                             name = name,
+                            tier = selectedTier,
                             namespace = namespace,
                         ),
                     )
@@ -266,6 +275,14 @@ fun NewEnvironmentDialog(
             onValueChange = { namespace = it },
             label = "K8s Namespace",
             singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        JDropdown(
+            items = EnvironmentTierEnum.entries.toList(),
+            selectedItem = selectedTier,
+            onItemSelected = { selectedTier = it },
+            label = "Typ prostředí",
+            itemLabel = { environmentTierLabel(it) },
         )
         Spacer(Modifier.height(12.dp))
         JDropdown(

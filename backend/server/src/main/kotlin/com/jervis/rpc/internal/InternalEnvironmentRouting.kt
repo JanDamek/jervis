@@ -2,11 +2,14 @@ package com.jervis.rpc.internal
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.EnvironmentId
+import com.jervis.common.types.ProjectGroupId
+import com.jervis.common.types.ProjectId
 import com.jervis.entity.ComponentState
 import com.jervis.entity.ComponentType
 import com.jervis.entity.EnvironmentComponent
 import com.jervis.entity.EnvironmentDocument
 import com.jervis.entity.EnvironmentState
+import com.jervis.entity.EnvironmentTier
 import com.jervis.mapper.toDto
 import com.jervis.service.environment.COMPONENT_DEFAULTS
 import com.jervis.service.environment.EnvironmentK8sService
@@ -103,10 +106,12 @@ fun Routing.installInternalEnvironmentApi(
     post("/internal/environments") {
         try {
             val body = call.receive<CreateEnvironmentRequest>()
+            val tier = body.tier?.let { EnvironmentTier.valueOf(it.uppercase()) } ?: EnvironmentTier.DEV
             val env = EnvironmentDocument(
                 clientId = ClientId(ObjectId(body.clientId)),
                 name = body.name,
                 namespace = body.namespace ?: body.name.lowercase().replace(Regex("[^a-z0-9-]"), "-"),
+                tier = tier,
                 description = body.description,
                 agentInstructions = body.agentInstructions,
                 storageSizeGi = body.storageSizeGi ?: 5,
@@ -348,6 +353,41 @@ fun Routing.installInternalEnvironmentApi(
         }
     }
 
+    // --- Clone environment ---
+    post("/internal/environments/{id}/clone") {
+        try {
+            val id = call.parameters["id"] ?: return@post call.respondText(
+                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val body = call.receive<CloneEnvironmentRequest>()
+            val newNamespace = body.newNamespace
+                ?: body.newName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            val newTier = body.newTier?.let { EnvironmentTier.valueOf(it.uppercase()) }
+
+            val cloned = environmentService.cloneEnvironment(
+                sourceId = EnvironmentId(ObjectId(id)),
+                newName = body.newName,
+                newNamespace = newNamespace,
+                targetClientId = body.targetClientId?.let { ClientId(ObjectId(it)) },
+                targetGroupId = body.targetGroupId?.let { ProjectGroupId(ObjectId(it)) },
+                targetProjectId = body.targetProjectId?.let { ProjectId(ObjectId(it)) },
+                newTier = newTier,
+            )
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                cloned.toDto(),
+            )
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.Created)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to clone environment" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // --- Get component templates ---
     get("/internal/environments/templates") {
         try {
@@ -407,9 +447,20 @@ data class CreateEnvironmentRequest(
     val clientId: String,
     val name: String,
     val namespace: String? = null,
+    val tier: String? = null,
     val description: String? = null,
     val agentInstructions: String? = null,
     val storageSizeGi: Int? = null,
+)
+
+@Serializable
+data class CloneEnvironmentRequest(
+    val newName: String,
+    val newNamespace: String? = null,
+    val newTier: String? = null,
+    val targetClientId: String? = null,
+    val targetGroupId: String? = null,
+    val targetProjectId: String? = null,
 )
 
 @Serializable

@@ -464,6 +464,15 @@ async def execute_tool(
             result = await _execute_environment_delete(
                 environment_id=arguments.get("environment_id", ""),
             )
+        elif tool_name == "environment_clone":
+            result = await _execute_environment_clone(
+                environment_id=arguments.get("environment_id", ""),
+                new_name=arguments.get("new_name", ""),
+                new_namespace=arguments.get("new_namespace"),
+                new_tier=arguments.get("new_tier"),
+                target_client_id=arguments.get("target_client_id"),
+                target_project_id=arguments.get("target_project_id"),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2528,8 +2537,8 @@ async def _execute_environment_get(environment_id: str) -> str:
 
 async def _execute_environment_create(
     client_id: str, name: str, namespace: str | None = None,
-    description: str | None = None, agent_instructions: str | None = None,
-    storage_size_gi: int = 5,
+    tier: str | None = None, description: str | None = None,
+    agent_instructions: str | None = None, storage_size_gi: int = 5,
 ) -> str:
     """Create a new environment."""
     if not name:
@@ -2537,6 +2546,8 @@ async def _execute_environment_create(
     body: dict = {"clientId": client_id, "name": name, "storageSizeGi": storage_size_gi}
     if namespace:
         body["namespace"] = namespace
+    if tier:
+        body["tier"] = tier.upper()
     if description:
         body["description"] = description
     if agent_instructions:
@@ -2716,5 +2727,40 @@ async def _execute_environment_delete(environment_id: str) -> str:
             return f"Environment {environment_id} deleted."
     except Exception as e:
         return f"Error deleting environment: {str(e)[:300]}"
+
+
+async def _execute_environment_clone(
+    environment_id: str, new_name: str, new_namespace: str | None = None,
+    new_tier: str | None = None, target_client_id: str | None = None,
+    target_project_id: str | None = None,
+) -> str:
+    """Clone environment to a new scope."""
+    if not environment_id or not new_name:
+        return "Error: environment_id and new_name are required."
+    body: dict = {"newName": new_name}
+    if new_namespace:
+        body["newNamespace"] = new_namespace
+    if new_tier:
+        body["newTier"] = new_tier.upper()
+    if target_client_id:
+        body["targetClientId"] = target_client_id
+    if target_project_id:
+        body["targetProjectId"] = target_project_id
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/clone",
+                json=body,
+            )
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            env = resp.json()
+            return (
+                f"Cloned: {env['name']} (id={env['id']})\n"
+                f"Tier: {env.get('tier', 'DEV')}, Namespace: {env['namespace']}\n"
+                f"State: {env['state']} — use environment_deploy to provision."
+            )
+    except Exception as e:
+        return f"Error cloning environment: {str(e)[:300]}"
 
 

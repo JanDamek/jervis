@@ -1148,6 +1148,11 @@ TOOL_ENVIRONMENT_CREATE: dict = {
                     "type": "string",
                     "description": "K8s namespace (auto-generated from name if empty).",
                 },
+                "tier": {
+                    "type": "string",
+                    "enum": ["DEV", "STAGING", "PROD"],
+                    "description": "Environment tier (default DEV).",
+                },
                 "description": {
                     "type": "string",
                     "description": "Optional environment description.",
@@ -1383,10 +1388,55 @@ TOOL_ENVIRONMENT_DELETE: dict = {
     },
 }
 
+TOOL_ENVIRONMENT_CLONE: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_clone",
+        "description": (
+            "Clone an existing environment to a new scope (different client, group, or project). "
+            "Creates a fresh copy with PENDING state and reset runtime state. "
+            "Useful for promoting environments across tiers (DEV→STAGING→PROD) "
+            "or replicating setups across projects."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "Source environment ID to clone from.",
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "Name for the cloned environment.",
+                },
+                "new_namespace": {
+                    "type": "string",
+                    "description": "K8s namespace for the clone (auto-generated from name if empty).",
+                },
+                "new_tier": {
+                    "type": "string",
+                    "enum": ["DEV", "STAGING", "PROD"],
+                    "description": "Tier for the clone (inherits from source if empty).",
+                },
+                "target_client_id": {
+                    "type": "string",
+                    "description": "Move clone to a different client (uses source client if empty).",
+                },
+                "target_project_id": {
+                    "type": "string",
+                    "description": "Assign clone to a specific project (uses source project if empty).",
+                },
+            },
+            "required": ["environment_id", "new_name"],
+        },
+    },
+}
+
 ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_LIST,
     TOOL_ENVIRONMENT_GET,
     TOOL_ENVIRONMENT_CREATE,
+    TOOL_ENVIRONMENT_CLONE,
     TOOL_ENVIRONMENT_ADD_COMPONENT,
     TOOL_ENVIRONMENT_CONFIGURE,
     TOOL_ENVIRONMENT_DEPLOY,

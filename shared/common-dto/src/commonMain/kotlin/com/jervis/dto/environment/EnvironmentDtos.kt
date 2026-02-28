@@ -11,6 +11,7 @@ data class EnvironmentDto(
     val projectId: String? = null,
     val name: String,
     val description: String? = null,
+    val tier: EnvironmentTierEnum = EnvironmentTierEnum.DEV,
     val namespace: String,
     val components: List<EnvironmentComponentDto> = emptyList(),
     val componentLinks: List<ComponentLinkDto> = emptyList(),
@@ -60,6 +61,13 @@ enum class ComponentTypeEnum {
     MINIO,
     CUSTOM_INFRA,
     PROJECT,
+}
+
+@Serializable
+enum class EnvironmentTierEnum {
+    DEV,
+    STAGING,
+    PROD,
 }
 
 @Serializable

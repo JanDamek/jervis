@@ -20,6 +20,8 @@ import com.jervis.dto.environment.ComponentTypeEnum
 import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
+import com.jervis.dto.environment.EnvironmentTierEnum
+import com.jervis.ui.screens.settings.sections.environmentTierLabel
 import com.jervis.ui.design.JActionBar
 import com.jervis.ui.design.JKeyValueRow
 import com.jervis.ui.design.JSecondaryButton
@@ -53,6 +55,7 @@ fun OverviewTab(
         // Basic info section
         JSection(title = "Základní informace") {
             JKeyValueRow("Název", environment.name)
+            JKeyValueRow("Typ", environmentTierLabel(environment.tier))
             JKeyValueRow("Namespace", environment.namespace)
             environment.description?.let { desc ->
                 if (desc.isNotBlank()) {

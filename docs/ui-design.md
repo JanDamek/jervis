@@ -1466,8 +1466,9 @@ Expanded (>=600dp):
 **Navigation:**
 - `Screen.EnvironmentManager(initialEnvironmentId: String? = null)` — supports deep-link
 - Menu item: "Správa prostředí" (Icons.Default.Dns)
-- Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt`
+- Reuses `NewEnvironmentDialog` from `EnvironmentDialogs.kt` (fields: name, namespace, tier DEV/STAGING/PROD, client, scope)
 - Reuses `EnvironmentStateBadge` from `EnvironmentTreeComponents.kt`
+- Reuses `environmentTierLabel()` from `EnvironmentDialogs.kt` for tier display
 
 ### 5.11) Environment Panel (Chat Sidebar) (`EnvironmentPanel.kt`)
 
@@ -1728,7 +1729,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |       +-- ProjectGroupEditForm.kt  <- Group edit form (internal)
 |   |       +-- ProjectGroupDialogs.kt   <- Group create dialog (internal)
 |   |       +-- EnvironmentsSettings.kt  <- Environment list + read-only summary + cross-link to Environment Manager
-|   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel()
+|   |       +-- EnvironmentDialogs.kt    <- NewEnvironmentDialog, AddComponentDialog, componentTypeLabel(), environmentTierLabel()
 |   |       +-- ConnectionsSettings.kt <- Connection list + per-card actions
 |   |       +-- ConnectionDialogs.kt    <- Connection create/edit dialogs (internal)
 |   |       +-- ConnectionFormComponents.kt <- Connection form fields (internal)

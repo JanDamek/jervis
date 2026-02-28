@@ -35,6 +35,7 @@ import com.jervis.dto.environment.EnvironmentStateEnum
 import com.jervis.dto.environment.EnvironmentStatusDto
 import com.jervis.ui.design.LocalJervisSemanticColors
 import com.jervis.ui.screens.settings.sections.componentTypeLabel
+import com.jervis.ui.screens.settings.sections.environmentTierLabel
 
 /**
  * Expandable card for a single environment in the tree.
@@ -70,7 +71,17 @@ fun EnvironmentTreeNode(
             )
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(environment.name, style = MaterialTheme.typography.titleMedium)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(environment.name, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        environmentTierLabel(environment.tier),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     environment.namespace,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),

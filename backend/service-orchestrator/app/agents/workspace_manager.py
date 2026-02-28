@@ -232,9 +232,10 @@ class WorkspaceManager:
     def _render_environment_md(env: dict) -> str:
         """Render environment context as markdown for agents."""
         ns = env.get("namespace", "unknown")
+        tier = env.get("tier", "DEV")
         state = env.get("state", "UNKNOWN")
         lines = [
-            f"## Environment (`{ns}`) — state: {state}",
+            f"## Environment (`{ns}`) — {tier.lower()} — state: {state}",
             "",
         ]
 
