@@ -177,13 +177,15 @@ async def handle_chat(
                     f"Vytvořím background task pro podrobné zpracování — bude to důkladnější.\n\n"
                     f"Originál zprávy je uložen v KB. Background task si ji může přečíst celou."
                 )
-                async for event in stream_text(bg_suggestion):
-                    yield event
-
+                # Save to DB BEFORE streaming so messages survive window switch
                 await save_assistant_message(
                     request.session_id, bg_suggestion,
                     {"summarizer_failed": "true", "original_length": str(msg_len)},
                 )
+
+                async for event in stream_text(bg_suggestion):
+                    yield event
+
                 yield ChatStreamEvent(type="done", metadata={
                     "summarizer_failed": True, "suggest_background": True, "original_length": msg_len,
                 })
@@ -309,9 +311,7 @@ async def _try_decompose(
         decompose_topics = [{"label": t.title, "type": t.topic_type} for t in subtopics]
         await update_conversation_topics(request.session_id, decompose_topics)
 
-        async for event in stream_text(final_text):
-            yield event
-
+        # Save to DB BEFORE streaming so messages survive window switch
         await save_assistant_message(
             request.session_id, final_text,
             {
@@ -323,6 +323,10 @@ async def _try_decompose(
                 **fact_check_metadata(fc_result),
             },
         )
+
+        async for event in stream_text(final_text):
+            yield event
+
         yield ChatStreamEvent(type="done", metadata={
             "decomposed": True, "topic_count": len(subtopics),
             "topics": [t.title for t in subtopics],
@@ -388,12 +392,13 @@ async def _try_greeting_fast_path(
             # EPIC 9-S1: Topic tracking
             greeting_topics = await detect_topics(request.message, direct_text)
             await update_conversation_topics(request.session_id, greeting_topics)
-            async for event in stream_text(direct_text):
-                yield event
+            # Save to DB BEFORE streaming so messages survive window switch
             await save_assistant_message(
                 request.session_id, direct_text,
                 {"direct_answer": "true", **fact_check_metadata(fc_result), **topic_metadata(greeting_topics)},
             )
+            async for event in stream_text(direct_text):
+                yield event
             yield ChatStreamEvent(type="done", metadata={
                 "direct_answer": True, "iterations": 0, **confidence_badge(fc_result),
                 **topic_metadata(greeting_topics),

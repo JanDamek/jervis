@@ -136,9 +136,7 @@ async def run_agentic_loop(
             topics = await detect_topics(request.message, final_text, used_tools)
             await update_conversation_topics(request.session_id, topics)
 
-            async for event in stream_text(final_text):
-                yield event
-
+            # Save to DB BEFORE streaming so messages survive window switch
             await save_assistant_message(
                 request.session_id, final_text,
                 {
@@ -151,6 +149,9 @@ async def run_agentic_loop(
                     **source_tracker.build_metadata(),
                 },
             )
+
+            async for event in stream_text(final_text):
+                yield event
 
             yield ChatStreamEvent(type="done", metadata={
                 "created_tasks": created_tasks, "responded_tasks": responded_tasks,
@@ -198,15 +199,17 @@ async def run_agentic_loop(
             drift_topics = await detect_topics(request.message, final_text, used_tools)
             await update_conversation_topics(request.session_id, drift_topics)
 
-            async for event in stream_text(final_text):
-                yield event
-
+            # Save to DB BEFORE streaming so messages survive window switch
             await save_assistant_message(
                 request.session_id, final_text,
                 {"drift_break": drift_reason, "used_tools": ",".join(used_tools),
                  **fact_check_metadata(fc_result), **topic_metadata(drift_topics),
                  **source_tracker.build_metadata()},
             )
+
+            async for event in stream_text(final_text):
+                yield event
+
             yield ChatStreamEvent(type="done", metadata={
                 "drift_break": drift_reason, "iterations": iteration + 1,
                 **confidence_badge(fc_result), **topic_metadata(drift_topics),
@@ -441,15 +444,17 @@ async def run_agentic_loop(
         max_iter_topics = await detect_topics(request.message, final_text, used_tools)
         await update_conversation_topics(request.session_id, max_iter_topics)
 
-        async for event in stream_text(final_text):
-            yield event
-
+        # Save to DB BEFORE streaming so messages survive window switch
         await save_assistant_message(
             request.session_id, final_text,
             {"max_iterations": "true", "used_tools": ",".join(used_tools),
              **fact_check_metadata(fc_result), **topic_metadata(max_iter_topics),
              **source_tracker.build_metadata()},
         )
+
+        async for event in stream_text(final_text):
+            yield event
+
         yield ChatStreamEvent(type="done", metadata={
             "max_iterations": True, "iterations": effective_max_iterations,
             **confidence_badge(fc_result), **topic_metadata(max_iter_topics),

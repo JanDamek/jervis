@@ -1,7 +1,7 @@
 # Chat — zprávy mizí po přepnutí okna/návratu do chatu
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE
 
 ---
 
