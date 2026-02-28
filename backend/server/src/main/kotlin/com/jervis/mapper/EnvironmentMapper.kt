@@ -60,6 +60,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
 
     return mapOf(
         "namespace" to namespace,
+        "state" to state.name,
         "components" to components.map { comp ->
             val resolved = propertyMappings
                 .filter { it.projectComponentId == comp.id }
@@ -82,8 +83,10 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
                 "componentState" to comp.componentState.name,
             )
         },
-        "componentLinks" to componentLinks.map {
-            mapOf("source" to it.sourceComponentId, "target" to it.targetComponentId, "description" to it.description)
+        "componentLinks" to componentLinks.map { link ->
+            val sourceName = components.find { it.id == link.sourceComponentId }?.name ?: link.sourceComponentId
+            val targetName = components.find { it.id == link.targetComponentId }?.name ?: link.targetComponentId
+            mapOf("source" to sourceName, "target" to targetName, "description" to link.description)
         },
         "agentInstructions" to agentInstructions,
     )
@@ -94,6 +97,7 @@ fun EnvironmentDocument.toAgentContext(): Map<String, Any?> {
  */
 fun EnvironmentDocument.toAgentContextJson(): JsonObject = buildJsonObject {
     put("namespace", namespace)
+    put("state", state.name)
     put("groupId", groupId?.toString())
     put("agentInstructions", agentInstructions)
     put("components", buildJsonArray {
@@ -133,9 +137,11 @@ fun EnvironmentDocument.toAgentContextJson(): JsonObject = buildJsonObject {
     })
     put("componentLinks", buildJsonArray {
         for (link in componentLinks) {
+            val sourceName = components.find { it.id == link.sourceComponentId }?.name ?: link.sourceComponentId
+            val targetName = components.find { it.id == link.targetComponentId }?.name ?: link.targetComponentId
             add(buildJsonObject {
-                put("source", link.sourceComponentId)
-                put("target", link.targetComponentId)
+                put("source", sourceName)
+                put("target", targetName)
                 put("description", link.description)
             })
         }

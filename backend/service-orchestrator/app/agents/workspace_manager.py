@@ -232,8 +232,9 @@ class WorkspaceManager:
     def _render_environment_md(env: dict) -> str:
         """Render environment context as markdown for agents."""
         ns = env.get("namespace", "unknown")
+        state = env.get("state", "UNKNOWN")
         lines = [
-            f"## Environment (`{ns}`)",
+            f"## Environment (`{ns}`) — state: {state}",
             "",
         ]
 
@@ -258,6 +259,16 @@ class WorkspaceManager:
             for c in sorted(projects, key=lambda x: x.get("startOrder", 0)):
                 env_vars = c.get("envVars", {})
                 lines.append(f"{c.get('startOrder', 0)}. **{c['name']}**")
+                # Build pipeline info
+                source_repo = c.get("sourceRepo")
+                source_branch = c.get("sourceBranch")
+                dockerfile = c.get("dockerfilePath")
+                if source_repo:
+                    branch_info = f" (branch: `{source_branch}`)" if source_branch else ""
+                    lines.append(f"   - Git: `{source_repo}`{branch_info}")
+                if dockerfile:
+                    lines.append(f"   - Dockerfile: `{dockerfile}`")
+                # Connection ENV vars
                 if env_vars:
                     for k, v in env_vars.items():
                         lines.append(f"   - `{k}={v}`")

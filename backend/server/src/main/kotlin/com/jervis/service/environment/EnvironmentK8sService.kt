@@ -249,8 +249,30 @@ class EnvironmentK8sService(
                 logger.info { "Synced component: ${component.name}" }
             }
 
+            // Re-resolve property mappings (component ENV vars may have changed)
+            val resolvedMappings = env.propertyMappings.map { mapping ->
+                val targetComponent = env.components.find { it.id == mapping.targetComponentId }
+                if (targetComponent != null) {
+                    val host = "${targetComponent.name}.${env.namespace}.svc.cluster.local"
+                    val port = targetComponent.ports.firstOrNull()?.let { it.servicePort ?: it.containerPort }
+                    var resolved = mapping.valueTemplate
+                        .replace("{host}", host)
+                        .replace("{port}", port?.toString() ?: "")
+                        .replace("{name}", targetComponent.name)
+                        .replace("{namespace}", env.namespace)
+                    resolved = Regex("\\{env:([^}]+)}").replace(resolved) { matchResult ->
+                        val varName = matchResult.groupValues[1]
+                        targetComponent.envVars[varName] ?: matchResult.value
+                    }
+                    mapping.copy(resolvedValue = resolved)
+                } else {
+                    mapping
+                }
+            }
+            environmentService.updateResolvedValues(environmentId, resolvedMappings)
+
             logger.info { "Resources synced for environment: ${env.name}" }
-            return env
+            return environmentService.getEnvironmentById(environmentId)
         } catch (e: Exception) {
             logger.error(e) { "Failed to sync resources for environment: ${env.name}" }
             throw e
