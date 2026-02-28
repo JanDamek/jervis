@@ -110,6 +110,9 @@ async def git_operations(state: dict) -> dict:
         workspace_path=workspace_path,
         allow_git=True,
         instructions_override=commit_instructions,
+        gpg_key_id=rules.git_gpg_key_id,
+        git_user_name=rules.git_author_name,
+        git_user_email=rules.git_author_email,
     )
 
     # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
@@ -153,6 +156,9 @@ async def git_operations(state: dict) -> dict:
             workspace_path=workspace_path,
             allow_git=True,
             instructions_override=push_instructions,
+            gpg_key_id=rules.git_gpg_key_id,
+            git_user_name=rules.git_author_name,
+            git_user_email=rules.git_author_email,
         )
 
         # Notify Kotlin server — sets task state to WAITING_FOR_AGENT

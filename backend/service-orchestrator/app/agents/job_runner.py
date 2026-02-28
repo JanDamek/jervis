@@ -80,6 +80,9 @@ class JobRunner:
         allow_git: bool = False,
         instructions_override: str | None = None,
         on_log_line: callable | None = None,
+        gpg_key_id: str | None = None,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> dict:
         """Run a coding agent as a K8s Job and wait for completion.
 
@@ -92,6 +95,9 @@ class JobRunner:
             allow_git: If True, agent may perform git operations.
             instructions_override: Override workspace instructions (for git delegation).
             on_log_line: Callback for streaming log lines.
+            gpg_key_id: Specific GPG key ID from project/client settings.
+            git_user_name: Git author name from project/client settings.
+            git_user_email: Git author email from project/client settings.
 
         Returns:
             Result dict from result.json or job status.
@@ -114,7 +120,7 @@ class JobRunner:
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
         # Fetch GPG key for commit signing (if configured)
-        gpg_key = await self._fetch_gpg_key(client_id) if allow_git else None
+        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id) if allow_git else None
 
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
@@ -127,6 +133,8 @@ class JobRunner:
             workspace_path=workspace_path,
             allow_git=allow_git,
             gpg_key=gpg_key,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         )
 
         logger.info("Creating K8s Job: %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -247,6 +255,9 @@ class JobRunner:
         workspace_path: str,
         allow_git: bool = False,
         instructions_override: str | None = None,
+        gpg_key_id: str | None = None,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> dict:
         """Dispatch a coding agent as a K8s Job and return immediately (non-blocking).
 
@@ -269,7 +280,7 @@ class JobRunner:
             (jervis_dir / "instructions.md").write_text(instructions_override)
 
         # Fetch GPG key for commit signing (if configured)
-        gpg_key = await self._fetch_gpg_key(client_id) if allow_git else None
+        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id) if allow_git else None
 
         # Build and create Job
         job_name = f"jervis-{agent_type}-{task_id[:12]}"
@@ -282,6 +293,8 @@ class JobRunner:
             workspace_path=workspace_path,
             allow_git=allow_git,
             gpg_key=gpg_key,
+            git_user_name=git_user_name,
+            git_user_email=git_user_email,
         )
 
         logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -334,12 +347,22 @@ class JobRunner:
             "agentType": agent_type,
         }
 
-    async def _fetch_gpg_key(self, client_id: str) -> dict | None:
-        """Fetch GPG key from Kotlin server for commit signing."""
+    async def _fetch_gpg_key(self, client_id: str, gpg_key_id: str | None = None) -> dict | None:
+        """Fetch GPG key from Kotlin server for commit signing.
+
+        Args:
+            client_id: Client ID (used as fallback lookup).
+            gpg_key_id: Specific GPG key ID from project/client git config.
+                        If provided, server looks up by key ID first.
+        """
         try:
+            params = {}
+            if gpg_key_id:
+                params["gpgKeyId"] = gpg_key_id
             async with httpx.AsyncClient(timeout=10) as http:
                 resp = await http.get(
-                    f"{settings.kotlin_server_url}/internal/gpg-key/{client_id}"
+                    f"{settings.kotlin_server_url}/internal/gpg-key/{client_id}",
+                    params=params,
                 )
                 if resp.status_code != 200:
                     return None
@@ -372,6 +395,8 @@ class JobRunner:
         workspace_path: str,
         allow_git: bool = False,
         gpg_key: dict | None = None,
+        git_user_name: str | None = None,
+        git_user_email: str | None = None,
     ) -> client.V1Job:
         """Build K8s Job manifest for a coding agent."""
         image = AGENT_IMAGES.get(agent_type)
@@ -415,6 +440,14 @@ class JobRunner:
             env_vars.append(client.V1EnvVar(name="GPG_PRIVATE_KEY", value=gpg_key["privateKeyArmored"]))
             if gpg_key.get("passphrase"):
                 env_vars.append(client.V1EnvVar(name="GPG_PASSPHRASE", value=gpg_key["passphrase"]))
+
+        # Git user identity (global fallback — local config is set by workspace_manager)
+        effective_name = git_user_name or (gpg_key.get("userName") if gpg_key else None)
+        effective_email = git_user_email or (gpg_key.get("userEmail") if gpg_key else None)
+        if effective_name:
+            env_vars.append(client.V1EnvVar(name="GIT_USER_NAME", value=effective_name))
+        if effective_email:
+            env_vars.append(client.V1EnvVar(name="GIT_USER_EMAIL", value=effective_email))
 
         return client.V1Job(
             metadata=client.V1ObjectMeta(

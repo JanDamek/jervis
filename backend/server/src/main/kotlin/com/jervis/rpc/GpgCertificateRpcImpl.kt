@@ -6,6 +6,7 @@ import com.jervis.dto.coding.GpgCertificateUploadDto
 import com.jervis.entity.GpgCertificateDocument
 import com.jervis.repository.GpgCertificateRepository
 import com.jervis.service.IGpgCertificateService
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
@@ -59,8 +60,19 @@ class GpgCertificateRpcImpl(
         }
     }
 
-    suspend fun getActiveKey(clientId: String): GpgKeyInfo? {
-        val doc = gpgCertificateRepository.findFirstByClientId(clientId) ?: return null
+    suspend fun getActiveKey(clientId: String, gpgKeyId: String? = null): GpgKeyInfo? {
+        // 1. Prefer specific key ID from project/client git config
+        val doc = if (!gpgKeyId.isNullOrBlank()) {
+            gpgCertificateRepository.findFirstByKeyId(gpgKeyId)
+        } else {
+            null
+        }
+            // 2. Fallback: first key for client (legacy behavior)
+            ?: gpgCertificateRepository.findFirstByClientId(clientId)
+            // 3. Fallback: any available key (global keys have clientId="")
+            ?: gpgCertificateRepository.findAllByOrderByCreatedAtDesc().firstOrNull()
+            ?: return null
+
         return GpgKeyInfo(
             keyId = doc.keyId,
             userName = doc.userName,

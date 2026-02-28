@@ -321,8 +321,9 @@ class KtorRpcServer(
                                     io.ktor.http.ContentType.Application.Json,
                                     HttpStatusCode.BadRequest,
                                 )
+                                val gpgKeyId = call.request.queryParameters["gpgKeyId"]
                                 try {
-                                    val keyInfo = gpgCertificateRpcImpl.getActiveKey(clientId)
+                                    val keyInfo = gpgCertificateRpcImpl.getActiveKey(clientId, gpgKeyId)
                                     if (keyInfo != null) {
                                         val json = kotlinx.serialization.json.Json.encodeToString(
                                             GpgKeyResponse.serializer(),

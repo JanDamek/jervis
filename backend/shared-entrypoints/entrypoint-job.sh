@@ -16,6 +16,8 @@
 #   GPG_PRIVATE_KEY – armored GPG private key for commit signing
 #   GPG_KEY_ID      – GPG key ID (fingerprint) for signing
 #   GPG_PASSPHRASE  – passphrase for the GPG key (if protected)
+#   GIT_USER_NAME   – git user.name for commits (global fallback)
+#   GIT_USER_EMAIL  – git user.email for commits (global fallback)
 #
 set -euo pipefail
 
@@ -25,6 +27,25 @@ AGENT_TYPE="${AGENT_TYPE:?AGENT_TYPE env is required}"
 RESULT_FILE="$WORKSPACE/.jervis/result.json"
 
 cd "$WORKSPACE"
+
+# --- Global gitignore: prevent coding agent artifacts from leaking into commits ---
+GLOBAL_GITIGNORE="/tmp/.jervis-global-gitignore"
+cat > "$GLOBAL_GITIGNORE" <<'GITIGNORE'
+# Jervis orchestrator artifacts (auto-generated, never commit)
+.jervis/
+.claude/
+CLAUDE.md
+.aider.conf.yml
+GITIGNORE
+git config --global core.excludesFile "$GLOBAL_GITIGNORE"
+
+# --- Git user identity (global fallback — local config takes precedence) ---
+if [ -n "${GIT_USER_NAME:-}" ]; then
+    git config --global user.name "${GIT_USER_NAME}"
+fi
+if [ -n "${GIT_USER_EMAIL:-}" ]; then
+    git config --global user.email "${GIT_USER_EMAIL}"
+fi
 
 # Import GPG key for commit signing (if provided by orchestrator)
 if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
