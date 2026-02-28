@@ -102,10 +102,13 @@ Request ────────────┤  1. autoUseOpenrouter = false?  
                     │  4. CRITICAL + P40 busy?                    │
                     │     → OpenRouter (chat nečeká)              │
                     │                                             │
-                    │  5. NORMAL + P40 busy?                      │
+                    │  5. NORMAL + P40 busy + free model?          │
+                    │     → OpenRouter free tier (zdarma!)         │
+                    │                                             │
+                    │  6. NORMAL + P40 busy + NO free model?      │
                     │     → fronta P40 (background počká)          │
                     │                                             │
-                    │  6. Timeout na P40 (>60s)?                  │
+                    │  7. Timeout na P40 (>60s)?                  │
                     │     → cancel + retry na OpenRouter           │
                     └─────────────────────────────────────────────┘
 ```
@@ -199,7 +202,13 @@ async def select_route(
         model = await resolve_openrouter_model(client_id, project_id, use_case)
         return Route(target="openrouter", model=model)
 
-    # Rule 6: NORMAL/IDLE → queue on local GPU
+    # Rule 6: NORMAL + GPU busy + OpenRouter free tier available → OpenRouter free
+    if priority == "NORMAL" and has_openrouter:
+        free_model = await resolve_openrouter_model(client_id, project_id, use_case, free_only=True)
+        if free_model:
+            return Route(target="openrouter", model=free_model)
+
+    # Rule 7: NORMAL/IDLE → queue on local GPU
     return Route(target="local", tier=select_local_tier(estimated_tokens))
 ```
 
@@ -226,9 +235,47 @@ else:
 
 ```python
 # Pro background tasks: priority="NORMAL"
-# → vždy jde na P40 (čeká ve frontě)
-# → eskaluje na OpenRouter jen po opakovaném timeout
+# → P40 volná → P40
+# → P40 busy + OpenRouter free model dostupný → OpenRouter free tier (zdarma)
+# → P40 busy + žádný free model → čeká ve frontě na P40
+# → eskaluje na placený OpenRouter jen po opakovaném timeout
 ```
+
+#### 5b. OpenRouter free tier modely
+
+OpenRouter nabízí free modely (30B+ parametrů) vhodné pro background analýzy:
+- Rate limity jsou nižší, ale pro background tasks to nevadí (nejsou interaktivní)
+- Model list se může měnit → resolver musí číst aktuální nabídku
+
+```python
+# V OpenRouterSettingsDtos.kt přidat:
+@Serializable
+data class OpenRouterModelEntryDto(
+    val modelId: String,                          # e.g. "qwen/qwen3-30b-a3b:free"
+    val label: String = "",
+    val preferredFor: List<OpenRouterModelUseCase> = emptyList(),
+    val free: Boolean = false,                    # NOVÉ — označit jako free tier
+    val maxContextTokens: Int? = null,
+)
+
+# V resolve_openrouter_model():
+async def resolve_openrouter_model(
+    client_id: str,
+    project_id: str | None,
+    use_case: str,
+    free_only: bool = False,  # NOVÉ — pro background na free tieru
+) -> str | None:
+    settings = await kotlin_client.get_openrouter_settings()
+    models = settings.get("models", [])
+    if free_only:
+        models = [m for m in models if m.get("free", False)]
+    for model in models:
+        if use_case in model.get("preferredFor", []):
+            return model["modelId"]
+    return models[0]["modelId"] if models else None
+```
+
+**UI v OpenRouter settings**: u každého modelu checkbox "Free tier" aby uživatel označil které modely jsou zdarma. Nebo automaticky detekovat z OpenRouter API (modely s `:free` suffixem).
 
 #### 6. Timeout fallback — cancel + retry
 
@@ -265,7 +312,9 @@ except asyncio.TimeoutError:
 1. Chat s `autoUseOpenrouter=true` + P40 busy → odpověď přes OpenRouter do 10s
 2. Chat s `autoUseOpenrouter=false` (banking) → čeká na P40, preemptne NORMAL
 3. Chat + P40 volná → jde na P40 (zdarma, rychlé)
-4. Background task → vždy P40 (šetří OpenRouter kredity)
+4. Background task + P40 volná → P40 (zdarma)
+5. Background task + P40 busy + free model → OpenRouter free tier (taky zdarma)
+6. Background task + P40 busy + no free model → fronta P40
 5. Context > 48k → rovnou OpenRouter (P40 by spillovala)
 6. P40 timeout 60s → automatic fallback na OpenRouter
 7. OpenRouter model = dle settings klienta/projektu, ne hardcoded "auto"
