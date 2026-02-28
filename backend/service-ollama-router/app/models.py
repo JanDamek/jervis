@@ -24,21 +24,20 @@ class Priority(IntEnum):
 
 # keep_alive="-1" → Ollama keeps models in VRAM indefinitely.
 # Router manages what's loaded/unloaded explicitly — no Ollama auto-eviction.
+#
+# Consolidated model set: 30b for ALL LLM tasks + embedding always loaded.
+# 7b/14b removed — 30b handles everything; no model swapping needed.
+# VLM loaded on-demand only (rare image description use case).
 MODEL_SETS: dict[str, dict] = {
-    "orchestrator": {
-        "models": ["qwen3-coder-tool:30b"],
-        "vram_gb": 20.0,
-        "keep_alive": "-1",
-    },
-    "background": {
-        "models": ["qwen2.5:7b", "qwen2.5:14b", "qwen3-embedding:8b"],
-        "vram_gb": 20.0,
+    "primary": {
+        "models": ["qwen3-coder-tool:30b", "qwen3-embedding:8b"],
+        "vram_gb": 25.0,
         "keep_alive": "-1",
     },
     "vlm": {
         "models": ["qwen3-vl:latest"],
         "vram_gb": 12.0,
-        "keep_alive": "-1",
+        "keep_alive": "10m",  # VLM: auto-unload after 10min idle (loaded on-demand)
     },
 }
 
@@ -51,8 +50,6 @@ for _set_name, _set_def in MODEL_SETS.items():
 # model → default priority lookup (CRITICAL is set via header, not model)
 MODEL_TO_PRIORITY: dict[str, Priority] = {
     "qwen3-coder-tool:30b": Priority.NORMAL,
-    "qwen2.5:7b": Priority.NORMAL,
-    "qwen2.5:14b": Priority.NORMAL,
     "qwen3-embedding:8b": Priority.NORMAL,
     "qwen3-vl:latest": Priority.NORMAL,
 }

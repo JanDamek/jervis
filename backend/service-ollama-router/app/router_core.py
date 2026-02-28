@@ -272,10 +272,10 @@ class OllamaRouter:
             self._bg_load_tasks[gpu_name] = task
 
     async def _delayed_background_load(self, gpu: GpuBackend) -> None:
-        """After a delay, load background models onto GPU.
+        """After a delay, ensure primary model set (30b + embedding) is loaded on GPU.
 
-        When :30b is loaded: only load embedding models (14b on CPU — too much offload).
-        When no :30b: load full background set (14b + embedding).
+        Since keep_alive="-1", models stay loaded indefinitely. This just ensures
+        embedding is loaded alongside 30b after a reservation release.
         """
         try:
             await asyncio.sleep(settings.background_load_delay_s)
@@ -284,22 +284,12 @@ class OllamaRouter:
             if gpu.name in self._reservations:
                 return
 
-            has_big_model = any(":30b" in m for m in gpu.loaded_models)
-            if has_big_model:
-                # Only load embedding alongside :30b (14b would cause too much CPU offload)
-                logger.info(
-                    "GPU %s has :30b — loading only embedding models alongside",
-                    gpu.name,
-                )
-                for emb_model in EMBEDDING_MODELS:
-                    if not gpu.has_model(emb_model):
-                        await self.gpu_pool.load_model(gpu, emb_model, self._mgmt_client)
-            else:
-                logger.info(
-                    "Loading background model set on GPU %s (existing: %s)",
-                    gpu.name, list(gpu.loaded_models.keys()),
-                )
-                await self.gpu_pool.load_model_set(gpu, "background", self._mgmt_client)
+            # Ensure full primary set is loaded (30b + embedding)
+            logger.info(
+                "Ensuring primary model set on GPU %s (existing: %s)",
+                gpu.name, list(gpu.loaded_models.keys()),
+            )
+            await self.gpu_pool.load_model_set(gpu, "primary", self._mgmt_client)
         except asyncio.CancelledError:
             logger.info("Background model loading cancelled for GPU %s", gpu.name)
         except Exception as e:

@@ -178,8 +178,8 @@ data:
   OLLAMA_INGEST_BASE_URL: "http://jervis-ollama-router:11430"      # Via router → GPU/CPU
   # -- Model routing (see docs/structures.md § "Model Routing") ---------------
   LLM_MODEL: "qwen3-coder-tool:30b"                           # General KB LLM (same as orchestrator → shares GPU)
-  INGEST_MODEL_SIMPLE: "qwen2.5:7b"                           # Fast: link relevance check (CPU)
-  INGEST_MODEL_COMPLEX: "qwen3-coder-tool:30b"                # Accurate: summary + entity extraction (GPU when CRITICAL)
+  INGEST_MODEL_SIMPLE: "qwen3-coder-tool:30b"                 # All ingest via 30b (always loaded on GPU)
+  INGEST_MODEL_COMPLEX: "qwen3-coder-tool:30b"                # Same model — no swapping needed
   # -- Storage backends -------------------------------------------------------
   WEAVIATE_URL: "http://nas.damek.local:8080"                  # Vector store (RAG)
   WEAVIATE_GRPC_URL: "nas.damek.local:50051"                   # Weaviate gRPC

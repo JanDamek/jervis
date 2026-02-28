@@ -144,13 +144,12 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). KB extraction uses :30b (same model as orchestrator).
 
 ```
-GPU state when 30b active:
-  qwen3-coder-tool:30b  (~25GB)  → GPU (orchestrator + KB extraction)
+GPU state (consolidated – always loaded, keep_alive="-1"):
+  qwen3-coder-tool:30b  (~25GB)  → GPU (all LLM tasks: orchestrator, KB, ingest)
   qwen3-embedding:8b    (~5GB)   → GPU (alongside, ~0.3s)
-  qwen2.5:7b                     → CPU (simple classification only)
 
-Total capacity: 2 GPU × 2 + 1 CPU × 2 = 6 slots
-(realistically :30b only on GPU → 4 GPU slots for large models)
+Total capacity: 2 GPU × 2 = 4 GPU slots for all LLM work
+No model swapping needed – 30b handles everything.
 ```
 
 ### Caller Concurrency
@@ -773,7 +772,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
    │ 30b + embedding:        │ │ 30b + embedding:      │ │ OLLAMA_NUM_PARALLEL=10   │
    │   qwen3-coder-tool:30b  │ │   qwen3-coder-tool:30b│ │ OLLAMA_NUM_THREADS=18    │
    │   qwen3-embedding:8b    │ │   qwen3-embedding:8b  │ │ OLLAMA_MAX_LOADED_MODELS=3│
-   │                         │ │                       │ │ qwen2.5:7b + embed:8b    │
+   │                         │ │                       │ │ embed:8b (fallback only) │
    │ Concurrent CRITICAL #1  │ │ Concurrent CRITICAL #2│ │                          │
    │ or NORMAL when free     │ │ or NORMAL when free   │ │ Always available fallback│
    └──────────────────────────┘ └───────────────────────┘ └──────────────────────────┘
@@ -796,10 +795,9 @@ KB extraction uses :30b (same model as orchestrator). CRITICAL extraction shares
 
 | Model | VRAM Est. | Location | Purpose |
 |-------|-----------|----------|---------|
-| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | Orchestrator + KB extraction (LLM_MODEL, INGEST_MODEL_COMPLEX) |
+| qwen3-coder-tool:30b | ~25GB | GPU (VRAM priority) | All LLM tasks (orchestrator, KB extraction, ingest simple+complex) |
 | qwen3-embedding:8b | ~5GB | GPU (alongside 30b) | KB embeddings |
-| qwen2.5:7b | ~5GB | CPU | KB simple classification (INGEST_MODEL_SIMPLE) |
-| **GPU Total** | **~30GB** | Some CPU offload | Acceptable performance |
+| **GPU Total** | **~30GB** | Some CPU offload | Acceptable performance, no model swapping |
 
 ### Auto-Reservation Protocol (no announce/release API)
 

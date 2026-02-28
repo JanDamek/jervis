@@ -36,10 +36,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen3-coder-tool:30b"                  # Default LLM for general KB tasks (30b = same as orchestrator, shares GPU)
     VISION_MODEL: str = "qwen3-vl:latest"                   # VLM for image description
 
-    # Ingest model routing (see docs/structures.md § "Model Routing"):
-    # - Simple: binary classification tasks (link relevance) → fast 7B model (CPU)
-    # - Complex: structured JSON output (summary + entity extraction) → 30B model (GPU when CRITICAL)
-    INGEST_MODEL_SIMPLE: str = "qwen2.5:7b"
+    # Ingest model routing — consolidated: 30b for all tasks.
+    # 7b removed (no model swapping needed, 30b always loaded on GPU).
+    INGEST_MODEL_SIMPLE: str = "qwen3-coder-tool:30b"
     INGEST_MODEL_COMPLEX: str = "qwen3-coder-tool:30b"
 
     # -- Context window management (same pattern as chat/orchestrator) ---------

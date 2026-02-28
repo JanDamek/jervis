@@ -73,8 +73,6 @@ class GpuBackend:
 
 MODEL_VRAM_ESTIMATES: dict[str, float] = {
     "qwen3-coder-tool:30b": 25.0,  # ~25GB VRAM (exceeds 24GB → uses CPU offload)
-    "qwen2.5:7b": 5.0,
-    "qwen2.5:14b": 10.0,
     "qwen3-embedding:8b": 5.0,
     "qwen3-vl:latest": 12.0,
 }
