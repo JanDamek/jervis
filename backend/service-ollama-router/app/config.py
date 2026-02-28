@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # After this many seconds of no GPU requests, router notifies Kotlin server
     # to trigger proactive analytical tasks (vulnerability scan, code quality, etc.)
     gpu_idle_notify_after_s: int = 300   # 5 minutes
-    kotlin_server_url: str = "http://jervis-server:8080"
+    kotlin_server_url: str = "http://jervis-server:5500"
 
     def parsed_gpu_backends(self) -> list[GpuBackendConfig]:
         raw = json.loads(self.gpu_backends)
