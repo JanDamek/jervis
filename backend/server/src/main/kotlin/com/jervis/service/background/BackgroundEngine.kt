@@ -896,6 +896,7 @@ class BackgroundEngine(
             interruptDescription = status["interrupt_description"],
             branch = status["branch"],
             artifacts = status["artifacts"]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
+            keepEnvironmentRunning = status["keep_environment_running"]?.toBooleanStrictOrNull() ?: false,
         )
     }
 

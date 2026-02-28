@@ -464,6 +464,13 @@ async def execute_tool(
             result = await _execute_environment_delete(
                 environment_id=arguments.get("environment_id", ""),
             )
+        elif tool_name == "environment_keep_running":
+            enabled = arguments.get("enabled", True)
+            result = (
+                "Environment will be kept running after task completion."
+                if enabled else
+                "Environment will be auto-stopped after task completion."
+            )
         elif tool_name == "environment_clone":
             result = await _execute_environment_clone(
                 environment_id=arguments.get("environment_id", ""),

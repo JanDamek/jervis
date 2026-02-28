@@ -1,5 +1,6 @@
 package com.jervis.service.agent.coordinator
 
+import com.jervis.common.types.EnvironmentId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
 import com.jervis.entity.TaskDocument
@@ -39,6 +40,8 @@ class OrchestratorStatusHandler(
     private val workflowTracker: OrchestratorWorkflowTracker,
     private val projectService: ProjectService,
     private val clientRepository: ClientRepository,
+    private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
+    private val environmentService: com.jervis.service.environment.EnvironmentService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -67,6 +70,7 @@ class OrchestratorStatusHandler(
         interruptDescription: String? = null,
         branch: String? = null,
         artifacts: List<String> = emptyList(),
+        keepEnvironmentRunning: Boolean = false,
     ) {
         val task = try {
             taskRepository.getById(TaskId(ObjectId(taskId)))
@@ -91,7 +95,7 @@ class OrchestratorStatusHandler(
                 // Still working — no state change needed (timestamp-based stuck detection in BackgroundEngine)
             }
             "interrupted" -> handleInterrupted(task, interruptAction, interruptDescription)
-            "done" -> handleDone(task, summary)
+            "done" -> handleDone(task, summary, keepEnvironmentRunning)
             "error" -> handleError(task, error)
             else -> {
                 logger.debug { "ORCHESTRATOR_STATUS_HANDLER: unknown status=$status for task $taskId" }
@@ -168,7 +172,7 @@ class OrchestratorStatusHandler(
         logger.info { "ORCHESTRATOR_INTERRUPTED: taskId=${task.id} action=$action phase=$phase → USER_TASK" }
     }
 
-    private suspend fun handleDone(task: TaskDocument, summary: String?) {
+    private suspend fun handleDone(task: TaskDocument, summary: String?, keepEnvironmentRunning: Boolean = false) {
         // Persist final response for FOREGROUND tasks
         if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
             val resultSummary = summary ?: "Orchestrace dokončena"
@@ -249,7 +253,15 @@ class OrchestratorStatusHandler(
         // Save to task history for UI display
         saveTaskHistory(task, "done")
 
-        logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages" }
+        // Auto-stop environment if not requested to keep running
+        // Python finalize already attempts stop; this is a safety net
+        if (!keepEnvironmentRunning) {
+            autoStopEnvironment(task)
+        } else {
+            logger.info { "ENV_KEEP_RUNNING: taskId=${task.id} — user requested to keep environment running" }
+        }
+
+        logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages keepEnvRunning=$keepEnvironmentRunning" }
     }
 
     private suspend fun handleError(task: TaskDocument, error: String?) {
@@ -288,6 +300,27 @@ class OrchestratorStatusHandler(
 
         // Emit idle queue status — orchestration errored out
         emitQueueIdle(task)
+    }
+
+    /**
+     * Auto-stop environment after task completion (non-blocking).
+     *
+     * Resolves the environment for the task's project and deprovisions it.
+     * This is a safety net — the Python finalize node also attempts to stop.
+     * Only stops RUNNING environments; ignores other states.
+     */
+    private suspend fun autoStopEnvironment(task: TaskDocument) {
+        val projectId = task.projectId ?: return
+        try {
+            val env = environmentService.resolveEnvironmentForProject(projectId)
+            if (env != null && env.state == com.jervis.entity.EnvironmentState.RUNNING) {
+                logger.info { "ENV_AUTO_STOP: taskId=${task.id} envId=${env.id} name=${env.name}" }
+                environmentK8sService.deprovisionEnvironment(env.id)
+            }
+        } catch (e: Exception) {
+            // Non-blocking — task is already done, environment stop failure shouldn't affect user
+            logger.warn(e) { "ENV_AUTO_STOP_FAILED: taskId=${task.id} projectId=$projectId" }
+        }
     }
 
     /**

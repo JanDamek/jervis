@@ -263,6 +263,7 @@ class OrchestrateRequest(BaseModel):
     agent_preference: str = "auto"
     rules: ProjectRules = Field(default_factory=ProjectRules)
     environment: dict | None = None  # Resolved environment context from server
+    environment_id: str | None = None  # MongoDB ID of the resolved environment (for lifecycle management)
     jervis_project_id: str | None = None  # JERVIS internal project for planning
     chat_history: ChatHistoryPayload | None = None  # Conversation context
     processing_mode: str = "FOREGROUND"  # FOREGROUND = reserve GPU, BACKGROUND = no GPU reservation

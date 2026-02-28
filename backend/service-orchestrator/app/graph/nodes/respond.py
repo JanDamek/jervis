@@ -207,6 +207,7 @@ async def respond(state: dict) -> dict:
     # Agentic tool-use loop
     iteration = 0
     tool_call_history: list[tuple[str, str]] = []  # (name, args_json) for loop detection
+    state_updates: dict = {}  # Accumulated state changes from tools
     tool_loop_break = False
     while iteration < _MAX_TOOL_ITERATIONS:
         iteration += 1
@@ -273,7 +274,7 @@ async def respond(state: dict) -> dict:
             # W-19: Save assistant answer to MongoDB
             await _save_assistant_message(state, answer)
 
-            return {"final_result": answer}
+            return {"final_result": answer, **state_updates}
 
         # Execute tool calls
         logger.info("Respond: executing %d tool calls", len(tool_calls))
@@ -341,6 +342,12 @@ async def respond(state: dict) -> dict:
                 logger.info("ASK_USER: user responded (%d chars)", len(answer))
                 result = f"User answered: {answer}"
 
+            # State-modifying tools: update graph state directly
+            if tool_name == "environment_keep_running":
+                env_keep = arguments.get("enabled", True)
+                state_updates["keep_environment_running"] = env_keep
+                logger.info("ENV_KEEP_RUNNING set to %s by respond node", env_keep)
+
             logger.info("Respond: tool %s returned %d chars", tool_name, len(result))
             logger.debug("Respond: tool %s full result: %s", tool_name, result)
 
@@ -387,7 +394,7 @@ async def respond(state: dict) -> dict:
     # W-19: Save assistant answer to MongoDB
     await _save_assistant_message(state, answer)
 
-    return {"final_result": answer}
+    return {"final_result": answer, **state_updates}
 
 
 # W-12: Real token streaming — streams LLM tokens as they arrive

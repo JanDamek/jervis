@@ -394,6 +394,7 @@ async def status(thread_id: str):
             "summary": final_result,
             "branch": values.get("branch"),
             "artifacts": values.get("artifacts", []),
+            "keep_environment_running": values.get("keep_environment_running", False),
         }
 
     return {"status": "unknown", "thread_id": thread_id}

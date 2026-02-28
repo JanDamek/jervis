@@ -95,6 +95,8 @@ class OrchestratorState(TypedDict, total=False):
     task: dict
     rules: dict
     environment: dict | None
+    environment_id: str | None          # MongoDB ID for lifecycle management
+    keep_environment_running: bool      # User override — don't auto-stop after task
     jervis_project_id: str | None       # JERVIS internal project
 
     # --- Task identity (top-level for easy access from all nodes) ---
@@ -480,6 +482,8 @@ async def _build_initial_state(request: OrchestrateRequest) -> dict:
         ).model_dump(),
         "rules": request.rules.model_dump(),
         "environment": request.environment,
+        "environment_id": request.environment_id,
+        "keep_environment_running": False,
         "jervis_project_id": request.jervis_project_id,
         # Task identity — top-level, accessible from all nodes
         "client_name": request.client_name,

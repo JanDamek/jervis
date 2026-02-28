@@ -1,16 +1,22 @@
-"""Finalize node — generate final report + KB outcome ingestion.
+"""Finalize node — generate final report + KB outcome ingestion + environment lifecycle.
 
 Replaces the old `report` node with support for all task categories.
 Uses LLM to produce a human-readable Czech summary.
 
 After summary generation, significant tasks are ingested into KB
 for long-term memory (fire-and-forget, never blocks completion).
+
+Environment lifecycle: if an environment was used, stop it unless the user
+explicitly requested to keep it running (for manual testing).
 """
 
 from __future__ import annotations
 
 import logging
 
+import httpx
+
+from app.config import settings
 from app.models import CodingTask, StepResult
 from app.graph.nodes._helpers import llm_with_cloud_fallback
 from app.kb.outcome_ingest import is_significant_task, extract_outcome, ingest_outcome_to_kb
@@ -64,6 +70,15 @@ async def finalize(state: dict) -> dict:
             logger.debug("Finalize: Memory Agent safety-net flush complete")
         except Exception as e:
             logger.warning("Finalize: Memory Agent safety-net flush failed (non-blocking): %s", e)
+
+    # --- Phase 4: Environment lifecycle (auto-stop unless user override) ---
+    env_id = state.get("environment_id")
+    keep_running = state.get("keep_environment_running", False)
+    if env_id and not keep_running:
+        await _try_stop_environment(env_id)
+        result["environment_stopped"] = True
+    elif env_id and keep_running:
+        logger.info("Finalize: keeping environment %s running (user override)", env_id)
 
     return result
 
@@ -185,6 +200,33 @@ async def _generate_summary_async(state: dict, task_category: str) -> dict:
         "final_result": summary,
         "artifacts": list(set(artifacts)),
     }
+
+
+async def _try_stop_environment(environment_id: str) -> None:
+    """Stop environment via Kotlin internal API (fire-and-forget).
+
+    Called when a coding task finishes and the user didn't request
+    to keep the environment running for manual testing.
+    Non-blocking — errors are logged but never prevent task completion.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{settings.kotlin_server_url}/internal/environments/{environment_id}/stop",
+            )
+            if resp.status_code == 200:
+                env = resp.json()
+                logger.info(
+                    "ENV_AUTO_STOP | id=%s | name=%s | state=%s",
+                    environment_id, env.get("name"), env.get("state"),
+                )
+            else:
+                logger.warning(
+                    "ENV_AUTO_STOP_FAILED | id=%s | status=%d | body=%s",
+                    environment_id, resp.status_code, resp.text[:200],
+                )
+    except Exception as e:
+        logger.warning("ENV_AUTO_STOP_ERROR | id=%s | error=%s", environment_id, e)
 
 
 async def _try_kb_ingest(state: dict) -> bool:

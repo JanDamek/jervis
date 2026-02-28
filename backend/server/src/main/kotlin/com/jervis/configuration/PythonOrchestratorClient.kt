@@ -280,6 +280,7 @@ data class OrchestrateRequestDto(
     @SerialName("agent_preference") val agentPreference: String = "auto",
     val rules: ProjectRulesDto = ProjectRulesDto(),
     val environment: kotlinx.serialization.json.JsonObject? = null,
+    @SerialName("environment_id") val environmentId: String? = null,
     @SerialName("jervis_project_id") val jervisProjectId: String? = null,
     @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
     @SerialName("processing_mode") val processingMode: String = "FOREGROUND",

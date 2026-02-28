@@ -1253,14 +1253,36 @@ EnvironmentDocument (MongoDB: environments)
 - Environment at **project level** is most specific
 - Resolution: query most specific first (project → group → client)
 
+### Environment Lifecycle (Auto-Provision + Auto-Stop)
+
+Environments are automatically provisioned when a coding task starts and
+stopped when it finishes. The user can override auto-stop via chat.
+
+**On task dispatch (Kotlin `AgentOrchestratorService.dispatchBackgroundV6`):**
+
+1. Resolves environment via `EnvironmentService.resolveEnvironmentForProject()`
+2. If environment is **PENDING** or **STOPPED** → auto-provisions via `EnvironmentK8sService`
+3. Passes `environment` JSON + `environmentId` to Python orchestrator
+
+**During task (Python respond node):**
+
+4. User can say "nech prostředí běžet" → `environment_keep_running(enabled=true)` tool
+5. Sets `keep_environment_running = True` in LangGraph state
+
+**On task completion (dual safety-net):**
+
+6. **Python finalize node**: If `keep_environment_running` is false → calls `POST /internal/environments/{id}/stop`
+7. **Kotlin `OrchestratorStatusHandler.handleDone`**: If `keepEnvironmentRunning` is false → calls `deprovisionEnvironment()` (safety net)
+8. On task **error**: environment is NOT stopped (user may need to debug)
+
 ### Agent Environment Context
 
 When a coding task is dispatched to the Python orchestrator:
 
 1. `AgentOrchestratorService` resolves environment via `EnvironmentService.resolveEnvironmentForProject()`
 2. `EnvironmentMapper.toAgentContextJson()` converts to `JsonObject`
-3. Passed in `OrchestrateRequestDto.environment` field
-4. Python orchestrator stores in LangGraph state as `environment` dict
+3. Passed in `OrchestrateRequestDto.environment` + `environmentId` fields
+4. Python orchestrator stores in LangGraph state as `environment` dict + `environment_id`
 5. `workspace_manager.prepare_workspace()` writes:
    - `.jervis/environment.json` – raw JSON for programmatic access
    - `.jervis/environment.md` – human-readable markdown
@@ -1324,6 +1346,7 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `environment_status(environment_id)` | Per-component readiness and replica status |
 | `environment_sync(environment_id)` | Re-apply manifests from DB to running K8s |
 | `environment_clone(environment_id, new_name, ...)` | Clone environment to new scope/tier |
+| `environment_keep_running(enabled)` | Override auto-stop — keep env running for user testing |
 | `environment_delete(environment_id)` | Delete environment + namespace |
 
 **K8s Resource Inspection Tools (namespace as parameter):**

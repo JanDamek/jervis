@@ -300,6 +300,7 @@ class KtorRpcServer(
                                             interruptDescription = body.interruptDescription,
                                             branch = body.branch,
                                             artifacts = body.artifacts,
+                                            keepEnvironmentRunning = body.keepEnvironmentRunning,
                                         )
                                     }
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
@@ -1340,6 +1341,7 @@ data class OrchestratorStatusCallback(
     val interruptDescription: String? = null,
     val branch: String? = null,
     val artifacts: List<String> = emptyList(),
+    val keepEnvironmentRunning: Boolean = false,
 )
 
 @kotlinx.serialization.Serializable

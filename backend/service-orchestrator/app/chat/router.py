@@ -93,6 +93,7 @@ async def orchestrate_v2(request: dict):
                 summary=result.get("summary", ""),
                 branch=result.get("branch"),
                 artifacts=result.get("artifacts", []),
+                keep_environment_running=result.get("keep_environment_running", False),
             )
         except Exception as e:
             logger.exception("Background v2 failed: %s", e)

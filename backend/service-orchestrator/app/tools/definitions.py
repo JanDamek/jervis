@@ -1432,6 +1432,29 @@ TOOL_ENVIRONMENT_CLONE: dict = {
     },
 }
 
+TOOL_ENVIRONMENT_KEEP_RUNNING: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_keep_running",
+        "description": (
+            "Mark the current environment to stay running after the task completes. "
+            "By default environments are auto-stopped when the coding task finishes. "
+            "Use this when the user wants to keep it running for manual testing. "
+            "Call with enabled=false to revert to auto-stop behavior."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "true = keep running after task, false = auto-stop (default).",
+                },
+            },
+            "required": ["enabled"],
+        },
+    },
+}
+
 ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_LIST,
     TOOL_ENVIRONMENT_GET,
@@ -1444,9 +1467,10 @@ ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_STATUS,
     TOOL_ENVIRONMENT_SYNC,
     TOOL_ENVIRONMENT_DELETE,
+    TOOL_ENVIRONMENT_KEEP_RUNNING,
 ]
 
-ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + BRAIN_TOOLS
+ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS + BRAIN_TOOLS + [TOOL_ENVIRONMENT_KEEP_RUNNING]
 
 
 # ============================================================

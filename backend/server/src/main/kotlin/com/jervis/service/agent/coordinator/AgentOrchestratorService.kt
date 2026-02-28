@@ -43,6 +43,7 @@ class AgentOrchestratorService(
     private val taskService: TaskService,
     private val taskRepository: TaskRepository,
     private val environmentService: EnvironmentService,
+    private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val clientService: ClientService,
     private val projectService: ProjectService,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
@@ -296,9 +297,31 @@ class AgentOrchestratorService(
     ): Boolean {
         onProgress("Spouštím orchestrátor v2...", mapOf("phase" to "python_orchestrate_v2"))
 
+        // Resolve environment and auto-provision if PENDING/STOPPED
+        var environmentId: String? = null
         val environmentJson = task.projectId?.let { pid ->
             try {
-                environmentService.resolveEnvironmentForProject(pid)?.toAgentContextJson()
+                val env = environmentService.resolveEnvironmentForProject(pid)
+                if (env != null) {
+                    environmentId = env.id.toString()
+                    // Auto-provision if not running
+                    val state = env.state
+                    if (state == com.jervis.entity.EnvironmentState.PENDING ||
+                        state == com.jervis.entity.EnvironmentState.STOPPED
+                    ) {
+                        logger.info { "AUTO_PROVISION: environment ${env.name} (ns=${env.namespace}) is $state, provisioning..." }
+                        onProgress("Spouštím prostředí ${env.name}...", mapOf("phase" to "environment_provision"))
+                        try {
+                            val provisioned = environmentK8sService.provisionEnvironment(env.id)
+                            provisioned.toAgentContextJson()
+                        } catch (provisionError: Exception) {
+                            logger.warn(provisionError) { "Auto-provision failed for ${env.name}, passing current state" }
+                            env.toAgentContextJson()
+                        }
+                    } else {
+                        env.toAgentContextJson()
+                    }
+                } else null
             } catch (e: Exception) {
                 logger.warn { "Failed to resolve environment for project $pid: ${e.message}" }
                 null
@@ -322,6 +345,7 @@ class AgentOrchestratorService(
             query = userInput,
             rules = rules,
             environment = environmentJson,
+            environmentId = environmentId,
             jervisProjectId = jervisProjectId,
             processingMode = "BACKGROUND",
         )

@@ -125,6 +125,7 @@ class KotlinServerClient:
         interrupt_description: str | None = None,
         branch: str | None = None,
         artifacts: list[str] | None = None,
+        keep_environment_running: bool = False,
     ) -> bool:
         """Push orchestrator status change to Kotlin server.
 
@@ -147,6 +148,7 @@ class KotlinServerClient:
                     "interruptDescription": interrupt_description,
                     "branch": branch,
                     "artifacts": artifacts or [],
+                    "keepEnvironmentRunning": keep_environment_running,
                 },
             )
             return True
