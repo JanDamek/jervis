@@ -310,7 +310,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                             if (models.isEmpty()) {
                                 JEmptyState(
                                     message = "Žádné modely v seznamu. Přidejte modely z katalogu OpenRouter.",
-                                    emojiIcon = "🤖",
+                                    icon = "🤖",
                                 )
                             } else {
                                 models.forEachIndexed { index, model ->
