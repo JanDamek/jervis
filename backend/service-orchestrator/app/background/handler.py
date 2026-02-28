@@ -401,9 +401,33 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "content": result,
             })
 
-        # If tool loop or search saturation detected, stop the outer iteration loop
+        # If tool loop or search saturation detected, force a final answer and stop
         if loop_break:
             logger.info("Background: breaking iteration loop due to tool loop/saturation")
+            # Force one final LLM call WITHOUT tools to produce a conclusion
+            try:
+                conclusion_messages = messages + [{
+                    "role": "system",
+                    "content": (
+                        "STOP. Nepoužívej žádné další nástroje. "
+                        "Shrň výsledky z předchozích volání nástrojů a poskytni finální odpověď."
+                    ),
+                }]
+                conclusion_resp = await llm_provider.completion(
+                    messages=conclusion_messages,
+                    tier=tracker.current_tier,
+                    max_tokens=settings.default_output_tokens,
+                    temperature=0.2,
+                    # No tools parameter → LLM must produce text
+                )
+                final_answer = conclusion_resp.choices[0].message.content or ""
+                logger.info(
+                    "Background: forced conclusion after loop break (%d chars)",
+                    len(final_answer),
+                )
+            except Exception as e:
+                logger.warning("Background: forced conclusion LLM call failed: %s", e)
+                final_answer = "Background task completed — search results collected but summary generation failed."
             break
 
     # --- EPIC 3: Code Review Phase (after coding agent dispatch) ---
