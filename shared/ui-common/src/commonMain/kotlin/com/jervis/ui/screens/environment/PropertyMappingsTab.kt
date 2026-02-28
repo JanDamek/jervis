@@ -41,6 +41,7 @@ import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JKeyValueRow
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JRemoveIconButton
@@ -70,6 +71,7 @@ fun PropertyMappingsTab(
     var expandedMappingIndex by remember { mutableStateOf<Int?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
     var showAutoSuggest by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -78,10 +80,13 @@ fun PropertyMappingsTab(
 
     fun saveEnvironment(updatedEnv: EnvironmentDto) {
         scope.launch {
+            saveError = null
             try {
                 repository.environments.updateEnvironment(updatedEnv.id, updatedEnv)
                 onUpdated()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                saveError = "Chyba při ukládání: ${e.message}"
+            }
         }
     }
 
@@ -148,6 +153,11 @@ fun PropertyMappingsTab(
                 },
                 onCancel = { showAddForm = false },
             )
+        }
+
+        saveError?.let { errorMsg ->
+            JErrorState(message = errorMsg)
+            Spacer(Modifier.height(JervisSpacing.itemGap))
         }
 
         Spacer(Modifier.height(JervisSpacing.itemGap))

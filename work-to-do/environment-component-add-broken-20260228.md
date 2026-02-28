@@ -1,7 +1,7 @@
 # Environment — přidání komponenty tiše selže
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

@@ -37,6 +37,7 @@ import com.jervis.dto.environment.EnvironmentDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JRemoveIconButton
 import com.jervis.ui.design.JervisSpacing
@@ -67,15 +68,19 @@ fun ComponentsTab(
     var expandedComponentId by remember { mutableStateOf<String?>(null) }
     var editingComponentId by remember { mutableStateOf<String?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
     fun saveEnvironment(updatedEnv: EnvironmentDto) {
         scope.launch {
+            saveError = null
             try {
                 repository.environments.updateEnvironment(updatedEnv.id, updatedEnv)
                 onUpdated()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                saveError = "Chyba při ukládání: ${e.message}"
+            }
         }
     }
 
@@ -95,6 +100,11 @@ fun ComponentsTab(
                 Spacer(Modifier.width(4.dp))
                 Text("Přidat")
             }
+        }
+
+        saveError?.let { errorMsg ->
+            JErrorState(message = errorMsg)
+            Spacer(Modifier.height(JervisSpacing.itemGap))
         }
 
         if (environment.components.isEmpty()) {

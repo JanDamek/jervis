@@ -32,6 +32,7 @@ import com.jervis.ui.design.JCard
 import com.jervis.ui.design.JCenteredLoading
 import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JEmptyState
+import com.jervis.ui.design.JErrorState
 import com.jervis.ui.design.JRefreshButton
 import com.jervis.ui.design.JSection
 import com.jervis.ui.design.JervisSpacing
@@ -58,12 +59,15 @@ fun LogsEventsTab(
     var eventsLoading by remember { mutableStateOf(false) }
 
     var isLoadingPods by remember { mutableStateOf(false) }
+    var podsError by remember { mutableStateOf<String?>(null) }
+    var eventsError by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
     fun loadPods() {
         scope.launch {
             isLoadingPods = true
+            podsError = null
             try {
                 val resources = repository.environmentResources.listResources(environment.id)
                 pods = resources.pods
@@ -71,8 +75,9 @@ fun LogsEventsTab(
                 if (selectedPod == null && resources.pods.isNotEmpty()) {
                     selectedPod = resources.pods.first()
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 pods = emptyList()
+                podsError = "Chyba při načítání podů: ${e.message}"
             } finally {
                 isLoadingPods = false
             }
@@ -96,11 +101,13 @@ fun LogsEventsTab(
     fun loadEvents() {
         scope.launch {
             eventsLoading = true
+            eventsError = null
             try {
                 val result = repository.environmentResources.getNamespaceEvents(environment.id, 50)
                 events = result.events
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 events = emptyList()
+                eventsError = "Chyba při načítání událostí: ${e.message}"
             } finally {
                 eventsLoading = false
             }
@@ -129,6 +136,7 @@ fun LogsEventsTab(
             logLoading = logLoading,
             isLoadingPods = isLoadingPods,
             tailLines = tailLines,
+            error = podsError,
             onPodSelected = { selectedPod = it },
             onTailLinesChanged = { tailLines = it },
             onRefresh = { selectedPod?.let { loadLogs(it.name) } },
@@ -138,6 +146,7 @@ fun LogsEventsTab(
         EventsSection(
             events = events,
             eventsLoading = eventsLoading,
+            error = eventsError,
             onRefresh = { loadEvents() },
         )
     }
@@ -155,6 +164,7 @@ private fun PodLogsSection(
     logLoading: Boolean,
     isLoadingPods: Boolean,
     tailLines: Int,
+    error: String? = null,
     onPodSelected: (K8sPodDto) -> Unit,
     onTailLinesChanged: (Int) -> Unit,
     onRefresh: () -> Unit,
@@ -162,6 +172,8 @@ private fun PodLogsSection(
     JSection(title = "Pod logy") {
         if (isLoadingPods) {
             JCenteredLoading()
+        } else if (error != null) {
+            JErrorState(message = error)
         } else if (pods.isEmpty()) {
             JEmptyState(message = "Žádné pody k dispozici")
         } else {
@@ -215,6 +227,7 @@ private fun PodLogsSection(
 private fun EventsSection(
     events: List<K8sEventDto>,
     eventsLoading: Boolean,
+    error: String? = null,
     onRefresh: () -> Unit,
 ) {
     JSection(title = "K8s události") {
@@ -229,6 +242,8 @@ private fun EventsSection(
 
         if (eventsLoading) {
             JCenteredLoading()
+        } else if (error != null) {
+            JErrorState(message = error)
         } else if (events.isEmpty()) {
             JEmptyState(message = "Žádné události")
         } else {
