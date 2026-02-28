@@ -296,8 +296,137 @@ except asyncio.TimeoutError:
         response = await asyncio.wait_for(call, timeout=240)
 ```
 
+---
+
+## Zjednodušený model: FRONTY (queues) místo složitého routingu
+
+Místo složité logiky s měřením rychlosti a dynamickým context matchingem — **pojmenované fronty s uspořádaným seznamem modelů**. Volající jen identifikuje frontu, systém vybere model.
+
+### Koncept
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  FRONTA = pojmenovaný seznam modelů (fallback chain)    │
+│                                                         │
+│  Volající: "použij frontu CHAT"                         │
+│  Systém:  zkusí model 1 → selhání → model 2 → ...      │
+│           (P40 je taky "model" ve frontě)               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Definované fronty
+
+| Fronta | Účel | Příklad modelů (v pořadí) |
+|--------|------|--------------------------|
+| `FREE` | Background tasky, P40 obsazená, šetříme | 1. P40 (pokud volná), 2. qwen/qwen3-30b:free, 3. meta-llama/llama-4-scout:free |
+| `CHAT` | Foreground chat (CRITICAL) | 1. P40 (pokud volná), 2. anthropic/claude-sonnet-4, 3. openai/gpt-4o |
+| `ORCHESTRATOR` | Background orchestrace, tool calling | 1. P40 (pokud volná), 2. qwen/qwen3-30b:free, 3. anthropic/claude-haiku-4 |
+| `LARGE_CONTEXT` | Context >48k tokenů | 1. google/gemini-2.5-flash, 2. anthropic/claude-sonnet-4 (200k) |
+| `CODING` | Coding agent dispatch | 1. P40 (pokud volná), 2. anthropic/claude-sonnet-4, 3. openai/codex |
+
+### Každý model ve frontě má
+
+```kotlin
+@Serializable
+data class QueueModelEntry(
+    val modelId: String,           // "p40" | "anthropic/claude-sonnet-4" | "qwen/qwen3-30b:free"
+    val isLocal: Boolean = false,  // true = P40 (přes router), false = OpenRouter
+    val maxContextTokens: Int,     // max context co model zvládne
+    val enabled: Boolean = true,
+)
+```
+
+### Routing logika (jednoduchá)
+
+```python
+async def route_request(
+    queue_name: str,          # "CHAT" | "FREE" | "ORCHESTRATOR" | ...
+    estimated_tokens: int,
+    client_id: str,
+    project_id: str | None,
+) -> ModelRoute:
+    """Projdi frontu, vrať první dostupný model."""
+    queue = await get_queue(queue_name, client_id, project_id)
+
+    for model in queue.models:
+        if not model.enabled:
+            continue
+        # Context check — model musí zvládnout
+        if estimated_tokens > model.max_context_tokens:
+            continue
+        # Lokální (P40) — zkontroluj dostupnost
+        if model.is_local:
+            status = await get_router_queue_status()
+            if len(status["gpu_free"]) > 0:
+                return ModelRoute(target="local", tier=select_tier(estimated_tokens))
+            continue  # P40 busy → zkus další model ve frontě
+        # OpenRouter model — vždy dostupný
+        return ModelRoute(target="openrouter", model=model.model_id)
+
+    # Žádný model ve frontě nevyhovuje → fallback na P40 frontu (čekej)
+    return ModelRoute(target="local", tier=select_tier(estimated_tokens))
+```
+
+### Kdo identifikuje frontu?
+
+| Situace | Fronta |
+|---------|--------|
+| Chat zpráva od uživatele | `CHAT` |
+| Background task orchestrace (tool loop) | `ORCHESTRATOR` |
+| Background task s estimated_tokens > 48k | `LARGE_CONTEXT` |
+| Background task + P40 busy (overflow) | `FREE` |
+| Coding agent dispatch | `CODING` |
+| Fact-check, topic detection | `FREE` |
+
+### UI v OpenRouter settings
+
+```
+Fronty modelů
+┌──────────────────────────────────────────────────┐
+│ CHAT                                    [Upravit] │
+│  1. 🖥 P40 (lokální)          max: 48k           │
+│  2. ☁ anthropic/claude-sonnet-4  max: 200k       │
+│  3. ☁ openai/gpt-4o             max: 128k        │
+├──────────────────────────────────────────────────┤
+│ FREE                                    [Upravit] │
+│  1. 🖥 P40 (lokální)          max: 48k           │
+│  2. ☁ qwen/qwen3-30b:free     max: 32k           │
+│  3. ☁ meta-llama/llama-4:free max: 128k          │
+├──────────────────────────────────────────────────┤
+│ ORCHESTRATOR                            [Upravit] │
+│  1. 🖥 P40 (lokální)          max: 48k           │
+│  2. ☁ qwen/qwen3-30b:free     max: 32k           │
+│  3. ☁ anthropic/claude-haiku-4 max: 200k          │
+├──────────────────────────────────────────────────┤
+│ LARGE_CONTEXT                           [Upravit] │
+│  1. ☁ google/gemini-2.5-flash  max: 1M           │
+│  2. ☁ anthropic/claude-sonnet-4  max: 200k       │
+└──────────────────────────────────────────────────┘
+```
+
+Uživatel sám seřadí modely v pořadí preference. P40 je jako jakýkoli jiný model — může být první (preferovaný), uprostřed, nebo vůbec (pokud klient nechce lokální).
+
+### Proč NE měření rychlosti
+
+Měření rychlosti modelů je extrémně složité:
+- Závisí na context size, prompt, load serveru, rate limity
+- Free modely mají nestabilní latenci
+- Vyžaduje historické statistiky, rolling averages, outlier detection
+- **Přínos je minimální** — uživatel ví které modely preferuje, seřadí je ručně
+
+Místo toho: **pořadí ve frontě = priorita**. Uživatel/admin nastaví pořadí jednou, systém ho respektuje.
+
+### Vztah k client policy
+
+- `autoUseOpenrouter=false` → fronty obsahují POUZE P40 (žádné cloud modely)
+- `autoUseOpenrouter=true` → fronty dle nastavení (P40 + OpenRouter modely)
+- Fronty se dědí: GLOBAL → CLIENT → PROJECT (merge = PROJECT přepíše celou frontu)
+
 ### Soubory
 
+- `shared/common-dto/.../openrouter/OpenRouterSettingsDtos.kt` — nové DTO pro fronty (`ModelQueueDto`, `QueueModelEntry`)
+- `backend/server/.../entity/OpenRouterSettingsDocument.kt` — uložení front do MongoDB
+- `shared/ui-common/.../settings/sections/OpenRouterSettings.kt` — UI pro správu front
 - `backend/service-ollama-router/app/main.py` — `/queue-status` endpoint
 - `backend/service-orchestrator/app/llm/provider.py` — routing decision, timeout fallback
 - `backend/service-orchestrator/app/llm/openrouter_resolver.py` — NOVÝ: fetch model z settings
