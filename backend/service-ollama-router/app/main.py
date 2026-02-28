@@ -137,8 +137,13 @@ async def api_embed(request: Request):
 
 
 @app.post("/api/show")
+@app.post("/api/generate/api/show")
+@app.post("/api/chat/api/show")
 async def api_show(request: Request):
-    """Model info – try GPU backends first, then CPU."""
+    """Model info – try GPU backends first, then CPU.
+
+    Extra paths handle litellm appending /api/show relative to its base endpoint.
+    """
     body = await request.json()
     model = body.get("name", body.get("model", ""))
 
