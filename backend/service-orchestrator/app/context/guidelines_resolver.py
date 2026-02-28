@@ -89,6 +89,10 @@ def format_guidelines_for_prompt(guidelines: dict[str, Any]) -> str:
     if coding.get("namingConventions"):
         for lang, conv in coding["namingConventions"].items():
             coding_lines.append(f"- Naming ({lang}): {conv}")
+    if coding.get("principles"):
+        coding_lines.append("- **Coding principy:**")
+        for principle in coding["principles"]:
+            coding_lines.append(f"  - {principle}")
     if coding_lines:
         sections.append("### Coding pravidla\n" + "\n".join(coding_lines))
 
@@ -177,6 +181,13 @@ def format_guidelines_for_coding_agent(guidelines: dict[str, Any]) -> str:
         lines.append("## Naming Conventions")
         for lang, conv in coding["namingConventions"].items():
             lines.append(f"- {lang}: {conv}")
+        lines.append("")
+
+    if coding.get("principles"):
+        lines.append("## Coding Principles (MUST FOLLOW)")
+        lines.append("")
+        for principle in coding["principles"]:
+            lines.append(f"- {principle}")
         lines.append("")
 
     git = guidelines.get("git", {})

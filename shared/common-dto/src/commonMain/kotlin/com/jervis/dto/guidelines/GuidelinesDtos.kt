@@ -37,6 +37,7 @@ data class CodingGuidelinesDto(
     val maxFunctionLines: Int? = null,
     val namingConventions: Map<String, String> = emptyMap(),
     val languageSpecific: Map<String, LanguageRulesDto> = emptyMap(),
+    val principles: List<String> = emptyList(),
 )
 
 /**

@@ -71,9 +71,33 @@ data class GuidelinesDocument(
         fun defaultGlobal(): GuidelinesDocument = GuidelinesDocument(
             coding = CodingGuidelinesDto(
                 maxFileLines = 500,
+                maxFunctionLines = 30,
                 namingConventions = mapOf(
                     "kotlin" to "camelCase",
                     "python" to "snake_case",
+                ),
+                principles = listOf(
+                    "Idiomatic Kotlin — NEVER Java-style code in Kotlin. Use data classes, sealed classes, extension functions, scope functions (let, run, apply, also), destructuring, sequences.",
+                    "Prefer expression bodies over block bodies where the expression fits on one line.",
+                    "Prefer val over var. Prefer immutable collections (List, Map, Set) over mutable.",
+                    "Use Kotlin stdlib — filterNotNull, mapNotNull, groupBy, associate, partition, zip — instead of manual loops.",
+                    "SOLID: Single Responsibility — every class/function does ONE thing. Max 500 lines per file, max 30 lines per function.",
+                    "SOLID: Open/Closed — extend via interfaces/sealed classes, not by modifying existing code.",
+                    "SOLID: Liskov Substitution — subtypes must be substitutable for base types without surprises.",
+                    "SOLID: Interface Segregation — small, focused interfaces. No god-interfaces.",
+                    "SOLID: Dependency Inversion — depend on abstractions (interfaces), inject via constructor.",
+                    "IF-LESS programming — prefer polymorphism, sealed class + when (exhaustive), strategy pattern, map lookups over if/else chains.",
+                    "Replace boolean flags with sealed class/enum variants.",
+                    "Replace nested if/else with early returns (guard clauses) or when expressions.",
+                    "Never use if/else for type dispatch — use sealed class + when or visitor pattern.",
+                    "Self-descriptive code — NO inline comments inside function bodies. If code needs a comment, rename the variable/function to be self-explanatory.",
+                    "KDoc only on public API — classes, public functions, interfaces. Describe WHAT and WHY, never HOW.",
+                    "No TODO comments in committed code — create a task/issue instead.",
+                    "Functions: max 3 parameters. More → use data class as parameter object.",
+                    "No magic numbers/strings — use named constants or enums.",
+                    "Fail fast — validate at boundaries, throw early, never silently swallow errors.",
+                    "Prefer composition over inheritance.",
+                    "DRY but not premature — extract only when pattern repeats 3+ times.",
                 ),
             ),
             git = GitGuidelinesDto(
@@ -147,6 +171,7 @@ private fun mergeCoding(base: CodingGuidelinesDto, override: CodingGuidelinesDto
         maxFunctionLines = override.maxFunctionLines ?: base.maxFunctionLines,
         namingConventions = base.namingConventions + override.namingConventions,
         languageSpecific = base.languageSpecific + override.languageSpecific,
+        principles = base.principles + override.principles,
     )
 
 private fun mergeGit(base: GitGuidelinesDto, override: GitGuidelinesDto): GitGuidelinesDto =

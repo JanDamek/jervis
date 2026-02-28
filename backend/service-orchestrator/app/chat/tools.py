@@ -435,8 +435,11 @@ TOOL_UPDATE_GUIDELINE: dict = {
             "Aktualizuj pravidla pro daný scope a kategorii. "
             "Scope: GLOBAL, CLIENT, PROJECT. "
             "Kategorie: coding, git, review, communication, approval, general. "
-            "Příklad: 'pro projekt X chci conventional commits' → "
-            "update_guideline(scope=PROJECT, category=git, rules={commitMessageTemplate: '...'})"
+            "Pro coding kategorie: principles (list stringů = coding principy), "
+            "maxFileLines, maxFunctionLines, forbiddenPatterns, requiredPatterns, namingConventions. "
+            "Příklad: 'chci aby kód byl idiomatický Kotlin' → "
+            "update_guideline(scope=GLOBAL, category=coding, "
+            "rules={principles: ['Idiomatic Kotlin — NEVER Java-style code in Kotlin']})"
         ),
         "parameters": {
             "type": "object",

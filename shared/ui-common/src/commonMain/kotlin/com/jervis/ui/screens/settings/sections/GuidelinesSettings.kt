@@ -320,6 +320,16 @@ private fun CodingSection(coding: CodingGuidelinesDto, onUpdate: (CodingGuidelin
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
+            JTextField(
+                value = coding.principles.joinToString("\n"),
+                onValueChange = { text ->
+                    onUpdate(coding.copy(principles = text.lines().filter { it.isNotBlank() }.map { it.trim() }))
+                },
+                label = "Coding principy (jeden na řádek)",
+                placeholder = "Idiomatic Kotlin — never Java-style in Kotlin\nSOLID principles\nIF-LESS programming",
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
