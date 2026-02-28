@@ -199,6 +199,7 @@ fun NewEnvironmentDialog(
     var projects by remember { mutableStateOf<List<com.jervis.dto.ProjectDto>>(emptyList()) }
     var selectedProjectId by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -223,7 +224,21 @@ fun NewEnvironmentDialog(
         }
     }
 
-    val isValid = name.isNotBlank() && namespace.isNotBlank() && selectedClientId != null &&
+    val nsRegex = remember { Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?\$") }
+    val reservedNamespaces = remember { setOf("default", "kube-system", "kube-public", "kube-node-lease", "jervis", "monitoring", "logging") }
+    val reservedPrefixes = remember { listOf("kube-", "openshift-", "istio-") }
+
+    val namespaceError = when {
+        namespace.isBlank() -> null
+        namespace.length > 63 -> "Max 63 znaků"
+        !nsRegex.matches(namespace) -> "Jen malá písmena, čísla a pomlčky"
+        namespace in reservedNamespaces -> "Rezervovaný namespace"
+        reservedPrefixes.any { namespace.startsWith(it) } -> "Zakázaný prefix"
+        else -> null
+    }
+
+    val isValid = name.isNotBlank() && namespace.isNotBlank() && namespaceError == null &&
+        selectedClientId != null &&
         when (selectedScope) {
             EnvironmentScope.CLIENT -> true
             EnvironmentScope.GROUP -> selectedGroupId != null
@@ -249,7 +264,8 @@ fun NewEnvironmentDialog(
                         ),
                     )
                     onCreated()
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    saveError = e.message
                     isSaving = false
                 }
             }
@@ -258,10 +274,19 @@ fun NewEnvironmentDialog(
         confirmEnabled = isValid && !isSaving,
         confirmText = "Vytvořit",
     ) {
+        saveError?.let { errorMsg ->
+            Text(
+                errorMsg,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         JTextField(
             value = name,
             onValueChange = {
                 name = it
+                saveError = null
                 if (namespace.isBlank() || namespace == name.lowercase().replace(Regex("[^a-z0-9-]"), "-").dropLast(1)) {
                     namespace = it.lowercase().replace(Regex("[^a-z0-9-]"), "-")
                 }
@@ -275,6 +300,8 @@ fun NewEnvironmentDialog(
             onValueChange = { namespace = it },
             label = "K8s Namespace",
             singleLine = true,
+            isError = namespaceError != null,
+            errorMessage = namespaceError,
         )
         Spacer(Modifier.height(12.dp))
         JDropdown(

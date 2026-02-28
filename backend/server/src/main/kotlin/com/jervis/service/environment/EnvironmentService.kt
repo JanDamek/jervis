@@ -18,6 +18,28 @@ class EnvironmentService(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
+
+        private val NAMESPACE_REGEX = Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?\$")
+        private val RESERVED_NAMESPACES = setOf(
+            "default", "kube-system", "kube-public", "kube-node-lease",
+            "jervis", "monitoring", "logging",
+        )
+        private val RESERVED_PREFIXES = listOf("kube-", "openshift-", "istio-")
+
+        fun validateNamespace(namespace: String) {
+            require(namespace.length in 1..63) {
+                "Namespace musí mít 1-63 znaků (má ${namespace.length})"
+            }
+            require(NAMESPACE_REGEX.matches(namespace)) {
+                "Namespace smí obsahovat pouze malá písmena, čísla a pomlčky (a-z, 0-9, -)"
+            }
+            require(namespace !in RESERVED_NAMESPACES) {
+                "Namespace '$namespace' je rezervovaný systémový namespace"
+            }
+            require(RESERVED_PREFIXES.none { namespace.startsWith(it) }) {
+                "Namespace nesmí začínat na ${RESERVED_PREFIXES.joinToString(", ")}"
+            }
+        }
     }
 
     suspend fun getAllEnvironments(): List<EnvironmentDocument> =
@@ -35,6 +57,8 @@ class EnvironmentService(
         environmentRepository.getById(id)
 
     suspend fun saveEnvironment(env: EnvironmentDocument): EnvironmentDocument {
+        validateNamespace(env.namespace)
+
         val existing = getEnvironmentByIdOrNull(env.id)
         val isNew = existing == null
 

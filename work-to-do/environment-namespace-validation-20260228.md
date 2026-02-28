@@ -1,7 +1,7 @@
 # Environment — validace namespace před provisioningem
 
 **Priorita**: MEDIUM
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

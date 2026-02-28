@@ -63,6 +63,9 @@ class EnvironmentK8sService(
     suspend fun provisionEnvironment(environmentId: EnvironmentId): EnvironmentDocument {
         val env = environmentService.getEnvironmentById(environmentId)
 
+        // Pre-flight: validate namespace is safe to use
+        validateNamespaceAccess(env.namespace)
+
         logger.info { "Provisioning environment: ${env.name} (ns=${env.namespace})" }
         environmentService.updateState(environmentId, EnvironmentState.CREATING)
 
@@ -329,6 +332,35 @@ class EnvironmentK8sService(
         return KubernetesClientBuilder()
             .withConfig(config)
             .build()
+    }
+
+    /**
+     * Pre-flight validation: ensure a namespace is not an existing foreign namespace.
+     * If the namespace exists but is NOT managed by Jervis, provisioning would fail
+     * with 403 Forbidden when trying to create resources in it.
+     */
+    private fun validateNamespaceAccess(namespace: String) {
+        EnvironmentService.validateNamespace(namespace)
+        buildK8sClient().use { client ->
+            try {
+                val ns = client.namespaces().withName(namespace).get()
+                if (ns != null && ns.metadata?.labels?.get("managed-by") != "jervis-server") {
+                    throw IllegalStateException(
+                        "Namespace '$namespace' already exists and is not managed by Jervis. " +
+                            "Choose a different namespace name."
+                    )
+                }
+            } catch (e: KubernetesClientException) {
+                if (e.code == 403) {
+                    throw IllegalStateException(
+                        "Namespace '$namespace' exists but Jervis does not have access to it (403 Forbidden). " +
+                            "Choose a different namespace name.",
+                        e,
+                    )
+                }
+                throw e
+            }
+        }
     }
 
     /**
