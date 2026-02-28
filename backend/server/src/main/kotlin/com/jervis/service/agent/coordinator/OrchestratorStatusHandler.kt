@@ -298,6 +298,11 @@ class OrchestratorStatusHandler(
         // Save to task history for UI display
         saveTaskHistory(task, "error")
 
+        // Auto-stop environment on error (same as done — don't waste cluster resources)
+        // Python finalize is the primary stop mechanism; this is the safety net.
+        // If user needs the environment for debugging, they can re-provision via UI/chat.
+        autoStopEnvironment(task)
+
         // Emit idle queue status — orchestration errored out
         emitQueueIdle(task)
     }

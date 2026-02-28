@@ -1269,11 +1269,11 @@ stopped when it finishes. The user can override auto-stop via chat.
 4. User can say "nech prostředí běžet" → `environment_keep_running(enabled=true)` tool
 5. Sets `keep_environment_running = True` in LangGraph state
 
-**On task completion (dual safety-net):**
+**On task completion or error (dual safety-net):**
 
 6. **Python finalize node**: If `keep_environment_running` is false → calls `POST /internal/environments/{id}/stop`
 7. **Kotlin `OrchestratorStatusHandler.handleDone`**: If `keepEnvironmentRunning` is false → calls `deprovisionEnvironment()` (safety net)
-8. On task **error**: environment is NOT stopped (user may need to debug)
+8. **Kotlin `OrchestratorStatusHandler.handleError`**: Always calls `autoStopEnvironment()` — don't waste cluster resources on errored tasks; user can re-provision via UI/chat if debugging is needed
 
 ### Agent Environment Context
 
