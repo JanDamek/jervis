@@ -166,6 +166,11 @@ case "$AGENT_TYPE" in
         ;;
 esac
 
+# --- Auto-update Claude Code CLI from NAS cache (claude agent only) ---
+if [ "$AGENT_TYPE" = "claude" ] && [ -f /opt/jervis/update-claude-cli.sh ]; then
+    source /opt/jervis/update-claude-cli.sh
+fi
+
 echo "=== JERVIS AGENT START: $AGENT_TYPE / $TASK_ID ==="
 echo "Workspace: $WORKSPACE"
 echo "Allow git: $ALLOW_GIT"

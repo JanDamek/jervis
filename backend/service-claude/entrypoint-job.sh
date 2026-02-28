@@ -14,6 +14,11 @@ echo "[jervis-claude] Mode: $MODE"
 
 cd "$WORKSPACE_PATH"
 
+# --- Auto-update Claude Code CLI from NAS cache ---
+if [ -f /opt/jervis/update-claude-cli.sh ]; then
+    source /opt/jervis/update-claude-cli.sh
+fi
+
 # Verify auth (either CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)
 if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
     echo "[jervis-claude] ERROR: Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set"

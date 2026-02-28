@@ -65,8 +65,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends postgresql-client && \
     rm -rf /var/lib/apt/lists/*
 
-# === Claude Code CLI (globally via npm) ===
+# === Claude Code CLI (baked-in fallback — NAS-cached version takes precedence at runtime) ===
 RUN npm install -g @anthropic-ai/claude-code
+
+# === Auto-update script (sources NAS-cached CLI at Job startup) ===
+COPY backend/service-claude/update-claude-cli.sh /opt/jervis/update-claude-cli.sh
+RUN chmod +x /opt/jervis/update-claude-cli.sh
 
 # === Python venv for MCP servers ===
 ENV VIRTUAL_ENV=/opt/venv

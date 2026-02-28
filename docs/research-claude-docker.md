@@ -505,37 +505,111 @@ done
 
 ---
 
-## 7. Shrnutí akcí
+## 7. Auto-update Claude Code CLI z NAS/PVC cache
 
-### Okamžité (v rámci tohoto výzkumu)
+### 7.1 Problém
+
+Claude Code CLI (`@anthropic-ai/claude-code`) se aktualizuje i vícekrát denně.
+Baked-in verze v Docker image zastarává za hodiny. Rebuildit image pokaždé
+je zbytečný overhead.
+
+### 7.2 Řešení: NAS-cached npm prefix + entrypoint update
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Docker Image (stabilní, rebuild jen pro tool updates)│
+│  ┌───────────────────────────────────────────────┐  │
+│  │ Node.js 20 + system tools + baked-in CLI      │  │
+│  │ /opt/jervis/update-claude-cli.sh              │  │
+│  │ /opt/jervis/entrypoint-job.sh                 │  │
+│  └───────────────────────────────────────────────┘  │
+│                                                     │
+│  PVC Mount: /opt/jervis/data/                       │
+│  └── claude-cli/          ← NAS-cached CLI          │
+│      ├── bin/claude       ← latest binary           │
+│      ├── lib/node_modules/                          │
+│      ├── .installed-version                         │
+│      └── .update.lock     ← flock for concurrency   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Tok při startu K8s Job:**
+
+1. `entrypoint-job.sh` sourcuje `update-claude-cli.sh`
+2. Script kontroluje čas od posledního updatu (default interval: 1 hodina)
+3. Pokud je update potřeba → `flock` zamkne `.update.lock`
+4. `npm install -g @anthropic-ai/claude-code@latest` s `NPM_CONFIG_PREFIX=/opt/jervis/data/claude-cli`
+5. Zapíše verzi do `.installed-version`
+6. Odemkne lock → další joby skočí přes
+7. Prepend `PATH` s NAS bin → NAS verze má přednost před baked-in
+
+**Časové nároky:**
+- Už aktuální: **~2-5s** (npm kontrola registru)
+- Potřeba update: **~10-30s** (stažení + instalace)
+- Čekání na lock (jiný job updatuje): **max 120s** (timeout)
+
+### 7.3 Soubory
+
+| Soubor | Účel |
+|--------|------|
+| `backend/service-claude/update-claude-cli.sh` | Auto-update script s flock + NAS cache |
+| `backend/shared-entrypoints/entrypoint-job.sh` | Sourcuje update script pro `AGENT_TYPE=claude` |
+| `backend/service-claude/entrypoint-job.sh` | Standalone entrypoint, sourcuje update script |
+| `backend/service-claude/Dockerfile` | Kopíruje update script + keeps baked-in CLI as fallback |
+
+### 7.4 Konfigurace (env vars)
+
+| Proměnná | Default | Popis |
+|----------|---------|-------|
+| `CLAUDE_CLI_CACHE` | `/opt/jervis/data/claude-cli` | Cesta k NAS cache |
+| `CLAUDE_CLI_UPDATE_INTERVAL` | `3600` (1h) | Min. sekund mezi update checky |
+
+### 7.5 Fallback
+
+Pokud NAS/PVC není dostupný nebo `npm update` selže, agent automaticky
+použije baked-in verzi CLI z Docker image. Žádný hard fail.
+
+---
+
+## 8. Shrnutí akcí
+
+### Dokončeno
+
+| # | Akce | Stav |
+|---|------|------|
+| 1 | Auto-update Claude CLI z NAS/PVC cache (`update-claude-cli.sh`) | **Hotovo** |
+| 2 | Integrace do shared entrypoint + standalone entrypoint | **Hotovo** |
+| 3 | Dockerfile: kopíruje update script, keeps baked-in CLI as fallback | **Hotovo** |
+
+### Okamžité (další kroky)
 
 | # | Akce | Priorita |
 |---|------|----------|
-| 1 | Přepsat `service-claude/Dockerfile` na `FROM node:22-slim` + Claude CLI + Agent SDK (bez JRE) | Vysoká |
-| 2 | Přidat Python Agent SDK wrapper (`claude-agent-sdk`) jako alternativu k CLI | Vysoká |
-| 3 | Rozšířit `.gitignore` template v entrypointu | Střední |
-| 4 | Přidat `~/.claude/settings.json` injekci do workspace manageru | Střední |
+| 4 | Přepsat `service-claude/Dockerfile` na `FROM node:22-slim` (bez JRE) | Vysoká |
+| 5 | Přidat Python Agent SDK wrapper (`claude-agent-sdk`) jako alternativu k CLI | Vysoká |
+| 6 | Rozšířit `.gitignore` template v entrypointu | Střední |
+| 7 | Přidat `~/.claude/settings.json` injekci do workspace manageru | Střední |
 
 ### Střednědobé (nové features)
 
 | # | Akce | Priorita |
 |---|------|----------|
-| 5 | MCP Server Settings UI (nová sekce v Settings) | Vysoká |
-| 6 | MCP Settings DTOs + RPC + Repository | Vysoká |
-| 7 | Integrace MCP settings do workspace manageru | Vysoká |
-| 8 | MCP settings propagace do chat/orchestrátoru | Střední |
+| 8 | MCP Server Settings UI (nová sekce v Settings) | Vysoká |
+| 9 | MCP Settings DTOs + RPC + Repository | Vysoká |
+| 10 | Integrace MCP settings do workspace manageru | Vysoká |
+| 11 | MCP settings propagace do chat/orchestrátoru | Střední |
 
 ### Dlouhodobé (architektura)
 
 | # | Akce | Priorita |
 |---|------|----------|
-| 9 | Přechod z CLI invokace na Python Agent SDK v entrypointu | Střední |
-| 10 | Session resumption support pro long-running tasks | Nízká |
-| 11 | Sandbox runtime (`@anthropic-ai/sandbox-runtime`) evaluace | Nízká |
+| 12 | Přechod z CLI invokace na Python Agent SDK v entrypointu | Střední |
+| 13 | Session resumption support pro long-running tasks | Nízká |
+| 14 | Sandbox runtime (`@anthropic-ai/sandbox-runtime`) evaluace | Nízká |
 
 ---
 
-## 8. Zdroje
+## 9. Zdroje
 
 - [Claude Code DevContainer](https://code.claude.com/docs/en/devcontainer) – Oficiální dokumentace
 - [Claude Code Headless/Programmatic](https://code.claude.com/docs/en/headless) – `-p` flag, CLI options
