@@ -1,7 +1,7 @@
 # Environment — PVC musí být per prostředí, ne sdílený
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

@@ -132,7 +132,7 @@ fun OverviewTab(
         JSection(title = "Úložiště") {
             JKeyValueRow("Strategie", "Jeden PVC na prostředí")
             JKeyValueRow("Velikost", "${environment.storageSizeGi} Gi")
-            JKeyValueRow("Název PVC", "jervis-env-data")
+            JKeyValueRow("Název PVC", "env-data-${environment.namespace}")
 
             val componentsWithStorage = environment.components.filter {
                 it.type != ComponentTypeEnum.PROJECT && it.volumeMountPath != null

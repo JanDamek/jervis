@@ -51,8 +51,9 @@ class EnvironmentK8sService(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
-        /** Shared PVC name within each environment namespace */
-        private const val PVC_NAME = "jervis-env-data"
+
+        /** Generate a per-environment PVC name from the namespace. */
+        fun pvcName(namespace: String): String = "env-data-$namespace"
     }
 
     /**
@@ -380,17 +381,17 @@ class EnvironmentK8sService(
             // Check if PVC already exists (PVC size cannot be reduced)
             val existing = client.persistentVolumeClaims()
                 .inNamespace(namespace)
-                .withName(PVC_NAME)
+                .withName(pvcName(namespace))
                 .get()
 
             if (existing != null) {
-                logger.info { "K8s: PVC $PVC_NAME already exists in $namespace" }
+                logger.info { "K8s: PVC ${pvcName(namespace)} already exists in $namespace" }
                 return
             }
 
             val pvc = PersistentVolumeClaimBuilder()
                 .withNewMetadata()
-                    .withName(PVC_NAME)
+                    .withName(pvcName(namespace))
                     .withNamespace(namespace)
                     .addToLabels("app", "jervis")
                     .addToLabels("managed-by", "jervis-server")
@@ -408,7 +409,7 @@ class EnvironmentK8sService(
                 .resource(pvc)
                 .create()
 
-            logger.info { "K8s: Created PVC $PVC_NAME (${sizeGi}Gi) in $namespace" }
+            logger.info { "K8s: Created PVC ${pvcName(namespace)} (${sizeGi}Gi) in $namespace" }
         }
     }
 
@@ -416,9 +417,9 @@ class EnvironmentK8sService(
         buildK8sClient().use { client ->
             client.persistentVolumeClaims()
                 .inNamespace(namespace)
-                .withName(PVC_NAME)
+                .withName(pvcName(namespace))
                 .delete()
-            logger.info { "K8s: Deleted PVC $PVC_NAME from $namespace" }
+            logger.info { "K8s: Deleted PVC ${pvcName(namespace)} from $namespace" }
         }
     }
 
@@ -517,7 +518,7 @@ class EnvironmentK8sService(
             if (volumeMountPath != null) {
                 volumeMounts.add(
                     VolumeMountBuilder()
-                        .withName(PVC_NAME)
+                        .withName(pvcName(namespace))
                         .withMountPath(volumeMountPath)
                         .withSubPath(name) // subPath isolates each component's data on the shared PVC
                         .build()
@@ -529,9 +530,9 @@ class EnvironmentK8sService(
             if (volumeMountPath != null) {
                 volumes.add(
                     VolumeBuilder()
-                        .withName(PVC_NAME)
+                        .withName(pvcName(namespace))
                         .withNewPersistentVolumeClaim()
-                            .withClaimName(PVC_NAME)
+                            .withClaimName(pvcName(namespace))
                         .endPersistentVolumeClaim()
                         .build()
                 )
