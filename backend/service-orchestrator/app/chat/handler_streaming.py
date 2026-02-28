@@ -16,7 +16,8 @@ from bson import ObjectId
 from app.chat.context import chat_context_assembler
 from app.chat.models import ChatStreamEvent
 from app.config import settings, foreground_headers
-from app.llm.provider import llm_provider
+from app.llm.provider import llm_provider, TokenTimeoutError
+from app.llm.openrouter_resolver import Route, select_route, resolve_openrouter_model
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -32,23 +33,51 @@ async def call_llm(
     max_tokens: int = settings.default_output_tokens,
     temperature: float = 0.1,
     timeout: float | None = None,
+    route: Route | None = None,
 ):
-    """Unified LLM completion call with optional timeout.
+    """Unified LLM completion call with optional timeout and route override.
 
-    All foreground chat LLM calls go through here — ensures consistent
-    parameters and priority headers.
+    If a route is provided (from select_route()), uses OpenRouter when
+    route.target == "openrouter". Falls back to local tier otherwise.
+
+    Implements timeout fallback: if local GPU times out and client has
+    OpenRouter enabled, retries on OpenRouter automatically.
     """
+    # Use route to determine actual tier and model
+    effective_tier = tier
+    extra_headers = foreground_headers("FOREGROUND")
+
+    if route and route.target == "openrouter" and route.model:
+        effective_tier = ModelTier.CLOUD_OPENROUTER
+        extra_headers = {**extra_headers, "X-Route-Model": route.model}
+
     coro = llm_provider.completion(
         messages=messages,
-        tier=tier,
+        tier=effective_tier,
         tools=tools,
         max_tokens=max_tokens,
         temperature=temperature,
-        extra_headers=foreground_headers("FOREGROUND"),
+        extra_headers=extra_headers,
     )
-    if timeout:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    return await coro
+    try:
+        if timeout:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        return await coro
+    except (TokenTimeoutError, asyncio.TimeoutError):
+        # Timeout fallback: if local GPU timed out and OpenRouter is available, retry there
+        if route and route.target == "local":
+            fallback_model = await resolve_openrouter_model("chat")
+            if fallback_model:
+                logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback_model)
+                return await llm_provider.completion(
+                    messages=messages,
+                    tier=ModelTier.CLOUD_OPENROUTER,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    extra_headers={**foreground_headers("FOREGROUND"), "X-Route-Model": fallback_model},
+                )
+        raise
 
 
 async def stream_text(text: str):

@@ -28,6 +28,7 @@ from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
 from app.graph.nodes._helpers import detect_tool_loop
 from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy, clamp_tier
+from app.llm.openrouter_resolver import select_route
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
@@ -220,13 +221,29 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 tier = tracker.current_tier
                 tier_config = TIER_CONFIG.get(tier, {})
 
+        # Hybrid routing: for NORMAL priority, prefer free tier when GPU busy
+        has_openrouter = rules.auto_use_openrouter if rules else False
+        bg_route = await select_route(
+            estimated_tokens=estimated_tokens,
+            priority="NORMAL",
+            has_openrouter=has_openrouter,
+            use_case="orchestrator",
+        )
+        effective_tier = tier
+        extra_headers = None
+        if bg_route.target == "openrouter" and bg_route.model:
+            effective_tier = ModelTier.CLOUD_OPENROUTER
+            extra_headers = {"X-Route-Model": bg_route.model}
+            logger.info("Background: routing to OpenRouter %s", bg_route.model)
+
         try:
             response = await llm_provider.completion(
                 messages=messages,
-                tier=tier,
+                tier=effective_tier,
                 max_tokens=settings.default_output_tokens,
                 temperature=0.2,
                 tools=ALL_BACKGROUND_TOOLS,
+                extra_headers=extra_headers,
             )
         except Exception as e:
             err_msg = str(e).lower()

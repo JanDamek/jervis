@@ -1,7 +1,7 @@
 # GPU + OpenRouter — strategie routování LLM requestů
 
 **Priorita**: CRITICAL
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

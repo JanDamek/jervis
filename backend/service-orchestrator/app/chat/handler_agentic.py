@@ -21,6 +21,7 @@ from app.chat.handler_fact_check import run_fact_check, fact_check_metadata, con
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
+from app.llm.openrouter_resolver import select_route
 from app.chat.handler_tools import (
     extract_tool_calls,
     describe_tool_call,
@@ -114,12 +115,22 @@ async def run_agentic_loop(
         logger.info("Chat: iteration %d/%d", iteration + 1, effective_max_iterations)
 
         estimated, tier = estimate_and_select_tier(messages, selected_tools)
-        logger.info("Chat: estimated_tokens=%d → tier=%s", estimated, tier.value)
 
-        if iteration == 0 and estimated > settings.gpu_vram_token_boundary:
+        # Hybrid routing: check GPU availability + OpenRouter policy
+        has_openrouter = getattr(request, "auto_use_openrouter", False)
+        route = await select_route(
+            estimated_tokens=estimated,
+            priority="CRITICAL",
+            has_openrouter=has_openrouter,
+            use_case="chat",
+        )
+        logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s",
+                     estimated, tier.value, route.target, route.model or tier.value)
+
+        if iteration == 0 and estimated > settings.gpu_vram_token_boundary and route.target == "local":
             yield ChatStreamEvent(type="thinking", content="Dlouhá zpráva — zpracování potrvá déle...")
 
-        response = await call_llm(messages=messages, tier=tier, tools=selected_tools)
+        response = await call_llm(messages=messages, tier=tier, tools=selected_tools, route=route)
 
         choice = response.choices[0]
         tool_calls, remaining_text = extract_tool_calls(choice.message)

@@ -99,6 +99,10 @@ data class OpenRouterModelEntryDto(
 
     /** Maximum tokens to request per call (0 = model default) */
     val maxOutputTokens: Int = 0,
+
+    /** Whether this is a free-tier model (e.g. ":free" suffix on OpenRouter).
+     * Free models are preferred for background tasks to avoid costs. */
+    val free: Boolean = false,
 )
 
 /**

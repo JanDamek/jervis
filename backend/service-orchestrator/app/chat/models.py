@@ -28,6 +28,9 @@ class ChatRequest(BaseModel):
     # Timestamp
     timestamp: str | None = None
 
+    # Cloud routing policy (from CloudModelPolicy)
+    auto_use_openrouter: bool = False
+
 
 class ChatStreamEvent(BaseModel):
     """SSE event pushed back to Kotlin -> UI."""

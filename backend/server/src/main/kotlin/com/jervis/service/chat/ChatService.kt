@@ -66,6 +66,7 @@ class ChatService(
         activeClientId: String? = null,
         activeProjectId: String? = null,
         contextTaskId: String? = null,
+        autoUseOpenrouter: Boolean = false,
     ): Flow<ChatStreamEvent> {
         require(text.isNotBlank()) { "Message text cannot be blank" }
 
@@ -119,6 +120,7 @@ class ChatService(
             activeClientId = activeClientId,
             activeProjectId = activeProjectId,
             contextTaskId = contextTaskId,
+            autoUseOpenrouter = autoUseOpenrouter,
         )
     }
 

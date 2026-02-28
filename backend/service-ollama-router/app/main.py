@@ -402,6 +402,20 @@ async def router_status():
     )
 
 
+@app.get("/queue-status")
+async def queue_status():
+    """Minimal queue status for orchestrator routing decisions."""
+    qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
+    gpu_free = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() == 0]
+    gpu_busy = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() > 0]
+    return {
+        "critical_queue": qdepth.get("critical", 0),
+        "normal_queue": qdepth.get("normal", 0),
+        "gpu_free": gpu_free,
+        "gpu_busy": gpu_busy,
+    }
+
+
 @app.get("/router/metrics")
 async def router_metrics():
     """Prometheus metrics endpoint."""

@@ -6,10 +6,13 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.ChatRole
 import com.jervis.entity.MessageRole
+import com.jervis.common.types.ProjectId
+import com.jervis.repository.ProjectRepository
 import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
+import org.bson.types.ObjectId
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +35,7 @@ import org.springframework.stereotype.Component
 class ChatRpcImpl(
     private val chatService: ChatService,
     private val backgroundEngine: BackgroundEngine,
+    private val projectRepository: ProjectRepository,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -133,12 +137,21 @@ class ChatRpcImpl(
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
             try {
+                // Resolve CloudModelPolicy for the project
+                val autoUseOpenrouter = try {
+                    activeProjectId?.let { pid ->
+                        projectRepository.getById(ProjectId(ObjectId(pid)))
+                            ?.cloudModelPolicy?.autoUseOpenrouter
+                    } ?: false
+                } catch (_: Exception) { false }
+
                 val eventFlow = chatService.sendMessage(
                     text = text,
                     clientMessageId = clientMessageId,
                     activeClientId = activeClientId,
                     activeProjectId = activeProjectId,
                     contextTaskId = contextTaskId,
+                    autoUseOpenrouter = autoUseOpenrouter,
                 )
 
                 // Generate unique messageId for this response — used by UI to accumulate tokens
