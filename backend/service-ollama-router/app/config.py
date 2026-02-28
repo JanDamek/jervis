@@ -43,7 +43,8 @@ class Settings(BaseSettings):
     proxy_write_timeout_s: float = 30.0
 
     # ── Model keep_alive ────────────────────────────────────────────────
-    default_keep_alive: str = "10m"  # Must match Ollama server's OLLAMA_KEEP_ALIVE
+    # "-1" = never auto-unload. Router explicitly manages model lifecycle.
+    default_keep_alive: str = "-1"
 
     # ── Request limits ──────────────────────────────────────────────────
     max_request_timeout_s: int = 300     # 5 min per request (cancel + REQUEST_OUT if exceeded)
@@ -53,6 +54,12 @@ class Settings(BaseSettings):
     # ── Preemption ──────────────────────────────────────────────────────
     preempt_embeddings: bool = False     # let short embedding requests finish
     preempt_grace_s: float = 2.0        # grace before killing streaming
+
+    # ── GPU idle notification ────────────────────────────────────────────
+    # After this many seconds of no GPU requests, router notifies Kotlin server
+    # to trigger proactive analytical tasks (vulnerability scan, code quality, etc.)
+    gpu_idle_notify_after_s: int = 300   # 5 minutes
+    kotlin_server_url: str = "http://jervis-server:8080"
 
     def parsed_gpu_backends(self) -> list[GpuBackendConfig]:
         raw = json.loads(self.gpu_backends)

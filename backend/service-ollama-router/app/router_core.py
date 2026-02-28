@@ -54,6 +54,11 @@ class OllamaRouter:
         self._watchdog_task: asyncio.Task | None = None
         self._request_timeout_task: asyncio.Task | None = None
         self._gpu_recovery_task: asyncio.Task | None = None
+        self._idle_notify_task: asyncio.Task | None = None
+
+        # GPU idle notification state
+        self._last_any_gpu_activity: float = time.monotonic()
+        self._idle_notified: bool = False  # True after idle notification sent; reset on activity
 
     async def startup(self) -> None:
         """Initialize router state on startup."""
@@ -69,6 +74,7 @@ class OllamaRouter:
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
         self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
+        self._idle_notify_task = asyncio.create_task(self._idle_notify_watchdog())
         # Start GPU recovery only if any backend failed initial sync
         if any(not b.healthy for b in self.gpu_pool.all_backends):
             self._start_gpu_recovery()
@@ -84,6 +90,8 @@ class OllamaRouter:
             self._request_timeout_task.cancel()
         if self._gpu_recovery_task:
             self._gpu_recovery_task.cancel()
+        if self._idle_notify_task:
+            self._idle_notify_task.cancel()
         for task in self._bg_load_tasks.values():
             if not task.done():
                 task.cancel()
@@ -137,6 +145,10 @@ class OllamaRouter:
             api_path=api_path,
             body=body,
         )
+
+        # Track GPU activity for idle notification
+        self._last_any_gpu_activity = time.monotonic()
+        self._idle_notified = False
 
         # ── Entry logging ──
         num_ctx = body.get("options", {}).get("num_ctx") if isinstance(body.get("options"), dict) else None
@@ -385,6 +397,58 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Request timeout watchdog error: %s", e)
+
+    async def _idle_notify_watchdog(self) -> None:
+        """Notify Kotlin server when GPU has been idle for gpu_idle_notify_after_s.
+
+        Runs every 30s. When all GPUs have had no requests for the configured
+        idle threshold (default 5 min), sends a POST to Kotlin server's
+        /internal/gpu-idle endpoint. This triggers the BackgroundEngine to
+        immediately run analytical/proactive tasks instead of waiting for
+        the normal 30-min idle review interval.
+
+        Notification is sent once per idle period — reset when new activity arrives.
+        """
+        idle_limit = settings.gpu_idle_notify_after_s
+        logger.info("Idle notify watchdog started (check every 30s, idle limit=%ds)", idle_limit)
+        while True:
+            try:
+                await asyncio.sleep(30)
+
+                # Check if any GPU has active requests
+                total_active = sum(b.active_request_count() for b in self.gpu_pool.all_backends)
+                if total_active > 0:
+                    # GPUs are busy — skip
+                    continue
+
+                idle_s = time.monotonic() - self._last_any_gpu_activity
+                if idle_s < idle_limit:
+                    continue
+
+                if self._idle_notified:
+                    # Already notified for this idle period
+                    continue
+
+                # GPU idle for >= threshold — notify Kotlin server
+                self._idle_notified = True
+                logger.info("GPU_IDLE: no requests for %ds (limit=%ds), notifying Kotlin server", int(idle_s), idle_limit)
+                try:
+                    async with httpx.AsyncClient(timeout=10) as http:
+                        resp = await http.post(
+                            f"{settings.kotlin_server_url}/internal/gpu-idle",
+                            json={"idle_seconds": int(idle_s)},
+                        )
+                        if resp.status_code == 200:
+                            logger.info("GPU_IDLE: Kotlin server notified successfully")
+                        else:
+                            logger.warning("GPU_IDLE: Kotlin server returned %d", resp.status_code)
+                except Exception as e:
+                    logger.warning("GPU_IDLE: Failed to notify Kotlin server: %s", e)
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error("Idle notify watchdog error: %s", e)
 
     async def _check_cpu_health(self) -> None:
         try:

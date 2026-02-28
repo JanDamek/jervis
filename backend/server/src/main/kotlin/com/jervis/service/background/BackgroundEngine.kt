@@ -240,6 +240,101 @@ class BackgroundEngine(
     }
 
     /**
+     * Called by the Ollama Router when all GPUs have been idle for >= gpu_idle_notify_after_s
+     * (default 5 min). Immediately creates an idle analytical task if the system is truly idle,
+     * without waiting for the normal 30-min idle review interval.
+     *
+     * This makes proactive scanning (vulnerability, code quality, etc.) start as soon as
+     * the GPU is available, maximizing utilization.
+     */
+    fun onGpuIdle() {
+        if (!backgroundProperties.idleReviewEnabled) {
+            logger.debug { "GPU_IDLE_NOTIFY: Idle review disabled, ignoring" }
+            return
+        }
+        scope.launch {
+            try {
+                // Check if there are active tasks (system might be busy with CPU-only work)
+                val activeStates = listOf(
+                    TaskStateEnum.QUALIFYING,
+                    TaskStateEnum.READY_FOR_GPU,
+                    TaskStateEnum.PYTHON_ORCHESTRATING,
+                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                )
+                val totalActive = activeStates.sumOf { state ->
+                    taskRepository.countByState(state)
+                }
+                if (totalActive > 0) {
+                    logger.debug { "GPU_IDLE_NOTIFY: System has $totalActive active tasks, skipping" }
+                    return@launch
+                }
+
+                // Check if there's already a pending/running IDLE_REVIEW task
+                val existingIdleReview = taskRepository.findFirstByTypeAndStateIn(
+                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+                    states = listOf(
+                        TaskStateEnum.NEW,
+                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.QUALIFYING,
+                        TaskStateEnum.READY_FOR_GPU,
+                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                    ),
+                )
+                if (existingIdleReview != null) {
+                    logger.debug { "GPU_IDLE_NOTIFY: Idle task already exists (${existingIdleReview.id}), skipping" }
+                    return@launch
+                }
+
+                // Find a client to associate the task with
+                val defaultClientId = try {
+                    val projects = projectRepository.findAll().toList()
+                    val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
+                        ?: projects.firstOrNull()
+                    jervisProject?.clientId
+                } catch (_: Exception) { null }
+
+                if (defaultClientId == null) {
+                    logger.debug { "GPU_IDLE_NOTIFY: No client found, skipping" }
+                    return@launch
+                }
+
+                // Consult IdleTaskRegistry for the next eligible task
+                val lastRunTimes = buildLastRunTimes()
+                val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
+                if (nextTask == null) {
+                    logger.debug { "GPU_IDLE_NOTIFY: All idle tasks ran recently, nothing to do" }
+                    return@launch
+                }
+
+                // Brain-dependent tasks need brain configured
+                if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
+                    logger.debug { "GPU_IDLE_NOTIFY: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
+                    return@launch
+                }
+
+                val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
+                val prompt = buildIdleTaskPrompt(nextTask.type)
+
+                val idleTask = TaskDocument(
+                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+                    taskName = taskName,
+                    content = prompt,
+                    clientId = defaultClientId,
+                    state = TaskStateEnum.READY_FOR_GPU,
+                    processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
+                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
+                )
+                taskRepository.save(idleTask)
+                taskNotifier.notifyNewTask()
+
+                logger.info { "GPU_IDLE_NOTIFY: Created ${nextTask.type} task ${idleTask.id} (triggered by router)" }
+            } catch (e: Exception) {
+                logger.error(e) { "GPU_IDLE_NOTIFY: Error creating idle task" }
+            }
+        }
+    }
+
+    /**
      * Qualification loop - continuously operates on the CPU, unaffected by the GPU's status.
      It handles the entire sequence of tasks requiring qualification by employing a concurrency limit.
      The process is straightforward: load the task sequence, process all tasks with semaphore, pause for 30 seconds if no tasks are pending, and then restart.

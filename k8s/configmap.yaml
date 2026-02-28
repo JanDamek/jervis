@@ -233,7 +233,9 @@ data:
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"
   MODEL_LOAD_TIMEOUT_S: "120"
   BACKGROUND_LOAD_DELAY_S: "5"
-  DEFAULT_KEEP_ALIVE: "10m"
+  DEFAULT_KEEP_ALIVE: "-1"
+  GPU_IDLE_NOTIFY_AFTER_S: "300"
+  KOTLIN_SERVER_URL: "http://jervis-server:5500"
 
 ---
 # =============================================================================

@@ -22,21 +22,23 @@ class Priority(IntEnum):
 
 # ── Model sets ──────────────────────────────────────────────────────────
 
+# keep_alive="-1" → Ollama keeps models in VRAM indefinitely.
+# Router manages what's loaded/unloaded explicitly — no Ollama auto-eviction.
 MODEL_SETS: dict[str, dict] = {
     "orchestrator": {
         "models": ["qwen3-coder-tool:30b"],
         "vram_gb": 20.0,
-        "keep_alive": "30m",
+        "keep_alive": "-1",
     },
     "background": {
         "models": ["qwen2.5:7b", "qwen2.5:14b", "qwen3-embedding:8b"],
         "vram_gb": 20.0,
-        "keep_alive": "10m",
+        "keep_alive": "-1",
     },
     "vlm": {
         "models": ["qwen3-vl:latest"],
         "vram_gb": 12.0,
-        "keep_alive": "5m",
+        "keep_alive": "-1",
     },
 }
 
