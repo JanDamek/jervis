@@ -19,10 +19,11 @@ data class ChatMessage(
 
     @Serializable
     enum class MessageType {
-        USER_MESSAGE, // User's message (for synchronization across clients)
-        PROGRESS,     // Intermediate progress update
-        FINAL,        // Final answer
-        ERROR,        // Error message (displayed with red styling)
+        USER_MESSAGE,       // User's message (for synchronization across clients)
+        PROGRESS,           // Intermediate progress update
+        FINAL,              // Final answer
+        ERROR,              // Error message (displayed with red styling)
+        APPROVAL_REQUEST,   // Approval dialog (approve/deny/always)
     }
 
     @Serializable

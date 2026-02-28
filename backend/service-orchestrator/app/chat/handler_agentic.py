@@ -36,8 +36,26 @@ from app.chat.tools import TOOL_DOMAINS
 from app.config import settings, estimate_tokens
 from app.llm.provider import clamp_tier, llm_provider
 from app.models import ModelTier
+from app.tools.executor import ApprovalRequiredInterrupt
 
 logger = logging.getLogger(__name__)
+
+# Pending approval futures: session_id → asyncio.Future
+_pending_approvals: dict[str, asyncio.Future] = {}
+# Session-level auto-approved actions (from "approve always"): session_id → set of action names
+_session_auto_approvals: dict[str, set[str]] = {}
+
+
+def resolve_pending_approval(session_id: str, approved: bool, always: bool = False, action: str | None = None):
+    """Called from /chat/approve endpoint to resolve a pending approval."""
+    future = _pending_approvals.get(session_id)
+    if future and not future.done():
+        if always and action:
+            auto = _session_auto_approvals.setdefault(session_id, set())
+            auto.add(action)
+        future.set_result({"approved": approved, "always": always})
+    else:
+        logger.warning("No pending approval for session %s", session_id)
 
 
 def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[int, ModelTier]:
@@ -292,10 +310,61 @@ async def run_agentic_loop(
                         },
                     )
             else:
-                result = await execute_chat_tool(
-                    tool_name, arguments,
-                    effective_client_id, effective_project_id,
-                )
+                try:
+                    result = await execute_chat_tool(
+                        tool_name, arguments,
+                        effective_client_id, effective_project_id,
+                    )
+                except ApprovalRequiredInterrupt as approval_exc:
+                    # Check session-level auto-approvals first
+                    auto_approved_actions = _session_auto_approvals.get(request.session_id, set())
+                    if approval_exc.action in auto_approved_actions:
+                        logger.info("Chat: auto-approved %s (session rule)", approval_exc.action)
+                        result = await execute_chat_tool(
+                            tool_name, arguments,
+                            effective_client_id, effective_project_id,
+                        )
+                    else:
+                        # Emit approval request and wait for user response
+                        logger.info("Chat: approval required for %s, waiting for user", approval_exc.action)
+                        yield ChatStreamEvent(
+                            type="approval_request",
+                            content=approval_exc.preview,
+                            metadata={
+                                "action": approval_exc.action,
+                                "tool": tool_name,
+                                "args": str(arguments)[:500],
+                            },
+                        )
+
+                        # Create future and wait for /chat/approve response
+                        loop = asyncio.get_event_loop()
+                        future = loop.create_future()
+                        _pending_approvals[request.session_id] = future
+                        try:
+                            approval_result = await asyncio.wait_for(future, timeout=300)
+                        except asyncio.TimeoutError:
+                            approval_result = {"approved": False}
+                            logger.warning("Chat: approval timed out for %s", approval_exc.action)
+                        finally:
+                            _pending_approvals.pop(request.session_id, None)
+
+                        if approval_result.get("approved"):
+                            logger.info("Chat: user approved %s (always=%s)", approval_exc.action, approval_result.get("always"))
+                            # Re-execute with approval bypass
+                            from app.tools.executor import execute_tool
+                            result = await execute_tool(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                client_id=effective_client_id or "",
+                                project_id=effective_project_id,
+                                processing_mode="FOREGROUND",
+                                skip_approval=True,
+                            )
+                        else:
+                            result = f"Akce {tool_name} byla zamítnuta uživatelem."
+                            logger.info("Chat: user denied %s", approval_exc.action)
+
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result[:100]}")
 

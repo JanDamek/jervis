@@ -183,6 +183,25 @@ class ChatService(
     fun getArchivedSessions(userId: String = "jan"): Flow<ChatSessionDocument> {
         return chatSessionRepository.findByUserIdAndArchivedOrderByLastMessageAtDesc(userId, true)
     }
+
+    /**
+     * Approve or deny a pending chat tool action.
+     * Forwards to Python /chat/approve endpoint.
+     */
+    suspend fun approveChatAction(
+        userId: String = "jan",
+        approved: Boolean,
+        always: Boolean = false,
+        action: String? = null,
+    ) {
+        val session = getOrCreateActiveSession(userId)
+        pythonChatClient.approveAction(
+            sessionId = session.id.toString(),
+            approved = approved,
+            always = always,
+            action = action,
+        )
+    }
 }
 
 /**

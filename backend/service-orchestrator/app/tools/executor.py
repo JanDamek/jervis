@@ -127,6 +127,7 @@ async def execute_tool(
     client_id: str,
     project_id: str | None,
     processing_mode: str = "FOREGROUND",
+    skip_approval: bool = False,
 ) -> str:
     """Execute a tool call and return the result as a string.
 
@@ -135,6 +136,7 @@ async def execute_tool(
         arguments: Parsed JSON arguments from the LLM's tool_call.
         client_id: Tenant client ID for KB scoping.
         project_id: Tenant project ID for KB scoping.
+        skip_approval: If True, skip approval gate (already approved by user).
 
     Returns:
         Formatted result string (never raises).
@@ -154,8 +156,9 @@ async def execute_tool(
         raise AskUserInterrupt(question)
 
     # EPIC 4/5: Check approval gate for write tools.
-    # Raises ApprovalRequiredInterrupt if approval needed (caught by respond node).
-    await _check_approval_gate(tool_name, arguments, client_id, project_id)
+    # Raises ApprovalRequiredInterrupt if approval needed (caught by respond node / chat handler).
+    if not skip_approval:
+        await _check_approval_gate(tool_name, arguments, client_id, project_id)
 
     try:
         result = None

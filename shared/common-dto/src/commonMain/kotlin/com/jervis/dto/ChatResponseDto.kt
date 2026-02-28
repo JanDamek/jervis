@@ -29,4 +29,5 @@ enum class ChatResponseType {
     QUEUE_STATUS,
     STREAMING_TOKEN,
     SCOPE_CHANGE,
+    APPROVAL_REQUEST,
 }

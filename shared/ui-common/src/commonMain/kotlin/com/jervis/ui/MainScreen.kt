@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
 import com.jervis.ui.model.PendingMessageInfo
@@ -59,6 +62,10 @@ fun MainScreenView(
     pendingMessageInfo: PendingMessageInfo? = null,
     onRetryPending: () -> Unit = {},
     onCancelPending: () -> Unit = {},
+    approvalRequest: ChatViewModel.ApprovalRequest? = null,
+    onApproveOnce: () -> Unit = {},
+    onApproveAlways: () -> Unit = {},
+    onDenyAction: () -> Unit = {},
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
@@ -109,6 +116,10 @@ fun MainScreenView(
                             pendingMessageInfo = pendingMessageInfo,
                             onRetryPending = onRetryPending,
                             onCancelPending = onCancelPending,
+                            approvalRequest = approvalRequest,
+                            onApproveOnce = onApproveOnce,
+                            onApproveAlways = onApproveAlways,
+                            onDenyAction = onDenyAction,
                             workspaceInfo = workspaceInfo,
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
@@ -144,6 +155,10 @@ fun MainScreenView(
                     pendingMessageInfo = pendingMessageInfo,
                     onRetryPending = onRetryPending,
                     onCancelPending = onCancelPending,
+                    approvalRequest = approvalRequest,
+                    onApproveOnce = onApproveOnce,
+                    onApproveAlways = onApproveAlways,
+                    onDenyAction = onDenyAction,
                     workspaceInfo = workspaceInfo,
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
@@ -181,6 +196,10 @@ private fun ChatContent(
     pendingMessageInfo: PendingMessageInfo? = null,
     onRetryPending: () -> Unit = {},
     onCancelPending: () -> Unit = {},
+    approvalRequest: ChatViewModel.ApprovalRequest? = null,
+    onApproveOnce: () -> Unit = {},
+    onApproveAlways: () -> Unit = {},
+    onDenyAction: () -> Unit = {},
     workspaceInfo: MainViewModel.WorkspaceInfo? = null,
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
@@ -221,6 +240,16 @@ private fun ChatContent(
                 info = pendingMessageInfo,
                 onRetry = onRetryPending,
                 onCancel = onCancelPending,
+            )
+        }
+
+        // Approval request banner — shown when chat tool needs user approval
+        if (approvalRequest != null) {
+            ApprovalBanner(
+                request = approvalRequest,
+                onApproveOnce = onApproveOnce,
+                onApproveAlways = onApproveAlways,
+                onDeny = onDenyAction,
             )
         }
 
@@ -384,6 +413,59 @@ private fun OrchestratorHealthBanner(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
+        }
+    }
+}
+
+/**
+ * Banner shown when a chat tool action needs user approval.
+ * Three options: approve once, approve always (for this session), deny.
+ */
+@Composable
+private fun ApprovalBanner(
+    request: ChatViewModel.ApprovalRequest,
+    onApproveOnce: () -> Unit,
+    onApproveAlways: () -> Unit,
+    onDeny: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Akce vyžaduje schválení",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = "${request.tool}: ${request.preview.take(80)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    maxLines = 2,
+                )
+            }
+            TextButton(onClick = onApproveOnce) { Text("Povolit") }
+            TextButton(onClick = onApproveAlways) { Text("Vždy") }
+            TextButton(onClick = onDeny) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Zamítnout",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

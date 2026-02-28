@@ -186,6 +186,16 @@ class ChatRpcImpl(
                                 ),
                             )
                         }
+                        "approval_request" -> {
+                            chatEventStream.emit(
+                                ChatResponseDto(
+                                    message = event.content,
+                                    type = ChatResponseType.APPROVAL_REQUEST,
+                                    messageId = responseMessageId,
+                                    metadata = metadata,
+                                ),
+                            )
+                        }
                         // tool_call/tool_result — raw data, not useful for UI progress.
                         // Only "thinking" events provide user-friendly Czech descriptions.
                         "tool_call", "tool_result" -> {
@@ -251,6 +261,11 @@ class ChatRpcImpl(
     override suspend fun archiveSession() {
         chatService.archiveCurrentSession()
         logger.info { "CHAT_SESSION_ARCHIVED" }
+    }
+
+    override suspend fun approveChatAction(approved: Boolean, always: Boolean, action: String?) {
+        logger.info { "CHAT_APPROVE | approved=$approved | always=$always | action=$action" }
+        chatService.approveChatAction(approved = approved, always = always, action = action)
     }
 
     private fun mapStreamEventToResponse(event: ChatStreamEvent): Pair<ChatResponseType, Map<String, String>> {

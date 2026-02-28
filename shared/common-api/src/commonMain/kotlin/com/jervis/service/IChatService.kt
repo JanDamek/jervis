@@ -56,4 +56,14 @@ interface IChatService {
      * Archive current session (starts fresh on next message).
      */
     suspend fun archiveSession()
+
+    /**
+     * Approve or deny a pending chat tool action.
+     * Called when user clicks Approve/Deny in the approval dialog.
+     *
+     * @param approved True if user approved, false if denied
+     * @param always True if "approve always" for this action type in this session
+     * @param action The approval action type (e.g. "KB_DELETE")
+     */
+    suspend fun approveChatAction(approved: Boolean, always: Boolean = false, action: String? = null)
 }

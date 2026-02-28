@@ -56,6 +56,40 @@ async def chat(request: ChatRequest):
 
 
 # ---------------------------------------------------------------------------
+# Chat approval endpoint
+# ---------------------------------------------------------------------------
+
+
+class ChatApproveRequest(BaseModel):
+    session_id: str
+    approved: bool = False
+    always: bool = False
+    action: str | None = None
+
+
+@router.post("/chat/approve")
+async def approve_chat_action(request: ChatApproveRequest):
+    """Approve or deny a pending chat tool action.
+
+    Called by Kotlin when user clicks Approve/Deny in the approval dialog.
+    Resolves the asyncio.Future in the agentic loop, unblocking tool execution.
+    """
+    from app.chat.handler_agentic import resolve_pending_approval
+
+    logger.info(
+        "CHAT_APPROVE | session=%s | approved=%s | always=%s | action=%s",
+        request.session_id, request.approved, request.always, request.action,
+    )
+    resolve_pending_approval(
+        session_id=request.session_id,
+        approved=request.approved,
+        always=request.always,
+        action=request.action,
+    )
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # Background v2 endpoint
 # ---------------------------------------------------------------------------
 

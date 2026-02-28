@@ -27,6 +27,7 @@ fun MainScreen(
     val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
+    val approvalRequest by viewModel.chat.approvalRequest.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
@@ -75,6 +76,10 @@ fun MainScreen(
         pendingMessageInfo = pendingMessageInfo,
         onRetryPending = viewModel.chat::retrySendMessage,
         onCancelPending = viewModel.chat::cancelRetry,
+        approvalRequest = approvalRequest,
+        onApproveOnce = { viewModel.chat.approveChatAction(always = false) },
+        onApproveAlways = { viewModel.chat.approveChatAction(always = true) },
+        onDenyAction = viewModel.chat::denyChatAction,
         workspaceInfo = workspaceInfo,
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,

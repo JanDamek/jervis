@@ -167,6 +167,31 @@ class PythonChatClient(
     }
 
     /**
+     * Approve or deny a pending chat tool action.
+     * Called when user clicks Approve/Deny in the approval dialog.
+     */
+    suspend fun approveAction(sessionId: String, approved: Boolean, always: Boolean = false, action: String? = null) {
+        val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat/approve"
+        try {
+            client.preparePost(apiUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(
+                    ChatApproveRequest(
+                        sessionId = sessionId,
+                        approved = approved,
+                        always = always,
+                        action = action,
+                    ),
+                )
+            }.execute { response ->
+                logger.info { "PYTHON_CHAT_APPROVE | session=$sessionId | approved=$approved | always=$always | status=${response.status}" }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "PYTHON_CHAT_APPROVE_ERROR | session=$sessionId | error=${e.message}" }
+        }
+    }
+
+    /**
      * Stop an active chat session. Called when user presses Stop button.
      */
     suspend fun stopChat(sessionId: String) {
@@ -193,6 +218,17 @@ class PythonChatClient(
         }
     }
 }
+
+/**
+ * Request body for Python /chat/approve endpoint.
+ */
+@Serializable
+private data class ChatApproveRequest(
+    @SerialName("session_id") val sessionId: String,
+    val approved: Boolean,
+    val always: Boolean = false,
+    val action: String? = null,
+)
 
 /**
  * Request body for Python /chat endpoint.

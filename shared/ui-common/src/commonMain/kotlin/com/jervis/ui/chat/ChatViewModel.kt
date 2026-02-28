@@ -71,6 +71,16 @@ class ChatViewModel(
     private val _pendingMessageInfo = MutableStateFlow<PendingMessageInfo?>(null)
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
+    /** Pending approval request from chat — action, tool, preview text */
+    data class ApprovalRequest(
+        val action: String,
+        val tool: String,
+        val preview: String,
+    )
+
+    private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
+    val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
+
     private var oldestSequence: Long? = null
     private val streamingBuffer = mutableMapOf<String, String>()
     private var pendingState: PendingMessageState? = null
@@ -290,6 +300,34 @@ class ChatViewModel(
         _pendingMessageInfo.value = null
     }
 
+    /** Approve the pending chat action (once or always). */
+    fun approveChatAction(always: Boolean = false) {
+        val request = _approvalRequest.value ?: return
+        _approvalRequest.value = null
+        scope.launch {
+            try {
+                repository.chat.approveChatAction(approved = true, always = always, action = request.action)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error approving chat action: ${e.message}")
+            }
+        }
+    }
+
+    /** Deny the pending chat action. */
+    fun denyChatAction() {
+        val request = _approvalRequest.value ?: return
+        _approvalRequest.value = null
+        scope.launch {
+            try {
+                repository.chat.approveChatAction(approved = false, always = false, action = request.action)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error denying chat action: ${e.message}")
+            }
+        }
+    }
+
     fun loadMoreHistory() {
         val projectId = selectedProjectId.value ?: ""
         val beforeSeq = oldestSequence ?: return
@@ -366,6 +404,18 @@ class ChatViewModel(
                 if (!newClientId.isNullOrBlank()) {
                     onScopeChange(newClientId, newProjectId, projectsJson)
                 }
+                null
+            }
+
+            ChatResponseType.APPROVAL_REQUEST -> {
+                val action = response.metadata["action"] ?: ""
+                val tool = response.metadata["tool"] ?: ""
+                println("=== Chat approval request: action=$action tool=$tool ===")
+                _approvalRequest.value = ApprovalRequest(
+                    action = action,
+                    tool = tool,
+                    preview = response.message,
+                )
                 null
             }
 
@@ -478,6 +528,10 @@ class ChatViewModel(
                         metadata = response.metadata,
                     ),
                 )
+            }
+
+            ChatMessage.MessageType.APPROVAL_REQUEST -> {
+                // Handled earlier via _approvalRequest StateFlow, not as a chat message
             }
         }
         _chatMessages.value = messages

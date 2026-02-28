@@ -237,6 +237,12 @@ async def handle_chat(
         yield ChatStreamEvent(type="error", content=str(e), metadata={"error": str(e)})
 
     finally:
+        # Clean up session auto-approvals
+        try:
+            from app.chat.handler_agentic import _session_auto_approvals
+            _session_auto_approvals.pop(request.session_id, None)
+        except Exception:
+            pass
         try:
             from app.tools.kotlin_client import kotlin_client
             await kotlin_client.register_foreground_end()
