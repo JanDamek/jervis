@@ -41,20 +41,20 @@ import java.util.concurrent.atomic.AtomicReference
  *    - Creates Graph nodes and RAG chunks with chunking for large documents
  *    - Routes tasks: DONE (simple) or READY_FOR_GPU (complex)
  *
- * 2. Execution loop (GPU) - processes qualified tasks during idle GPU time
- *    - Only runs when no active user requests (checked via LlmLoadMonitor)
- *    - Process READY_FOR_GPU tasks through Python orchestrator
- *    - Loads TaskMemory context from Qualifier for efficient execution
- *    - Preemption: Interrupted immediately when a user request arrives
+ * 2. Execution loop (GPU) - three-tier priority: FOREGROUND > BACKGROUND > IDLE
+ *    - FOREGROUND (chat) tasks always processed first
+ *    - BACKGROUND (user-scheduled) tasks processed when no foreground work
+ *    - IDLE (system idle work) tasks processed only when truly idle
+ *    - Preemption: FOREGROUND preempts BACKGROUND and IDLE; BACKGROUND preempts IDLE
  *
  * 3. Scheduler loop - dispatches scheduled tasks 10 minutes before the scheduled time
  *
- * PREEMPTION LOGIC:
- * - LlmLoadMonitor tracks active foreground (user) requests
- * - When user request starts: registerRequestStart() → interruptNow()
- * - interruptNow() cancels currently running background task
- * - Background tasks resume only after an idle threshold (30s with no activity)
- * - This ensures user requests ALWAYS get priority over background tasks
+ * PREEMPTION LOGIC (three-tier):
+ * - FOREGROUND preempts both BACKGROUND and IDLE
+ * - BACKGROUND preempts IDLE (but never preempted by IDLE)
+ * - IDLE never preempts anything — runs only when truly idle
+ * - registerForegroundChatStart() interrupts any BACKGROUND/IDLE task
+ * - Execution loop checks preemption every iteration
  *
  * STARTUP ORDER:
  * @Order(10) ensures this starts AFTER WeaviateSchemaInitializer (@Order(0))
@@ -241,11 +241,11 @@ class BackgroundEngine(
 
     /**
      * Called by the Ollama Router when all GPUs have been idle for >= gpu_idle_notify_after_s
-     * (default 5 min). Immediately creates an idle analytical task if the system is truly idle,
+     * (default 5 min). Immediately creates an idle task if the system is truly idle,
      * without waiting for the normal 30-min idle review interval.
      *
-     * This makes proactive scanning (vulnerability, code quality, etc.) start as soon as
-     * the GPU is available, maximizing utilization.
+     * Creates a single IDLE task (ProcessingMode.IDLE) that is lowest priority —
+     * automatically preempted by any FOREGROUND or BACKGROUND task.
      */
     fun onGpuIdle() {
         if (!backgroundProperties.idleReviewEnabled) {
@@ -254,80 +254,25 @@ class BackgroundEngine(
         }
         scope.launch {
             try {
-                // Check if there are active tasks (system might be busy with CPU-only work)
-                val activeStates = listOf(
-                    TaskStateEnum.QUALIFYING,
-                    TaskStateEnum.READY_FOR_GPU,
-                    TaskStateEnum.PYTHON_ORCHESTRATING,
-                    TaskStateEnum.READY_FOR_QUALIFICATION,
-                )
-                val totalActive = activeStates.sumOf { state ->
-                    taskRepository.countByState(state)
-                }
-                if (totalActive > 0) {
-                    logger.debug { "GPU_IDLE_NOTIFY: System has $totalActive active tasks, skipping" }
+                // Check if there are active FOREGROUND or BACKGROUND tasks
+                val activeFgBg = taskRepository.countByProcessingModeAndState(
+                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.READY_FOR_GPU,
+                ) + taskRepository.countByProcessingModeAndState(
+                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.READY_FOR_GPU,
+                ) + taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+
+                if (activeFgBg > 0) {
+                    logger.debug { "GPU_IDLE_NOTIFY: System has $activeFgBg active FG/BG tasks, skipping" }
                     return@launch
                 }
 
-                // Check if there's already a pending/running IDLE_REVIEW task
-                val existingIdleReview = taskRepository.findFirstByTypeAndStateIn(
-                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                    states = listOf(
-                        TaskStateEnum.NEW,
-                        TaskStateEnum.READY_FOR_QUALIFICATION,
-                        TaskStateEnum.QUALIFYING,
-                        TaskStateEnum.READY_FOR_GPU,
-                        TaskStateEnum.PYTHON_ORCHESTRATING,
-                    ),
-                )
-                if (existingIdleReview != null) {
-                    logger.debug { "GPU_IDLE_NOTIFY: Idle task already exists (${existingIdleReview.id}), skipping" }
+                // Check if there's already a pending/running IDLE task
+                if (hasExistingIdleTask()) {
+                    logger.debug { "GPU_IDLE_NOTIFY: Idle task already exists, skipping" }
                     return@launch
                 }
 
-                // Find a client to associate the task with
-                val defaultClientId = try {
-                    val projects = projectRepository.findAll().toList()
-                    val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
-                        ?: projects.firstOrNull()
-                    jervisProject?.clientId
-                } catch (_: Exception) { null }
-
-                if (defaultClientId == null) {
-                    logger.debug { "GPU_IDLE_NOTIFY: No client found, skipping" }
-                    return@launch
-                }
-
-                // Consult IdleTaskRegistry for the next eligible task
-                val lastRunTimes = buildLastRunTimes()
-                val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
-                if (nextTask == null) {
-                    logger.debug { "GPU_IDLE_NOTIFY: All idle tasks ran recently, nothing to do" }
-                    return@launch
-                }
-
-                // Brain-dependent tasks need brain configured
-                if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
-                    logger.debug { "GPU_IDLE_NOTIFY: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
-                    return@launch
-                }
-
-                val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
-                val prompt = buildIdleTaskPrompt(nextTask.type)
-
-                val idleTask = TaskDocument(
-                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                    taskName = taskName,
-                    content = prompt,
-                    clientId = defaultClientId,
-                    state = TaskStateEnum.READY_FOR_GPU,
-                    processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
-                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
-                )
-                taskRepository.save(idleTask)
-                taskNotifier.notifyNewTask()
-
-                logger.info { "GPU_IDLE_NOTIFY: Created ${nextTask.type} task ${idleTask.id} (triggered by router)" }
+                createIdleTask()
             } catch (e: Exception) {
                 logger.error(e) { "GPU_IDLE_NOTIFY: Error creating idle task" }
             }
@@ -388,6 +333,19 @@ class BackgroundEngine(
      *
      * FOREGROUND tasks take precedence over BACKGROUND tasks.
      */
+    /**
+     * Execution loop — three-tier priority: FOREGROUND > BACKGROUND > IDLE.
+     *
+     * Processing order:
+     * 1. FOREGROUND tasks (chat) — ordered by queuePosition, highest priority
+     * 2. BACKGROUND tasks (user-scheduled) — ordered by priorityScore DESC, createdAt ASC
+     * 3. IDLE tasks (system idle work) — only when truly idle, lowest priority
+     *
+     * Preemption:
+     * - FOREGROUND preempts both BACKGROUND and IDLE
+     * - BACKGROUND preempts IDLE
+     * - IDLE never preempts anything
+     */
     private suspend fun runExecutionLoop() {
         while (scope.isActive) {
             try {
@@ -395,53 +353,68 @@ class BackgroundEngine(
                 val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
 
                 if (orchestratingCount > 0) {
-                    // PREEMPTIVE PRIORITY: If FOREGROUND task exists while BACKGROUND is running → interrupt BACKGROUND
-                    val waitingForegroundTask = taskService.getNextForegroundTask()
+                    val runningTasks =
+                        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                            .toList()
+                    val runningTask = runningTasks.firstOrNull()
 
-                    if (waitingForegroundTask != null) {
-                        // Find currently running task from DB (currentRunningTask is cleared when dispatched to Python)
-                        val runningTasks =
-                            taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
-                                .toList()
-                        val runningTask = runningTasks.firstOrNull()
+                    if (runningTask != null) {
+                        val runningMode = runningTask.processingMode
+                        val waitingForegroundTask = taskService.getNextForegroundTask()
+                        val waitingBackgroundTask = if (waitingForegroundTask == null) taskService.getNextBackgroundTask() else null
 
-                        if (runningTask != null && runningTask.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
+                        // Preemption rules:
+                        // IDLE running + FOREGROUND waiting → preempt
+                        // IDLE running + BACKGROUND waiting → preempt
+                        // BACKGROUND running + FOREGROUND waiting → preempt
+                        val shouldPreempt = when {
+                            runningMode == com.jervis.entity.ProcessingMode.IDLE &&
+                                (waitingForegroundTask != null || waitingBackgroundTask != null) -> true
+                            runningMode == com.jervis.entity.ProcessingMode.BACKGROUND &&
+                                waitingForegroundTask != null -> true
+                            else -> false
+                        }
+
+                        val preemptingTask = waitingForegroundTask ?: waitingBackgroundTask
+
+                        if (shouldPreempt && preemptingTask != null) {
                             logger.warn {
-                                "PREEMPT: FOREGROUND task ${waitingForegroundTask.id} (queue=${waitingForegroundTask.queuePosition}) " +
-                                    "arrived while BACKGROUND task ${runningTask.id} is running → interrupting BACKGROUND"
+                                "PREEMPT: ${preemptingTask.processingMode} task ${preemptingTask.id} " +
+                                    "arrived while ${runningMode} task ${runningTask.id} is running → interrupting"
                             }
 
-                            // Interrupt the BACKGROUND task - orchestrator will save checkpoint and return
-                            val interrupted = interruptBackgroundTask(runningTask)
+                            val interrupted = interruptLowerPriorityTask(runningTask)
 
                             if (interrupted) {
-                                logger.info { "PREEMPT_SUCCESS: BACKGROUND task ${runningTask.id} interrupted, will resume later" }
-                                // Continue to next iteration - FOREGROUND task will be picked up
+                                logger.info { "PREEMPT_SUCCESS: ${runningMode} task ${runningTask.id} interrupted, will resume later" }
                                 continue
                             } else {
-                                logger.warn { "PREEMPT_FAILED: Could not interrupt BACKGROUND task ${runningTask.id}, will wait" }
+                                logger.warn { "PREEMPT_FAILED: Could not interrupt ${runningMode} task ${runningTask.id}, will wait" }
                                 delay(1_000)
                                 continue
                             }
                         } else {
-                            // FOREGROUND is already running, or no running task found - wait
+                            // No preemption needed — wait for current task to finish
                             delay(5_000)
                             continue
                         }
                     } else {
-                        // No FOREGROUND tasks waiting - just wait for current task to finish
                         delay(5_000)
                         continue
                     }
                 }
 
-                // 1. Check for FOREGROUND tasks first (chat messages have priority)
+                // 1. FOREGROUND tasks (chat) — highest priority
                 var task = taskService.getNextForegroundTask()
 
-                // 2. If no FOREGROUND tasks, check for BACKGROUND tasks
-                //    But skip if a foreground chat is active (GPU needed for chat LLM)
+                // 2. BACKGROUND tasks (user-scheduled) — skip if foreground chat is active
                 if (task == null && !isForegroundChatActive()) {
                     task = taskService.getNextBackgroundTask()
+                }
+
+                // 3. IDLE tasks — only when truly idle (no FG, no BG, no active chat)
+                if (task == null && !isForegroundChatActive()) {
+                    task = taskService.getNextIdleTask()
                 }
 
                 if (task != null) {
@@ -478,15 +451,17 @@ class BackgroundEngine(
     }
 
     /**
-     * Interrupt a running BACKGROUND task to allow FOREGROUND task to run immediately.
+     * Interrupt a lower-priority task to allow a higher-priority task to run.
      *
      * Sends interrupt request to Python orchestrator, which saves checkpoint to MongoDB
-     * and returns. The BACKGROUND task can be resumed later from the checkpoint.
+     * and returns. The interrupted task can be resumed later from the checkpoint.
      *
-     * @param task The BACKGROUND task currently running
+     * Used for: FOREGROUND preempting BACKGROUND/IDLE, BACKGROUND preempting IDLE.
+     *
+     * @param task The lower-priority task currently running
      * @return true if interrupt was successful, false otherwise
      */
-    private suspend fun interruptBackgroundTask(task: TaskDocument): Boolean {
+    private suspend fun interruptLowerPriorityTask(task: TaskDocument): Boolean {
         if (task.orchestratorThreadId == null) {
             logger.warn { "PREEMPT_SKIP: Task ${task.id} has no orchestratorThreadId, cannot interrupt" }
             return false
@@ -598,6 +573,12 @@ class BackgroundEngine(
                             } else {
                                 logger.info { "BACKGROUND_TASK_USER_TASK | taskId=${task.id} | keeping until user responds" }
                             }
+                        }
+
+                        com.jervis.entity.ProcessingMode.IDLE -> {
+                            // IDLE tasks are always deleted after completion
+                            taskRepository.delete(task)
+                            logger.info { "IDLE_TASK_DELETED | taskId=${task.id} | idle task completed and cleaned up" }
                         }
                     }
 
@@ -1014,6 +995,20 @@ class BackgroundEngine(
      * - There are active tasks (QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING)
      * - An existing IDLE_REVIEW task is already pending/running
      */
+    /**
+     * Unified idle work loop.
+     *
+     * Creates at most ONE idle task at a time using ProcessingMode.IDLE.
+     * The execution loop picks up IDLE tasks only when no FOREGROUND or BACKGROUND work exists.
+     * IDLE tasks are automatically preempted when higher-priority work arrives.
+     *
+     * Flow:
+     * 1. Wait for system to be idle (no FG/BG tasks)
+     * 2. Check if an IDLE task already exists → skip if so
+     * 3. Consult IdleTaskRegistry for the next due check (priority-ordered)
+     * 4. Create ONE IDLE task → execution loop picks it up
+     * 5. After completion, next iteration creates the next due check
+     */
     private suspend fun runIdleReviewLoop() {
         // Wait for startup + extra buffer to let system stabilize
         delay(backgroundProperties.waitOnStartup)
@@ -1027,89 +1022,27 @@ class BackgroundEngine(
                     continue
                 }
 
-                // Check if there are active tasks (system is busy)
-                val activeStates = listOf(
-                    TaskStateEnum.QUALIFYING,
-                    TaskStateEnum.READY_FOR_GPU,
-                    TaskStateEnum.PYTHON_ORCHESTRATING,
-                    TaskStateEnum.READY_FOR_QUALIFICATION,
-                )
-                val totalActive = activeStates.sumOf { state ->
-                    taskRepository.countByState(state)
-                }
-                if (totalActive > 0) {
-                    logger.debug { "IDLE_TASK: System busy ($totalActive active tasks), skipping" }
+                // Don't create idle tasks if there's any real work pending
+                val hasFgBgWork = taskRepository.countByProcessingModeAndState(
+                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.READY_FOR_GPU,
+                ) + taskRepository.countByProcessingModeAndState(
+                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.READY_FOR_GPU,
+                ) + taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING) +
+                    taskRepository.countByState(TaskStateEnum.QUALIFYING) +
+                    taskRepository.countByState(TaskStateEnum.READY_FOR_QUALIFICATION)
+
+                if (hasFgBgWork > 0) {
+                    logger.debug { "IDLE_TASK: System busy ($hasFgBgWork active tasks), skipping" }
                     continue
                 }
 
-                // Check if there's already a pending/running IDLE_REVIEW task
-                val existingIdleReview = taskRepository.findFirstByTypeAndStateIn(
-                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                    states = listOf(
-                        TaskStateEnum.NEW,
-                        TaskStateEnum.READY_FOR_QUALIFICATION,
-                        TaskStateEnum.QUALIFYING,
-                        TaskStateEnum.READY_FOR_GPU,
-                        TaskStateEnum.PYTHON_ORCHESTRATING,
-                    ),
-                )
-                if (existingIdleReview != null) {
-                    logger.debug { "IDLE_TASK: Already exists (${existingIdleReview.id}), skipping" }
+                // Only ONE idle task at a time
+                if (hasExistingIdleTask()) {
+                    logger.debug { "IDLE_TASK: Already exists, skipping" }
                     continue
                 }
 
-                // Use a system-level client ID — the JERVIS Internal project's client
-                val defaultClientId = try {
-                    val projects = projectRepository.findAll().toList()
-                    val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
-                        ?: projects.firstOrNull()
-                    jervisProject?.clientId
-                } catch (_: Exception) {
-                    null
-                }
-
-                if (defaultClientId == null) {
-                    logger.debug { "IDLE_TASK: No client found, skipping" }
-                    continue
-                }
-
-                val defaultClient = clientRepository.getById(defaultClientId)
-                if (defaultClient == null || defaultClient.archived) {
-                    logger.debug { "IDLE_TASK: Client $defaultClientId not found or archived, skipping" }
-                    continue
-                }
-
-                // EPIC 7: Consult IdleTaskRegistry for the next eligible task
-                val lastRunTimes = buildLastRunTimes()
-                val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
-
-                if (nextTask == null) {
-                    logger.debug { "IDLE_TASK: All tasks ran recently, skipping" }
-                    continue
-                }
-
-                // Brain-dependent tasks need brain configured
-                if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
-                    logger.debug { "IDLE_TASK: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
-                    continue
-                }
-
-                val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
-                val prompt = buildIdleTaskPrompt(nextTask.type)
-
-                val idleTask = TaskDocument(
-                    type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
-                    taskName = taskName,
-                    content = prompt,
-                    clientId = defaultClientId,
-                    state = TaskStateEnum.READY_FOR_GPU,
-                    processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
-                    sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
-                )
-                taskRepository.save(idleTask)
-                taskNotifier.notifyNewTask()
-
-                logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} for client $defaultClientId" }
+                createIdleTask()
             } catch (e: CancellationException) {
                 logger.info { "Idle task loop cancelled" }
                 throw e
@@ -1118,6 +1051,80 @@ class BackgroundEngine(
                 delay(backgroundProperties.idleReviewInterval)
             }
         }
+    }
+
+    /**
+     * Check if an IDLE task already exists in the pipeline.
+     */
+    private suspend fun hasExistingIdleTask(): Boolean {
+        val existing = taskRepository.findFirstByTypeAndStateIn(
+            type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+            states = listOf(
+                TaskStateEnum.NEW,
+                TaskStateEnum.READY_FOR_QUALIFICATION,
+                TaskStateEnum.QUALIFYING,
+                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.PYTHON_ORCHESTRATING,
+            ),
+        )
+        return existing != null
+    }
+
+    /**
+     * Create a single IDLE task for the highest-priority due idle check.
+     * Uses ProcessingMode.IDLE so the execution loop treats it as lowest priority.
+     */
+    private suspend fun createIdleTask() {
+        val defaultClientId = try {
+            val projects = projectRepository.findAll().toList()
+            val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
+                ?: projects.firstOrNull()
+            jervisProject?.clientId
+        } catch (_: Exception) {
+            null
+        }
+
+        if (defaultClientId == null) {
+            logger.debug { "IDLE_TASK: No client found, skipping" }
+            return
+        }
+
+        val defaultClient = clientRepository.getById(defaultClientId)
+        if (defaultClient == null || defaultClient.archived) {
+            logger.debug { "IDLE_TASK: Client $defaultClientId not found or archived, skipping" }
+            return
+        }
+
+        val lastRunTimes = buildLastRunTimes()
+        val nextTask = idleTaskRegistry.getNextIdleTask(lastRunTimes)
+
+        if (nextTask == null) {
+            logger.debug { "IDLE_TASK: All tasks ran recently, skipping" }
+            return
+        }
+
+        // Brain-dependent tasks need brain configured
+        if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
+            logger.debug { "IDLE_TASK: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
+            return
+        }
+
+        val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
+        val prompt = buildIdleTaskPrompt(nextTask.type)
+
+        val idleTask = TaskDocument(
+            type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
+            taskName = taskName,
+            content = prompt,
+            clientId = defaultClientId,
+            state = TaskStateEnum.READY_FOR_GPU,
+            processingMode = com.jervis.entity.ProcessingMode.IDLE,
+            sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
+        )
+        taskRepository.save(idleTask)
+        taskNotifier.notifyNewTask()
+
+        logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} (mode=IDLE) for client $defaultClientId" }
     }
 
     /**
@@ -1501,28 +1508,29 @@ class BackgroundEngine(
 
     /**
      * Register that a foreground chat is active. Called by Python /chat endpoint
-     * via /internal/foreground-start. While active, background GPU tasks are
+     * via /internal/foreground-start. While active, background and idle GPU tasks are
      * interrupted to free the GPU for chat LLM calls.
      */
     fun registerForegroundChatStart() {
         val count = activeForegroundChats.incrementAndGet()
         logger.info { "FOREGROUND_CHAT_START: active=$count" }
 
-        // Interrupt currently running BACKGROUND task if any
+        // Interrupt currently running BACKGROUND or IDLE task if any
         if (count == 1) {
             scope.launch {
                 try {
                     val runningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
                         .toList()
-                    val backgroundTask = runningTasks.firstOrNull {
-                        it.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND
+                    val lowerPriorityTask = runningTasks.firstOrNull {
+                        it.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
+                            it.processingMode == com.jervis.entity.ProcessingMode.IDLE
                     }
-                    if (backgroundTask != null) {
-                        logger.info { "FOREGROUND_CHAT_PREEMPT: Interrupting BACKGROUND task ${backgroundTask.id}" }
-                        interruptBackgroundTask(backgroundTask)
+                    if (lowerPriorityTask != null) {
+                        logger.info { "FOREGROUND_CHAT_PREEMPT: Interrupting ${lowerPriorityTask.processingMode} task ${lowerPriorityTask.id}" }
+                        interruptLowerPriorityTask(lowerPriorityTask)
                     }
                 } catch (e: Exception) {
-                    logger.warn(e) { "Failed to preempt background task for chat" }
+                    logger.warn(e) { "Failed to preempt lower-priority task for chat" }
                 }
             }
         }
@@ -1580,13 +1588,13 @@ class BackgroundEngine(
             content = DEADLINE_SCAN_PROMPT,
             clientId = defaultClientId,
             state = TaskStateEnum.READY_FOR_GPU,
-            processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
+            processingMode = com.jervis.entity.ProcessingMode.IDLE,
             sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
         )
         taskRepository.save(scanTask)
         taskNotifier.notifyNewTask()
 
-        logger.info { "DEADLINE_SCAN: Created deadline scan task ${scanTask.id}" }
+        logger.info { "DEADLINE_SCAN: Created deadline scan task ${scanTask.id} (mode=IDLE)" }
     }
 
     companion object {

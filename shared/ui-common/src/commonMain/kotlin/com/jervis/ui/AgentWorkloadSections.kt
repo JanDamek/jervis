@@ -75,6 +75,7 @@ internal fun AgentSectionContent(
     runningTaskType: String?,
     orchestratorProgress: OrchestratorProgressInfo?,
     runningNodes: List<com.jervis.ui.model.NodeEntry>,
+    recentChatMessages: List<com.jervis.dto.ui.ChatMessage>,
     onStop: () -> Unit,
 ) {
     if (!isRunning) {
@@ -123,6 +124,43 @@ internal fun AgentSectionContent(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        // Recent chat messages — shows last conversation context
+        if (recentChatMessages.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                recentChatMessages.forEach { msg ->
+                    val (prefix, prefixColor) = when (msg.from) {
+                        com.jervis.dto.ui.ChatMessage.Sender.Me ->
+                            "Vy" to MaterialTheme.colorScheme.primary
+                        com.jervis.dto.ui.ChatMessage.Sender.Assistant ->
+                            "Agent" to MaterialTheme.colorScheme.tertiary
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = "$prefix: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = prefixColor,
+                        )
+                        Text(
+                            text = msg.text.take(200),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
         // Orchestrator progress — goal/step counters and stop button

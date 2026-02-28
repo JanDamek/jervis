@@ -66,8 +66,19 @@ fun AgentWorkloadScreen(
     val taskHistoryHasMore by viewModel.queue.taskHistoryHasMore.collectAsState()
     val backgroundTotalCount by viewModel.queue.backgroundTotalCount.collectAsState()
     val isLoadingMoreBackground by viewModel.queue.isLoadingMoreBackground.collectAsState()
+    val chatMessages by viewModel.chat.chatMessages.collectAsState()
 
     val isRunning = runningProjectId != null && runningProjectId != "none"
+
+    // Last 5 meaningful chat messages (user + final, not progress)
+    val recentChatMessages = remember(chatMessages) {
+        chatMessages
+            .filter {
+                it.messageType == com.jervis.dto.ui.ChatMessage.MessageType.USER_MESSAGE ||
+                    it.messageType == com.jervis.dto.ui.ChatMessage.MessageType.FINAL
+            }
+            .takeLast(5)
+    }
 
     var expandedSection by remember { mutableStateOf(AccordionSection.AGENT) }
 
@@ -100,6 +111,7 @@ fun AgentWorkloadScreen(
                     runningTaskType = runningTaskType,
                     orchestratorProgress = orchestratorProgress,
                     runningNodes = runningNodes,
+                    recentChatMessages = recentChatMessages,
                     onStop = {
                         orchestratorProgress?.let { viewModel.queue.cancelOrchestration(it.taskId) }
                     },

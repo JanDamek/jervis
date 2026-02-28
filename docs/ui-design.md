@@ -878,6 +878,7 @@ State: Frontend expanded
 
 **AgentSectionContent** — when running:
 - Project name, task type, task preview
+- **Recent chat messages**: Last 5 meaningful messages (USER_MESSAGE + FINAL) displayed above orchestrator progress, showing user↔agent conversation context
 - Orchestrator progress: goal/step counters, node spinner, status message, progress bar
 - Stop button (`cancelOrchestration`)
 - When idle: `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
@@ -904,7 +905,7 @@ State: Frontend expanded
 
 **Data models** (`com.jervis.ui.model.AgentActivityEntry`):
 - `AgentActivityEntry`: `id`, `time` (HH:mm:ss), `type` (TASK_STARTED/TASK_COMPLETED/AGENT_IDLE/QUEUE_CHANGED), `description`, `projectName?`, `taskType?`, `clientId?`
-- `PendingQueueItem`: `taskId`, `preview`, `projectName`, `processingMode` (FOREGROUND/BACKGROUND), `queuePosition`
+- `PendingQueueItem`: `taskId`, `preview`, `projectName`, `processingMode` (FOREGROUND/BACKGROUND/IDLE), `queuePosition`
 - `TaskHistoryEntry`: `taskId`, `taskPreview`, `projectName?`, `startTime`, `endTime?`, `status` (running/done/error), `nodes: List<NodeEntry>`
 - `NodeEntry`: `node` (key), `label` (Czech), `status` (DONE/RUNNING/PENDING)
 - Activity log stored in `AgentActivityLog` ring buffer (max 200), held by `QueueViewModel`

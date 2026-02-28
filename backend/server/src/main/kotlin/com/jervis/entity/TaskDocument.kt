@@ -24,15 +24,20 @@ import java.time.Instant
  * - Agent checkpoint state stored in agentCheckpointJson for continuity
  * - Queue management integrated directly into TaskDocument (no separate queue collection)
  *
- * Processing Modes (FOREGROUND vs BACKGROUND):
+ * Processing Modes (three-tier priority: FOREGROUND > BACKGROUND > IDLE):
  * - FOREGROUND: Chat window processing - user waits for response, sees in UI
  *   - Processed by order: queuePosition ASC (user can reorder in UI)
  *   - User interacts via chat window
  *
- * - BACKGROUND: Autonomous processing - runs independently when no foreground tasks
- *   - Processed by order: createdAt ASC (oldest first, FIFO)
+ * - BACKGROUND: Autonomous processing - user-scheduled tasks via chat
+ *   - Processed by order: priorityScore DESC, createdAt ASC
  *   - No chat interaction, runs automatically
  *   - Can escalate to USER_TASK if needs input
+ *   - Preempts IDLE, never preempted by IDLE
+ *
+ * - IDLE: System idle work - runs only when nothing else to do
+ *   - Lowest priority, pauses when any FOREGROUND or BACKGROUND arrives
+ *   - Max one idle task at a time
  *
  * Movement between modes:
  * - Chat → Background: User moves TaskDocument to background (disappears from chat history)
@@ -82,7 +87,7 @@ import java.time.Instant
  * @property clientId Client who owns this task
  * @property createdAt Task creation timestamp
  * @property state Current task state (NEW, READY_FOR_GPU, RUNNING, DONE, ERROR, etc.)
- * @property processingMode FOREGROUND (chat) or BACKGROUND (autonomous)
+ * @property processingMode FOREGROUND (chat), BACKGROUND (user-scheduled), or IDLE (system idle work)
  * @property queuePosition Position in foreground queue (null for BACKGROUND)
  * @property correlationId Unique ID for tracing execution flow
  * @property sourceUrn Source of task (chat, email, Jira, etc.)
@@ -255,21 +260,31 @@ data class TaskDocument(
 /**
  * ProcessingMode - determines how task is processed and queued.
  *
+ * Three-tier priority hierarchy (highest → lowest):
+ *
  * FOREGROUND:
- * - Chat window processing
- * - User waits for response, sees in UI
+ * - Chat window processing — user waits for response, sees in UI
  * - Ordered by queuePosition (user can reorder in UI)
- * - Takes precedence over BACKGROUND tasks
+ * - Takes precedence over BACKGROUND and IDLE tasks
+ * - Preempts both BACKGROUND and IDLE
  *
  * BACKGROUND:
- * - Autonomous background processing
- * - Runs independently when no FOREGROUND tasks
- * - Ordered by createdAt (oldest first, FIFO)
- * - Examples: Confluence indexing, Jira polling, scheduled tasks
+ * - Autonomous background processing scheduled via chat
+ * - Ordered by priorityScore DESC, then createdAt ASC
+ * - Runs when no FOREGROUND tasks
+ * - Preempts IDLE tasks (but never preempted by IDLE)
+ * - Examples: User-scheduled tasks, Confluence/Jira indexing
+ *
+ * IDLE:
+ * - System idle work — lowest priority, runs only when nothing else to do
+ * - Pauses immediately when any FOREGROUND or BACKGROUND task arrives
+ * - Examples: Proactive code review, KB consistency check, vulnerability scan
+ * - Max ONE idle task at a time per system
  */
 enum class ProcessingMode {
     FOREGROUND,
     BACKGROUND,
+    IDLE,
 }
 
 /**

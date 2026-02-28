@@ -237,8 +237,10 @@ class OrchestratorStatusHandler(
             )
             taskRepository.save(updatedTask)
 
-            // Background tasks: delete after completion
-            if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND) {
+            // Background and idle tasks: delete after completion
+            if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
+                task.processingMode == com.jervis.entity.ProcessingMode.IDLE
+            ) {
                 taskRepository.delete(updatedTask)
             }
         }

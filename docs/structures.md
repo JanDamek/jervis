@@ -620,15 +620,16 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **Recurring tasks (cron):** Creates execution copy → `READY_FOR_QUALIFICATION`, updates original with next `scheduledAt` via `CronExpression.next()`
 - **Invalid cron:** Falls back to one-shot behavior (deletes original after creating execution copy)
 
-### Execution Loop (GPU)
+### Execution Loop (GPU) — Three-Tier Priority
 
-- **Trigger:** Runs ONLY when idle (no user requests for 30s)
+- **Priority order:** FOREGROUND > BACKGROUND > IDLE
+- **FOREGROUND (chat):** Highest priority, processed first by `queuePosition ASC`
+- **BACKGROUND (user-scheduled):** Processed when no FOREGROUND tasks, by `priorityScore DESC, createdAt ASC`
+- **IDLE (system idle work):** Lowest priority, processed only when no FG/BG tasks and no active chat
+- **Preemption:** FOREGROUND preempts both BACKGROUND and IDLE; BACKGROUND preempts IDLE; IDLE never preempts
 - **Agent:** Python Orchestrator (LangGraph) with GPU model (OLLAMA_PRIMARY)
-- **Max iterations:** 500 (configurable via application.yml)
-- **Preemption:** Immediately interrupted by user requests
-- **Dual-queue:** Status emissions include both FOREGROUND and BACKGROUND pending items
 - **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
-- **Stale recovery:** On pod startup, BACKGROUND tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset. Migration: old BACKGROUND DISPATCHED_GPU tasks without orchestratorThreadId are migrated to DONE.
+- **Stale recovery:** On pod startup, BACKGROUND and IDLE tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset.
 
 ### KB Queue Count Fix (2026-02-23)
 
@@ -685,8 +686,9 @@ NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10
     └── recurring (cron): original stays NEW (scheduledAt = next cron run),
                           execution copy → READY_FOR_QUALIFICATION
 
-Idle review:
-(no active tasks + brain configured) → IDLE_REVIEW task → READY_FOR_GPU → PYTHON_ORCHESTRATING → DONE
+Idle work (ProcessingMode.IDLE):
+(no FG/BG tasks + brain configured) → IDLE_REVIEW task (mode=IDLE) → READY_FOR_GPU → PYTHON_ORCHESTRATING → DONE
+Max ONE idle task at a time. Automatically preempted when any FG/BG work arrives.
 ```
 
 ### K8s Resilience
@@ -707,15 +709,19 @@ whose backoff has elapsed:
 - **Manual retry:** UI "Zkusit znovu" button calls `IProjectService.retryWorkspace()` → resets all retry fields
 - **UI banner:** `WorkspaceBanner` composable shows CLONING (info) or CLONE_FAILED (error + retry button)
 
-### Idle Review Loop (Brain)
+### Unified Idle Work Loop
 
 - **Interval:** Configurable via `BackgroundProperties.idleReviewInterval` (default 30 min)
 - **Enabled:** `BackgroundProperties.idleReviewEnabled` (default true)
-- **Preconditions:** Brain configured (SystemConfig), no active tasks, no existing IDLE_REVIEW task
-- **Creates:** `IDLE_REVIEW` task with state `READY_FOR_GPU` (skips qualification)
-- **Orchestrator prompt:** Review open issues, check deadlines, update Confluence summaries
+- **Preconditions:** No active FG/BG tasks, no existing IDLE_REVIEW task
+- **ProcessingMode:** `IDLE` (lowest priority — preempted by both FOREGROUND and BACKGROUND)
+- **Creates:** At most ONE `IDLE_REVIEW` task at a time with `ProcessingMode.IDLE`
+- **Task selection:** `IdleTaskRegistry` returns highest-priority due check (priority-ordered, interval-based)
+- **Lifecycle:** Task created → READY_FOR_GPU → executed → DONE (deleted) → next iteration picks next due check
 - **Task type:** `TaskTypeEnum.IDLE_REVIEW`
 - **Client resolution:** Uses JERVIS Internal project's client ID
+- **Deadline scan:** Also uses `ProcessingMode.IDLE` (periodic via scheduler loop, every 5 min)
+- **GPU idle callback:** `onGpuIdle()` immediately creates idle task when GPU has been idle ≥5 min
 
 ### Cross-Project Aggregation (Qualifier → Brain)
 
@@ -787,7 +793,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 
 > Priority is set via `X-Ollama-Priority: 0` header for CRITICAL. No header = NORMAL (router default). Model name no longer determines priority.
 >
-> **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND tasks send no header (NORMAL).
+> **Orchestrator processing_mode**: FOREGROUND tasks send `X-Ollama-Priority: 0` on all sub-calls (KB, tools). BACKGROUND and IDLE tasks send no header (NORMAL).
 
 ### Model Co-location on GPU
 

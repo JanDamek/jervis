@@ -174,6 +174,21 @@ class TaskService(
     }
 
     /**
+     * Get next IDLE task (system idle work) ordered by createdAt ASC.
+     *
+     * IDLE tasks are lowest priority — only picked when no FOREGROUND or BACKGROUND tasks exist.
+     * Returns only tasks with processingMode=IDLE in READY_FOR_GPU state.
+     */
+    suspend fun getNextIdleTask(): TaskDocument? {
+        val now = java.time.Instant.now()
+        return taskRepository
+            .findByProcessingModeAndStateOrderByCreatedAtAsc(
+                ProcessingMode.IDLE,
+                TaskStateEnum.READY_FOR_GPU,
+            ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
+    }
+
+    /**
      * Mark task as currently running (for queue status tracking)
      */
     fun setRunningTask(task: TaskDocument?) {
@@ -285,7 +300,7 @@ class TaskService(
     suspend fun reorderTaskInQueue(task: TaskDocument, newPosition: Int) {
         val allTasks = when (task.processingMode) {
             ProcessingMode.FOREGROUND -> getPendingForegroundTasks()
-            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks()
+            ProcessingMode.BACKGROUND, ProcessingMode.IDLE -> getPendingBackgroundTasks()
         }.sortedBy { it.queuePosition ?: Int.MAX_VALUE }.toMutableList()
 
         // Remove the target task from the list
@@ -321,7 +336,7 @@ class TaskService(
         // Calculate next position in target queue
         val targetTasks = when (targetMode) {
             ProcessingMode.FOREGROUND -> getPendingForegroundTasks()
-            ProcessingMode.BACKGROUND -> getPendingBackgroundTasks()
+            ProcessingMode.BACKGROUND, ProcessingMode.IDLE -> getPendingBackgroundTasks()
         }
         val maxPosition = targetTasks.maxOfOrNull { it.queuePosition ?: 0 } ?: 0
 
@@ -587,12 +602,12 @@ class TaskService(
             logger.warn { "MIGRATION: Migrated ${migrateDoneResult.modifiedCount} BACKGROUND DISPATCHED_GPU tasks (no orchestratorThreadId) → DONE" }
         }
 
-        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND tasks only, with orchestratorThreadId = truly dispatched)
+        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND and IDLE tasks only)
         // FOREGROUND tasks stay DISPATCHED_GPU - they're completed, not stuck
         // DONE tasks are terminal — never reset
         val dispatchedQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
-                .and("processingMode").`is`(ProcessingMode.BACKGROUND.name),
+                .and("processingMode").`in`(ProcessingMode.BACKGROUND.name, ProcessingMode.IDLE.name),
         )
         val dispatchedUpdate = Update()
             .set("state", TaskStateEnum.READY_FOR_GPU.name)

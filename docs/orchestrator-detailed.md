@@ -592,7 +592,7 @@ class OrchestratorState(TypedDict, total=False):
 - Vytvoří `ClarificationQuestion` objekty
 - Zavolá `interrupt()` — graf se zastaví
 - Python pushne `status=interrupted, action=clarify`
-- Kotlin: FOREGROUND → emitne do chatu + DISPATCHED_GPU; BACKGROUND → USER_TASK
+- Kotlin: FOREGROUND → emitne do chatu + DISPATCHED_GPU; BACKGROUND/IDLE → USER_TASK
 - Po resume: `clarification_response` obsahuje user's answers
 
 **Output**: `task_category`, `task_action`, `external_refs`, `task_complexity`, `project_context`, `allow_cloud_prompt`, `needs_clarification`, **`target_branch`**
@@ -2364,11 +2364,17 @@ class OrchestratorStatusHandler(
 ### 26.5 BackgroundEngine (relevantní loops)
 
 ```kotlin
-// Execution loop (GPU): picks up READY_FOR_GPU tasks
+// Execution loop (GPU): three-tier priority — FOREGROUND > BACKGROUND > IDLE
 private suspend fun runExecutionLoop():
     while (true):
-        delay(executionIntervalMs)     // configurable polling interval
-        task = findNextGpuTask()       // respects preemption
+        // 0. Preemption: FG preempts BG+IDLE, BG preempts IDLE
+        checkPreemption(runningTask)
+        // 1. FOREGROUND (chat) — highest priority
+        task = getNextForegroundTask()
+        // 2. BACKGROUND (user-scheduled) — if no FG and no active chat
+        if task == null: task = getNextBackgroundTask()
+        // 3. IDLE (system idle work) — only when truly idle
+        if task == null: task = getNextIdleTask()
         if task != null:
             agentOrchestratorService.run(task, task.content)
 

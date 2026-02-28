@@ -34,6 +34,6 @@ data class PendingTaskItemDto(
     val projectName: String,
     val preview: String,
     val taskType: String,
-    val processingMode: String, // "FOREGROUND" or "BACKGROUND"
+    val processingMode: String, // "FOREGROUND", "BACKGROUND", or "IDLE"
     val queuePosition: Int? = null,
 )

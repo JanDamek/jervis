@@ -142,7 +142,7 @@ data class PipelineItemDto(
     val taskId: String? = null,
     /** Queue position (null = FIFO by createdAt). */
     val queuePosition: Int? = null,
-    /** Processing mode: FOREGROUND (user chat, critical) or BACKGROUND (autonomous). */
+    /** Processing mode: FOREGROUND (chat), BACKGROUND (user-scheduled), or IDLE (system idle). */
     val processingMode: String? = null,
     /** ISO 8601 – when qualification actually started (not queue creation time). */
     val qualificationStartedAt: String? = null,

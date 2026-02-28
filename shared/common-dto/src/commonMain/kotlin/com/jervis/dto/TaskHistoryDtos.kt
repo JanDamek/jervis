@@ -25,7 +25,7 @@ data class TaskHistoryEntryDto(
     val startedAt: String?,
     val completedAt: String,
     val status: String, // "done", "error", "interrupted"
-    val processingMode: String, // "FOREGROUND", "BACKGROUND"
+    val processingMode: String, // "FOREGROUND", "BACKGROUND", "IDLE"
     val nodes: List<TaskHistoryNodeDto> = emptyList(),
 )
 
