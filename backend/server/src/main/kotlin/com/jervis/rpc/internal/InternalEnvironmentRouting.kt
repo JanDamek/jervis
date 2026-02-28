@@ -400,16 +400,16 @@ fun Routing.installInternalEnvironmentApi(
                     "defaultVolumeMountPath" to defaults.defaultVolumeMountPath,
                 )
             }
+            val jsonTemplates = templates.map { template ->
+                kotlinx.serialization.json.JsonObject(
+                    template.mapValues { (_, v) -> toJsonElement(v) }
+                )
+            }
             val json = internalJson.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(
-                    kotlinx.serialization.builtins.MapSerializer(
-                        kotlinx.serialization.builtins.serializer<String>(),
-                        kotlinx.serialization.json.JsonElement.serializer(),
-                    ),
+                    kotlinx.serialization.json.JsonElement.serializer(),
                 ),
-                templates.map { template ->
-                    template.mapValues { (_, v) -> toJsonElement(v) }
-                },
+                jsonTemplates,
             )
             call.respondText(json, ContentType.Application.Json)
         } catch (e: Exception) {
