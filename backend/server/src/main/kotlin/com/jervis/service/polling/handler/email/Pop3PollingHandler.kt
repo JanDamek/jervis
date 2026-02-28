@@ -7,6 +7,7 @@ import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.PollingStateService
 import com.jervis.service.polling.handler.ResourceFilter
+import com.jervis.service.storage.DirectoryStructureService
 import jakarta.mail.Folder
 import jakarta.mail.Session
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,8 @@ import java.util.Properties
 class Pop3PollingHandler(
     repository: EmailMessageIndexRepository,
     private val pollingStateService: PollingStateService,
-) : EmailPollingHandlerBase(repository) {
+    directoryStructureService: DirectoryStructureService,
+) : EmailPollingHandlerBase(repository, directoryStructureService) {
     fun canHandle(connectionDocument: ConnectionDocument): Boolean =
         connectionDocument.protocol == com.jervis.dto.connection.ProtocolEnum.POP3
 

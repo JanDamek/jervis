@@ -554,25 +554,77 @@ graphRefLocks["client-abc|user:john"] = Mutex()
 
 ### EmailContinuousIndexer
 
-- **Purpose:** Creates DATA_PROCESSING task from emails + processes links
+- **Purpose:** Creates EMAIL_PROCESSING task from emails + indexes attachments as KB documents
 - **Process:**
   1. Reads NEW emails from MongoDB
-  2. Extracts links using LinkExtractor
-  3. Creates DATA_PROCESSING task for email (without downloading links)
-  4. For each link creates SEPARATE LINK_PROCESSING task
+  2. Cleans email body via Tika (HTML → plain text)
+  3. Creates EMAIL_PROCESSING task for email content
+  4. **Indexes email attachments as KB documents** (binary stored during polling):
+     - Each attachment with `storagePath` is registered with the Python KB service
+     - KB service extracts text (Tika/OCR/VLM) and indexes into RAG + Graph
+     - Attachments become searchable directly in the Knowledge Base
+     - Original files are preserved in `kb-documents/` directory
+     - SourceUrn format: `email-attachment::conn:{id},msgId:{msgId},file:{filename}`
 
-### JiraContinuousIndexer
+#### Email Attachment Flow
 
-- **Purpose:** Creates DATA_PROCESSING task from Jira issues
+```
+CentralPoller (IMAP/POP3)
+  → EmailPollingHandlerBase.parseContent()
+    → Extracts attachment binary from MIME parts
+    → Stores binary to kb-documents/{uuid}_{filename}
+    → Sets storagePath on EmailAttachment
+  → MongoDB (NEW state with storagePath)
+
+EmailContinuousIndexer
+  → Creates EMAIL_PROCESSING task
+  → indexEmailAttachments():
+    → For each attachment with storagePath:
+      → AttachmentKbIndexingService.registerPreStoredAttachment()
+        → Computes SHA-256 content hash
+        → Calls KB service POST /documents/register
+        → KB extracts text + indexes into RAG/Graph
+  → Marks as INDEXED
+```
+
+### JiraContinuousIndexer (BugTrackerContinuousIndexer)
+
+- **Purpose:** Creates BUGTRACKER_PROCESSING task from Jira issues + indexes attachments as KB documents
 - **Process:**
   1. Reads NEW Jira issues from MongoDB
-  2. Creates DATA_PROCESSING task
-  3. Qualifier agent handles indexing and link processing
+  2. Fetches full issue details from Jira API (including attachments)
+  3. Downloads and stores attachments in `attachments/` directory
+  4. Creates BUGTRACKER_PROCESSING task with attachment metadata
+  5. **Indexes each attachment as a KB document**:
+     - Copies binary from `attachments/` to `kb-documents/` (separate lifecycle)
+     - Registers with KB service for text extraction and RAG indexing
+     - SourceUrn format: `jira-attachment::conn:{id},issueKey:{key},file:{filename}`
 
-### ConfluenceContinuousIndexer
+### ConfluenceContinuousIndexer (WikiContinuousIndexer)
 
-- **Purpose:** Creates DATA_PROCESSING task from Confluence pages
-- **Process:** Similar to Jira indexer
+- **Purpose:** Creates WIKI_PROCESSING task from Confluence pages + indexes attachments as KB documents
+- **Process:**
+  1. Reads NEW Confluence pages from MongoDB
+  2. Fetches full page details from Confluence API (including attachments)
+  3. Downloads and stores attachments in `attachments/` directory
+  4. Creates WIKI_PROCESSING task with attachment metadata
+  5. **Indexes each attachment as a KB document**:
+     - Copies binary from `attachments/` to `kb-documents/` (separate lifecycle)
+     - Registers with KB service for text extraction and RAG indexing
+     - SourceUrn format: `confluence-attachment::conn:{id},pageId:{id},file:{filename}`
+
+### AttachmentKbIndexingService (shared)
+
+- **Location:** `backend/server/.../service/indexing/AttachmentKbIndexingService.kt`
+- **Purpose:** Shared service for indexing attachments from any source as KB documents
+- **Methods:**
+  - `indexAttachmentAsKbDocument()` — stores binary + registers (for new binary data)
+  - `indexStoredAttachmentAsKbDocument()` — copies from `attachments/` to `kb-documents/` + registers
+  - `registerPreStoredAttachment()` — registers already-stored file in `kb-documents/` (no copy needed)
+- **Features:**
+  - SHA-256 content hash for deduplication
+  - MIME-type-based categorization (REPORT, TECHNICAL, OTHER)
+  - Error-tolerant: individual attachment failures don't block parent entity indexing
 
 ### GitContinuousIndexer
 
@@ -961,10 +1013,14 @@ can be cross-project. The directory structure managed by `DirectoryStructureServ
 ### SourceUrn Format
 
 ```
-doc::id:{uuid}
+doc::id:{uuid}                                                          # User-uploaded KB document
+email-attachment::conn:{connId},msgId:{messageId},file:{filename}       # Email attachment
+jira-attachment::conn:{connId},issueKey:{key},file:{filename}           # Jira attachment
+confluence-attachment::conn:{connId},pageId:{pageId},file:{filename}    # Confluence attachment
 ```
 
-Matches the existing `SourceUrn.document()` factory in Kotlin.
+Matches the `SourceUrn.document()`, `SourceUrn.emailAttachment()`, `SourceUrn.jiraAttachment()`,
+and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 
 ### API Endpoints (Python KB Service)
 
@@ -994,6 +1050,7 @@ Matches the existing `SourceUrn.document()` factory in Kotlin.
 | `shared/common-api/.../IKbDocumentService.kt` | KRPC service interface |
 | `backend/server/.../rpc/KbDocumentRpcImpl.kt` | Kotlin RPC implementation (stores on FS, calls KB REST) |
 | `backend/server/.../storage/DirectoryStructureService.kt` | FS storage methods (`storeKbDocument`, `readKbDocument`, `deleteKbDocument`) |
+| `backend/server/.../service/indexing/AttachmentKbIndexingService.kt` | Shared service for indexing attachments as KB documents |
 | `backend/server/.../configuration/KnowledgeServiceRestClient.kt` | REST client to Python KB (document CRUD methods) |
 | `backend/service-knowledgebase/app/api/routes.py` | Python endpoints (`/documents/*`) |
 | `backend/service-knowledgebase/app/services/knowledge_service.py` | Document business logic (upload, extract, list, delete) |

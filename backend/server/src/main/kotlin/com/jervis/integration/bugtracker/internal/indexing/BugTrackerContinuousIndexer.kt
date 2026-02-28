@@ -16,6 +16,7 @@ import com.jervis.integration.bugtracker.internal.entity.BugTrackerIssueIndexDoc
 import com.jervis.integration.bugtracker.internal.state.BugTrackerStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
+import com.jervis.service.indexing.AttachmentKbIndexingService
 import com.jervis.service.storage.DirectoryStructureService
 import com.jervis.util.toAttachmentType
 import jakarta.annotation.PostConstruct
@@ -54,6 +55,7 @@ class BugTrackerContinuousIndexer(
     private val githubBugTrackerClient: IBugTrackerClient,
     private val gitlabBugTrackerClient: IBugTrackerClient,
     private val directoryStructureService: DirectoryStructureService,
+    private val attachmentKbIndexingService: AttachmentKbIndexingService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -356,6 +358,33 @@ class BugTrackerContinuousIndexer(
                 attachments = attachmentMetadata,
                 taskName = "${doc.issueKey}: ${(issueDetails.fields.summary ?: doc.summary ?: doc.issueKey).take(100)}",
             )
+
+            // Index Jira attachments as KB documents for full-text search and RAG
+            val issueSummary = issueDetails.fields.summary ?: doc.summary ?: doc.issueKey
+            for (att in attachmentMetadata) {
+                try {
+                    attachmentKbIndexingService.indexStoredAttachmentAsKbDocument(
+                        clientId = doc.clientId,
+                        projectId = doc.projectId,
+                        filename = att.filename,
+                        mimeType = att.mimeType,
+                        sizeBytes = att.sizeBytes,
+                        existingStoragePath = att.storagePath,
+                        sourceUrn = SourceUrn.jiraAttachment(
+                            connectionId = doc.connectionId.value,
+                            issueKey = doc.issueKey,
+                            filename = att.filename,
+                        ),
+                        title = "Jira ${doc.issueKey}: ${att.filename}",
+                        description = "Attachment from Jira issue '${doc.issueKey}: $issueSummary'",
+                        tags = listOf("jira-attachment", "jira", doc.issueKey),
+                    )
+                } catch (e: Exception) {
+                    logger.warn(e) {
+                        "Failed to index Jira attachment as KB document: ${att.filename} from ${doc.issueKey}"
+                    }
+                }
+            }
 
             // Convert to INDEXED state - delete full content, keep minimal tracking
             stateManager.markAsIndexed(doc)

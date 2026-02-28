@@ -6,6 +6,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.entity.email.EmailMessageIndexDocument
 import com.jervis.repository.EmailMessageIndexRepository
 import com.jervis.service.background.TaskService
+import com.jervis.service.indexing.AttachmentKbIndexingService
 import com.jervis.service.text.TikaTextExtractionService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,7 @@ class EmailContinuousIndexer(
     private val repository: EmailMessageIndexRepository,
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
+    private val attachmentKbIndexingService: AttachmentKbIndexingService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -167,11 +169,63 @@ class EmailContinuousIndexer(
                 taskName = doc.subject?.take(120) ?: "Email from ${doc.from}",
             )
 
+            // Index email attachments as KB documents (stored during polling)
+            indexEmailAttachments(doc)
+
             markAsIndexed(doc)
             logger.info { "Created EMAIL_PROCESSING task for email: ${doc.subject}" }
         } catch (e: Exception) {
             logger.error(e) { "Failed to create task for email ${doc.subject}" }
             markAsFailed(doc, "Task creation failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Index email attachments as KB documents.
+     *
+     * Attachments with storagePath were stored during email polling (binary extracted from MIME
+     * and written to kb-documents/ directory). This method registers them with the KB service
+     * for text extraction and RAG indexing, making them searchable directly in the Knowledge Base.
+     */
+    private suspend fun indexEmailAttachments(doc: EmailMessageIndexDocument) {
+        val attachmentsWithStorage = doc.attachments.filter { it.storagePath != null }
+        if (attachmentsWithStorage.isEmpty()) return
+
+        val messageId = doc.messageId ?: doc.messageUid
+        val emailSubject = doc.subject ?: "Email from ${doc.from}"
+
+        logger.info {
+            "Indexing ${attachmentsWithStorage.size} email attachment(s) as KB documents: subject='$emailSubject'"
+        }
+
+        for (att in attachmentsWithStorage) {
+            try {
+                val sourceUrn = SourceUrn.emailAttachment(
+                    connectionId = doc.connectionId,
+                    messageId = messageId,
+                    filename = att.filename,
+                )
+
+                // Binary was already stored in kb-documents/ during polling — just register it
+                attachmentKbIndexingService.registerPreStoredAttachment(
+                    clientId = doc.clientId,
+                    projectId = doc.projectId,
+                    filename = att.filename,
+                    mimeType = att.contentType,
+                    sizeBytes = att.size,
+                    kbDocumentStoragePath = att.storagePath!!,
+                    sourceUrn = sourceUrn,
+                    title = "Email: ${att.filename}",
+                    description = "Attachment from email '$emailSubject' (from: ${doc.from}, date: ${doc.sentDate ?: doc.receivedDate})",
+                    tags = listOf("email-attachment", "email"),
+                )
+            } catch (e: Exception) {
+                // Don't fail the whole email indexing if one attachment fails
+                logger.warn(e) {
+                    "Failed to index email attachment as KB document: ${att.filename} " +
+                        "from email '${doc.subject}'"
+                }
+            }
         }
     }
 

@@ -13,6 +13,7 @@ import com.jervis.integration.wiki.internal.entity.WikiPageIndexDocument
 import com.jervis.integration.wiki.internal.state.WikiStateManager
 import com.jervis.service.background.TaskService
 import com.jervis.service.connection.ConnectionService
+import com.jervis.service.indexing.AttachmentKbIndexingService
 import com.jervis.service.storage.DirectoryStructureService
 import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,7 @@ class WikiContinuousIndexer(
     private val connectionService: ConnectionService,
     private val atlassianClient: IAtlassianClient,
     private val directoryStructureService: DirectoryStructureService,
+    private val attachmentKbIndexingService: AttachmentKbIndexingService,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
@@ -240,6 +242,33 @@ class WikiContinuousIndexer(
                 attachments = attachmentMetadata,
                 taskName = doc.title.take(120).ifBlank { "Confluence page ${doc.pageId}" },
             )
+
+            // Index Confluence attachments as KB documents for full-text search and RAG
+            val pageTitle = doc.title.ifBlank { "Confluence page ${doc.pageId}" }
+            for (att in attachmentMetadata) {
+                try {
+                    attachmentKbIndexingService.indexStoredAttachmentAsKbDocument(
+                        clientId = doc.clientId,
+                        projectId = doc.projectId,
+                        filename = att.filename,
+                        mimeType = att.mimeType,
+                        sizeBytes = att.sizeBytes,
+                        existingStoragePath = att.storagePath,
+                        sourceUrn = SourceUrn.confluenceAttachment(
+                            connectionId = doc.connectionDocumentId.value,
+                            pageId = doc.pageId,
+                            filename = att.filename,
+                        ),
+                        title = "Confluence: ${att.filename}",
+                        description = "Attachment from Confluence page '$pageTitle' (space: ${pageDetails.spaceKey ?: "N/A"})",
+                        tags = listOf("confluence-attachment", "confluence", pageDetails.spaceKey ?: "unknown-space"),
+                    )
+                } catch (e: Exception) {
+                    logger.warn(e) {
+                        "Failed to index Confluence attachment as KB document: ${att.filename} from page ${doc.pageId}"
+                    }
+                }
+            }
 
             // Convert to INDEXED state - delete full content, keep minimal tracking
             stateManager.markAsIndexed(doc)

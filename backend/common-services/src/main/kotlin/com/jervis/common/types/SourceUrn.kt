@@ -76,6 +76,33 @@ value class SourceUrn(
                 }",
             )
 
+        fun emailAttachment(
+            connectionId: ConnectionId,
+            messageId: String,
+            filename: String,
+        ): SourceUrn =
+            SourceUrn(
+                "email-attachment::conn:$connectionId,msgId:${encodeValue(messageId)},file:${encodeValue(filename)}",
+            )
+
+        fun jiraAttachment(
+            connectionId: ObjectId,
+            issueKey: String,
+            filename: String,
+        ): SourceUrn =
+            SourceUrn(
+                "jira-attachment::conn:${connectionId.toHexString()},issueKey:${encodeValue(issueKey)},file:${encodeValue(filename)}",
+            )
+
+        fun confluenceAttachment(
+            connectionId: ObjectId,
+            pageId: String,
+            filename: String,
+        ): SourceUrn =
+            SourceUrn(
+                "confluence-attachment::conn:${connectionId.toHexString()},pageId:${encodeValue(pageId)},file:${encodeValue(filename)}",
+            )
+
         private fun encodeValue(value: String): String =
             value
                 .replace(",", "%2C")

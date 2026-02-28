@@ -13,10 +13,12 @@ import com.jervis.service.polling.PollingResult
 import com.jervis.service.polling.handler.PollingContext
 import com.jervis.service.polling.handler.PollingHandler
 import com.jervis.service.polling.handler.ResourceFilter
+import com.jervis.service.storage.DirectoryStructureService
 import jakarta.mail.Message
 import jakarta.mail.Multipart
 import jakarta.mail.Part
 import mu.KotlinLogging
+import java.io.InputStream
 import java.time.Instant
 
 /**
@@ -35,6 +37,7 @@ import java.time.Instant
  */
 abstract class EmailPollingHandlerBase(
     protected val repository: EmailMessageIndexRepository,
+    protected val directoryStructureService: DirectoryStructureService,
 ) {
     protected val logger = KotlinLogging.logger {}
 
@@ -177,7 +180,7 @@ abstract class EmailPollingHandlerBase(
         val receivedDate = message.receivedDate?.toInstant() ?: Instant.now()
 
         // Parse body and attachments (may return null if content cannot be loaded)
-        val contentResult = parseContent(message)
+        val contentResult = parseContent(message, clientId)
         val (textBody, htmlBody, attachments) =
             if (contentResult != null) {
                 contentResult
@@ -214,8 +217,14 @@ abstract class EmailPollingHandlerBase(
      *
      * Recursively traverses nested MIME multipart structures (e.g. multipart/mixed
      * containing multipart/alternative with text/plain + text/html body parts).
+     *
+     * Attachment binary data is extracted and stored on the shared filesystem
+     * (in kb-documents/) so it can later be registered as a KB document for indexing.
      */
-    protected fun parseContent(message: Message): Triple<String?, String?, List<EmailAttachment>>? {
+    protected fun parseContent(
+        message: Message,
+        clientId: ClientId,
+    ): Triple<String?, String?, List<EmailAttachment>>? {
         val content =
             try {
                 message.content
@@ -243,11 +252,18 @@ abstract class EmailPollingHandlerBase(
 
             when {
                 Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) -> {
+                    val filename = part.fileName ?: "attachment"
+                    val contentType = part.contentType?.substringBefore(";")?.trim() ?: "application/octet-stream"
+
+                    // Extract and store attachment binary data for later KB indexing
+                    val (storagePath, actualSize) = storeAttachmentBinary(part, clientId, filename)
+
                     attachments.add(
                         EmailAttachment(
-                            filename = part.fileName ?: "attachment",
-                            contentType = part.contentType,
-                            size = part.size.toLong(),
+                            filename = filename,
+                            contentType = contentType,
+                            size = actualSize ?: part.size.toLong(),
+                            storagePath = storagePath,
                         ),
                     )
                 }
@@ -281,5 +297,42 @@ abstract class EmailPollingHandlerBase(
         }
 
         return Triple(textBody, htmlBody, attachments)
+    }
+
+    /**
+     * Extract attachment binary data from a MIME part and store it on the shared filesystem.
+     *
+     * @return Pair of (storagePath, actualSize) — storagePath is null if extraction failed
+     */
+    private fun storeAttachmentBinary(
+        part: Part,
+        clientId: ClientId,
+        filename: String,
+    ): Pair<String?, Long?> {
+        return try {
+            val binaryData = (part.content as? InputStream)?.readBytes()
+                ?: part.inputStream?.readBytes()
+
+            if (binaryData == null || binaryData.isEmpty()) {
+                logger.warn { "Empty or unreadable attachment binary: $filename" }
+                return Pair(null, null)
+            }
+
+            // Store directly to kb-documents directory (non-suspend file I/O)
+            val kbDocsDir = directoryStructureService.clientKbDocumentsDir(clientId)
+            val uuid = java.util.UUID.randomUUID().toString()
+            val sanitizedFilename = filename.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val uniqueFilename = "${uuid}_$sanitizedFilename"
+            val filePath = kbDocsDir.resolve(uniqueFilename)
+            java.nio.file.Files.write(filePath, binaryData)
+
+            val storagePath = directoryStructureService.workspaceRoot().relativize(filePath).toString()
+            logger.debug { "Stored email attachment: $filename -> $storagePath (${binaryData.size} bytes)" }
+
+            Pair(storagePath, binaryData.size.toLong())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to extract/store email attachment binary: $filename" }
+            Pair(null, null)
+        }
     }
 }

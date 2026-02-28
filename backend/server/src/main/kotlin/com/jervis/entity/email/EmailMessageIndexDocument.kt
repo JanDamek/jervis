@@ -68,10 +68,15 @@ data class EmailMessageIndexDocument(
 
 /**
  * Email attachment metadata.
+ *
+ * When storagePath is set, the attachment binary has been stored on the shared filesystem
+ * (in kb-documents/) and can be registered as a KB document for full-text indexing.
  */
 data class EmailAttachment(
     val filename: String,
     val contentType: String,
     val size: Long,
     val contentId: String? = null,
+    /** Relative path from workspace root where the binary is stored (null for legacy docs) */
+    val storagePath: String? = null,
 )
