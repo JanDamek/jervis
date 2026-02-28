@@ -70,6 +70,7 @@ internal fun ClientEditForm(
     var autoUseAnthropic by remember { mutableStateOf(client.autoUseAnthropic) }
     var autoUseOpenai by remember { mutableStateOf(client.autoUseOpenai) }
     var autoUseGemini by remember { mutableStateOf(client.autoUseGemini) }
+    var autoUseOpenrouter by remember { mutableStateOf(client.autoUseOpenrouter) }
 
     // Connections
     var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toMutableSet()) }
@@ -209,6 +210,7 @@ internal fun ClientEditForm(
                     autoUseAnthropic = autoUseAnthropic,
                     autoUseOpenai = autoUseOpenai,
                     autoUseGemini = autoUseGemini,
+                    autoUseOpenrouter = autoUseOpenrouter,
                 ),
             )
         },
@@ -441,6 +443,11 @@ internal fun ClientEditForm(
                         label = "Google Gemini – pouze pro extrémní kontext (>49k tokenů)",
                         checked = autoUseGemini,
                         onCheckedChange = { autoUseGemini = it },
+                    )
+                    JCheckboxRow(
+                        label = "OpenRouter – směrování přes OpenRouter AI (dle prioritního seznamu)",
+                        checked = autoUseOpenrouter,
+                        onCheckedChange = { autoUseOpenrouter = it },
                     )
                 }
 

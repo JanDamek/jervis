@@ -503,6 +503,8 @@ enum class SettingsCategory(
     ENVIRONMENTS("Prostredi", Icons.Default.Language, "Definice K8s prostredi pro testovani."),
     CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Nastaveni API klicu a konfigurace coding agentu."),
     WHISPER("Whisper", Icons.Default.Mic, "Nastaveni prepisu reci na text a konfigurace modelu."),
+    GPG_CERTIFICATES("GPG Certifikaty", Icons.Default.Lock, "Sprava GPG klicu pro podepisovani commitu coding agentu."),
+    OPENROUTER("OpenRouter", Icons.Default.Route, "Smerovani LLM pozadavku pres OpenRouter AI – API klic, filtry, prioritni seznam modelu."),
 }
 
 @Composable

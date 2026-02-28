@@ -151,6 +151,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         rules.auto_use_anthropic,
         rules.auto_use_openai,
         rules.auto_use_gemini,
+        rules.auto_use_openrouter,
     ])
     tracker = EscalationTracker(
         start_tier=initial_tier,

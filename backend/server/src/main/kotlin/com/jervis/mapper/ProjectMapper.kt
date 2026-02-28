@@ -37,6 +37,7 @@ fun ProjectDocument.toDto(): ProjectDto =
         autoUseAnthropic = this.cloudModelPolicy?.autoUseAnthropic,
         autoUseOpenai = this.cloudModelPolicy?.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy?.autoUseGemini,
+        autoUseOpenrouter = this.cloudModelPolicy?.autoUseOpenrouter,
         isJervisInternal = this.isJervisInternal,
         workspaceStatus = this.workspaceStatus?.name,
         workspaceError = this.lastWorkspaceError,
@@ -74,11 +75,12 @@ fun ProjectDto.toDocument(): ProjectDocument {
         description = this.description,
         communicationLanguageEnum = this.communicationLanguageEnum,
         buildConfig = null, // TODO: Map buildConfig
-        cloudModelPolicy = if (autoUseAnthropic != null || autoUseOpenai != null || autoUseGemini != null) {
+        cloudModelPolicy = if (autoUseAnthropic != null || autoUseOpenai != null || autoUseGemini != null || autoUseOpenrouter != null) {
             CloudModelPolicy(
                 autoUseAnthropic = autoUseAnthropic ?: false,
                 autoUseOpenai = autoUseOpenai ?: false,
                 autoUseGemini = autoUseGemini ?: false,
+                autoUseOpenrouter = autoUseOpenrouter ?: false,
             )
         } else {
             null

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -72,6 +73,7 @@ enum class SettingsCategory(
     INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek (Git, Jira, Wiki, Email)."),
     GUIDELINES("Pravidla a směrnice", Icons.Default.Gavel, "Coding standards, Git pravidla, review checklist, approval pravidla."),
     GPG_CERTIFICATES("GPG Certifikáty", Icons.Default.Lock, "Správa GPG klíčů pro podepisování commitů coding agentů."),
+    OPENROUTER("OpenRouter", Icons.Default.Route, "Směrování LLM požadavků přes OpenRouter AI – API klíč, filtry, prioritní seznam modelů."),
 }
 
 @Composable
@@ -266,5 +268,6 @@ private fun SettingsContent(
         SettingsCategory.GUIDELINES -> GuidelinesSettings(repository)
         SettingsCategory.INDEXING -> IndexingSettings(repository)
         SettingsCategory.GPG_CERTIFICATES -> GpgCertificateSettings(repository)
+        SettingsCategory.OPENROUTER -> OpenRouterSettings(repository)
     }
 }

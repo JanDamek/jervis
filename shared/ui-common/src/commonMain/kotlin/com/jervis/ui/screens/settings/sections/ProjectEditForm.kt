@@ -93,12 +93,13 @@ internal fun ProjectEditForm(
     // Cloud model policy override
     var overrideCloudPolicy by remember {
         mutableStateOf(
-            project.autoUseAnthropic != null || project.autoUseOpenai != null || project.autoUseGemini != null,
+            project.autoUseAnthropic != null || project.autoUseOpenai != null || project.autoUseGemini != null || project.autoUseOpenrouter != null,
         )
     }
     var autoUseAnthropic by remember { mutableStateOf(project.autoUseAnthropic ?: false) }
     var autoUseOpenai by remember { mutableStateOf(project.autoUseOpenai ?: false) }
     var autoUseGemini by remember { mutableStateOf(project.autoUseGemini ?: false) }
+    var autoUseOpenrouter by remember { mutableStateOf(project.autoUseOpenrouter ?: false) }
 
     val scope = rememberCoroutineScope()
 
@@ -203,6 +204,7 @@ internal fun ProjectEditForm(
                     autoUseAnthropic = if (overrideCloudPolicy) autoUseAnthropic else null,
                     autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
                     autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
+                    autoUseOpenrouter = if (overrideCloudPolicy) autoUseOpenrouter else null,
                 ),
             )
         },
@@ -409,6 +411,7 @@ internal fun ProjectEditForm(
                                 autoUseAnthropic = false
                                 autoUseOpenai = false
                                 autoUseGemini = false
+                                autoUseOpenrouter = false
                             }
                         },
                     )
@@ -429,6 +432,11 @@ internal fun ProjectEditForm(
                             label = "Google Gemini – pouze pro extrémní kontext (>49k tokenů)",
                             checked = autoUseGemini,
                             onCheckedChange = { autoUseGemini = it },
+                        )
+                        JCheckboxRow(
+                            label = "OpenRouter – směrování přes OpenRouter AI (dle prioritního seznamu)",
+                            checked = autoUseOpenrouter,
+                            onCheckedChange = { autoUseOpenrouter = it },
                         )
                     }
                 }

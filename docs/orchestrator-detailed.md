@@ -353,6 +353,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False        # Cloud model auto-eskalace
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
+    auto_use_openrouter: bool = False      # OpenRouter — unrestricted, routes via priority model list
 ```
 
 ### ChatHistoryPayload
@@ -817,7 +818,7 @@ def select_local_tier(context_tokens):
    c. user zamítl? → RuntimeError
 ```
 
-**Auto-providers**: `rules.auto_use_anthropic/openai/gemini` + explicitní cloud prompt (keywords)
+**Auto-providers**: `rules.auto_use_anthropic/openai/gemini/openrouter` + explicitní cloud prompt (keywords)
 
 ### 8.4 Streaming + token-arrival timeout
 
@@ -2523,7 +2524,7 @@ k8s/build_orchestrator.sh
 # === Legacy Enums ===
 AgentType        # aider, openhands, claude, junie
 Complexity       # simple, medium, complex, critical
-ModelTier        # local_fast/standard/large, cloud_reasoning/coding/premium/large_context
+ModelTier        # local_fast/standard/large, cloud_openrouter/reasoning/coding/premium/large_context
 TaskCategory     # advice, single_task, epic, generative
 TaskAction       # respond, code, tracker_ops, mixed
 StepType         # respond, code, tracker
@@ -3044,7 +3045,7 @@ Tests in `backend/service-orchestrator/tests/test_hardening.py`:
 
 ### 30.6 Cloud Safety
 
-**CRITICAL:** Cloud models are NEVER called unless explicitly allowed in project rules (`auto_use_anthropic`, `auto_use_openai`, `auto_use_gemini`). All hardening changes (W-14 context guard, W-13 quality retry) use local Ollama only. The `llm_with_cloud_fallback` in `_helpers.py` checks `auto_providers(rules)` which derives from project settings — this is the ONLY path to cloud and it respects project configuration.
+**CRITICAL:** Cloud models are NEVER called unless explicitly allowed in project rules (`auto_use_anthropic`, `auto_use_openai`, `auto_use_gemini`, `auto_use_openrouter`). All hardening changes (W-14 context guard, W-13 quality retry) use local Ollama only. The `llm_with_cloud_fallback` in `_helpers.py` checks `auto_providers(rules)` which derives from project settings — this is the ONLY path to cloud and it respects project configuration. OpenRouter is unrestricted — when enabled, it can handle any task type and any context size, routing via the priority model list configured in OpenRouter settings.
 
 ---
 
@@ -3150,6 +3151,7 @@ class ChatRequest(BaseModel):
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
+    auto_use_openrouter: bool = False
 
 class ChatStreamEvent(BaseModel):
     event_type: ChatEventType  # token | thinking | tool_call | tool_result | done | error
@@ -3267,7 +3269,7 @@ LOCAL_FAST → LOCAL_STANDARD → LOCAL_LARGE → LOCAL_XLARGE → (cloud, if al
 - Tool parse failures ≥ 2 (JSON workaround issues)
 - Gibberish detection (low alphabetic ratio)
 
-**`get_next_tier(current, cloud_allowed)`** follows the escalation path. Cloud bridge (`CLOUD_REASONING → CLOUD_CODING → CLOUD_PREMIUM`) is ONLY accessible when `cloud_allowed=True`, derived from project rules.
+**`get_next_tier(current, cloud_allowed)`** follows the escalation path. Cloud bridge (`CLOUD_OPENROUTER → CLOUD_REASONING → CLOUD_CODING → CLOUD_PREMIUM`) is ONLY accessible when `cloud_allowed=True`, derived from project rules. OpenRouter is first in the cloud chain — unrestricted, handles any task.
 
 **`EscalationTracker`** — stateful tracker per background execution:
 - Tracks current tier, escalation count, failure reasons
@@ -3343,8 +3345,9 @@ backend/server/
 Both handlers enforce the same cloud safety rule as the rest of the system:
 
 - **Chat handler:** Passes `auto_use_*` flags from `ChatRequest` to `llm_with_cloud_fallback()` via project rules. Cloud is never used unless explicitly allowed.
-- **Background handler:** Derives `cloud_allowed` from `OrchestrateRequest.rules` (`auto_use_anthropic or auto_use_openai or auto_use_gemini`). `EscalationTracker` only bridges to cloud tiers when `cloud_allowed=True`.
+- **Background handler:** Derives `cloud_allowed` from `OrchestrateRequest.rules` (`auto_use_anthropic or auto_use_openai or auto_use_gemini or auto_use_openrouter`). `EscalationTracker` only bridges to cloud tiers when `cloud_allowed=True`.
 - **No implicit cloud:** If all project `auto_use_*` flags are `False`, escalation stops at `LOCAL_XLARGE` and the task fails if that tier can't handle it.
+- **OpenRouter routing:** When `auto_use_openrouter=True`, OpenRouter is the first cloud tier tried (`CLOUD_OPENROUTER`). It routes via the priority model list configured in Settings → OpenRouter. No task type or context size restrictions — OpenRouter can handle everything.
 
 ### 31.14 Kotlin Integration (Implemented)
 

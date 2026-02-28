@@ -479,6 +479,7 @@ class AgentOrchestratorService(
             autoUseAnthropic = effectivePolicy.autoUseAnthropic,
             autoUseOpenai = effectivePolicy.autoUseOpenai,
             autoUseGemini = effectivePolicy.autoUseGemini,
+            autoUseOpenrouter = effectivePolicy.autoUseOpenrouter,
             gitAuthorName = effectiveGitConfig?.authorName,
             gitAuthorEmail = effectiveGitConfig?.authorEmail,
             gitCommitterName = effectiveGitConfig?.committerName,

@@ -23,20 +23,24 @@ from app.models import ModelTier
 logger = logging.getLogger(__name__)
 
 
-# Escalation path: each tier maps to its successor
+# Escalation path: each tier maps to its successor.
+# OpenRouter is the first cloud tier tried — it's unrestricted (handles any
+# task type, any context size) and routes via the priority model list.
 _ESCALATION_PATH: dict[ModelTier, ModelTier | None] = {
     ModelTier.LOCAL_FAST: ModelTier.LOCAL_STANDARD,
     ModelTier.LOCAL_STANDARD: ModelTier.LOCAL_LARGE,
     ModelTier.LOCAL_LARGE: ModelTier.LOCAL_XLARGE,
     ModelTier.LOCAL_XLARGE: None,  # End of local path
     # Cloud escalation (only if allowed)
+    ModelTier.CLOUD_OPENROUTER: ModelTier.CLOUD_REASONING,
     ModelTier.CLOUD_REASONING: ModelTier.CLOUD_CODING,
     ModelTier.CLOUD_CODING: ModelTier.CLOUD_PREMIUM,
     ModelTier.CLOUD_PREMIUM: None,  # End of cloud path
 }
 
-# Local → cloud bridge (only if cloud is allowed)
-_LOCAL_TO_CLOUD_BRIDGE: ModelTier = ModelTier.CLOUD_REASONING
+# Local → cloud bridge (only if cloud is allowed).
+# OpenRouter first — unrestricted, handles everything.
+_LOCAL_TO_CLOUD_BRIDGE: ModelTier = ModelTier.CLOUD_OPENROUTER
 
 
 def needs_escalation(

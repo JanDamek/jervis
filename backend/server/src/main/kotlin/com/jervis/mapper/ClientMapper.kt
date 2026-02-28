@@ -32,6 +32,7 @@ fun ClientDocument.toDto(): ClientDto =
         autoUseAnthropic = this.cloudModelPolicy.autoUseAnthropic,
         autoUseOpenai = this.cloudModelPolicy.autoUseOpenai,
         autoUseGemini = this.cloudModelPolicy.autoUseGemini,
+        autoUseOpenrouter = this.cloudModelPolicy.autoUseOpenrouter,
     )
 
 fun ClientDto.toDocument(): ClientDocument {
@@ -68,6 +69,7 @@ fun ClientDto.toDocument(): ClientDocument {
             autoUseAnthropic = this.autoUseAnthropic,
             autoUseOpenai = this.autoUseOpenai,
             autoUseGemini = this.autoUseGemini,
+            autoUseOpenrouter = this.autoUseOpenrouter,
         ),
     )
 }

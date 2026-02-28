@@ -85,6 +85,10 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.CLOUD_LARGE_CONTEXT: {
         "model": f"google/{settings.default_large_context_model}",
     },
+    ModelTier.CLOUD_OPENROUTER: {
+        "model": "openrouter/auto",  # Default; overridden at runtime from settings DB
+        "api_base": settings.openrouter_api_base,
+    },
 }
 
 # Blocking call timeout per tier (seconds).
@@ -102,6 +106,7 @@ TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
     ModelTier.CLOUD_CODING:        300,
     ModelTier.CLOUD_PREMIUM:       300,
     ModelTier.CLOUD_LARGE_CONTEXT: 300,
+    ModelTier.CLOUD_OPENROUTER:    300,
 }
 
 
@@ -217,8 +222,8 @@ def _trim_messages_for_context(
 TIER_ORDER = [
     ModelTier.LOCAL_FAST, ModelTier.LOCAL_STANDARD, ModelTier.LOCAL_LARGE,
     ModelTier.LOCAL_XLARGE, ModelTier.LOCAL_XXLARGE,
-    ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING, ModelTier.CLOUD_PREMIUM,
-    ModelTier.CLOUD_LARGE_CONTEXT,
+    ModelTier.CLOUD_OPENROUTER, ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING,
+    ModelTier.CLOUD_PREMIUM, ModelTier.CLOUD_LARGE_CONTEXT,
 ]
 _TIER_INDEX = {t: i for i, t in enumerate(TIER_ORDER)}
 
@@ -261,8 +266,16 @@ class EscalationPolicy:
         """Suggest best cloud tier based on enabled providers and task type.
 
         Returns None if no suitable provider is auto-enabled.
+
+        OpenRouter is unrestricted — it can handle any task type and any
+        context size, so it's the preferred cloud fallback when enabled.
         """
         providers = auto_providers or set()
+        has_openrouter = "openrouter" in providers
+
+        # OpenRouter can handle everything — preferred first fallback
+        if has_openrouter:
+            return ModelTier.CLOUD_OPENROUTER
 
         # Large context → Gemini only
         if context_tokens > 40_000:
@@ -293,6 +306,8 @@ class EscalationPolicy:
             available.add("openai")
         if settings.google_api_key:
             available.add("gemini")
+        if settings.openrouter_api_key:
+            available.add("openrouter")
         return available
 
     def best_available_cloud_tier(

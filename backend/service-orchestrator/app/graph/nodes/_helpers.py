@@ -84,6 +84,7 @@ _CLOUD_KEYWORDS = [
     "cloud model", "cloud modely",
     "použij anthropic", "použi anthropic",
     "použij openai", "použi openai",
+    "použij openrouter", "použi openrouter",
 ]
 
 
@@ -93,7 +94,11 @@ def detect_cloud_prompt(query: str) -> bool:
 
 
 def auto_providers(rules: ProjectRules) -> set[str]:
-    """Build set of auto-enabled cloud providers from project rules."""
+    """Build set of auto-enabled cloud providers from project rules.
+
+    OpenRouter is unrestricted — when enabled, it can handle any task type
+    and any context size, routing via the priority model list in settings.
+    """
     providers = set()
     if rules.auto_use_anthropic:
         providers.add("anthropic")
@@ -101,6 +106,8 @@ def auto_providers(rules: ProjectRules) -> set[str]:
         providers.add("openai")
     if rules.auto_use_gemini:
         providers.add("gemini")
+    if rules.auto_use_openrouter:
+        providers.add("openrouter")
     return providers
 
 
@@ -215,6 +222,7 @@ async def _escalate_to_cloud(
 
     # 3. Ask user via interrupt
     tier_label = {
+        ModelTier.CLOUD_OPENROUTER: "OpenRouter (routing dle prioritního seznamu)",
         ModelTier.CLOUD_REASONING: "Anthropic Claude (reasoning)",
         ModelTier.CLOUD_CODING: "OpenAI GPT-4o (code)",
         ModelTier.CLOUD_LARGE_CONTEXT: "Google Gemini (large context)",

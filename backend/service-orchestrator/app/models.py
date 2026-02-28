@@ -39,6 +39,7 @@ class ModelTier(str, Enum):
     CLOUD_CODING = "cloud_coding"           # Anthropic — critical code changes
     CLOUD_PREMIUM = "cloud_premium"         # Anthropic Opus — last resort, critical
     CLOUD_LARGE_CONTEXT = "cloud_large_context"  # Gemini — ultra-large context (1M tokens)
+    CLOUD_OPENROUTER = "cloud_openrouter"   # OpenRouter — routed via priority model list
 
 
 class TaskCategory(str, Enum):
@@ -90,6 +91,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
+    auto_use_openrouter: bool = False
     # Git commit config (from client/project settings)
     git_author_name: str | None = None
     git_author_email: str | None = None

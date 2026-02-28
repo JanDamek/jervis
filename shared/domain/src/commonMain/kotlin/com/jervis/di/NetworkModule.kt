@@ -25,6 +25,7 @@ import com.jervis.service.IUserTaskService
 import com.jervis.service.IChatService
 import com.jervis.service.IGuidelinesService
 import com.jervis.service.IKbDocumentService
+import com.jervis.service.IOpenRouterSettingsService
 import com.jervis.service.ISystemConfigService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
@@ -150,6 +151,7 @@ object NetworkModule {
             chatService = rpcClient.withService<IChatService>(),
             guidelinesService = rpcClient.withService<IGuidelinesService>(),
             kbDocumentService = rpcClient.withService<IKbDocumentService>(),
+            openRouterSettingsService = rpcClient.withService<IOpenRouterSettingsService>(),
         )
 
     /**
@@ -182,5 +184,6 @@ object NetworkModule {
         val chatService: IChatService,
         val guidelinesService: IGuidelinesService,
         val kbDocumentService: IKbDocumentService,
+        val openRouterSettingsService: IOpenRouterSettingsService,
     )
 }
