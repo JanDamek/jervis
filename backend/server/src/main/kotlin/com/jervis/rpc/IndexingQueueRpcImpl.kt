@@ -256,7 +256,7 @@ class IndexingQueueRpcImpl(
             Query(
                 Criteria.where("state").`in`(listOf(TaskStateEnum.READY_FOR_QUALIFICATION, TaskStateEnum.QUALIFYING, TaskStateEnum.DONE).map { it.name })
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
-            ),
+            ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
         ).collectList().awaitSingle()
         val activeServerTasks = activeServerTasksList.associateBy { it.correlationId }
@@ -443,7 +443,7 @@ class IndexingQueueRpcImpl(
             Query(
                 Criteria.where("state").`in`(indexingActiveStates.map { it.name })
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
-            ),
+            ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
         ).collectList().awaitSingle()
         val activeServerTasks = activeServerTasksList.associateBy { it.correlationId }
@@ -659,6 +659,7 @@ class IndexingQueueRpcImpl(
             Criteria.where("state").`in`(states.map { it.name })
                 .and("type").`in`(types.map { it.name }),
         ).with(Sort.by(Sort.Direction.ASC, "createdAt"))
+            .limit(200)
 
         val tasks = mongoTemplate.find(taskQuery, TaskDocument::class.java, "tasks")
             .collectList().awaitSingle()
@@ -840,6 +841,7 @@ class IndexingQueueRpcImpl(
     ) {
         val gitQuery = Query(Criteria.where("state").`in`(states.map { it.name }))
             .with(Sort.by(Sort.Direction.DESC, "commitDate"))
+            .limit(500) // Dashboard groups take(20) per client — cap to avoid full collection scan
         val gitDocs = mongoTemplate.find(gitQuery, GitCommitDocument::class.java, "git_commits")
             .collectList().awaitSingle()
 
@@ -875,6 +877,7 @@ class IndexingQueueRpcImpl(
     ) {
         val emailQuery = Query(Criteria.where("state").`in`(states.map { it.name }))
             .with(Sort.by(Sort.Direction.DESC, "receivedDate"))
+            .limit(500)
         val emailDocs = mongoTemplate.find(emailQuery, EmailMessageIndexDocument::class.java, "email_message_index")
             .collectList().awaitSingle()
 
@@ -911,6 +914,7 @@ class IndexingQueueRpcImpl(
     ) {
         val btQuery = Query(Criteria.where("status").`in`(states.map { it.name }))
             .with(Sort.by(Sort.Direction.DESC, "bugtrackerUpdatedAt"))
+            .limit(500)
         val btDocs = mongoTemplate.find(btQuery, BugTrackerIssueIndexDocument::class.java, "bugtracker_issues")
             .collectList().awaitSingle()
 
@@ -948,6 +952,7 @@ class IndexingQueueRpcImpl(
     ) {
         val wikiQuery = Query(Criteria.where("status").`in`(states.map { it.name }))
             .with(Sort.by(Sort.Direction.DESC, "wikiUpdatedAt"))
+            .limit(500)
         val wikiDocs = mongoTemplate.find(wikiQuery, WikiPageIndexDocument::class.java, "wiki_pages")
             .collectList().awaitSingle()
 

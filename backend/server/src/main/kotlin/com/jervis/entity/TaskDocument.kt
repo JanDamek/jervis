@@ -10,6 +10,8 @@ import com.jervis.dto.TaskTypeEnum
 import org.bson.types.ObjectId
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.PersistenceCreator
+import org.springframework.data.mongodb.core.index.CompoundIndex
+import org.springframework.data.mongodb.core.index.CompoundIndexes
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import java.time.Instant
@@ -101,6 +103,10 @@ import java.time.Instant
  * @property orchestrationStartedAt Timestamp when task was dispatched to Python orchestrator (for detecting inline messages)
  */
 @Document(collection = "tasks")
+@CompoundIndexes(
+    CompoundIndex(name = "state_type", def = "{'state': 1, 'type': 1}"),
+    CompoundIndex(name = "state_type_createdAt", def = "{'state': 1, 'type': 1, 'createdAt': -1}"),
+)
 data class TaskDocument(
     @Id
     val id: TaskId = TaskId.generate(),

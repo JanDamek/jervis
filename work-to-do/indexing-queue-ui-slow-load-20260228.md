@@ -1,7 +1,7 @@
 # UI — fronta indexace se načítá extrémně dlouho
 
 **Priorita**: MEDIUM
-**Status**: OPEN
+**Status**: DONE
 
 ---
 
