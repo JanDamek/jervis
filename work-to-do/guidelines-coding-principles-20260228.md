@@ -1,7 +1,7 @@
 # Guidelines — přidat coding principles (idiomatický kód, SOLID, IF-LESS)
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

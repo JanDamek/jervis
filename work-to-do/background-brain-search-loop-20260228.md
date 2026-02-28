@@ -1,7 +1,7 @@
 # Background task — brain_search_issues loop (3× → forced conclusion)
 
 **Priorita**: MEDIUM
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

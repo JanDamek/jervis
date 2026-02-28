@@ -1,7 +1,7 @@
 # Chat timeout — background task nepreemptuje GPU pro CRITICAL chat
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE
 
 ---
 

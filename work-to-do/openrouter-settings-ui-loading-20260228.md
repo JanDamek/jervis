@@ -1,7 +1,7 @@
 # OpenRouter Settings — UI se jen točí (loading spinner)
 
 **Priorita**: MEDIUM
-**Status**: OPEN
+**Status**: DONE
 
 ---
 
