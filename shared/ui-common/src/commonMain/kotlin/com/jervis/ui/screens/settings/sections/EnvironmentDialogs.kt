@@ -58,6 +58,8 @@ fun AddComponentDialog(
         else -> null
     }
 
+    val defaultPorts = currentTemplate?.defaultPorts ?: emptyList()
+    val defaultEnvVars = currentTemplate?.defaultEnvVars ?: emptyMap()
     val volumeMountPath = currentTemplate?.defaultVolumeMountPath
 
     JFormDialog(
@@ -71,6 +73,8 @@ fun AddComponentDialog(
                     name = name,
                     type = selectedType,
                     image = resolvedImage,
+                    ports = defaultPorts,
+                    envVars = defaultEnvVars,
                     volumeMountPath = volumeMountPath,
                 ),
             )
@@ -135,11 +139,16 @@ fun AddComponentDialog(
                 )
             }
 
-            // Volume mount path preview (read-only)
-            volumeMountPath?.let {
+            // Template defaults preview (read-only)
+            if (defaultPorts.isNotEmpty() || defaultEnvVars.isNotEmpty() || volumeMountPath != null) {
                 Spacer(Modifier.height(8.dp))
+                val parts = buildList {
+                    if (defaultPorts.isNotEmpty()) add("Porty: ${defaultPorts.joinToString(", ") { "${it.containerPort}" }}")
+                    if (defaultEnvVars.isNotEmpty()) add("${defaultEnvVars.size} ENV")
+                    volumeMountPath?.let { add("Volume: $it") }
+                }
                 Text(
-                    "Volume: $it",
+                    parts.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

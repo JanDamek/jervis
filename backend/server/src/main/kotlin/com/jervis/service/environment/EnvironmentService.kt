@@ -50,6 +50,9 @@ class EnvironmentService(
             agentInstructions = env.agentInstructions,
             storageSizeGi = env.storageSizeGi,
             yamlManifests = env.yamlManifests,
+            // Preserve state and clientId — never overwrite via UI save
+            state = existing.state,
+            clientId = existing.clientId,
         ) ?: env
 
         val saved = environmentRepository.save(merged)
