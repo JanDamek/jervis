@@ -554,13 +554,19 @@ Text: {text}
         if direction not in ("OUTBOUND", "INBOUND", "ANY"):
             direction = "OUTBOUND"
 
+        from ..core.config import settings as kb_settings
+
+        max_results = kb_settings.MAX_GRAPH_TRAVERSAL_RESULTS
+
         aql = f"""
         FOR v, e, p IN @minDepth..@maxDepth {direction}
         @startNode
         KnowledgeEdges
         FILTER {filter_expr}
+        LIMIT @maxResults
         RETURN {{vertex: v, depth: LENGTH(p.edges)}}
         """
+        bind_vars["maxResults"] = max_results
 
         logger.info("GRAPH_READ: QUERY aql=%s bind_vars=%s", aql.strip(), bind_vars)
 

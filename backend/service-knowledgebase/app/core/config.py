@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     #   "write" — ingest, crawl, purge, alias/register, alias/merge
     KB_MODE: str = "all"
 
+    # -- Graph traversal limits --------------------------------------------------
+    # Prevents OOM kills on high-connectivity hub nodes (user:*, client_id:*, etc.)
+    MAX_GRAPH_TRAVERSAL_RESULTS: int = 200   # LIMIT per single AQL traversal
+    MAX_GRAPH_EXPANSION_CHUNKS: int = 500    # Total chunk cap in hybrid retriever graph expansion
+
     # -- Concurrency limits -----------------------------------------------------
     # Read operations: unlimited (as many as pod can handle)
     # Write operations: limited to prevent resource exhaustion (won't block reads)

@@ -298,10 +298,16 @@ class HybridRetriever:
         """
         Expand search via graph traversal from seed nodes.
         """
+        from ..core.config import settings as kb_settings
+
+        max_expansion_chunks = kb_settings.MAX_GRAPH_EXPANSION_CHUNKS
         chunks = []
         visited_chunks = set()
 
         for seed_idx, seed_key in enumerate(seed_nodes):
+            if len(chunks) >= max_expansion_chunks:
+                logger.info("GRAPH_EXPAND: chunk cap reached (%d), stopping", max_expansion_chunks)
+                break
             # Score penalty based on seed priority
             seed_priority_factor = 1.0 - (seed_idx * 0.05)
 
