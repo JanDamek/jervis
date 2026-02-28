@@ -69,6 +69,7 @@ async def orchestrate_v2(request: dict):
     Fire-and-forget: returns thread_id immediately, pushes status to Kotlin.
     """
     from app.background.handler import handle_background
+    from app.main import _active_tasks
     from app.models import OrchestrateRequest
     from app.tools.kotlin_client import kotlin_client
 
@@ -95,6 +96,14 @@ async def orchestrate_v2(request: dict):
                 artifacts=result.get("artifacts", []),
                 keep_environment_running=result.get("keep_environment_running", False),
             )
+        except asyncio.CancelledError:
+            logger.info("ORCHESTRATE_V2_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
+            await kotlin_client.report_status_change(
+                task_id=orchestrate_request.task_id,
+                thread_id=thread_id,
+                status="error",
+                error="Background task interrupted (preempted by foreground chat)",
+            )
         except Exception as e:
             logger.exception("Background v2 failed: %s", e)
             await kotlin_client.report_status_change(
@@ -103,8 +112,11 @@ async def orchestrate_v2(request: dict):
                 status="error",
                 error=str(e),
             )
+        finally:
+            _active_tasks.pop(thread_id, None)
 
-    asyncio.create_task(_run_background())
+    task = asyncio.create_task(_run_background())
+    _active_tasks[thread_id] = task
     return {"thread_id": thread_id}
 
 

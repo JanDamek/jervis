@@ -433,14 +433,20 @@ class RequestQueue:
 
     # ── CRITICAL preemption ──────────────────────────────────────────────
 
-    def _preempt_normal_for_critical(self) -> None:
-        """If CRITICAL is queued and all GPU slots occupied by NORMAL, preempt one."""
-        if self._critical.empty():
-            return
+    def _preempt_normal_for_critical(self) -> bool:
+        """If CRITICAL is queued and all GPU slots occupied by NORMAL, preempt one.
 
-        # Find a GPU running NORMAL that we can preempt
+        Returns True if a preemption was initiated, False if nothing to preempt.
+        Skips already-preempted requests to avoid duplicate preemption attempts.
+        """
+        if self._critical.empty():
+            return False
+
+        # Find a GPU running NORMAL that we can preempt (skip already preempted)
         for gpu in self.gpu_pool.healthy_backends:
             for req_id, req in list(gpu.active_requests.items()):
+                if req.state == RequestState.PREEMPTED:
+                    continue  # Already preempted — don't re-signal
                 if req.priority >= Priority.NORMAL:
                     if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
                         continue
@@ -452,4 +458,5 @@ class RequestQueue:
                     req.state = RequestState.PREEMPTED
                     # After preemption completes (grace period handled by proxy),
                     # cleanup will call notify_slot_freed() which wakes dispatcher
-                    return  # One preemption at a time
+                    return True  # One preemption at a time
+        return False
