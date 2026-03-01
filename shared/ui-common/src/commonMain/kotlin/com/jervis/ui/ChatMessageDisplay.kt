@@ -1,7 +1,7 @@
 package com.jervis.ui
 
-import com.jervis.ui.queue.OrchestratorProgressInfo
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,14 +33,13 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.queue.OrchestratorProgressInfo
 import com.jervis.ui.util.copyToClipboard
 import com.jervis.ui.util.formatMessageTime
 import com.mikepenz.markdown.m3.Markdown
@@ -115,9 +115,10 @@ internal fun ChatArea(
                         val prevSequence = messages[originalIndex - 1].sequence
                         val currSequence = message.sequence
                         if (prevSequence != null && currSequence != null) {
-                            val boundary = compressionBoundaries.find { b ->
-                                b.afterSequence in prevSequence until currSequence
-                            }
+                            val boundary =
+                                compressionBoundaries.find { b ->
+                                    b.afterSequence in prevSequence until currSequence
+                                }
                             if (boundary != null) {
                                 CompressionBoundaryIndicator(boundary)
                             }
@@ -162,9 +163,10 @@ private fun CompressionBoundaryIndicator(
     var expanded by remember { mutableStateOf(false) }
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
     ) {
         // Divider with icon and label
         Row(
@@ -198,9 +200,10 @@ private fun CompressionBoundaryIndicator(
         // Expandable summary
         AnimatedVisibility(visible = expanded) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
                     text = boundary.summary,
@@ -311,10 +314,11 @@ private fun ChatMessageItem(
                 if (orchestratorProgress.percent > 0) {
                     LinearProgressIndicator(
                         progress = { (orchestratorProgress.percent / 100.0).coerceIn(0.0, 1.0).toFloat() },
-                        modifier = Modifier
-                            .padding(start = 24.dp, end = 48.dp)
-                            .fillMaxWidth()
-                            .height(3.dp),
+                        modifier =
+                            Modifier
+                                .padding(start = 24.dp, end = 48.dp)
+                                .fillMaxWidth()
+                                .height(3.dp),
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                 }
@@ -326,9 +330,10 @@ private fun ChatMessageItem(
         var expanded by remember { mutableStateOf(false) }
 
         Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -341,11 +346,12 @@ private fun ChatMessageItem(
                         if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = if (isSuccess) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
+                        tint =
+                            if (isSuccess) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
                     )
                     Text(
                         text = message.metadata["task_title"] ?: "Background úloha",
@@ -379,14 +385,16 @@ private fun ChatMessageItem(
                     SelectionContainer {
                         Markdown(
                             content = message.text,
-                            colors = markdownColor(
-                                text = MaterialTheme.colorScheme.onSurfaceVariant,
-                                codeBackground = MaterialTheme.colorScheme.surface,
-                            ),
-                            typography = markdownTypography(
-                                text = MaterialTheme.typography.bodySmall,
-                                code = MaterialTheme.typography.bodySmall,
-                            ),
+                            colors =
+                                markdownColor(
+                                    text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    codeBackground = MaterialTheme.colorScheme.surface,
+                                ),
+                            typography =
+                                markdownTypography(
+                                    text = MaterialTheme.typography.bodySmall,
+                                    code = MaterialTheme.typography.bodySmall,
+                                ),
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
@@ -408,9 +416,10 @@ private fun ChatMessageItem(
     } else if (message.messageType == ChatMessage.MessageType.URGENT_ALERT) {
         // Urgent alert — always expanded, errorContainer border
         Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                ),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         ) {
@@ -438,14 +447,16 @@ private fun ChatMessageItem(
                 SelectionContainer {
                     Markdown(
                         content = message.text,
-                        colors = markdownColor(
-                            text = MaterialTheme.colorScheme.onErrorContainer,
-                            codeBackground = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                        typography = markdownTypography(
-                            text = MaterialTheme.typography.bodyMedium,
-                            code = MaterialTheme.typography.bodySmall,
-                        ),
+                        colors =
+                            markdownColor(
+                                text = MaterialTheme.colorScheme.onErrorContainer,
+                                codeBackground = MaterialTheme.colorScheme.errorContainer,
+                            ),
+                        typography =
+                            markdownTypography(
+                                text = MaterialTheme.typography.bodyMedium,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
                     )
                 }
 
@@ -475,7 +486,7 @@ private fun ChatMessageItem(
     } else {
         // standard chat bubble - iMessage/WhatsApp style (width based on content)
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-            val maxBubbleWidth = maxWidth - 32.dp  // Account for LazyColumn's padding
+            val maxBubbleWidth = maxWidth - 32.dp // Account for LazyColumn's padding
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -496,139 +507,130 @@ private fun ChatMessageItem(
                                     MaterialTheme.colorScheme.secondaryContainer
                                 },
                         ),
-                    modifier = Modifier
-                        .widthIn(min = 48.dp, max = maxBubbleWidth),
+                    modifier =
+                        Modifier
+                            .widthIn(min = 48.dp, max = maxBubbleWidth),
                 ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                ) {
-                    // Header row: sender label + action icons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier.padding(16.dp),
                     ) {
-                        Text(
-                            text =
-                                if (isMe) {
-                                    "Já"
-                                } else {
-                                    "Asistent"
-                                },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-
-                        // Action icons
+                        // Header row: sender label + action icons
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(0.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Edit button — only for user messages
-                            if (isMe) {
+                            Text(
+                                text =
+                                    if (isMe) {
+                                        "Já"
+                                    } else {
+                                        "Asistent"
+                                    },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            // Action icons
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Edit button — only for user messages
+                                if (isMe) {
+                                    IconButton(
+                                        onClick = { onEditMessage(message.text) },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = "Upravit",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                                // Copy button — for both user and assistant
                                 IconButton(
-                                    onClick = { onEditMessage(message.text) },
+                                    onClick = { copyToClipboard(message.text) },
                                     modifier = Modifier.size(32.dp),
                                 ) {
                                     Icon(
-                                        Icons.Default.Edit,
-                                        contentDescription = "Upravit",
+                                        Icons.Default.ContentCopy,
+                                        contentDescription = "Kopírovat",
                                         modifier = Modifier.size(18.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     )
                                 }
                             }
-                            // Copy button — for both user and assistant
-                            IconButton(
-                                onClick = { copyToClipboard(message.text) },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentCopy,
-                                    contentDescription = "Kopírovat",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                )
-                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    // Message content - Markdown for Assistant, plain text for User
-                    SelectionContainer {
-                        if (isMe) {
-                            // User messages - plain text
-                            Text(
-                                text = message.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        } else {
-                            // Assistant messages - Markdown rendering
-                            // Sanitize: normalize line endings to prevent AST/text length mismatch
-                            // (StringIndexOutOfBoundsException in markdown parser)
-                            val stableContent = remember(message.text) {
-                                message.text
-                                    .replace("\r\n", "\n")
-                                    .replace("\r", "\n")
-                                    .replace("\u0000", "")
-                            }
-                            var markdownFailed by remember(stableContent) { mutableStateOf(false) }
-                            if (markdownFailed) {
-                                // Fallback: plain text when markdown rendering fails
+                        // Message content - Markdown for Assistant, plain text for User
+                        SelectionContainer {
+                            if (isMe) {
+                                // User messages - plain text
                                 Text(
-                                    text = stableContent,
+                                    text = message.text,
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             } else {
-                                try {
-                                    Markdown(
-                                        content = stableContent,
-                                        colors = markdownColor(
+                                // Assistant messages - Markdown rendering
+                                // Sanitize: normalize line endings to prevent AST/text length mismatch
+                                // (StringIndexOutOfBoundsException in markdown parser)
+                                val stableContent =
+                                    remember(message.text) {
+                                        message.text
+                                            .replace("\r\n", "\n")
+                                            .replace("\r", "\n")
+                                            .replace("\u0000", "")
+                                    }
+                                Markdown(
+                                    content = stableContent,
+                                    colors =
+                                        markdownColor(
                                             text = MaterialTheme.colorScheme.onSecondaryContainer,
                                             codeBackground = MaterialTheme.colorScheme.surfaceVariant,
                                         ),
-                                        typography = markdownTypography(
+                                    typography =
+                                        markdownTypography(
                                             text = MaterialTheme.typography.bodyMedium,
                                             code = MaterialTheme.typography.bodySmall,
                                             h1 = MaterialTheme.typography.headlineMedium,
                                             h2 = MaterialTheme.typography.headlineSmall,
                                             h3 = MaterialTheme.typography.titleLarge,
                                         ),
-                                    )
-                                } catch (_: Exception) {
-                                    markdownFailed = true
-                                }
+                                )
                             }
                         }
-                    }
 
-                    // Show timestamp if available — formatted for humans
-                    message.timestamp?.let { ts ->
-                        if (ts.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = formatMessageTime(ts),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            )
+                        // Show timestamp if available — formatted for humans
+                        message.timestamp?.let { ts ->
+                            if (ts.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = formatMessageTime(ts),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                            }
                         }
-                    }
 
-                    // Confidence badge for assistant messages (E14-S4)
-                    if (!isMe) {
-                        ConfidenceBadge(message.metadata)
-                    }
+                        // Confidence badge for assistant messages (E14-S4)
+                        if (!isMe) {
+                            ConfidenceBadge(message.metadata)
+                        }
 
-                    // Show workflow steps for Assistant messages
-                    if (!isMe && message.workflowSteps.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        WorkflowStepsDisplay(message.workflowSteps)
+                        // Show workflow steps for Assistant messages
+                        if (!isMe && message.workflowSteps.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            WorkflowStepsDisplay(message.workflowSteps)
+                        }
                     }
                 }
             }
-        }
-        }  // BoxWithConstraints
+        } // BoxWithConstraints
     }
 }
 
@@ -666,11 +668,12 @@ private fun WorkflowStepsDisplay(
                         },
                         contentDescription = null,
                         modifier = Modifier.size(12.dp),
-                        tint = when (step.status) {
-                            ChatMessage.StepStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-                            ChatMessage.StepStatus.FAILED -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        tint =
+                            when (step.status) {
+                                ChatMessage.StepStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                                ChatMessage.StepStatus.FAILED -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                     )
 
                     // Step label
@@ -685,11 +688,12 @@ private fun WorkflowStepsDisplay(
                     if (step.tools.isNotEmpty()) {
                         IconButton(
                             onClick = {
-                                expandedStepIndices = if (index in expandedStepIndices) {
-                                    expandedStepIndices - index
-                                } else {
-                                    expandedStepIndices + index
-                                }
+                                expandedStepIndices =
+                                    if (index in expandedStepIndices) {
+                                        expandedStepIndices - index
+                                    } else {
+                                        expandedStepIndices + index
+                                    }
                             },
                             modifier = Modifier.size(20.dp),
                         ) {
@@ -706,9 +710,10 @@ private fun WorkflowStepsDisplay(
                 // Tools list (collapsible)
                 if (step.tools.isNotEmpty() && index in expandedStepIndices) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 18.dp, top = 4.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 18.dp, top = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         step.tools.forEach { tool ->
@@ -740,11 +745,16 @@ private fun ConfidenceBadge(
     val verified = metadata["fact_check_verified"]?.toIntOrNull() ?: 0
     if (claims == 0) return
 
-    val badgeColor = when {
-        confidence >= 0.8 -> Color(0xFF4CAF50) // Green
-        confidence >= 0.5 -> Color(0xFFFFC107) // Amber
-        else -> Color(0xFFF44336)              // Red
-    }
+    val badgeColor =
+        when {
+            confidence >= 0.8 -> Color(0xFF4CAF50)
+
+            // Green
+            confidence >= 0.5 -> Color(0xFFFFC107)
+
+            // Amber
+            else -> Color(0xFFF44336) // Red
+        }
     val pct = (confidence * 100).toInt()
 
     Spacer(modifier = Modifier.height(6.dp))
