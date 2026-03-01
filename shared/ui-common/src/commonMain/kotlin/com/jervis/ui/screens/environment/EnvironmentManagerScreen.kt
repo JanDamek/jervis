@@ -83,7 +83,9 @@ fun EnvironmentManagerScreen(
         // Load templates once (static data)
         try {
             templates = repository.environments.getComponentTemplates()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            error = "Chyba při načítání šablon: ${e.message}"
+        }
     }
 
     // Deep-link: select initial environment once loaded
@@ -217,19 +219,22 @@ private fun EnvironmentDetail(
     var selectedTab by remember { mutableStateOf(EnvironmentManagerTab.OVERVIEW) }
     var status by remember { mutableStateOf<EnvironmentStatusDto?>(null) }
     var statusLoading by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
 
     // Load status when environment changes
     LaunchedEffect(environment.id) {
+        actionError = null
         if (environment.state == EnvironmentStateEnum.RUNNING ||
             environment.state == EnvironmentStateEnum.CREATING
         ) {
             statusLoading = true
             try {
                 status = repository.environments.getEnvironmentStatus(environment.id)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 status = null
+                actionError = "Chyba při načítání stavu: ${e.message}"
             } finally {
                 statusLoading = false
             }
@@ -240,6 +245,15 @@ private fun EnvironmentDetail(
         title = environment.name,
         onBack = onBack,
     ) {
+        // Action error banner
+        actionError?.let { errMsg ->
+            JErrorState(
+                message = errMsg,
+                onRetry = { actionError = null },
+            )
+            Spacer(Modifier.height(JervisSpacing.itemGap))
+        }
+
         // Tab row
         TabRow(
             selectedTabIndex = selectedTab.ordinal,
@@ -263,36 +277,59 @@ private fun EnvironmentDetail(
                 OverviewTab(
                     environment = environment,
                     status = status,
+                    onSave = { updatedEnv ->
+                        scope.launch {
+                            actionError = null
+                            try {
+                                repository.environments.updateEnvironment(updatedEnv.id, updatedEnv)
+                                onUpdated()
+                            } catch (e: Exception) {
+                                actionError = "Chyba při ukládání: ${e.message}"
+                            }
+                        }
+                    },
                     onProvision = {
                         scope.launch {
+                            actionError = null
                             try {
                                 repository.environments.provisionEnvironment(environment.id)
                                 onUpdated()
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                actionError = "Chyba při provisionování: ${e.message}"
+                            }
                         }
                     },
                     onStop = {
                         scope.launch {
+                            actionError = null
                             try {
                                 repository.environments.deprovisionEnvironment(environment.id)
                                 onUpdated()
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                actionError = "Chyba při zastavování: ${e.message}"
+                            }
                         }
                     },
                     onDelete = {
                         scope.launch {
+                            actionError = null
                             try {
                                 repository.environments.deleteEnvironment(environment.id)
                                 onDeleted()
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                actionError = "Chyba při mazání: ${e.message}"
+                            }
                         }
                     },
                     onSync = {
                         scope.launch {
+                            actionError = null
                             try {
                                 repository.environments.syncEnvironmentResources(environment.id)
                                 onUpdated()
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) {
+                                actionError = "Chyba při synchronizaci: ${e.message}"
+                            }
                         }
                     },
                 )
