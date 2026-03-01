@@ -1,1133 +1,271 @@
-# Jervis – Engineering & Architecture Guidelines (2026)
+# Jervis – Quick Start Guidelines
 
-**Status:** Production Documentation (2026-02-12)
-**Purpose:** Single source of truth for engineering, architecture, and UI guidelines
-
----
-
-## Table of Contents
-
-1. [Core Development Principles](#core-development-principles)
-2. [Kotlin & Code Style](#kotlin--code-style)
-3. [Error Handling & Logging](#error-handling--logging)
-4. [HTTP Clients & Service Integration](#http-clients--service-integration)
-5. [LLM Integration & Prompting](#llm-integration--prompting)
-6. [UI Design System](#ui-design-system)
-7. [Architecture & Modules](#architecture--modules)
-8. [Security & Operations](#security--operations)
+**Status:** Production (2026-03-01)
+**Purpose:** Essential rules and patterns for coding agents
 
 ---
 
-## Core Development Principles
+## What is Jervis?
 
-### Database Query Principles
+**Jervis** is an autonomous AI assistant built on Kotlin Multiplatform + Python LangGraph orchestrator.
 
-**Always filter in DB, never in application code.**
+- **UI**: Compose Multiplatform (Desktop/Android/iOS), Czech language
+- **Backend**: Kotlin Spring Boot + Python microservices
+- **Data**: MongoDB (tasks/clients/projects), ArangoDB (knowledge graph), Weaviate (RAG)
+- **AI**: LiteLLM + Ollama, GPU/CPU routing, 20+ specialized agents
 
-Every condition that can be expressed as a DB query MUST be a DB query. Fetching records only to filter them in Kotlin wastes DB time, network, and application RAM.
+**Core mission**: Autonomously manage software projects — indexing code/JIRA/Confluence/Git/emails, qualifying tasks, dispatching agents, executing code changes, creating PRs, tracking deadlines.
 
-**❌ DON'T:**
+---
+
+## Critical Rules
+
+### 1. Database Query Principles
+
+**ALWAYS filter in DB, NEVER in application code.**
+
+❌ **DON'T:**
 ```kotlin
-// WRONG: fetches ALL clients, filters in Kotlin
-clientRepository.findAll().toList().filter { it.archived }
-// WRONG: fetches all, then filters
-repository.findByState(READY).toList().filter { it.clientId !in excludedIds }
+repository.findAll().filter { it.archived }  // Fetches ALL, filters in Kotlin
 ```
 
-**✅ DO:**
+✅ **DO:**
 ```kotlin
-// CORRECT: DB does the filtering
-clientRepository.findByArchivedTrue()
-// CORRECT: proper query method
-repository.findByStateAndClientIdNotIn(READY, excludedIds)
+repository.findByArchivedTrue()  // DB does the filtering
 ```
 
 **Rules:**
-1. **Spring Data derived queries first** — use method name conventions (`findByArchivedTrue`, `findByStateAndClientIdNotIn`)
-2. **@Query only when Spring Data cannot express it** — complex aggregations, joins, text search
-3. **Never use MongoTemplate/ReactiveMongoTemplate** when Spring Data derived query can do the job
-4. **If a query is slow, add an index** — don't work around it with application-level caching of filtered results
-5. **Prefer `Flow` over `List`** — don't `.toList()` unless you actually need all items in memory
+- Spring Data derived queries first (`findByArchivedTrue`, `findByStateAndClientIdNotIn`)
+- `@Query` only when Spring Data can't express it
+- Never `MongoTemplate` when Spring Data can do it
+- Prefer `Flow` over `List` (don't `.toList()` unless needed)
 
-**Index strategy:** If a new query pattern is needed and might be slow, add a MongoDB index annotation on the repository or document. A proper index is always better than fetching extra data.
+### 2. FAIL-FAST Philosophy
 
-### FAIL-FAST Philosophy
+**Exceptions must propagate. Never hide errors.**
 
-Errors must not be hidden. An exception is better than masking an error.
+❌ **DON'T:**
+- Try/catch inside services (except I/O boundaries)
+- Generic `Result<T>` wrappers everywhere
 
-**❌ DON'T:**
-- Try/catch inside business logic (services, tools, repositories)
-- Catch exceptions just for logging and re-throw
-- Use generic `Result<T>` wrappers everywhere
+✅ **DO:**
+- Try/catch ONLY at boundaries (REST, tools, top-level handler)
+- Validate input, fail fast
+- Background/batch jobs: skip + warn on stale IDs, don't crash entire batch
 
-**✅ DO:**
-- Try/catch ONLY at boundaries: I/O, REST boundary, top-level controller
-- Let exceptions propagate to top-level handler
-- For Tools: Tools throw exceptions, caller handles as tool error
-- Validate input (fail-fast), not defensive programming everywhere
-- Background/batch jobs: skip + warn on missing references (stale IDs) instead of crashing the whole batch
-- External service calls (LLM, APIs): retry transient errors with exponential backoff before escalating
+### 3. IF-LESS Pattern
 
-### Kotlin-First & Idiomatic Code
+Replace `if/when` with polymorphism/sealed classes/routing tables where code might expand.
 
-- Use coroutines + Flow as foundation for async work
-- Avoid "Java in Kotlin" patterns
-- Prefer streaming (`Flow`, `Sequence`) over building large `List`
-- Use extension functions instead of "utils" classes
-- No @Deprecated code: all changes refactored immediately
+**OK for trivial cases**: `if/when` is fine for simple decisions.
 
-### IF-LESS Pattern
+### 4. Documentation is Part of the Deliverable
 
-Where code might expand, replace `if/when` with:
-- Polymorphism
-- Sealed hierarchies
-- Strategy maps
-- Routing tables
+**After every code change, update docs BEFORE committing.**
 
-**OK for trivial cases:** `if/when` is fine for simple decisions
+| Changed Code | Update These Docs |
+|--------------|-------------------|
+| UI component/pattern | `ui-design.md` + `GUIDELINES.md` |
+| Data processing/routing | `architecture.md` + `structures.md` |
+| KB/graph schema | `knowledge-base.md` |
+| Architecture/modules | `architecture.md` |
+| Orchestrator behavior | `orchestrator-final-spec.md` or `orchestrator-detailed.md` |
 
-### SOLID Principles
+### 5. Kotlin-First & Idiomatic Code
 
-- Small, single-purpose functions
-- High cohesion, low coupling
-- Eliminate duplicates
-- Dependency injection
+- Use coroutines + `Flow` for async work
+- No "Java in Kotlin" patterns
+- Prefer streaming over `List`
+- Extension functions, not utils classes
+- No `@Deprecated` code — refactor immediately
 
-### Code Comments & Language
+### 6. Language
 
-**Language:** English only in code, comments, and logs
-
-**Comments:**
-- ❌ NO decorative comments (ASCII art, section headers, formatting)
-  - ❌ `// ════════════`
-  - ❌ `// ───────────`
-  - ❌ `// ==================== SECTION ====================`
-- ✅ Self-documenting code speaks for itself
-- ✅ ONLY KDoc for public API
-- ✅ Only critical "why" notes inline
-- ✅ Use blank lines or package structure for separation
-
-### NO Metadata Maps (Antipattern)
-
-**❌ NEVER use:** `metadata: MutableMap<String, Any>` or generic maps for structured data
-
-**✅ ALWAYS create:** Proper data classes with typed fields
-
-**Why?** No type safety, no IDE support, no refactoring support, poor readability
-
-### DTO & Data Modeling
-
-**❌ NO String Constants for Types:**
-- Never use `String` for fixed sets of values (e.g., `type: String` for "HTTP", "IMAP").
-- ✅ ALWAYS use `enum class` (e.g., `ConnectionTypeEnum`).
-
-**❌ NO UI-Modifiable State in DTOs:**
-- `state` fields in DTOs (e.g., `ConnectionStateEnum`) are for **read-only display** in UI.
-- UI must NOT allow changing state directly.
-- State changes happen only in backend services (e.g., on error, on successful connection test).
+- **Code/comments/logs**: English
+- **UI text**: Czech
+- **Documentation**: English
 
 ---
 
-## Kotlin & Code Style
-
-### No Serialization of Mixed-Type Collections
-
-**Problem:** Ollama API requests had heterogeneous maps (e.g., `mapOf("name" to "model", "stream" to false)`)
-
-**Error:** `IllegalStateException: Serializing collections of different element types is not yet supported`
-
-**Solution:** Define `@Serializable` data classes for each request type
-
-```kotlin
-@Serializable
-data class OllamaPullRequest(
-    val name: String,
-    val stream: Boolean = false
-)
-
-@Serializable
-data class OllamaPullResponse(
-    val status: String,
-    val digest: String? = null,
-    val total: Long? = null,
-    val completed: Long? = null
-)
-```
-
-**Benefit:**
-- Type-safe API calls
-- IDE autocomplete and compile-time checks
-- Clear request/response structure
-- Follows guidelines preference for `kotlinx.serialization`
-
----
-
-## Error Handling & Logging
-
-### Exception Hierarchy
-
-- **Business Logic:** Throw exceptions, don't catch
-- **I/O Layer:** Catch, log, transform to domain exceptions
-- **REST Boundary:** Catch, convert to HTTP response
-- **Top Level:** Global exception handler
-
-### Logging Levels
-
-- **ERROR:** Unrecoverable failure requiring intervention
-- **WARN:** Degraded operation, security concerns, repeated errors
-- **INFO:** Significant state transitions, deployment events
-- **DEBUG:** Detailed flow, tool execution, validation details
-
----
-
-## HTTP Clients & Service Integration
-
-### Decision Tree
-
-| Scenario | Client | Why |
-|----------|--------|-----|
-| Internal service (192.168.x.x, localhost) | `KtorClientFactory` | Trusted network |
-| External LLM API with built-in rate limiting | `KtorClientFactory` | No client-side limit needed |
-| Microservice with `@HttpExchange` | `WebClientFactory` | Spring integration |
-| Microservice with dynamic domain | Ktor + `DomainRateLimiter` | User-specified URLs |
-| Link scraper | Ktor + `DomainRateLimiter` | Dynamic domain scraping |
-
-### KtorClientFactory - No Rate Limiting
-
-**Use for:**
-- Ollama (localhost)
-- LM Studio (localhost)
-- Searxng (internal)
-- OpenAI, Anthropic, Google (have built-in rate limiting)
-
-**Setup:**
-```kotlin
-@Service
-class OllamaClient(private val ktorClientFactory: KtorClientFactory) {
-    private val httpClient by lazy { 
-        ktorClientFactory.getHttpClient("ollama.primary") 
-    }
-    
-    suspend fun call(...) = httpClient.post("/api/generate") { 
-        setBody(...) 
-    }.body<Response>()
-}
-```
-
-**Critical:** LLM calls must have NO timeout (can take 15+ minutes)
-
-```kotlin
-install(HttpTimeout) {
-    requestTimeoutMillis = null // No timeout for LLM
-    socketTimeoutMillis = null  // No socket timeout for streaming
-}
-```
-
-### Ktor with DomainRateLimiter
-
-**Use for:** Provider services with dynamic domains (user-specified URLs)
-
-**Rate limits** are centralized in `ProviderRateLimits`:
-
-```kotlin
-// common-services/.../ratelimit/ProviderRateLimits.kt
-object ProviderRateLimits {
-    val GITHUB = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 80)
-    val GITLAB = RateLimitConfig(maxRequestsPerSecond = 20, maxRequestsPerMinute = 300)
-    val ATLASSIAN = RateLimitConfig(maxRequestsPerSecond = 10, maxRequestsPerMinute = 100)
-}
-
-// Usage in Application.kt:
-val rateLimiter = DomainRateLimiter(ProviderRateLimits.GITHUB)
-val apiClient = GitHubApiClient(httpClient, rateLimiter)
-```
-
-### Provider Response Validation
-
-All provider API clients use `checkProviderResponse()` for typed error handling:
-
-```kotlin
-// common-services/.../http/ResponseValidation.kt
-val responseText = response.checkProviderResponse("GitHub", "listRepositories")
-```
-
-Throws typed exceptions from `ProviderApiException` sealed hierarchy:
-- `ProviderAuthException` (401, 403)
-- `ProviderNotFoundException` (404)
-- `ProviderRateLimitException` (429, parses `Retry-After` header)
-- `ProviderServerException` (5xx)
-
-### Provider Pagination Helpers
-
-Two pagination strategies in `common-services/.../http/PaginationHelper.kt`:
-
-**Link header** (GitHub): Parses `Link: <url>; rel="next"` header
-```kotlin
-paginateViaLinkHeader(httpClient, url, "GitHub", "listRepositories",
-    requestBuilder = { header(...) },
-    deserialize = { body -> json.decodeFromString(body) },
-    maxPages = 10)
-```
-
-**Offset-based** (GitLab): Uses `x-next-page` / `x-total-pages` headers
-```kotlin
-paginateViaOffset("GitLab", "listProjects",
-    fetchPage = { page, perPage -> /* returns Pair<List<T>, HttpResponse> */ },
-    perPage = 100, maxPages = 10)
-```
-
-### WebClientFactory - Only for @HttpExchange
-
-**Use for:** Compute services with declarative HTTP contracts
-
-```kotlin
-@HttpExchange(url = "/parse", method = "POST")
-interface ITikaClient {
-    suspend fun process(request: TikaProcessRequest): TikaProcessResponse
-}
-
-@HttpExchange(url = "/jira/search", method = "POST")
-interface IAtlassianClient {
-    suspend fun searchJiraIssues(request: JiraSearchRequest): JiraSearchResponse
-}
-```
-
-### NDJSON Streaming (Newline-Delimited JSON)
-
-**Problem:** Ollama `/api/pull` returns streaming NDJSON
-
-**❌ WRONG:** `.body<Type>()` → `NoTransformationFoundException`
-
-**✅ CORRECT:** Read line-by-line with `bodyAsChannel()`
-
-```kotlin
-val response: HttpResponse = httpClient.post("/api/pull") { 
-    setBody(body) 
-}
-val channel: ByteReadChannel = response.bodyAsChannel()
-val mapper = jacksonObjectMapper()
-
-while (!channel.isClosedForRead) {
-    val line = channel.readUTF8Line() ?: break
-    if (line.isNotBlank()) {
-        val jsonNode = mapper.readTree(line)
-        val status = jsonNode.get("status")?.asText()
-        // Process each JSON line...
-    }
-}
-```
-
----
-
-## LLM Integration & Prompting
-
-### String Boundaries & Templating (SSOT)
-
-LLM boundary is ALWAYS String → String:
-- `nodeLLMRequest` and `nodeLLMSendToolResult` work with text only
-- Type-safe I/O held at edges via `PromptBuilderService`
-
-### JSON Payload Templating
-
-**❌ NEVER:** Ad-hoc `StringBuilder`/`buildString` for JSON to LLM
-
-**✅ ALWAYS use:** `PromptBuilderService`
-
-```kotlin
-// 1. Prepare static template
-val template = """
-{
-  "id": "{id}",
-  "type": "{type}",
-  "clientId": "{clientId}",
-  "projectId": {projectIdRaw},
-  "content": {contentRaw}
-}
-"""
-
-// 2. Prepare values
-val values = mapOf(
-    "id" to taskId.toString(),
-    "type" to contentType,
-    "clientId" to clientId,
-    "projectIdRaw" to projectId?.toString() ?: "null",
-    "contentRaw" to Json.encodeToString(content)
-)
-
-// 3. Render with fail-fast
-val json = PromptBuilderService.render(template, values)
-```
-
-### LLM Model Routing
-
-**Providers:** Defined in `models-config.yaml`
-
-| Provider | Use Case | Model |
-|----------|----------|-------|
-| OLLAMA_QUALIFIER | CPU qualifier agent | `qwen3-coder-tool:30b` |
-| OLLAMA_EMBEDDING | Vector embeddings | `nomic-embed-text` |
-| OLLAMA_PRIMARY | Main reasoning | Configured model |
-| OPENAI | Premium tasks | `gpt-4` |
-| ANTHROPIC | Alternate | `claude-3` |
-
-**Fail-fast:** No automatic fallbacks between LLM providers
-
-### Prompt Structure
-
-```kotlin
-system("""
-    You are [ROLE] - [PURPOSE].
-
-    MANDATORY WORKFLOW:
-    1. [STEP 1]: Description
-    2. [STEP 2]: Description
-    3. [STEP 3]: Description
-
-    CRITICAL STOP RULES - NEVER VIOLATE:
-    ❌ NEVER [bad behavior]
-    ❌ NEVER [bad behavior]
-    ✅ ALWAYS [good behavior]
-    ✅ ALWAYS [good behavior]
-
-    [Additional context-specific rules]
-".trimIndent())
-```
-
-**Key Points:**
-- Keep system prompts under 50 lines
-- Use clear section headers (WORKFLOW, STOP RULES)
-- Avoid concrete tool names
-- Use visual markers (❌ ✅)
-- Be specific about what NOT to do
-
-### Chat Context Quality
-
-**History distrust:** Chat summaries (compressed by LLM) can contain hallucinations from earlier answers. To prevent self-reinforcing loops:
-- Summaries are prefixed with `[Neověřený souhrn]` in context assembly (`context.py`)
-- System prompt includes explicit "KRITICKÁ DISTANCE K HISTORII" warning
-
-**Self-correction:** Chat has `kb_delete` tool (CORE category, always available) for purging incorrect KB entries. System prompt instructs LLM to use it when user reports wrong information or when contradictions are detected between KB and verified facts.
-
-### Tool Registration Best Practices
-
-```kotlin
-@Tool
-@LLMDescription(
-    "Analyze and interpret user request to understand goal. " +
-    "Returns: NormalizedRequest with type, entities and outcome."
-)
-suspend fun interpretRequest(): String {
-    // Implementation
-}
-```
-
-**Critical Rules:**
-- ❌ NEVER mention tool names in prompts (e.g., "call interpretRequest()")
-- ❌ NEVER say "Always call X after Y"
-- ✅ Use generic descriptions: "Analyze the request type"
-- ✅ Let LLM discover tools via @LLMDescription
-
----
-
-## UI Design System
-
-> **Full SSOT with ASCII diagrams, all patterns and complete examples:** **[`docs/ui-design.md`](ui-design.md)**
-> This section has enough detail for common tasks. For dialog patterns, expandable sections,
-> typography conventions and migration checklist see `ui-design.md`.
-
-### Source Files
-
-| What | Where |
-|------|-------|
-| Design system – theme, spacing | `shared/ui-common/.../design/DesignTheme.kt` |
-| Design system – state components | `shared/ui-common/.../design/DesignState.kt` |
-| Design system – layout components | `shared/ui-common/.../design/DesignLayout.kt` |
-| Design system – buttons | `shared/ui-common/.../design/DesignButtons.kt` |
-| Design system – cards | `shared/ui-common/.../design/DesignCards.kt` |
-| Design system – forms | `shared/ui-common/.../design/DesignForms.kt` |
-| Design system – dialogs | `shared/ui-common/.../design/DesignDialogs.kt` |
-| Design system – data display | `shared/ui-common/.../design/DesignDataDisplay.kt` |
-| Semantic colors (light/dark) | `shared/ui-common/.../design/JervisColors.kt` |
-| Responsive typography | `shared/ui-common/.../design/JervisTypography.kt` |
-| Centralized shapes | `shared/ui-common/.../design/JervisShapes.kt` |
-| Watch readiness (ComponentImportance) | `shared/ui-common/.../design/ComponentImportance.kt` |
-| Breakpoints + WindowSizeClass | `shared/ui-common/.../design/JervisBreakpoints.kt` |
-| Shared form helpers (GitCommitConfigFields, getCapabilityLabel) | `shared/ui-common/.../screens/settings/sections/ClientsSharedHelpers.kt` (`internal`) |
-| Icon buttons (Refresh, Delete, Edit) — delegate to J* | `shared/ui-common/.../util/IconButtons.kt` |
-| ConfirmDialog (Czech defaults) | `shared/ui-common/.../util/ConfirmDialog.kt` |
-| CopyableTextCard (SelectionContainer) | `shared/ui-common/.../util/CopyableTextCard.kt` |
-
-### Core Principles
-
-- **J-prefixed components:** All UI elements use J-prefixed wrappers from `design/` package (`JCard`, `JTextField`, `JPrimaryButton`, etc.)
-- **Consistency:** Use shared components from `com.jervis.ui.design` (JTopBar, JSection, JActionBar, etc.)
-- **Adaptive layout:** `COMPACT_BREAKPOINT_DP = 600` – phone (<600dp) vs tablet/desktop (≥600dp)
-- **Light + Dark theme:** Auto-switches via `isSystemInDarkTheme()`, customizable via `JervisColors.kt`
-- **Material Icons:** All icons use `material-icons-extended` (ImageVector), no emoji in UI
-- **Fail-fast in UI:** Show errors via `JErrorState`, never hide
-- **Touch targets ≥ 44dp:** `JervisSpacing.touchTarget` – all clickable elements
-- **No secrets masking:** Passwords, tokens, keys always visible (private app)
-- **Czech UI labels:** All user-facing text in Czech, code/comments/logs in English
-
-### Adaptive Layout – How It Works
-
-Detection is via `BoxWithConstraints` (width-based, no platform expect/actual).
-
-**Compact (phone < 600dp):**
-- Category list as full-screen `JNavigationRow` items with icon, title, description, chevron
-- Tap → full-screen section with `JTopBar` back arrow
-- Entity detail replaces list entirely
-
-**Expanded (tablet/desktop ≥ 600dp):**
-- 240dp sidebar with category selection + "Zpět" button
-- Content area fills remaining width
-- Entity detail also replaces list (same behavior)
-
-### Decision Tree – Which Component to Use
-
-```
-┌─ New screen type? ─────────────────────────────────────────────────┐
-│                                                                     │
-│  Category-based navigation (settings, admin)?                       │
-│    → JAdaptiveSidebarLayout                                         │
-│    Example: SettingsScreen.kt                                       │
-│                                                                     │
-│  Expandable list with nested items (clients + projects)?            │
-│    → LazyColumn + expandable Cards + JDetailScreen for edit         │
-│    Example: ClientsSettings.kt                                     │
-│                                                                     │
-│  Entity list with detail view (tasks, projects)?                     │
-│    → JListDetailLayout + JDetailScreen for detail                    │
-│    Example: UserTasksScreen.kt, ProjectGroupsSettings.kt            │
-│                                                                     │
-│  Flat list with per-row actions (connections)?                       │
-│    → LazyColumn + JCard + JActionBar at top                         │
-│    Example: ConnectionsSettings.kt                                  │
-│                                                                     │
-│  Simple scrollable form (general settings, whisper config)?          │
-│    → Column(verticalScroll) with JSection blocks                    │
-│    Example: GeneralSettings in SettingsScreen.kt, WhisperSettings.kt│
-│                                                                     │
-│  Status/activity log (agent workload, live state)?                  │
-│    → Status card + LazyColumn (newest first), in-memory log         │
-│    Example: AgentWorkloadScreen.kt                                  │
-│                                                                     │
-│  CRUD sub-view with category grouping (corrections, per-entity)?    │
-│    → JDetailScreen + LazyColumn grouped by category + dialogs       │
-│    Example: CorrectionsScreen.kt                                     │
-│                                                                     │
-│  Vertical split with independent scrolling (transcript + chat)?     │
-│    → JVerticalSplitLayout (draggable top/bottom panels)             │
-│    Example: MeetingDetailView in MeetingsScreen.kt                  │
-│                                                                     │
-│  Dashboard grouped by entity with expandable cards?                 │
-│    → LazyColumn + expandable JCards + collapsed-by-default section  │
-│    Example: IndexingQueueScreen.kt (grouped by connection)          │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Adaptive Components
-
-| Component | Purpose | Key params |
-|-----------|---------|------------|
-| `JAdaptiveSidebarLayout<T>` | Sidebar (expanded) / category list (compact) | `categories`, `selectedIndex`, `onSelect`, `onBack`, `title`, `categoryIcon: @Composable (T) -> Unit`, `categoryTitle`, `categoryDescription`, `content` |
-| `JListDetailLayout<T>` | List with detail navigation | `items`, `selectedItem`, `isLoading`, `onItemSelected`, `emptyMessage`, `emptyIcon`, `listHeader`, `listFooter?`, `listItem`, `detailContent` |
-| `JDetailScreen` | Edit form with back + save/cancel | `title`, `onBack`, `onSave?`, `saveEnabled`, `actions`, `content: ColumnScope` |
-| `JNavigationRow` | Touch-friendly nav row (44dp+) | `icon: @Composable () -> Unit`, `title`, `subtitle?`, `onClick`, `trailing` |
-| `JVerticalSplitLayout` | Draggable vertical split (top/bottom) | `splitFraction`, `onSplitChange`, `topContent`, `bottomContent` |
-| `JHorizontalSplitLayout` | Draggable horizontal split (left/right) | `splitFraction`, `onSplitChange`, `minFraction`, `maxFraction`, `leftContent`, `rightContent` |
-
-### Pattern 1: Category-Based Settings
-
-```kotlin
-enum class SettingsCategory(val title: String, val icon: ImageVector, val description: String) {
-    GENERAL("Obecné", Icons.Default.Settings, "Základní nastavení aplikace a vzhledu."),
-    CLIENTS("Klienti a projekty", Icons.Default.Business, "Správa klientů, projektů a jejich konfigurace."),
-    CONNECTIONS("Připojení", Icons.Default.Power, "Technické parametry připojení."),
-    INDEXING("Indexace", Icons.Default.Schedule, "Intervaly automatické kontroly nových položek."),
-    CODING_AGENTS("Coding Agenti", Icons.Default.Code, "Konfigurace coding agentů."),
-}
-
-@Composable
-fun SettingsScreen(repository: JervisRepository, onBack: () -> Unit) {
-    val categories = remember { SettingsCategory.entries.toList() }
-    var selectedIndex by remember { mutableIntStateOf(0) }
-
-    JAdaptiveSidebarLayout(
-        categories = categories,
-        selectedIndex = selectedIndex,
-        onSelect = { selectedIndex = it },
-        onBack = onBack,
-        title = "Nastavení",
-        categoryIcon = { Icon(it.icon, contentDescription = it.title) },
-        categoryTitle = { it.title },
-        categoryDescription = { it.description },
-        content = { category -> SettingsContent(category, repository) },
-    )
-}
-```
-
-### Pattern 2: Entity List → Detail
-
-```kotlin
-JListDetailLayout(
-    items = clients,
-    selectedItem = selectedClient,
-    isLoading = isLoading,
-    onItemSelected = { selectedClient = it },
-    emptyMessage = "Žádní klienti nenalezeni",
-    emptyIcon = "🏢",
-    listHeader = {
-        JActionBar {
-            RefreshIconButton(onClick = { loadClients() })
-            JPrimaryButton(onClick = { /* new */ }) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Přidat klienta")
-            }
-        }
-    },
-    listItem = { client ->
-        JCard(
-            modifier = Modifier.fillMaxWidth().clickable { selectedClient = client },
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp).heightIn(min = JervisSpacing.touchTarget),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(client.name, style = MaterialTheme.typography.titleMedium)
-                    Text("ID: ${client.id}", style = MaterialTheme.typography.bodySmall)
-                }
-                Icon(Icons.Default.KeyboardArrowRight, null,
-                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    },
-    detailContent = { client ->
-        ClientEditForm(client, repository, onSave = { ... }, onCancel = { selectedClient = null })
-    },
-)
-```
-
-### Pattern 3: Edit Form (Detail Screen)
-
-```kotlin
-JDetailScreen(
-    title = client.name,
-    onBack = onCancel,
-    onSave = { onSave(client.copy(name = name, ...)) },
-    saveEnabled = name.isNotBlank(),
-) {
-    val scrollState = rememberScrollState()
-    Column(
-        modifier = Modifier.weight(1f).verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        JSection(title = "Základní údaje") {
-            JTextField(value = name, onValueChange = { name = it },
-                label = { Text("Název") }, modifier = Modifier.fillMaxWidth())
-        }
-        JSection(title = "Git Commit Konfigurace") {
-            GitCommitConfigFields(  // Shared helper from ClientsSharedHelpers.kt
-                messageFormat = ..., authorName = ..., authorEmail = ...,
-                committerName = ..., committerEmail = ...,
-                gpgSign = ..., gpgKeyId = ...,
-                // + all onChange callbacks
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-```
-
-### Pattern 4: Flat List with Actions (Connections, Logs)
-
-```kotlin
-Column(modifier = Modifier.fillMaxSize()) {
-    JActionBar {
-        JPrimaryButton(onClick = { showCreateDialog = true }) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Přidat připojení")
-        }
-    }
-    Spacer(Modifier.height(JervisSpacing.itemGap))
-
-    if (isLoading && items.isEmpty()) JCenteredLoading()
-    else if (items.isEmpty()) JEmptyState(message = "Žádná data", icon = "📋")
-    else LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.weight(1f),
-    ) {
-        items(data) { item ->
-            JCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    // ... content rows ...
-                    Row(Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                        JPrimaryButton(onClick = { ... }) { Text("Akce") }
-                        JDestructiveButton(onClick = { ... }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Smazat")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-### Pattern 5: Expandable Card (Nested Content)
-
-```kotlin
-var expanded by remember { mutableStateOf(false) }
-
-Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-     border = CardDefaults.outlinedCardBorder()) {
-    Column(Modifier.padding(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
-                .heightIn(min = JervisSpacing.touchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(if (expanded) Icons.Default.KeyboardArrowUp
-                 else Icons.Default.KeyboardArrowDown, null)
-        }
-        if (expanded) {
-            Spacer(Modifier.height(12.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp))
-            // ... nested content ...
-        }
-    }
-}
-```
-
-### Pattern 6: Meeting Recording Screen
-
-```kotlin
-// MeetingsScreen: list with recording controls + transcript detail
-MeetingsScreen(
-    viewModel = meetingViewModel,     // MeetingViewModel(meetingService)
-    clients = clients,
-    selectedClientId = selectedClientId,
-    selectedProjectId = selectedProjectId,
-    onBack = { navigator.goBack() },
-)
-
-// MeetingDetailView: split layout (transcript top + agent chat bottom)
-// Uses JVerticalSplitLayout (expanded) or fixed-height chat (compact)
-MeetingDetailView(
-    meeting = meeting,
-    isPlaying = isPlaying,
-    isCorrecting = isCorrecting,
-    pendingChatMessage = pendingChatMessage,  // optimistic chat message
-    onBack = { viewModel.selectMeeting(null) },
-    onDelete = { viewModel.deleteMeeting(meeting.id) },
-    onRefresh = { viewModel.refreshMeeting(meeting.id) },
-    onPlayToggle = { viewModel.playAudio(meeting.id) },
-    onRetranscribe = { viewModel.retranscribeMeeting(meeting.id) },
-    onRecorrect = { viewModel.recorrectMeeting(meeting.id) },
-    onReindex = { viewModel.reindexMeeting(meeting.id) },
-    onCorrections = { showCorrections = true },
-    onAnswerQuestions = { answers -> viewModel.answerQuestions(meeting.id, answers) },
-    onApplySegmentCorrection = { idx, text -> viewModel.applySegmentCorrection(meeting.id, idx, text) },
-    onCorrectWithInstruction = { instruction -> viewModel.correctWithInstruction(meeting.id, instruction) },
-)
-
-// Chat history persisted in MeetingDocument.correctionChatHistory
-// CorrectionChatMessageDto: role ("user"/"agent"), text, timestamp, rulesCreated, status
-
-// RecordingIndicator: shown on MainScreen during active recording
-RecordingIndicator(
-    durationSeconds = recordingDuration,
-    onStop = { viewModel.stopRecording() },
-)
-
-// Audio capture: expect/actual AudioRecorder
-val recorder = AudioRecorder()
-recorder.getAvailableInputDevices()       // List<AudioDevice>
-recorder.getSystemAudioCapabilities()     // SystemAudioCapability
-recorder.startRecording(config)           // Boolean
-recorder.getAndClearBuffer()              // ByteArray? (for chunked upload)
-recorder.stopRecording()                  // ByteArray?
-```
-
-### Pattern 7: Corrections Screen (Sub-view)
-
-```kotlin
-// CorrectionsScreen: accessible from MeetingDetailView via onCorrections
-CorrectionsScreen(
-    correctionService = viewModel.correctionService,  // ITranscriptCorrectionService? (RPC)
-    clientId = meeting.clientId,
-    projectId = meeting.projectId,
-    onBack = { showCorrections = false },
-    prefilledOriginal = null,  // optional pre-fill from segment click
-)
-
-// CorrectionViewModel: manages KB-stored correction rules
-class CorrectionViewModel(correctionService: ITranscriptCorrectionService) {
-    val corrections: StateFlow<List<TranscriptCorrectionDto>>
-    val isLoading: StateFlow<Boolean>
-
-    fun loadCorrections(clientId, projectId)
-    fun submitCorrection(submit, clientId, projectId)
-    fun deleteCorrection(sourceUrn, clientId, projectId)
-}
-
-// CorrectionQuestionsCard: shown in MeetingDetailView when state == CORRECTION_REVIEW
-// Resizable panel (draggable divider) with play button per question, Nevím/Potvrdit buttons
-// Odeslat vše applies corrections in-place to segments + saves to KB (no full re-correction)
-// LLM agent filters KB-known questions automatically
-```
-
-### Pattern 8: Environment Manager (List + Tabbed Detail)
-
-```kotlin
-// EnvironmentManagerScreen: JListDetailLayout + TabRow in detail
-EnvironmentManagerScreen(
-    repository = repository,
-    onBack = { appNavigator.goBack() },
-    initialEnvironmentId = screen.initialEnvironmentId,  // deep-link from Settings
-)
-
-// Detail uses JDetailScreen + TabRow with EnvironmentManagerTab enum:
-// OVERVIEW | COMPONENTS | K8S_RESOURCES | LOGS_EVENTS
-// OverviewTab: editable fields (name, desc, tier, namespace, storage, instructions) + read-only summary + onSave(EnvironmentDto) + action buttons
-// Reuses: NewEnvironmentDialog, EnvironmentStateBadge, componentTypeLabel()
-// Navigation: Screen.EnvironmentManager(initialEnvironmentId: String? = null)
-```
-
-### Shared Form Helpers
-
-| Helper | Location | Purpose |
-|--------|----------|---------|
-| `GitCommitConfigFields(...)` | `ClientsSharedHelpers.kt` (internal) | Reusable git commit config form (7 fields + GPG) |
-| `getCapabilityLabel(capability)` | `ClientsSharedHelpers.kt` (internal) | Human-readable label: BUGTRACKER→"Bug Tracker" etc. |
-| `getIndexAllLabel(capability)` | `ClientsSharedHelpers.kt` (internal) | "Indexovat všechny repozitáře" etc. |
-
-### Card & Spacing Standards
-
-```kotlin
-// ALL list item cards — use JCard (replaces raw Card(outlinedCardBorder)):
-JCard(modifier = Modifier.fillMaxWidth()) { ... }
-
-// Spacing constants:
-JervisSpacing.outerPadding   // 10.dp - screen margins
-JervisSpacing.sectionPadding // 12.dp - JSection internal
-JervisSpacing.sectionGap     // 16.dp - between form sections
-JervisSpacing.fieldGap       // 8.dp  - between fields in a section
-JervisSpacing.itemGap        // 8.dp  - between items in LazyColumn
-JervisSpacing.touchTarget    // 44.dp - minimum clickable height
-JervisSpacing.watchTouchTarget // 56.dp - watch-sized touch target
-
-COMPACT_BREAKPOINT_DP = 600  // phone < 600dp, tablet/desktop >= 600dp
-
-// Between form sections: Arrangement.spacedBy(JervisSpacing.sectionGap)
-// Between fields in a section: Spacer(Modifier.height(JervisSpacing.fieldGap))
-```
-
-### Button Types
-
-| Button type | Component |
-|-------------|-----------|
-| Primary action | `JPrimaryButton` |
-| Secondary / cancel | `JSecondaryButton` or `JTextButton` |
-| Destructive | `JDestructiveButton` |
-
-### Typography Quick Reference
-
-| Context | Style | Color |
-|---------|-------|-------|
-| Card title | `titleMedium` | default |
-| Card subtitle / ID | `bodySmall` | `onSurfaceVariant` |
-| Section title | `titleMedium` (via JSection) | `primary` |
-| Capability group label | `labelMedium` | `primary` |
-| Help text / hint | `bodySmall` | `onSurfaceVariant` |
-| Error text | `bodySmall` | `error` |
-
-### Forbidden Patterns
-
-| Don't | Do instead |
-|-------|-----------|
-| `Card(elevation = ..., colors = surfaceVariant)` | `JCard(...)` |
-| Raw `Card(border = outlinedCardBorder())` | `JCard(...)` |
-| Raw `OutlinedTextField(...)` | `JTextField(...)` (except inside ExposedDropdownMenuBox needing menuAnchor) |
-| Raw `Button(colors = error)` | `JDestructiveButton(...)` |
-| Raw `OutlinedButton(...)` | `JSecondaryButton(...)` |
-| Emoji icons in UI (`🔄`, `🗑️`, `✏️`) | Material Icons via `JIconButton(icon = Icons.Default.Refresh)` etc. |
-| `String` icon params in components | `@Composable () -> Unit` or `ImageVector` |
-| `Box { CircularProgressIndicator() }` | `JCenteredLoading()` |
-| Inline save/cancel below form | `JDetailScreen(onSave, onBack)` |
-| Fixed sidebar without adaptive | `JAdaptiveSidebarLayout` |
-| `IconButton` without explicit 44dp size | `IconButton(Modifier.size(JervisSpacing.touchTarget))` |
-| `TopAppBar` directly | `JTopBar(title, onBack, actions)` |
-| Duplicating `getCapabilityLabel()` | Import from `ClientsSharedHelpers.kt` |
-| Platform expect/actual for layout | `BoxWithConstraints` width check (automatic in J* components) |
-| `Row` of buttons without alignment | `JActionBar { ... }` or `Row(Arrangement.spacedBy(8.dp, Alignment.End))` |
-
-> **More patterns:** Dialog patterns (selection, multi-select, create, delete confirm),
-> screen anatomy ASCII diagrams, file structure reference → see **[`docs/ui-design.md`](ui-design.md)**
-
-### UI File Organization (KMP Compose Best Practice)
-
-#### Three-Level Decomposition
-
-Every feature screen follows a three-level structure:
-
-```
-Screen (stateful)           ← touches ViewModel, collects state, delegates to Content
-  └─ Content (stateless)    ← receives data + lambdas, orchestrates Sections
-       └─ Sections/Components (stateless) ← focused UI pieces, max ~200 lines each
-```
-
-**Screen** — one per feature, `public`. Collects `StateFlow` from ViewModel, passes data and
-callbacks down. This is the only composable that sees the ViewModel.
-
-**Content** — `internal`. Receives all data as parameters (state hoisting). Arranges sections,
-handles local UI state (expanded/collapsed, dialogs, scroll position).
-
-**Sections/Components** — `internal` or `private`. Each file contains one primary composable
-with private helpers. Focused on a single visual block (form, list, card, dialog).
-
-#### File Size Rules
-
-| Threshold | Action |
-|-----------|--------|
-| < 300 lines | OK, no splitting needed |
-| 300–500 lines | Consider splitting if file has distinct logical sections |
-| > 500 lines | Must split into separate files |
-| > 200 lines for a single composable function | Extract sub-composables |
-
-#### Package Structure
-
-Each feature screen lives in its own package under `screens/`:
-
-```
-meeting/                      ← feature package (under com.jervis.ui)
-  MeetingsScreen.kt           ← public Screen entry point
-  MeetingListItems.kt         ← internal list item composables
-  MeetingDetailView.kt        ← internal Content for detail
-  TranscriptPanel.kt          ← internal Section
-  AgentChatPanel.kt           ← internal Section
-  PipelineProgress.kt         ← internal Section
-  CorrectionQuestionsCard.kt  ← internal Component
-  SegmentCorrectionDialog.kt  ← internal dialog
-  MeetingHelpers.kt           ← internal utility functions
-  MeetingViewModel.kt         ← ViewModel
-  CorrectionViewModel.kt      ← Sub-ViewModel
-  RecordingSetupDialog.kt     ← internal dialog
-  RecordingIndicator.kt       ← internal Component
-  CorrectionsScreen.kt        ← KB correction rules CRUD
-  ...
-```
-
-**Root-level screens** (files directly in `com.jervis.ui`) should ideally be moved into
-`screens/<feature>/` packages. Currently `App.kt`, `JervisApp.kt`, and several smaller screens
-(AgentWorkloadScreen, SchedulerScreen, UserTasksScreen, etc.) remain at root level.
-The `meeting/` package is at root level (`com.jervis.ui.meeting`), not under `screens/`.
-
-#### Visibility Rules
-
-| Scope | Visibility | Example |
-|-------|-----------|---------|
-| Entry-point screen composable | `public` | `fun MeetingsScreen(...)` |
-| Design system components | `public` | `fun JCard(...)` |
-| Feature-internal sections | `internal` | `internal fun TranscriptPanel(...)` |
-| File-local helpers | `private` | `private fun formatDateTime(...)` |
-| Shared helpers across features | `internal` | `internal fun getCapabilityLabel(...)` |
-
-#### ViewModel Decomposition
-
-`MainViewModel` is a thin coordinator (~450 lines) that delegates to domain-specific sub-ViewModels:
-
-```kotlin
-class MainViewModel(repository, connectionManager) {
-    val connection = ConnectionViewModel(connectionManager)
-    val chat = ChatViewModel(repository, connectionManager, selectedClientId, selectedProjectId, ...)
-    val queue = QueueViewModel(repository, connectionManager, selectedClientId)
-    val environment = EnvironmentViewModel(repository, selectedClientId, selectedProjectId)
-    val notification = NotificationViewModel(repository, selectedClientId)
-}
-```
-
-Sub-ViewModels receive `StateFlow<String?>` for shared state (read-only) and callbacks
-for cross-cutting concerns (`onScopeChange`, `onError`, `onChatProgressUpdate`).
-Each sub-ViewModel owns its own `CoroutineScope` and `StateFlow`s.
-UI collects from sub-ViewModels: `viewModel.chat.chatMessages`, `viewModel.queue.queueSize`, etc.
-
-#### Design System Split
-
-The `design/` package splits components by category:
-
-```
-design/
-  DesignTheme.kt          ← JervisTheme, JervisSpacing, COMPACT_BREAKPOINT_DP
-  DesignState.kt          ← JCenteredLoading, JErrorState, JEmptyState
-  DesignLayout.kt         ← JTopBar, JSection, JActionBar, JAdaptiveSidebarLayout, etc.
-  DesignButtons.kt        ← JPrimaryButton, JSecondaryButton, JIconButton, etc.
-  DesignCards.kt          ← JCard, JListItemCard, JTableHeaderRow, JTableRowCard
-  DesignForms.kt          ← JTextField, JDropdown, JSwitch, JSlider, JCheckboxRow
-  DesignDialogs.kt        ← JConfirmDialog, JFormDialog, JSelectionDialog
-  DesignDataDisplay.kt    ← JKeyValueRow, JStatusBadge, JCodeBlock, JSnackbarHost
-  JervisColors.kt         ← (existing) Semantic colors
-  JervisTypography.kt     ← (existing) Typography
-  JervisShapes.kt         ← (existing) Shapes
-  ComponentImportance.kt  ← (existing) Watch readiness
-  JervisBreakpoints.kt   ← (existing) Breakpoints + WindowSizeClass
-```
-
-All design components remain `public` — they are the shared design system.
-
-#### Naming Conventions
-
-| Type | Pattern | Example |
-|------|---------|---------|
-| Screen entry point | `<Feature>Screen.kt` | `MeetingsScreen.kt` |
-| Content orchestrator | `<Feature>Content.kt` or `<Part>View.kt` | `MeetingDetailView.kt` |
-| UI section | `<Section>Panel.kt` or `<Section>Section.kt` | `TranscriptPanel.kt` |
-| Reusable component | `<Component>Card.kt` or `<Component>Dialog.kt` | `CorrectionQuestionsCard.kt` |
-| Helper functions | `<Feature>Helpers.kt` | `MeetingHelpers.kt` |
-| ViewModel | `<Feature>ViewModel.kt` | `MeetingViewModel.kt` |
-| ViewModel helper | `<Concern>Manager.kt` or `<Concern>Handler.kt` | `ChatConnectionManager.kt` |
-
----
-
-## Architecture & Modules
+## Architecture Quick Reference
 
 ### Module Structure
 
-- **backend/server**: Spring Boot WebFlux (orchestrator, RAG, scheduling, integrations)
-- **backend/service-***: Compute-only services (joern, tika, whisper, atlassian)
-- **shared/common-dto**: DTO objects
-- **shared/common-api**: `@HttpExchange` contracts
-- **shared/domain**: Pure domain types
-- **shared/ui-common**: Compose Multiplatform UI screens
-- **apps/desktop**: Primary desktop application
-- **apps/mobile**: iOS/Android port from desktop
+```
+jervis/
+├── shared/
+│   ├── common-dto/           # DTOs shared by UI + server
+│   ├── common-api/           # @HttpExchange interfaces (UI ↔ server)
+│   ├── domain/               # Business logic (repositories, domain models)
+│   └── ui-common/            # Compose UI (screens, components, design system)
+├── backend/
+│   ├── server/               # Kotlin Spring Boot server
+│   ├── service-orchestrator/ # Python LangGraph orchestrator
+│   ├── service-knowledgebase/# Python KB (Weaviate + ArangoDB)
+│   ├── service-correction/   # Transcript correction
+│   ├── service-whisper/      # Audio transcription
+│   ├── service-mcp/          # MCP server (tools for orchestrator)
+│   └── service-ollama-router/# GPU/CPU routing proxy
+├── desktop/                  # Desktop app entry point
+├── android-app/              # Android app entry point
+└── ios-app/                  # iOS app entry point
+```
 
 ### Communication Contract
 
-- UI ↔ Server: ONLY `@HttpExchange` interfaces in `shared/common-api`
-- Server ↔ Microservices: REST via `@HttpExchange` in `backend/common-services`
-- No UI access to internal microservice contracts
+- **UI ↔ Server**: ONLY `@HttpExchange` in `shared/common-api`
+- **Server ↔ Microservices**: REST via `@HttpExchange` in `backend/common-services`
+- **No UI access** to internal microservice contracts
+
+### Task Pipeline (3-stage)
+
+```
+Polling → Indexing → Qualification → Orchestrator Dispatch → Execution
+```
+
+1. **Polling**: Download external data (JIRA, emails, Git) → MongoDB indexing collections
+2. **Indexing**: Process → KB (graph + RAG) → create pending tasks
+3. **Qualification**: SimpleQualifierAgent decides: actionable? complex? → route to orchestrator
+4. **Orchestrator**: Python LangGraph agent executes task
+
+### Directory Structure
+
+**DirectoryStructureService is SINGLE SOURCE OF TRUTH for all paths.**
+
+```
+{data}/clients/{clientId}/projects/{projectId}/
+├── git/{resourceId}/         # Agent/orchestrator workspace (stable)
+├── git-indexing/{resourceId}/# Indexing temporary workspace (checkout any branch)
+├── uploads/
+├── audio/
+├── documents/
+└── meetings/
+```
+
+**Never hardcode paths. Always use `DirectoryStructureService`.**
 
 ---
 
-## Security & Operations
+## UI Design Quick Rules
 
-### Security Headers
+### Adaptive Layout
 
-- Server-side `SecurityHeaderFilter` REQUIRES `X-Jervis-Client` header with shared token
-- Missing/invalid value → connection without response (port scanning prevention)
-- Client MUST send:
-  - `X-Jervis-Client: <token>`
-  - `X-Jervis-Platform: Desktop|Android|iOS`
+```
+COMPACT_BREAKPOINT_DP = 600
 
-### Development Mode Rules
+Compact (<600dp, phone):   full-screen list→detail, JTopBar with back arrow
+Expanded (≥600dp, tablet): 240dp sidebar + content side-by-side
+```
 
-- **No deprecations, no compatibility layers:** Deprecated code is forbidden
-- **Policy: No Deprecated Code**
-  - NEVER create `@Deprecated` annotations
-  - NEVER leave old code "for compatibility"
-  - If change needed, refactor ENTIRE code including all usage
-  - Deprecated functionality is IMMEDIATELY removed
-- UI shows all values: passwords, tokens, keys always visible (private app)
-- DocumentDB (Mongo): nothing encrypted; store in "plain text" (private dev instance)
+**Decision tree:**
+- Category navigation → `JAdaptiveSidebarLayout`
+- Entity CRUD list → `JListDetailLayout` + `JDetailScreen`
+- Flat list with actions → `LazyColumn` + `JActionBar` + state components
+- Edit form → `JDetailScreen` (provides back + save/cancel)
 
----
+**Forbidden:**
+- `Card(elevation/surfaceVariant)` → use `CardDefaults.outlinedCardBorder()` or `JCard`
+- `TopAppBar` directly → use `JTopBar`
+- `IconButton` without 44dp size
+- Platform expect/actual for layout decisions (use `BoxWithConstraints`)
+- Duplicating helpers (check `ClientsSharedHelpers.kt` first)
 
-## Summary
+### Key Components
 
-### Key Practices
+| Component | Purpose |
+|-----------|---------|
+| `JAdaptiveSidebarLayout` | Category navigation (settings sections) |
+| `JListDetailLayout` | Master-detail for entity lists |
+| `JDetailScreen` | Edit form scaffold (back + save/cancel) |
+| `JTopBar` | Top bar with back/title/actions |
+| `JActionBar` | Floating action button row |
+| `JCenteredLoading` | Loading state |
+| `JEmptyState` | Empty state |
+| `JErrorState` | Error state |
 
-1. **Fail-fast errors, fail-fast validation**
-2. **Type-safe, idiomatic Kotlin**
-3. **HTTP client selection by use case**
-4. **String-based LLM integration with templating**
-5. **Consistent, responsive UI with shared components**
-6. **Clear module boundaries and contracts**
-7. **Documentation in existing files ONLY - no status/summary files**
+**Design system**: `shared/ui-common/.../design/` (DesignTheme, DesignLayout, DesignButtons, DesignCards, DesignForms, DesignDialogs, DesignDataDisplay, DesignState)
 
-### Required Components
-
-- `com.jervis.ui.design.*` -- ALL J-prefixed components (buttons, cards, forms, dialogs, layout)
-- `com.jervis.ui.util.ConfirmDialog` -- Delete confirmations (Czech defaults)
-- `JRemoveIconButton` -- Inline remove button with built-in ConfirmDialog (for list item removal)
-- `com.jervis.ui.util.CopyableTextCard` -- Text with SelectionContainer wrapping
-
----
-
-## Guidelines Engine (EPIC 1)
-
-### Overview
-
-Hierarchical rules engine: **Global → Client → Project**, where lower scopes override/extend higher ones via deep merge.
-
-### Data Model
-
-- **MongoDB collection:** `guidelines`
-- **Compound unique index:** `clientId + projectId`
-- **Scope resolution:** `clientId=null, projectId=null` = GLOBAL; `clientId=set, projectId=null` = CLIENT; both set = PROJECT
-
-### Categories
-
-| Category | Key Fields |
-|----------|-----------|
-| `coding` | `forbiddenPatterns`, `requiredPatterns`, `maxFileLines`, `maxFunctionLines`, `namingConventions`, `languageSpecific` |
-| `git` | `commitMessageTemplate`, `commitMessageValidators`, `branchNameTemplate`, `requireJiraReference`, `squashOnMerge`, `protectedBranches` |
-| `review` | `mustHaveTests`, `mustPassLint`, `maxChangedFiles`, `maxChangedLines`, `forbiddenFileChanges`, `focusAreas`, `checklistItems` |
-| `communication` | `emailResponseLanguage`, `emailSignature`, `jiraCommentLanguage`, `formalityLevel`, `customRules` |
-| `approval` | Per-action `ApprovalRule` with `enabled`, `whenRiskLevelBelow`, `whenConfidenceAbove` for: commit, push, email, jira, PR, chat, confluence, coding dispatch |
-| `general` | `customRules`, `notes` |
-
-### Merge Semantics
-
-- **Lists:** concatenated (e.g., forbiddenPatterns from all scopes are combined)
-- **Scalars (non-null):** lower scope overrides (e.g., project's `maxFileLines` overrides global)
-- **Booleans (require_*):** OR semantics (if ANY scope requires tests, tests are required)
-- **Maps:** merged with lower scope winning on key conflicts
-
-### Source Files
-
-| File | Purpose |
-|------|---------|
-| `shared/common-dto/.../guidelines/GuidelinesDtos.kt` | All DTO types |
-| `shared/common-api/.../IGuidelinesService.kt` | RPC interface |
-| `backend/server/.../entity/GuidelinesDocument.kt` | MongoDB entity + merge logic |
-| `backend/server/.../repository/GuidelinesRepository.kt` | Spring Data repository |
-| `backend/server/.../service/guidelines/GuidelinesService.kt` | Business logic with 5-min cache |
-| `backend/server/.../rpc/GuidelinesRpcImpl.kt` | RPC implementation |
-| `backend/server/.../rpc/internal/InternalGuidelinesRouting.kt` | REST endpoints for Python orchestrator |
-| `shared/ui-common/.../screens/settings/sections/GuidelinesSettings.kt` | Settings UI |
-| `backend/service-orchestrator/app/context/guidelines_resolver.py` | Python resolver + formatter |
-| `backend/service-orchestrator/app/chat/tools.py` | `get_guidelines`, `update_guideline` tools |
-
-### Chat Tools
-
-- `get_guidelines(client_id?, project_id?)` — returns merged guidelines for scope
-- `update_guideline(scope, category, rules, client_id?, project_id?)` — updates single category
-
-### Orchestrator Integration
-
-- `GuidelinesResolver` loads merged guidelines via internal REST API
-- Formatted guidelines injected into both foreground chat system prompt and background handler prompt
-- `format_guidelines_for_coding_agent()` produces CLAUDE.md-compatible output for coding agent workspaces
-
-### Settings UI
-
-New settings category "Pravidla a směrnice" with:
-- Three-tab scope selector (Globální / Klient / Projekt)
-- Client/project dropdowns for non-global scopes
-- Form sections for each category (coding, git, review, communication, approval, general)
-- Scope inheritance indicator
+**Full reference**: `docs/ui-design.md` (SSOT)
 
 ---
 
-**Document Version:** 4.0
-**Last Updated:** 2026-02-25
-**Applies To:** All engineering, architecture, and UI development in Jervis
+## Common Patterns
+
+### Error Handling
+
+```kotlin
+// ❌ DON'T: catch inside service
+fun fetchData() {
+    try {
+        val data = api.call()
+    } catch (e: Exception) {
+        logger.error("Failed", e)
+        throw e  // Useless try/catch
+    }
+}
+
+// ✅ DO: let exceptions propagate, catch at boundary
+suspend fun apiHandler(call: ApplicationCall) {
+    try {
+        val result = service.fetchData()
+        call.respond(result)
+    } catch (e: Exception) {
+        logger.error("API error", e)
+        call.respond(HttpStatusCode.InternalServerError, ErrorDto(e.message))
+    }
+}
+```
+
+### Streaming vs List
+
+```kotlin
+// ❌ DON'T: toList() unless needed
+val all = repository.findAll().toList()  // Loads everything into RAM
+
+// ✅ DO: use Flow
+val flow: Flow<Entity> = repository.findAll()
+flow.collect { entity -> process(entity) }  // Streams, doesn't load all
+```
+
+### Repository Queries
+
+```kotlin
+// ❌ DON'T:
+@Query("{ 'clientId': ?0, 'archived': false }")
+fun findByClientIdAndArchivedFalse(clientId: String): Flow<Client>
+
+// ✅ DO: use derived query
+fun findByClientIdAndArchivedFalse(clientId: String): Flow<Client>  // Spring Data generates query
+```
+
+---
+
+## Build Notes
+
+- **No network in CI/sandbox** — cannot run Gradle
+- **`DOCKER_BUILD=true`** skips Android/iOS/Compose targets
+- **Verify code manually** against DTO fields and repository API signatures
+
+---
+
+## Pull Request Checklist
+
+- [ ] Code changes done
+- [ ] Relevant docs updated (ui-design, architecture, structures, knowledge-base, orchestrator-*)
+- [ ] No duplicated helpers (check `ClientsSharedHelpers.kt`)
+- [ ] All interactive elements ≥ 44dp touch target
+- [ ] Cards use `CardDefaults.outlinedCardBorder()` or `JCard`
+- [ ] Loading/empty/error states use `JCenteredLoading` / `JEmptyState` / `JErrorState`
+- [ ] No hardcoded paths (use `DirectoryStructureService`)
+- [ ] DB queries filter at DB level (no `.filter {}` in Kotlin)
+
+---
+
+## Read Next
+
+- **System architecture**: `docs/architecture.md` (modules, services, workspace, pipelines)
+- **Data structures**: `docs/structures.md` (task pipeline, background engine, CPU/GPU routing)
+- **Orchestrator**: `docs/orchestrator-final-spec.md` + `orchestrator-detailed.md` (Python LangGraph, agents, tools)
+- **Knowledge Base**: `docs/knowledge-base.md` (graph schema, RAG, ingest)
+- **UI Design**: `docs/ui-design.md` (SSOT for layout, components, patterns)
+- **Implementation**: `docs/implementation.md` (detailed conventions)

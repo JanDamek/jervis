@@ -2,42 +2,29 @@
 
 > **Note:** All documentation is in English. UI language is Czech.
 
-## Core Documentation (Always Current)
+## Core Documentation
 
-These documents are the **single source of truth** for their respective areas and are kept up-to-date with every change:
+These documents are the **single source of truth** and are kept up-to-date with every change:
 
-### Architecture & Design
+### Quick Start
 
-- **[architecture.md](architecture.md)** - System architecture, module boundaries, service interactions, high-level design
-- **[ui-design.md](ui-design.md)** - **SSOT** for UI layout, adaptive patterns, component signatures, dialogs, typography, spacing
-- **[structures.md](structures.md)** - Data processing pipeline, CPU/GPU routing, qualification flow, BackgroundEngine
+- **[guidelines.md](guidelines.md)** - **START HERE** - Essential rules and patterns for coding agents
 
-### Implementation Guides
+### System Architecture
 
-- **[guidelines.md](guidelines.md)** - Quick reference with inline code patterns, decision trees, component usage
-- **[implementation.md](implementation.md)** - Implementation details, conventions, patterns, best practices
-- **[reference.md](reference.md)** - Terminology, naming conventions, architecture layers, quick lookup
+- **[architecture.md](architecture.md)** - System architecture, modules, services, workspace, GPU/CPU routing
+- **[structures.md](structures.md)** - Data processing pipeline, task states, background engine
 
 ### Service-Specific
 
-- **[knowledge-base.md](knowledge-base.md)** - **SSOT** for Knowledge Base: graph schema, RAG, ingest, normalization, indexers
-- **[orchestrator-final-spec.md](orchestrator-final-spec.md)** - Python Orchestrator specification: async dispatch, approval flow, concurrency
+- **[knowledge-base.md](knowledge-base.md)** - **SSOT** for Knowledge Base: graph schema, RAG, ingest, normalization
+- **[orchestrator-final-spec.md](orchestrator-final-spec.md)** - Python Orchestrator specification: async dispatch, approval flow
 - **[orchestrator-detailed.md](orchestrator-detailed.md)** - Detailed orchestrator reference: nodes, LLM calls, K8s Jobs, state machine
+- **[ui-design.md](ui-design.md)** - **SSOT** for UI: adaptive layout, component signatures, patterns, dialogs
 
-### Planning & Tasks
+### Implementation Details
 
-- **[TODO.md](TODO.md)** - Active TODO list, planned features, known issues
-
----
-
-## Archive
-
-Historical documents, completed migrations, and outdated analyses are in **[archive/](archive/)**:
-
-- `kb-analysis-and-recommendations.md` - KB analysis from 2026-02-05 (superseded by knowledge-base.md)
-- `koog-audit.md` - Koog framework removal (completed 2026-02-07)
-- `task-scheduling-analysis.md` - Scheduler bug fixes (completed 2026-02-11)
-- `operations.md` - OAuth2 Phase 1 deployment checklist (historical)
+- **[implementation.md](implementation.md)** - Implementation details, conventions, patterns, best practices
 
 ---
 
@@ -47,21 +34,25 @@ Historical documents, completed migrations, and outdated analyses are in **[arch
 
 **After every code change**, update relevant documentation:
 
-| Changed Code | Update These Docs |
-|--------------|-------------------|
-| UI component or pattern | `ui-design.md` (SSOT) + `guidelines.md` (inline examples) |
-| Data processing / routing | `structures.md` |
-| KB / graph schema | `knowledge-base.md` |
-| Architecture / module boundaries | `architecture.md` |
-| Implementation conventions | `implementation.md` |
-| Orchestrator behavior | `orchestrator-final-spec.md` or `orchestrator-detailed.md` |
+| Changed Code                     | Update These Docs                                          |
+|----------------------------------|------------------------------------------------------------|
+| UI component or pattern          | `ui-design.md` + `guidelines.md`                           |
+| Data processing / routing        | `structures.md`                                            |
+| KB / graph schema                | `knowledge-base.md`                                        |
+| Architecture / module boundaries | `architecture.md`                                          |
+| Orchestrator behavior            | `orchestrator-final-spec.md` or `orchestrator-detailed.md` |
+| Implementation conventions       | `implementation.md`                                        |
 
 ### Pull Request Checklist
 
 - [ ] Code changes done
 - [ ] Relevant docs updated
-- [ ] No outdated information left
-- [ ] Cross-references still valid
+- [ ] No duplicated helpers (check `ClientsSharedHelpers.kt`)
+- [ ] All interactive elements ≥ 44dp touch target
+- [ ] Cards use `CardDefaults.outlinedCardBorder()` or `JCard`
+- [ ] Loading/empty/error states use `JCenteredLoading` / `JEmptyState` / `JErrorState`
+- [ ] No hardcoded paths (use `DirectoryStructureService`)
+- [ ] DB queries filter at DB level (no `.filter {}` in Kotlin)
 
 ---
 
