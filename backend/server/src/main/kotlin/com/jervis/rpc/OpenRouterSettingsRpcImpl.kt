@@ -1,9 +1,11 @@
 package com.jervis.rpc
 
 import com.jervis.dto.openrouter.*
+import com.jervis.entity.ModelQueue
 import com.jervis.entity.OpenRouterFilters
 import com.jervis.entity.OpenRouterModelEntry
 import com.jervis.entity.OpenRouterSettingsDocument
+import com.jervis.entity.QueueModelEntry
 import com.jervis.repository.OpenRouterSettingsRepository
 import com.jervis.service.IOpenRouterSettingsService
 import io.ktor.client.HttpClient
@@ -54,6 +56,7 @@ class OpenRouterSettingsRpcImpl(
             models = request.models?.map { it.toEntity() } ?: existing.models,
             monthlyBudgetUsd = request.monthlyBudgetUsd ?: existing.monthlyBudgetUsd,
             fallbackStrategy = request.fallbackStrategy?.name ?: existing.fallbackStrategy,
+            modelQueues = request.modelQueues?.map { it.toEntity() } ?: existing.modelQueues,
         )
 
         repository.save(updated)
@@ -178,6 +181,7 @@ class OpenRouterSettingsRpcImpl(
             } catch (_: Exception) {
                 OpenRouterFallbackStrategy.NEXT_IN_LIST
             },
+            modelQueues = this.modelQueues.map { it.toDto() },
         )
 
     private fun OpenRouterModelEntry.toDto(): OpenRouterModelEntryDto =
@@ -216,6 +220,38 @@ class OpenRouterSettingsRpcImpl(
             outputPricePerMillion = this.outputPricePerMillion,
             preferredFor = this.preferredFor.map { it.name },
             maxOutputTokens = this.maxOutputTokens,
+        )
+
+    private fun ModelQueue.toDto(): ModelQueueDto =
+        ModelQueueDto(
+            name = this.name,
+            models = this.models.map { it.toDto() },
+            enabled = this.enabled,
+        )
+
+    private fun QueueModelEntry.toDto(): QueueModelEntryDto =
+        QueueModelEntryDto(
+            modelId = this.modelId,
+            isLocal = this.isLocal,
+            maxContextTokens = this.maxContextTokens,
+            enabled = this.enabled,
+            label = this.label,
+        )
+
+    private fun ModelQueueDto.toEntity(): ModelQueue =
+        ModelQueue(
+            name = this.name,
+            models = this.models.map { it.toEntity() },
+            enabled = this.enabled,
+        )
+
+    private fun QueueModelEntryDto.toEntity(): QueueModelEntry =
+        QueueModelEntry(
+            modelId = this.modelId,
+            isLocal = this.isLocal,
+            maxContextTokens = this.maxContextTokens,
+            enabled = this.enabled,
+            label = this.label,
         )
 }
 

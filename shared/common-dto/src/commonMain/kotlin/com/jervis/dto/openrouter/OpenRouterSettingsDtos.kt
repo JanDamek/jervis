@@ -35,6 +35,9 @@ data class OpenRouterSettingsDto(
 
     /** Fallback strategy when preferred model is unavailable */
     val fallbackStrategy: OpenRouterFallbackStrategy = OpenRouterFallbackStrategy.NEXT_IN_LIST,
+
+    /** Named model queues for queue-based routing (CHAT, FREE, ORCHESTRATOR, etc.) */
+    val modelQueues: List<ModelQueueDto> = emptyList(),
 )
 
 /**
@@ -158,6 +161,51 @@ data class OpenRouterSettingsUpdateDto(
     val models: List<OpenRouterModelEntryDto>? = null,
     val monthlyBudgetUsd: Double? = null,
     val fallbackStrategy: OpenRouterFallbackStrategy? = null,
+    val modelQueues: List<ModelQueueDto>? = null,
+)
+
+/**
+ * Named queue of models with fallback ordering.
+ *
+ * Each queue represents a use case (CHAT, FREE, ORCHESTRATOR, etc.) with
+ * an ordered list of models. The router iterates the list top-to-bottom:
+ * first available model (local GPU free, or cloud always available) is used.
+ */
+@Serializable
+data class ModelQueueDto(
+    /** Queue name (e.g. "CHAT", "FREE", "ORCHESTRATOR", "LARGE_CONTEXT", "CODING") */
+    val name: String,
+
+    /** Ordered list of models in this queue (index 0 = highest priority) */
+    val models: List<QueueModelEntryDto> = emptyList(),
+
+    /** Whether this queue is enabled */
+    val enabled: Boolean = true,
+)
+
+/**
+ * A single model entry within a named queue.
+ *
+ * Can represent either a local GPU model (via Ollama router) or a cloud model
+ * (via OpenRouter). The router checks local availability before falling back
+ * to the next model in the queue.
+ */
+@Serializable
+data class QueueModelEntryDto(
+    /** Model identifier. "p40" for local GPU, or OpenRouter ID (e.g. "anthropic/claude-sonnet-4") */
+    val modelId: String,
+
+    /** true = local GPU (via Ollama router), false = cloud (via OpenRouter) */
+    val isLocal: Boolean = false,
+
+    /** Maximum context tokens this model can handle */
+    val maxContextTokens: Int = 32_000,
+
+    /** Whether this entry is enabled */
+    val enabled: Boolean = true,
+
+    /** Human-readable label for UI */
+    val label: String = "",
 )
 
 /**

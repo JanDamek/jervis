@@ -20,6 +20,7 @@ data class OpenRouterSettingsDocument(
     val models: List<OpenRouterModelEntry> = emptyList(),
     val monthlyBudgetUsd: Double = 0.0,
     val fallbackStrategy: String = "NEXT_IN_LIST",
+    val modelQueues: List<ModelQueue> = emptyList(),
 ) {
     companion object {
         const val SINGLETON_ID = "openrouter-settings-global"
@@ -46,4 +47,18 @@ data class OpenRouterModelEntry(
     val outputPricePerMillion: Double = 0.0,
     val preferredFor: List<String> = emptyList(),
     val maxOutputTokens: Int = 0,
+)
+
+data class ModelQueue(
+    val name: String,
+    val models: List<QueueModelEntry> = emptyList(),
+    val enabled: Boolean = true,
+)
+
+data class QueueModelEntry(
+    val modelId: String,
+    val isLocal: Boolean = false,
+    val maxContextTokens: Int = 32_000,
+    val enabled: Boolean = true,
+    val label: String = "",
 )

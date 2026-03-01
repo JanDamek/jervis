@@ -22,6 +22,7 @@ import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalFilterRulesApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
+import com.jervis.rpc.internal.installInternalOpenRouterApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -107,6 +108,7 @@ class KtorRpcServer(
                             installInternalGuidelinesApi(guidelinesService)
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
+                            installInternalOpenRouterApi(openRouterSettingsRpcImpl)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
