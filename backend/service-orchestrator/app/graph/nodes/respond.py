@@ -312,6 +312,7 @@ async def respond(state: dict) -> dict:
                         client_id=client_id,
                         project_id=project_id,
                         processing_mode=state.get("processing_mode", "FOREGROUND"),
+                        group_id=state.get("group_id"),
                     ),
                     timeout=_TOOL_EXECUTION_TIMEOUT_S,
                 )

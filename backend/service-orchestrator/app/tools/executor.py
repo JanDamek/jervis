@@ -128,6 +128,7 @@ async def execute_tool(
     project_id: str | None,
     processing_mode: str = "FOREGROUND",
     skip_approval: bool = False,
+    group_id: str | None = None,
 ) -> str:
     """Execute a tool call and return the result as a string.
 
@@ -137,13 +138,14 @@ async def execute_tool(
         client_id: Tenant client ID for KB scoping.
         project_id: Tenant project ID for KB scoping.
         skip_approval: If True, skip approval gate (already approved by user).
+        group_id: Group ID for cross-project KB visibility.
 
     Returns:
         Formatted result string (never raises).
     """
     logger.debug(
-        "execute_tool START: tool=%s, args=%s, client_id=%s, project_id=%s",
-        tool_name, arguments, client_id, project_id
+        "execute_tool START: tool=%s, args=%s, client_id=%s, project_id=%s, group_id=%s",
+        tool_name, arguments, client_id, project_id, group_id
     )
 
     # ask_user is special — it raises AskUserInterrupt (not caught here).
@@ -174,6 +176,7 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
                 processing_mode=processing_mode,
+                group_id=group_id,
             )
         elif tool_name == "kb_delete":
             result = await _execute_kb_delete(
@@ -189,6 +192,7 @@ async def execute_tool(
                 client_id=client_id,
                 project_id=project_id,
                 processing_mode=processing_mode,
+                group_id=group_id,
             )
         elif tool_name == "create_scheduled_task":
             result = await _execute_create_scheduled_task(
@@ -594,16 +598,18 @@ async def _execute_kb_search(
     client_id: str = "",
     project_id: str | None = None,
     processing_mode: str = "FOREGROUND",
+    group_id: str | None = None,
 ) -> str:
     """Search the Knowledge Base via POST /api/v1/retrieve.
 
     Reuses the same pattern as app/kb/prefetch.py.
+    When group_id is provided, KB returns results from all projects in the group.
     """
     if not query.strip():
         return "Error: Empty KB search query."
 
-    logger.info("kb_search: query=%r clientId=%s projectId=%s maxResults=%d",
-                query[:120], client_id, project_id, max_results)
+    logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s maxResults=%d",
+                query[:120], client_id, project_id, group_id, max_results)
 
     url = f"{settings.knowledgebase_url}/api/v1/retrieve"
     payload = {
@@ -614,6 +620,8 @@ async def _execute_kb_search(
         "minConfidence": 0.3,
         "expandGraph": True,
     }
+    if group_id:
+        payload["groupId"] = group_id
 
     headers = foreground_headers(processing_mode)
 
@@ -713,6 +721,7 @@ async def _execute_store_knowledge(
     client_id: str = "",
     project_id: str | None = None,
     processing_mode: str = "FOREGROUND",
+    group_id: str | None = None,
 ) -> str:
     """Store new knowledge into the Knowledge Base via POST /api/v1/ingest.
 
@@ -769,6 +778,8 @@ async def _execute_store_knowledge(
             "source": "agent_learning",
         },
     }
+    if group_id:
+        payload["groupId"] = group_id
 
     headers = foreground_headers(processing_mode)
 

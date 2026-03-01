@@ -127,13 +127,14 @@ class ChatRpcImpl(
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
             try {
-                // Resolve CloudModelPolicy for the project
-                val autoUseOpenrouter = try {
+                // Resolve CloudModelPolicy and groupId for the project
+                val project = try {
                     activeProjectId?.let { pid ->
                         projectRepository.getById(ProjectId(ObjectId(pid)))
-                            ?.cloudModelPolicy?.autoUseOpenrouter
-                    } ?: false
-                } catch (_: Exception) { false }
+                    }
+                } catch (_: Exception) { null }
+                val autoUseOpenrouter = project?.cloudModelPolicy?.autoUseOpenrouter ?: false
+                val activeGroupId = project?.groupId?.toString()
 
                 // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow
                 val eventFlow = chatService.sendMessage(
@@ -141,6 +142,7 @@ class ChatRpcImpl(
                     clientMessageId = clientMessageId,
                     activeClientId = activeClientId,
                     activeProjectId = activeProjectId,
+                    activeGroupId = activeGroupId,
                     contextTaskId = contextTaskId,
                     autoUseOpenrouter = autoUseOpenrouter,
                 )

@@ -4,6 +4,7 @@ import com.jervis.domain.atlassian.AttachmentMetadata
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.Attachment
 import com.jervis.knowledgebase.model.FullIngestRequest
+import com.jervis.repository.ProjectRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.text.TikaTextExtractionService
 import mu.KotlinLogging
@@ -29,6 +30,7 @@ class SimpleQualifierAgent(
     private val knowledgeClient: com.jervis.configuration.KnowledgeServiceRestClient,
     private val taskService: TaskService,
     private val tikaTextExtractionService: TikaTextExtractionService,
+    private val projectRepository: ProjectRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -64,9 +66,13 @@ class SimpleQualifierAgent(
 
         // 3. Build request and submit to KB (fire-and-forget)
         onProgress("Odesílám do KB služby...", mapOf("step" to "kb_call_start", "agent" to "simple_qualifier"))
+        val groupId = task.projectId?.let { pid ->
+            try { projectRepository.getById(pid)?.groupId?.toString() } catch (_: Exception) { null }
+        }
         val request = FullIngestRequest(
             clientId = task.clientId,
             projectId = task.projectId,
+            groupId = groupId,
             sourceUrn = task.correlationId,
             sourceType = task.type,
             subject = extractSubject(task),

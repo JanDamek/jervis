@@ -1,6 +1,7 @@
 package com.jervis.repository
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ProjectGroupId
 import com.jervis.common.types.ProjectId
 import com.jervis.entity.ProjectDocument
 import kotlinx.coroutines.flow.Flow
@@ -38,4 +39,9 @@ interface ProjectRepository : CoroutineCrudRepository<ProjectDocument, ProjectId
      * Find the JERVIS internal project for a client (max 1 per client).
      */
     suspend fun findByClientIdAndIsJervisInternal(clientId: ClientId, isJervisInternal: Boolean): ProjectDocument?
+
+    /**
+     * Find all projects belonging to a group. Used for KB cross-project visibility.
+     */
+    fun findByGroupId(groupId: ProjectGroupId): Flow<ProjectDocument>
 }

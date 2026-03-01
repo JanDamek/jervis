@@ -403,8 +403,23 @@ This means all projects in the same group share KB data (RAG chunks and graph no
 
 Both Weaviate (RAG) and ArangoDB (Graph) store `groupId` alongside `clientId`/`projectId`.
 
-**Re-grouping**: When a project moves between groups, its own data retains its `projectId` and
-gains immediate visibility in the new group via the updated `groupId` filter.
+**Re-grouping**: When a project's group assignment changes (`ProjectService.saveProject()`),
+the Kotlin backend detects the `groupId` change and calls `POST /api/v1/retag-group` on the KB
+service. This updates all `KnowledgeNodes` with the matching `projectId` to the new `groupId`
+(or clears it if the project is removed from a group). RAG chunks inherit the new groupId
+through the graph node linkage on next search.
+
+**groupId propagation pipeline:**
+```
+Ingest:   SimpleQualifierAgent → resolves project.groupId → FullIngestRequest.groupId
+                                → KnowledgeServiceRestClient → KB Python /ingest
+Chat:     ChatRpcImpl → resolves project.groupId → PythonChatClient.activeGroupId
+                      → Python ChatRequest.active_group_id → executor.execute_tool(group_id=...)
+                      → KB Python /search payload { groupId: ... }
+Background: AgentOrchestratorService → resolves project.groupId → OrchestrateRequestDto.groupId
+                                     → Python OrchestrateRequest.group_id → executor.execute_tool(group_id=...)
+MCP:      kb_search / kb_store / kb_traverse / kb_graph_search — optional group_id parameter
+```
 
 ### Integration
 *   **Tika Service**: Used for text extraction (OCR).
@@ -1033,6 +1048,7 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 | PUT | `/api/v1/documents/{docId}` | Update metadata (title, category, tags) |
 | DELETE | `/api/v1/documents/{docId}` | Delete (purges RAG + graph node) |
 | POST | `/api/v1/documents/{docId}/reindex` | Re-extract and re-ingest |
+| POST | `/api/v1/retag-group` | Update groupId on all KB nodes for a project (called on group change) |
 
 ### MCP Tools
 

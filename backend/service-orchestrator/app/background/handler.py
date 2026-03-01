@@ -403,6 +403,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                             client_id=client_id,
                             project_id=project_id,
                             processing_mode="BACKGROUND",
+                            group_id=request.group_id,
                         ),
                         timeout=_TOOL_EXECUTION_TIMEOUT_S,
                     )
@@ -536,7 +537,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                                     if tn == "dispatch_coding_agent":
                                         re_dispatch_done = True
                                     res = await asyncio.wait_for(
-                                        execute_tool(tn, args, client_id, project_id, "BACKGROUND"),
+                                        execute_tool(tn, args, client_id, project_id, "BACKGROUND", group_id=request.group_id),
                                         timeout=_TOOL_EXECUTION_TIMEOUT_S,
                                     )
                                     messages.append({

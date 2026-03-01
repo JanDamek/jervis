@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     # Scope — from UI selection
     active_client_id: str | None = None          # Currently selected client in UI
     active_project_id: str | None = None         # Currently selected project in UI
+    active_group_id: str | None = None           # Group ID of active project (for cross-project KB)
 
     # Context — when user clicks on a specific user_task
     context_task_id: str | None = None           # TaskDocument._id if responding to user_task

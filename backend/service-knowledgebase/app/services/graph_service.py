@@ -1641,3 +1641,29 @@ Text: {text}
         if deleted:
             logger.info("Deleted kb_document node key=%s", key)
         return deleted
+
+    async def retag_group(self, project_id: str, new_group_id: str | None) -> int:
+        """Update groupId on all ArangoDB nodes for a project.
+
+        Called when a project's group membership changes.
+        Returns number of updated nodes.
+        """
+        aql = """
+        FOR doc IN KnowledgeNodes
+            FILTER doc.projectId == @projectId
+            UPDATE doc WITH { groupId: @groupId } IN KnowledgeNodes
+            RETURN 1
+        """
+        bind_vars = {"projectId": project_id, "groupId": new_group_id or ""}
+
+        def _execute():
+            cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
+            return sum(1 for _ in cursor)
+
+        try:
+            updated = await asyncio.to_thread(_execute)
+            logger.info("retag_group: projectId=%s newGroupId=%s updated=%d nodes", project_id, new_group_id, updated)
+            return updated
+        except Exception as e:
+            logger.warning("retag_group failed: projectId=%s error=%s", project_id, e)
+            return 0

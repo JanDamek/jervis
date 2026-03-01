@@ -11,6 +11,7 @@ data class RetrievalRequest(
     val query: String,
     val clientId: ClientId,
     val projectId: ProjectId? = null,
+    val groupId: String? = null,
     val asOf: Instant? = null, // for historical queries
     val minConfidence: Double = 0.0,
     val maxResults: Int = 10,

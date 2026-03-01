@@ -89,6 +89,7 @@ class KnowledgeServiceRestClient(
         val pythonRequest = PythonIngestRequest(
             clientId = request.clientId.toString(),
             projectId = request.projectId?.toString(),
+            groupId = request.groupId,
             sourceUrn = request.sourceUrn.toString(),
             kind = request.kind,
             content = request.content,
@@ -141,6 +142,7 @@ class KnowledgeServiceRestClient(
                         request.subject?.let { append("subject", it) }
                         append("content", request.content)
                         request.projectId?.let { append("projectId", it.toString()) }
+                        request.groupId?.let { append("groupId", it) }
                         append("metadata", Json.encodeToString(request.metadata))
 
                         // Add attachments
@@ -254,6 +256,7 @@ class KnowledgeServiceRestClient(
                 request.subject?.let { append("subject", it) }
                 append("content", request.content)
                 request.projectId?.let { append("projectId", it.toString()) }
+                request.groupId?.let { append("groupId", it) }
                 append("metadata", Json.encodeToString(request.metadata))
                 append("callbackUrl", callbackUrl)
                 append("taskId", taskId)
@@ -290,6 +293,7 @@ class KnowledgeServiceRestClient(
             query = request.query,
             clientId = request.clientId.toString(),
             projectId = request.projectId?.toString(),
+            groupId = request.groupId,
             asOf = request.asOf?.let { DateTimeFormatter.ISO_INSTANT.format(it) },
             minConfidence = request.minConfidence,
             maxResults = request.maxResults,
@@ -709,6 +713,26 @@ class KnowledgeServiceRestClient(
         }
     }
 
+    /**
+     * Update groupId on all KB items for a project.
+     * Called when a project's group membership changes.
+     */
+    suspend fun retagGroupId(projectId: String, newGroupId: String?) {
+        logger.info { "KB retag-group: projectId=$projectId newGroupId=$newGroupId" }
+        try {
+            val response = client.post("$apiBaseUrl/retag-group") {
+                contentType(ContentType.Application.Json)
+                setBody(PythonRetagGroupRequest(projectId = projectId, groupId = newGroupId))
+            }
+            if (!response.status.isSuccess()) {
+                val errorBody = response.bodyAsText()
+                logger.warn { "KB retag-group failed: ${response.status} $errorBody" }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to retag KB group for project $projectId: ${e.message}" }
+        }
+    }
+
     fun close() {
         client.close()
     }
@@ -720,6 +744,7 @@ class KnowledgeServiceRestClient(
 private data class PythonIngestRequest(
     val clientId: String,
     val projectId: String? = null,
+    val groupId: String? = null,
     val sourceUrn: String,
     val kind: String = "",
     val content: String,
@@ -743,6 +768,7 @@ private data class PythonRetrievalRequest(
     val query: String,
     val clientId: String,
     val projectId: String? = null,
+    val groupId: String? = null,
     val asOf: String? = null,
     val minConfidence: Double = 0.0,
     val maxResults: Int = 10,
@@ -995,6 +1021,12 @@ private data class PythonKbDocumentRegisterRequest(
     val category: String = "OTHER",
     val tags: List<String> = emptyList(),
     val contentHash: String? = null,
+)
+
+@Serializable
+private data class PythonRetagGroupRequest(
+    val projectId: String,
+    val groupId: String? = null,
 )
 
 @Serializable

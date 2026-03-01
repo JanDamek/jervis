@@ -98,6 +98,7 @@ async def execute_chat_tool(
     arguments: dict,
     active_client_id: str | None,
     active_project_id: str | None,
+    group_id: str | None = None,
 ) -> str:
     """Execute a tool call, routing between base tools and chat-specific tools."""
     if tool_name in _CHAT_SPECIFIC_TOOLS:
@@ -109,6 +110,7 @@ async def execute_chat_tool(
         client_id=active_client_id or "",
         project_id=active_project_id,
         processing_mode="FOREGROUND",
+        group_id=group_id,
     )
 
 

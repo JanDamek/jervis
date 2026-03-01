@@ -12,6 +12,7 @@ import java.time.Instant
 data class FullIngestRequest(
     val clientId: ClientId,
     val projectId: ProjectId? = null,
+    val groupId: String? = null,
     val sourceUrn: String,
     val sourceType: TaskTypeEnum,
     val subject: String? = null, // Email subject, page title, issue key

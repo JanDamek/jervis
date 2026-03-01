@@ -258,6 +258,7 @@ class OrchestrateRequest(BaseModel):
     task_id: str
     client_id: str
     project_id: str | None = None
+    group_id: str | None = None
     client_name: str | None = None
     project_name: str | None = None
     workspace_path: str

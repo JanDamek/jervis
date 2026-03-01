@@ -337,6 +337,7 @@ async def run_agentic_loop(
                     result = await execute_chat_tool(
                         tool_name, arguments,
                         effective_client_id, effective_project_id,
+                        group_id=getattr(request, "active_group_id", None),
                     )
                 except ApprovalRequiredInterrupt as approval_exc:
                     # Check session-level auto-approvals first
@@ -346,6 +347,7 @@ async def run_agentic_loop(
                         result = await execute_chat_tool(
                             tool_name, arguments,
                             effective_client_id, effective_project_id,
+                            group_id=getattr(request, "active_group_id", None),
                         )
                     else:
                         # Emit approval request and wait for user response
@@ -384,6 +386,7 @@ async def run_agentic_loop(
                                 project_id=effective_project_id,
                                 processing_mode="FOREGROUND",
                                 skip_approval=True,
+                                group_id=getattr(request, "active_group_id", None),
                             )
                         else:
                             result = f"Akce {tool_name} byla zamítnuta uživatelem."

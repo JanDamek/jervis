@@ -60,6 +60,7 @@ async def kb_search(
     query: str,
     client_id: str = "",
     project_id: str = "",
+    group_id: str = "",
     scope: str = "auto",
     max_results: int = 10,
     min_confidence: float = 0.6,
@@ -67,11 +68,13 @@ async def kb_search(
     """Search the Knowledge Base using RAG + knowledge graph expansion.
 
     Combines vector search with graph traversal for comprehensive results.
+    When group_id is provided, returns results from all projects in the group.
 
     Args:
         query: Natural language search query
         client_id: Client ID (leave empty to use server default)
         project_id: Project ID (leave empty to use server default)
+        group_id: Group ID for cross-project visibility (leave empty for single project)
         scope: "auto" (client+project), "global", "client" (no project filter)
         max_results: Maximum number of results (default 10)
         min_confidence: Minimum confidence threshold (0.0-1.0)
@@ -85,17 +88,20 @@ async def kb_search(
 
     # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
     headers = {"X-Ollama-Priority": "0"}
+    payload = {
+        "query": query,
+        "clientId": cid,
+        "projectId": pid,
+        "maxResults": max_results,
+        "minConfidence": min_confidence,
+        "expandGraph": True,
+    }
+    if group_id:
+        payload["groupId"] = group_id
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         resp = await client.post(
             f"{settings.knowledgebase_url}/api/v1/retrieve",
-            json={
-                "query": query,
-                "clientId": cid,
-                "projectId": pid,
-                "maxResults": max_results,
-                "minConfidence": min_confidence,
-                "expandGraph": True,
-            },
+            json=payload,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -113,6 +119,7 @@ async def kb_search_simple(
     query: str,
     client_id: str = "",
     project_id: str = "",
+    group_id: str = "",
     max_results: int = 5,
 ) -> str:
     """Quick RAG-only search without graph expansion. Faster but less comprehensive.
@@ -121,21 +128,25 @@ async def kb_search_simple(
         query: Natural language search query
         client_id: Client ID (leave empty for default)
         project_id: Project ID (leave empty for default)
+        group_id: Group ID for cross-project visibility (leave empty for single project)
         max_results: Maximum results
     """
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
     headers = {"X-Ollama-Priority": "0"}
+    payload = {
+        "query": query,
+        "clientId": cid,
+        "projectId": pid,
+        "maxResults": max_results,
+    }
+    if group_id:
+        payload["groupId"] = group_id
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         resp = await client.post(
             f"{settings.knowledgebase_url}/api/v1/retrieve/simple",
-            json={
-                "query": query,
-                "clientId": cid,
-                "projectId": pid,
-                "maxResults": max_results,
-            },
+            json=payload,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -151,6 +162,7 @@ async def kb_search_simple(
 async def kb_traverse(
     start_node: str,
     client_id: str = "",
+    group_id: str = "",
     direction: str = "outbound",
     max_hops: int = 2,
 ) -> str:
@@ -159,20 +171,24 @@ async def kb_traverse(
     Args:
         start_node: Node key or label to start traversal from
         client_id: Client ID (leave empty for default)
+        group_id: Group ID for cross-project visibility (leave empty for single-project)
         direction: "outbound", "inbound", or "any"
         max_hops: Maximum traversal depth (1-3 recommended)
     """
     cid = client_id or settings.default_client_id
     headers = {"X-Ollama-Priority": "0"}
+    payload = {
+        "startNodeKey": start_node,
+        "direction": direction,
+        "maxDepth": max_hops,
+        "clientId": cid,
+    }
+    if group_id:
+        payload["groupId"] = group_id
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         resp = await client.post(
             f"{settings.knowledgebase_url}/api/v1/traverse",
-            json={
-                "startNodeKey": start_node,
-                "direction": direction,
-                "maxDepth": max_hops,
-                "clientId": cid,
-            },
+            json=payload,
         )
         resp.raise_for_status()
         nodes = resp.json()
@@ -194,6 +210,7 @@ async def kb_traverse(
 async def kb_graph_search(
     query: str,
     client_id: str = "",
+    group_id: str = "",
     node_type: str = "",
     limit: int = 20,
 ) -> str:
@@ -202,6 +219,7 @@ async def kb_graph_search(
     Args:
         query: Search query for node labels
         client_id: Client ID (leave empty for default)
+        group_id: Group ID for cross-project visibility (leave empty for single-project)
         node_type: Filter by node type (e.g., "jira_issue", "file", "class", "method", "commit")
         limit: Maximum number of results
     """
@@ -209,6 +227,8 @@ async def kb_graph_search(
     params: dict = {"query": query, "clientId": cid, "limit": limit}
     if node_type:
         params["nodeType"] = node_type
+    if group_id:
+        params["groupId"] = group_id
     headers = {"X-Ollama-Priority": "0"}
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         resp = await client.get(f"{settings.knowledgebase_url}/api/v1/graph/search", params=params)
@@ -274,6 +294,7 @@ async def kb_store(
     content: str,
     client_id: str = "",
     project_id: str = "",
+    group_id: str = "",
     kind: str = "finding",
     source_urn: str = "agent://claude-mcp",
     metadata: str = "{}",
@@ -286,6 +307,7 @@ async def kb_store(
         content: The knowledge content to store
         client_id: Client ID (leave empty for default)
         project_id: Project ID (leave empty for default)
+        group_id: Group ID for cross-project visibility (leave empty for single-project)
         kind: Type: "finding", "decision", "pattern", "bug", "convention"
         source_urn: Source identifier
         metadata: Additional metadata as JSON string
@@ -295,17 +317,20 @@ async def kb_store(
 
     # Fire-and-forget: KB queues processing (embedding + extraction) in background
     headers = {"X-Ollama-Priority": "0"}
+    payload = {
+        "clientId": cid,
+        "projectId": pid,
+        "sourceUrn": source_urn,
+        "kind": kind,
+        "content": content,
+        "metadata": json.loads(metadata) if metadata else {},
+    }
+    if group_id:
+        payload["groupId"] = group_id
     async with httpx.AsyncClient(timeout=30, headers=headers) as client:
         resp = await client.post(
             f"{settings.knowledgebase_write_url}/api/v1/ingest-queue",
-            json={
-                "clientId": cid,
-                "projectId": pid,
-                "sourceUrn": source_urn,
-                "kind": kind,
-                "content": content,
-                "metadata": json.loads(metadata) if metadata else {},
-            },
+            json=payload,
         )
         resp.raise_for_status()
         return f"Queued for processing."

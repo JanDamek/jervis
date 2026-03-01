@@ -273,6 +273,7 @@ data class OrchestrateRequestDto(
     @SerialName("task_id") val taskId: String,
     @SerialName("client_id") val clientId: String,
     @SerialName("project_id") val projectId: String? = null,
+    @SerialName("group_id") val groupId: String? = null,
     @SerialName("client_name") val clientName: String? = null,
     @SerialName("project_name") val projectName: String? = null,
     @SerialName("workspace_path") val workspacePath: String,

@@ -27,6 +27,7 @@ class ProjectService(
     private val gitRepositoryService: GitRepositoryService,
     private val directoryStructureService: DirectoryStructureService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
+    private val knowledgeClient: com.jervis.configuration.KnowledgeServiceRestClient,
 ) {
     private val bgScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     companion object {
@@ -64,6 +65,21 @@ class ProjectService(
             logger.info { "Created new project: ${savedProject.name}" }
         } else {
             logger.info { "Updated project: ${savedProject.name}" }
+
+            // Retag KB items when project group changes
+            if (existing.groupId != project.groupId) {
+                logger.info { "Project group changed: ${existing.groupId} → ${project.groupId}, retagging KB items" }
+                bgScope.launch {
+                    try {
+                        knowledgeClient.retagGroupId(
+                            projectId = savedProject.id.toString(),
+                            newGroupId = savedProject.groupId?.toString(),
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "KB retag-group failed for project ${savedProject.name}" }
+                    }
+                }
+            }
         }
 
         // Trigger async repo sync if project has REPOSITORY resources (for indexing)

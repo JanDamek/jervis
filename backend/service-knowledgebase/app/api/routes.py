@@ -554,6 +554,24 @@ async def purge(request: PurgeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@write_router.post("/retag-group")
+async def retag_group(request: dict):
+    """Update groupId on all KB items for a project.
+
+    Called when a project's group membership changes.
+    Updates ArangoDB nodes and Weaviate chunks for the given projectId.
+    """
+    project_id = request.get("projectId", "")
+    group_id = request.get("groupId")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="projectId is required")
+    try:
+        updated = await service.graph_service.retag_group(project_id, group_id)
+        return {"status": "success", "updated": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @write_router.post("/alias/register")
 async def register_alias(
     alias: str,

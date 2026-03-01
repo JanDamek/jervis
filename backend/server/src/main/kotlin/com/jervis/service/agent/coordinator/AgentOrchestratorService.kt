@@ -264,11 +264,13 @@ class AgentOrchestratorService(
         val clientName = try {
             clientService.getClientByIdOrNull(task.clientId)?.name
         } catch (e: Exception) { null }
-        val projectName = task.projectId?.let { pid ->
+        val projectDoc = task.projectId?.let { pid ->
             try {
-                projectService.getProjectByIdOrNull(pid)?.name
+                projectService.getProjectByIdOrNull(pid)
             } catch (e: Exception) { null }
         }
+        val projectName = projectDoc?.name
+        val groupId = projectDoc?.groupId?.toString()
 
         val workspacePath = resolveWorkspacePath(task)
 
@@ -276,7 +278,7 @@ class AgentOrchestratorService(
         // v6 routing: BACKGROUND → /orchestrate/v2 (simplified agentic loop)
         // No fallback: if v2 fails → error, task goes back to queue
         // -----------------------------------------------------------------------
-        return dispatchBackgroundV6(task, userInput, rules, clientName, projectName, workspacePath, onProgress)
+        return dispatchBackgroundV6(task, userInput, rules, clientName, projectName, groupId, workspacePath, onProgress)
     }
 
     /**
@@ -292,6 +294,7 @@ class AgentOrchestratorService(
         rules: ProjectRulesDto,
         clientName: String?,
         projectName: String?,
+        groupId: String?,
         workspacePath: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): Boolean {
@@ -339,6 +342,7 @@ class AgentOrchestratorService(
             taskId = task.id.toString(),
             clientId = task.clientId.toString(),
             projectId = task.projectId?.toString(),
+            groupId = groupId,
             clientName = clientName,
             projectName = projectName,
             workspacePath = workspacePath,
