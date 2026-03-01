@@ -416,6 +416,8 @@ private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.
         TaskStateEnum.PYTHON_ORCHESTRATING -> "Zpracovává se"
         TaskStateEnum.WAITING_FOR_AGENT -> "Čeká na agenta"
         TaskStateEnum.USER_TASK -> "Čeká na uživatele"
+        TaskStateEnum.BLOCKED -> "Blokován"
+        TaskStateEnum.PLANNING -> "Plánování"
         TaskStateEnum.DONE -> "Dokončeno"
         TaskStateEnum.ERROR -> "Chyba"
     }

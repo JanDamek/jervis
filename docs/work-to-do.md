@@ -107,7 +107,7 @@
 - DTOs: childCount, completedChildCount, phase
 
 ### 22. Unified Chat Stream (BACKGROUND + ALERT zprávy)
-**Stav:** ✅ Hotovo (UI styling pending)
+**Stav:** ✅ Hotovo
 - MessageRole: BACKGROUND, ALERT
 - ChatRpcImpl: pushBackgroundResult(), pushUrgentAlert(), isUserOnline()
 - OrchestratorStatusHandler: push do chatu při done/error

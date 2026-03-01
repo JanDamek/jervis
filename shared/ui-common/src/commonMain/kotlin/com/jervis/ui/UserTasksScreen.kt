@@ -490,6 +490,8 @@ private fun ChatBubble(message: ChatMessageDto) {
         ChatRole.USER -> "Uživatel"
         ChatRole.ASSISTANT -> "Agent"
         ChatRole.SYSTEM -> "Systém"
+        ChatRole.BACKGROUND -> "Background"
+        ChatRole.ALERT -> "Upozornění"
     }
     val bgColor = if (isUser) {
         MaterialTheme.colorScheme.primaryContainer
