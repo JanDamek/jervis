@@ -7,6 +7,7 @@ import com.jervis.dto.ChatResponseType
 import com.jervis.dto.ChatRole
 import com.jervis.entity.MessageRole
 import com.jervis.service.IChatService
+import com.jervis.service.background.BackgroundEngine
 import com.jervis.service.chat.ChatService
 import com.jervis.service.chat.ChatStreamEvent
 import java.util.concurrent.CancellationException
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Component
 @Component
 class ChatRpcImpl(
     private val chatService: ChatService,
+    private val backgroundEngine: BackgroundEngine,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -221,6 +223,10 @@ class ChatRpcImpl(
                         type = ChatResponseType.ERROR,
                     ),
                 )
+            } finally {
+                // Always release foreground chat lock so background tasks can resume.
+                // Python's finally block in async generator is unreliable for this.
+                backgroundEngine.registerForegroundChatEnd()
             }
         }
     }
