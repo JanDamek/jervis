@@ -4,6 +4,8 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.common.types.TaskId
 import com.jervis.dto.TaskStateEnum
+import com.jervis.dto.connection.ConnectionCapability
+import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.pipeline.ActionExecutionRequest
 import com.jervis.dto.pipeline.ActionExecutionResult
 import com.jervis.dto.pipeline.ApprovalAction
@@ -15,10 +17,15 @@ import com.jervis.entity.ApprovalQueueDocument
 import com.jervis.entity.ApprovalStatisticsDocument
 import com.jervis.repository.ApprovalQueueRepository
 import com.jervis.repository.ApprovalStatisticsRepository
+import com.jervis.repository.ClientRepository
 import com.jervis.repository.TaskRepository
 import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.service.connection.ConnectionService
+import com.jervis.service.github.GitHubClient
 import com.jervis.service.guidelines.GuidelinesService
 import com.jervis.service.task.UserTaskService
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.firstOrNull
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -50,6 +57,9 @@ class ActionExecutorService(
     private val approvalQueueRepository: ApprovalQueueRepository,
     private val approvalStatisticsRepository: ApprovalStatisticsRepository,
     private val chatReplyService: com.jervis.integration.chat.ChatReplyService,
+    private val gitHubClient: GitHubClient,
+    private val connectionService: ConnectionService,
+    private val clientRepository: ClientRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -512,13 +522,102 @@ class ActionExecutorService(
     }
 
     private suspend fun dispatchPrAction(request: ActionExecutionRequest): ActionExecutionResult {
-        // TODO: Wire GitWriteService when PR create/comment/merge API is implemented
-        logger.warn { "PR_DISPATCH: PR operations not yet implemented — action recorded as approved" }
-        return ActionExecutionResult(
-            success = true,
-            message = "PR action approved (Git write API pending implementation)",
-            action = request.action,
-        )
+        val payload = request.payload
+        val owner = payload["owner"] ?: error("Missing owner")
+        val repo = payload["repo"] ?: error("Missing repo")
+
+        val connection = findGitHubConnection(request.clientId)
+            ?: return ActionExecutionResult(
+                success = false,
+                message = "No valid GitHub connection with REPOSITORY capability found for client ${request.clientId}",
+                action = request.action,
+            )
+
+        return when (request.action) {
+            ApprovalAction.PR_CREATE -> {
+                val pr = gitHubClient.createPullRequest(
+                    connection = connection,
+                    owner = owner,
+                    repo = repo,
+                    title = payload["title"] ?: "Untitled PR",
+                    body = payload["body"],
+                    head = payload["head_branch"] ?: error("Missing head_branch"),
+                    base = payload["base_branch"] ?: "main",
+                    draft = payload["draft"]?.toBooleanStrictOrNull() ?: false,
+                )
+                logger.info { "PR_CREATED: ${pr.html_url} (#${pr.number})" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Created PR #${pr.number}: ${pr.title}",
+                    action = request.action,
+                    artifactId = pr.html_url,
+                )
+            }
+
+            ApprovalAction.PR_COMMENT -> {
+                val prNumber = payload["pr_number"]?.toIntOrNull() ?: error("Missing or invalid pr_number")
+                val comment = gitHubClient.commentOnPullRequest(
+                    connection = connection,
+                    owner = owner,
+                    repo = repo,
+                    prNumber = prNumber,
+                    body = payload["body"] ?: error("Missing body"),
+                )
+                logger.info { "PR_COMMENTED: PR #$prNumber — ${comment.html_url}" }
+                ActionExecutionResult(
+                    success = true,
+                    message = "Commented on PR #$prNumber",
+                    action = request.action,
+                    artifactId = comment.html_url,
+                )
+            }
+
+            ApprovalAction.PR_MERGE -> {
+                val prNumber = payload["pr_number"]?.toIntOrNull() ?: error("Missing or invalid pr_number")
+                val result = gitHubClient.mergePullRequest(
+                    connection = connection,
+                    owner = owner,
+                    repo = repo,
+                    prNumber = prNumber,
+                    commitMessage = payload["commit_message"],
+                    mergeMethod = payload["merge_method"] ?: "merge",
+                )
+                if (result.merged) {
+                    logger.info { "PR_MERGED: PR #$prNumber — ${result.message}" }
+                    ActionExecutionResult(
+                        success = true,
+                        message = "Merged PR #$prNumber: ${result.message}",
+                        action = request.action,
+                        artifactId = result.sha,
+                    )
+                } else {
+                    logger.warn { "PR_MERGE_FAILED: PR #$prNumber — ${result.message}" }
+                    ActionExecutionResult(
+                        success = false,
+                        message = "PR #$prNumber merge failed: ${result.message}",
+                        action = request.action,
+                    )
+                }
+            }
+
+            else -> ActionExecutionResult(
+                success = false,
+                message = "Unknown PR action: ${request.action}",
+                action = request.action,
+            )
+        }
+    }
+
+    private suspend fun findGitHubConnection(clientId: String): com.jervis.entity.connection.ConnectionDocument? {
+        val client = clientRepository.getById(ClientId.fromString(clientId)) ?: return null
+        val clientConnectionIds = client.connectionIds.toSet()
+        return connectionService.findAllValid()
+            .filter { conn ->
+                conn.id.value in clientConnectionIds &&
+                    conn.provider == ProviderEnum.GITHUB &&
+                    conn.availableCapabilities.contains(ConnectionCapability.REPOSITORY)
+            }
+            .firstOrNull()
     }
 
     private suspend fun dispatchKbAction(request: ActionExecutionRequest): ActionExecutionResult {

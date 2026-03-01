@@ -15,6 +15,7 @@ import com.jervis.service.project.ProjectService
 import com.jervis.service.task.UserTaskService
 import mu.KotlinLogging
 import org.bson.types.ObjectId
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 
 /**
@@ -42,7 +43,7 @@ class OrchestratorStatusHandler(
     private val clientRepository: ClientRepository,
     private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val environmentService: com.jervis.service.environment.EnvironmentService,
-    private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
+    @Lazy private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
 

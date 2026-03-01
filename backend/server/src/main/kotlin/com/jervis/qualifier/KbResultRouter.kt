@@ -14,6 +14,7 @@ import com.jervis.service.background.AutoTaskCreationService
 import com.jervis.service.background.TaskService
 import com.jervis.service.filtering.FilteringRulesService
 import mu.KotlinLogging
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.Instant
@@ -34,7 +35,7 @@ class KbResultRouter(
     private val actionTypeInferrer: ActionTypeInferrer,
     private val autoTaskCreationService: AutoTaskCreationService,
     private val filteringRulesService: FilteringRulesService,
-    private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
+    @Lazy private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
 

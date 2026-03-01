@@ -7,6 +7,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
@@ -60,6 +62,84 @@ class GitHubClient(
         }
         return json.decodeFromString(response.bodyAsText())
     }
+
+    // --- PR write operations ---
+
+    suspend fun createPullRequest(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        title: String,
+        body: String?,
+        head: String,
+        base: String,
+        draft: Boolean = false,
+    ): GitHubPullRequest {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject {
+            put("title", title)
+            body?.let { put("body", it) }
+            put("head", head)
+            put("base", base)
+            put("draft", draft)
+        }.toString()
+        val response = httpClient.post("https://api.github.com/repos/$owner/$repo/pulls") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub PR create failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubPullRequest.serializer(), response.bodyAsText())
+    }
+
+    suspend fun commentOnPullRequest(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        prNumber: Int,
+        body: String,
+    ): GitHubComment {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject { put("body", body) }.toString()
+        val response = httpClient.post("https://api.github.com/repos/$owner/$repo/issues/$prNumber/comments") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub PR comment failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubComment.serializer(), response.bodyAsText())
+    }
+
+    suspend fun mergePullRequest(
+        connection: ConnectionDocument,
+        owner: String,
+        repo: String,
+        prNumber: Int,
+        commitMessage: String? = null,
+        mergeMethod: String = "merge",
+    ): GitHubMergeResult {
+        val token = requireToken(connection)
+        val requestBody = buildJsonObject {
+            commitMessage?.let { put("commit_message", it) }
+            put("merge_method", mergeMethod)
+        }.toString()
+        val response = httpClient.put("https://api.github.com/repos/$owner/$repo/pulls/$prNumber/merge") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            contentType(ContentType.Application.Json)
+            setBody(requestBody)
+        }
+        if (!response.status.isSuccess()) {
+            error("GitHub PR merge failed: ${response.status} — ${response.bodyAsText()}")
+        }
+        return json.decodeFromString(GitHubMergeResult.serializer(), response.bodyAsText())
+    }
 }
 
 @Serializable
@@ -102,3 +182,26 @@ data class GitHubIssue(
     val created_at: String,
     val updated_at: String
 )
+
+@Serializable
+data class GitHubPullRequest(
+    val id: Long,
+    val number: Int,
+    val title: String,
+    val body: String? = null,
+    val state: String,
+    val html_url: String,
+    val head: GitHubRef,
+    val base: GitHubRef,
+    val draft: Boolean = false,
+    val merged: Boolean = false,
+)
+
+@Serializable
+data class GitHubRef(val ref: String, val sha: String)
+
+@Serializable
+data class GitHubComment(val id: Long, val body: String, val html_url: String)
+
+@Serializable
+data class GitHubMergeResult(val sha: String? = null, val merged: Boolean, val message: String)

@@ -18,8 +18,8 @@
 ### ~~4. Wiring: E10-S3 FilteringRulesService → qualifier pipeline~~ ✅
 **Hotovo:** `FilteringRulesService.evaluate()` integrován do `KbResultRouter.routeTask()` mezi actionability check a complexity assessment. IGNORE → task DONE, URGENT/HIGH → force complex routing. SourceUrn auto-mapován na FilterSourceType.
 
-### ~~5. E5-S2/S3/S4/S5: Action dispatch stubs → reálné implementace~~ ✅ (částečně)
-**Hotovo:** JIRA a Confluence dispatch přes `BrainWriteService` (createIssue, updateIssue, addComment, transitionIssue, createPage, updatePage). Email a PR zůstávají stuby (SMTP a Git write API vyžadují novou implementaci).
+### ~~5. E5-S2/S3/S4/S5: Action dispatch stubs → reálné implementace~~ ✅
+**Hotovo:** JIRA a Confluence dispatch přes `BrainWriteService`. GitHub PR dispatch (PR_CREATE, PR_COMMENT, PR_MERGE) přes `GitHubClient` — lookup GitHub connection dle clientId + REPOSITORY capability. Email zůstává záměrný stub (SMTP neimplementován, aby Jervis nespamoval bez explicitního souhlasu).
 
 ---
 
