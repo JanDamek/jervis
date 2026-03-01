@@ -112,7 +112,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     try:
         plan = await _run_planning_phase(
             messages=messages[:],  # Copy to avoid mutation
-            tier=initial_tier,
+            tier=tier,
             task_id=task_id,
             client_id=client_id,
             request=request,
@@ -585,7 +585,7 @@ async def _build_background_prompt(request: OrchestrateRequest) -> str:
 
     # Add environment context
     if request.environment:
-        parts.append(f"\nEnvironment: {json.dumps(request.environment, default=str)[:500]}")
+        parts.append(f"\nEnvironment: {json.dumps(request.environment, default=str)[:4000]}")
 
     # Add project rules
     if request.rules:
