@@ -134,6 +134,14 @@ async def run_agentic_loop(
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s",
                      estimated, tier.value, route.target, route.model or tier.value)
 
+        # Preempt background only on first iteration AND only when using local GPU
+        if iteration == 0 and route.target == "local":
+            try:
+                from app.tools.kotlin_client import kotlin_client
+                await kotlin_client.register_foreground_start()
+            except Exception as e:
+                logger.warning("Failed to register foreground start: %s", e)
+
         response = await call_llm(messages=messages, tier=tier, tools=selected_tools, route=route)
 
         choice = response.choices[0]

@@ -136,11 +136,12 @@ class OllamaRouter:
     ) -> dict:
         """Capability-based routing decision.
 
-        1. max_tier == "NONE" → always local (wait for GPU)
-        2. Find local GPU with model matching capability + context
-        3. GPU free → local
-        4. GPU busy + OpenRouter allowed → find cloud model
-        5. No cloud match → local (wait)
+        1. max_tier == "NONE" → always local (CRITICAL, preempts background)
+        2. GPU free → local (no cost when GPU is available)
+        3. GPU busy + OpenRouter allowed → cloud (let background keep GPU)
+        4. GPU busy + no cloud model → local (wait in queue)
+
+        Background tasks always send max_tier="NONE" → always local.
 
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
@@ -148,15 +149,16 @@ class OllamaRouter:
 
         # Find local model for requested capability
         local_model = self._find_local_model_for_capability(capability)
+        api_base = f"http://jervis-ollama-router:{settings.router_port}"
+        local_result = {
+            "target": "local",
+            "model": local_model or settings.orchestrator_model,
+            "api_base": api_base,
+        }
 
         # Rule 1: No OpenRouter → always local
         if tier_level == 0:
-            api_base = f"http://jervis-ollama-router:{settings.router_port}"
-            return {
-                "target": "local",
-                "model": local_model or settings.orchestrator_model,
-                "api_base": api_base,
-            }
+            return local_result
 
         # Rule 2: Context > 48k → must go to cloud
         if estimated_tokens > 48_000:
@@ -164,44 +166,26 @@ class OllamaRouter:
             if cloud_model:
                 logger.info("Route decision: large context (%d) → cloud %s", estimated_tokens, cloud_model)
                 return {"target": "openrouter", "model": cloud_model}
-            # No cloud model fits → local fallback (will be trimmed)
             logger.info("Route decision: large context (%d) but no cloud fits → local", estimated_tokens)
-            api_base = f"http://jervis-ollama-router:{settings.router_port}"
-            return {
-                "target": "local",
-                "model": local_model or settings.orchestrator_model,
-                "api_base": api_base,
-            }
+            return local_result
 
-        # Rule 3: Check GPU availability
+        # Rule 3: GPU free → use local (no cost, no preemption needed)
         gpu_free = any(
             b.healthy and b.active_request_count() == 0
             for b in self.gpu_pool.all_backends
         )
-
-        # Rule 4: GPU free → local
         if gpu_free:
-            api_base = f"http://jervis-ollama-router:{settings.router_port}"
-            return {
-                "target": "local",
-                "model": local_model or settings.orchestrator_model,
-                "api_base": api_base,
-            }
+            return local_result
 
-        # Rule 5: GPU busy → try cloud
+        # Rule 4: GPU busy + OpenRouter allowed → cloud (let background keep GPU)
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
-            logger.info("Route decision: GPU busy → cloud %s", cloud_model)
+            logger.info("Route decision: GPU busy → cloud %s (background keeps GPU)", cloud_model)
             return {"target": "openrouter", "model": cloud_model}
 
-        # Rule 6: Fallback → local (wait in queue)
-        logger.info("Route decision: no cloud available → local (will wait)")
-        api_base = f"http://jervis-ollama-router:{settings.router_port}"
-        return {
-            "target": "local",
-            "model": local_model or settings.orchestrator_model,
-            "api_base": api_base,
-        }
+        # Rule 5: No cloud model fits → local (wait in queue)
+        logger.info("Route decision: GPU busy, no cloud available → local (will wait)")
+        return local_result
 
     @staticmethod
     def _find_local_model_for_capability(capability: str) -> str | None:

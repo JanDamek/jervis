@@ -83,12 +83,8 @@ async def handle_chat(
 
     Yields ChatStreamEvent objects for SSE streaming to Kotlin -> UI.
     """
-    # Register foreground (preempt background tasks)
-    try:
-        from app.tools.kotlin_client import kotlin_client
-        await kotlin_client.register_foreground_start()
-    except Exception as e:
-        logger.warning("Failed to register foreground start: %s", e)
+    # NOTE: foreground preemption is deferred to agentic loop AFTER route decision.
+    # If chat goes to OpenRouter, background keeps the GPU undisturbed.
 
     try:
         # 1. Load context

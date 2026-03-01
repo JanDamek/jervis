@@ -1553,7 +1553,9 @@ class BackgroundEngine(
      * via /internal/foreground-end.
      */
     fun registerForegroundChatEnd() {
-        val count = activeForegroundChats.decrementAndGet()
+        val count = activeForegroundChats.updateAndGet { current ->
+            if (current > 0) current - 1 else 0
+        }
         logger.info { "FOREGROUND_CHAT_END: active=$count" }
     }
 
