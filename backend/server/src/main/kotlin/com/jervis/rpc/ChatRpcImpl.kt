@@ -41,7 +41,7 @@ class ChatRpcImpl(
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val chatEventStream = MutableSharedFlow<ChatResponseDto>(
-        replay = 0,
+        replay = 10,
         extraBufferCapacity = 200,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -122,18 +122,6 @@ class ChatRpcImpl(
     ) {
         logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$activeClientId | projectId=$activeProjectId" }
 
-        // Emit user message to stream for immediate UI display
-        chatEventStream.emit(
-            ChatResponseDto(
-                message = text,
-                type = ChatResponseType.USER_MESSAGE,
-                metadata = mapOf(
-                    "sender" to "user",
-                    "timestamp" to java.time.Instant.now().toString(),
-                ),
-            ),
-        )
-
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
             try {
@@ -145,6 +133,7 @@ class ChatRpcImpl(
                     } ?: false
                 } catch (_: Exception) { false }
 
+                // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow
                 val eventFlow = chatService.sendMessage(
                     text = text,
                     clientMessageId = clientMessageId,
@@ -152,6 +141,18 @@ class ChatRpcImpl(
                     activeProjectId = activeProjectId,
                     contextTaskId = contextTaskId,
                     autoUseOpenrouter = autoUseOpenrouter,
+                )
+
+                // Emit user message AFTER DB save (persistence-first) for reliable reconnect
+                chatEventStream.emit(
+                    ChatResponseDto(
+                        message = text,
+                        type = ChatResponseType.USER_MESSAGE,
+                        metadata = mapOf(
+                            "sender" to "user",
+                            "timestamp" to java.time.Instant.now().toString(),
+                        ),
+                    ),
                 )
 
                 // Generate unique messageId for this response — used by UI to accumulate tokens
