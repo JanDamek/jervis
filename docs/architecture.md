@@ -647,22 +647,28 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ### Overview
 
-GPU routing uses **fixed `num_ctx`** per GPU to prevent costly model reloads when context size changes between requests. The Python orchestrator routes requests to local GPU or OpenRouter cloud models based on GPU availability and project-level `maxOpenRouterTier` setting.
+GPU routing uses **fixed `num_ctx`** per GPU to prevent costly model reloads. The Ollama Router proxy manages GPU backends (no CPU backend). The Python orchestrator routes requests to local GPU or OpenRouter cloud models based on GPU availability and project-level `maxOpenRouterTier` setting.
 
 ### Fixed GPU Configuration
 
 | GPU | Model | num_ctx | Role |
 |-----|-------|---------|------|
-| GPU1 (P40) | `qwen3-coder-tool:30b` | 48,000 | Primary — all local tasks |
-| GPU2 (P40) | `qwen3-coder-tool:30b` | 32,000 | Secondary (shares with embedding 8b) |
+| GPU1 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 48,000 | Primary — all local tasks |
+| GPU2 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 32,000 | Secondary |
+
+- **1 concurrent request per GPU** — serial execution is faster than parallel when VRAM spills to CPU RAM
+- **No CPU Ollama** — all LLM/embedding on GPU only
+- Default for new clients: `maxOpenRouterTier = FREE` (free cloud fallback when GPU busy)
 
 ### Routing Logic (`select_route()`)
 
 The Python orchestrator estimates total tokens (messages + tools + output) and routes:
 
-1. **Context fits locally (≤48k)**: Use local GPU if available, else OpenRouter fallback per `maxOpenRouterTier`
-2. **Context exceeds 48k**: Route to LARGE_CONTEXT queue (Gemini 2.5 Pro 1M, Sonnet 200k)
-3. **maxOpenRouterTier = NONE**: Always wait for local GPU (no cloud fallback)
+1. **maxOpenRouterTier = NONE**: Always wait for local GPU (no cloud fallback)
+2. **Context > 48k**: Route to LARGE_CONTEXT queue (Gemini 2.5 Pro 1M, Sonnet 200k; requires >= PAID_LOW)
+3. **GPU free**: Use local GPU (48k)
+4. **GPU busy + OpenRouter enabled**: Immediately route to cloud (no waiting) — try FREE → PAID_LOW → PAID_HIGH based on tier
+5. **GPU busy + no cloud**: Wait in queue for GPU
 
 ### OpenRouter Tiered Fallback
 
@@ -670,12 +676,19 @@ Per-project `maxOpenRouterTier` (NONE / FREE / PAID_LOW / PAID_HIGH) controls cl
 
 | Tier | Queues Accessible | Models |
 |------|-------------------|--------|
-| NONE | — | Local GPU only |
+| NONE | — | Local GPU only (wait in queue) |
 | FREE | FREE | Free models (qwen3-30b:free) |
 | PAID_LOW | FREE, PAID_LOW | + Haiku, GPT-4o-mini |
 | PAID_HIGH | FREE, PAID_LOW, PAID_HIGH | + Sonnet, o3-mini |
 
-LARGE_CONTEXT queue is auto-selected when estimated tokens > 48k (requires `maxOpenRouterTier >= PAID_LOW`).
+For context >48k, the router iterates allowed queues and picks the first model whose `maxContextTokens` fits. Each queue's models have context limits (e.g. Sonnet 200k, GPT-4o-mini 128k).
+
+### Gemini (Direct Orchestrator Call)
+
+Gemini (1M context) is **NOT** in the OpenRouter routing queues. The orchestrator calls it directly via litellm (`CLOUD_LARGE_CONTEXT` tier) only when:
+1. Context exceeds the max capacity of all available OpenRouter models
+2. Used for context reduction — splitting huge documents into smaller scope chunks
+3. Orchestrator stores chunks in scope, then processes each chunk via normal routing
 
 ---
 

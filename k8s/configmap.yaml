@@ -227,7 +227,6 @@ metadata:
 data:
   ROUTER_PORT: "11430"
   GPU_BACKENDS: '[{"url":"http://nas.damek.local:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.damek.local:11434","vram_gb":24,"name":"p40-2"}]'
-  CPU_BACKEND_URL: "http://nas.damek.local:11435"
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"

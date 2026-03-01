@@ -67,7 +67,6 @@ class RequestState:
     QUEUED = "queued"
     LOADING_MODEL = "loading_model"
     RUNNING_GPU = "running_gpu"
-    RUNNING_CPU = "running_cpu"
     PREEMPTED = "preempted"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -95,15 +94,13 @@ class TrackedRequest:
 # ── API schemas ─────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
-    status: str              # "healthy" | "degraded" | "unhealthy"
+    status: str              # "healthy" | "unhealthy"
     gpu_backends: list[dict[str, Any]]
-    cpu_backend: dict[str, Any]
     orchestrator_reserved: bool
     queue_depth: int
 
 
 class StatusResponse(BaseModel):
     gpu_backends: list[dict[str, Any]]
-    cpu_backend: dict[str, Any]
     orchestrator: dict[str, Any]
     metrics: dict[str, Any]

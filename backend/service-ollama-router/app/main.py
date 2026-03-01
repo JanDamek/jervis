@@ -60,11 +60,8 @@ async def lifespan(app: FastAPI):
             "Configure it as JSON array, e.g.: "
             '[{"url":"http://gpu1:11434","vram_gb":24,"name":"p40-1"}]'
         )
-    if not settings.cpu_backend_url:
-        raise RuntimeError(
-            "CPU_BACKEND_URL env var is not set. "
-            "Configure it with the CPU Ollama URL, e.g.: http://cpu-host:11435"
-        )
+    # CPU backend removed — all requests go to GPU only.
+    # If GPU is busy and OpenRouter is enabled, requests route to cloud.
     gpu_pool = GpuPool(backends)
     router = OllamaRouter(gpu_pool)
     await router.startup()
@@ -161,17 +158,7 @@ async def api_show(request: Request):
         except Exception:
             pass
 
-    # Fall back to CPU
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{router.cpu_url}/api/show", json=body)
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                media_type="application/json",
-            )
-    except Exception as e:
-        return JSONResponse(status_code=503, content={"error": str(e)})
+    return JSONResponse(status_code=503, content={"error": "model_not_found"})
 
 
 @app.post("/api/pull")
@@ -192,17 +179,7 @@ async def api_pull(request: Request):
         except Exception:
             pass
 
-    # Also pull on CPU for fallback availability
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=30, pool=30)) as client:
-            resp = await client.post(f"{router.cpu_url}/api/pull", json=body)
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                media_type="application/json",
-            )
-    except Exception as e:
-        return JSONResponse(status_code=503, content={"error": str(e)})
+    return JSONResponse(status_code=503, content={"error": "no_gpu_available"})
 
 
 @app.get("/api/tags")
@@ -224,19 +201,6 @@ async def api_tags():
         except Exception:
             pass
 
-    # Collect from CPU
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{router.cpu_url}/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                for m_info in data.get("models", []):
-                    name = m_info.get("name", "")
-                    if name not in all_models:
-                        all_models[name] = m_info
-    except Exception:
-        pass
-
     return {"models": list(all_models.values())}
 
 
@@ -257,17 +221,6 @@ async def api_ps():
         except Exception:
             pass
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{router.cpu_url}/api/ps")
-            if resp.status_code == 200:
-                data = resp.json()
-                for m_info in data.get("models", []):
-                    m_info["_backend"] = "cpu"
-                    all_running.append(m_info)
-    except Exception:
-        pass
-
     return {"models": all_running}
 
 
@@ -285,32 +238,22 @@ async def api_delete(request: Request):
         except Exception as e:
             results[backend.name] = str(e)
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.request("DELETE", f"{router.cpu_url}/api/delete", json=body)
-            results["cpu"] = resp.status_code
-    except Exception as e:
-        results["cpu"] = str(e)
-
     return {"results": results}
 
 
 @app.head("/")
 async def root_head():
-    """Health check – return 200 if any backend is up."""
-    if router.gpu_pool.healthy_backends or router.cpu_healthy:
+    """Health check – return 200 if any GPU backend is up."""
+    if router.gpu_pool.healthy_backends:
         return Response(status_code=200)
     return Response(status_code=503)
 
 
 @app.get("/")
 async def root_get():
-    """Ollama version info – proxy to first available backend."""
+    """Ollama version info – proxy to first healthy GPU backend."""
     for backend in router.gpu_pool.healthy_backends:
         return await proxy_passthrough_get(backend.url, "/")
-
-    if router.cpu_healthy:
-        return await proxy_passthrough_get(router.cpu_url, "/")
 
     return JSONResponse(status_code=503, content={"error": "no_backend_available"})
 
@@ -334,18 +277,12 @@ async def router_health():
         })
 
     any_gpu_healthy = any(b.healthy for b in router.gpu_pool.all_backends)
-    if any_gpu_healthy and router.cpu_healthy:
-        status = "healthy"
-    elif any_gpu_healthy or router.cpu_healthy:
-        status = "degraded"
-    else:
-        status = "unhealthy"
+    status = "healthy" if any_gpu_healthy else "unhealthy"
 
     qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
     return HealthResponse(
         status=status,
         gpu_backends=gpu_backends,
-        cpu_backend={"healthy": router.cpu_healthy, "url": router.cpu_url},
         orchestrator_reserved=router.is_reserved,
         queue_depth=qdepth["critical"] + qdepth["normal"],
     )
@@ -385,10 +322,6 @@ async def router_status():
 
     return StatusResponse(
         gpu_backends=gpu_backends,
-        cpu_backend={
-            "healthy": router.cpu_healthy,
-            "url": router.cpu_url,
-        },
         orchestrator={
             "reserved": router.is_reserved,
             "reservations": router._reservations,

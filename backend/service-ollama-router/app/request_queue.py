@@ -1,11 +1,10 @@
 """Two-tier request queue: unlimited CRITICAL + bounded NORMAL.
 
 Router ALWAYS accepts requests. Never returns 503/reject.
-Each request is queued and dispatched when a backend slot becomes available.
+Each request is queued and dispatched when a GPU slot becomes available.
 
 CRITICAL requests preempt NORMAL when all GPU slots are busy.
-CRITICAL NEVER goes to CPU — only GPU.
-CPU is exclusively for NORMAL/background work.
+GPU only — no CPU backend.
 """
 
 from __future__ import annotations
@@ -19,12 +18,11 @@ from typing import TYPE_CHECKING
 from starlette.responses import Response, JSONResponse, StreamingResponse
 
 from .config import settings
-from .gpu_state import GpuBackend, estimate_vram
+from .gpu_state import GpuBackend
 from .models import (
     EMBEDDING_MODELS,
     EMBEDDING_PATHS,
     Priority,
-    RequestState,
     TrackedRequest,
 )
 from .proxy import is_streaming_request, proxy_non_streaming, proxy_streaming
@@ -43,25 +41,23 @@ class QueueEntry:
 
 
 class RequestQueue:
-    """Two-tier request queue with backend-aware dispatch.
+    """Two-tier request queue with GPU-only dispatch.
 
     CRITICAL queue: unlimited — chat, foreground, interactive.
     NORMAL queue: bounded (back-pressure when full).
 
     Dispatch rules:
-    - CRITICAL always gets GPU, never CPU. Preempts NORMAL if needed.
-    - NORMAL gets GPU or CPU, whichever is available.
-    - Max 2 concurrent requests per backend (Ollama handles 2 well).
+    - CRITICAL preempts NORMAL if needed.
+    - Max 1 concurrent request per GPU (serial is faster than parallel when VRAM spills).
+    - GPU only — no CPU backend.
     """
 
     def __init__(
         self,
         gpu_pool: GpuPool,
-        cpu_url: str,
         router,   # OllamaRouter — back-reference for model loading etc.
     ) -> None:
         self.gpu_pool = gpu_pool
-        self.cpu_url = cpu_url
         self._router = router
 
         self._critical: asyncio.Queue[QueueEntry] = asyncio.Queue()
@@ -70,9 +66,6 @@ class RequestQueue:
         )
         self._dispatch_event = asyncio.Event()
         self._dispatcher_task: asyncio.Task | None = None
-
-        # Track CPU active requests (GPUs tracked in GpuBackend.active_requests)
-        self._cpu_active: dict[str, TrackedRequest] = {}
 
         self._max_per_backend = settings.max_concurrent_per_backend
 
@@ -261,14 +254,11 @@ class RequestQueue:
     # ── Slot finding ─────────────────────────────────────────────────────
 
     def _find_slot(self, request: TrackedRequest) -> str | None:
-        """Find an available backend for this request.
+        """Find an available GPU backend for this request.
 
-        Returns backend identifier: "gpu:<name>" or "cpu", or None if no slot.
-
-        CRITICAL: only GPU slots (never CPU).
-        NORMAL: GPU preferred, CPU fallback for small models.
+        Returns backend identifier "gpu:<name>", or None if no slot.
+        GPU only — no CPU backend.
         """
-        model = request.model
         is_critical = request.priority <= Priority.CRITICAL
 
         # Try GPU backends (prefer one with model already loaded, least busy)
@@ -284,7 +274,7 @@ class RequestQueue:
             gpu_candidates.append(b)
 
         # Prefer GPU that already has the model
-        with_model = [b for b in gpu_candidates if b.has_model(model)]
+        with_model = [b for b in gpu_candidates if b.has_model(request.model)]
         if with_model:
             best = self._pick_least_busy_rr(with_model)
             return f"gpu:{best.name}"
@@ -293,14 +283,6 @@ class RequestQueue:
         if gpu_candidates:
             best = self._pick_least_busy_rr(gpu_candidates)
             return f"gpu:{best.name}"
-
-        # CRITICAL never goes to CPU
-        if is_critical:
-            return None
-
-        # CPU for NORMAL (small models only)
-        if estimate_vram(model) < 20.0 and self._cpu_active_count() < self._max_per_backend:
-            return "cpu"
 
         return None
 
@@ -311,14 +293,6 @@ class RequestQueue:
         pick = tied[self._rr_counter % len(tied)]
         self._rr_counter += 1
         return pick
-
-    def _cpu_active_count(self) -> int:
-        # Clean up finished requests
-        self._cpu_active = {
-            k: v for k, v in self._cpu_active.items()
-            if v.state in (RequestState.RUNNING_CPU, RequestState.QUEUED)
-        }
-        return len(self._cpu_active)
 
     # ── Execution ────────────────────────────────────────────────────────
 
@@ -352,36 +326,32 @@ class RequestQueue:
             self.notify_slot_freed()
 
     async def _run_on_backend(self, backend: str, request: TrackedRequest) -> Response:
-        """Actually proxy the request to a backend."""
-        if backend == "cpu":
-            return await self._send_to_cpu(request)
-        elif backend.startswith("gpu:"):
-            gpu_name = backend[4:]
-            gpu = self.gpu_pool.backends.get(gpu_name)
-            if not gpu:
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "gpu_unavailable", "message": f"GPU {gpu_name} not found"},
-                )
-            # Ensure model is loaded
-            if not gpu.has_model(request.model):
-                loaded = await self.gpu_pool.load_model(
-                    gpu, request.model, self._router._mgmt_client,
-                )
-                if not loaded:
-                    return JSONResponse(
-                        status_code=503,
-                        content={"error": "model_load_failed", "message": f"Failed to load {request.model}"},
-                    )
-            return await self._send_to_gpu(gpu, request)
-        else:
+        """Actually proxy the request to a GPU backend."""
+        if not backend.startswith("gpu:"):
             return JSONResponse(status_code=500, content={"error": "unknown_backend"})
 
+        gpu_name = backend[4:]
+        gpu = self.gpu_pool.backends.get(gpu_name)
+        if not gpu:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "gpu_unavailable", "message": f"GPU {gpu_name} not found"},
+            )
+        # Ensure model is loaded
+        if not gpu.has_model(request.model):
+            loaded = await self.gpu_pool.load_model(
+                gpu, request.model, self._router._mgmt_client,
+            )
+            if not loaded:
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "model_load_failed", "message": f"Failed to load {request.model}"},
+                )
+        return await self._send_to_gpu(gpu, request)
+
     def _cleanup_backend(self, backend: str, request: TrackedRequest) -> None:
-        """Remove request from backend tracking."""
-        if backend == "cpu":
-            self._cpu_active.pop(request.request_id, None)
-        elif backend.startswith("gpu:"):
+        """Remove request from GPU backend tracking."""
+        if backend.startswith("gpu:"):
             gpu_name = backend[4:]
             gpu = self.gpu_pool.backends.get(gpu_name)
             if gpu:
@@ -417,19 +387,6 @@ class RequestQueue:
         if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
             return await proxy_non_streaming(gpu.url, request, on_connect_error=on_gpu_connect_error)
         return await proxy_streaming(gpu.url, request, on_connect_error=on_gpu_connect_error)
-
-    async def _send_to_cpu(self, request: TrackedRequest) -> Response:
-        request.state = RequestState.RUNNING_CPU
-        self._cpu_active[request.request_id] = request
-
-        logger.info(
-            "REQUEST_PROXY: id=%s → CPU (%s) model=%s priority=%s",
-            request.request_id, self.cpu_url, request.model, request.priority.name,
-        )
-
-        if request.api_path in EMBEDDING_PATHS or not is_streaming_request(request.body):
-            return await proxy_non_streaming(self.cpu_url, request)
-        return await proxy_streaming(self.cpu_url, request)
 
     # ── CRITICAL preemption ──────────────────────────────────────────────
 

@@ -1,17 +1,19 @@
 """OpenRouter queue-based model resolver + GPU queue status.
 
-4 named queues:
+3 named queues:
 - FREE: local GPU + free cloud models (automatic fallback)
 - PAID_LOW: standard paid models (Haiku, GPT-4o-mini)
 - PAID_HIGH: thinking/reasoning models (Sonnet, o3-mini)
-- LARGE_CONTEXT: models with >48k context (Gemini, Sonnet)
 
 Routing logic:
 1. max_tier == "NONE" → always local (wait for GPU)
-2. estimated_tokens > 48k → LARGE_CONTEXT queue (if max_tier >= "PAID_LOW")
-3. GPU free → local (LOCAL_STANDARD, 48k)
-4. GPU busy → iterate queues by max_tier level
-5. Fallback: wait for local GPU
+2. Context > 48k → find cloud model with enough context from allowed queues
+3. GPU free + context ≤ 48k → local
+4. GPU busy → iterate queues by max_tier level, pick first model that fits
+5. No cloud match → local GPU fallback (will be trimmed to 48k)
+
+Gemini (1M context) is NOT in the routing queues — orchestrator calls it
+directly for context reduction/chunking of huge documents.
 """
 
 from __future__ import annotations
@@ -114,10 +116,6 @@ _DEFAULT_QUEUES: dict[str, list[dict]] = {
         {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
         {"modelId": "openai/o3-mini", "isLocal": False, "maxContextTokens": 200_000},
     ],
-    "LARGE_CONTEXT": [
-        {"modelId": "google/gemini-2.5-pro", "isLocal": False, "maxContextTokens": 1_000_000},
-        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-    ],
 }
 
 
@@ -163,24 +161,27 @@ async def select_route(
 
     Returns:
         Route with target ("local" or "openrouter") and model/tier info.
+
+    Routing iterates queues by tier level (FREE → PAID_LOW → PAID_HIGH)
+    and picks the first cloud model whose maxContextTokens fits the context.
+    Gemini is NOT in the queues — orchestrator calls it directly for
+    context reduction of huge documents.
     """
     tier_level = _TIER_LEVELS.get(max_tier, 0)
 
-    # Rule 1: No OpenRouter → always local
+    # Rule 1: No OpenRouter → always local (wait in queue)
     if tier_level == 0:
         return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
 
-    # Rule 2: Large context → LARGE_CONTEXT queue (requires at least PAID_LOW)
+    # Rule 2: Context > 48k → must go to cloud (GPU can only do 48k)
     if estimated_tokens > 48_000:
-        if tier_level >= _TIER_LEVELS["PAID_LOW"]:
-            cloud_model = await _first_cloud_model("LARGE_CONTEXT", estimated_tokens)
-            if cloud_model:
-                logger.info("Route: large context (%d tokens) → LARGE_CONTEXT queue → %s",
-                            estimated_tokens, cloud_model)
-                return Route(target="openrouter", model=cloud_model)
-        # Large context but no paid tier → local (will be trimmed to 48k)
-        logger.info("Route: large context (%d tokens) but max_tier=%s → local fallback",
-                     estimated_tokens, max_tier)
+        cloud_model = await _find_cloud_model_for_context(estimated_tokens, tier_level)
+        if cloud_model:
+            logger.info("Route: large context (%d tokens) → %s", estimated_tokens, cloud_model)
+            return Route(target="openrouter", model=cloud_model)
+        # No cloud model fits → local fallback (will be trimmed to 48k)
+        logger.info("Route: large context (%d tokens) but no cloud model fits → local (trimmed)",
+                     estimated_tokens)
         return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
 
     # Rule 3: Check GPU availability (cached 2s)
@@ -191,30 +192,41 @@ async def select_route(
     if gpu_free:
         return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
 
-    # Rule 5: GPU busy → try queues by tier level
+    # Rule 5: GPU busy → try cloud queues by tier level
+    cloud_model = await _find_cloud_model_for_context(estimated_tokens, tier_level)
+    if cloud_model:
+        logger.info("Route: GPU busy → %s", cloud_model)
+        return Route(target="openrouter", model=cloud_model)
+
+    # Rule 6: Fallback → wait for local GPU
+    logger.info("Route: no cloud model available → local GPU fallback (will wait), tokens=%d", estimated_tokens)
+    return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
+
+
+async def _find_cloud_model_for_context(estimated_tokens: int, tier_level: int) -> str | None:
+    """Find first cloud model that fits the context, iterating queues by tier.
+
+    Tries FREE → PAID_LOW → PAID_HIGH in order, respecting tier_level limit.
+    Returns modelId or None.
+    """
     # Always try FREE first
     cloud_model = await _first_cloud_model("FREE", estimated_tokens)
     if cloud_model:
-        logger.info("Route: GPU busy → FREE queue → %s", cloud_model)
-        return Route(target="openrouter", model=cloud_model)
+        return cloud_model
 
     # Try PAID_LOW if allowed
     if tier_level >= _TIER_LEVELS["PAID_LOW"]:
         cloud_model = await _first_cloud_model("PAID_LOW", estimated_tokens)
         if cloud_model:
-            logger.info("Route: GPU busy → PAID_LOW queue → %s", cloud_model)
-            return Route(target="openrouter", model=cloud_model)
+            return cloud_model
 
     # Try PAID_HIGH if allowed
     if tier_level >= _TIER_LEVELS["PAID_HIGH"]:
         cloud_model = await _first_cloud_model("PAID_HIGH", estimated_tokens)
         if cloud_model:
-            logger.info("Route: GPU busy → PAID_HIGH queue → %s", cloud_model)
-            return Route(target="openrouter", model=cloud_model)
+            return cloud_model
 
-    # Rule 6: Fallback → wait for local GPU
-    logger.info("Route: no queue match → local GPU fallback (will wait), tokens=%d", estimated_tokens)
-    return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
+    return None
 
 
 async def _first_cloud_model(queue_name: str, estimated_tokens: int) -> str | None:
@@ -227,3 +239,34 @@ async def _first_cloud_model(queue_name: str, estimated_tokens: int) -> str | No
         if estimated_tokens <= max_ctx:
             return entry.get("modelId")
     return None
+
+
+async def get_max_context_tokens(max_tier: str = "NONE") -> int:
+    """Get the maximum context tokens available across all allowed queues.
+
+    Used by orchestrator to know when context is too large for any available
+    model and needs to be chunked (via Gemini direct call).
+
+    Returns: max context tokens (e.g. 200_000 for Sonnet, 48_000 for local only).
+    """
+    tier_level = _TIER_LEVELS.get(max_tier, 0)
+    if tier_level == 0:
+        return 48_000  # Local GPU only
+
+    max_ctx = 48_000  # Local GPU baseline
+    queues_to_check = ["FREE"]
+    if tier_level >= _TIER_LEVELS["PAID_LOW"]:
+        queues_to_check.append("PAID_LOW")
+    if tier_level >= _TIER_LEVELS["PAID_HIGH"]:
+        queues_to_check.append("PAID_HIGH")
+
+    for queue_name in queues_to_check:
+        queue_models = await _get_queue(queue_name)
+        for entry in queue_models:
+            if entry.get("isLocal", False):
+                continue
+            entry_ctx = entry.get("maxContextTokens", 32_000)
+            if entry_ctx > max_ctx:
+                max_ctx = entry_ctx
+
+    return max_ctx

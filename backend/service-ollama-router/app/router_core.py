@@ -32,8 +32,6 @@ logger = logging.getLogger("ollama-router.core")
 class OllamaRouter:
     def __init__(self, gpu_pool: GpuPool) -> None:
         self.gpu_pool = gpu_pool
-        self.cpu_url = settings.cpu_backend_url.rstrip("/")
-        self.cpu_healthy = True
 
         # Request queue (initialized in startup)
         self._queue: RequestQueue | None = None
@@ -66,11 +64,10 @@ class OllamaRouter:
         self._mgmt_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
         # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
-        await self._check_cpu_health()
         # Preload orchestrator model on all GPUs that don't have it
         await self._preload_model_on_all_gpus(settings.orchestrator_model)
-        # Start request queue
-        self._queue = RequestQueue(self.gpu_pool, self.cpu_url, self)
+        # Start request queue (GPU only, no CPU backend)
+        self._queue = RequestQueue(self.gpu_pool, self)
         await self._queue.start()
         # Start background tasks
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
@@ -378,16 +375,11 @@ class OllamaRouter:
                             )
                             req.cancel_event.set()
 
-                # Also check CPU active requests via queue
-                cpu_active = 0
-                if self._queue:
-                    cpu_active = self._queue._cpu_active_count()
-
-                if total_active > 0 or cpu_active > 0:
+                if total_active > 0:
                     qdepth = self._queue.queue_depth if self._queue else {}
                     logger.info(
-                        "ACTIVE_REQUESTS: gpu=%d cpu=%d queue=%s",
-                        total_active, cpu_active, qdepth,
+                        "ACTIVE_REQUESTS: gpu=%d queue=%s",
+                        total_active, qdepth,
                     )
 
             except asyncio.CancelledError:
@@ -504,18 +496,6 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Warmup loop error: %s", e)
-
-    async def _check_cpu_health(self) -> None:
-        try:
-            resp = await self._mgmt_client.head(f"{self.cpu_url}/", timeout=5.0)
-            was_healthy = self.cpu_healthy
-            self.cpu_healthy = resp.status_code == 200
-            if not was_healthy and self.cpu_healthy:
-                logger.info("CPU backend recovered")
-        except Exception:
-            if self.cpu_healthy:
-                logger.warning("CPU backend is unhealthy")
-            self.cpu_healthy = False
 
     # ── GPU recovery (on-demand, not heartbeat) ──────────────────────────
 

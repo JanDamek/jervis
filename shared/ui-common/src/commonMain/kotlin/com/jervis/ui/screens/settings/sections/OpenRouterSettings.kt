@@ -79,8 +79,8 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     // Model list (legacy flat list)
     var models by remember { mutableStateOf<List<OpenRouterModelEntryDto>>(emptyList()) }
 
-    // Model queues (4-tier routing)
-    val queueNames = listOf("FREE", "PAID_LOW", "PAID_HIGH", "LARGE_CONTEXT")
+    // Model queues (3-tier routing; Gemini is not in queues — orchestrator calls it directly)
+    val queueNames = listOf("FREE", "PAID_LOW", "PAID_HIGH")
     var modelQueues by remember { mutableStateOf<Map<String, List<QueueModelEntryDto>>>(emptyMap()) }
     var selectedQueueTab by remember { mutableStateOf(0) }
 
@@ -341,7 +341,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                     "FREE" -> "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru."
                                     "PAID_LOW" -> "Standardní placené modely (Haiku, GPT-4o-mini). Vyžaduje maxOpenRouterTier >= PAID_LOW."
                                     "PAID_HIGH" -> "Thinking/reasoning modely (Sonnet, o3-mini). Vyžaduje maxOpenRouterTier >= PAID_HIGH."
-                                    "LARGE_CONTEXT" -> "Pro kontext >48k tokenů. Gemini 2.5 Pro (1M), Sonnet (200k)."
+                                    // Gemini not in queues — orchestrator calls it directly for huge context reduction
                                     else -> ""
                                 },
                                 style = MaterialTheme.typography.bodySmall,

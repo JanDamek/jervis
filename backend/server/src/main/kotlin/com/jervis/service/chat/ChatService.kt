@@ -169,8 +169,11 @@ class ChatService(
     suspend fun updateSessionScope(userId: String = "jan", clientId: String, projectId: String?, groupId: String? = null) {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false) ?: return
         session.lastClientId = clientId
-        session.lastProjectId = projectId
-        session.lastGroupId = groupId
+        // Only overwrite projectId/groupId if provided — prevents reconnect from clearing saved scope
+        if (projectId != null) {
+            session.lastProjectId = projectId
+            session.lastGroupId = groupId
+        }
         chatSessionRepository.save(session)
         logger.info { "SESSION_SCOPE_UPDATE | sessionId=${session.id} | clientId=$clientId | projectId=$projectId | groupId=$groupId" }
     }

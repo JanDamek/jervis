@@ -19,5 +19,5 @@ data class CloudModelPolicy(
     val autoUseAnthropic: Boolean = false,
     val autoUseOpenai: Boolean = false,
     val autoUseGemini: Boolean = false,
-    val maxOpenRouterTier: OpenRouterTier = OpenRouterTier.NONE,
+    val maxOpenRouterTier: OpenRouterTier = OpenRouterTier.FREE,
 )
