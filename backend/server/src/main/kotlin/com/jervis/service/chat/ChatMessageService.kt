@@ -3,6 +3,7 @@ package com.jervis.service.chat
 import com.jervis.entity.ChatMessageDocument
 import com.jervis.entity.MessageRole
 import com.jervis.repository.ChatMessageRepository
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.reactive.awaitSingle
 import mu.KotlinLogging
@@ -87,7 +88,10 @@ class ChatMessageService(
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
 
-        val messages = chatMessageRepository.findTop10ByConversationIdOrderBySequenceDesc(conversationId).toList()
+        val messages = chatMessageRepository
+            .findByConversationIdOrderBySequenceDesc(conversationId)
+            .take(limit)
+            .toList()
 
         logger.debug { "MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size} | limit=$limit" }
 

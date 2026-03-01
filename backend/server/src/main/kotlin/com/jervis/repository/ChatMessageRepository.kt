@@ -29,6 +29,12 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     suspend fun findTop10ByConversationIdOrderBySequenceDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
 
     /**
+     * Load messages for a conversation, ordered by sequence descending.
+     * Used with Flow.take(limit) to support dynamic limit values.
+     */
+    suspend fun findByConversationIdOrderBySequenceDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
+
+    /**
      * Load all messages for a conversation, ordered by sequence ascending.
      * Used by agent to read full conversation history.
      */
