@@ -1,7 +1,8 @@
 # Chat agent — pomalé odpovědi a zbytečná práce (overwork)
 
 **Priorita**: HIGH
-**Status**: PARTIAL (2026-03-01) — max_iterations limit existuje (6/10 dle délky zprávy), ale 5/6 root causes neřešeno (context scaling, tool filtering, brain dedup, Operation not allowed, transition 500)
+**Status**: PARTIAL (2026-03-01) — max_iterations limit existuje (6/10 dle délky zprávy), ale 6/7 root causes neřešeno
+**Souvisí**: `smart-model-routing` řeší root cause 1 (pomalé LLM) přesunem chatu na cloud; root causes 2–7 (agent chování) jsou nezávislé na routingu
 
 ---
 
