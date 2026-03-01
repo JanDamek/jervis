@@ -1,18 +1,14 @@
 """LLM provider abstraction using litellm.
 
 Supports local Ollama models and cloud providers (Anthropic, OpenAI, Google).
-Fixed num_ctx: GPU1=48k, GPU2=32k — no dynamic tier selection, no model reloads.
+num_ctx is sent as a FIXED constant per GPU — never changes between requests.
+GPU1: 48k (full VRAM, no embedding), GPU2: 32k (30b + embedding 8b coexist).
+Changing num_ctx dynamically causes Ollama to reload the model with different
+context, spilling to CPU RAM and dropping speed from ~30 tok/s to ~2 tok/s.
 
 Timeout strategy:
-- Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS). As long as
-  tokens keep arriving, the call can run indefinitely.
+- Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS).
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
-  Both local tiers: 300s. Cloud tiers: 300s.
-
-Cloud model usage:
-- Always try local Ollama first
-- Cloud only on local failure, with per-provider settings
-- Cloud ONLY used when explicitly allowed in project rules
 
 Hardening:
 - W-21: Rate limiting — asyncio.Semaphore per priority level
@@ -45,7 +41,7 @@ class TokenTimeoutError(Exception):
     pass
 
 
-# Model configuration per tier — fixed num_ctx, no dynamic selection
+# Model configuration per tier — fixed constant num_ctx per GPU, never changes
 TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.LOCAL_STANDARD: {
         "model": f"ollama/{settings.default_local_model}",
