@@ -46,6 +46,8 @@ async def chat(request: ChatRequest):
         try:
             async for event in handle_chat(request):
                 data = event.model_dump_json()
+                if event.type == "approval_request":
+                    logger.info("SSE: emitting approval_request event to HTTP stream")
                 yield f"event: {event.type}\ndata: {data}\n\n"
         except Exception as e:
             logger.exception("Chat handler failed for session %s", request.session_id)
@@ -131,13 +133,9 @@ async def orchestrate_v2(request: dict):
                 keep_environment_running=result.get("keep_environment_running", False),
             )
         except asyncio.CancelledError:
+            # Preemption is NOT an error — Kotlin already reset task to READY_FOR_GPU.
+            # Do NOT send error status — it would show "Chyba" banner in UI.
             logger.info("ORCHESTRATE_V2_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
-            await kotlin_client.report_status_change(
-                task_id=orchestrate_request.task_id,
-                thread_id=thread_id,
-                status="error",
-                error="Background task interrupted (preempted by foreground chat)",
-            )
         except Exception as e:
             logger.exception("Background v2 failed: %s", e)
             await kotlin_client.report_status_change(

@@ -121,6 +121,9 @@ class PythonChatClient(
                             if (currentData.isNotEmpty()) {
                                 val event = parseSSEData(currentEventType, currentData.toString())
                                 if (event != null) {
+                                    if (event.type == "approval_request") {
+                                        logger.info { "PYTHON_CHAT_APPROVAL_EVENT | session=$sessionId | action=${event.metadata["action"]}" }
+                                    }
                                     emit(event)
 
                                     // Stop on terminal events

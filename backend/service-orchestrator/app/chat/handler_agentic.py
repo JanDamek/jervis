@@ -326,7 +326,7 @@ async def run_agentic_loop(
                         )
                     else:
                         # Emit approval request and wait for user response
-                        logger.info("Chat: approval required for %s, waiting for user", approval_exc.action)
+                        logger.info("Chat: approval required for %s, emitting SSE event", approval_exc.action)
                         yield ChatStreamEvent(
                             type="approval_request",
                             content=approval_exc.preview,
@@ -336,6 +336,7 @@ async def run_agentic_loop(
                                 "args": str(arguments)[:500],
                             },
                         )
+                        logger.info("Chat: approval_request SSE event yielded, now waiting for user response")
 
                         # Create future and wait for /chat/approve response
                         loop = asyncio.get_event_loop()
