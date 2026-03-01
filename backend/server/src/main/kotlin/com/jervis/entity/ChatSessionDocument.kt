@@ -31,4 +31,5 @@ data class ChatSessionDocument(
     var archived: Boolean = false,
     var lastClientId: String? = null,
     var lastProjectId: String? = null,
+    var lastGroupId: String? = null,
 )

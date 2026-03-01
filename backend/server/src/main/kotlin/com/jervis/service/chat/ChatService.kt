@@ -104,6 +104,7 @@ class ChatService(
         if (activeClientId != null) {
             session.lastClientId = activeClientId
             session.lastProjectId = activeProjectId
+            session.lastGroupId = activeGroupId
         }
         chatSessionRepository.save(session)
 
@@ -157,6 +158,7 @@ class ChatService(
             totalCount = totalCount,
             activeClientId = session.lastClientId,
             activeProjectId = session.lastProjectId,
+            activeGroupId = session.lastGroupId,
         )
     }
 
@@ -164,12 +166,13 @@ class ChatService(
      * Update session scope when Python emits scope_change.
      * Called by ChatRpcImpl when it sees a SCOPE_CHANGE event.
      */
-    suspend fun updateSessionScope(userId: String = "jan", clientId: String, projectId: String?) {
+    suspend fun updateSessionScope(userId: String = "jan", clientId: String, projectId: String?, groupId: String? = null) {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false) ?: return
         session.lastClientId = clientId
         session.lastProjectId = projectId
+        session.lastGroupId = groupId
         chatSessionRepository.save(session)
-        logger.info { "SESSION_SCOPE_UPDATE | sessionId=${session.id} | clientId=$clientId | projectId=$projectId" }
+        logger.info { "SESSION_SCOPE_UPDATE | sessionId=${session.id} | clientId=$clientId | projectId=$projectId | groupId=$groupId" }
     }
 
     /**
@@ -242,4 +245,5 @@ data class ChatHistoryResult(
     val totalCount: Long = 0,
     val activeClientId: String? = null,
     val activeProjectId: String? = null,
+    val activeGroupId: String? = null,
 )

@@ -176,10 +176,13 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 "role": "system",
                 "content": f"[Plan] Následuj tento plán:\n{plan_text}",
             })
+            steps = plan.get("steps", [])
             logger.info(
-                "Background: planning phase completed, %d steps",
-                len(plan.get("steps", [])),
+                "Background: planning phase completed, %d steps, risk=%s",
+                len(steps), plan.get("risk_level", "?"),
             )
+            for i, step in enumerate(steps, 1):
+                logger.info("  Plan step %d: %s (tool: %s)", i, step.get("description", "?")[:100], step.get("tool", "none"))
             await kotlin_client.report_progress(
                 task_id=task_id, client_id=client_id,
                 node="plan", message=f"Plan: {plan.get('summary', 'N/A')[:100]}",
@@ -298,7 +301,11 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             break
 
         # Execute tool calls
-        logger.info("Background: executing %d tool calls", len(tool_calls))
+        bg_tool_names = [tc.function.name for tc in tool_calls]
+        logger.info("Background: executing %d tool calls: %s", len(tool_calls), ", ".join(bg_tool_names))
+        bg_reasoning = getattr(message_obj, "content", None)
+        if bg_reasoning:
+            logger.info("Background: LLM reasoning: %s", str(bg_reasoning)[:300])
         messages.append(message_obj.model_dump())
 
         loop_break = False
@@ -412,6 +419,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             except Exception as e:
                 result = f"Error executing {tool_name}: {e}"
 
+            logger.info("Background: tool %s result (%d chars): %s", tool_name, len(result), result[:200])
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,

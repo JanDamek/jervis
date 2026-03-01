@@ -10,4 +10,5 @@ data class ChatHistoryDto(
     val compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     val activeClientId: String? = null,
     val activeProjectId: String? = null,
+    val activeGroupId: String? = null,
 )

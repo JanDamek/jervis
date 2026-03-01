@@ -238,7 +238,10 @@ async def run_agentic_loop(
             return
 
         # --- Execute tool calls ---
-        logger.info("Chat: executing %d tool calls", len(tool_calls))
+        tool_names = [tc.function.name for tc in tool_calls]
+        logger.info("Chat: executing %d tool calls: %s", len(tool_calls), ", ".join(tool_names))
+        if remaining_text:
+            logger.info("Chat: LLM reasoning: %s", remaining_text[:300])
 
         assistant_msg = {"role": "assistant", "content": remaining_text or None, "tool_calls": []}
         for tc in tool_calls:
@@ -394,6 +397,7 @@ async def run_agentic_loop(
 
                 used_tools.append(tool_name)
                 tool_summaries.append(f"{tool_name}: {result[:100]}")
+                logger.info("Chat: tool %s result (%d chars): %s", tool_name, len(result), result[:200])
 
                 # EPIC 14-S2: Track KB sources for attribution
                 source_tracker.add_tool_result(tool_name, result)

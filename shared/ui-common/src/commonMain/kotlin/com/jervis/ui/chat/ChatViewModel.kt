@@ -41,7 +41,7 @@ class ChatViewModel(
     private val connectionManager: RpcConnectionManager,
     private val selectedClientId: StateFlow<String?>,
     private val selectedProjectId: StateFlow<String?>,
-    private val onScopeChange: (clientId: String, projectId: String?, projectsJson: String?) -> Unit,
+    private val onScopeChange: (clientId: String, projectId: String?, projectsJson: String?, groupId: String?) -> Unit,
     private val onConnectionReady: () -> Unit,
     private val onError: (String) -> Unit,
 ) {
@@ -411,9 +411,10 @@ class ChatViewModel(
                 val newClientId = response.metadata["clientId"]
                 val newProjectId = response.metadata["projectId"]?.takeIf { it.isNotBlank() }
                 val projectsJson = response.metadata["projects"]
-                println("=== Chat scope change: client=$newClientId project=$newProjectId ===")
+                val newGroupId = response.metadata["groupId"]?.takeIf { it.isNotBlank() }
+                println("=== Chat scope change: client=$newClientId project=$newProjectId group=$newGroupId ===")
                 if (!newClientId.isNullOrBlank()) {
-                    onScopeChange(newClientId, newProjectId, projectsJson)
+                    onScopeChange(newClientId, newProjectId, projectsJson, newGroupId)
                 }
                 null
             }
@@ -635,10 +636,10 @@ class ChatViewModel(
             oldestMessageId = history.oldestMessageId
             _compressionBoundaries.value = history.compressionBoundaries
 
-            // Restore UI scope from chat session (persisted client/project)
+            // Restore UI scope from chat session (persisted client/project/group)
             val restoredClientId = history.activeClientId
             if (!restoredClientId.isNullOrBlank()) {
-                onScopeChange(restoredClientId, history.activeProjectId, null)
+                onScopeChange(restoredClientId, history.activeProjectId, null, history.activeGroupId)
             }
 
             pendingState?.let { state ->

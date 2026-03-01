@@ -638,7 +638,14 @@ async def _execute_kb_search(
         return f"Error: KB search failed: {str(e)[:200]}"
 
     items = data.get("items", [])
-    logger.info("kb_search: query=%r → %d results", query[:80], len(items))
+    if items:
+        result_summary = "; ".join(
+            f"[{it.get('score', 0):.2f}] {it.get('sourceUrn', '?')[:80]}"
+            for it in items[:max_results]
+        )
+        logger.info("kb_search: query=%r → %d results: %s", query[:80], len(items), result_summary)
+    else:
+        logger.info("kb_search: query=%r → 0 results", query[:80])
     if not items:
         return f"No Knowledge Base results found for: {query}"
 

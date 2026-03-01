@@ -312,9 +312,9 @@ class MainViewModel(
      *
      * Waits for clients to be loaded before applying scope (prevents race condition on startup).
      */
-    private fun updateChatScope(clientId: String, projectId: String? = null, projectsJson: String? = null) {
-        if (clientId == _selectedClientId.value && projectId == _selectedProjectId.value) return
-        println("MainViewModel: updateChatScope(client=$clientId, project=$projectId)")
+    private fun updateChatScope(clientId: String, projectId: String? = null, projectsJson: String? = null, groupId: String? = null) {
+        if (clientId == _selectedClientId.value && projectId == _selectedProjectId.value && groupId == _selectedGroupId.value) return
+        println("MainViewModel: updateChatScope(client=$clientId, project=$projectId, group=$groupId)")
 
         scope.launch {
             // Wait for clients to be loaded (prevents race condition on app startup)
@@ -343,13 +343,15 @@ class MainViewModel(
                     println("Failed to parse scope_change projects: ${e.message}")
                 }
                 _selectedProjectId.value = projectId
+                _selectedGroupId.value = groupId
                 persistChatScope(clientId, projectId)
             } else if (clientChanged) {
                 // History restore or scope_change without projects — full selectClient flow
-                selectClient(clientId, chatProjectId = projectId)
-            } else if (projectId != _selectedProjectId.value) {
-                // Same client, different project
+                selectClient(clientId, chatProjectId = projectId, chatGroupId = groupId)
+            } else if (projectId != _selectedProjectId.value || groupId != _selectedGroupId.value) {
+                // Same client, different project or group
                 _selectedProjectId.value = projectId
+                _selectedGroupId.value = groupId
                 persistChatScope(clientId, projectId)
             }
         }
@@ -361,9 +363,9 @@ class MainViewModel(
      * @param chatProjectId If set (from chat history restore), overrides lastSelectedProjectId.
      *                      Does NOT persist scope (already saved in chat session).
      */
-    fun selectClient(clientId: String, chatProjectId: String? = null) {
+    fun selectClient(clientId: String, chatProjectId: String? = null, chatGroupId: String? = null) {
         if (_selectedClientId.value == clientId && chatProjectId == null) return
-        println("MainViewModel: selectClient($clientId, chatProject=$chatProjectId) — previous: ${_selectedClientId.value}")
+        println("MainViewModel: selectClient($clientId, chatProject=$chatProjectId, chatGroup=$chatGroupId) — previous: ${_selectedClientId.value}")
 
         // Chat is global — do NOT cancel chatJob or clear chatMessages here.
 
@@ -417,6 +419,11 @@ class MainViewModel(
                     ?: _clients.value.find { it.id == clientId }?.lastSelectedProjectId
                 if (projectToSelect != null && projectList.any { it.id == projectToSelect }) {
                     _selectedProjectId.value = projectToSelect
+                }
+
+                // Restore group from chat session (cross-device scope restore)
+                if (chatGroupId != null && clientGroups.any { it.id == chatGroupId }) {
+                    _selectedGroupId.value = chatGroupId
                 }
 
                 // Eagerly load environments to determine badge visibility

@@ -73,17 +73,18 @@ class ChatRpcImpl(
                 )
             }
 
-            // Emit persisted scope so UI restores client/project selection on startup
+            // Emit persisted scope so UI restores client/project/group selection on startup
             val clientId = history.activeClientId
             if (!clientId.isNullOrBlank()) {
                 emit(
                     ChatResponseDto(
                         message = "",
                         type = ChatResponseType.SCOPE_CHANGE,
-                        metadata = mapOf(
-                            "clientId" to clientId,
-                            "projectId" to (history.activeProjectId ?: ""),
-                        ),
+                        metadata = buildMap {
+                            put("clientId", clientId)
+                            put("projectId", history.activeProjectId ?: "")
+                            put("groupId", history.activeGroupId ?: "")
+                        },
                     ),
                 )
             }
@@ -171,8 +172,14 @@ class ChatRpcImpl(
                             // Persist scope to session for UI restore on restart
                             val newClientId = event.metadata["clientId"]?.toString()
                             val newProjectId = event.metadata["projectId"]?.toString()?.takeIf { it.isNotBlank() }
+                            // Resolve groupId from project for cross-device scope restore
+                            val newGroupId = newProjectId?.let { pid ->
+                                try {
+                                    projectRepository.getById(ProjectId(ObjectId(pid)))?.groupId?.toString()
+                                } catch (_: Exception) { null }
+                            }
                             if (newClientId != null) {
-                                chatService.updateSessionScope(clientId = newClientId, projectId = newProjectId)
+                                chatService.updateSessionScope(clientId = newClientId, projectId = newProjectId, groupId = newGroupId)
                             }
                             chatEventStream.emit(
                                 ChatResponseDto(
@@ -276,13 +283,19 @@ class ChatRpcImpl(
             oldestMessageId = result.oldestMessageId,
             activeClientId = result.activeClientId,
             activeProjectId = result.activeProjectId,
+            activeGroupId = result.activeGroupId,
         )
     }
 
     override suspend fun updateScope(clientId: String?, projectId: String?) {
         if (clientId.isNullOrBlank()) return
-        chatService.updateSessionScope(clientId = clientId, projectId = projectId)
-        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$projectId" }
+        val groupId = projectId?.let { pid ->
+            try {
+                projectRepository.getById(ProjectId(ObjectId(pid)))?.groupId?.toString()
+            } catch (_: Exception) { null }
+        }
+        chatService.updateSessionScope(clientId = clientId, projectId = projectId, groupId = groupId)
+        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$projectId | groupId=$groupId" }
     }
 
     override suspend fun archiveSession() {
