@@ -12,6 +12,8 @@ fun ChatMessageDocument.toDto(): ChatMessageDto = ChatMessageDto(
         MessageRole.USER -> com.jervis.dto.ChatRole.USER
         MessageRole.ASSISTANT -> com.jervis.dto.ChatRole.ASSISTANT
         MessageRole.SYSTEM -> com.jervis.dto.ChatRole.SYSTEM
+        MessageRole.BACKGROUND -> com.jervis.dto.ChatRole.BACKGROUND
+        MessageRole.ALERT -> com.jervis.dto.ChatRole.ALERT
     },
     content = this.content,
     timestamp = this.timestamp.toString(),
