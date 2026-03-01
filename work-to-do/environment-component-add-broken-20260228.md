@@ -9,42 +9,50 @@
 
 V "Správa prostředí" → Komponenty → "+ Přidat" dialog se vyplní, potvrdí, ale komponenta se nevytvoří. Dialog se zavře a nic se nestane.
 
-## Příčina
+## Potvrzená příčina (2026-03-01)
 
-`ComponentsTab.kt:73-80` — `saveEnvironment()` tiše spolkne výjimku:
+Tichý `catch (_: Exception) {}` na **9 místech** v 5 souborech:
 
-```kotlin
-fun saveEnvironment(updatedEnv: EnvironmentDto) {
-    scope.launch {
-        try {
-            repository.environments.updateEnvironment(updatedEnv.id, updatedEnv)
-            onUpdated()
-        } catch (_: Exception) {}  // ← BUG: tiše zahodí chybu
-    }
-}
-```
+| Soubor | Místo | Řádky |
+|--------|-------|-------|
+| **ComponentsTab.kt** | `saveEnvironment()` | 75-79 |
+| **PropertyMappingsTab.kt** | `saveEnvironment()` | 81-85 |
+| **EnvironmentManagerScreen.kt** | templates load | 84-86 |
+| **EnvironmentManagerScreen.kt** | provision akce | 269-272 |
+| **EnvironmentManagerScreen.kt** | stop akce | 277-280 |
+| **EnvironmentManagerScreen.kt** | delete akce | 285-288 |
+| **EnvironmentManagerScreen.kt** | sync akce | 293-296 |
+| **LogsEventsTab.kt** | `loadPods()` | 74-78 |
+| **LogsEventsTab.kt** | `loadEvents()` | 102-106 |
 
-Backend `updateEnvironment` pravděpodobně padá, ale UI o tom neví.
+**Pozitivní vzor k následování** — K8sResourcesTab.kt je vzorně udělaný:
+- Exception → `error` proměnná → `JErrorState(message, onRetry)` (řádky 137-140)
 
 ## Řešení
 
-### 1. Zobrazit chybu uživateli
+### 1. Nahradit tiché catch bloky error state zobrazením
 
+Vzor z K8sResourcesTab (správný):
 ```kotlin
+var error by remember { mutableStateOf<String?>(null) }
+
 fun saveEnvironment(updatedEnv: EnvironmentDto) {
     scope.launch {
         try {
             repository.environments.updateEnvironment(updatedEnv.id, updatedEnv)
+            error = null
             onUpdated()
         } catch (e: Exception) {
-            // Zobrazit snackbar s chybou
-            snackbarHostState.showSnackbar("Chyba: ${e.message}")
+            error = "Chyba při ukládání: ${e.message}"
         }
     }
 }
-```
 
-Vyžaduje přidat `snackbarHostState` parametr do `ComponentsTab`.
+// V composable:
+error?.let { msg ->
+    JErrorState(message = msg, onRetry = { error = null })
+}
+```
 
 ### 2. Investigovat proč backend padá
 
@@ -54,21 +62,16 @@ Zkontrolovat:
 - Zda `environment.id` existuje v DB
 - Zda DTO serializace/deserializace je korektní (value class gotcha?)
 
-### 3. Stejný pattern opravit všude
+## Soubory (9 catch bloků k opravení)
 
-Stejný `catch (_: Exception) {}` je pravděpodobně i jinde v environment UI — opravit konzistentně:
-- `ComponentsTab.kt` — saveEnvironment
-- `PropertyMappingsTab.kt` — pokud má stejný pattern
-- `OverviewTab.kt` — provisioning/delete akce
-
-## Soubory
-
-- `shared/ui-common/.../screens/environment/ComponentsTab.kt` — přidat error handling
-- `shared/ui-common/.../screens/environment/PropertyMappingsTab.kt` — zkontrolovat
-- `shared/ui-common/.../screens/environment/OverviewTab.kt` — zkontrolovat
+- `shared/ui-common/.../screens/environment/ComponentsTab.kt` — saveEnvironment
+- `shared/ui-common/.../screens/environment/PropertyMappingsTab.kt` — saveEnvironment
+- `shared/ui-common/.../screens/environment/EnvironmentManagerScreen.kt` — templates + 4 akce
+- `shared/ui-common/.../screens/environment/LogsEventsTab.kt` — loadPods + loadEvents
 - `backend/server/.../rpc/EnvironmentRpcImpl.kt` — zkontrolovat updateEnvironment
 
 ## Ověření
 
 1. Přidat komponentu → buď se vytvoří, nebo se zobrazí srozumitelná chyba
 2. Žádný tichý `catch (_: Exception) {}` v celém environment UI
+3. Provisioning/stop/delete/sync → při chybě zobrazit error state

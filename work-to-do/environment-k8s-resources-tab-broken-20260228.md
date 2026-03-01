@@ -1,7 +1,7 @@
 # Environment — K8s zdroje tab nefunguje (chybí namespace)
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE (2026-03-01)
 
 ---
 
@@ -30,9 +30,19 @@ Tab "K8s zdroje" v Správa prostředí nic nezobrazuje. Namespace prostředí ne
 - `shared/ui-common/.../screens/environment/K8sResourcesTab.kt` — zobrazit stav namespace, error handling
 - `shared/common-api/.../IEnvironmentService.kt` — RPC metoda pro K8s resources
 
+## Stav po investigaci (2026-03-01)
+
+K8sResourcesTab.kt je **správně implementovaný**:
+- Error state s retry tlačítkem (řádky 137-140) — `JErrorState(message, onRetry)`
+- Namespace health summary — `NamespaceHealthSummary(status)` jen pokud nsStatus != null
+- Empty state — `JEmptyState(message = "Žádné K8s zdroje")` (řádek 228)
+- Graceful handling K8s API chyb — exception → error variable → JErrorState
+
+Body 2-4 z požadavku jsou splněny. Bod 1 (auto-create namespace při uložení) je samostatný požadavek pokrytý v `environment-namespace-validation`.
+
 ## Ověření
 
-1. Vytvořit nové prostředí → namespace se automaticky vytvoří v K8s
-2. K8s zdroje tab → zobrazí namespace stav + resources (i když prázdné)
-3. Neexistující namespace → jasná zpráva + tlačítko pro vytvoření
-4. K8s nedostupné → error state, ne prázdná stránka
+1. ~~Vytvořit nové prostředí → namespace se automaticky vytvoří v K8s~~ (viz namespace-validation)
+2. K8s zdroje tab → zobrazí namespace stav + resources (i když prázdné) **OK**
+3. ~~Neexistující namespace → jasná zpráva + tlačítko pro vytvoření~~ (viz namespace-validation)
+4. K8s nedostupné → error state, ne prázdná stránka **OK**
