@@ -150,9 +150,86 @@ Nebo jednodušeji: do `brain_create_issue` result message přidat "Nepřidávej 
 
 **Kumulativní efekt**: jednoduchá zpráva trvá 10+ minut místo 10 sekund.
 
+---
+
+## Root cause 5: "Operation not allowed" — finální odpověď nahrazena raw errorem
+
+### Problém
+Po 15 minutách zpracování (5 iterací) agent vyprodukoval 94-znakovou odpověď v blocking mode. Pak spustil **streaming call** aby odpověď doručil uživateli. Tento streaming call překročil Ollama `num_ctx` limit → Ollama vrátila `{"message":"Operation not allowed"}` jako **generovaný text** (ne jako HTTP error). Orchestrátor to streamoval do UI jako "odpověď".
+
+Uživatel po 15 minutách čekání viděl:
+```
+{"error": {"type": "llm_call_failed", "message": "{"message":"Operation not allowed"}\n"}}
+```
+
+### Timeline
+```
+09:19:38 — blocking LLM → finish_reason=stop, 94 chars (SPRÁVNÁ odpověď)
+09:19:38 — streaming LLM call → p40-1 (nas.damek.local)
+09:19:43 — topic_tracker LLM failed: TimeoutError (GPU přetížená)
+09:19:43 — PYTHON_CHAT_END | type=done
+→ UI dostala "Operation not allowed" místo 94-znakové odpovědi
+```
+
+### Řešení
+
+#### 5.1 Nepoužívat streaming call pro doručení blocking odpovědi
+Pokud blocking call vrátil `finish_reason=stop` s content, **streamovat přímo ten text** — ne volat LLM znovu:
+```python
+# handler_agentic.py — po blocking final answer
+if final_answer_content:
+    yield {"type": "text", "content": final_answer_content}  # Přímo streamovat
+    # NE: await streaming_llm_call(same_context)
+```
+
+#### 5.2 Detekovat "Operation not allowed" ve streaming
+Pokud streaming vrátí "Operation not allowed", zachytit a:
+- Pokud existuje blocking odpověď → použít ji místo erroru
+- Pokud ne → vrátit uživatelsky přívětivou chybovou hlášku
+
+#### 5.3 Snížit kontext pro streaming call
+Pokud se streaming call musí dělat, použít menší kontext (jen final answer text, bez tool results).
+
+### Soubory
+- `backend/service-orchestrator/app/chat/handler_agentic.py` — final answer delivery
+- `backend/service-orchestrator/app/chat/handler_streaming.py` — streaming error handling
+- `backend/service-orchestrator/app/llm/provider.py` — `_call_with_retry` (řádek 367)
+
+---
+
+## Root cause 6: brain_transition_issue 500 error
+
+Agent po vytvoření JI-22 zkusil `brain_transition_issue` → "To Do", ale server vrátil 500.
+
+```
+WARNING: brain_transition_issue failed: Server error '500 Internal Server Error'
+  for url 'http://jervis-server:5500/internal/brain/jira/issue/JI-22/transition'
+```
+
+Pravděpodobně Jira transition name neodpovídá dostupným přechodům, nebo endpoint má bug.
+
+### Soubory
+- `backend/server/.../rpc/internal/InternalBrainRouting.kt` — transition endpoint
+- `backend/server/.../service/brain/BrainService.kt` — Jira transition logic
+
+---
+
+## Shrnutí dopadů (aktualizováno)
+
+| Problém | Dopad | Řešení |
+|---------|-------|--------|
+| Kontext roste s iteracemi | 92s → 292s per call | Omezit tools, sumárizovat results |
+| Zbytečné tool calls | 3/4 calls nepotřeba | Posílit system prompt, iteration limiter |
+| Intent decomposition fail → 30 tools | Pomalé, zbytečné | Fallback na core tools |
+| brain_add_comment duplikát | +5 min čekání | Dedup pattern / result hint |
+| **Operation not allowed** | **Odpověď ztracena, raw error v UI** | **Streamovat blocking result přímo** |
+| brain_transition_issue 500 | Zbytečná iterace + error | Fix transition endpoint |
+
 ## Ověření
 
 1. Odeslat jednoduchou zprávu "tady je popis bugů" → odpověď do 30s, max 1-2 tool calls
 2. Odeslat "vytvoř issue v Jiře" → 1 tool call (brain_create_issue), žádný brain_add_comment
 3. Kontext po 3 iteracích < 30k tokenů (tool results sumárizované)
 4. Intent decomposition failure → max 10 tools, ne 30
+5. Po 5 iteracích → uživatel MUSÍ vidět odpověď (ne raw JSON error)
+6. brain_transition_issue → nesmí vrátit 500
