@@ -1,7 +1,7 @@
 # Chat agent — pomalé odpovědi a zbytečná práce (overwork)
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: PARTIAL (2026-03-01) — max_iterations limit existuje (6/10 dle délky zprávy), ale 5/6 root causes neřešeno (context scaling, tool filtering, brain dedup, Operation not allowed, transition 500)
 
 ---
 
