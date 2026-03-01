@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     preempt_embeddings: bool = False     # let short embedding requests finish
     preempt_grace_s: float = 2.0        # grace before killing streaming
 
+    # ── GPU warmup ping ─────────────────────────────────────────────────
+    # Periodically ping GPU backends to keep models in VRAM (prevents cold starts).
+    warmup_enabled: bool = True
+    warmup_interval_s: int = 240         # 4 minutes (safely under Ollama 5min default)
+
     # ── GPU idle notification ────────────────────────────────────────────
     # After this many seconds of no GPU requests, router notifies Kotlin server
     # to trigger proactive analytical tasks (vulnerability scan, code quality, etc.)

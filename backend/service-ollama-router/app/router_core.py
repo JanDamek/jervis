@@ -55,6 +55,7 @@ class OllamaRouter:
         self._request_timeout_task: asyncio.Task | None = None
         self._gpu_recovery_task: asyncio.Task | None = None
         self._idle_notify_task: asyncio.Task | None = None
+        self._warmup_task: asyncio.Task | None = None
 
         # GPU idle notification state
         self._last_any_gpu_activity: float = time.monotonic()
@@ -75,10 +76,14 @@ class OllamaRouter:
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
         self._request_timeout_task = asyncio.create_task(self._request_timeout_watchdog())
         self._idle_notify_task = asyncio.create_task(self._idle_notify_watchdog())
+        # Start warmup loop (keeps models in VRAM)
+        if settings.warmup_enabled:
+            self._warmup_task = asyncio.create_task(self._warmup_loop())
         # Start GPU recovery only if any backend failed initial sync
         if any(not b.healthy for b in self.gpu_pool.all_backends):
             self._start_gpu_recovery()
-        logger.info("Router started with %d GPU backend(s), queue enabled", len(self.gpu_pool.all_backends))
+        logger.info("Router started with %d GPU backend(s), queue enabled, warmup=%s",
+                     len(self.gpu_pool.all_backends), settings.warmup_enabled)
 
     async def shutdown(self) -> None:
         """Cleanup on shutdown."""
@@ -92,6 +97,8 @@ class OllamaRouter:
             self._gpu_recovery_task.cancel()
         if self._idle_notify_task:
             self._idle_notify_task.cancel()
+        if self._warmup_task:
+            self._warmup_task.cancel()
         for task in self._bg_load_tasks.values():
             if not task.done():
                 task.cancel()
@@ -439,6 +446,64 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Idle notify watchdog error: %s", e)
+
+    async def _warmup_loop(self) -> None:
+        """Periodically ping GPU backends to keep models loaded in VRAM.
+
+        Sends minimal generate/embeddings requests with keep_alive=-1 to
+        prevent Ollama from evicting models after its default timeout.
+        Only pings idle GPUs (no active requests and idle for >80% of interval).
+        """
+        from .models import MODEL_SETS, EMBEDDING_MODELS
+
+        interval = settings.warmup_interval_s
+        models = MODEL_SETS.get("primary", {}).get("models", [settings.orchestrator_model])
+        logger.info("Warmup loop started (interval=%ds, models=%s)", interval, models)
+
+        while True:
+            try:
+                await asyncio.sleep(interval)
+
+                for backend in self.gpu_pool.all_backends:
+                    if not backend.healthy:
+                        continue
+                    if backend.active_request_count() > 0:
+                        continue
+                    # Skip if GPU had recent activity
+                    last_activity = time.monotonic() - self._last_any_gpu_activity
+                    if last_activity < interval * 0.8:
+                        continue
+
+                    for model_name in models:
+                        try:
+                            if model_name in EMBEDDING_MODELS:
+                                payload = {"model": model_name, "prompt": "warmup", "keep_alive": -1}
+                                resp = await self._mgmt_client.post(
+                                    f"{backend.url}/api/embeddings",
+                                    json=payload,
+                                    timeout=30.0,
+                                )
+                            else:
+                                payload = {"model": model_name, "prompt": "", "keep_alive": -1, "stream": False}
+                                resp = await self._mgmt_client.post(
+                                    f"{backend.url}/api/generate",
+                                    json=payload,
+                                    timeout=30.0,
+                                )
+                            if resp.status_code == 200:
+                                logger.debug("Warmup ping OK: %s model=%s", backend.name, model_name)
+                            else:
+                                logger.warning(
+                                    "Warmup ping HTTP %d: %s model=%s",
+                                    resp.status_code, backend.name, model_name,
+                                )
+                        except Exception as e:
+                            logger.warning("Warmup ping failed: %s model=%s error=%s", backend.name, model_name, e)
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error("Warmup loop error: %s", e)
 
     async def _check_cpu_health(self) -> None:
         try:
