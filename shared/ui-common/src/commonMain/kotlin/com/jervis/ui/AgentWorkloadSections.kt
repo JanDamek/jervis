@@ -126,8 +126,16 @@ internal fun AgentSectionContent(
             )
         }
 
-        // Recent chat messages — shows last conversation context
+        // Recent chat messages — shows last foreground conversation context
         if (recentChatMessages.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Poslední z chatu:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(modifier = Modifier.height(4.dp))
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp),

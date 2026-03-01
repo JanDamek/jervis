@@ -45,8 +45,6 @@ internal fun InputArea(
     onSendClick: () -> Unit,
     enabled: Boolean,
     queueSize: Int = 0,
-    runningProjectId: String? = null,
-    currentProjectId: String? = null,
     attachments: List<PickedFile> = emptyList(),
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
@@ -134,12 +132,8 @@ internal fun InputArea(
                 singleLine = false,
             )
 
-            val buttonText =
-                when {
-                    runningProjectId == null || runningProjectId == "none" -> "Odeslat"
-                    runningProjectId == currentProjectId -> "Odeslat" // Inline delivery to running task
-                    else -> "Do fronty" // Different project or queue has items
-                }
+            // Foreground chat is global — always "Odeslat" regardless of background task state
+            val buttonText = "Odeslat"
 
             JPrimaryButton(
                 onClick = onSendClick,

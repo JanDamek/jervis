@@ -21,7 +21,6 @@ fun MainScreen(
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
     val queueSize by viewModel.queue.queueSize.collectAsState()
-    val runningProjectId by viewModel.queue.runningProjectId.collectAsState()
     val hasMore by viewModel.chat.hasMore.collectAsState()
     val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
     val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
@@ -62,7 +61,6 @@ fun MainScreen(
         isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,
         queueSize = queueSize,
-        runningProjectId = runningProjectId,
         hasMore = hasMore,
         isLoadingMore = isLoadingMore,
         compressionBoundaries = compressionBoundaries,
