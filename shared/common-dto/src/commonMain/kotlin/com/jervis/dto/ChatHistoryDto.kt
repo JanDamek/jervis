@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 data class ChatHistoryDto(
     val messages: List<ChatMessageDto> = emptyList(),
     val hasMore: Boolean = false,
-    val oldestSequence: Long? = null,
+    val oldestMessageId: String? = null,
     val compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     val activeClientId: String? = null,
     val activeProjectId: String? = null,

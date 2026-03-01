@@ -565,23 +565,41 @@ private fun ChatMessageItem(
                             )
                         } else {
                             // Assistant messages - Markdown rendering
-                            // Stabilize text with remember to prevent AST/text mismatch
-                            // during recomposition (StringIndexOutOfBoundsException)
-                            val stableContent = remember(message.text) { message.text }
-                            Markdown(
-                                content = stableContent,
-                                colors = markdownColor(
-                                    text = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    codeBackground = MaterialTheme.colorScheme.surfaceVariant,
-                                ),
-                                typography = markdownTypography(
-                                    text = MaterialTheme.typography.bodyMedium,
-                                    code = MaterialTheme.typography.bodySmall,
-                                    h1 = MaterialTheme.typography.headlineMedium,
-                                    h2 = MaterialTheme.typography.headlineSmall,
-                                    h3 = MaterialTheme.typography.titleLarge,
-                                ),
-                            )
+                            // Sanitize: normalize line endings to prevent AST/text length mismatch
+                            // (StringIndexOutOfBoundsException in markdown parser)
+                            val stableContent = remember(message.text) {
+                                message.text
+                                    .replace("\r\n", "\n")
+                                    .replace("\r", "\n")
+                                    .replace("\u0000", "")
+                            }
+                            var markdownFailed by remember(stableContent) { mutableStateOf(false) }
+                            if (markdownFailed) {
+                                // Fallback: plain text when markdown rendering fails
+                                Text(
+                                    text = stableContent,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            } else {
+                                try {
+                                    Markdown(
+                                        content = stableContent,
+                                        colors = markdownColor(
+                                            text = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+                                        ),
+                                        typography = markdownTypography(
+                                            text = MaterialTheme.typography.bodyMedium,
+                                            code = MaterialTheme.typography.bodySmall,
+                                            h1 = MaterialTheme.typography.headlineMedium,
+                                            h2 = MaterialTheme.typography.headlineSmall,
+                                            h3 = MaterialTheme.typography.titleLarge,
+                                        ),
+                                    )
+                                } catch (_: Exception) {
+                                    markdownFailed = true
+                                }
+                            }
                         }
                     }
 

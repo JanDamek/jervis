@@ -249,8 +249,8 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeSequence: Long?): ChatHistoryDto {
-        val result = chatService.getHistory(limit = limit, beforeSequence = beforeSequence)
+    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?): ChatHistoryDto {
+        val result = chatService.getHistory(limit = limit, beforeMessageId = beforeMessageId)
 
         val messages = result.messages.map { msg ->
             ChatMessageDto(
@@ -266,13 +266,14 @@ class ChatRpcImpl(
                 correlationId = msg.correlationId,
                 metadata = msg.metadata,
                 sequence = msg.sequence,
+                messageId = msg.id.toString(),
             )
         }
 
         return ChatHistoryDto(
             messages = messages,
             hasMore = result.hasMore,
-            oldestSequence = result.oldestSequence,
+            oldestMessageId = result.oldestMessageId,
             activeClientId = result.activeClientId,
             activeProjectId = result.activeProjectId,
         )

@@ -20,4 +20,5 @@ data class ChatMessageDto(
     val correlationId: String? = null,
     val metadata: Map<String, String> = emptyMap(),
     val sequence: Long? = null,
+    val messageId: String? = null, // MongoDB ObjectId for pagination cursor
 )

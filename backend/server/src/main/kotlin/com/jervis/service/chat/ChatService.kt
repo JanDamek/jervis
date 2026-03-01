@@ -128,29 +128,32 @@ class ChatService(
 
     /**
      * Load chat history for UI display.
+     * Pagination uses message ObjectId (monotonically increasing) instead of sequence
+     * to avoid issues with sequence counter desync between Kotlin and Python.
      */
     suspend fun getHistory(
         userId: String = "jan",
         limit: Int = 20,
-        beforeSequence: Long? = null,
+        beforeMessageId: String? = null,
     ): ChatHistoryResult {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false)
             ?: return ChatHistoryResult(messages = emptyList(), hasMore = false)
 
-        val messages = if (beforeSequence != null) {
-            chatMessageService.getMessagesBeforeSequence(session.id, beforeSequence, limit)
+        val messages = if (beforeMessageId != null) {
+            chatMessageService.getMessagesBefore(session.id, ObjectId(beforeMessageId), limit)
         } else {
             chatMessageService.getLastMessages(session.id, limit)
         }
 
         val totalCount = chatMessageService.getMessageCount(session.id)
-        val hasMore = messages.isNotEmpty() && messages.first().sequence > 1
+        // If we got exactly `limit` messages, there are probably more
+        val hasMore = messages.size == limit && messages.size.toLong() < totalCount
 
         return ChatHistoryResult(
             sessionId = session.id.toString(),
             messages = messages,
             hasMore = hasMore,
-            oldestSequence = messages.firstOrNull()?.sequence,
+            oldestMessageId = messages.firstOrNull()?.id?.toString(),
             totalCount = totalCount,
             activeClientId = session.lastClientId,
             activeProjectId = session.lastProjectId,
@@ -235,7 +238,7 @@ data class ChatHistoryResult(
     val sessionId: String? = null,
     val messages: List<ChatMessageDocument>,
     val hasMore: Boolean,
-    val oldestSequence: Long? = null,
+    val oldestMessageId: String? = null,
     val totalCount: Long = 0,
     val activeClientId: String? = null,
     val activeProjectId: String? = null,

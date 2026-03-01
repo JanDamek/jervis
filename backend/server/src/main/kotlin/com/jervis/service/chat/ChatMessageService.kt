@@ -81,6 +81,7 @@ class ChatMessageService(
     /**
      * Load last N messages for a conversation (for UI initial display).
      * Returns messages in chronological order (oldest first).
+     * Sorted by _id (ObjectId) which is monotonically increasing — immune to sequence counter desync.
      */
     suspend fun getLastMessages(
         conversationId: ObjectId,
@@ -89,7 +90,7 @@ class ChatMessageService(
         require(limit > 0) { "Limit must be positive" }
 
         val messages = chatMessageRepository
-            .findByConversationIdOrderBySequenceDesc(conversationId)
+            .findByConversationIdOrderByIdDesc(conversationId)
             .take(limit)
             .toList()
 
@@ -103,7 +104,7 @@ class ChatMessageService(
      * Returns messages in chronological order.
      */
     suspend fun getAllMessages(conversationId: ObjectId): List<ChatMessageDocument> {
-        val messages = chatMessageRepository.findByConversationIdOrderBySequenceAsc(conversationId).toList()
+        val messages = chatMessageRepository.findByConversationIdOrderByIdAsc(conversationId).toList()
 
         logger.debug { "ALL_MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size}" }
 
@@ -111,24 +112,24 @@ class ChatMessageService(
     }
 
     /**
-     * Load messages before a specific sequence (for pagination/"load more").
+     * Load messages before a specific message ID (for pagination/"load more").
+     * Uses ObjectId comparison — chronologically correct regardless of sequence values.
      */
-    suspend fun getMessagesBeforeSequence(
+    suspend fun getMessagesBefore(
         conversationId: ObjectId,
-        beforeSequence: Long,
+        beforeId: ObjectId,
         limit: Int = 10,
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
-        require(beforeSequence > 0) { "Sequence must be positive" }
 
         val messages =
             chatMessageRepository
-                .findByConversationIdAndSequenceLessThanOrderBySequenceDesc(conversationId, beforeSequence)
+                .findByConversationIdAndIdLessThanOrderByIdDesc(conversationId, beforeId)
                 .toList()
                 .take(limit)
 
         logger.debug {
-            "MESSAGES_BEFORE_SEQUENCE | conversationId=$conversationId | beforeSequence=$beforeSequence | " +
+            "MESSAGES_BEFORE_ID | conversationId=$conversationId | beforeId=$beforeId | " +
                 "count=${messages.size} | limit=$limit"
         }
 

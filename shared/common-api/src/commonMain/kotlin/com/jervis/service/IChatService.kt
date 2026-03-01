@@ -42,9 +42,9 @@ interface IChatService {
     /**
      * Load chat history for UI display (pagination).
      * @param limit Max messages to return
-     * @param beforeSequence Load messages before this sequence (cursor)
+     * @param beforeMessageId Load messages before this message ID (cursor, ObjectId string)
      */
-    suspend fun getChatHistory(limit: Int = 20, beforeSequence: Long? = null): ChatHistoryDto
+    suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null): ChatHistoryDto
 
     /**
      * Update active scope (client/project) in the chat session.

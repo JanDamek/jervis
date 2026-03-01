@@ -81,7 +81,7 @@ class ChatViewModel(
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
 
-    private var oldestSequence: Long? = null
+    private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
     private var pendingState: PendingMessageState? = null
     private var retryJob: Job? = null
@@ -330,14 +330,14 @@ class ChatViewModel(
 
     fun loadMoreHistory() {
         val projectId = selectedProjectId.value ?: ""
-        val beforeSeq = oldestSequence ?: return
+        val beforeId = oldestMessageId ?: return
         if (_isLoadingMore.value) return
 
         scope.launch {
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
-                    limit = 10, beforeSequence = beforeSeq,
+                    limit = 10, beforeMessageId = beforeId,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -364,7 +364,7 @@ class ChatViewModel(
                 }
                 _chatMessages.value = olderMessages + _chatMessages.value
                 _hasMore.value = history.hasMore
-                oldestSequence = history.oldestSequence
+                oldestMessageId = history.oldestMessageId
                 _compressionBoundaries.value =
                     (history.compressionBoundaries + _compressionBoundaries.value)
                         .distinctBy { it.afterSequence }
@@ -632,7 +632,7 @@ class ChatViewModel(
             }
             _chatMessages.value = newMessages + deduped
             _hasMore.value = history.hasMore
-            oldestSequence = history.oldestSequence
+            oldestMessageId = history.oldestMessageId
             _compressionBoundaries.value = history.compressionBoundaries
 
             // Restore UI scope from chat session (persisted client/project)

@@ -278,7 +278,7 @@ fun EnvironmentViewerScreen(
                                 )
                             }
                             if (podsExpanded) {
-                                items(resources!!.pods, key = { it.name }) { pod ->
+                                items(resources!!.pods, key = { "pod_${it.name}" }) { pod ->
                                     PodCard(
                                         pod = pod,
                                         onViewLogs = {
@@ -299,7 +299,7 @@ fun EnvironmentViewerScreen(
                                 )
                             }
                             if (deploymentsExpanded) {
-                                items(resources!!.deployments, key = { it.name }) { dep ->
+                                items(resources!!.deployments, key = { "dep_${it.name}" }) { dep ->
                                     DeploymentCard(
                                         deployment = dep,
                                         onViewDetails = {
@@ -331,7 +331,7 @@ fun EnvironmentViewerScreen(
                                 )
                             }
                             if (servicesExpanded) {
-                                items(resources!!.services, key = { it.name }) { svc ->
+                                items(resources!!.services, key = { "svc_${it.name}" }) { svc ->
                                     ServiceCard(service = svc)
                                 }
                             }

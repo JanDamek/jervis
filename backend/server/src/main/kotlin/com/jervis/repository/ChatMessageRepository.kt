@@ -21,32 +21,25 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, ObjectId> {
     /**
-     * Load last N messages for a conversation, ordered by sequence descending.
-     * Used for initial UI display (show last 10 messages).
-     *
-     * NOTE: Returns in DESCENDING order (newest first), caller should reverse if needed.
+     * Load messages for a conversation, ordered by _id descending (newest first).
+     * ObjectId is monotonically increasing, so _id order = insertion order.
+     * Used with Flow.take(limit) for UI display.
      */
-    suspend fun findTop10ByConversationIdOrderBySequenceDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
+    suspend fun findByConversationIdOrderByIdDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
 
     /**
-     * Load messages for a conversation, ordered by sequence descending.
-     * Used with Flow.take(limit) to support dynamic limit values.
-     */
-    suspend fun findByConversationIdOrderBySequenceDesc(conversationId: ObjectId): Flow<ChatMessageDocument>
-
-    /**
-     * Load all messages for a conversation, ordered by sequence ascending.
+     * Load all messages for a conversation, ordered by _id ascending.
      * Used by agent to read full conversation history.
      */
-    suspend fun findByConversationIdOrderBySequenceAsc(conversationId: ObjectId): Flow<ChatMessageDocument>
+    suspend fun findByConversationIdOrderByIdAsc(conversationId: ObjectId): Flow<ChatMessageDocument>
 
     /**
-     * Load messages before a specific sequence number (for pagination).
-     * Used for "load more" functionality in UI.
+     * Load messages before a specific message ID (for pagination / "load more").
+     * Uses ObjectId comparison which is chronologically correct.
      */
-    suspend fun findByConversationIdAndSequenceLessThanOrderBySequenceDesc(
+    suspend fun findByConversationIdAndIdLessThanOrderByIdDesc(
         conversationId: ObjectId,
-        sequence: Long,
+        id: ObjectId,
     ): Flow<ChatMessageDocument>
 
     /**
