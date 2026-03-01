@@ -23,6 +23,7 @@ from .models import (
     EMBEDDING_MODELS,
     EMBEDDING_PATHS,
     Priority,
+    RequestState,
     TrackedRequest,
 )
 from .proxy import is_streaming_request, proxy_non_streaming, proxy_streaming

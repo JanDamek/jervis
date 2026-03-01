@@ -30,18 +30,23 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          livenessProbe:
+          startupProbe:
             httpGet:
               path: /router/health
               port: 11430
             initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30  # 10 + 30*10 = 310s max startup (model preload takes 2-3 min)
+          livenessProbe:
+            httpGet:
+              path: /router/health
+              port: 11430
             periodSeconds: 15
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /router/health
               port: 11430
-            initialDelaySeconds: 5
             periodSeconds: 10
       imagePullSecrets:
         - name: regcred
