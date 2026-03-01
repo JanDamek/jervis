@@ -214,6 +214,61 @@ Pravděpodobně Jira transition name neodpovídá dostupným přechodům, nebo e
 
 ---
 
+## Root cause 7: Agent nepoužívá code_search k ověření tvrzení o kódu
+
+### Problém
+Agent tvrdí věci o kódu (např. "chybí inicializace traceId a spanId v TracingService.kt") bez ověření přes `code_search` tool. V logách za celou session **ani jeden code_search call**. Agent spoléhá na:
+- KB záznamy (mohou být zastaralé/halucinované)
+- brain_search (Jira — popis ticketů, ne kód)
+- Vlastní "znalost" (halucinace 30b modelu)
+
+### Naměřeno (2026-03-01)
+```
+grep "code_search" v logách → 0 výskytů
+grep "dispatch_coding_agent" → 0 výskytů
+grep "brain_search_issues" → opakované volání (3× loop → forced conclusion)
+grep "brain_create_issue" → opakované volání (loop detection → break)
+grep "kb_search" → stále stejný query "deadlines due dates milestones"
+```
+
+Agent má `code_search` tool k dispozici (definitions.py:293), ale nikdy ho nepoužije. Místo toho:
+1. Najde info v KB → přijme jako fakt
+2. Tvrdí to uživateli → uživatel opraví → agent argumentuje
+3. System prompt říká "ověřuj přes code_search" ale 30b model pravidlo ignoruje
+
+### Řešení
+
+#### 7.1 Automatický code_search před tvrzením o kódu
+Pokud agent chce mluvit o konkrétním souboru/třídě/funkci, **vynutit** code_search:
+```python
+# V handler_agentic.py — před final answer
+if mentions_code_entity(final_answer):
+    # Přidat system message: "Ověř svá tvrzení o kódu přes code_search."
+    # Nebo automaticky spustit code_search pro zmíněné entity
+```
+
+#### 7.2 Posílit system prompt
+Přidat explicitní pravidlo:
+```
+## ⚠️ KÓDOVÉ TVRZENÍ = POVINNÝ code_search
+NIKDY netvrddi nic o konkrétním souboru, třídě, metodě nebo architektuře klienta
+BEZ PŘEDCHOZÍHO code_search volání. KB záznamy NEJSOU spolehlivý zdroj o kódu.
+Pokud code_search nevrátí výsledky → ŘEKNI "nemohu ověřit".
+```
+
+#### 7.3 Background task → vždy code_search + dispatch_coding_agent
+Pro složitější kódové analýzy by agent měl:
+1. `code_search` → zjistit stav
+2. Pokud potřeba hlubší analýza → `dispatch_coding_agent` (MCP Claude agent)
+3. Teprve pak reportovat uživateli
+
+### Soubory
+- `backend/service-orchestrator/app/chat/system_prompt.py` — posílit pravidlo
+- `backend/service-orchestrator/app/chat/handler_agentic.py` — vynucený code_search
+- `backend/service-orchestrator/app/tools/definitions.py` — code_search description (posílit)
+
+---
+
 ## Shrnutí dopadů (aktualizováno)
 
 | Problém | Dopad | Řešení |
@@ -224,6 +279,7 @@ Pravděpodobně Jira transition name neodpovídá dostupným přechodům, nebo e
 | brain_add_comment duplikát | +5 min čekání | Dedup pattern / result hint |
 | **Operation not allowed** | **Odpověď ztracena, raw error v UI** | **Streamovat blocking result přímo** |
 | brain_transition_issue 500 | Zbytečná iterace + error | Fix transition endpoint |
+| **Agent neověřuje kód** | **Halucinace o kódu** | **Vynutit code_search / coding agent** |
 
 ## Ověření
 
@@ -233,3 +289,4 @@ Pravděpodobně Jira transition name neodpovídá dostupným přechodům, nebo e
 4. Intent decomposition failure → max 10 tools, ne 30
 5. Po 5 iteracích → uživatel MUSÍ vidět odpověď (ne raw JSON error)
 6. brain_transition_issue → nesmí vrátit 500
+7. Otázka o kódu klienta → agent MUSÍ zavolat code_search PŘED odpovědí
