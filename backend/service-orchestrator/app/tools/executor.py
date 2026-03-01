@@ -471,6 +471,18 @@ async def execute_tool(
             result = await _execute_environment_delete(
                 environment_id=arguments.get("environment_id", ""),
             )
+        elif tool_name == "environment_add_property_mapping":
+            result = await _execute_environment_add_property_mapping(
+                environment_id=arguments.get("environment_id", ""),
+                project_component=arguments.get("project_component", ""),
+                property_name=arguments.get("property_name", ""),
+                target_component=arguments.get("target_component", ""),
+                value_template=arguments.get("value_template", ""),
+            )
+        elif tool_name == "environment_auto_suggest_mappings":
+            result = await _execute_environment_auto_suggest_mappings(
+                environment_id=arguments.get("environment_id", ""),
+            )
         elif tool_name == "environment_keep_running":
             enabled = arguments.get("enabled", True)
             result = (
@@ -2798,5 +2810,57 @@ async def _execute_environment_clone(
             )
     except Exception as e:
         return f"Error cloning environment: {str(e)[:300]}"
+
+
+async def _execute_environment_add_property_mapping(
+    environment_id: str, project_component: str, property_name: str,
+    target_component: str, value_template: str,
+) -> str:
+    """Add a property mapping to an environment."""
+    if not environment_id or not project_component or not property_name or not target_component or not value_template:
+        return "Error: all parameters are required (environment_id, project_component, property_name, target_component, value_template)."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/property-mappings",
+                json={
+                    "projectComponentId": project_component,
+                    "propertyName": property_name,
+                    "targetComponentId": target_component,
+                    "valueTemplate": value_template,
+                },
+            )
+            if resp.status_code == 409:
+                return f"Mapping for '{property_name}' already exists."
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            env = resp.json()
+            count = len(env.get("propertyMappings", []))
+            return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
+    except Exception as e:
+        return f"Error adding property mapping: {str(e)[:300]}"
+
+
+async def _execute_environment_auto_suggest_mappings(environment_id: str) -> str:
+    """Auto-suggest property mappings for all PROJECT×INFRA pairs."""
+    if not environment_id:
+        return "Error: environment_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/environments/{environment_id}/property-mappings/auto-suggest",
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            env = resp.json()
+            added = resp.headers.get("X-Mappings-Added", "?")
+            total = len(env.get("propertyMappings", []))
+            return (
+                f"Auto-suggested mappings for '{env['name']}'.\n"
+                f"Added: {added}, Total: {total}.\n"
+                f"Use environment_deploy to provision and resolve values."
+            )
+    except Exception as e:
+        return f"Error auto-suggesting mappings: {str(e)[:300]}"
 
 

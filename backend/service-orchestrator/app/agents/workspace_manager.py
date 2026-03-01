@@ -92,6 +92,7 @@ class WorkspaceManager:
             (jervis_dir / "environment.md").write_text(
                 self._render_environment_md(environment_context)
             )
+            self._generate_env_files(workspace, environment_context)
 
         # 4. Agent-specific configuration
         if agent_type == "claude":
@@ -184,6 +185,18 @@ class WorkspaceManager:
                 ]
             )
 
+            # Environment workflow instructions
+            claude_md_parts.extend(
+                [
+                    "",
+                    "## Environment Workflow",
+                    "- Read `.env` file for pre-resolved connection strings",
+                    "- Start the project locally — do NOT try to build Docker images",
+                    "- Use `source .env` or dotenv to load environment variables before starting",
+                    "- Infrastructure services are already running in K8s (managed by Jervis)",
+                ]
+            )
+
             # Add environment MCP tool descriptions if namespace is present
             if environment_context.get("namespace"):
                 ns = environment_context["namespace"]
@@ -199,8 +212,8 @@ class WorkspaceManager:
                         "- `restart_deployment(namespace, name)` – trigger rolling restart",
                         "- `get_namespace_status(namespace)` – overall namespace health",
                         "",
-                        "Use these tools to diagnose runtime issues, check service health,",
-                        "and manage the environment when fixing bugs.",
+                        "Use `environment_status` to check if infra is ready before starting your project.",
+                        "Use `get_pod_logs` to diagnose runtime issues.",
                     ]
                 )
 
@@ -229,6 +242,67 @@ class WorkspaceManager:
         (workspace / "CLAUDE.md").write_text(claude_md)
 
     @staticmethod
+    def _generate_env_files(workspace: Path, env: dict):
+        """Generate .env files from resolved environment context."""
+        projects = [c for c in env.get("components", []) if c.get("type") == "PROJECT"]
+        for proj in projects:
+            env_vars = proj.get("envVars", {})
+            if env_vars:
+                content = "\n".join(f"{k}={v}" for k, v in sorted(env_vars.items()))
+                safe_name = proj["name"].lower().replace(" ", "-")
+                (workspace / f".env.{safe_name}").write_text(content + "\n")
+        # Single project → also write .env for convenience
+        if len(projects) == 1 and projects[0].get("envVars"):
+            env_vars = projects[0]["envVars"]
+            content = "\n".join(f"{k}={v}" for k, v in sorted(env_vars.items()))
+            (workspace / ".env").write_text(content + "\n")
+
+    # Connection string templates per component type (for documentation)
+    _CONNECTION_STRINGS: dict[str, list[tuple[str, str]]] = {
+        "POSTGRESQL": [
+            ("JDBC", "jdbc:postgresql://{host}:5432/jervis"),
+            ("URI", "postgresql://postgres:jervis@{host}:5432/jervis"),
+        ],
+        "MONGODB": [
+            ("URI", "mongodb://{host}:27017/jervis"),
+        ],
+        "REDIS": [
+            ("URI", "redis://{host}:6379/0"),
+        ],
+        "RABBITMQ": [
+            ("AMQP", "amqp://guest:guest@{host}:5672/"),
+            ("Management", "http://{host}:15672"),
+        ],
+        "KAFKA": [
+            ("Bootstrap", "{host}:9092"),
+        ],
+        "ELASTICSEARCH": [
+            ("HTTP", "http://{host}:9200"),
+        ],
+        "ORACLE": [
+            ("JDBC", "jdbc:oracle:thin:@{host}:1521/FREEPDB1"),
+        ],
+        "MYSQL": [
+            ("JDBC", "jdbc:mysql://{host}:3306/jervis"),
+            ("URI", "mysql://root:jervis@{host}:3306/jervis"),
+        ],
+        "MINIO": [
+            ("S3 API", "http://{host}:9000"),
+            ("Console", "http://{host}:9001"),
+        ],
+    }
+
+    _DEFAULT_CREDENTIALS: dict[str, str] = {
+        "POSTGRESQL": "user=postgres, password=jervis",
+        "MONGODB": "no auth (dev mode)",
+        "REDIS": "no auth (dev mode)",
+        "RABBITMQ": "user=guest, password=guest",
+        "ORACLE": "user=system, password=jervis",
+        "MYSQL": "user=root, password=jervis",
+        "MINIO": "access_key=jervis, secret_key=jervis123",
+    }
+
+    @staticmethod
     def _render_environment_md(env: dict) -> str:
         """Render environment context as markdown for agents."""
         ns = env.get("namespace", "unknown")
@@ -255,6 +329,30 @@ class WorkspaceManager:
                 lines.append(f"- **{c['name']}** ({c['type']}): `{host}` [{port_str}]")
             lines.append("")
 
+            # Connection strings for infra components
+            conn_lines = []
+            cred_lines = []
+            for c in sorted(infra, key=lambda x: x.get("startOrder", 0)):
+                ctype = c.get("type", "")
+                host = c.get("host", "")
+                templates = WorkspaceManager._CONNECTION_STRINGS.get(ctype, [])
+                if templates:
+                    for label, tmpl in templates:
+                        conn_lines.append(f"- **{c['name']}** ({label}): `{tmpl.format(host=host)}`")
+                creds = WorkspaceManager._DEFAULT_CREDENTIALS.get(ctype)
+                if creds:
+                    cred_lines.append(f"- **{c['name']}** ({ctype}): {creds}")
+
+            if conn_lines:
+                lines.append("### Connection Strings")
+                lines.extend(conn_lines)
+                lines.append("")
+
+            if cred_lines:
+                lines.append("### Default Credentials (DEV only)")
+                lines.extend(cred_lines)
+                lines.append("")
+
         if projects:
             lines.append("### Projects (your responsibility to build/start for testing)")
             for c in sorted(projects, key=lambda x: x.get("startOrder", 0)):
@@ -271,9 +369,20 @@ class WorkspaceManager:
                     lines.append(f"   - Dockerfile: `{dockerfile}`")
                 # Connection ENV vars
                 if env_vars:
-                    for k, v in env_vars.items():
+                    for k, v in sorted(env_vars.items()):
                         lines.append(f"   - `{k}={v}`")
             lines.append("")
+
+            # How to run
+            lines.extend([
+                "### How to Run",
+                "1. Install dependencies (`npm install` / `pip install -r requirements.txt` / `./gradlew build`)",
+                "2. Load environment variables: `source .env` or use dotenv library",
+                "3. Start the application (`npm start` / `python main.py` / `./gradlew bootRun`)",
+                "4. Infrastructure services are accessible via K8s DNS (see connection strings above)",
+                "5. Do NOT try to build Docker images — run the project directly",
+                "",
+            ])
 
         agent_instructions = env.get("agentInstructions")
         if agent_instructions:
@@ -394,6 +503,11 @@ class WorkspaceManager:
             p = workspace / cleanup_file
             if p.exists():
                 p.unlink()
+
+        # Remove generated .env files
+        for env_file in workspace.glob(".env*"):
+            if env_file.is_file():
+                env_file.unlink()
 
         claude_dir = workspace / ".claude"
         if claude_dir.exists():

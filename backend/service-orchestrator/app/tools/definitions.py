@@ -1432,6 +1432,66 @@ TOOL_ENVIRONMENT_CLONE: dict = {
     },
 }
 
+TOOL_ENVIRONMENT_ADD_MAPPING: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_add_property_mapping",
+        "description": (
+            "Add an environment variable mapping from an infrastructure component to a project. "
+            "Maps an ENV var to a value derived from infra (host, port, credentials). "
+            "Use template placeholders: {host}, {port}, {name}, {env:VAR_NAME}."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+                "project_component": {
+                    "type": "string",
+                    "description": "ID of the project component receiving the env var.",
+                },
+                "property_name": {
+                    "type": "string",
+                    "description": "ENV var name (e.g., DATABASE_URL, SPRING_DATASOURCE_URL).",
+                },
+                "target_component": {
+                    "type": "string",
+                    "description": "ID of the infrastructure component (source of connection info).",
+                },
+                "value_template": {
+                    "type": "string",
+                    "description": "Value template with placeholders ({host}, {port}, {env:VAR_NAME}).",
+                },
+            },
+            "required": ["environment_id", "project_component", "property_name", "target_component", "value_template"],
+        },
+    },
+}
+
+TOOL_ENVIRONMENT_AUTO_SUGGEST_MAPPINGS: dict = {
+    "type": "function",
+    "function": {
+        "name": "environment_auto_suggest_mappings",
+        "description": (
+            "Auto-generate property mappings for all PROJECT x INFRA component pairs. "
+            "Uses predefined templates (JDBC URLs, Redis URIs, etc.). "
+            "Skips existing mappings. Run after adding all components."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "type": "string",
+                    "description": "The environment ID.",
+                },
+            },
+            "required": ["environment_id"],
+        },
+    },
+}
+
 TOOL_ENVIRONMENT_KEEP_RUNNING: dict = {
     "type": "function",
     "function": {
@@ -1462,6 +1522,8 @@ ENVIRONMENT_TOOLS: list[dict] = [
     TOOL_ENVIRONMENT_CLONE,
     TOOL_ENVIRONMENT_ADD_COMPONENT,
     TOOL_ENVIRONMENT_CONFIGURE,
+    TOOL_ENVIRONMENT_ADD_MAPPING,
+    TOOL_ENVIRONMENT_AUTO_SUGGEST_MAPPINGS,
     TOOL_ENVIRONMENT_DEPLOY,
     TOOL_ENVIRONMENT_STOP,
     TOOL_ENVIRONMENT_STATUS,

@@ -188,7 +188,7 @@ async def intake(state: dict) -> dict:
     environment = state.get("environment")
     env_summary = ""
     if environment:
-        env_summary = f"Environment: {json.dumps(environment, default=str)[:500]}"
+        env_summary = f"Environment: {json.dumps(environment, default=str)[:4000]}"
 
     # 4. Detect cloud prompt
     allow_cloud_prompt = detect_cloud_prompt(query)

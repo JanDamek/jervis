@@ -104,7 +104,7 @@ def _build_respond_context(state: dict) -> str:
 
     env_data = state.get("environment")
     if env_data:
-        parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:500]}")
+        parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:4000]}")
 
     return "\n\n".join(parts)
 

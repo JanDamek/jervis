@@ -55,7 +55,7 @@ async def decompose(state: dict) -> dict:
 
     env_data = state.get("environment")
     if env_data:
-        context_parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:500]}")
+        context_parts.append(f"## Environment\n{json.dumps(env_data, default=str)[:4000]}")
 
     # Evidence pack context
     evidence = state.get("evidence_pack", {})
