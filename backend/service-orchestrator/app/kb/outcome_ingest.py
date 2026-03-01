@@ -102,7 +102,7 @@ Rules:
 async def extract_outcome(state: dict) -> dict | None:
     """Use LLM to extract structured knowledge from completed task.
 
-    Calls LLM with LOCAL_FAST tier (short prompt, short output).
+    Calls LLM with LOCAL_COMPACT tier (short prompt, short output).
     Returns parsed dict or None on failure.
     """
     from app.graph.nodes._helpers import llm_with_cloud_fallback

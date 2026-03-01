@@ -33,7 +33,7 @@ async def detect_topics(
 ) -> list[dict]:
     """Detect topics from user message and assistant response.
 
-    Uses lightweight LLM call (LOCAL_FAST) to extract 1-3 topic labels.
+    Uses lightweight LLM call (LOCAL_COMPACT) to extract 1-3 topic labels.
     Falls back to tool-domain heuristic if LLM fails.
 
     Returns:
@@ -81,7 +81,7 @@ async def _llm_detect_topics(
             {"role": "system", "content": "Extract conversation topics. Respond with JSON array only."},
             {"role": "user", "content": prompt},
         ],
-        tier=ModelTier.LOCAL_FAST,
+        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=256,
         temperature=0.1,
         timeout=5.0,

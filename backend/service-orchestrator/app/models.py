@@ -26,15 +26,12 @@ class Complexity(str, Enum):
 class ModelTier(str, Enum):
     """LLM tier hierarchy.
 
-    Local tiers (Ollama) — default, free, always used when sufficient.
+    Local tiers (Ollama) — fixed num_ctx, no dynamic tier selection.
     Cloud tiers — only when cloud providers explicitly enabled in project rules.
     """
 
-    LOCAL_FAST = "local_fast"           # Ollama, 8k ctx — decompose, simple plan
-    LOCAL_STANDARD = "local_standard"   # Ollama, 32k ctx — standard tasks
-    LOCAL_LARGE = "local_large"         # Ollama, 48k ctx — GPU VRAM limit (fast)
-    LOCAL_XLARGE = "local_xlarge"       # Ollama, 128k ctx — CPU RAM (slower but works)
-    LOCAL_XXLARGE = "local_xxlarge"     # Ollama, 256k ctx — qwen3 max context
+    LOCAL_STANDARD = "local_standard"   # Ollama, 48k ctx — default for all local calls
+    LOCAL_COMPACT = "local_compact"     # Ollama, 32k ctx — GPU2 (30b + embedding coexist)
     CLOUD_REASONING = "cloud_reasoning"     # Anthropic — critical architecture/design
     CLOUD_CODING = "cloud_coding"           # Anthropic — critical code changes
     CLOUD_PREMIUM = "cloud_premium"         # Anthropic Opus — last resort, critical
@@ -91,7 +88,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
-    auto_use_openrouter: bool = False
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
     # Git commit config (from client/project settings)
     git_author_name: str | None = None
     git_author_email: str | None = None

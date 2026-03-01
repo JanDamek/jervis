@@ -643,39 +643,39 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ---
 
-## Smart Model Selector
+## GPU Model Routing
 
 ### Overview
 
-SmartModelSelector is a Spring service that dynamically selects optimal Ollama LLM models based on input content length. It prevents context truncation for large documents while avoiding RAM/VRAM waste on small tasks.
+GPU routing uses **fixed `num_ctx`** per GPU to prevent costly model reloads when context size changes between requests. The Python orchestrator routes requests to local GPU or OpenRouter cloud models based on GPU availability and project-level `maxOpenRouterTier` setting.
 
-### Problem Statement
+### Fixed GPU Configuration
 
-#### Before SmartModelSelector:
-- **Hardcoded models**: All tasks use same model (e.g., `qwen3-coder:30b` with 128k context)
-- **Small tasks** (1k tokens): Waste RAM/VRAM allocating 128k context
-- **Large tasks** (100k tokens): Get truncated at 128k limit
+| GPU | Model | num_ctx | Role |
+|-----|-------|---------|------|
+| GPU1 (P40) | `qwen3-coder-tool:30b` | 48,000 | Primary — all local tasks |
+| GPU2 (P40) | `qwen3-coder-tool:30b` | 32,000 | Secondary (shares with embedding 8b) |
 
-#### After SmartModelSelector:
-- **Dynamic selection**: Automatically chooses optimal tier based on content length
-- **Efficient resource usage**: Small tasks use small context (4k-16k)
-- **No truncation**: Large tasks get appropriate context (64k-256k)
+### Routing Logic (`select_route()`)
 
-### Model Naming Convention
+The Python orchestrator estimates total tokens (messages + tools + output) and routes:
 
-All models on Ollama server follow this pattern:
-```
-qwen3-coder-tool-{SIZE}k:30b
-```
+1. **Context fits locally (≤48k)**: Use local GPU if available, else OpenRouter fallback per `maxOpenRouterTier`
+2. **Context exceeds 48k**: Route to LARGE_CONTEXT queue (Gemini 2.5 Pro 1M, Sonnet 200k)
+3. **maxOpenRouterTier = NONE**: Always wait for local GPU (no cloud fallback)
 
-### Model Selection Logic
+### OpenRouter Tiered Fallback
 
-| Content Length | Model | Context | Use Case |
-|----------------|-------|---------|----------|
-| 0-4,000 tokens | qwen3-coder-tool-4k:30b | 4k | Small tasks, quick queries |
-| 4,001-16,000 tokens | qwen3-coder-tool-16k:30b | 16k | Medium tasks, documents |
-| 16,001-64,000 tokens | qwen3-coder-tool-64k:30b | 64k | Large documents, codebases |
-| 64,001+ tokens | qwen3-coder-tool-256k:30b | 256k | Very large documents |
+Per-project `maxOpenRouterTier` (NONE / FREE / PAID_LOW / PAID_HIGH) controls cloud access:
+
+| Tier | Queues Accessible | Models |
+|------|-------------------|--------|
+| NONE | — | Local GPU only |
+| FREE | FREE | Free models (qwen3-30b:free) |
+| PAID_LOW | FREE, PAID_LOW | + Haiku, GPT-4o-mini |
+| PAID_HIGH | FREE, PAID_LOW, PAID_HIGH | + Sonnet, o3-mini |
+
+LARGE_CONTEXT queue is auto-selected when estimated tokens > 48k (requires `maxOpenRouterTier >= PAID_LOW`).
 
 ---
 

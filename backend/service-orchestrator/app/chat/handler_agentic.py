@@ -35,7 +35,7 @@ from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import RuntimeContext
 from app.chat.tools import TOOL_DOMAINS
 from app.config import settings, estimate_tokens
-from app.llm.provider import clamp_tier, llm_provider
+from app.llm.provider import llm_provider
 from app.models import ModelTier
 from app.tools.executor import ApprovalRequiredInterrupt
 
@@ -59,13 +59,11 @@ def resolve_pending_approval(session_id: str, approved: bool, always: bool = Fal
         logger.warning("No pending approval for session %s", session_id)
 
 
-def estimate_and_select_tier(messages: list[dict], tools: list[dict]) -> tuple[int, ModelTier]:
-    """Estimate token count and select appropriate tier."""
+def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
+    """Estimate total token count for routing decisions."""
     message_tokens = sum(estimate_tokens(str(m)) for m in messages)
     tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
-    estimated = message_tokens + tools_tokens + settings.default_output_tokens
-    tier = llm_provider.escalation.select_local_tier(estimated)
-    return estimated, clamp_tier(tier)
+    return message_tokens + tools_tokens + settings.default_output_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -123,21 +121,18 @@ async def run_agentic_loop(
 
         logger.info("Chat: iteration %d/%d", iteration + 1, effective_max_iterations)
 
-        estimated, tier = estimate_and_select_tier(messages, selected_tools)
+        tier = ModelTier.LOCAL_STANDARD  # Fixed 48k
+        estimated = _estimate_tokens_total(messages, selected_tools)
 
         # Hybrid routing: check GPU availability + OpenRouter policy
-        has_openrouter = getattr(request, "auto_use_openrouter", False)
+        max_tier = getattr(request, "max_openrouter_tier", "NONE")
         route = await select_route(
             estimated_tokens=estimated,
+            max_tier=max_tier,
             priority="CRITICAL",
-            has_openrouter=has_openrouter,
-            use_case="chat",
         )
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s",
                      estimated, tier.value, route.target, route.model or tier.value)
-
-        if iteration == 0 and estimated > settings.gpu_vram_token_boundary and route.target == "local":
-            yield ChatStreamEvent(type="thinking", content="Dlouhá zpráva — zpracování potrvá déle...")
 
         response = await call_llm(messages=messages, tier=tier, tools=selected_tools, route=route)
 
@@ -461,7 +456,7 @@ async def run_agentic_loop(
         "content": "Dosáhl jsi maximálního počtu iterací. Odpověz uživateli s tím co víš. Nevolej žádné tools.",
     })
     try:
-        final_resp = await call_llm(messages=messages, tier=clamp_tier(tier))
+        final_resp = await call_llm(messages=messages, tier=tier)
         final_text = final_resp.choices[0].message.content or "Omlouvám se, vyčerpal jsem limit operací."
 
         # EPIC 14-S1: Fact-check post-processing

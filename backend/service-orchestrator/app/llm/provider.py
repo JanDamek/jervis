@@ -1,19 +1,18 @@
 """LLM provider abstraction using litellm.
 
 Supports local Ollama models and cloud providers (Anthropic, OpenAI, Google).
-Implements EscalationPolicy for local-first tier selection with cloud fallback.
+Fixed num_ctx: GPU1=48k, GPU2=32k — no dynamic tier selection, no model reloads.
 
 Timeout strategy:
 - Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS). As long as
   tokens keep arriving, the call can run indefinitely.
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
-  GPU tiers (≤32k): 300s. GPU-boundary (48k): 600s. CPU-spill (128k+): 900-1200s.
+  Both local tiers: 300s. Cloud tiers: 300s.
 
 Cloud model usage:
 - Always try local Ollama first
 - Cloud only on local failure, with per-provider settings
-- Three cloud providers: Anthropic (reasoning), OpenAI (code editing), Gemini (large context)
-- Cloud ONLY used when explicitly allowed in project rules (auto_use_*)
+- Cloud ONLY used when explicitly allowed in project rules
 
 Hardening:
 - W-21: Rate limiting — asyncio.Semaphore per priority level
@@ -46,32 +45,17 @@ class TokenTimeoutError(Exception):
     pass
 
 
-# Model configuration per tier
+# Model configuration per tier — fixed num_ctx, no dynamic selection
 TIER_CONFIG: dict[ModelTier, dict] = {
-    ModelTier.LOCAL_FAST: {
-        "model": f"ollama/{settings.default_local_model}",
-        "api_base": settings.ollama_url,
-        "num_ctx": 8192,
-    },
     ModelTier.LOCAL_STANDARD: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 32768,
+        "num_ctx": 48000,  # GPU1 — fixed 48k, full VRAM speed (~30 tok/s)
     },
-    ModelTier.LOCAL_LARGE: {
+    ModelTier.LOCAL_COMPACT: {
         "model": f"ollama/{settings.default_local_model}",
         "api_base": settings.ollama_url,
-        "num_ctx": 40960,  # 40k — fits in P40 VRAM (30b weights ~17GB + 40k KV ~4GB < 24GB)
-    },
-    ModelTier.LOCAL_XLARGE: {
-        "model": f"ollama/{settings.default_local_model}",
-        "api_base": settings.ollama_url,
-        "num_ctx": 131072,  # 128k — CPU RAM spill (~7-12 tok/s)
-    },
-    ModelTier.LOCAL_XXLARGE: {
-        "model": f"ollama/{settings.default_local_model}",
-        "api_base": settings.ollama_url,
-        "num_ctx": 262144,  # 256k — qwen3 max
+        "num_ctx": 32000,  # GPU2 — fixed 32k (30b + embedding 8b coexist)
     },
     ModelTier.CLOUD_REASONING: {
         "model": f"anthropic/{settings.default_cloud_model}",
@@ -92,16 +76,10 @@ TIER_CONFIG: dict[ModelTier, dict] = {
 }
 
 # Blocking call timeout per tier (seconds).
-# GPU tiers (≤32k, ~30 tok/s): 300s is plenty.
-# GPU-boundary tier (40k): 600s — safety margin if KV cache approaches VRAM limit.
-# CPU-spill tiers (~7-12 tok/s): need longer — large context = slow generation.
-# Cloud tiers: fast APIs, 300s is fine.
+# Fixed num_ctx = consistent timeouts, no CPU-spill tiers.
 TIER_TIMEOUT_SECONDS: dict[ModelTier, int] = {
-    ModelTier.LOCAL_FAST:           300,   # 8k ctx, GPU
-    ModelTier.LOCAL_STANDARD:       300,   # 32k ctx, GPU
-    ModelTier.LOCAL_LARGE:          600,   # 40k ctx, GPU boundary — safety margin for VRAM limit
-    ModelTier.LOCAL_XLARGE:         900,   # 128k ctx, CPU spill (~7-12 tok/s)
-    ModelTier.LOCAL_XXLARGE:       1200,   # 256k ctx, CPU, slower
+    ModelTier.LOCAL_STANDARD:       300,   # 48k ctx, GPU1
+    ModelTier.LOCAL_COMPACT:        300,   # 32k ctx, GPU2
     ModelTier.CLOUD_REASONING:     300,
     ModelTier.CLOUD_CODING:        300,
     ModelTier.CLOUD_PREMIUM:       300,
@@ -218,106 +196,6 @@ def _trim_messages_for_context(
     return trimmed
 
 
-# Tier ordering for clamping (local < cloud)
-TIER_ORDER = [
-    ModelTier.LOCAL_FAST, ModelTier.LOCAL_STANDARD, ModelTier.LOCAL_LARGE,
-    ModelTier.LOCAL_XLARGE, ModelTier.LOCAL_XXLARGE,
-    ModelTier.CLOUD_OPENROUTER, ModelTier.CLOUD_REASONING, ModelTier.CLOUD_CODING,
-    ModelTier.CLOUD_PREMIUM, ModelTier.CLOUD_LARGE_CONTEXT,
-]
-_TIER_INDEX = {t: i for i, t in enumerate(TIER_ORDER)}
-
-
-def clamp_tier(tier: ModelTier, max_tier: ModelTier = ModelTier.LOCAL_LARGE) -> ModelTier:
-    """Clamp tier to max_tier to prevent GPU VRAM overflow in foreground chat."""
-    if _TIER_INDEX.get(tier, 0) > _TIER_INDEX.get(max_tier, 2):
-        return max_tier
-    return tier
-
-
-class EscalationPolicy:
-    """Local-first model selection. Cloud only via explicit policy check."""
-
-    def select_local_tier(self, context_tokens: int = 0) -> ModelTier:
-        """Always returns a local tier based on context size.
-
-        Qwen3 supports up to 256k context. P40 GPU VRAM fits ~40k tokens
-        for 30b model (~17GB weights + ~4GB KV cache < 24GB VRAM).
-        Above that spills to CPU RAM, still works at reduced speed (~7-12 tok/s).
-        Boundary is configurable via gpu_vram_token_boundary setting.
-        """
-        vram_boundary = settings.gpu_vram_token_boundary
-        if context_tokens > 128_000:
-            return ModelTier.LOCAL_XXLARGE  # 256k — qwen3 max
-        if context_tokens > vram_boundary:
-            return ModelTier.LOCAL_XLARGE   # 128k — CPU RAM spill
-        if context_tokens > 32_000:
-            return ModelTier.LOCAL_LARGE    # 40k — GPU VRAM limit
-        if context_tokens > 8_000:
-            return ModelTier.LOCAL_STANDARD # 32k
-        return ModelTier.LOCAL_FAST         # 8k
-
-    def suggest_cloud_tier(
-        self,
-        context_tokens: int = 0,
-        auto_providers: set[str] | None = None,
-        task_type: str = "general",
-    ) -> ModelTier | None:
-        """Suggest best cloud tier based on enabled providers and task type.
-
-        Returns None if no suitable provider is auto-enabled.
-
-        OpenRouter is unrestricted — it can handle any task type and any
-        context size, so it's the preferred cloud fallback when enabled.
-        """
-        providers = auto_providers or set()
-        has_openrouter = "openrouter" in providers
-
-        # OpenRouter can handle everything — preferred first fallback
-        if has_openrouter:
-            return ModelTier.CLOUD_OPENROUTER
-
-        # Large context → Gemini only
-        if context_tokens > 40_000:
-            return ModelTier.CLOUD_LARGE_CONTEXT if "gemini" in providers else None
-
-        has_anthropic = "anthropic" in providers
-        has_openai = "openai" in providers
-
-        # Both → pick by task type
-        if has_anthropic and has_openai:
-            if task_type in ("architecture", "design_review", "decomposition"):
-                return ModelTier.CLOUD_REASONING   # Anthropic
-            return ModelTier.CLOUD_CODING           # OpenAI
-
-        if has_anthropic:
-            return ModelTier.CLOUD_REASONING
-        if has_openai:
-            return ModelTier.CLOUD_CODING
-
-        return None  # No auto-enabled provider
-
-    def get_available_providers(self) -> set[str]:
-        """Providers with API keys configured (can be used via user approval)."""
-        available = set()
-        if settings.anthropic_api_key:
-            available.add("anthropic")
-        if settings.openai_api_key:
-            available.add("openai")
-        if settings.google_api_key:
-            available.add("gemini")
-        if settings.openrouter_api_key:
-            available.add("openrouter")
-        return available
-
-    def best_available_cloud_tier(
-        self, context_tokens: int = 0, task_type: str = "general",
-    ) -> ModelTier | None:
-        """Best cloud tier from ANY configured provider (for interrupt description)."""
-        return self.suggest_cloud_tier(
-            context_tokens, self.get_available_providers(), task_type,
-        )
-
 class LLMProvider:
     """Unified LLM provider using litellm.
 
@@ -325,9 +203,6 @@ class LLMProvider:
     - Internally streams, collects tokens, returns full response
     - TokenTimeoutError if no token for TOKEN_TIMEOUT_SECONDS
     """
-
-    def __init__(self):
-        self.escalation = EscalationPolicy()
 
     async def completion(
         self,

@@ -25,6 +25,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.openrouter.ModelQueueDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFallbackStrategy
 import com.jervis.dto.openrouter.OpenRouterFiltersDto
@@ -43,6 +46,7 @@ import com.jervis.dto.openrouter.OpenRouterModelEntryDto
 import com.jervis.dto.openrouter.OpenRouterModelUseCase
 import com.jervis.dto.openrouter.OpenRouterSettingsDto
 import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
+import com.jervis.dto.openrouter.QueueModelEntryDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import kotlinx.coroutines.launch
@@ -72,13 +76,19 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     var requireToolSupport by remember { mutableStateOf(false) }
     var requireStreaming by remember { mutableStateOf(true) }
 
-    // Model list
+    // Model list (legacy flat list)
     var models by remember { mutableStateOf<List<OpenRouterModelEntryDto>>(emptyList()) }
+
+    // Model queues (4-tier routing)
+    val queueNames = listOf("FREE", "PAID_LOW", "PAID_HIGH", "LARGE_CONTEXT")
+    var modelQueues by remember { mutableStateOf<Map<String, List<QueueModelEntryDto>>>(emptyMap()) }
+    var selectedQueueTab by remember { mutableStateOf(0) }
 
     // Catalog
     var catalogModels by remember { mutableStateOf<List<OpenRouterCatalogModelDto>>(emptyList()) }
     var loadingCatalog by remember { mutableStateOf(false) }
     var showAddModelDialog by remember { mutableStateOf(false) }
+    var addModelTargetQueue by remember { mutableStateOf("FREE") }
 
     // Connection test
     var testingConnection by remember { mutableStateOf(false) }
@@ -98,6 +108,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
         requireToolSupport = dto.filters.requireToolSupport
         requireStreaming = dto.filters.requireStreaming
         models = dto.models
+        modelQueues = dto.modelQueues.associate { it.name to it.models }
     }
 
     fun loadSettings() {
@@ -294,54 +305,86 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                         }
                     }
 
-                    // --- Model Priority List ---
-                    JSection(title = "Prioritní seznam modelů") {
+                    // --- Model Queues (4-tier routing) ---
+                    JSection(title = "Fronty modelů") {
                         Column(verticalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap)) {
                             Text(
-                                "Seřazený seznam modelů dostupných pro routing. " +
-                                    "Pořadí určuje prioritu – model na pozici 1 se použije jako první. " +
-                                    "Orchestrátor, chat i KB vybírají model z tohoto seznamu podle typu úlohy.",
+                                "4 fronty pro tiered routing. Při busy GPU se vybírá fronta dle nastavení projektu " +
+                                    "(maxOpenRouterTier). Pořadí modelů v každé frontě určuje prioritu.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            val queueLabels = listOf("Free", "Paid Low", "Paid High", "Large Context")
+
+                            TabRow(
+                                selectedTabIndex = selectedQueueTab,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ) {
+                                queueLabels.forEachIndexed { index, label ->
+                                    Tab(
+                                        selected = selectedQueueTab == index,
+                                        onClick = { selectedQueueTab = index },
+                                        text = { Text(label) },
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(4.dp))
+
+                            val currentQueueName = queueNames[selectedQueueTab]
+                            val currentModels = modelQueues[currentQueueName] ?: emptyList()
+
+                            Text(
+                                when (currentQueueName) {
+                                    "FREE" -> "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru."
+                                    "PAID_LOW" -> "Standardní placené modely (Haiku, GPT-4o-mini). Vyžaduje maxOpenRouterTier >= PAID_LOW."
+                                    "PAID_HIGH" -> "Thinking/reasoning modely (Sonnet, o3-mini). Vyžaduje maxOpenRouterTier >= PAID_HIGH."
+                                    "LARGE_CONTEXT" -> "Pro kontext >48k tokenů. Gemini 2.5 Pro (1M), Sonnet (200k)."
+                                    else -> ""
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
 
                             Spacer(Modifier.height(4.dp))
 
-                            if (models.isEmpty()) {
+                            if (currentModels.isEmpty()) {
                                 JEmptyState(
-                                    message = "Žádné modely v seznamu. Přidejte modely z katalogu OpenRouter.",
+                                    message = "Žádné modely v této frontě.",
                                     icon = "🤖",
                                 )
                             } else {
-                                models.forEachIndexed { index, model ->
-                                    ModelEntryCard(
-                                        model = model,
+                                currentModels.forEachIndexed { index, entry ->
+                                    QueueModelCard(
+                                        entry = entry,
                                         index = index,
                                         isFirst = index == 0,
-                                        isLast = index == models.lastIndex,
+                                        isLast = index == currentModels.lastIndex,
                                         onMoveUp = {
                                             if (index > 0) {
-                                                val list = models.toMutableList()
+                                                val list = currentModels.toMutableList()
                                                 val item = list.removeAt(index)
                                                 list.add(index - 1, item)
-                                                models = list
+                                                modelQueues = modelQueues + (currentQueueName to list)
                                             }
                                         },
                                         onMoveDown = {
-                                            if (index < models.lastIndex) {
-                                                val list = models.toMutableList()
+                                            if (index < currentModels.lastIndex) {
+                                                val list = currentModels.toMutableList()
                                                 val item = list.removeAt(index)
                                                 list.add(index + 1, item)
-                                                models = list
+                                                modelQueues = modelQueues + (currentQueueName to list)
                                             }
                                         },
                                         onToggle = {
-                                            models = models.toMutableList().also { list ->
-                                                list[index] = model.copy(enabled = !model.enabled)
-                                            }
+                                            val list = currentModels.toMutableList()
+                                            list[index] = entry.copy(enabled = !entry.enabled)
+                                            modelQueues = modelQueues + (currentQueueName to list)
                                         },
                                         onRemove = {
-                                            models = models.filterIndexed { i, _ -> i != index }
+                                            modelQueues = modelQueues + (currentQueueName to currentModels.filterIndexed { i, _ -> i != index })
                                         },
                                     )
                                 }
@@ -354,7 +397,6 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                     scope.launch {
                                         loadingCatalog = true
                                         try {
-                                            // Save current filters before fetching
                                             repository.openRouterSettings.updateSettings(
                                                 OpenRouterSettingsUpdateDto(
                                                     apiKey = apiKey,
@@ -370,6 +412,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                                 ),
                                             )
                                             catalogModels = repository.openRouterSettings.fetchCatalogModels()
+                                            addModelTargetQueue = currentQueueName
                                             showAddModelDialog = true
                                         } catch (e: Exception) {
                                             snackbarHostState.showSnackbar("Chyba načítání katalogu: ${e.message}")
@@ -389,7 +432,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                 }
                                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text(if (loadingCatalog) "Načítám katalog..." else "Přidat model z katalogu")
+                                Text(if (loadingCatalog) "Načítám katalog..." else "Přidat model do fronty")
                             }
                         }
                     }
@@ -415,6 +458,12 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                             models = models,
                                             monthlyBudgetUsd = monthlyBudgetUsd.toDoubleOrNull() ?: 0.0,
                                             fallbackStrategy = fallbackStrategy,
+                                            modelQueues = queueNames.map { name ->
+                                                ModelQueueDto(
+                                                    name = name,
+                                                    models = modelQueues[name] ?: emptyList(),
+                                                )
+                                            },
                                         ),
                                     )
                                     applySettings(updated)
@@ -439,21 +488,100 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
 
     // Add Model from Catalog Dialog
     if (showAddModelDialog) {
+        val targetQueue = addModelTargetQueue
+        val existingInQueue = (modelQueues[targetQueue] ?: emptyList()).map { it.modelId }.toSet()
         AddModelFromCatalogDialog(
             catalogModels = catalogModels,
-            existingModelIds = models.map { it.modelId }.toSet(),
+            existingModelIds = existingInQueue,
             onAdd = { catalogModel ->
-                models = models + OpenRouterModelEntryDto(
+                val currentList = modelQueues[targetQueue] ?: emptyList()
+                modelQueues = modelQueues + (targetQueue to currentList + QueueModelEntryDto(
                     modelId = catalogModel.id,
-                    displayName = catalogModel.name,
-                    enabled = true,
+                    isLocal = false,
                     maxContextTokens = catalogModel.contextLength,
-                    inputPricePerMillion = catalogModel.inputPricePerMillion,
-                    outputPricePerMillion = catalogModel.outputPricePerMillion,
-                )
+                    enabled = true,
+                    label = catalogModel.name,
+                ))
             },
             onDismiss = { showAddModelDialog = false },
         )
+    }
+}
+
+@Composable
+private fun QueueModelCard(
+    entry: QueueModelEntryDto,
+    index: Int,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onToggle: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    JCard {
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = JervisSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "${index + 1}.",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (entry.enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    entry.label.ifEmpty { entry.modelId },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (entry.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                Text(
+                    buildString {
+                        append(entry.modelId)
+                        if (entry.isLocal) append(" (lokální GPU)")
+                        if (entry.maxContextTokens > 0) {
+                            append(" · ${entry.maxContextTokens / 1000}k ctx")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            JIconButton(
+                onClick = onMoveUp,
+                icon = Icons.Default.ArrowUpward,
+                contentDescription = "Posunout nahoru",
+                enabled = !isFirst,
+            )
+            JIconButton(
+                onClick = onMoveDown,
+                icon = Icons.Default.ArrowDownward,
+                contentDescription = "Posunout dolů",
+                enabled = !isLast,
+            )
+            JIconButton(
+                onClick = onToggle,
+                icon = if (entry.enabled) Icons.Default.Check else Icons.Default.Close,
+                contentDescription = if (entry.enabled) "Deaktivovat" else "Aktivovat",
+            )
+            JRemoveIconButton(
+                onConfirmed = onRemove,
+                title = "Odebrat model?",
+                message = "Model \"${entry.label.ifEmpty { entry.modelId }}\" bude odebrán z fronty.",
+            )
+        }
     }
 }
 

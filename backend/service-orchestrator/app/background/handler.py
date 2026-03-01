@@ -22,12 +22,12 @@ import logging
 import time
 import uuid
 
-from app.background.escalation import EscalationTracker, needs_escalation
+from app.background.escalation import needs_escalation
 from app.background.tools import ALL_BACKGROUND_TOOLS
 from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
 from app.graph.nodes._helpers import detect_tool_loop
-from app.llm.provider import llm_provider, TIER_CONFIG, EscalationPolicy, clamp_tier
+from app.llm.provider import llm_provider
 from app.llm.openrouter_resolver import select_route
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
@@ -36,57 +36,12 @@ from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
 
-_escalation_policy = EscalationPolicy()
 
-_MAX_ESCALATION_RETRIES = 3  # max times to retry with escalated model
-
-# Background tasks can use higher tiers than chat (no VRAM contention with streaming)
-_BG_MAX_TIER = ModelTier.LOCAL_XLARGE
-
-
-def _estimate_and_select_tier(
-    messages: list[dict], tools: list[dict],
-) -> tuple[int, ModelTier]:
-    """Estimate token count and select appropriate local tier for background.
-
-    Same pattern as chat handler_agentic.estimate_and_select_tier but
-    allows up to LOCAL_XLARGE (128k) since background tasks don't compete
-    with streaming for GPU VRAM.
-    """
+def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
+    """Estimate total token count for routing decisions."""
     message_tokens = sum(estimate_tokens(str(m)) for m in messages)
     tools_tokens = sum(estimate_tokens(str(t)) for t in tools)
-    output_tokens = settings.default_output_tokens
-    estimated = message_tokens + tools_tokens + output_tokens
-    tier = _escalation_policy.select_local_tier(estimated)
-    # Clamp to BG max tier
-    tier = clamp_tier(tier, max_tier=_BG_MAX_TIER)
-    return estimated, tier
-
-
-def _detect_context_overflow(response) -> bool:
-    """Detect if Ollama returned a context overflow error as text.
-
-    When num_ctx is exceeded, Ollama returns "Operation not allowed" as
-    generated text (not as an exception). This function detects that pattern.
-    """
-    try:
-        choice = response.choices[0]
-        content = choice.message.content or ""
-        # Check for known overflow patterns
-        if "operation not allowed" in content.lower():
-            # Verify via prompt_tokens if available
-            usage = getattr(response, "usage", None)
-            if usage:
-                prompt_tokens = getattr(usage, "prompt_tokens", 0)
-                if prompt_tokens > 0:
-                    logger.warning(
-                        "CONTEXT_OVERFLOW detected: prompt_tokens=%d, content contains 'Operation not allowed'",
-                        prompt_tokens,
-                    )
-            return True
-    except (AttributeError, IndexError):
-        pass
-    return False
+    return message_tokens + tools_tokens + settings.default_output_tokens
 
 
 async def handle_background(request: OrchestrateRequest) -> dict:
@@ -141,23 +96,17 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
     messages.append({"role": "user", "content": request.query})
 
-    # --- Dynamic tier selection based on initial context size ---
-    initial_estimated, initial_tier = _estimate_and_select_tier(messages, ALL_BACKGROUND_TOOLS)
+    # --- Fixed tier — no dynamic selection ---
+    tier = ModelTier.LOCAL_STANDARD  # Fixed 48k
+    initial_estimated = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
     logger.info(
-        "Background: initial context estimate=%d tokens → tier=%s",
-        initial_estimated, initial_tier.value,
+        "Background: initial context estimate=%d tokens, tier=%s (fixed)",
+        initial_estimated, tier.value,
     )
 
-    cloud_allowed = any([
-        rules.auto_use_anthropic,
-        rules.auto_use_openai,
-        rules.auto_use_gemini,
-        rules.auto_use_openrouter,
-    ])
-    tracker = EscalationTracker(
-        start_tier=initial_tier,
-        cloud_allowed=cloud_allowed,
-    )
+    max_openrouter_tier = rules.max_openrouter_tier if rules else "NONE"
+    # Track escalation history for logging
+    escalation_history = [tier.value]
 
     # --- EPIC 2-S4: Planning phase ---
     plan = None
@@ -207,30 +156,17 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         iteration += 1
         logger.info(
             "Background: iteration %d/%d | tier=%s",
-            iteration, settings.background_max_iterations, tracker.current_tier.value,
+            iteration, settings.background_max_iterations, tier.value,
         )
 
-        # Re-estimate context size and escalate tier if needed
-        estimated_tokens, estimated_tier = _estimate_and_select_tier(messages, ALL_BACKGROUND_TOOLS)
-        tier = tracker.current_tier
-        tier_config = TIER_CONFIG.get(tier, {})
-        current_num_ctx = tier_config.get("num_ctx", 8192)
-        if estimated_tokens > current_num_ctx * 0.85:
-            logger.info(
-                "Background: context grew (%d tokens > %.0f%% of %d), escalating tier",
-                estimated_tokens, 85, current_num_ctx,
-            )
-            if tracker.escalate():
-                tier = tracker.current_tier
-                tier_config = TIER_CONFIG.get(tier, {})
+        # Re-estimate context for routing decision
+        estimated_tokens = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
 
-        # Hybrid routing: for NORMAL priority, prefer free tier when GPU busy
-        has_openrouter = rules.auto_use_openrouter if rules else False
+        # Hybrid routing: check GPU availability + OpenRouter policy
         bg_route = await select_route(
             estimated_tokens=estimated_tokens,
+            max_tier=max_openrouter_tier,
             priority="NORMAL",
-            has_openrouter=has_openrouter,
-            use_case="orchestrator",
         )
         effective_tier = tier
         extra_headers = None
@@ -258,20 +194,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 final_answer = "Background task aborted: preempted by foreground chat."
                 break
             logger.warning("LLM call failed: %s (tier=%s)", e, tier.value)
-            if tracker.escalate():
-                continue
             final_answer = f"Background task failed: {e}"
-            break
-
-        # Detect context overflow (Ollama returns error as text, not exception)
-        if _detect_context_overflow(response):
-            logger.warning(
-                "Background: context overflow detected (tier=%s), escalating",
-                tier.value,
-            )
-            if tracker.escalate():
-                continue
-            final_answer = "Background task failed: LLM context overflow."
             break
 
         choice = response.choices[0]
@@ -283,16 +206,6 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         if not tool_calls:
             # Final answer
             answer = message_obj.content or ""
-
-            # Escalation check
-            if needs_escalation(answer, tool_parse_failures=tool_parse_failures, iteration=iteration):
-                if tracker.escalate():
-                    messages.append({
-                        "role": "system",
-                        "content": "Previous attempt was insufficient. Try again with more detail.",
-                    })
-                    continue
-
             final_answer = answer
             logger.info(
                 "Background: final answer after %d iterations (%d chars)",
@@ -441,7 +354,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 }]
                 conclusion_resp = await llm_provider.completion(
                     messages=conclusion_messages,
-                    tier=tracker.current_tier,
+                    tier=tier,
                     max_tokens=settings.default_output_tokens,
                     temperature=0.2,
                     # No tools parameter → LLM must produce text
@@ -526,7 +439,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                             try:
                                 resp = await llm_provider.completion(
                                     messages=messages,
-                                    tier=tracker.current_tier,
+                                    tier=tier,
                                     max_tokens=settings.default_output_tokens,
                                     temperature=0.2,
                                     tools=ALL_BACKGROUND_TOOLS,
@@ -597,7 +510,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             final_tokens = sum(estimate_tokens(str(m)) for m in final_messages) + settings.default_output_tokens
             final_resp = await llm_provider.completion(
                 messages=final_messages,
-                tier=tracker.current_tier,
+                tier=tier,
                 max_tokens=settings.default_output_tokens,
                 temperature=0.2,
             )
@@ -610,7 +523,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     if failed_steps > 0:
         logger.warning(
             "BACKGROUND_QUALITY | %d/%d steps failed | escalation=%s",
-            failed_steps, len(step_results), tracker.history_str,
+            failed_steps, len(step_results), " → ".join(escalation_history),
         )
 
     # Save result to MongoDB
@@ -631,7 +544,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     logger.info(
         "BACKGROUND_DONE | task_id=%s | success=%s | iterations=%d | tools=%d | "
         "escalation=%s | %.1fs",
-        task_id, success, iteration, total_tool_calls, tracker.history_str, elapsed,
+        task_id, success, iteration, total_tool_calls, " → ".join(escalation_history), elapsed,
     )
 
     # EPIC 9-S4: Log completed action to KB action memory
@@ -655,7 +568,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         "artifacts": [],
         "step_results": step_results,
         "branch": None,
-        "escalation_path": tracker.history_str,
+        "escalation_path": " → ".join(escalation_history),
         "plan": plan,  # EPIC 2: Include plan in result for audit trail
         "review": review_report.__dict__ if review_report else None,  # EPIC 3
     }

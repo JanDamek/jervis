@@ -106,7 +106,7 @@ def auto_providers(rules: ProjectRules) -> set[str]:
         providers.add("openai")
     if rules.auto_use_gemini:
         providers.add("gemini")
-    if rules.auto_use_openrouter:
+    if rules.max_openrouter_tier != "NONE":
         providers.add("openrouter")
     return providers
 

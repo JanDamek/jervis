@@ -32,7 +32,7 @@ data class ProjectDto(
     val autoUseAnthropic: Boolean? = null,
     val autoUseOpenai: Boolean? = null,
     val autoUseGemini: Boolean? = null,
-    val autoUseOpenrouter: Boolean? = null,
+    val maxOpenRouterTier: String? = null,  // "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH" (null = inherit)
     // Workspace status (read-only, mapped from server)
     val workspaceStatus: String? = null,       // READY, CLONING, CLONE_FAILED_AUTH/NETWORK/NOT_FOUND/OTHER, NOT_NEEDED
     val workspaceError: String? = null,        // Last error message if CLONE_FAILED_*

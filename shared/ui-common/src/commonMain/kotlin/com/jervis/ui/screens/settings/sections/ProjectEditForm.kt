@@ -93,13 +93,13 @@ internal fun ProjectEditForm(
     // Cloud model policy override
     var overrideCloudPolicy by remember {
         mutableStateOf(
-            project.autoUseAnthropic != null || project.autoUseOpenai != null || project.autoUseGemini != null || project.autoUseOpenrouter != null,
+            project.autoUseAnthropic != null || project.autoUseOpenai != null || project.autoUseGemini != null || project.maxOpenRouterTier != null,
         )
     }
     var autoUseAnthropic by remember { mutableStateOf(project.autoUseAnthropic ?: false) }
     var autoUseOpenai by remember { mutableStateOf(project.autoUseOpenai ?: false) }
     var autoUseGemini by remember { mutableStateOf(project.autoUseGemini ?: false) }
-    var autoUseOpenrouter by remember { mutableStateOf(project.autoUseOpenrouter ?: false) }
+    var maxOpenRouterTier by remember { mutableStateOf(project.maxOpenRouterTier ?: "NONE") }
 
     val scope = rememberCoroutineScope()
 
@@ -204,7 +204,7 @@ internal fun ProjectEditForm(
                     autoUseAnthropic = if (overrideCloudPolicy) autoUseAnthropic else null,
                     autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
                     autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
-                    autoUseOpenrouter = if (overrideCloudPolicy) autoUseOpenrouter else null,
+                    maxOpenRouterTier = if (overrideCloudPolicy) maxOpenRouterTier else null,
                 ),
             )
         },
@@ -411,7 +411,7 @@ internal fun ProjectEditForm(
                                 autoUseAnthropic = false
                                 autoUseOpenai = false
                                 autoUseGemini = false
-                                autoUseOpenrouter = false
+                                maxOpenRouterTier = "NONE"
                             }
                         },
                     )
@@ -433,10 +433,21 @@ internal fun ProjectEditForm(
                             checked = autoUseGemini,
                             onCheckedChange = { autoUseGemini = it },
                         )
-                        JCheckboxRow(
-                            label = "OpenRouter – směrování přes OpenRouter AI (dle prioritního seznamu)",
-                            checked = autoUseOpenrouter,
-                            onCheckedChange = { autoUseOpenrouter = it },
+                        Spacer(Modifier.height(8.dp))
+                        JDropdown(
+                            items = listOf("NONE", "FREE", "PAID_LOW", "PAID_HIGH"),
+                            selectedItem = maxOpenRouterTier,
+                            onItemSelected = { maxOpenRouterTier = it },
+                            label = "OpenRouter – fallback při busy GPU",
+                            itemLabel = { tier ->
+                                when (tier) {
+                                    "NONE" -> "Vypnuto"
+                                    "FREE" -> "Pouze free modely"
+                                    "PAID_LOW" -> "Placené (standard)"
+                                    "PAID_HIGH" -> "Placené (thinking/reasoning)"
+                                    else -> tier
+                                }
+                            },
                         )
                     }
                 }

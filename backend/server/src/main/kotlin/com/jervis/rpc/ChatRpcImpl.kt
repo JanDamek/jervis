@@ -134,7 +134,7 @@ class ChatRpcImpl(
                         projectRepository.getById(ProjectId(ObjectId(pid)))
                     }
                 } catch (_: Exception) { null }
-                val autoUseOpenrouter = project?.cloudModelPolicy?.autoUseOpenrouter ?: false
+                val maxOpenRouterTier = project?.cloudModelPolicy?.maxOpenRouterTier?.name ?: "NONE"
                 val activeGroupId = project?.groupId?.toString()
 
                 // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow
@@ -145,7 +145,7 @@ class ChatRpcImpl(
                     activeProjectId = activeProjectId,
                     activeGroupId = activeGroupId,
                     contextTaskId = contextTaskId,
-                    autoUseOpenrouter = autoUseOpenrouter,
+                    maxOpenRouterTier = maxOpenRouterTier,
                 )
 
                 // Emit user message AFTER DB save (persistence-first) for reliable reconnect

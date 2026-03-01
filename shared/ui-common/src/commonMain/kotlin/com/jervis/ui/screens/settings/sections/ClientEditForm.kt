@@ -70,7 +70,7 @@ internal fun ClientEditForm(
     var autoUseAnthropic by remember { mutableStateOf(client.autoUseAnthropic) }
     var autoUseOpenai by remember { mutableStateOf(client.autoUseOpenai) }
     var autoUseGemini by remember { mutableStateOf(client.autoUseGemini) }
-    var autoUseOpenrouter by remember { mutableStateOf(client.autoUseOpenrouter) }
+    var maxOpenRouterTier by remember { mutableStateOf(client.maxOpenRouterTier) }
 
     // Connections
     var selectedConnectionIds by remember { mutableStateOf(client.connectionIds.toMutableSet()) }
@@ -210,7 +210,7 @@ internal fun ClientEditForm(
                     autoUseAnthropic = autoUseAnthropic,
                     autoUseOpenai = autoUseOpenai,
                     autoUseGemini = autoUseGemini,
-                    autoUseOpenrouter = autoUseOpenrouter,
+                    maxOpenRouterTier = maxOpenRouterTier,
                 ),
             )
         },
@@ -444,10 +444,21 @@ internal fun ClientEditForm(
                         checked = autoUseGemini,
                         onCheckedChange = { autoUseGemini = it },
                     )
-                    JCheckboxRow(
-                        label = "OpenRouter – směrování přes OpenRouter AI (dle prioritního seznamu)",
-                        checked = autoUseOpenrouter,
-                        onCheckedChange = { autoUseOpenrouter = it },
+                    Spacer(androidx.compose.ui.Modifier.height(8.dp))
+                    JDropdown(
+                        items = listOf("NONE", "FREE", "PAID_LOW", "PAID_HIGH"),
+                        selectedItem = maxOpenRouterTier,
+                        onItemSelected = { maxOpenRouterTier = it },
+                        label = "OpenRouter – fallback při busy GPU",
+                        itemLabel = { tier ->
+                            when (tier) {
+                                "NONE" -> "Vypnuto"
+                                "FREE" -> "Pouze free modely"
+                                "PAID_LOW" -> "Placené (standard)"
+                                "PAID_HIGH" -> "Placené (thinking/reasoning)"
+                                else -> tier
+                            }
+                        },
                     )
                 }
 

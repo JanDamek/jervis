@@ -276,46 +276,22 @@ class TestParseJsonResponse:
         assert result == {}
 
 
-class TestEscalationPolicy:
-    """Test local-first tier selection."""
+class TestFixedTierConfig:
+    """Test fixed tier configuration (no dynamic selection)."""
 
-    def test_small_context_fast_tier(self):
-        from app.llm.provider import EscalationPolicy
+    def test_tier_config_has_local_standard(self):
+        from app.llm.provider import TIER_CONFIG
         from app.models import ModelTier
-        policy = EscalationPolicy()
-        tier = policy.select_local_tier(1000)
-        assert tier == ModelTier.LOCAL_FAST
+        config = TIER_CONFIG[ModelTier.LOCAL_STANDARD]
+        assert config["num_ctx"] == 48000
 
-    def test_medium_context_standard_tier(self):
-        from app.llm.provider import EscalationPolicy
+    def test_tier_config_has_local_compact(self):
+        from app.llm.provider import TIER_CONFIG
         from app.models import ModelTier
-        policy = EscalationPolicy()
-        tier = policy.select_local_tier(10000)
-        assert tier == ModelTier.LOCAL_STANDARD
+        config = TIER_CONFIG[ModelTier.LOCAL_COMPACT]
+        assert config["num_ctx"] == 32000
 
-    def test_large_context_xlarge_tier(self):
-        from app.llm.provider import EscalationPolicy
+    def test_tier_config_has_cloud_openrouter(self):
+        from app.llm.provider import TIER_CONFIG
         from app.models import ModelTier
-        policy = EscalationPolicy()
-        tier = policy.select_local_tier(60000)
-        assert tier == ModelTier.LOCAL_XLARGE
-
-    def test_huge_context_xxlarge_tier(self):
-        from app.llm.provider import EscalationPolicy
-        from app.models import ModelTier
-        policy = EscalationPolicy()
-        tier = policy.select_local_tier(200000)
-        assert tier == ModelTier.LOCAL_XXLARGE
-
-    def test_cloud_tier_none_without_providers(self):
-        from app.llm.provider import EscalationPolicy
-        policy = EscalationPolicy()
-        tier = policy.suggest_cloud_tier(1000, set())
-        assert tier is None
-
-    def test_cloud_tier_anthropic_when_enabled(self):
-        from app.llm.provider import EscalationPolicy
-        from app.models import ModelTier
-        policy = EscalationPolicy()
-        tier = policy.suggest_cloud_tier(1000, {"anthropic"})
-        assert tier == ModelTier.CLOUD_REASONING
+        assert ModelTier.CLOUD_OPENROUTER in TIER_CONFIG

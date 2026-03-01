@@ -302,7 +302,7 @@ data class ProjectRulesDto(
     @SerialName("auto_use_anthropic") val autoUseAnthropic: Boolean = false,
     @SerialName("auto_use_openai") val autoUseOpenai: Boolean = false,
     @SerialName("auto_use_gemini") val autoUseGemini: Boolean = false,
-    @SerialName("auto_use_openrouter") val autoUseOpenrouter: Boolean = false,
+    @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
     // Git commit config (from client/project settings)
     @SerialName("git_author_name") val gitAuthorName: String? = null,
     @SerialName("git_author_email") val gitAuthorEmail: String? = null,

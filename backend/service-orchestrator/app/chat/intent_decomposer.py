@@ -137,7 +137,7 @@ async def _llm_decompose(
             {"role": "system", "content": "Extract user intents. Respond with JSON array only."},
             {"role": "user", "content": prompt},
         ],
-        tier=ModelTier.LOCAL_FAST,
+        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=512,
         temperature=0.1,
         timeout=8.0,

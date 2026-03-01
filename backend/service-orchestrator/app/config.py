@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     token_budget_depth_3: int = 4000
 
     # Context budgeting (ChatContextAssembler)
-    total_context_window: int = 32_768       # Model context window (Qwen3-30B default)
+    total_context_window: int = 48_000        # Model context window (fixed 48k on GPU1)
     system_prompt_reserve: int = 2_000       # Tokens reserved for system prompt + tools
     response_reserve: int = 4_000            # Tokens reserved for LLM response
     recent_message_count: int = 100          # Max recent verbatim messages to load (budget limits actual inclusion)
@@ -140,7 +140,6 @@ class Settings(BaseSettings):
 
     # LLM token budgets
     default_output_tokens: int = 4096        # Output token reserve for tier estimation
-    gpu_vram_token_boundary: int = 40_000    # P40 VRAM limit for 30b model + KV cache
 
     # Graph node constants (respond, plan, design)
     respond_max_iterations: int = 8          # Max tool iterations in respond node

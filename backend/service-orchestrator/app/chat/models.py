@@ -56,7 +56,7 @@ class ChatRequest(BaseModel):
     timestamp: str | None = None
 
     # Cloud routing policy (from CloudModelPolicy)
-    auto_use_openrouter: bool = False
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
 
 
 class ChatStreamEvent(BaseModel):

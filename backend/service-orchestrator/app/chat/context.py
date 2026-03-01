@@ -566,7 +566,7 @@ class ChatContextAssembler:
             try:
                 response = await llm_provider.completion(
                     messages=llm_messages,
-                    tier=ModelTier.LOCAL_FAST,
+                    tier=ModelTier.LOCAL_COMPACT,
                     max_tokens=2048,
                     temperature=0.1,
                 )

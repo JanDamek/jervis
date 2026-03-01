@@ -353,7 +353,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False        # Cloud model auto-eskalace
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
-    auto_use_openrouter: bool = False      # OpenRouter — unrestricted, routes via priority model list
+    max_openrouter_tier: str = "NONE"     # "NONE"/"FREE"/"PAID_LOW"/"PAID_HIGH" — OpenRouter fallback tier
 ```
 
 ### ChatHistoryPayload
@@ -786,41 +786,70 @@ Tools: `web_search`, `kb_search`, `kb_delete`, `store_knowledge`, `ask_user`, `c
 
 ### 8.1 Tiery modelů
 
+Fixní `num_ctx` na GPU — žádná dynamická selekce. GPU1 = 48k, GPU2 = 32k (s embedding modelem).
+
 | Tier | Model | Context | Kdy |
 |------|-------|---------|-----|
-| `LOCAL_FAST` | `ollama/qwen3-coder-tool:30b` | 8k | Klasifikace, jednoduchý plan |
-| `LOCAL_STANDARD` | `ollama/qwen3-coder-tool:30b` | 32k | Standardní úlohy |
-| `LOCAL_LARGE` | `ollama/qwen3-coder-tool:30b` | 49k | Max lokální kontext |
+| `LOCAL_STANDARD` | `ollama/qwen3-coder-tool:30b` | 48k | Všechny lokální úlohy (default) |
+| `LOCAL_COMPACT` | `ollama/qwen3-coder-tool:30b` | 32k | Pojistka pro GPU2 |
 | `CLOUD_REASONING` | `anthropic/claude-sonnet-4-5` | - | Architektura, design (auto=anthropic) |
 | `CLOUD_CODING` | `openai/gpt-4o` | - | Code editing (auto=openai) |
 | `CLOUD_PREMIUM` | `anthropic/claude-opus-4-6` | - | Kritické úlohy |
 | `CLOUD_LARGE_CONTEXT` | `google/gemini-2.5-pro` | 1M | Ultra-large context (auto=gemini) |
+| `CLOUD_OPENROUTER` | dle fronty | varies | OpenRouter fallback při busy GPU |
 
-### 8.2 Escalation policy
+### 8.2 Routing — `select_route()`
+
+**Soubor**: `app/llm/openrouter_resolver.py`
+
+Nahrazuje dynamickou eskalaci. Rozhoduje local vs cloud dle GPU stavu a `maxOpenRouterTier`:
 
 ```python
-def select_local_tier(context_tokens):
-    if context_tokens > 32_000: return LOCAL_LARGE
-    if context_tokens > 8_000:  return LOCAL_STANDARD
-    return LOCAL_FAST
+async def select_route(
+    estimated_tokens: int,
+    max_tier: str = "NONE",       # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
+    priority: str = "CRITICAL",
+) -> Route:
 ```
 
-### 8.3 Cloud eskalace (`llm_with_cloud_fallback`)
+Logika:
+1. `max_tier == "NONE"` → vždy local (čeká na GPU)
+2. `estimated_tokens > 48k` → LARGE_CONTEXT fronta (pokud `max_tier >= PAID_LOW`)
+3. GPU volná → local (`LOCAL_STANDARD`, 48k)
+4. GPU busy → iteruj fronty dle `max_tier`:
+   - Vždy zkus FREE frontu první
+   - `max_tier >= PAID_LOW` → zkus PAID_LOW
+   - `max_tier >= PAID_HIGH` → zkus PAID_HIGH
+5. Fallback: čekej na local GPU
+
+### 8.3 OpenRouter fronty
+
+4 fronty konfigurované v OpenRouter nastavení:
+
+| Fronta | Modely (default) | Kdy |
+|--------|-------------------|-----|
+| `FREE` | p40 (local), qwen3-30b:free | GPU busy, maxTier >= FREE |
+| `PAID_LOW` | p40 (local), claude-haiku-4, gpt-4o-mini | maxTier >= PAID_LOW |
+| `PAID_HIGH` | p40 (local), claude-sonnet-4, o3-mini | maxTier >= PAID_HIGH |
+| `LARGE_CONTEXT` | gemini-2.5-pro (1M), claude-sonnet-4 (200k) | estimated > 48k, maxTier >= PAID_LOW |
+
+### 8.4 Cloud eskalace (`llm_with_cloud_fallback`)
 
 **Soubor**: `app/graph/nodes/_helpers.py`
 
+Pro LangGraph nody (ne chat/background handler):
 ```
 1. context_tokens > 49_000? → rovnou cloud (pokud auto-enabled)
-2. Pokus o lokální model (select_local_tier)
+2. Pokus o lokální model (LOCAL_STANDARD, 48k)
 3. Lokální selhal → cloud eskalace:
    a. auto_providers neprázdné? → auto-escalate (bez ptaní)
    b. žádný provider auto? → interrupt() (zeptat se usera)
    c. user zamítl? → RuntimeError
 ```
 
-**Auto-providers**: `rules.auto_use_anthropic/openai/gemini/openrouter` + explicitní cloud prompt (keywords)
+**Auto-providers**: `rules.auto_use_anthropic/openai/gemini` + `rules.max_openrouter_tier != "NONE"` → openrouter
 
-### 8.4 Streaming + token-arrival timeout
+### 8.5 Streaming + token-arrival timeout
 
 ```python
 async def _iter_with_timeout(stream):
@@ -830,12 +859,9 @@ async def _iter_with_timeout(stream):
     # raises TokenTimeoutError if no token for 5 min
 ```
 
-- **Streaming** (bez tool calls): per-chunk token-arrival timeout. Pokud tokeny přicházejí → čeká neomezeně. Pokud 5 min bez tokenu → `TokenTimeoutError` → escalate/retry. (This is a read timeout on the LLM stream, separate from task-level stuck detection.)
-- **Blocking** (tool calls — litellm omezení): tier-based timeout via `TIER_TIMEOUT_SECONDS`:
-  - GPU tiery (LOCAL_FAST..LOCAL_LARGE, ≤48k): **300s**
-  - CPU-spill tiery (LOCAL_XLARGE 128k): **900s** (~7-12 tok/s)
-  - CPU-spill tiery (LOCAL_XXLARGE 256k): **1200s**
-  - Cloud tiery: **300s** (rychlé API)
+- **Streaming** (bez tool calls): per-chunk token-arrival timeout. Pokud tokeny přicházejí → čeká neomezeně. Pokud 5 min bez tokenu → `TokenTimeoutError`.
+- **Blocking** (tool calls — litellm omezení): **300s** timeout pro všechny tiery (fixní num_ctx, žádný CPU-spill)
+- Cloud tiery: **300s** (rychlé API)
 
 ---
 

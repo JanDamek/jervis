@@ -50,7 +50,7 @@ async def detect_context_switch(
     parked_affairs: list[Affair],
     confidence_threshold: float = 0.7,
 ) -> ContextSwitchResult:
-    """Classify user message using LOCAL_FAST LLM tier.
+    """Classify user message using LOCAL_COMPACT LLM tier.
 
     Fast paths (no LLM call):
       - No active affair and no parked affairs → NEW_AFFAIR
@@ -58,7 +58,7 @@ async def detect_context_switch(
 
     LLM path:
       - Build prompt with active affair + parked affair titles
-      - Call LOCAL_FAST (max_tokens=256, temperature=0.1)
+      - Call LOCAL_COMPACT (max_tokens=256, temperature=0.1)
       - Parse JSON response
       - Apply confidence threshold
 

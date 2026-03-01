@@ -83,7 +83,7 @@ class PythonChatClient(
         activeProjectId: String? = null,
         activeGroupId: String? = null,
         contextTaskId: String? = null,
-        autoUseOpenrouter: Boolean = false,
+        maxOpenRouterTier: String = "NONE",
     ): Flow<ChatStreamEvent> = flow {
         val apiUrl = "${orchestratorBaseUrl.trimEnd('/')}/chat"
         val request = PythonChatRequest(
@@ -95,7 +95,7 @@ class PythonChatClient(
             activeProjectId = activeProjectId,
             activeGroupId = activeGroupId,
             contextTaskId = contextTaskId,
-            autoUseOpenrouter = autoUseOpenrouter,
+            maxOpenRouterTier = maxOpenRouterTier,
         )
 
         logger.info { "PYTHON_CHAT_START | session=$sessionId | message=${message.take(80)}" }
@@ -250,5 +250,5 @@ private data class PythonChatRequest(
     @SerialName("active_project_id") val activeProjectId: String? = null,
     @SerialName("active_group_id") val activeGroupId: String? = null,
     @SerialName("context_task_id") val contextTaskId: String? = null,
-    @SerialName("auto_use_openrouter") val autoUseOpenrouter: Boolean = false,
+    @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
 )

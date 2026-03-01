@@ -1,7 +1,7 @@
 """Intent Router — two-pass classification for focused agent routing.
 
 Pass 1: Regex fast-path (0ms) — handles 40-60% of messages.
-Pass 2: LLM call on P40 (LOCAL_FAST, ~2-3s) — for ambiguous messages.
+Pass 2: LLM call on P40 (LOCAL_COMPACT, ~2-3s) — for ambiguous messages.
 
 Fallback: RESEARCH on low confidence or LLM failure.
 """
@@ -97,7 +97,7 @@ async def route_intent(
     - Single non-CORE category → map directly.
 
     Pass 2: LLM call for ambiguous cases (multiple regex categories).
-    - LOCAL_FAST tier, 8k context, no tools, ~2-3s.
+    - LOCAL_COMPACT tier, 8k context, no tools, ~2-3s.
     - Fallback to RESEARCH on failure or low confidence.
 
     Args:
@@ -140,7 +140,7 @@ async def _llm_classify(
 ) -> RoutingDecision:
     """LLM-based classification for ambiguous messages.
 
-    Uses LOCAL_FAST tier (P40), 8k context, no tools.
+    Uses LOCAL_COMPACT tier (P40), 8k context, no tools.
     """
     from app.llm.provider import llm_provider
     from app.models import ModelTier
@@ -169,7 +169,7 @@ async def _llm_classify(
 
     response = await llm_provider.completion(
         messages=messages,
-        tier=ModelTier.LOCAL_FAST,
+        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=settings.router_max_tokens,
         temperature=0.0,
         timeout=settings.router_timeout,

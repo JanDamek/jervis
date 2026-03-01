@@ -235,7 +235,7 @@ async def handle_chat(
         if routing and routing.category == ChatCategory.DIRECT:
             logger.info("Chat: DIRECT fast-path via router")
             try:
-                direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_FAST)
+                direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_COMPACT)
                 direct_text = direct_response.choices[0].message.content or ""
                 if direct_text.strip():
                     await save_assistant_message(
@@ -426,7 +426,7 @@ async def _try_greeting_fast_path(
 
     logger.info("Chat: greeting message (%d chars, CORE-only) — trying direct answer", msg_len)
     try:
-        direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_FAST)
+        direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_COMPACT)
         direct_text = direct_response.choices[0].message.content or ""
         direct_lower = direct_text.lower()
         has_tool_markers = any(m in direct_lower for m in _NEEDS_TOOLS_MARKERS)

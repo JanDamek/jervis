@@ -73,7 +73,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - OpenRouter settings: `shared/common-dto/.../openrouter/OpenRouterSettingsDtos.kt`, `shared/common-api/.../IOpenRouterSettingsService.kt`, `backend/server/.../rpc/OpenRouterSettingsRpcImpl.kt`
 - OpenRouter UI: `shared/ui-common/.../screens/settings/sections/OpenRouterSettings.kt`
 - OpenRouter entity: `backend/server/.../entity/OpenRouterSettingsDocument.kt`
-- Cloud model policy: `backend/server/.../entity/CloudModelPolicy.kt` (includes `autoUseOpenrouter`)
+- Cloud model policy: `backend/server/.../entity/CloudModelPolicy.kt` (includes `OpenRouterTier` enum, `maxOpenRouterTier`)
 - Guidelines engine: `shared/common-dto/.../guidelines/GuidelinesDtos.kt`, `backend/server/.../service/guidelines/GuidelinesService.kt`, `backend/service-orchestrator/app/context/guidelines_resolver.py`
 - Indexing settings: `shared/common-dto/.../indexing/IndexingSettingsDtos.kt`, `backend/server/.../rpc/PollingIntervalRpcImpl.kt`
 - Whisper settings: `shared/common-dto/.../whisper/WhisperSettingsDtos.kt`, `backend/server/.../rpc/WhisperSettingsRpcImpl.kt`

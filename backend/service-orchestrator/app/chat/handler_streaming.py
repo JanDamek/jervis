@@ -17,7 +17,7 @@ from app.chat.context import chat_context_assembler
 from app.chat.models import ChatStreamEvent
 from app.config import settings, foreground_headers
 from app.llm.provider import llm_provider, TokenTimeoutError
-from app.llm.openrouter_resolver import Route, select_route, resolve_openrouter_model
+from app.llm.openrouter_resolver import Route, _first_cloud_model
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -64,9 +64,9 @@ async def call_llm(
             return await asyncio.wait_for(coro, timeout=timeout)
         return await coro
     except (TokenTimeoutError, asyncio.TimeoutError):
-        # Timeout fallback: if local GPU timed out and OpenRouter is available, retry there
+        # Timeout fallback: if local GPU timed out, try FREE cloud model
         if route and route.target == "local":
-            fallback_model = await resolve_openrouter_model("chat")
+            fallback_model = await _first_cloud_model("FREE", 48_000)
             if fallback_model:
                 logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback_model)
                 return await llm_provider.completion(

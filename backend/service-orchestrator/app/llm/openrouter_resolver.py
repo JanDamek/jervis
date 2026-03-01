@@ -1,19 +1,24 @@
 """OpenRouter queue-based model resolver + GPU queue status.
 
-Implements named queue routing (FRONTY):
-- Each queue (CHAT, FREE, ORCHESTRATOR, LARGE_CONTEXT, CODING) holds
-  an ordered list of models (local P40 + cloud OpenRouter).
-- Router iterates the queue top-to-bottom, skipping models that can't
-  handle the context or whose local backend is busy.
-- Queues are loaded from Kotlin server's OpenRouter settings (cached).
-- Fallback to hardcoded defaults if settings are unavailable.
+4 named queues:
+- FREE: local GPU + free cloud models (automatic fallback)
+- PAID_LOW: standard paid models (Haiku, GPT-4o-mini)
+- PAID_HIGH: thinking/reasoning models (Sonnet, o3-mini)
+- LARGE_CONTEXT: models with >48k context (Gemini, Sonnet)
+
+Routing logic:
+1. max_tier == "NONE" → always local (wait for GPU)
+2. estimated_tokens > 48k → LARGE_CONTEXT queue (if max_tier >= "PAID_LOW")
+3. GPU free → local (LOCAL_STANDARD, 48k)
+4. GPU busy → iterate queues by max_tier level
+5. Fallback: wait for local GPU
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -21,6 +26,9 @@ from app.config import settings
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
+
+# Tier ordering for comparison
+_TIER_LEVELS = {"NONE": 0, "FREE": 1, "PAID_LOW": 2, "PAID_HIGH": 3}
 
 # ── GPU queue status cache ──────────────────────────────────────────────
 
@@ -92,32 +100,23 @@ async def _fetch_openrouter_settings() -> dict | None:
 # ── Default queues (used when Kotlin settings are not available) ────────
 
 _DEFAULT_QUEUES: dict[str, list[dict]] = {
-    "CHAT": [
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-        {"modelId": "openai/gpt-4o", "isLocal": False, "maxContextTokens": 128_000},
-    ],
     "FREE": [
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
         {"modelId": "qwen/qwen3-30b-a3b:free", "isLocal": False, "maxContextTokens": 32_000},
     ],
-    "ORCHESTRATOR": [
+    "PAID_LOW": [
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "qwen/qwen3-30b-a3b:free", "isLocal": False, "maxContextTokens": 32_000},
         {"modelId": "anthropic/claude-haiku-4", "isLocal": False, "maxContextTokens": 200_000},
+        {"modelId": "openai/gpt-4o-mini", "isLocal": False, "maxContextTokens": 128_000},
+    ],
+    "PAID_HIGH": [
+        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
+        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
+        {"modelId": "openai/o3-mini", "isLocal": False, "maxContextTokens": 200_000},
     ],
     "LARGE_CONTEXT": [
-        {"modelId": "google/gemini-2.5-flash", "isLocal": False, "maxContextTokens": 1_000_000},
+        {"modelId": "google/gemini-2.5-pro", "isLocal": False, "maxContextTokens": 1_000_000},
         {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-    ],
-    "CODING": [
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
-        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-    ],
-    "CHAT_CLOUD": [
-        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
-        {"modelId": "openai/gpt-4o", "isLocal": False, "maxContextTokens": 128_000},
-        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
     ],
 }
 
@@ -131,38 +130,7 @@ async def _get_queue(queue_name: str) -> list[dict]:
                 models = [m for m in q.get("models", []) if m.get("enabled", True)]
                 if models:
                     return models
-    return _DEFAULT_QUEUES.get(queue_name, _DEFAULT_QUEUES["CHAT"])
-
-
-# ── Queue name resolution ──────────────────────────────────────────────
-
-# Maps use_case + priority to queue name
-_QUEUE_MAP: dict[tuple[str, str], str] = {
-    ("chat", "CRITICAL"): "CHAT",
-    ("chat", "NORMAL"): "CHAT",
-    ("coding", "CRITICAL"): "CODING",
-    ("coding", "NORMAL"): "CODING",
-    ("large_context", "CRITICAL"): "LARGE_CONTEXT",
-    ("large_context", "NORMAL"): "LARGE_CONTEXT",
-    ("orchestrator", "CRITICAL"): "ORCHESTRATOR",
-    ("orchestrator", "NORMAL"): "ORCHESTRATOR",
-    ("chat_cloud", "CRITICAL"): "CHAT_CLOUD",
-    ("chat_cloud", "NORMAL"): "CHAT_CLOUD",
-}
-
-
-def _resolve_queue_name(
-    use_case: str,
-    priority: str,
-    estimated_tokens: int,
-) -> str:
-    """Determine which queue to use based on context."""
-    # Large context override
-    if estimated_tokens > 48_000:
-        return "LARGE_CONTEXT"
-    # NORMAL priority with GPU busy can use FREE queue
-    # (checked later in select_route — start with the standard queue)
-    return _QUEUE_MAP.get((use_case, priority), "CHAT")
+    return _DEFAULT_QUEUES.get(queue_name, _DEFAULT_QUEUES["FREE"])
 
 
 # ── Route dataclass ────────────────────────────────────────────────────
@@ -175,122 +143,87 @@ class Route:
     model: str | None = None         # For openrouter target
 
 
-def _select_local_tier(estimated_tokens: int) -> ModelTier:
-    """Select local tier based on context size."""
-    vram_boundary = settings.gpu_vram_token_boundary
-    if estimated_tokens > 128_000:
-        return ModelTier.LOCAL_XXLARGE
-    if estimated_tokens > vram_boundary:
-        return ModelTier.LOCAL_XLARGE
-    if estimated_tokens > 32_000:
-        return ModelTier.LOCAL_LARGE
-    if estimated_tokens > 8_000:
-        return ModelTier.LOCAL_STANDARD
-    return ModelTier.LOCAL_FAST
-
-
 # ── Main routing decision ──────────────────────────────────────────────
 
 async def select_route(
     estimated_tokens: int,
+    max_tier: str = "NONE",
     priority: str = "CRITICAL",
-    has_openrouter: bool = False,
-    use_case: str = "chat",
 ) -> Route:
-    """Queue-based routing decision.
-
-    Iterates the named queue for the given use_case/priority.
-    For each model: if local, checks GPU availability; if cloud, uses it.
-    Falls back to local GPU queue if no cloud model is available.
+    """Queue-based routing decision with tiered OpenRouter fallback.
 
     Args:
         estimated_tokens: Estimated context size in tokens.
+        max_tier: Maximum OpenRouter tier allowed.
+            "NONE" = local only (wait for GPU).
+            "FREE" = free cloud models only.
+            "PAID_LOW" = standard paid models.
+            "PAID_HIGH" = thinking/reasoning models.
         priority: "CRITICAL" (chat) or "NORMAL" (background).
-        has_openrouter: Whether client/project allows OpenRouter.
-        use_case: "chat", "coding", "large_context", "orchestrator".
 
     Returns:
         Route with target ("local" or "openrouter") and model/tier info.
     """
+    tier_level = _TIER_LEVELS.get(max_tier, 0)
+
     # Rule 1: No OpenRouter → always local
-    if not has_openrouter:
-        return Route(target="local", tier=_select_local_tier(estimated_tokens))
+    if tier_level == 0:
+        return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
 
-    # Determine queue name
-    queue_name = _resolve_queue_name(use_case, priority, estimated_tokens)
-    queue_models = await _get_queue(queue_name)
+    # Rule 2: Large context → LARGE_CONTEXT queue (requires at least PAID_LOW)
+    if estimated_tokens > 48_000:
+        if tier_level >= _TIER_LEVELS["PAID_LOW"]:
+            cloud_model = await _first_cloud_model("LARGE_CONTEXT", estimated_tokens)
+            if cloud_model:
+                logger.info("Route: large context (%d tokens) → LARGE_CONTEXT queue → %s",
+                            estimated_tokens, cloud_model)
+                return Route(target="openrouter", model=cloud_model)
+        # Large context but no paid tier → local (will be trimmed to 48k)
+        logger.info("Route: large context (%d tokens) but max_tier=%s → local fallback",
+                     estimated_tokens, max_tier)
+        return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
 
-    # Get GPU availability (once, cached 2s)
+    # Rule 3: Check GPU availability (cached 2s)
     queue_status = await get_router_queue_status()
     gpu_free = len(queue_status.get("gpu_free", [])) > 0
 
-    # Iterate queue: first available model wins
+    # Rule 4: GPU free → always local
+    if gpu_free:
+        return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
+
+    # Rule 5: GPU busy → try queues by tier level
+    # Always try FREE first
+    cloud_model = await _first_cloud_model("FREE", estimated_tokens)
+    if cloud_model:
+        logger.info("Route: GPU busy → FREE queue → %s", cloud_model)
+        return Route(target="openrouter", model=cloud_model)
+
+    # Try PAID_LOW if allowed
+    if tier_level >= _TIER_LEVELS["PAID_LOW"]:
+        cloud_model = await _first_cloud_model("PAID_LOW", estimated_tokens)
+        if cloud_model:
+            logger.info("Route: GPU busy → PAID_LOW queue → %s", cloud_model)
+            return Route(target="openrouter", model=cloud_model)
+
+    # Try PAID_HIGH if allowed
+    if tier_level >= _TIER_LEVELS["PAID_HIGH"]:
+        cloud_model = await _first_cloud_model("PAID_HIGH", estimated_tokens)
+        if cloud_model:
+            logger.info("Route: GPU busy → PAID_HIGH queue → %s", cloud_model)
+            return Route(target="openrouter", model=cloud_model)
+
+    # Rule 6: Fallback → wait for local GPU
+    logger.info("Route: no queue match → local GPU fallback (will wait), tokens=%d", estimated_tokens)
+    return Route(target="local", tier=ModelTier.LOCAL_STANDARD)
+
+
+async def _first_cloud_model(queue_name: str, estimated_tokens: int) -> str | None:
+    """Get first available cloud model from a queue that can handle the context."""
+    queue_models = await _get_queue(queue_name)
     for entry in queue_models:
-        model_id = entry.get("modelId", "")
-        is_local = entry.get("isLocal", False)
+        if entry.get("isLocal", False):
+            continue  # Skip local entries (GPU already checked by caller)
         max_ctx = entry.get("maxContextTokens", 32_000)
-
-        # Skip if model can't handle the context
-        if estimated_tokens > max_ctx:
-            continue
-
-        if is_local:
-            # Local GPU — only use if free
-            if gpu_free:
-                logger.info(
-                    "Route[%s]: queue=%s → local GPU (free), tokens=%d",
-                    use_case, queue_name, estimated_tokens,
-                )
-                return Route(target="local", tier=_select_local_tier(estimated_tokens))
-            # GPU busy — skip to next model in queue
-            continue
-        else:
-            # Cloud model — always available
-            logger.info(
-                "Route[%s]: queue=%s → OpenRouter %s, tokens=%d",
-                use_case, queue_name, model_id, estimated_tokens,
-            )
-            return Route(target="openrouter", model=model_id)
-
-    # No queue model worked — try FREE queue for NORMAL priority
-    if priority == "NORMAL" and queue_name != "FREE":
-        free_models = await _get_queue("FREE")
-        for entry in free_models:
-            if entry.get("isLocal", False):
-                continue  # Already checked GPU
-            if estimated_tokens > entry.get("maxContextTokens", 32_000):
-                continue
-            model_id = entry.get("modelId", "")
-            logger.info("Route[%s]: fallback FREE queue → OpenRouter %s", use_case, model_id)
-            return Route(target="openrouter", model=model_id)
-
-    # Ultimate fallback → queue on local GPU (will wait)
-    logger.info("Route[%s]: no queue match → local GPU fallback, tokens=%d", use_case, estimated_tokens)
-    return Route(target="local", tier=_select_local_tier(estimated_tokens))
-
-
-async def resolve_openrouter_model(
-    use_case: str = "chat",
-    free_only: bool = False,
-) -> str | None:
-    """Legacy model resolver (used by callers that don't use select_route yet).
-
-    Delegates to queue-based lookup when settings are available.
-    """
-    if not settings.openrouter_api_key:
-        return None
-
-    if free_only:
-        queue = await _get_queue("FREE")
-        for entry in queue:
-            if not entry.get("isLocal", False):
-                return entry.get("modelId")
-        return "qwen/qwen3-30b-a3b:free"
-
-    queue_name = {"chat": "CHAT", "coding": "CODING", "large_context": "LARGE_CONTEXT"}.get(use_case, "CHAT")
-    queue = await _get_queue(queue_name)
-    for entry in queue:
-        if not entry.get("isLocal", False):
+        if estimated_tokens <= max_ctx:
             return entry.get("modelId")
-
-    return settings.default_cloud_model or "anthropic/claude-sonnet-4"
+    return None

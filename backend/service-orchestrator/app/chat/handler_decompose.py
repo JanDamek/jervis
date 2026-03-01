@@ -91,7 +91,7 @@ async def save_original_to_kb(
 async def summarize_long_message(message: str) -> str | None:
     """Summarize a very long message into a structured compact form.
 
-    Uses LOCAL_FAST (~5s) to create a ~2-4k char summary.
+    Uses LOCAL_COMPACT (~5s) to create a ~2-4k char summary.
     Returns summary string, or None on failure.
     """
     msg_len = len(message)
@@ -122,7 +122,7 @@ async def summarize_long_message(message: str) -> str | None:
                 {"role": "system", "content": _SUMMARIZER_SYSTEM},
                 {"role": "user", "content": user_content},
             ],
-            tier=ModelTier.LOCAL_FAST,
+            tier=ModelTier.LOCAL_COMPACT,
             max_tokens=2048,
             timeout=90.0,
         )
@@ -177,7 +177,7 @@ async def maybe_decompose(message: str) -> list[SubTopic] | None:
                 {"role": "system", "content": _CLASSIFIER_SYSTEM},
                 {"role": "user", "content": "\n".join(parts)},
             ],
-            tier=ModelTier.LOCAL_FAST,
+            tier=ModelTier.LOCAL_COMPACT,
             max_tokens=512,
             timeout=15.0,
         )
@@ -401,7 +401,7 @@ async def combine_results(
                 {"role": "system", "content": _COMBINER_SYSTEM},
                 {"role": "user", "content": formatted + "\n\nSpoj do jedné odpovědi."},
             ],
-            tier=ModelTier.LOCAL_FAST,
+            tier=ModelTier.LOCAL_COMPACT,
             timeout=90.0,
         )
         combined = (response.choices[0].message.content or "").strip()

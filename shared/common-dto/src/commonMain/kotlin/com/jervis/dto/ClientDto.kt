@@ -33,7 +33,7 @@ data class ClientDto(
     val autoUseAnthropic: Boolean = false,
     val autoUseOpenai: Boolean = false,
     val autoUseGemini: Boolean = false,
-    val autoUseOpenrouter: Boolean = false,
+    val maxOpenRouterTier: String = "NONE",  // "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
 )
 
 /**

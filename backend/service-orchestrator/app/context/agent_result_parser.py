@@ -75,7 +75,7 @@ async def _summarize_with_llm(text: str, max_tokens: int = 200) -> str:
 
     response = await llm_provider.completion(
         messages=messages,
-        tier=ModelTier.LOCAL_FAST,
+        tier=ModelTier.LOCAL_COMPACT,
         max_tokens=max_tokens,
         temperature=0.1,
     )
