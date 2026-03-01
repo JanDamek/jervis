@@ -11,6 +11,7 @@ import java.time.Instant
 data class IngestRequest(
     val clientId: ClientId,
     val projectId: ProjectId? = null,
+    val groupId: String? = null,
     val sourceUrn: SourceUrn,
     val kind: String = "",
     val content: String,
