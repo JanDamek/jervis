@@ -52,7 +52,7 @@ rules:
   # Create/manage namespaces for test environments
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["create", "get", "list", "delete"]
+    verbs: ["create", "get", "list", "delete", "patch"]
   # Full management of resources within environment namespaces
   - apiGroups: [""]
     resources: ["pods", "pods/log", "pods/exec", "services", "configmaps", "secrets", "persistentvolumeclaims", "events"]
