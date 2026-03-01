@@ -28,7 +28,6 @@ from app.chat.context import chat_context_assembler
 from app.config import settings, estimate_tokens
 from app.graph.nodes._helpers import detect_tool_loop
 from app.llm.provider import llm_provider
-from app.llm.openrouter_resolver import select_route
 from app.models import ModelTier, OrchestrateRequest
 from app.tools.executor import execute_tool, _TOOL_EXECUTION_TIMEOUT_S
 from app.tools.kotlin_client import kotlin_client
@@ -104,7 +103,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
         initial_estimated, tier.value,
     )
 
-    max_openrouter_tier = rules.max_openrouter_tier if rules else "NONE"
+    # Background always uses local GPU — no OpenRouter routing
     # Track escalation history for logging
     escalation_history = [tier.value]
 
@@ -159,30 +158,17 @@ async def handle_background(request: OrchestrateRequest) -> dict:
             iteration, settings.background_max_iterations, tier.value,
         )
 
-        # Re-estimate context for routing decision
+        # Re-estimate context for logging
         estimated_tokens = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
 
-        # Hybrid routing: check GPU availability + OpenRouter policy
-        bg_route = await select_route(
-            estimated_tokens=estimated_tokens,
-            max_tier=max_openrouter_tier,
-            priority="NORMAL",
-        )
-        effective_tier = tier
-        extra_headers = None
-        if bg_route.target == "openrouter" and bg_route.model:
-            effective_tier = ModelTier.CLOUD_OPENROUTER
-            extra_headers = {"X-Route-Model": bg_route.model}
-            logger.info("Background: routing to OpenRouter %s", bg_route.model)
-
+        # Background always uses local GPU — no OpenRouter routing
         try:
             response = await llm_provider.completion(
                 messages=messages,
-                tier=effective_tier,
+                tier=tier,
                 max_tokens=settings.default_output_tokens,
                 temperature=0.2,
                 tools=ALL_BACKGROUND_TOOLS,
-                extra_headers=extra_headers,
             )
         except Exception as e:
             err_msg = str(e).lower()

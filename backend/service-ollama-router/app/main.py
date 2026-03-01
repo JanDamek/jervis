@@ -335,6 +335,34 @@ async def router_status():
     )
 
 
+@app.post("/route-decision")
+async def route_decision(request: Request):
+    """Capability-based routing decision endpoint.
+
+    Called by orchestrator/chat to determine where to send an LLM request.
+    Router decides based on capability, max_tier, estimated_tokens, and GPU state.
+
+    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000}
+    Output: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
+    """
+    body = await request.json()
+    decision = await router.decide_route(
+        capability=body.get("capability", "chat"),
+        max_tier=body.get("max_tier", "NONE"),
+        estimated_tokens=body.get("estimated_tokens", 0),
+    )
+    return JSONResponse(content=decision)
+
+
+@app.get("/route-decision/max-context")
+async def route_max_context(request: Request):
+    """Get max available context tokens for a given tier."""
+    max_tier = request.query_params.get("max_tier", "NONE")
+    from .openrouter_catalog import get_max_context_tokens
+    max_ctx = await get_max_context_tokens(max_tier)
+    return JSONResponse(content={"max_context_tokens": max_ctx})
+
+
 @app.get("/queue-status")
 async def queue_status():
     """Minimal queue status for orchestrator routing decisions."""

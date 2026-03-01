@@ -1,12 +1,14 @@
-"""Request/response schemas, priority enum, model-set definitions."""
+"""Request/response schemas, priority enum, model-set definitions, capability catalog."""
 
 from __future__ import annotations
 
+import json
+import os
 import time
 import uuid
 import asyncio
 from dataclasses import dataclass, field
-from enum import IntEnum
+from enum import IntEnum, Enum
 from typing import Any
 
 from pydantic import BaseModel
@@ -20,14 +22,62 @@ class Priority(IntEnum):
     NORMAL = 1     # System work (background, correction, KB ingest)
 
 
-# ── Model sets ──────────────────────────────────────────────────────────
+# ── Capability enum ─────────────────────────────────────────────────────
+
+class Capability(str, Enum):
+    """LLM capability requested by caller (orchestrator/chat)."""
+    THINKING = "thinking"      # Reasoning, analysis, architecture
+    CODING = "coding"          # Code generation/editing
+    CHAT = "chat"              # General conversation, Q&A
+    EMBEDDING = "embedding"    # Text embeddings
+    VISUAL = "visual"          # Image understanding (VLM)
+
+
+# ── Per-GPU model sets ──────────────────────────────────────────────────
+# Which models to keep loaded on each GPU. Loaded from env var GPU_MODEL_SETS
+# with fallback to defaults. p40-1 stays stable (never swaps models).
+
+_DEFAULT_GPU_MODEL_SETS: dict[str, list[str]] = {
+    "p40-1": ["qwen3-coder-tool:30b"],                        # 48k ctx, stable
+    "p40-2": ["qwen3-coder-tool:30b", "qwen3-embedding:8b"],  # 32k ctx, + VLM on-demand
+}
+
+def _load_gpu_model_sets() -> dict[str, list[str]]:
+    """Load GPU_MODEL_SETS from env var (JSON), fallback to defaults."""
+    raw = os.environ.get("GPU_MODEL_SETS", "")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return _DEFAULT_GPU_MODEL_SETS
+
+GPU_MODEL_SETS: dict[str, list[str]] = _load_gpu_model_sets()
+
+# VLM assigned to p40-2 — temporarily replaces coder model when needed.
+# p40-1 stays stable (never swaps models).
+VLM_GPU = "p40-2"
+
+# Local model capabilities
+LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
+    "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
+    "qwen3-embedding:8b": ["embedding"],
+    "qwen3-vl:latest": ["visual"],
+}
+
+# Local model context limits (fixed num_ctx per GPU Modelfile)
+LOCAL_MODEL_CONTEXT: dict[str, int] = {
+    "p40-1": 48_000,
+    "p40-2": 32_000,
+}
+
+
+# ── Model sets (legacy — used by gpu_state.py for VRAM tracking) ───────
 
 # keep_alive="-1" → Ollama keeps models in VRAM indefinitely.
 # Router manages what's loaded/unloaded explicitly — no Ollama auto-eviction.
-#
-# Consolidated model set: 30b for ALL LLM tasks + embedding always loaded.
-# 7b/14b removed — 30b handles everything; no model swapping needed.
-# VLM loaded on-demand only (rare image description use case).
 MODEL_SETS: dict[str, dict] = {
     "primary": {
         "models": ["qwen3-coder-tool:30b", "qwen3-embedding:8b"],

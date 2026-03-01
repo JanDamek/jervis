@@ -22,9 +22,11 @@ from .gpu_state import GpuBackend
 from .models import (
     EMBEDDING_MODELS,
     EMBEDDING_PATHS,
+    GPU_MODEL_SETS,
     Priority,
     RequestState,
     TrackedRequest,
+    VLM_GPU,
 )
 from .proxy import is_streaming_request, proxy_non_streaming, proxy_streaming
 
@@ -259,8 +261,13 @@ class RequestQueue:
 
         Returns backend identifier "gpu:<name>", or None if no slot.
         GPU only — no CPU backend.
+
+        Embedding models → only GPUs that have embedding in GPU_MODEL_SETS.
+        VLM models → only VLM_GPU (p40-2).
         """
         is_critical = request.priority <= Priority.CRITICAL
+        is_embedding = request.model in EMBEDDING_MODELS
+        is_vlm = request.model == "qwen3-vl:latest"
 
         # Try GPU backends (prefer one with model already loaded, least busy)
         gpu_candidates = []
@@ -271,6 +278,14 @@ class RequestQueue:
                 continue
             # For NORMAL, skip reserved GPUs
             if not is_critical and b.reserved_by:
+                continue
+            # Embedding → only GPUs with embedding in their model set
+            if is_embedding:
+                gpu_set = GPU_MODEL_SETS.get(b.name, [])
+                if request.model not in gpu_set:
+                    continue
+            # VLM → only VLM_GPU
+            if is_vlm and b.name != VLM_GPU:
                 continue
             gpu_candidates.append(b)
 

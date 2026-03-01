@@ -35,8 +35,10 @@ import com.jervis.dto.connection.ConnectionResourceDto
 import com.jervis.dto.connection.ConnectionResponseDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.JCard
+import com.jervis.ui.design.JCheckboxRow
 import com.jervis.ui.design.JDestructiveButton
 import com.jervis.ui.design.JDetailScreen
+import com.jervis.ui.design.JDropdown
 import com.jervis.ui.design.JPrimaryButton
 import com.jervis.ui.design.JRemoveIconButton
 import com.jervis.ui.design.JSection
@@ -55,6 +57,17 @@ internal fun ProjectGroupEditForm(
 ) {
     var name by remember { mutableStateOf(group.name) }
     var description by remember { mutableStateOf(group.description ?: "") }
+
+    // Cloud model policy override
+    var overrideCloudPolicy by remember {
+        mutableStateOf(
+            group.autoUseAnthropic != null || group.autoUseOpenai != null || group.autoUseGemini != null || group.maxOpenRouterTier != null,
+        )
+    }
+    var autoUseAnthropic by remember { mutableStateOf(group.autoUseAnthropic ?: false) }
+    var autoUseOpenai by remember { mutableStateOf(group.autoUseOpenai ?: false) }
+    var autoUseGemini by remember { mutableStateOf(group.autoUseGemini ?: false) }
+    var maxOpenRouterTier by remember { mutableStateOf(group.maxOpenRouterTier ?: "NONE") }
 
     // Resources model (same pattern as ProjectEditForm)
     var resources by remember { mutableStateOf(group.resources.toMutableList()) }
@@ -142,6 +155,10 @@ internal fun ProjectGroupEditForm(
                     description = description.ifBlank { null },
                     resources = resources,
                     resourceLinks = resourceLinks,
+                    autoUseAnthropic = if (overrideCloudPolicy) autoUseAnthropic else null,
+                    autoUseOpenai = if (overrideCloudPolicy) autoUseOpenai else null,
+                    autoUseGemini = if (overrideCloudPolicy) autoUseGemini else null,
+                    maxOpenRouterTier = if (overrideCloudPolicy) maxOpenRouterTier else null,
                 ),
             )
         },
@@ -293,6 +310,40 @@ internal fun ProjectGroupEditForm(
                         Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Přidat zdroj")
+                    }
+                }
+
+                // Cloud model policy override (group level)
+                JSection(title = "Cloud modely") {
+                    JCheckboxRow(
+                        label = "Přepsat nastavení klienta",
+                        checked = overrideCloudPolicy,
+                        onCheckedChange = {
+                            overrideCloudPolicy = it
+                            if (!it) {
+                                autoUseAnthropic = false
+                                autoUseOpenai = false
+                                autoUseGemini = false
+                                maxOpenRouterTier = "NONE"
+                            }
+                        },
+                    )
+
+                    if (overrideCloudPolicy) {
+                        Spacer(Modifier.height(8.dp))
+                        JDropdown(
+                            items = listOf("NONE", "FREE"),
+                            selectedItem = maxOpenRouterTier,
+                            onItemSelected = { maxOpenRouterTier = it },
+                            label = "OpenRouter – fallback při busy GPU",
+                            itemLabel = { tier ->
+                                when (tier) {
+                                    "NONE" -> "Vypnuto"
+                                    "FREE" -> "Pouze free modely"
+                                    else -> tier
+                                }
+                            },
+                        )
                     }
                 }
 

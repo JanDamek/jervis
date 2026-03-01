@@ -39,4 +39,6 @@ data class ProjectGroupDocument(
     val resources: List<ProjectResource> = emptyList(),
     /** N:M links between group-level resources */
     val resourceLinks: List<ResourceLink> = emptyList(),
+    /** Cloud model policy at group level (overrides client, overridden by project) */
+    val cloudModelPolicy: CloudModelPolicy? = null,
 )

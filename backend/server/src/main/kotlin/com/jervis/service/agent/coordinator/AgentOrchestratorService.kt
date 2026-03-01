@@ -15,6 +15,7 @@ import com.jervis.entity.TaskDocument
 import com.jervis.entity.CloudModelPolicy
 import com.jervis.mapper.toAgentContextJson
 import com.jervis.repository.TaskRepository
+import com.jervis.service.CloudModelPolicyResolver
 import com.jervis.service.client.ClientService
 import com.jervis.service.project.ProjectService
 import com.jervis.service.background.TaskService
@@ -46,6 +47,7 @@ class AgentOrchestratorService(
     private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val clientService: ClientService,
     private val projectService: ProjectService,
+    private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
 ) {
@@ -453,13 +455,12 @@ class AgentOrchestratorService(
     ): ProjectRulesDto {
         val prefs = preferenceService.getAllPreferences(clientId, projectId)
 
-        // Load cloud model policy: project overrides client
-        val client = clientId?.let { clientService.getClientByIdOrNull(it) }
-        val project = projectId?.let { projectService.getProjectByIdOrNull(it) }
-        val clientPolicy = client?.cloudModelPolicy ?: CloudModelPolicy()
-        val effectivePolicy = project?.cloudModelPolicy ?: clientPolicy
+        // Resolve cloud model policy via hierarchy: project → group → client → default
+        val effectivePolicy = cloudModelPolicyResolver.resolve(clientId, projectId)
 
         // Git commit config: project overrides client
+        val client = clientId?.let { clientService.getClientByIdOrNull(it) }
+        val project = projectId?.let { projectService.getProjectByIdOrNull(it) }
         val clientGitConfig = client?.gitCommitConfig
         val effectiveGitConfig = project?.gitCommitConfig ?: clientGitConfig
 

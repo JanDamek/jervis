@@ -647,46 +647,72 @@ When user answers "Nevím" (I don't know) to correction questions, the system re
 
 ### Overview
 
-GPU routing uses **fixed `num_ctx`** per GPU to prevent costly model reloads. The Ollama Router proxy manages GPU backends (no CPU backend). The Python orchestrator routes requests to local GPU or OpenRouter cloud models based on GPU availability and project-level `maxOpenRouterTier` setting.
+GPU routing uses **capability-based routing** with the Ollama Router as the central routing service. The orchestrator/chat declares a **capability** (thinking, coding, chat, embedding, visual) and the router decides local GPU vs cloud. Fixed `num_ctx` per GPU prevents costly model reloads.
 
-### Fixed GPU Configuration
+### Architecture
 
-| GPU | Model | num_ctx | Role |
-|-----|-------|---------|------|
-| GPU1 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 48,000 | Primary — all local tasks |
-| GPU2 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 32,000 | Secondary |
+```
+Orchestrator → "capability=chat, max_tier=FREE, tokens=5000"
+    → Router /route-decision
+        → GPU free → {"target":"local", "model":"qwen3-coder-tool:30b", "api_base":"..."}
+        → GPU busy + FREE → {"target":"openrouter", "model":"qwen/qwen3-30b-a3b:free"}
+        → GPU busy + NONE → {"target":"local", ...}  (wait in queue)
+Orchestrator → litellm → target backend
+```
 
-- **1 concurrent request per GPU** — serial execution is faster than parallel when VRAM spills to CPU RAM
+### Per-GPU Model Sets
+
+Each GPU has its own set of models (configured via `GPU_MODEL_SETS` env var):
+
+| GPU | Models | num_ctx | Role |
+|-----|--------|---------|------|
+| GPU1 (P40) | `qwen3-coder-tool:30b` | 48,000 | Primary — stable, never swaps |
+| GPU2 (P40) | `qwen3-coder-tool:30b` + `qwen3-embedding:8b` | 32,000 | Secondary + embedding |
+
+- **Embedding → GPU2 only** — p40-1 doesn't have embedding model
+- **VLM → GPU2 only** — on-demand, temporarily replaces coder model
+- **1 concurrent request per GPU** — serial is faster than parallel when VRAM spills
 - **No CPU Ollama** — all LLM/embedding on GPU only
-- Default for new clients: `maxOpenRouterTier = FREE` (free cloud fallback when GPU busy)
+- Default for new clients: `maxOpenRouterTier = FREE`
 
-### Routing Logic (`select_route()`)
+### Capability Model Catalog
 
-The Python orchestrator estimates total tokens (messages + tools + output) and routes:
+```python
+LOCAL_MODEL_CAPABILITIES = {
+    "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
+    "qwen3-embedding:8b": ["embedding"],
+    "qwen3-vl:latest": ["visual"],
+}
+```
 
-1. **maxOpenRouterTier = NONE**: Always wait for local GPU (no cloud fallback)
-2. **Context > 48k**: Route to LARGE_CONTEXT queue (Gemini 2.5 Pro 1M, Sonnet 200k; requires >= PAID_LOW)
-3. **GPU free**: Use local GPU (48k)
-4. **GPU busy + OpenRouter enabled**: Immediately route to cloud (no waiting) — try FREE → PAID_LOW → PAID_HIGH based on tier
-5. **GPU busy + no cloud**: Wait in queue for GPU
+### Routing Logic (`/route-decision`)
 
-### OpenRouter Tiered Fallback
+The router decides based on capability, max_tier, estimated_tokens, and GPU state:
 
-Per-project `maxOpenRouterTier` (NONE / FREE / PAID_LOW / PAID_HIGH) controls cloud access:
+1. **max_tier = NONE**: Always local (wait for GPU)
+2. **Context > 48k**: Route to cloud model with enough context
+3. **GPU free**: Use local GPU
+4. **GPU busy + OpenRouter enabled**: Route to cloud (no waiting)
+5. **GPU busy + no cloud**: Local (wait in queue)
 
-| Tier | Queues Accessible | Models |
-|------|-------------------|--------|
-| NONE | — | Local GPU only (wait in queue) |
-| FREE | FREE | Free models (qwen3-30b:free) |
-| PAID_LOW | FREE, PAID_LOW | + Haiku, GPT-4o-mini |
-| PAID_HIGH | FREE, PAID_LOW, PAID_HIGH | + Sonnet, o3-mini |
+### CloudModelPolicy Hierarchy
 
-For context >48k, the router iterates allowed queues and picks the first model whose `maxContextTokens` fits. Each queue's models have context limits (e.g. Sonnet 200k, GPT-4o-mini 128k).
+Policy resolution: **project → group → client → default (FREE)**
+
+- Project can override group/client policy
+- Group can override client policy (new)
+- Resolved via `CloudModelPolicyResolver` in Kotlin server
+- Currently only NONE/FREE active (PAID_LOW/PAID_HIGH disabled in UI)
+
+### Background vs Foreground
+
+- **Foreground (chat)**: CRITICAL priority, capability-based routing via `/route-decision`, can use OpenRouter
+- **Background**: Always local GPU, no routing decision, no OpenRouter — waits in queue
 
 ### Gemini (Direct Orchestrator Call)
 
-Gemini (1M context) is **NOT** in the OpenRouter routing queues. The orchestrator calls it directly via litellm (`CLOUD_LARGE_CONTEXT` tier) only when:
-1. Context exceeds the max capacity of all available OpenRouter models
+Gemini (1M context) is **NOT** in the routing queues. The orchestrator calls it directly via litellm (`CLOUD_LARGE_CONTEXT` tier) only when:
+1. Context exceeds the max capacity of all available models
 2. Used for context reduction — splitting huge documents into smaller scope chunks
 3. Orchestrator stores chunks in scope, then processes each chunk via normal routing
 

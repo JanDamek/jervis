@@ -446,7 +446,7 @@ internal fun ClientEditForm(
                     )
                     Spacer(androidx.compose.ui.Modifier.height(8.dp))
                     JDropdown(
-                        items = listOf("NONE", "FREE", "PAID_LOW", "PAID_HIGH"),
+                        items = listOf("NONE", "FREE"),
                         selectedItem = maxOpenRouterTier,
                         onItemSelected = { maxOpenRouterTier = it },
                         label = "OpenRouter – fallback při busy GPU",
@@ -454,8 +454,6 @@ internal fun ClientEditForm(
                             when (tier) {
                                 "NONE" -> "Vypnuto"
                                 "FREE" -> "Pouze free modely"
-                                "PAID_LOW" -> "Placené (standard)"
-                                "PAID_HIGH" -> "Placené (thinking/reasoning)"
                                 else -> tier
                             }
                         },

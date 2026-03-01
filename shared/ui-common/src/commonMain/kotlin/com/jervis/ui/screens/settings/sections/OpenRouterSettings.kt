@@ -79,8 +79,8 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     // Model list (legacy flat list)
     var models by remember { mutableStateOf<List<OpenRouterModelEntryDto>>(emptyList()) }
 
-    // Model queues (3-tier routing; Gemini is not in queues — orchestrator calls it directly)
-    val queueNames = listOf("FREE", "PAID_LOW", "PAID_HIGH")
+    // Model queues (only FREE active; PAID_LOW/PAID_HIGH disabled)
+    val queueNames = listOf("FREE")
     var modelQueues by remember { mutableStateOf<Map<String, List<QueueModelEntryDto>>>(emptyMap()) }
     var selectedQueueTab by remember { mutableStateOf(0) }
 
@@ -315,7 +315,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
 
-                            val queueLabels = listOf("Free", "Paid Low", "Paid High", "Large Context")
+                            val queueLabels = listOf("Free")
 
                             TabRow(
                                 selectedTabIndex = selectedQueueTab,
@@ -337,13 +337,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                             val currentModels = modelQueues[currentQueueName] ?: emptyList()
 
                             Text(
-                                when (currentQueueName) {
-                                    "FREE" -> "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru."
-                                    "PAID_LOW" -> "Standardní placené modely (Haiku, GPT-4o-mini). Vyžaduje maxOpenRouterTier >= PAID_LOW."
-                                    "PAID_HIGH" -> "Thinking/reasoning modely (Sonnet, o3-mini). Vyžaduje maxOpenRouterTier >= PAID_HIGH."
-                                    // Gemini not in queues — orchestrator calls it directly for huge context reduction
-                                    else -> ""
-                                },
+                                "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

@@ -40,6 +40,7 @@ class ProjectGroupService(
             connectionCapabilities = group.connectionCapabilities,
             resources = group.resources,
             resourceLinks = group.resourceLinks,
+            cloudModelPolicy = group.cloudModelPolicy,
         ) ?: group
 
         val saved = projectGroupRepository.save(merged)

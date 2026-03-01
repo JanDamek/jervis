@@ -208,6 +208,8 @@ class LLMProvider:
         temperature: float = 0.1,
         max_tokens: int = 8192,
         extra_headers: dict[str, str] | None = None,
+        model_override: str | None = None,
+        api_base_override: str | None = None,
     ) -> dict:
         """Call LLM with streaming + token-arrival timeout.
 
@@ -215,9 +217,24 @@ class LLMProvider:
         in the same format as litellm non-streaming response.
         Tool calls are not streamed (litellm limitation) — falls back to blocking.
 
+        model_override/api_base_override: from router's route decision.
+        For OpenRouter: model_override is the cloud model ID (prefixed with "openrouter/").
+        For local: model_override is the Ollama model name (prefixed with "ollama/").
+
         W-21: Rate-limited via asyncio.Semaphore per provider type.
         """
-        config = TIER_CONFIG[tier]
+        config = dict(TIER_CONFIG[tier])  # Copy to avoid mutating global
+
+        # Apply route decision overrides
+        if model_override:
+            if tier == ModelTier.CLOUD_OPENROUTER:
+                config["model"] = f"openrouter/{model_override}"
+            elif tier.value.startswith("local_"):
+                config["model"] = f"ollama/{model_override}"
+            else:
+                config["model"] = model_override
+        if api_base_override:
+            config["api_base"] = api_base_override
 
         # W-21: Select appropriate rate limiter
         is_cloud = tier.value.startswith("cloud_")

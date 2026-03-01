@@ -6,8 +6,11 @@ import com.jervis.dto.ChatResponseDto
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.ChatRole
 import com.jervis.entity.MessageRole
+import com.jervis.common.types.ClientId
+import com.jervis.entity.OpenRouterTier
 import com.jervis.common.types.ProjectId
 import com.jervis.repository.ProjectRepository
+import com.jervis.service.CloudModelPolicyResolver
 import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
 import com.jervis.service.chat.ChatService
@@ -36,6 +39,7 @@ class ChatRpcImpl(
     private val chatService: ChatService,
     private val backgroundEngine: BackgroundEngine,
     private val projectRepository: ProjectRepository,
+    private val cloudModelPolicyResolver: CloudModelPolicyResolver,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -128,13 +132,17 @@ class ChatRpcImpl(
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
             try {
-                // Resolve CloudModelPolicy and groupId for the project
+                // Resolve CloudModelPolicy (project → group → client hierarchy) and groupId
                 val project = try {
                     activeProjectId?.let { pid ->
                         projectRepository.getById(ProjectId(ObjectId(pid)))
                     }
                 } catch (_: Exception) { null }
-                val maxOpenRouterTier = project?.cloudModelPolicy?.maxOpenRouterTier?.name ?: "NONE"
+                val policy = cloudModelPolicyResolver.resolve(
+                    clientId = activeClientId?.let { ClientId(ObjectId(it)) },
+                    projectId = activeProjectId?.let { ProjectId(ObjectId(it)) },
+                )
+                val maxOpenRouterTier = policy.maxOpenRouterTier.name
                 val activeGroupId = project?.groupId?.toString()
 
                 // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow

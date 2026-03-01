@@ -22,4 +22,9 @@ data class ProjectGroupDto(
     val resources: List<ProjectResourceDto> = emptyList(),
     /** N:M links between group-level resources */
     val resourceLinks: List<ResourceLinkDto> = emptyList(),
+    /** Cloud model policy override at group level (null = inherit from client) */
+    val autoUseAnthropic: Boolean? = null,
+    val autoUseOpenai: Boolean? = null,
+    val autoUseGemini: Boolean? = null,
+    val maxOpenRouterTier: String? = null,
 )

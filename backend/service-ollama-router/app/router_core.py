@@ -20,9 +20,17 @@ from .config import settings
 from .gpu_state import GpuBackend, GpuPool
 from .models import (
     EMBEDDING_MODELS,
+    GPU_MODEL_SETS,
+    LOCAL_MODEL_CAPABILITIES,
+    LOCAL_MODEL_CONTEXT,
     MODEL_TO_PRIORITY,
     Priority,
     TrackedRequest,
+    VLM_GPU,
+)
+from .openrouter_catalog import (
+    TIER_LEVELS,
+    find_cloud_model_for_context,
 )
 from .request_queue import RequestQueue
 
@@ -64,8 +72,8 @@ class OllamaRouter:
         self._mgmt_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
         # Sync GPU state from all backends (initial check only, fail fast after)
         await self.gpu_pool.sync_state(self._mgmt_client)
-        # Preload orchestrator model on all GPUs that don't have it
-        await self._preload_model_on_all_gpus(settings.orchestrator_model)
+        # Preload per-GPU model sets (each GPU gets its own models)
+        await self._preload_per_gpu_models()
         # Start request queue (GPU only, no CPU backend)
         self._queue = RequestQueue(self.gpu_pool, self)
         await self._queue.start()
@@ -102,23 +110,106 @@ class OllamaRouter:
         if self._mgmt_client:
             await self._mgmt_client.aclose()
 
-    async def _preload_model_on_all_gpus(self, model: str) -> None:
-        """Preload model on all healthy GPUs that don't have it yet.
+    async def _preload_per_gpu_models(self) -> None:
+        """Preload per-GPU model sets according to GPU_MODEL_SETS config.
 
-        Ensures both GPUs are ready to accept requests from the start,
-        preventing all traffic from going to the single GPU that happens
-        to have the model loaded.
+        Each GPU gets its own set of models. p40-1 gets only LLM models,
+        p40-2 gets LLM + embedding. This ensures both GPUs are ready from start.
         """
         for backend in self.gpu_pool.healthy_backends:
-            if backend.has_model(model):
-                logger.info("GPU %s already has %s loaded", backend.name, model)
-                continue
-            logger.info("Preloading %s on GPU %s ...", model, backend.name)
-            ok = await self.gpu_pool.load_model(backend, model, self._mgmt_client)
-            if ok:
-                logger.info("Preloaded %s on GPU %s", model, backend.name)
-            else:
-                logger.warning("Failed to preload %s on GPU %s", model, backend.name)
+            gpu_models = GPU_MODEL_SETS.get(backend.name, [settings.orchestrator_model])
+            for model in gpu_models:
+                if backend.has_model(model):
+                    logger.info("GPU %s already has %s loaded", backend.name, model)
+                    continue
+                logger.info("Preloading %s on GPU %s ...", model, backend.name)
+                ok = await self.gpu_pool.load_model(backend, model, self._mgmt_client)
+                if ok:
+                    logger.info("Preloaded %s on GPU %s", model, backend.name)
+                else:
+                    logger.warning("Failed to preload %s on GPU %s", model, backend.name)
+
+    # ── Capability-based route decision ────────────────────────────────
+
+    async def decide_route(
+        self, capability: str, max_tier: str, estimated_tokens: int,
+    ) -> dict:
+        """Capability-based routing decision.
+
+        1. max_tier == "NONE" → always local (wait for GPU)
+        2. Find local GPU with model matching capability + context
+        3. GPU free → local
+        4. GPU busy + OpenRouter allowed → find cloud model
+        5. No cloud match → local (wait)
+
+        Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
+        """
+        tier_level = TIER_LEVELS.get(max_tier, 0)
+
+        # Find local model for requested capability
+        local_model = self._find_local_model_for_capability(capability)
+
+        # Rule 1: No OpenRouter → always local
+        if tier_level == 0:
+            api_base = f"http://jervis-ollama-router:{settings.router_port}"
+            return {
+                "target": "local",
+                "model": local_model or settings.orchestrator_model,
+                "api_base": api_base,
+            }
+
+        # Rule 2: Context > 48k → must go to cloud
+        if estimated_tokens > 48_000:
+            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
+            if cloud_model:
+                logger.info("Route decision: large context (%d) → cloud %s", estimated_tokens, cloud_model)
+                return {"target": "openrouter", "model": cloud_model}
+            # No cloud model fits → local fallback (will be trimmed)
+            logger.info("Route decision: large context (%d) but no cloud fits → local", estimated_tokens)
+            api_base = f"http://jervis-ollama-router:{settings.router_port}"
+            return {
+                "target": "local",
+                "model": local_model or settings.orchestrator_model,
+                "api_base": api_base,
+            }
+
+        # Rule 3: Check GPU availability
+        gpu_free = any(
+            b.healthy and b.active_request_count() == 0
+            for b in self.gpu_pool.all_backends
+        )
+
+        # Rule 4: GPU free → local
+        if gpu_free:
+            api_base = f"http://jervis-ollama-router:{settings.router_port}"
+            return {
+                "target": "local",
+                "model": local_model or settings.orchestrator_model,
+                "api_base": api_base,
+            }
+
+        # Rule 5: GPU busy → try cloud
+        cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
+        if cloud_model:
+            logger.info("Route decision: GPU busy → cloud %s", cloud_model)
+            return {"target": "openrouter", "model": cloud_model}
+
+        # Rule 6: Fallback → local (wait in queue)
+        logger.info("Route decision: no cloud available → local (will wait)")
+        api_base = f"http://jervis-ollama-router:{settings.router_port}"
+        return {
+            "target": "local",
+            "model": local_model or settings.orchestrator_model,
+            "api_base": api_base,
+        }
+
+    @staticmethod
+    def _find_local_model_for_capability(capability: str) -> str | None:
+        """Find a local model that has the requested capability."""
+        for model, caps in LOCAL_MODEL_CAPABILITIES.items():
+            if capability in caps:
+                return model
+        return None
 
     # ── Main routing entry point ────────────────────────────────────────
 
@@ -276,10 +367,10 @@ class OllamaRouter:
             self._bg_load_tasks[gpu_name] = task
 
     async def _delayed_background_load(self, gpu: GpuBackend) -> None:
-        """After a delay, ensure primary model set (30b + embedding) is loaded on GPU.
+        """After a delay, ensure per-GPU model set is loaded.
 
-        Since keep_alive="-1", models stay loaded indefinitely. This just ensures
-        embedding is loaded alongside 30b after a reservation release.
+        Uses GPU_MODEL_SETS to determine which models belong on each GPU.
+        p40-1: only 30b (no embedding). p40-2: 30b + embedding.
         """
         try:
             await asyncio.sleep(settings.background_load_delay_s)
@@ -288,12 +379,15 @@ class OllamaRouter:
             if gpu.name in self._reservations:
                 return
 
-            # Ensure full primary set is loaded (30b + embedding)
+            # Ensure per-GPU model set is loaded
+            gpu_models = GPU_MODEL_SETS.get(gpu.name, [settings.orchestrator_model])
             logger.info(
-                "Ensuring primary model set on GPU %s (existing: %s)",
-                gpu.name, list(gpu.loaded_models.keys()),
+                "Ensuring per-GPU model set on GPU %s: %s (existing: %s)",
+                gpu.name, gpu_models, list(gpu.loaded_models.keys()),
             )
-            await self.gpu_pool.load_model_set(gpu, "primary", self._mgmt_client)
+            for model in gpu_models:
+                if not gpu.has_model(model):
+                    await self.gpu_pool.load_model(gpu, model, self._mgmt_client)
         except asyncio.CancelledError:
             logger.info("Background model loading cancelled for GPU %s", gpu.name)
         except Exception as e:
@@ -442,15 +536,11 @@ class OllamaRouter:
     async def _warmup_loop(self) -> None:
         """Periodically ping GPU backends to keep models loaded in VRAM.
 
-        Sends minimal generate/embeddings requests with keep_alive=-1 to
-        prevent Ollama from evicting models after its default timeout.
+        Pings only models assigned to each GPU via GPU_MODEL_SETS.
         Only pings idle GPUs (no active requests and idle for >80% of interval).
         """
-        from .models import MODEL_SETS, EMBEDDING_MODELS
-
         interval = settings.warmup_interval_s
-        models = MODEL_SETS.get("primary", {}).get("models", [settings.orchestrator_model])
-        logger.info("Warmup loop started (interval=%ds, models=%s)", interval, models)
+        logger.info("Warmup loop started (interval=%ds, gpu_model_sets=%s)", interval, GPU_MODEL_SETS)
 
         while True:
             try:
@@ -466,7 +556,9 @@ class OllamaRouter:
                     if last_activity < interval * 0.8:
                         continue
 
-                    for model_name in models:
+                    # Ping only models assigned to this GPU
+                    gpu_models = GPU_MODEL_SETS.get(backend.name, [settings.orchestrator_model])
+                    for model_name in gpu_models:
                         try:
                             if model_name in EMBEDDING_MODELS:
                                 payload = {"model": model_name, "prompt": "warmup", "keep_alive": -1}
@@ -529,14 +621,16 @@ class OllamaRouter:
                             len(unhealthy), [b.name for b in unhealthy])
                 await self.gpu_pool.check_health(self._mgmt_client)
 
-                # Preload model on any newly recovered GPUs
+                # Preload per-GPU model set on any newly recovered GPUs
                 for backend in unhealthy:
                     if backend.healthy:
+                        gpu_models = GPU_MODEL_SETS.get(backend.name, [settings.orchestrator_model])
                         logger.info("GPU_RECOVERY: %s is back — preloading %s",
-                                    backend.name, settings.orchestrator_model)
-                        await self.gpu_pool.load_model(
-                            backend, settings.orchestrator_model, self._mgmt_client
-                        )
+                                    backend.name, gpu_models)
+                        for model in gpu_models:
+                            await self.gpu_pool.load_model(
+                                backend, model, self._mgmt_client
+                            )
 
             except asyncio.CancelledError:
                 return

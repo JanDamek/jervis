@@ -17,7 +17,7 @@ from app.chat.context import chat_context_assembler
 from app.chat.models import ChatStreamEvent
 from app.config import settings, foreground_headers
 from app.llm.provider import llm_provider, TokenTimeoutError
-from app.llm.openrouter_resolver import Route, _first_cloud_model
+from app.llm.router_client import RouteDecision
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -33,23 +33,29 @@ async def call_llm(
     max_tokens: int = settings.default_output_tokens,
     temperature: float = 0.1,
     timeout: float | None = None,
-    route: Route | None = None,
+    route: RouteDecision | None = None,
 ):
     """Unified LLM completion call with optional timeout and route override.
 
-    If a route is provided (from select_route()), uses OpenRouter when
-    route.target == "openrouter". Falls back to local tier otherwise.
+    If a route is provided (from route_request()), uses the route decision:
+    - target == "openrouter" → OpenRouter model via litellm
+    - target == "local" → local model via Ollama router
 
-    Implements timeout fallback: if local GPU times out and client has
-    OpenRouter enabled, retries on OpenRouter automatically.
+    Implements timeout fallback: if local GPU times out and max_tier != NONE,
+    retries via router with a fallback route request.
     """
     # Use route to determine actual tier and model
     effective_tier = tier
     extra_headers = foreground_headers("FOREGROUND")
+    model_override = None
+    api_base_override = None
 
     if route and route.target == "openrouter" and route.model:
         effective_tier = ModelTier.CLOUD_OPENROUTER
-        extra_headers = {**extra_headers, "X-Route-Model": route.model}
+        model_override = route.model
+    elif route and route.target == "local" and route.model:
+        model_override = route.model
+        api_base_override = route.api_base
 
     coro = llm_provider.completion(
         messages=messages,
@@ -58,24 +64,28 @@ async def call_llm(
         max_tokens=max_tokens,
         temperature=temperature,
         extra_headers=extra_headers,
+        model_override=model_override,
+        api_base_override=api_base_override,
     )
     try:
         if timeout:
             return await asyncio.wait_for(coro, timeout=timeout)
         return await coro
     except (TokenTimeoutError, asyncio.TimeoutError):
-        # Timeout fallback: if local GPU timed out, try FREE cloud model
+        # Timeout fallback: if local GPU timed out, try cloud via router
         if route and route.target == "local":
-            fallback_model = await _first_cloud_model("FREE", 48_000)
-            if fallback_model:
-                logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback_model)
+            from app.llm.router_client import route_request
+            fallback = await route_request(capability="chat", max_tier="FREE", estimated_tokens=48_000)
+            if fallback.target == "openrouter" and fallback.model:
+                logger.info("Local GPU timeout, falling back to OpenRouter %s", fallback.model)
                 return await llm_provider.completion(
                     messages=messages,
                     tier=ModelTier.CLOUD_OPENROUTER,
                     tools=tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    extra_headers={**foreground_headers("FOREGROUND"), "X-Route-Model": fallback_model},
+                    extra_headers=foreground_headers("FOREGROUND"),
+                    model_override=fallback.model,
                 )
         raise
 
