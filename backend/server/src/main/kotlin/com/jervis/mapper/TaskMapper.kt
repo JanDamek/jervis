@@ -21,7 +21,10 @@ fun TaskDocument.toUserTaskDto(): UserTaskDto =
     )
 
 /** Lightweight mapper for list view — skips content, attachments, agentCheckpointJson. */
-fun TaskDocument.toUserTaskListItemDto(): UserTaskListItemDto =
+fun TaskDocument.toUserTaskListItemDto(
+    childCount: Int = 0,
+    completedChildCount: Int = 0,
+): UserTaskListItemDto =
     UserTaskListItemDto(
         id = this.id.toString(),
         title = this.taskName,
@@ -31,9 +34,16 @@ fun TaskDocument.toUserTaskListItemDto(): UserTaskListItemDto =
         createdAtEpochMillis = this.createdAt.toEpochMilli(),
         hasPendingQuestion = !this.pendingUserQuestion.isNullOrBlank(),
         pendingQuestionPreview = this.pendingUserQuestion?.take(120),
+        parentTaskId = this.parentTaskId?.toString(),
+        childCount = childCount,
+        completedChildCount = completedChildCount,
+        phase = this.phase,
     )
 
-fun TaskDocument.toPendingTaskDto(): PendingTaskDto =
+fun TaskDocument.toPendingTaskDto(
+    childCount: Int = 0,
+    completedChildCount: Int = 0,
+): PendingTaskDto =
     PendingTaskDto(
         id = this.id.toString(),
         taskType = this.type.name,
@@ -42,5 +52,9 @@ fun TaskDocument.toPendingTaskDto(): PendingTaskDto =
         clientId = this.clientId.toString(),
         createdAt = this.createdAt.toString(),
         state = this.state.name,
-        attachments = this.attachments.map { it.toDto() }
+        attachments = this.attachments.map { it.toDto() },
+        parentTaskId = this.parentTaskId?.toString(),
+        childCount = childCount,
+        completedChildCount = completedChildCount,
+        phase = this.phase,
     )

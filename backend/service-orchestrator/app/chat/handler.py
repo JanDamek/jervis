@@ -39,9 +39,11 @@ from app.chat.handler_decompose import (
 from app.chat.handler_streaming import call_llm, stream_text, save_assistant_message
 from app.chat.intent import classify_intent, select_tools
 from app.chat.intent_decomposer import decompose_intents, build_intent_focus_message, intent_metadata
-from app.chat.models import ChatRequest, ChatStreamEvent
+from app.chat.intent_router import route_intent
+from app.chat.models import ChatRequest, ChatStreamEvent, ChatCategory
+from app.chat.prompts.builder import build_routed_prompt
 from app.chat.system_prompt import build_system_prompt
-from app.chat.tools import CHAT_TOOLS, ToolCategory
+from app.chat.tools import CHAT_TOOLS, ToolCategory, select_tools_by_names
 from app.config import settings
 from app.models import ModelTier
 
@@ -112,17 +114,40 @@ async def handle_chat(
         logger.info("Chat: intent=%s → %d/%d tools",
                      [c.value for c in intent_categories], len(selected_tools), len(CHAT_TOOLS))
 
+        # 2b. Intent Router (feature-flagged)
+        routing = None
+        if settings.use_intent_router:
+            try:
+                routing = await route_intent(request.message, intent_categories)
+                selected_tools = select_tools_by_names(routing.tool_names)
+                logger.info(
+                    "Chat: router → %s (conf=%.2f, cloud=%s, max_iter=%d, tools=%d) reason=%s",
+                    routing.category.value, routing.confidence, routing.use_cloud,
+                    routing.max_iterations, len(selected_tools), routing.reason,
+                )
+            except Exception as e:
+                logger.warning("Chat: intent router failed, using regex fallback: %s", e)
+                routing = None
+
         # 3. Task context
         task_context_msg = None
         if request.context_task_id:
             task_context_msg = await load_task_context_message(request.context_task_id)
 
         # 4. Build LLM messages
-        system_prompt_text = build_system_prompt(
-            active_client_id=request.active_client_id,
-            active_project_id=request.active_project_id,
-            runtime_context=runtime_ctx,
-        )
+        if routing:
+            system_prompt_text = build_routed_prompt(
+                category=routing.category,
+                active_client_id=request.active_client_id,
+                active_project_id=request.active_project_id,
+                runtime_context=runtime_ctx,
+            )
+        else:
+            system_prompt_text = build_system_prompt(
+                active_client_id=request.active_client_id,
+                active_project_id=request.active_project_id,
+                runtime_context=runtime_ctx,
+            )
         messages = build_messages(
             system_prompt=system_prompt_text,
             context=context,
@@ -206,7 +231,27 @@ async def handle_chat(
                 # Decompose handled everything (returned via yield)
                 return
 
-        # 7. Greeting fast path
+        # 7. DIRECT fast path (router) or greeting fast path (legacy)
+        if routing and routing.category == ChatCategory.DIRECT:
+            logger.info("Chat: DIRECT fast-path via router")
+            try:
+                direct_response = await call_llm(messages=messages, tier=ModelTier.LOCAL_FAST)
+                direct_text = direct_response.choices[0].message.content or ""
+                if direct_text.strip():
+                    await save_assistant_message(
+                        request.session_id, direct_text,
+                        {"direct_answer": "true", "router_category": "direct"},
+                    )
+                    async for event in stream_text(direct_text):
+                        yield event
+                    yield ChatStreamEvent(type="done", metadata={
+                        "direct_answer": True, "iterations": 0,
+                        "router_category": "direct",
+                    })
+                    return
+            except Exception as e:
+                logger.warning("Chat: DIRECT fast-path failed (%s), falling through", e)
+
         async for event in _try_greeting_fast_path(request, messages, intent_categories, msg_len):
             yield event
             if event.type == "done":
@@ -231,6 +276,8 @@ async def handle_chat(
             disconnect_event=disconnect_event,
             is_summarized=is_summarized,
             msg_len=msg_len,
+            max_iterations_override=routing.max_iterations if routing else None,
+            use_case_override="chat_cloud" if routing and routing.use_cloud else None,
         ):
             yield event
 

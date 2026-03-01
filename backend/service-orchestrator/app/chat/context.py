@@ -65,7 +65,7 @@ MAX_TOOL_RESULT_IN_MSG = settings.max_tool_result_in_msg
 @dataclass
 class ChatMessage:
     """Single message from chat_messages collection."""
-    role: str          # "user" | "assistant" | "system"
+    role: str          # "user" | "assistant" | "system" | "background" | "alert"
     content: str
     timestamp: str     # ISO datetime
     sequence: int
@@ -413,8 +413,15 @@ class ChatContextAssembler:
             content = doc.get("content", "")
             if _is_error_message(content):
                 continue
+            raw_role = doc["role"].lower()
+            # Map BACKGROUND/ALERT roles to "system" for LLM compatibility
+            # The content already has [Background]/[Urgent Alert] prefix from ChatRpcImpl
+            if raw_role in ("background", "alert"):
+                role = "system"
+            else:
+                role = raw_role
             messages.append(ChatMessage(
-                role=doc["role"].lower(),
+                role=role,
                 content=content,
                 timestamp=doc.get("timestamp", datetime.now(timezone.utc)).isoformat(),
                 sequence=doc.get("sequence", 0),
@@ -434,8 +441,13 @@ class ChatContextAssembler:
 
         messages = []
         async for doc in cursor:
+            raw_role = doc["role"].lower()
+            if raw_role in ("background", "alert"):
+                role = "system"
+            else:
+                role = raw_role
             messages.append(ChatMessage(
-                role=doc["role"].lower(),
+                role=role,
                 content=doc.get("content", ""),
                 timestamp=doc.get("timestamp", datetime.now(timezone.utc)).isoformat(),
                 sequence=doc.get("sequence", 0),

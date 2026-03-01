@@ -13,6 +13,8 @@ enum class TaskStateEnum {
     PYTHON_ORCHESTRATING, // Dispatched to Python orchestrator (LangGraph), awaiting result
     WAITING_FOR_AGENT, // Coding agent K8s Job dispatched, waiting for completion
     USER_TASK, // Waiting for user input/decision
+    BLOCKED, // Waiting for dependency tasks (blockedByTaskIds) to complete
+    PLANNING, // Root task undergoing decomposition into child tasks
     DONE, // Terminal state — qualification complete, no orchestrator action needed (info_only, simple_action)
     ERROR,
 }

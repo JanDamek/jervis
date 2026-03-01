@@ -55,6 +55,8 @@ class ChatRpcImpl(
             for (msg in history.messages) {
                 val responseType = when (msg.role) {
                     MessageRole.USER -> ChatResponseType.USER_MESSAGE
+                    MessageRole.BACKGROUND -> ChatResponseType.BACKGROUND_RESULT
+                    MessageRole.ALERT -> ChatResponseType.URGENT_ALERT
                     else -> ChatResponseType.FINAL
                 }
                 emit(
@@ -254,6 +256,8 @@ class ChatRpcImpl(
                     MessageRole.USER -> ChatRole.USER
                     MessageRole.ASSISTANT -> ChatRole.ASSISTANT
                     MessageRole.SYSTEM -> ChatRole.SYSTEM
+                    MessageRole.BACKGROUND -> ChatRole.BACKGROUND
+                    MessageRole.ALERT -> ChatRole.ALERT
                 },
                 content = msg.content,
                 timestamp = msg.timestamp.toString(),
@@ -286,6 +290,98 @@ class ChatRpcImpl(
     override suspend fun approveChatAction(approved: Boolean, always: Boolean, action: String?) {
         logger.info { "CHAT_APPROVE | approved=$approved | always=$always | action=$action" }
         chatService.approveChatAction(approved = approved, always = always, action = action)
+    }
+
+    // ── Push methods for background results and urgent alerts ────────────
+
+    /**
+     * Whether there is at least one active subscriber to the chat event stream.
+     * Used to decide whether to push background results / alerts to chat.
+     */
+    fun isUserOnline(): Boolean = chatEventStream.subscriptionCount.value > 0
+
+    /**
+     * Push a background task result into the chat stream.
+     * Persists the message to DB and emits to live subscribers.
+     */
+    suspend fun pushBackgroundResult(
+        taskTitle: String,
+        summary: String,
+        success: Boolean,
+        metadata: Map<String, String> = emptyMap(),
+    ) {
+        val session = chatService.getOrCreateActiveSession()
+        val content = if (success) {
+            "[Background] $taskTitle: $summary"
+        } else {
+            "[Background FAILED] $taskTitle: $summary"
+        }
+
+        // Persist to DB
+        chatService.saveSystemMessage(
+            sessionId = session.id,
+            role = MessageRole.BACKGROUND,
+            content = content,
+            metadata = metadata,
+        )
+
+        // Emit to live stream
+        val allMetadata = buildMap {
+            put("sender", "background")
+            put("taskTitle", taskTitle)
+            put("success", success.toString())
+            put("timestamp", java.time.Instant.now().toString())
+            putAll(metadata)
+        }
+        chatEventStream.emit(
+            ChatResponseDto(
+                message = content,
+                type = ChatResponseType.BACKGROUND_RESULT,
+                metadata = allMetadata,
+            ),
+        )
+        logger.info { "CHAT_PUSH_BACKGROUND | title=$taskTitle | success=$success" }
+    }
+
+    /**
+     * Push an urgent alert into the chat stream.
+     * Persists the message to DB and emits to live subscribers.
+     */
+    suspend fun pushUrgentAlert(
+        sourceUrn: String,
+        summary: String,
+        suggestedAction: String? = null,
+    ) {
+        val session = chatService.getOrCreateActiveSession()
+        val content = buildString {
+            append("[Urgent Alert] $summary")
+            if (suggestedAction != null) {
+                append("\nSuggested action: $suggestedAction")
+            }
+        }
+
+        // Persist to DB
+        chatService.saveSystemMessage(
+            sessionId = session.id,
+            role = MessageRole.ALERT,
+            content = content,
+            metadata = mapOf("sourceUrn" to sourceUrn),
+        )
+
+        // Emit to live stream
+        chatEventStream.emit(
+            ChatResponseDto(
+                message = content,
+                type = ChatResponseType.URGENT_ALERT,
+                metadata = buildMap {
+                    put("sender", "alert")
+                    put("sourceUrn", sourceUrn)
+                    put("timestamp", java.time.Instant.now().toString())
+                    if (suggestedAction != null) put("suggestedAction", suggestedAction)
+                },
+            ),
+        )
+        logger.info { "CHAT_PUSH_ALERT | sourceUrn=$sourceUrn | summary=${summary.take(80)}" }
     }
 
     private fun mapStreamEventToResponse(event: ChatStreamEvent): Pair<ChatResponseType, Map<String, String>> {

@@ -274,6 +274,46 @@ class KotlinServerClient:
             logger.warning("Failed to create background task: %s", e)
             return f"Error: {e}"
 
+    async def create_work_plan(
+        self,
+        title: str,
+        phases: list[dict],
+        client_id: str,
+        project_id: str | None = None,
+    ) -> str:
+        """Create a hierarchical work plan via Kotlin internal API.
+
+        Creates a root task (PLANNING) with child tasks organized in phases.
+        Children are BLOCKED until their dependencies complete, then auto-unblocked
+        by WorkPlanExecutor.
+        """
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/tasks/create-work-plan",
+                json={
+                    "title": title,
+                    "phases": phases,
+                    "clientId": client_id,
+                    "projectId": project_id,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                root_id = data.get("rootTaskId", "?")
+                child_count = data.get("childCount", 0)
+                phase_count = data.get("phaseCount", 0)
+                return (
+                    f"Work plan vytvořen: {title}\n"
+                    f"Root task: {root_id}\n"
+                    f"Fáze: {phase_count}, Dílčích úkolů: {child_count}\n"
+                    f"Úkoly se automaticky zpracují v pořadí dle závislostí."
+                )
+            return f"Error: {resp.status_code} — {resp.text[:200]}"
+        except Exception as e:
+            logger.warning("Failed to create work plan: %s", e)
+            return f"Error: {e}"
+
     async def dispatch_coding_agent(
         self,
         task_description: str,

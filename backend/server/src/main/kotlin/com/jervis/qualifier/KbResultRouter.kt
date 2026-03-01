@@ -34,6 +34,7 @@ class KbResultRouter(
     private val actionTypeInferrer: ActionTypeInferrer,
     private val autoTaskCreationService: AutoTaskCreationService,
     private val filteringRulesService: FilteringRulesService,
+    private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -97,6 +98,21 @@ class KbResultRouter(
         if (filterAction != null && filterAction != FilterAction.NORMAL) {
             logger.info {
                 "KB_ROUTE: taskId=${task.id} filterAction=$filterAction"
+            }
+        }
+
+        // Push urgent alert to chat if user is online
+        if (filterAction == FilterAction.URGENT || result.urgency == "urgent") {
+            if (chatRpcImpl.isUserOnline()) {
+                try {
+                    chatRpcImpl.pushUrgentAlert(
+                        sourceUrn = task.sourceUrn.value,
+                        summary = result.summary.take(200),
+                        suggestedAction = result.suggestedActions.firstOrNull(),
+                    )
+                } catch (e: Exception) {
+                    logger.warn(e) { "Failed to push urgent alert to chat for task ${task.id}" }
+                }
             }
         }
 

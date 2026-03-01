@@ -8,6 +8,8 @@ enum class ChatRole {
     @SerialName("user") USER,
     @SerialName("assistant") ASSISTANT,
     @SerialName("system") SYSTEM,
+    @SerialName("background") BACKGROUND,
+    @SerialName("alert") ALERT,
 }
 
 @Serializable

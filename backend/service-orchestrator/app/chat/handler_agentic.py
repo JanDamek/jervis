@@ -81,12 +81,21 @@ async def run_agentic_loop(
     disconnect_event: asyncio.Event | None,
     is_summarized: bool,
     msg_len: int,
+    max_iterations_override: int | None = None,
+    use_case_override: str | None = None,
 ) -> AsyncIterator[ChatStreamEvent]:
     """Run the main agentic loop: LLM → extract tools → execute → iterate.
 
     Yields ChatStreamEvent objects for SSE streaming.
+
+    Args:
+        max_iterations_override: Override max iterations (from intent router).
+        use_case_override: Override use_case for model routing (e.g., "chat_cloud").
     """
-    effective_max_iterations = settings.chat_max_iterations_long if msg_len > settings.decompose_threshold else settings.chat_max_iterations
+    if max_iterations_override is not None:
+        effective_max_iterations = max_iterations_override
+    else:
+        effective_max_iterations = settings.chat_max_iterations_long if msg_len > settings.decompose_threshold else settings.chat_max_iterations
 
     created_tasks: list[dict] = []
     responded_tasks: list[str] = []
@@ -265,7 +274,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "brain_create_issue", "switch_context"}
+            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "brain_create_issue", "switch_context"}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
@@ -308,7 +317,7 @@ async def run_agentic_loop(
                         "content": (
                             f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
                             "Všechna dříve udělená oprávnění pro write akce "
-                            "(create_background_task, dispatch_coding_agent, store_knowledge, brain_create_issue) "
+                            "(create_background_task, create_work_plan, dispatch_coding_agent, store_knowledge, brain_create_issue) "
                             "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
                             "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),
@@ -390,7 +399,7 @@ async def run_agentic_loop(
                 if tool_name not in _WRITE_TOOLS:
                     tool_result_cache[cache_key] = result
 
-                if tool_name == "create_background_task":
+                if tool_name in ("create_background_task", "create_work_plan"):
                     created_tasks.append(arguments)
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))

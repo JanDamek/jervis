@@ -91,6 +91,7 @@ class BackgroundEngine(
     private var orchestratorResultJob: Job? = null
     private var workspaceRetryJob: Job? = null
     private var idleReviewJob: Job? = null
+    private var workPlanJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
     private val schedulerAdvance = Duration.ofMinutes(10)
@@ -210,6 +211,16 @@ class BackgroundEngine(
                 }
             }
 
+        workPlanJob =
+            scope.launch {
+                try {
+                    logger.info { "Work plan executor loop STARTED (interval: 15s)" }
+                    runWorkPlanLoop()
+                } catch (e: Exception) {
+                    logger.error(e) { "Work plan executor loop FAILED to start!" }
+                }
+            }
+
         logger.info { "BackgroundEngine initialization complete - all loops launched with singleton guarantee" }
     }
 
@@ -223,6 +234,7 @@ class BackgroundEngine(
         orchestratorResultJob?.cancel()
         workspaceRetryJob?.cancel()
         idleReviewJob?.cancel()
+        workPlanJob?.cancel()
         supervisor.cancel(CancellationException("Application shutdown"))
 
         try {
@@ -1628,5 +1640,99 @@ class BackgroundEngine(
             |
             |Summarize all findings at the end with a count of items per urgency level.
         """.trimMargin()
+    }
+
+    // ── Work Plan Executor ─────────────────────────────────────────────────
+
+    /**
+     * Work Plan Executor loop — manages hierarchical task dependencies.
+     *
+     * Every 15 seconds:
+     * 1. Find BLOCKED tasks → check if ALL blockedByTaskIds are DONE → unblock (READY_FOR_QUALIFICATION)
+     * 2. Find PLANNING root tasks (have children) → if all children DONE → root = DONE
+     * 3. If any child ERROR → escalate root to USER_TASK
+     *
+     * This loop only touches BLOCKED and PLANNING states — never interferes with other loops.
+     */
+    private suspend fun runWorkPlanLoop() {
+        delay(backgroundProperties.waitOnStartup)
+
+        while (scope.isActive) {
+            try {
+                var unblocked = 0
+                var completed = 0
+
+                // 1. Unblock BLOCKED tasks whose dependencies are all DONE
+                val blockedTasks = taskRepository.findByStateOrderByOrderInPhaseAsc(TaskStateEnum.BLOCKED)
+                    .toList()
+
+                for (task in blockedTasks) {
+                    if (task.blockedByTaskIds.isEmpty()) {
+                        // No dependencies — should not be BLOCKED, unblock immediately
+                        taskService.updateState(task, TaskStateEnum.READY_FOR_QUALIFICATION)
+                        unblocked++
+                        continue
+                    }
+
+                    // Check if ALL blocking tasks are DONE
+                    val allDone = task.blockedByTaskIds.all { depId ->
+                        val depTask = taskRepository.getById(depId)
+                        depTask?.state == TaskStateEnum.DONE
+                    }
+
+                    if (allDone) {
+                        taskService.updateState(task, TaskStateEnum.READY_FOR_QUALIFICATION)
+                        unblocked++
+                        logger.info { "WorkPlan: Unblocked task ${task.id} (${task.taskName}), all ${task.blockedByTaskIds.size} deps done" }
+                    }
+                }
+
+                // 2. Check PLANNING root tasks — complete when all children done
+                val planningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PLANNING)
+                    .toList()
+
+                for (rootTask in planningTasks) {
+                    val children = taskRepository.findByParentTaskId(rootTask.id).toList()
+                    if (children.isEmpty()) continue // No children yet, still decomposing
+
+                    val hasError = children.any { it.state == TaskStateEnum.ERROR }
+                    if (hasError) {
+                        // Escalate to USER_TASK so user sees the failure
+                        val failedNames = children.filter { it.state == TaskStateEnum.ERROR }
+                            .joinToString(", ") { it.taskName }
+                        taskService.updateStateAndContent(
+                            rootTask,
+                            TaskStateEnum.USER_TASK,
+                            "Work plan failed. Failed subtasks: $failedNames",
+                        )
+                        logger.warn { "WorkPlan: Root task ${rootTask.id} escalated to USER_TASK — child errors: $failedNames" }
+                        continue
+                    }
+
+                    val notDoneCount = taskRepository.countByParentTaskIdAndStateNot(rootTask.id, TaskStateEnum.DONE)
+                    if (notDoneCount == 0L) {
+                        // All children DONE — complete the root task
+                        val summary = children.joinToString("\n") { "- [DONE] ${it.taskName}" }
+                        taskService.updateStateAndContent(
+                            rootTask,
+                            TaskStateEnum.DONE,
+                            "Work plan completed. ${children.size} subtasks done:\n$summary",
+                        )
+                        completed++
+                        logger.info { "WorkPlan: Root task ${rootTask.id} completed — all ${children.size} children done" }
+                    }
+                }
+
+                if (unblocked > 0 || completed > 0) {
+                    logger.info { "WorkPlan cycle: unblocked=$unblocked, completed=$completed" }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error(e) { "WorkPlan executor error" }
+            }
+
+            delay(15_000) // 15s interval
+        }
     }
 }

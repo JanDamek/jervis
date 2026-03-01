@@ -3,8 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Intent Router categories (Phase 3)
+# ---------------------------------------------------------------------------
+
+class ChatCategory(str, Enum):
+    """Category of user intent — determines tool set, prompt, and routing."""
+    DIRECT = "direct"           # Simple answer, no tools needed (greeting, chit-chat, quick question)
+    RESEARCH = "research"       # KB search, code search, web search
+    BRAIN = "brain"             # Jira, Confluence, external brain systems
+    TASK_MGMT = "task_mgmt"    # Task lifecycle (create, schedule, list, cancel)
+    COMPLEX = "complex"         # Multi-step work plan, decomposition, coding dispatch
+    MEMORY = "memory"           # KB corrections, learning, fact verification
+
+
+@dataclass
+class RoutingDecision:
+    """Result of intent routing — determines how the message is processed."""
+    category: ChatCategory
+    confidence: float           # 0.0–1.0
+    reason: str                 # Human-readable reason for the decision
+    use_cloud: bool             # Whether to use cloud model (OpenRouter)
+    max_iterations: int         # Max agentic loop iterations
+    tool_names: list[str] = field(default_factory=list)  # Tool names for this category
 
 
 class ChatRequest(BaseModel):

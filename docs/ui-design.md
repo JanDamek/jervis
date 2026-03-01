@@ -609,6 +609,8 @@ iMessage/WhatsApp-style chat with content-based width:
 - **Markdown support**: Uses `multiplatform-markdown-renderer:0.29.0` with Material 3 theme colors
 - **Workflow steps**: Collapsible step list with status icons (✓ completed, ✗ failed, ↻ in-progress, ⏰ pending) and tool usage
 - **Confidence badge** (E14-S4): Shown on assistant messages when fact-check metadata present. Reads `fact_check_confidence`, `fact_check_claims`, `fact_check_verified` from `ChatMessage.metadata`. Displays `Icons.Default.Verified` icon + "N% (X/Y)" text. Color: green (≥80%), amber (≥50%), red (<50%). Hidden when no claims.
+- **Background result messages** (BACKGROUND_RESULT): `surfaceVariant` background, `Icons.Default.CheckCircle` (success) or `Icons.Default.Error` (failure) icon, collapsible content. Shows task title + summary.
+- **Urgent alert messages** (URGENT_ALERT): `errorContainer` border, `Icons.Default.Warning` icon, always expanded. Shows source + summary + optional suggested action. User can reply in chat.
 - **Timestamps**: Human-readable formatting via `formatMessageTime()` — today: "HH:mm", yesterday: "Včera HH:mm", this year: "d. M. HH:mm", older: "d. M. yyyy HH:mm"
 
 **Edit & Copy actions** (header row of each bubble):

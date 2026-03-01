@@ -3616,3 +3616,101 @@ System prompt contains a dynamic "Naučené postupy a konvence" section loaded f
 | System prompt tools | ~375 | ~120 | -255 |
 | Focus reminder | 0 | +80/iter | +160 |
 | **Per call total** | **~2,975** | **~1,180** | **-1,795** |
+
+---
+
+## 32. Intent Router + Cloud-First Chat (feature-flagged)
+
+> **Implemented:** 2026-03-01 | **Feature flag:** `use_intent_router=False` (disabled by default)
+
+### 32.1 Motivation
+
+Monolithic system prompt (160 lines) + 26 tools = excessive context, slow responses, unfocused tool usage.
+Intent router enables: focused prompts (~60-80 lines), 3-13 tools per category, cloud-first routing for quality.
+
+### 32.2 Two-Pass Classification
+
+**Pass 1: Regex fast-path** (0ms, handles ~60% of messages):
+- CORE only → DIRECT (no tools needed)
+- Single non-CORE category → map directly (RESEARCH, BRAIN, TASK_MGMT)
+
+**Pass 2: LLM classification** (~2-3s, LOCAL_FAST tier on P40):
+- Multiple regex hits → LLM decides category + confidence
+- Low confidence (<0.7) → fallback to RESEARCH
+
+### 32.3 Categories & Tool Sets
+
+| Category | Tools (count) | Max Iters | Use Case |
+|----------|---------------|-----------|----------|
+| DIRECT | none (0) | 1 | Greetings, simple questions |
+| RESEARCH | kb_search, code_search, web_search, memory_recall, switch_context (5) | 3 | Information lookup |
+| BRAIN | brain_* + switch_context (11) | 4 | Jira/Confluence CRUD |
+| TASK_MGMT | task lifecycle + meetings + KB (11) | 4 | Background tasks, meetings |
+| COMPLEX | work plans, coding, KB, brain, web (7) | 6 | Multi-step complex tasks |
+| MEMORY | kb_search, kb_delete, memory_store, store_knowledge, memory_recall, code_search (6) | 3 | KB corrections, learning |
+
+### 32.4 Prompt Architecture
+
+```
+core.py (shared identity + time + scope + runtime data + CRITICAL RULES)
+  + category-specific prompt (10-20 lines each)
+  = focused system prompt (~60-80 lines vs ~160 lines monolithic)
+```
+
+**Critical rules in core.py** (always applied):
+- Absolute client/project isolation
+- "User is always right" — corrections ≠ feature requests
+- KB may contain hallucinations — verify before trusting
+- Trust hierarchy: User > code_search > brain_search > kb_search
+
+### 32.5 Cloud Routing
+
+CHAT_CLOUD queue: claude-sonnet-4 → gpt-4o → p40 (fallback).
+DIRECT category stays on P40 (LOCAL_FAST). All other categories use cloud-first when OpenRouter is available.
+
+### 32.6 Files
+
+- `app/chat/intent_router.py` — route_intent(), _llm_classify()
+- `app/chat/prompts/` — core.py, direct.py, research.py, brain.py, task_mgmt.py, complex.py, memory.py, builder.py
+- `app/chat/models.py` — ChatCategory, RoutingDecision
+- `app/chat/tools.py` — select_tools_by_names()
+- `app/llm/openrouter_resolver.py` — CHAT_CLOUD queue
+- `app/config.py` — use_intent_router + per-category settings
+
+---
+
+## 33. Hierarchical Task System & Work Plan Decomposition
+
+> **Implemented:** 2026-03-01
+
+### 33.1 Task Hierarchy
+
+TaskDocument now supports parent-child relationships:
+- `parentTaskId` — links child to root task
+- `blockedByTaskIds` — dependencies that must complete before this task runs
+- `phase` + `orderInPhase` — ordering within work plan phases
+- New states: `BLOCKED` (waiting for deps), `PLANNING` (root task being decomposed)
+
+### 33.2 WorkPlanExecutor
+
+New loop in BackgroundEngine (15s interval):
+1. Find BLOCKED tasks → if all blockedByTaskIds are DONE → unblock to READY_FOR_QUALIFICATION
+2. Find PLANNING root tasks → if all children DONE → root.state = DONE with summary
+3. If any child ERROR → root escalated to USER_TASK
+
+### 33.3 create_work_plan Tool
+
+Chat tool that creates hierarchical work plans:
+- LLM sends phases + tasks with dependencies
+- Python forwards to `POST /internal/tasks/create-work-plan`
+- Kotlin creates root (PLANNING) + children (BLOCKED/READY_FOR_QUALIFICATION)
+- First phase tasks without dependencies start immediately
+- WorkPlanExecutor handles the rest automatically
+
+### 33.4 Unified Chat Stream
+
+Background results and urgent alerts pushed to chat:
+- `ChatRpcImpl.pushBackgroundResult()` — on task completion
+- `ChatRpcImpl.pushUrgentAlert()` — on urgent KB results
+- New MessageRole: BACKGROUND, ALERT
+- ChatContextAssembler maps to "system" role with prefixes for LLM awareness

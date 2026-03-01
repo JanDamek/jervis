@@ -371,6 +371,29 @@ class TaskService(
     }
 
     /**
+     * Update task state and content atomically.
+     * Used by WorkPlanExecutor to complete/escalate root tasks with summary content.
+     */
+    suspend fun updateStateAndContent(
+        task: TaskDocument,
+        next: TaskStateEnum,
+        content: String,
+    ): TaskDocument {
+        val fromState = task.state
+        val query = Query(Criteria.where("_id").`is`(task.id.value))
+        val update = Update()
+            .set("state", next.name)
+            .set("content", content)
+        val options = FindAndModifyOptions.options().returnNew(true)
+        val saved = mongoTemplate.findAndModify(query, update, options, TaskDocument::class.java)
+            .awaitSingleOrNull() ?: task.copy(state = next, content = content)
+        logger.info {
+            "TASK_STATE_CONTENT_UPDATE: id=${task.id} from=$fromState to=$next type=${task.type}"
+        }
+        return saved
+    }
+
+    /**
      * Mark the task as ERROR with an error message, without requiring the expected state.
      * This is used for fatal errors where we need to ensure a task is marked as failed.
      */

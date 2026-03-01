@@ -31,6 +31,11 @@ data class UserTaskListItemDto(
     val hasPendingQuestion: Boolean = false,
     /** Short preview of the pending question (first 120 chars). */
     val pendingQuestionPreview: String? = null,
+    // Work plan hierarchy
+    val parentTaskId: String? = null,
+    val childCount: Int = 0,
+    val completedChildCount: Int = 0,
+    val phase: String? = null,
 )
 
 @Serializable

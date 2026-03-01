@@ -9,6 +9,7 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.repository.TaskRepository
 import com.jervis.service.background.TaskService
 import com.jervis.service.task.UserTaskService
+import com.jervis.entity.ProcessingMode
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -193,6 +194,109 @@ fun Routing.installInternalTaskApi(
         }
     }
 
+    // Create a hierarchical work plan — root task (PLANNING) + child tasks (BLOCKED/READY)
+    post("/internal/tasks/create-work-plan") {
+        try {
+            val body = call.receive<InternalCreateWorkPlanRequest>()
+            val clientId = ClientId(ObjectId(body.clientId))
+            val projectId = body.projectId?.let { ProjectId(ObjectId(it)) }
+            val correlationPrefix = "workplan-${java.util.UUID.randomUUID().toString().take(8)}"
+
+            // 1. Create root task (PLANNING state)
+            val rootTask = taskService.createTask(
+                taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+                content = buildString {
+                    appendLine("# Work Plan: ${body.title}")
+                    appendLine()
+                    body.phases.forEachIndexed { pi, phase ->
+                        appendLine("## Phase ${pi + 1}: ${phase.name}")
+                        phase.tasks.forEachIndexed { ti, task ->
+                            val deps = task.dependsOn?.joinToString(", ") ?: "none"
+                            appendLine("- [${task.actionType ?: "TASK"}] ${task.title} (depends: $deps)")
+                        }
+                        appendLine()
+                    }
+                },
+                clientId = clientId,
+                correlationId = correlationPrefix,
+                sourceUrn = SourceUrn("chat://work-plan"),
+                projectId = projectId,
+                state = TaskStateEnum.PLANNING,
+                taskName = body.title,
+            )
+
+            // 2. Create child tasks per phase
+            // First pass: create all tasks to get their IDs, map title → TaskId
+            val titleToId = mutableMapOf<String, TaskId>()
+            val childTasks = mutableListOf<com.jervis.entity.TaskDocument>()
+            var totalChildren = 0
+
+            for ((phaseIndex, phase) in body.phases.withIndex()) {
+                for ((taskIndex, taskReq) in phase.tasks.withIndex()) {
+                    val childTask = taskService.createTask(
+                        taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
+                        content = taskReq.description,
+                        clientId = clientId,
+                        correlationId = "$correlationPrefix-p${phaseIndex}-t${taskIndex}",
+                        sourceUrn = SourceUrn("workplan://${rootTask.id}"),
+                        projectId = projectId,
+                        state = TaskStateEnum.BLOCKED, // Will adjust below
+                        taskName = taskReq.title,
+                    )
+                    titleToId[taskReq.title] = childTask.id
+                    childTasks.add(childTask)
+                    totalChildren++
+                }
+            }
+
+            // 3. Second pass: set parentTaskId, blockedByTaskIds, phase, orderInPhase
+            var childIdx = 0
+            for ((phaseIndex, phase) in body.phases.withIndex()) {
+                for ((taskIndex, taskReq) in phase.tasks.withIndex()) {
+                    val child = childTasks[childIdx]
+                    val blockedBy = taskReq.dependsOn
+                        ?.mapNotNull { depTitle -> titleToId[depTitle] }
+                        ?: emptyList()
+
+                    // First phase tasks with no dependencies start as READY_FOR_QUALIFICATION
+                    val state = if (phaseIndex == 0 && blockedBy.isEmpty()) {
+                        TaskStateEnum.READY_FOR_QUALIFICATION
+                    } else {
+                        TaskStateEnum.BLOCKED
+                    }
+
+                    val updated = child.copy(
+                        parentTaskId = rootTask.id,
+                        blockedByTaskIds = blockedBy,
+                        phase = phase.name,
+                        orderInPhase = taskIndex,
+                        state = state,
+                        processingMode = ProcessingMode.BACKGROUND,
+                        actionType = taskReq.actionType,
+                    )
+                    taskRepository.save(updated)
+                    childIdx++
+                }
+            }
+
+            call.respondText(
+                Json.encodeToString(mapOf(
+                    "rootTaskId" to rootTask.id.toString(),
+                    "phaseCount" to body.phases.size.toString(),
+                    "childCount" to totalChildren.toString(),
+                )),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/create-work-plan" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // List recent tasks — for chat tool list_recent_tasks
     get("/internal/tasks/recent") {
         try {
@@ -269,6 +373,28 @@ data class InternalCreateTaskRequest(
     val schedule: String? = null,
     val daysOffset: Int? = null,
     val createdBy: String? = null,
+)
+
+@Serializable
+data class InternalCreateWorkPlanRequest(
+    val title: String,
+    val phases: List<WorkPlanPhase>,
+    val clientId: String,
+    val projectId: String? = null,
+)
+
+@Serializable
+data class WorkPlanPhase(
+    val name: String,
+    val tasks: List<WorkPlanTask>,
+)
+
+@Serializable
+data class WorkPlanTask(
+    val title: String,
+    val description: String,
+    val actionType: String? = null,
+    val dependsOn: List<String>? = null,
 )
 
 @Serializable

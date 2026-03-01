@@ -366,6 +366,82 @@ TOOL_REMOVE_FILTER_RULE: dict = {
 # Action memory tools (EPIC 9-S4)
 # ---------------------------------------------------------------------------
 
+TOOL_CREATE_WORK_PLAN: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_work_plan",
+        "description": (
+            "Rozlož složitý úkol na hierarchii dílčích úkolů s fázemi a závislostmi. "
+            "Použij pro úkoly s víc než 3 kroky. Vytvoří root task (PLANNING) s child tasky "
+            "které se automaticky odblokují a zpracují."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Název celého plánu (stručný).",
+                },
+                "phases": {
+                    "type": "array",
+                    "description": "Fáze plánu (v pořadí vykonání).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Název fáze (např. 'Analýza', 'Implementace').",
+                            },
+                            "tasks": {
+                                "type": "array",
+                                "description": "Úkoly v rámci fáze.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {
+                                            "type": "string",
+                                            "description": "Název dílčího úkolu.",
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "description": "Co přesně se má udělat.",
+                                        },
+                                        "action_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "DECIDE", "RESEARCH", "DESIGN",
+                                                "CODE", "REVIEW", "TEST",
+                                                "CLARIFY", "ESTIMATE",
+                                            ],
+                                            "description": "Typ akce.",
+                                        },
+                                        "depends_on": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "Názvy úkolů na kterých závisí (volitelné).",
+                                        },
+                                    },
+                                    "required": ["title", "description"],
+                                },
+                            },
+                        },
+                        "required": ["name", "tasks"],
+                    },
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (z kontextu nebo se zeptej).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (volitelné).",
+                },
+            },
+            "required": ["title", "phases"],
+        },
+    },
+}
+
 TOOL_QUERY_ACTION_LOG: dict = {
     "type": "function",
     "function": {
@@ -479,6 +555,7 @@ TOOL_UPDATE_GUIDELINE: dict = {
 
 CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_CREATE_BACKGROUND_TASK,
+    TOOL_CREATE_WORK_PLAN,
     TOOL_DISPATCH_CODING_AGENT,
     TOOL_SEARCH_TASKS,
     TOOL_GET_TASK_STATUS,
@@ -579,7 +656,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "brain_add_comment": "brain", "brain_transition_issue": "brain",
     "brain_search_issues": "brain", "brain_create_page": "brain",
     "brain_update_page": "brain", "brain_search_pages": "brain",
-    "create_background_task": "task", "dispatch_coding_agent": "task",
+    "create_background_task": "task", "create_work_plan": "task", "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
@@ -589,3 +666,28 @@ TOOL_DOMAINS: dict[str, str] = {
     "remove_filter_rule": "filtering",
     "query_action_log": "memory",
 }
+
+# Tool name → tool definition lookup (for intent router)
+_TOOL_BY_NAME: dict[str, dict] = {
+    tool["function"]["name"]: tool for tool in CHAT_TOOLS
+}
+
+
+def select_tools_by_names(tool_names: list[str]) -> list[dict]:
+    """Select tool definitions by name from CHAT_TOOLS.
+
+    Used by intent router to build a focused tool set per category.
+
+    Args:
+        tool_names: List of tool function names (e.g., ["kb_search", "code_search"]).
+
+    Returns:
+        List of tool definition dicts (no duplicates, preserves order).
+    """
+    tools = []
+    seen = set()
+    for name in tool_names:
+        if name in _TOOL_BY_NAME and name not in seen:
+            tools.append(_TOOL_BY_NAME[name])
+            seen.add(name)
+    return tools

@@ -112,6 +112,7 @@ def _topics_from_tools(used_tools: list[str]) -> list[dict]:
         "brain_search": ("Brain JIRA", "task"),
         "brain_create_issue": ("Brain JIRA", "task"),
         "create_background_task": ("Správa úkolů", "planning"),
+        "create_work_plan": ("Správa úkolů", "planning"),
         "dispatch_coding_agent": ("Coding", "task"),
         "store_knowledge": ("Knowledge Base", "admin"),
         "memory_store": ("Paměť", "admin"),

@@ -94,3 +94,36 @@
 ---
 
 *Aktualizováno 2026-02-26 po implementaci všech položek (kromě EPIC 15 Apple Watch).*
+
+---
+
+## Architecture Upgrade (2026-03-01)
+
+### 21. Hierarchická dekompozice tasků (TaskDocument hierarchy)
+**Stav:** ✅ Hotovo
+- TaskStateEnum: nové stavy BLOCKED, PLANNING
+- TaskDocument: nová pole parentTaskId, blockedByTaskIds, phase, orderInPhase
+- WorkPlanExecutor loop v BackgroundEngine (15s interval) — automatický unblock, completion
+- DTOs: childCount, completedChildCount, phase
+
+### 22. Unified Chat Stream (BACKGROUND + ALERT zprávy)
+**Stav:** ✅ Hotovo (UI styling pending)
+- MessageRole: BACKGROUND, ALERT
+- ChatRpcImpl: pushBackgroundResult(), pushUrgentAlert(), isUserOnline()
+- OrchestratorStatusHandler: push do chatu při done/error
+- KbResultRouter: urgent push do chatu
+- ChatContextAssembler: mapování nových rolí pro LLM
+
+### 23. Intent Router + Cloud-first chat
+**Stav:** ✅ Hotovo (feature-flagged, `use_intent_router=False`)
+- Dvou-fázová klasifikace: regex fast-path (0ms) + LLM fallback (P40, ~2-3s)
+- 6 kategorií: DIRECT, RESEARCH, BRAIN, TASK_MGMT, COMPLEX, MEMORY
+- Per-category fokusované prompty (prompts/ adresář) a tool sety (3-13 tools místo 26)
+- CHAT_CLOUD queue pro cloud-first routing (claude-sonnet-4 → gpt-4o → p40)
+- Posílená izolace klientů/projektů v promptech
+
+### 24. Planning Agent (work plan dekompozice)
+**Stav:** ✅ Hotovo
+- create_work_plan chat tool: fáze + závislosti → hierarchie child tasků
+- Kotlin endpoint POST /internal/tasks/create-work-plan
+- Integrace s approval flow a write consent

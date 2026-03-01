@@ -106,6 +106,7 @@ import java.time.Instant
 @CompoundIndexes(
     CompoundIndex(name = "state_type", def = "{'state': 1, 'type': 1}"),
     CompoundIndex(name = "state_type_createdAt", def = "{'state': 1, 'type': 1, 'createdAt': -1}"),
+    CompoundIndex(name = "parent_state_idx", def = "{'parentTaskId': 1, 'state': 1}"),
 )
 data class TaskDocument(
     @Id
@@ -177,6 +178,16 @@ data class TaskDocument(
     val actionType: String? = null,
     /** Inferred complexity from qualifier (e.g., TRIVIAL, SIMPLE, MEDIUM, COMPLEX). */
     val estimatedComplexity: String? = null,
+    // Work plan hierarchy: parent-child task decomposition
+    /** Parent task ID for hierarchical task decomposition (null = root/standalone task). */
+    @Indexed
+    val parentTaskId: TaskId? = null,
+    /** Task IDs that must complete (DONE) before this task can be unblocked. */
+    val blockedByTaskIds: List<TaskId> = emptyList(),
+    /** Phase name within a work plan (e.g., "architecture", "implementation", "testing"). */
+    val phase: String? = null,
+    /** Ordering within a phase (0-based). */
+    val orderInPhase: Int = 0,
 ) {
     companion object {
         /**
@@ -223,6 +234,10 @@ data class TaskDocument(
             priorityReason: String?,
             actionType: String?,
             estimatedComplexity: String?,
+            parentTaskId: ObjectId?,
+            blockedByTaskIds: List<ObjectId>?,
+            phase: String?,
+            orderInPhase: Int?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -259,6 +274,10 @@ data class TaskDocument(
             priorityReason = priorityReason,
             actionType = actionType,
             estimatedComplexity = estimatedComplexity,
+            parentTaskId = parentTaskId?.let { TaskId(it) },
+            blockedByTaskIds = blockedByTaskIds?.map { TaskId(it) } ?: emptyList(),
+            phase = phase,
+            orderInPhase = orderInPhase ?: 0,
         )
     }
 }

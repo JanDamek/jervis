@@ -42,6 +42,7 @@ class OrchestratorStatusHandler(
     private val clientRepository: ClientRepository,
     private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val environmentService: com.jervis.service.environment.EnvironmentService,
+    private val chatRpcImpl: com.jervis.rpc.ChatRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -237,10 +238,22 @@ class OrchestratorStatusHandler(
             )
             taskRepository.save(updatedTask)
 
-            // Background and idle tasks: delete after completion
+            // Push background result to chat if user is online
             if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
                 task.processingMode == com.jervis.entity.ProcessingMode.IDLE
             ) {
+                if (chatRpcImpl.isUserOnline()) {
+                    try {
+                        chatRpcImpl.pushBackgroundResult(
+                            taskTitle = task.taskName,
+                            summary = summary ?: "Completed",
+                            success = true,
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Failed to push background result to chat for task ${task.id}" }
+                    }
+                }
+                // Delete after completion
                 taskRepository.delete(updatedTask)
             }
         }
@@ -287,6 +300,19 @@ class OrchestratorStatusHandler(
                 )
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to save error message for task ${task.id}" }
+            }
+        }
+
+        // Push error to chat if user is online
+        if (task.processingMode != com.jervis.entity.ProcessingMode.FOREGROUND && chatRpcImpl.isUserOnline()) {
+            try {
+                chatRpcImpl.pushBackgroundResult(
+                    taskTitle = task.taskName,
+                    summary = errorMsg,
+                    success = false,
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to push background error to chat for task ${task.id}" }
             }
         }
 

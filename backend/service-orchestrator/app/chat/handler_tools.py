@@ -45,6 +45,7 @@ _TOOL_DESCRIPTIONS = {
     "brain_update_page": lambda a: f"Aktualizuji stránku: {a.get('page_id', '')}",
     "brain_search_pages": lambda a: f"Hledám v Confluence: {a.get('query', '')}",
     "create_background_task": lambda a: f"Vytvářím úkol: {a.get('title', '')}",
+    "create_work_plan": lambda a: f"Vytvářím plán: {a.get('title', '')}",
     "dispatch_coding_agent": lambda _: "Odesílám coding task na agenta",
     "search_user_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
     "search_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
@@ -76,6 +77,7 @@ def describe_tool_call(name: str, args: dict) -> str:
 # Chat-specific tools dispatched via Kotlin internal API
 _CHAT_SPECIFIC_TOOLS = {
     "create_background_task",
+    "create_work_plan",
     "dispatch_coding_agent",
     "search_user_tasks",
     "search_tasks",
@@ -123,6 +125,19 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
         priority=args.get("priority", "medium"),
     )
     return f"Background task created: {result}"
+
+
+async def _handle_create_work_plan(args, client_id, project_id, kotlin_client):
+    effective_client_id = args.get("client_id") or client_id
+    if not effective_client_id:
+        return "Chyba: client_id je povinný pro vytvoření work planu. Zeptej se uživatele na klienta."
+    result = await kotlin_client.create_work_plan(
+        title=args["title"],
+        phases=args["phases"],
+        client_id=effective_client_id,
+        project_id=args.get("project_id", project_id),
+    )
+    return result
 
 
 async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
@@ -268,6 +283,7 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
+    "create_work_plan": _handle_create_work_plan,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
     "search_user_tasks": _handle_search_tasks,
     "search_tasks": _handle_search_tasks,

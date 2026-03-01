@@ -168,6 +168,26 @@ class ChatService(
     }
 
     /**
+     * Save a system-generated message (BACKGROUND result, ALERT, etc.) to DB.
+     * Used by ChatRpcImpl push methods to persist messages before emitting to stream.
+     */
+    suspend fun saveSystemMessage(
+        sessionId: ObjectId,
+        role: MessageRole,
+        content: String,
+        metadata: Map<String, String> = emptyMap(),
+    ): ChatMessageDocument {
+        val correlationId = ObjectId().toString()
+        return chatMessageService.addMessage(
+            conversationId = sessionId,
+            role = role,
+            content = content,
+            correlationId = correlationId,
+            metadata = metadata,
+        )
+    }
+
+    /**
      * Archive the current session (new session created on next message).
      */
     suspend fun archiveCurrentSession(userId: String = "jan") {

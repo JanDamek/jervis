@@ -57,4 +57,6 @@ enum class MessageRole {
     USER,
     ASSISTANT,
     SYSTEM,
+    BACKGROUND,  // Result from a completed background task
+    ALERT,       // Urgent notification (e.g., urgent email, deadline approaching)
 }

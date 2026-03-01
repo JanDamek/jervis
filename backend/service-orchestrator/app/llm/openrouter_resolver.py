@@ -114,6 +114,11 @@ _DEFAULT_QUEUES: dict[str, list[dict]] = {
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
         {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
     ],
+    "CHAT_CLOUD": [
+        {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
+        {"modelId": "openai/gpt-4o", "isLocal": False, "maxContextTokens": 128_000},
+        {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
+    ],
 }
 
 
@@ -141,6 +146,8 @@ _QUEUE_MAP: dict[tuple[str, str], str] = {
     ("large_context", "NORMAL"): "LARGE_CONTEXT",
     ("orchestrator", "CRITICAL"): "ORCHESTRATOR",
     ("orchestrator", "NORMAL"): "ORCHESTRATOR",
+    ("chat_cloud", "CRITICAL"): "CHAT_CLOUD",
+    ("chat_cloud", "NORMAL"): "CHAT_CLOUD",
 }
 
 

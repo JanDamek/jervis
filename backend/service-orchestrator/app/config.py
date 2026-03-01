@@ -175,6 +175,18 @@ class Settings(BaseSettings):
     max_tool_result_chars: int = 8000
     tool_execution_timeout: int = 120
 
+    # Intent Router (Phase 3 — feature-flagged OFF by default)
+    use_intent_router: bool = False
+    router_max_tokens: int = 256
+    router_timeout: float = 5.0
+    router_confidence_threshold: float = 0.7
+    direct_max_iterations: int = 1
+    research_max_iterations: int = 3
+    brain_max_iterations: int = 4
+    task_mgmt_max_iterations: int = 4
+    complex_max_iterations: int = 6
+    memory_max_iterations: int = 3
+
     class Config:
         env_prefix = "ORCHESTRATOR_"
 

@@ -225,4 +225,30 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
      */
     suspend fun findByCorrelationId(correlationId: String): TaskDocument?
 
+    // Work plan hierarchy queries
+
+    /**
+     * Find all child tasks of a parent task.
+     * Used by WorkPlanExecutor to check hierarchy completion.
+     */
+    fun findByParentTaskId(parentTaskId: TaskId): Flow<TaskDocument>
+
+    /**
+     * Find child tasks of a parent in a specific state.
+     * Used by WorkPlanExecutor to find BLOCKED children for unblocking.
+     */
+    fun findByParentTaskIdAndState(parentTaskId: TaskId, state: TaskStateEnum): Flow<TaskDocument>
+
+    /**
+     * Count child tasks NOT in a given state.
+     * Used to check if all children are DONE (countNot(DONE) == 0 → all done).
+     */
+    suspend fun countByParentTaskIdAndStateNot(parentTaskId: TaskId, state: TaskStateEnum): Long
+
+    /**
+     * Find all BLOCKED tasks ordered by phase order.
+     * Used by WorkPlanExecutor to iterate BLOCKED tasks for dependency resolution.
+     */
+    fun findByStateOrderByOrderInPhaseAsc(state: TaskStateEnum): Flow<TaskDocument>
+
 }

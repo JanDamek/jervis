@@ -24,6 +24,9 @@
 15. [Notification System](#notification-system)
 16. [Foreground Chat (ChatSession)](#foreground-chat-chatsession)
 17. [Guidelines Engine](#guidelines-engine)
+18. [Intent Router](#intent-router-feature-flagged)
+19. [Hierarchical Task System](#hierarchical-task-system)
+20. [Unified Chat Stream](#unified-chat-stream)
 
 ---
 
@@ -1997,6 +2000,122 @@ The old foreground chat flow (`IAgentOrchestratorService.subscribeToChat/sendMes
 - **`OrchestratorStatusHandler`**: Removed `emitToChatStream()` calls in handleInterrupted/handleDone/handleError (message persistence kept)
 - **`/internal/streaming-token`**: Now a no-op endpoint (returns ok but doesn't relay tokens)
 - **`IAgentOrchestratorService`** retains: queue management (`subscribeToQueueStatus`, `getPendingTasks`, `reorderTask`, `moveTask`, `cancelOrchestration`) and task history (`getTaskHistory`)
+
+---
+
+## Intent Router (feature-flagged)
+
+**Status:** Implemented, disabled by default (`use_intent_router=False`)
+
+Two-pass intent classification that routes chat messages to focused specialist agents with category-specific tools and prompts.
+
+### Architecture
+
+```
+User message → classify_intent() (regex)
+                     │
+              ┌──────▼──────┐
+              │ Pass 1:     │ Regex fast-path (0ms, ~60% of messages)
+              │ CORE only?  │──► DIRECT (no tools, P40)
+              │ Single hit? │──► Map directly to category
+              └──────┬──────┘
+                     │ Multiple regex hits (ambiguous)
+              ┌──────▼──────┐
+              │ Pass 2:     │ LLM call (LOCAL_FAST, ~2-3s)
+              │ P40 classify│──► Category + confidence
+              └──────┬──────┘
+                     │
+              ┌──────▼──────┐
+              │ Route       │ Category-specific prompt + tools + cloud routing
+              └─────────────┘
+```
+
+### Categories
+
+| Category | Tools | Max Iterations | Routing |
+|----------|-------|----------------|---------|
+| DIRECT | 0 | 1 | P40 (LOCAL_FAST) |
+| RESEARCH | 5 (kb_search, code_search, web_search, memory_recall, switch_context) | 3 | Cloud-first |
+| BRAIN | 11 (brain_* + switch_context) | 4 | Cloud-first |
+| TASK_MGMT | 11 (task lifecycle + meetings + KB) | 4 | Cloud-first |
+| COMPLEX | 7 (work plans, coding, research) | 6 | Cloud-first |
+| MEMORY | 6 (kb_search, kb_delete, memory_store, store_knowledge, memory_recall, code_search) | 3 | Cloud-first |
+
+### Files
+
+- `app/chat/intent_router.py` — Two-pass classification, `_CATEGORY_TOOL_NAMES` mapping
+- `app/chat/prompts/` — Per-category focused prompts (core.py, direct.py, research.py, brain.py, task_mgmt.py, complex.py, memory.py, builder.py)
+- `app/chat/tools.py` — `select_tools_by_names()`, `_TOOL_BY_NAME` lookup
+- `app/llm/openrouter_resolver.py` — `CHAT_CLOUD` queue (claude-sonnet-4 → gpt-4o → p40 fallback)
+
+### Feature Flag
+
+When `use_intent_router=False` (default), the original monolithic flow is used unchanged.
+When `True`: handler.py calls `route_intent()` → builds routed prompt → selects focused tools → runs agentic loop with `max_iterations_override` and `use_case_override="chat_cloud"`.
+
+---
+
+## Hierarchical Task System
+
+### Overview
+
+Tasks can form parent-child hierarchies for work plan decomposition. The `create_work_plan` chat tool creates a root task (PLANNING state) with child tasks organized in phases with dependency tracking.
+
+### New Task States
+
+| State | Purpose |
+|-------|---------|
+| `BLOCKED` | Waiting for dependency tasks (`blockedByTaskIds`) to complete |
+| `PLANNING` | Root task undergoing decomposition into child tasks |
+
+### TaskDocument Hierarchy Fields
+
+```kotlin
+val parentTaskId: TaskId? = null,      // Parent task for child tasks
+val blockedByTaskIds: List<TaskId> = emptyList(), // Dependencies
+val phase: String? = null,             // Phase name (e.g., "architecture")
+val orderInPhase: Int = 0,             // Ordering within phase
+```
+
+### WorkPlanExecutor
+
+New loop in `BackgroundEngine` (15s interval) that:
+1. Finds BLOCKED tasks → checks if ALL `blockedByTaskIds` have state DONE → unblocks to READY_FOR_QUALIFICATION
+2. Finds PLANNING root tasks → if all children DONE → root.state = DONE with summary
+3. If any child ERROR → root task escalated to USER_TASK for user attention
+
+Existing loops (execution, qualification) are unaffected — they never see BLOCKED tasks.
+
+### Kotlin Endpoint
+
+`POST /internal/tasks/create-work-plan` — accepts phases with tasks and dependencies, creates root (PLANNING) + children (BLOCKED/READY_FOR_QUALIFICATION).
+
+---
+
+## Unified Chat Stream
+
+### New Message Roles
+
+| Role | Purpose | UI Styling |
+|------|---------|------------|
+| `BACKGROUND` | Background task result pushed to chat | surfaceVariant, checkmark/error icon, collapsible |
+| `ALERT` | Urgent notification pushed to chat | errorContainer border, warning icon, always visible |
+
+### Push Mechanism
+
+```kotlin
+// ChatRpcImpl
+fun isUserOnline(): Boolean = chatEventStream.subscriptionCount.value > 0
+suspend fun pushBackgroundResult(taskTitle, summary, success, metadata)
+suspend fun pushUrgentAlert(sourceUrn, summary, suggestedAction)
+```
+
+**OrchestratorStatusHandler** pushes BACKGROUND_RESULT on task done/error (when user is online).
+**KbResultRouter** pushes URGENT_ALERT for urgent KB results.
+
+### LLM Context Integration
+
+`ChatContextAssembler` maps BACKGROUND/ALERT roles to `"system"` for LLM with `[Background]`/`[Urgent Alert]` prefixes, so Jervis sees background results and alerts in conversation context.
 
 ---
 
