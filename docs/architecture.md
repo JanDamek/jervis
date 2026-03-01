@@ -1327,12 +1327,27 @@ When a coding task is dispatched to the Python orchestrator:
 4. Python orchestrator stores in LangGraph state as `environment` dict + `environment_id`
 5. `workspace_manager.prepare_workspace()` writes:
    - `.jervis/environment.json` – raw JSON for programmatic access
-   - `.jervis/environment.md` – human-readable markdown
+   - `.jervis/environment.md` – human-readable markdown with connection strings, credentials, how-to-run
+   - `.env` / `.env.{component}` – resolved env vars for `source .env` usage
 6. `CLAUDE.md` includes environment section with:
-   - Infrastructure endpoints (host:port)
+   - Infrastructure endpoints (host:port) and connection strings
+   - Default credentials (DEV only)
    - Project components with ENV vars
+   - How to run instructions (install deps, source .env, start app)
+   - Environment workflow (use .env, don't build Docker, check infra health)
    - Agent instructions
    - Component topology
+
+### Typical Agent Workflow (Create → Deploy → Use)
+
+```
+1. environment_create(client_id, name, ...)     → PENDING
+2. environment_add_component(id, "postgresql", "POSTGRESQL")
+3. environment_add_component(id, "my-app", "PROJECT")
+4. environment_auto_suggest_mappings(id)        → auto-creates SPRING_DATASOURCE_URL, etc.
+5. environment_deploy(id)                       → RUNNING, values resolved
+6. Coding agent gets CLAUDE.md + .env with resolved connection strings
+```
 
 ### UI → Chat Context Bridge
 
@@ -1387,6 +1402,8 @@ Agents connect via HTTP instead of stdio subprocesses — smaller Docker images,
 | `environment_stop(environment_id)` | Deprovision (stop deployments, keep DB definition) |
 | `environment_status(environment_id)` | Per-component readiness and replica status |
 | `environment_sync(environment_id)` | Re-apply manifests from DB to running K8s |
+| `environment_add_property_mapping(environment_id, ...)` | Add env var mapping from infra → project |
+| `environment_auto_suggest_mappings(environment_id)` | Auto-generate mappings for all PROJECT×INFRA pairs |
 | `environment_clone(environment_id, new_name, ...)` | Clone environment to new scope/tier |
 | `environment_keep_running(enabled)` | Override auto-stop — keep env running for user testing |
 | `environment_delete(environment_id)` | Delete environment + namespace |
@@ -1426,6 +1443,8 @@ POST   /internal/environments                     → CreateEnvironmentRequest
 DELETE /internal/environments/{id}
 POST   /internal/environments/{id}/components     → AddComponentRequest
 PUT    /internal/environments/{id}/components/{name} → ConfigureComponentRequest
+POST   /internal/environments/{id}/property-mappings → AddPropertyMappingRequest
+POST   /internal/environments/{id}/property-mappings/auto-suggest
 POST   /internal/environments/{id}/deploy
 POST   /internal/environments/{id}/stop
 POST   /internal/environments/{id}/sync
@@ -1451,7 +1470,8 @@ GET  /internal/environment/{ns}/status
 
 **Workspace Integration:**
 - `workspace_manager.py` writes `.claude/mcp.json` with HTTP MCP server URL
-- `CLAUDE.md` includes tool descriptions and namespace hint
+- `CLAUDE.md` includes tool descriptions, namespace hint, connection strings, credentials, how-to-run
+- `.env` / `.env.{component}` files with resolved property mappings for `source .env` usage
 - Namespace passed as tool parameter (not env var)
 
 **Key Files:**

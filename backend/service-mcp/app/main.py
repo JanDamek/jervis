@@ -1516,6 +1516,75 @@ async def environment_clone(
         )
 
 
+@mcp.tool
+async def environment_add_property_mapping(
+    environment_id: str,
+    project_component: str,
+    property_name: str,
+    target_component: str,
+    value_template: str,
+) -> str:
+    """Add an environment variable mapping from an infrastructure component to a project component.
+
+    Maps an ENV var in the project to a value derived from an infrastructure component.
+    Use template placeholders: {host}, {port}, {name}, {env:VAR_NAME}.
+
+    Example: property_name="DATABASE_URL", target_component="postgresql",
+             value_template="postgresql://postgres:{env:POSTGRES_PASSWORD}@{host}:{port}/mydb"
+
+    Args:
+        environment_id: The environment ID
+        project_component: ID of the project component (receiving the env var)
+        property_name: ENV var name (e.g., DATABASE_URL, SPRING_DATASOURCE_URL)
+        target_component: ID of the infrastructure component (source of connection info)
+        value_template: Value template with placeholders ({host}, {port}, {env:VAR_NAME})
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/property-mappings",
+            json={
+                "projectComponentId": project_component,
+                "propertyName": property_name,
+                "targetComponentId": target_component,
+                "valueTemplate": value_template,
+            },
+        )
+        if resp.status_code == 409:
+            return f"Mapping for '{property_name}' already exists."
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        count = len(env.get("propertyMappings", []))
+        return f"Property mapping added: {property_name} → {target_component}. Total mappings: {count}."
+
+
+@mcp.tool
+async def environment_auto_suggest_mappings(environment_id: str) -> str:
+    """Auto-generate property mappings for all PROJECT x INFRA component pairs.
+
+    Uses predefined templates (JDBC URLs, Redis URIs, etc.) to create mappings.
+    Skips mappings that already exist. Run this after adding all components to
+    quickly set up standard connection env vars.
+
+    Args:
+        environment_id: The environment ID
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/environments/{environment_id}/property-mappings/auto-suggest",
+        )
+        if resp.status_code != 200:
+            return f"Error ({resp.status_code}): {resp.text}"
+        env = resp.json()
+        added = resp.headers.get("X-Mappings-Added", "?")
+        total = len(env.get("propertyMappings", []))
+        return (
+            f"Auto-suggested mappings for '{env['name']}'.\n"
+            f"Added: {added}, Total: {total}.\n"
+            f"Use environment_deploy to provision and resolve values."
+        )
+
+
 # ── Environment / K8s Tools ──────────────────────────────────────────────
 # These tools call the Kotlin backend's internal REST endpoints which perform
 # the actual fabric8 K8s operations. K8s credentials stay server-side.

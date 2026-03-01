@@ -10,10 +10,12 @@ import com.jervis.entity.EnvironmentComponent
 import com.jervis.entity.EnvironmentDocument
 import com.jervis.entity.EnvironmentState
 import com.jervis.entity.EnvironmentTier
+import com.jervis.entity.PropertyMapping
 import com.jervis.mapper.toDto
 import com.jervis.service.environment.COMPONENT_DEFAULTS
 import com.jervis.service.environment.EnvironmentK8sService
 import com.jervis.service.environment.EnvironmentService
+import com.jervis.service.environment.PROPERTY_MAPPING_TEMPLATES
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -388,6 +390,114 @@ fun Routing.installInternalEnvironmentApi(
         }
     }
 
+    // --- Add property mapping ---
+    post("/internal/environments/{id}/property-mappings") {
+        try {
+            val id = call.parameters["id"] ?: return@post call.respondText(
+                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val body = call.receive<AddPropertyMappingRequest>()
+            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
+
+            // Validate components exist
+            val projectComp = env.components.find { it.id == body.projectComponentId }
+                ?: return@post call.respondText(
+                    "{\"error\":\"Project component '${body.projectComponentId}' not found\"}",
+                    ContentType.Application.Json, HttpStatusCode.NotFound,
+                )
+            val targetComp = env.components.find { it.id == body.targetComponentId }
+                ?: return@post call.respondText(
+                    "{\"error\":\"Target component '${body.targetComponentId}' not found\"}",
+                    ContentType.Application.Json, HttpStatusCode.NotFound,
+                )
+
+            // Check for duplicate
+            val exists = env.propertyMappings.any {
+                it.projectComponentId == body.projectComponentId && it.propertyName == body.propertyName
+            }
+            if (exists) {
+                return@post call.respondText(
+                    "{\"error\":\"Mapping for '${body.propertyName}' on '${projectComp.name}' already exists\"}",
+                    ContentType.Application.Json, HttpStatusCode.Conflict,
+                )
+            }
+
+            val mapping = PropertyMapping(
+                projectComponentId = body.projectComponentId,
+                propertyName = body.propertyName,
+                targetComponentId = body.targetComponentId,
+                valueTemplate = body.valueTemplate,
+            )
+            val updated = env.copy(propertyMappings = env.propertyMappings + mapping)
+            val saved = environmentService.saveEnvironment(updated)
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                saved.toDto(),
+            )
+            call.respondText(json, ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to add property mapping" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // --- Auto-suggest property mappings ---
+    post("/internal/environments/{id}/property-mappings/auto-suggest") {
+        try {
+            val id = call.parameters["id"] ?: return@post call.respondText(
+                "{\"error\":\"Missing id\"}", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val env = environmentService.getEnvironmentById(EnvironmentId(ObjectId(id)))
+
+            val projects = env.components.filter { it.type == ComponentType.PROJECT }
+            val infra = env.components.filter { it.type != ComponentType.PROJECT }
+
+            var newMappings = env.propertyMappings.toList()
+            var addedCount = 0
+
+            for (project in projects) {
+                for (infraComp in infra) {
+                    val templates = PROPERTY_MAPPING_TEMPLATES[infraComp.type] ?: continue
+                    for (tmpl in templates) {
+                        // Skip if already exists
+                        val exists = newMappings.any {
+                            it.projectComponentId == project.id && it.propertyName == tmpl.envVarName
+                        }
+                        if (exists) continue
+
+                        newMappings = newMappings + PropertyMapping(
+                            projectComponentId = project.id,
+                            propertyName = tmpl.envVarName,
+                            targetComponentId = infraComp.id,
+                            valueTemplate = tmpl.valueTemplate,
+                        )
+                        addedCount++
+                    }
+                }
+            }
+
+            val saved = environmentService.saveEnvironment(env.copy(propertyMappings = newMappings))
+            val json = internalJson.encodeToString(
+                com.jervis.dto.environment.EnvironmentDto.serializer(),
+                saved.toDto(),
+            )
+            // Return with count header
+            call.response.headers.append("X-Mappings-Added", addedCount.toString())
+            call.respondText(json, ContentType.Application.Json)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to auto-suggest property mappings" }
+            call.respondText(
+                "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // --- Get component templates ---
     get("/internal/environments/templates") {
         try {
@@ -474,6 +584,14 @@ data class AddComponentRequest(
     val sourceBranch: String? = null,
     val dockerfilePath: String? = null,
     val startOrder: Int? = null,
+)
+
+@Serializable
+data class AddPropertyMappingRequest(
+    val projectComponentId: String,
+    val propertyName: String,
+    val targetComponentId: String,
+    val valueTemplate: String,
 )
 
 @Serializable
