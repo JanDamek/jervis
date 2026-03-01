@@ -1,7 +1,7 @@
 # Environment Manager — UI opravy a doplnění
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE (2026-03-01) — OverviewTab editable + onSave wiring, silent catch→error state, ComponentEditPanel template sync + custom image toggle, PropertyMappings UX with concept explanation
 
 ---
 

@@ -1,7 +1,7 @@
 # GPU + OpenRouter — strategie routování LLM requestů
 
 **Priorita**: CRITICAL
-**Status**: PARTIAL (2026-03-01) — Variant E hybrid routing implementován (commit f126a3eb), ALE queue-based model selection (fronty CHAT/FREE/ORCHESTRATOR/LARGE_CONTEXT/CODING) NENÍ implementován — viz sekce "Zjednodušený model: FRONTY" níže
+**Status**: DONE (2026-03-01) — Variant E + FRONTY queue-based routing implemented: ModelQueueDto/QueueModelEntryDto DTOs, entity + mapper, internal REST endpoint, openrouter_resolver.py rewritten with queue iteration, default queues as fallback, settings cached from Kotlin server
 
 ---
 

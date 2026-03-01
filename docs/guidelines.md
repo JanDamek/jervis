@@ -797,7 +797,7 @@ EnvironmentManagerScreen(
 
 // Detail uses JDetailScreen + TabRow with EnvironmentManagerTab enum:
 // OVERVIEW | COMPONENTS | K8S_RESOURCES | LOGS_EVENTS
-// OverviewTab: JSection blocks (info, assignment, components summary) + action buttons
+// OverviewTab: editable fields (name, desc, tier, namespace, storage, instructions) + read-only summary + onSave(EnvironmentDto) + action buttons
 // Reuses: NewEnvironmentDialog, EnvironmentStateBadge, componentTypeLabel()
 // Navigation: Screen.EnvironmentManager(initialEnvironmentId: String? = null)
 ```

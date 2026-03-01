@@ -1,7 +1,7 @@
 # Chat — historie ztracená po restartu aplikace + agent ignoruje korekce
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: DONE (2026-03-01) — truncation bug fixed (findByOrderByDesc + Flow.take), persistence-first emit, replay=10, system prompt correction example + memory_store logging
 
 ---
 

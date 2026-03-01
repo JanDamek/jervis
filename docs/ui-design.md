@@ -1459,10 +1459,10 @@ Expanded (>=600dp):
 - `EnvironmentManagerScreen` — `JListDetailLayout` with list header ("Nové prostředí" button)
 - `EnvironmentListItem` — `JCard` with name, namespace (monospace), component count, `EnvironmentStateBadge`
 - `EnvironmentDetail` — `JDetailScreen` + `TabRow` + tab content dispatch
-- `OverviewTab` — `JSection` blocks (basic info, assignment, components summary, property mappings summary), action buttons
+- `OverviewTab` — **editable** fields (name, description, tier, namespace, storage size, agent instructions via JTextField/JDropdown) + read-only summary (assignment, components, property mappings) + "Uložit změny" button (shown only when changes detected) + action buttons. `onSave(EnvironmentDto)` callback wired through EnvironmentManagerScreen to `updateEnvironment()`.
 - `ComponentsTab` — expandable JCards per component (collapsed: type + name + summary; expanded: read-only detail or inline editor)
-- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image, ports list, ENV vars, resource limits, health check, startup config, source/build pipeline (sourceRepo, sourceBranch, dockerfilePath — visible for PROJECT type)
-- `PropertyMappingsTab` — manages `PropertyMappingDto` entries: auto-suggest from `ComponentTemplateDto.propertyMappingTemplates`, manual form, expandable cards with resolved values
+- `ComponentEditPanel` — inline editor for EnvironmentComponentDto: name, type, image (with template version picker + custom image toggle, synchronized with AddComponentDialog pattern), ports list, ENV vars, resource limits, health check, startup config, source/build pipeline (sourceRepo, sourceBranch, dockerfilePath — visible for PROJECT type)
+- `PropertyMappingsTab` — manages `PropertyMappingDto` entries: auto-suggest from `ComponentTemplateDto.propertyMappingTemplates`, manual form with concept explanation and detailed placeholder docs, expandable cards with resolved values
 - `K8sResourcesTab` — namespace health summary, collapsible pods/deployments/services sections, pod log dialog, deployment detail dialog, restart
 - `LogsEventsTab` — pod log viewer (dropdown pod selector, tail lines, monospace text area) + K8s events list (Warning/Normal coloring)
 
@@ -1742,7 +1742,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   +-- environment/
 |   |   +-- EnvironmentManagerScreen.kt  <- JListDetailLayout + tabbed detail (Správa prostředí)
 |   |   +-- EnvironmentManagerTabs.kt    <- EnvironmentManagerTab enum (OVERVIEW, COMPONENTS, PROPERTY_MAPPINGS, K8S_RESOURCES, LOGS_EVENTS)
-|   |   +-- OverviewTab.kt              <- Overview tab: info sections + action buttons
+|   |   +-- OverviewTab.kt              <- Overview tab: editable fields + read-only summary + onSave + action buttons
 |   |   +-- ComponentsTab.kt            <- Components tab: expandable JCards with inline editing
 |   |   +-- ComponentEditPanel.kt       <- Inline component editor (name, type, image, ports, ENV, limits, health, startup)
 |   |   +-- PropertyMappingsTab.kt      <- Property mappings tab: auto-suggest, manual add, expandable cards

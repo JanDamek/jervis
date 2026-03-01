@@ -1,7 +1,7 @@
 # GPU — model cold start po neaktivitě (keep_alive + warmup ping)
 
 **Priorita**: HIGH
-**Status**: PARTIAL (2026-03-01) — krok 1 hotový, krok 2 (warmup ping) volitelný
+**Status**: DONE (2026-03-01) — krok 1 (OLLAMA_KEEP_ALIVE) done previously, krok 2 (warmup ping loop in router, 240s interval) implemented
 
 ---
 
