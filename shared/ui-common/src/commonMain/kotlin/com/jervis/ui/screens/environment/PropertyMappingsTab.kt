@@ -165,9 +165,11 @@ fun PropertyMappingsTab(
         if (environment.propertyMappings.isEmpty()) {
             JEmptyState(
                 message = if (projectComponents.isEmpty() || infraComponents.isEmpty()) {
-                    "Přidejte alespoň jeden PROJECT a jeden infrastrukturní komponent pro vytvoření mapování."
+                    "Mapování propojuje infra komponenty (DB, cache) s projekty přes ENV proměnné. " +
+                        "Přidejte alespoň jeden PROJECT a jeden infrastrukturní komponent na záložce Komponenty."
                 } else {
-                    "Žádná mapování. Použijte \"Auto-navrhnout\" pro automatické vygenerování."
+                    "Žádná mapování. Klikněte \"Auto-navrhnout\" pro automatické vygenerování " +
+                        "na základě šablon, nebo \"Přidat\" pro ruční vytvoření."
                 },
                 icon = "\uD83D\uDD17",
             )
@@ -415,42 +417,60 @@ private fun ManualMappingForm(
     var valueTemplate by remember { mutableStateOf("") }
 
     JSection(title = "Nové mapování") {
-        if (projectComponents.isNotEmpty()) {
-            JDropdown(
-                items = projectComponents,
-                selectedItem = selectedProject,
-                onItemSelected = { selectedProject = it },
-                label = "Projekt komponenta",
-                itemLabel = { it.name },
-            )
-            Spacer(Modifier.height(JervisSpacing.fieldGap))
-        }
+        Text(
+            "Mapování propojuje infrastrukturní komponentu (DB, Redis, ...) s projektovou " +
+                "aplikací. Při provisionování se šablona vyhodnotí a výsledná hodnota se " +
+                "nastaví jako ENV proměnná v kontejneru projektu.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(JervisSpacing.fieldGap))
+
+        // 1. Source: infra component (where data comes from)
         if (infraComponents.isNotEmpty()) {
             JDropdown(
                 items = infraComponents,
                 selectedItem = selectedInfra,
                 onItemSelected = { selectedInfra = it },
-                label = "Cílová infra komponenta",
+                label = "Zdroj dat (infra komponenta)",
                 itemLabel = { "${it.name} (${componentTypeLabel(it.type)})" },
             )
             Spacer(Modifier.height(JervisSpacing.fieldGap))
         }
 
+        // 2. Target: project component (where ENV will be set)
+        if (projectComponents.isNotEmpty()) {
+            JDropdown(
+                items = projectComponents,
+                selectedItem = selectedProject,
+                onItemSelected = { selectedProject = it },
+                label = "Cíl (projektová aplikace)",
+                itemLabel = { it.name },
+            )
+            Spacer(Modifier.height(JervisSpacing.fieldGap))
+        }
+
+        // 3. ENV variable name
         JTextField(
             value = propertyName,
             onValueChange = { propertyName = it },
-            label = "ENV proměnná (např. SPRING_DATASOURCE_URL)",
+            label = "Název ENV proměnné v cílovém kontejneru",
+            placeholder = "např. SPRING_DATASOURCE_URL, REDIS_HOST",
             singleLine = true,
         )
         Spacer(Modifier.height(JervisSpacing.fieldGap))
+
+        // 4. Value template
         JTextField(
             value = valueTemplate,
             onValueChange = { valueTemplate = it },
-            label = "Šablona hodnoty (např. jdbc:postgresql://{host}:{port}/db)",
+            label = "Šablona hodnoty (placeholdery se nahradí při provisionování)",
+            placeholder = "např. jdbc:postgresql://{host}:{port}/db",
             singleLine = true,
         )
         Text(
-            "Placeholdery: {host}, {port}, {name}, {env:VAR_NAME}",
+            "Placeholdery: {host} = K8s service name infra komponenty, {port} = první port, " +
+                "{name} = název komponenty, {env:VAR_NAME} = hodnota ENV z infra komponenty",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
