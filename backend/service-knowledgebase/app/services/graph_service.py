@@ -385,6 +385,7 @@ Text: {text}
         """
         Remove references to deleted RAG chunks from graph nodes and edges.
         Delete orphaned nodes/edges that have no remaining evidence.
+        Processes in batches to avoid OOM on large graphs.
 
         Returns:
             Tuple of (nodes_cleaned, edges_cleaned, nodes_deleted, edges_deleted)
@@ -393,6 +394,7 @@ Text: {text}
             return 0, 0, 0, 0
 
         deleted_set = set(deleted_chunk_ids)
+        BATCH_SIZE = 5000
 
         def _purge():
             nodes_collection = self.db.collection("KnowledgeNodes")
@@ -403,45 +405,61 @@ Text: {text}
             nodes_deleted = 0
             edges_deleted = 0
 
-            # Clean nodes: remove deleted chunk IDs from ragChunks
+            # Clean nodes in batches
             try:
-                cursor = self.db.aql.execute(
-                    "FOR doc IN KnowledgeNodes FILTER LENGTH(doc.ragChunks) > 0 RETURN doc"
-                )
-                for doc in cursor:
-                    rag_chunks = doc.get("ragChunks", [])
-                    remaining = [c for c in rag_chunks if c not in deleted_set]
-                    if len(remaining) < len(rag_chunks):
-                        if remaining:
-                            nodes_collection.update({"_key": doc["_key"], "ragChunks": remaining})
-                            nodes_cleaned += 1
-                        else:
-                            try:
-                                nodes_collection.delete(doc["_key"])
-                                nodes_deleted += 1
-                            except Exception:
-                                pass
+                offset = 0
+                while True:
+                    cursor = self.db.aql.execute(
+                        "FOR doc IN KnowledgeNodes FILTER LENGTH(doc.ragChunks) > 0 "
+                        "LIMIT @offset, @batch RETURN doc",
+                        bind_vars={"offset": offset, "batch": BATCH_SIZE},
+                    )
+                    batch = list(cursor)
+                    if not batch:
+                        break
+                    for doc in batch:
+                        rag_chunks = doc.get("ragChunks", [])
+                        remaining = [c for c in rag_chunks if c not in deleted_set]
+                        if len(remaining) < len(rag_chunks):
+                            if remaining:
+                                nodes_collection.update({"_key": doc["_key"], "ragChunks": remaining})
+                                nodes_cleaned += 1
+                            else:
+                                try:
+                                    nodes_collection.delete(doc["_key"])
+                                    nodes_deleted += 1
+                                except Exception:
+                                    pass
+                    offset += BATCH_SIZE
             except Exception as e:
                 logger.warning("Failed to clean node chunk refs: %s", e)
 
-            # Clean edges: remove deleted chunk IDs from evidenceChunkIds
+            # Clean edges in batches
             try:
-                cursor = self.db.aql.execute(
-                    "FOR doc IN KnowledgeEdges FILTER LENGTH(doc.evidenceChunkIds) > 0 RETURN doc"
-                )
-                for doc in cursor:
-                    evidence_ids = doc.get("evidenceChunkIds", [])
-                    remaining = [c for c in evidence_ids if c not in deleted_set]
-                    if len(remaining) < len(evidence_ids):
-                        if remaining:
-                            edges_collection.update({"_key": doc["_key"], "evidenceChunkIds": remaining})
-                            edges_cleaned += 1
-                        else:
-                            try:
-                                edges_collection.delete(doc["_key"])
-                                edges_deleted += 1
-                            except Exception:
-                                pass
+                offset = 0
+                while True:
+                    cursor = self.db.aql.execute(
+                        "FOR doc IN KnowledgeEdges FILTER LENGTH(doc.evidenceChunkIds) > 0 "
+                        "LIMIT @offset, @batch RETURN doc",
+                        bind_vars={"offset": offset, "batch": BATCH_SIZE},
+                    )
+                    batch = list(cursor)
+                    if not batch:
+                        break
+                    for doc in batch:
+                        evidence_ids = doc.get("evidenceChunkIds", [])
+                        remaining = [c for c in evidence_ids if c not in deleted_set]
+                        if len(remaining) < len(evidence_ids):
+                            if remaining:
+                                edges_collection.update({"_key": doc["_key"], "evidenceChunkIds": remaining})
+                                edges_cleaned += 1
+                            else:
+                                try:
+                                    edges_collection.delete(doc["_key"])
+                                    edges_deleted += 1
+                                except Exception:
+                                    pass
+                    offset += BATCH_SIZE
             except Exception as e:
                 logger.warning("Failed to clean edge chunk refs: %s", e)
 
@@ -1573,8 +1591,9 @@ Text: {text}
         self,
         client_id: str,
         project_id: str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
-        """List all kb_document nodes for a client (optionally filtered by project)."""
+        """List kb_document nodes for a client (optionally filtered by project)."""
 
         def _list():
             aql = """
@@ -1582,13 +1601,13 @@ Text: {text}
                     FILTER v.type == "kb_document"
                     FILTER v.clientId == @clientId
             """
-            bind_vars = {"clientId": client_id}
+            bind_vars: dict = {"clientId": client_id, "limit": limit}
 
             if project_id:
                 aql += '    FILTER v.projectId == @projectId\n'
                 bind_vars["projectId"] = project_id
 
-            aql += '    SORT v.uploadedAt DESC\n    RETURN v'
+            aql += '    SORT v.uploadedAt DESC\n    LIMIT @limit\n    RETURN v'
 
             cursor = self.db.aql.execute(aql, bind_vars=bind_vars)
             return list(cursor)
