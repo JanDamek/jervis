@@ -21,9 +21,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -314,6 +317,158 @@ private fun ChatMessageItem(
                             .height(3.dp),
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
+                }
+            }
+        }
+    } else if (message.messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
+        // Background task result — collapsible card with surfaceVariant background
+        val isSuccess = message.metadata["success"] != "false"
+        var expanded by remember { mutableStateOf(false) }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (isSuccess) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    Text(
+                        text = message.metadata["task_title"] ?: "Background úloha",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (expanded) "Skrýt" else "Zobrazit",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+
+                // Collapsed: first line only. Expanded: full text.
+                AnimatedVisibility(visible = !expanded) {
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                AnimatedVisibility(visible = expanded) {
+                    SelectionContainer {
+                        Markdown(
+                            content = message.text,
+                            colors = markdownColor(
+                                text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                codeBackground = MaterialTheme.colorScheme.surface,
+                            ),
+                            typography = markdownTypography(
+                                text = MaterialTheme.typography.bodySmall,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+
+                // Timestamp
+                message.timestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
+                        Text(
+                            text = formatMessageTime(ts),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+    } else if (message.messageType == ChatMessage.MessageType.URGENT_ALERT) {
+        // Urgent alert — always expanded, errorContainer border
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+            modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = "Upozornění",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                SelectionContainer {
+                    Markdown(
+                        content = message.text,
+                        colors = markdownColor(
+                            text = MaterialTheme.colorScheme.onErrorContainer,
+                            codeBackground = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        typography = markdownTypography(
+                            text = MaterialTheme.typography.bodyMedium,
+                            code = MaterialTheme.typography.bodySmall,
+                        ),
+                    )
+                }
+
+                // Suggested action
+                message.metadata["suggested_action"]?.let { action ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Doporučení: $action",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    )
+                }
+
+                // Timestamp
+                message.timestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
+                        Text(
+                            text = formatMessageTime(ts),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }

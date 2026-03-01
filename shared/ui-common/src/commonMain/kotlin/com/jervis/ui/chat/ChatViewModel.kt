@@ -340,11 +340,22 @@ class ChatViewModel(
                     limit = 10, beforeSequence = beforeSeq,
                 )
                 val olderMessages = history.messages.map { msg ->
+                    val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+                        ChatMessage.Sender.Me
+                    } else {
+                        ChatMessage.Sender.Assistant
+                    }
+                    val msgType = when (msg.role) {
+                        com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                        com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                        com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                        else -> ChatMessage.MessageType.FINAL
+                    }
                     ChatMessage(
-                        from = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.Sender.Me else ChatMessage.Sender.Assistant,
+                        from = sender,
                         text = msg.content,
                         contextId = projectId,
-                        messageType = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
+                        messageType = msgType,
                         metadata = msg.metadata,
                         timestamp = msg.timestamp,
                         workflowSteps = parseWorkflowSteps(msg.metadata),
@@ -418,6 +429,9 @@ class ChatViewModel(
                 )
                 null
             }
+
+            ChatResponseType.BACKGROUND_RESULT -> ChatMessage.MessageType.BACKGROUND_RESULT
+            ChatResponseType.URGENT_ALERT -> ChatMessage.MessageType.URGENT_ALERT
 
             else -> null
         }
@@ -533,6 +547,22 @@ class ChatViewModel(
             ChatMessage.MessageType.APPROVAL_REQUEST -> {
                 // Handled earlier via _approvalRequest StateFlow, not as a chat message
             }
+
+            ChatMessage.MessageType.BACKGROUND_RESULT,
+            ChatMessage.MessageType.URGENT_ALERT,
+            -> {
+                // Append directly — no deduplication needed, these are push-only
+                messages.add(
+                    ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = response.message,
+                        contextId = projectId,
+                        messageType = messageType,
+                        metadata = response.metadata,
+                        timestamp = response.metadata["timestamp"],
+                    ),
+                )
+            }
         }
         _chatMessages.value = messages
     }
@@ -565,11 +595,22 @@ class ChatViewModel(
         try {
             val history = repository.chat.getChatHistory(limit = 10)
             val newMessages = history.messages.map { msg ->
+                val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+                    ChatMessage.Sender.Me
+                } else {
+                    ChatMessage.Sender.Assistant
+                }
+                val msgType = when (msg.role) {
+                    com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                    com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                    com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                    else -> ChatMessage.MessageType.FINAL
+                }
                 ChatMessage(
-                    from = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.Sender.Me else ChatMessage.Sender.Assistant,
+                    from = sender,
                     text = msg.content,
                     contextId = projectId,
-                    messageType = if (msg.role == com.jervis.dto.ChatRole.USER) ChatMessage.MessageType.USER_MESSAGE else ChatMessage.MessageType.FINAL,
+                    messageType = msgType,
                     metadata = msg.metadata,
                     timestamp = msg.timestamp,
                     workflowSteps = parseWorkflowSteps(msg.metadata),
@@ -653,11 +694,20 @@ class ChatViewModel(
     private fun scheduleAutoRetry() {
         retryJob?.cancel()
         val state = pendingState ?: return
-        if (state.attemptCount >= MAX_AUTO_RETRIES) { updatePendingInfo(); return }
-        if (state.lastErrorType == "server") { updatePendingInfo(); return }
+        if (state.attemptCount >= MAX_AUTO_RETRIES) {
+            updatePendingInfo()
+            return
+        }
+        if (state.lastErrorType == "server") {
+            updatePendingInfo()
+            return
+        }
 
         val delayMs = BACKOFF_DELAYS_MS.getOrElse(state.attemptCount) { Long.MAX_VALUE }
-        if (delayMs == Long.MAX_VALUE) { updatePendingInfo(); return }
+        if (delayMs == Long.MAX_VALUE) {
+            updatePendingInfo()
+            return
+        }
 
         retryJob = scope.launch {
             if (delayMs > 0) {

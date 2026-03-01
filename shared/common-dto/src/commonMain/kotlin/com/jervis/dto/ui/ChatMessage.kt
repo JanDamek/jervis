@@ -24,6 +24,8 @@ data class ChatMessage(
         FINAL,              // Final answer
         ERROR,              // Error message (displayed with red styling)
         APPROVAL_REQUEST,   // Approval dialog (approve/deny/always)
+        BACKGROUND_RESULT,  // Background task result pushed to chat
+        URGENT_ALERT,       // Urgent notification pushed to chat
     }
 
     @Serializable
