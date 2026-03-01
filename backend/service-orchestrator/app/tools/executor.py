@@ -1919,6 +1919,10 @@ async def _execute_memory_store(
     project_id: str | None = None,
 ) -> str:
     """Store a fact/decision into Memory Agent's LQM + KB write buffer."""
+    logger.info(
+        "memory_store: subject=%r category=%s priority=%s clientId=%s projectId=%s",
+        subject[:80], category, priority, client_id, project_id,
+    )
     if not subject.strip():
         return "Error: Subject cannot be empty."
     if not content.strip():
@@ -1979,13 +1983,17 @@ async def _execute_memory_store(
         await lqm.buffer_write(write)
 
         affair_note = f" (added to affair: {active.title})" if active else ""
+        logger.info(
+            "memory_store OK: subject=%r category=%s urn=%s",
+            subject[:80], category, write.source_urn,
+        )
         return (
             f"✓ Stored in memory: '{subject}' ({category}){affair_note}\n"
             f"Priority: {priority}\n"
             f"Available immediately for recall; will be persisted to KB."
         )
     except Exception as e:
-        logger.warning("memory_store failed: %s", e)
+        logger.warning("memory_store FAILED: subject=%r error=%s", subject[:80], e)
         return f"Error storing to memory: {str(e)[:200]}"
 
 
