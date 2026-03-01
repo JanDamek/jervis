@@ -1,7 +1,7 @@
 # GPU + OpenRouter — strategie routování LLM requestů
 
 **Priorita**: CRITICAL
-**Status**: DONE
+**Status**: PARTIAL (2026-03-01) — Variant E hybrid routing implementován (commit f126a3eb), ALE queue-based model selection (fronty CHAT/FREE/ORCHESTRATOR/LARGE_CONTEXT/CODING) NENÍ implementován — viz sekce "Zjednodušený model: FRONTY" níže
 
 ---
 

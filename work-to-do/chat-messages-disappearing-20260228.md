@@ -1,7 +1,7 @@
 # Chat — zprávy mizí po přepnutí okna/návratu do chatu
 
 **Priorita**: HIGH
-**Status**: DONE
+**Status**: PARTIAL (2026-03-01) — persistence-first fix (commit 5e843334) hotový, ALE truncation bug (findTop10 hardcoded na 10 zpráv) zůstává → viz `chat-history-lost-on-restart-20260301.md`
 
 ---
 

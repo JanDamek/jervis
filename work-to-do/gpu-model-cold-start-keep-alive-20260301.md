@@ -1,7 +1,7 @@
 # GPU — model cold start po neaktivitě (keep_alive + warmup ping)
 
 **Priorita**: HIGH
-**Status**: OPEN
+**Status**: PARTIAL (2026-03-01) — krok 1 hotový, krok 2 (warmup ping) volitelný
 
 ---
 
@@ -170,7 +170,7 @@ if "embedding" in model_name:
 
 ## Priorita implementace
 
-1. **Nejdřív** ověřit `OLLAMA_KEEP_ALIVE=-1` na obou hostech (5 minut práce, může vyřešit celý problém)
+1. ~~**Nejdřív** ověřit `OLLAMA_KEEP_ALIVE=-1` na obou hostech~~ — **DONE (2026-03-01)**, nastaveno na obou hostech
 2. **Pak** warmup ping v routeru jako pojistka (i kdyby keep_alive fungovalo, warmup zajistí detekci problémů)
 
 ## Ověření
