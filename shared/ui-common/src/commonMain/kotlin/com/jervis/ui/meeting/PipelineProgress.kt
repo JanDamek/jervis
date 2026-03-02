@@ -46,8 +46,10 @@ internal val pipelineSteps = listOf(
     PipelineStep("Indexace", "Přepis uložen do znalostní báze", "Ukládá se přepis do znalostní báze..."),
 )
 
-/** Maps MeetingStateEnum to pipeline step index (0-based) and whether step is active vs done. */
-internal fun stateToStepInfo(state: MeetingStateEnum): Pair<Int, Boolean> =
+/** Maps MeetingStateEnum to pipeline step index (0-based) and whether step is active vs done.
+ *  [corrected] indicates whether correction actually happened (correctedTranscriptText != null).
+ *  INDEXED without correction = still waiting for step 2 (Korekce). */
+internal fun stateToStepInfo(state: MeetingStateEnum, corrected: Boolean = true): Pair<Int, Boolean> =
     when (state) {
         MeetingStateEnum.RECORDING -> -1 to true
         MeetingStateEnum.UPLOADING -> 0 to true
@@ -57,13 +59,14 @@ internal fun stateToStepInfo(state: MeetingStateEnum): Pair<Int, Boolean> =
         MeetingStateEnum.CORRECTING -> 2 to true
         MeetingStateEnum.CORRECTION_REVIEW -> 2 to false  // step 2 paused, waiting for user answers
         MeetingStateEnum.CORRECTED -> 2 to false      // step 2 done, waiting in queue
-        MeetingStateEnum.INDEXED -> 3 to false         // all done
+        MeetingStateEnum.INDEXED -> if (corrected) 3 to false else 1 to false  // all done vs waiting for correction
         MeetingStateEnum.FAILED -> -1 to false
     }
 
 @Composable
 internal fun PipelineProgress(
     state: MeetingStateEnum,
+    corrected: Boolean = true,
     transcriptionPercent: Double? = null,
     correctionProgress: MeetingViewModel.CorrectionProgressInfo? = null,
     stateChangedAt: String? = null,
@@ -72,7 +75,7 @@ internal fun PipelineProgress(
 ) {
     if (state == MeetingStateEnum.RECORDING) return
 
-    val (currentStepIndex, isActive) = stateToStepInfo(state)
+    val (currentStepIndex, isActive) = stateToStepInfo(state, corrected)
 
     // Compute elapsed minutes since state changed (for stuck detection)
     val elapsedMinutes = remember(stateChangedAt) {
@@ -180,7 +183,8 @@ internal fun PipelineProgress(
             val elapsedSuffix = if (elapsedMinutes != null && elapsedMinutes > 0 && isActive) " (${elapsedMinutes} min)" else ""
             val statusText = when {
                 state == MeetingStateEnum.FAILED -> null // handled separately
-                state == MeetingStateEnum.INDEXED -> "Zpracování dokončeno"
+                state == MeetingStateEnum.INDEXED && corrected -> "Zpracování dokončeno"
+                state == MeetingStateEnum.INDEXED && !corrected -> "Ve frontě – čeká na korekci přes LLM model"
                 // Waiting in queue (step done, next not started yet)
                 state == MeetingStateEnum.UPLOADED -> "Ve frontě – čeká na přepis přes Whisper"
                 isLikelyStuck && state == MeetingStateEnum.TRANSCRIBING ->
@@ -216,7 +220,7 @@ internal fun PipelineProgress(
                             progress = { (correctionProgress.percent / 100.0).toFloat() },
                             modifier = Modifier.width(80.dp).height(3.dp),
                         )
-                    } else if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED)) {
+                    } else if (isActive || state in listOf(MeetingStateEnum.UPLOADED, MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTED) || (state == MeetingStateEnum.INDEXED && !corrected)) {
                         LinearProgressIndicator(
                             modifier = Modifier.width(80.dp).height(3.dp),
                         )
@@ -226,7 +230,7 @@ internal fun PipelineProgress(
                         style = MaterialTheme.typography.bodySmall,
                         color = when {
                             isLikelyStuck -> MaterialTheme.colorScheme.error
-                            state == MeetingStateEnum.INDEXED -> MaterialTheme.colorScheme.primary
+                            state == MeetingStateEnum.INDEXED && corrected -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         modifier = Modifier.weight(1f),

@@ -258,6 +258,7 @@ internal fun MeetingDetailView(
                 // Pipeline progress indicator
                 PipelineProgress(
                     state = meeting.state,
+                    corrected = !meeting.correctedTranscriptText.isNullOrBlank(),
                     transcriptionPercent = transcriptionPercent,
                     correctionProgress = correctionProgress,
                     stateChangedAt = meeting.stateChangedAt,

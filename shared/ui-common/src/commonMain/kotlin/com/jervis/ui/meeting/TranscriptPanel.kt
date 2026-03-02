@@ -78,13 +78,10 @@ internal fun TranscriptPanel(
                         label = { Text("Surový") },
                     )
                 }
-                if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
+                // Action buttons only for error recovery (FAILED or manual retry)
+                if (meeting.state == MeetingStateEnum.FAILED) {
                     JTextButton(onClick = onRetranscribe) { Text("Přepsat znovu") }
-                }
-                if (meeting.state in listOf(MeetingStateEnum.CORRECTED, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                     JTextButton(onClick = onRecorrect) { Text("Opravit znovu") }
-                }
-                if (meeting.state == MeetingStateEnum.INDEXED) {
                     JTextButton(onClick = onReindex) { Text("Přeindexovat") }
                 }
             }
