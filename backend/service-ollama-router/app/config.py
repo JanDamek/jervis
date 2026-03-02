@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # ── Timeouts ────────────────────────────────────────────────────────
     orchestrator_reservation_timeout_s: int = 600   # 10 min max reservation (safety net)
     orchestrator_idle_timeout_s: int = 60            # 1 min no critical requests → auto-release
-    model_load_timeout_s: int = 120                  # 2 min to load a model
+    model_load_timeout_s: int = 300                  # 5 min to load a model (p40-2 with 8GB RAM needs >200s)
     background_load_delay_s: int = 5                 # delay before loading bg set after release
     proxy_connect_timeout_s: float = 10.0
     proxy_write_timeout_s: float = 30.0
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # ── GPU idle notification ────────────────────────────────────────────
     # After this many seconds of no GPU requests, router notifies Kotlin server
     # to trigger proactive analytical tasks (vulnerability scan, code quality, etc.)
-    gpu_idle_notify_after_s: int = 300   # 5 minutes
+    gpu_idle_notify_after_s: int = 120   # 2 minutes (faster proactive task triggering)
     kotlin_server_url: str = "http://jervis-server:5500"
 
     def parsed_gpu_backends(self) -> list[GpuBackendConfig]:
