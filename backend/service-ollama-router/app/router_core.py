@@ -31,6 +31,7 @@ from .models import (
 from .openrouter_catalog import (
     TIER_LEVELS,
     find_cloud_model_for_context,
+    get_api_key,
 )
 from .request_queue import RequestQueue
 
@@ -166,7 +167,8 @@ class OllamaRouter:
             cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
             if cloud_model:
                 logger.info("Route decision: large context (%d) → cloud %s", estimated_tokens, cloud_model)
-                return {"target": "openrouter", "model": cloud_model}
+                api_key = await get_api_key()
+                return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
             logger.info("Route decision: large context (%d) but no cloud fits → local", estimated_tokens)
             return local_result
 
@@ -186,7 +188,8 @@ class OllamaRouter:
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
             logger.info("Route decision: GPU busy → cloud %s (background keeps GPU)", cloud_model)
-            return {"target": "openrouter", "model": cloud_model}
+            api_key = await get_api_key()
+            return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
         # Rule 5: No cloud model fits → local (wait in queue)
         logger.info("Route decision: GPU busy, no cloud available → local (will wait)")

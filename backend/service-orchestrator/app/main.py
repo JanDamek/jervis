@@ -191,6 +191,10 @@ async def lifespan(app: FastAPI):
     await chat_context_assembler.init()
     logger.info("ChatContextAssembler ready (MongoDB: chat_messages, chat_summaries)")
 
+    # Load OpenRouter API key from Kotlin server (DB settings → TIER_CONFIG)
+    from app.llm.provider import refresh_openrouter_api_key
+    await refresh_openrouter_api_key()
+
     # Start AgentTaskWatcher (monitors async coding agent K8s Jobs)
     from app.agent_task_watcher import agent_task_watcher
     await agent_task_watcher.start()

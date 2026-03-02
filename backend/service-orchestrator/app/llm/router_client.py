@@ -23,6 +23,7 @@ class RouteDecision:
     target: str          # "local" or "openrouter"
     model: str | None = None
     api_base: str | None = None
+    api_key: str | None = None  # OpenRouter API key (from DB settings via router)
 
 
 def _router_base_url() -> str:
@@ -59,6 +60,7 @@ async def route_request(
                 target=data.get("target", "local"),
                 model=data.get("model"),
                 api_base=data.get("api_base"),
+                api_key=data.get("api_key"),
             )
     except Exception as e:
         logger.warning("Failed to get route decision from %s: %s — defaulting to local", url, e)

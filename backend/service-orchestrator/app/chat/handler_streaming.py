@@ -50,9 +50,12 @@ async def call_llm(
     model_override = None
     api_base_override = None
 
+    api_key_override = None
+
     if route and route.target == "openrouter" and route.model:
         effective_tier = ModelTier.CLOUD_OPENROUTER
         model_override = route.model
+        api_key_override = route.api_key
     elif route and route.target == "local" and route.model:
         model_override = route.model
         api_base_override = route.api_base
@@ -66,6 +69,7 @@ async def call_llm(
         extra_headers=extra_headers,
         model_override=model_override,
         api_base_override=api_base_override,
+        api_key_override=api_key_override,
     )
     try:
         if timeout:
@@ -86,6 +90,7 @@ async def call_llm(
                     temperature=temperature,
                     extra_headers=foreground_headers("FOREGROUND"),
                     model_override=fallback.model,
+                    api_key_override=fallback.api_key,
                 )
         raise
 

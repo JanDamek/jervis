@@ -46,6 +46,16 @@ async def _fetch_openrouter_settings() -> dict | None:
         return _openrouter_settings_cache  # Return stale cache if available
 
 
+async def get_api_key() -> str | None:
+    """Get OpenRouter API key from cached settings."""
+    or_settings = await _fetch_openrouter_settings()
+    if or_settings:
+        key = or_settings.get("apiKey", "")
+        if key:
+            return key
+    return None
+
+
 # ── Default queues (used when Kotlin settings are not available) ────────
 
 _DEFAULT_QUEUES: dict[str, list[dict]] = {

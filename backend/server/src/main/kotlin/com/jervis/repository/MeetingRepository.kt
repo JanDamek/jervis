@@ -65,14 +65,14 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
     ): Flow<MeetingDocument>
 
     @Query("{ 'clientId': ?0, 'deleted': false, 'startedAt': { \$gte: ?1, \$lt: ?2 } }", sort = "{ 'startedAt': -1 }")
-    fun findByClientIdAndDateRange(
+    fun listMeetingsInRange(
         clientId: ClientId,
         from: java.time.Instant,
         to: java.time.Instant,
     ): Flow<MeetingDocument>
 
     @Query("{ 'clientId': ?0, 'projectId': ?1, 'deleted': false, 'startedAt': { \$gte: ?2, \$lt: ?3 } }", sort = "{ 'startedAt': -1 }")
-    fun findByClientIdAndProjectIdAndDateRange(
+    fun listMeetingsInRangeForProject(
         clientId: ClientId,
         projectId: ProjectId,
         from: java.time.Instant,

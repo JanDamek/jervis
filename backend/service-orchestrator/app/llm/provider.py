@@ -61,6 +61,7 @@ TIER_CONFIG: dict[ModelTier, dict] = {
     ModelTier.CLOUD_OPENROUTER: {
         "model": "openrouter/auto",  # Default; overridden at runtime from settings DB
         "api_base": settings.openrouter_api_base,
+        "api_key": settings.openrouter_api_key,
     },
 }
 
@@ -203,6 +204,7 @@ class LLMProvider:
         extra_headers: dict[str, str] | None = None,
         model_override: str | None = None,
         api_base_override: str | None = None,
+        api_key_override: str | None = None,
     ) -> dict:
         """Call LLM with streaming + token-arrival timeout.
 
@@ -210,7 +212,7 @@ class LLMProvider:
         in the same format as litellm non-streaming response.
         Tool calls are not streamed (litellm limitation) — falls back to blocking.
 
-        model_override/api_base_override: from router's route decision.
+        model_override/api_base_override/api_key_override: from router's route decision.
         For OpenRouter: model_override is the cloud model ID (prefixed with "openrouter/").
         For local: model_override is the Ollama model name (prefixed with "ollama/").
 
@@ -227,6 +229,8 @@ class LLMProvider:
                 config["model"] = model_override
         if api_base_override:
             config["api_base"] = api_base_override
+        if api_key_override:
+            config["api_key"] = api_key_override
 
         # Tool calls can't be reliably streamed — use blocking call
         if tools:
@@ -293,6 +297,8 @@ class LLMProvider:
 
         if config.get("api_base"):
             kwargs["api_base"] = config["api_base"]
+        if config.get("api_key"):
+            kwargs["api_key"] = config["api_key"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
             # Pre-trim oversized user messages to avoid sending excess data to Ollama
@@ -343,6 +349,8 @@ class LLMProvider:
 
         if config.get("api_base"):
             kwargs["api_base"] = config["api_base"]
+        if config.get("api_key"):
+            kwargs["api_key"] = config["api_key"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
             # Pre-trim oversized user messages to avoid sending excess data to Ollama
@@ -426,6 +434,8 @@ class LLMProvider:
 
         if config.get("api_base"):
             kwargs["api_base"] = config["api_base"]
+        if config.get("api_key"):
+            kwargs["api_key"] = config["api_key"]
         if config.get("num_ctx"):
             kwargs["num_ctx"] = config["num_ctx"]
             kwargs["messages"] = _trim_messages_for_context(messages, config["num_ctx"], max_tokens)
@@ -452,6 +462,32 @@ def _build_response(content: str, model: str) -> object:
             self.model = m
 
     return _Response(content, model)
+
+
+async def refresh_openrouter_api_key() -> None:
+    """Fetch OpenRouter API key from Kotlin server and update TIER_CONFIG.
+
+    Called at startup and can be called periodically to refresh the key.
+    Falls back to env var OPENROUTER_API_KEY if Kotlin server is unreachable.
+    """
+    import httpx
+
+    url = f"{settings.kotlin_server_url.rstrip('/')}/internal/openrouter-settings"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            api_key = data.get("apiKey", "")
+            if api_key:
+                TIER_CONFIG[ModelTier.CLOUD_OPENROUTER]["api_key"] = api_key
+                logger.info("OpenRouter API key loaded from Kotlin server")
+            else:
+                logger.warning("OpenRouter API key is empty in Kotlin server settings")
+    except Exception as e:
+        logger.warning("Failed to fetch OpenRouter API key from Kotlin server: %s", e)
+        if settings.openrouter_api_key:
+            logger.info("Using OpenRouter API key from environment variable")
 
 
 # Singleton
