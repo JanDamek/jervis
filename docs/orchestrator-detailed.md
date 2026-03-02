@@ -3720,3 +3720,125 @@ Background results and urgent alerts pushed to chat:
 - `ChatRpcImpl.pushUrgentAlert()` — on urgent KB results
 - New MessageRole: BACKGROUND, ALERT
 - ChatContextAssembler maps to "system" role with prefixes for LLM awareness
+
+## 34. Graph Agent — Vertex/Edge Task Decomposition DAG
+
+> **Status:** Part 1 implemented (data model, graph operations, persistence, progress)
+> **Source:** `backend/service-orchestrator/app/graph_agent/`
+
+### 34.1 Motivace
+
+Současný delegation systém (sekce 18-25) používá fixní `parallel_groups` bez přenosu kontextu mezi delegacemi. Graph Agent nahrazuje tento model plným DAG:
+
+- Vstupní požadavek se rozloží na **vrcholy** (vertices) propojené **hranami** (edges)
+- Každý vrchol se dál rozpracovává (rekurzivní dekompozice)
+- **Hranou** do dalšího vrcholu jde **sumář výsledku** + **plný kontext** (prohledávatelný)
+- **Fan-in**: pokud se do vrcholu sejde 10 hran → 10 sumářů + 10 kontextů
+- **Fan-out**: vrchol se rozloží na více sub-vrcholů
+- Výsledek se skládá z výsledků terminálních vrcholů
+
+### 34.2 Data Model
+
+```python
+# Enums
+VertexType:  ROOT | TASK | DECOMPOSE | SYNTHESIS | GATE
+VertexStatus: PENDING | READY | RUNNING | COMPLETED | FAILED | SKIPPED
+EdgeType:    DEPENDENCY | DECOMPOSITION | SEQUENCE
+GraphStatus: BUILDING | READY | EXECUTING | COMPLETED | FAILED
+
+# What flows through an edge (filled when source completes)
+class EdgePayload:
+    source_vertex_id: str
+    source_vertex_title: str
+    summary: str           # Concise result summary
+    context: str           # Full context (searchable at target)
+
+# Processing unit
+class GraphVertex:
+    id, title, description, vertex_type, status
+    agent_name: str | None
+    input_request: str
+    incoming_context: list[EdgePayload]  # From incoming edges
+    result: str
+    result_summary: str         # For outgoing edges
+    local_context: str          # Full context (searchable downstream)
+    parent_id: str | None       # Decomposition hierarchy
+    depth: int
+
+# Connection
+class GraphEdge:
+    id, source_id, target_id, edge_type
+    payload: EdgePayload | None  # Filled when source completes
+
+# Complete DAG
+class TaskGraph:
+    id, task_id, client_id, project_id
+    root_vertex_id: str
+    vertices: dict[str, GraphVertex]
+    edges: list[GraphEdge]
+    status: GraphStatus
+```
+
+### 34.3 Graph Operations
+
+| Operation | Description |
+|-----------|-------------|
+| `create_task_graph()` | Create graph with root vertex |
+| `add_vertex()` | Add vertex, auto-depth from parent |
+| `add_edge()` | Add edge, recalculate target readiness |
+| `get_ready_vertices()` | Vertices where ALL incoming edges have payloads |
+| `start_vertex()` | Mark RUNNING, populate `incoming_context` from edges |
+| `complete_vertex()` | Mark COMPLETED, fill outgoing edge payloads, cascade readiness |
+| `fail_vertex()` | Mark FAILED, propagate SKIPPED to unreachable downstream |
+| `topological_order()` | Kahn's algorithm for execution order |
+| `get_final_result()` | Compose result from terminal vertices |
+
+### 34.4 Context Accumulation Flow
+
+```
+vertex A completes → edge A→C gets EdgePayload(summary_A, context_A)
+vertex B completes → edge B→C gets EdgePayload(summary_B, context_B)
+                                        ↓
+vertex C becomes READY (all incoming edges have payloads)
+C.incoming_context = [payload_A, payload_B]
+C processes with access to both upstream contexts
+C completes → edge C→D gets EdgePayload(summary_C, context_C)
+                                        ↓
+D.incoming_context includes C's context which itself references A and B
+```
+
+After N vertices, the context chain carries N summaries + full contexts.
+
+### 34.5 MongoDB Persistence
+
+Collection: `task_graphs` (TTL: 30 days, unique index on `task_id`)
+
+Supports atomic vertex status updates via MongoDB dot notation:
+```python
+await store.update_vertex_status(task_id, vertex_id, VertexStatus.COMPLETED, result="...")
+await store.update_edge_payload(task_id, edge_index, payload)
+await store.update_graph_status(task_id, GraphStatus.COMPLETED)
+```
+
+### 34.6 Progress Reporting
+
+Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegation_agent`, `delegation_depth` to stream vertex progress to UI.
+
+### 34.7 Planned Parts
+
+| Part | Status | Description |
+|------|--------|-------------|
+| **1** | Done | Core data model, graph operations, persistence, progress |
+| **2** | Planned | LLM-driven decomposition engine (vertex → sub-vertices) |
+| **3** | Planned | Execution engine (topological exec, fan-in, parallel, context passing) |
+| **4** | Planned | Integration with chat handler, orchestrator, qualifier |
+
+### 34.8 Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/graph_agent/__init__.py` | Package docstring |
+| `app/graph_agent/models.py` | All data models and enums |
+| `app/graph_agent/graph.py` | Graph operations (add/remove/traverse/complete/fail) |
+| `app/graph_agent/persistence.py` | MongoDB CRUD with atomic updates |
+| `app/graph_agent/progress.py` | Progress reporting to Kotlin server |

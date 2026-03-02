@@ -1229,6 +1229,159 @@ All default to `False` (opt-in):
 
 ---
 
+## Graph Agent — Task Decomposition via Vertex/Edge DAG
+
+### Overview
+
+The Graph Agent is a new execution model that replaces the fixed delegation pipeline with a dynamic vertex/edge DAG. Instead of rigid parallel groups, the request is decomposed into **vertices** (processing units) connected by **edges** that carry **context + summary** from source to target.
+
+**Key principles:**
+- **Input → vertices → edges → result**: a request is decomposed into main vertices, each further decomposable
+- **Context accumulation**: each edge carries `summary` + `full context` (searchable). After 10 vertices, target has 10 contexts
+- **Fan-in**: if 10 edges converge into a vertex, it receives 10 summaries + 10 full contexts
+- **Fan-out**: a vertex can decompose into multiple sub-vertices
+- **Results compose from vertex results**
+
+### Data Model
+
+**Source:** `backend/service-orchestrator/app/graph_agent/models.py`
+
+```python
+class VertexType(str, Enum):
+    ROOT = "root"               # Initial request decomposition
+    TASK = "task"               # Concrete work item (agent executes it)
+    DECOMPOSE = "decompose"     # Intermediate — further breaks down
+    SYNTHESIS = "synthesis"     # Combines results from upstream
+    GATE = "gate"               # Decision / approval point
+
+class VertexStatus(str, Enum):
+    PENDING = "pending"         # Waiting for incoming edges
+    READY = "ready"             # All incoming edges satisfied
+    RUNNING = "running"         # Currently processing
+    COMPLETED = "completed"     # Done
+    FAILED = "failed"
+    SKIPPED = "skipped"         # Unreachable (upstream failed)
+
+class EdgeType(str, Enum):
+    DEPENDENCY = "dependency"       # B depends on A's result
+    DECOMPOSITION = "decomposition" # Parent → child breakdown
+    SEQUENCE = "sequence"           # Strict ordering
+```
+
+### EdgePayload — what flows through edges
+
+```python
+class EdgePayload(BaseModel):
+    source_vertex_id: str
+    source_vertex_title: str
+    summary: str                # Concise result summary
+    context: str                # Full context (searchable at target)
+```
+
+When a vertex completes, its outgoing edges get filled with `EdgePayload(summary, context)`. The target vertex becomes READY only when ALL incoming edges have payloads.
+
+### GraphVertex
+
+```python
+class GraphVertex(BaseModel):
+    id: str
+    title: str
+    description: str
+    vertex_type: VertexType
+    status: VertexStatus
+
+    agent_name: str | None          # Which agent handles this
+    input_request: str              # What to solve
+    incoming_context: list[EdgePayload]  # Accumulated from incoming edges
+
+    # Output (filled after execution)
+    result: str                     # Full result
+    result_summary: str             # Summary for outgoing edges
+    local_context: str              # Full context (searchable downstream)
+
+    # Hierarchy
+    parent_id: str | None           # Parent vertex (decomposition tree)
+    depth: int                      # Decomposition depth
+```
+
+### TaskGraph
+
+```python
+class TaskGraph(BaseModel):
+    id: str
+    task_id: str
+    client_id: str
+    project_id: str | None
+
+    root_vertex_id: str
+    vertices: dict[str, GraphVertex]
+    edges: list[GraphEdge]
+    status: GraphStatus             # BUILDING → READY → EXECUTING → COMPLETED
+```
+
+### Graph Operations
+
+**Source:** `backend/service-orchestrator/app/graph_agent/graph.py`
+
+| Operation | Description |
+|-----------|-------------|
+| `create_task_graph()` | Create graph with root vertex |
+| `add_vertex()` | Add vertex (auto-calculates depth from parent) |
+| `add_edge()` | Add directed edge, recalculate target readiness |
+| `get_ready_vertices()` | Vertices where all incoming edges have payloads |
+| `accumulate_context()` | Gather all incoming EdgePayloads for a vertex |
+| `start_vertex()` | Mark RUNNING, populate incoming_context |
+| `complete_vertex()` | Mark COMPLETED, fill outgoing edge payloads, update downstream readiness |
+| `fail_vertex()` | Mark FAILED, propagate SKIPPED to unreachable downstream |
+| `topological_order()` | Kahn's algorithm for execution ordering |
+| `has_cycle()` | Cycle detection |
+| `get_final_result()` | Compose result from terminal vertices |
+
+### Context Flow Example
+
+```
+Request: "Review code and deploy to staging"
+
+[ROOT] ─decompose→ [v1: Code Review] ─dependency→ [v3: Deploy to Staging]
+                    [v2: Run Tests]   ─dependency→ [v3: Deploy to Staging]
+
+v1 completes → edge to v3 gets payload(summary="review OK", context="full review details...")
+v2 completes → edge to v3 gets payload(summary="tests pass", context="full test output...")
+v3 becomes READY (both incoming edges have payloads)
+v3.incoming_context = [
+    EdgePayload(summary="review OK", context="..."),
+    EdgePayload(summary="tests pass", context="..."),
+]
+v3 executes with access to both upstream contexts
+```
+
+### MongoDB Persistence
+
+**Source:** `backend/service-orchestrator/app/graph_agent/persistence.py`
+
+| Collection | Key | TTL |
+|------------|-----|-----|
+| `task_graphs` | `task_id` (unique) | 30 days |
+
+Supports atomic vertex status updates via MongoDB dot notation without rewriting the entire document.
+
+### Progress Reporting
+
+**Source:** `backend/service-orchestrator/app/graph_agent/progress.py`
+
+Uses existing `kotlin_client.report_progress()` API with delegation fields (`delegation_id`, `delegation_agent`, `delegation_depth`) to communicate graph execution state.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/graph_agent/models.py` | GraphVertex, GraphEdge, EdgePayload, TaskGraph, enums |
+| `app/graph_agent/graph.py` | Graph operations (topological sort, context accumulation, readiness) |
+| `app/graph_agent/persistence.py` | MongoDB save/load, atomic updates |
+| `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
+
+---
+
 ## Autonomous Pipeline Components (EPIC 2-5, 7-10, 14)
 
 ### Enhanced Qualifier Output (EPIC 2-S1)
