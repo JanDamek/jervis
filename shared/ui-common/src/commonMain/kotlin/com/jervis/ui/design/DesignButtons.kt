@@ -8,13 +8,18 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -103,6 +108,7 @@ fun JRunTextButton(
     JTextButton(onClick = onClick, enabled = enabled) { Text("▶ $text") }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JIconButton(
     onClick: () -> Unit,
@@ -112,12 +118,28 @@ fun JIconButton(
     enabled: Boolean = true,
     tint: Color = LocalContentColor.current,
 ) {
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.size(JervisSpacing.touchTarget),
-    ) {
-        Icon(icon, contentDescription = contentDescription, tint = tint)
+    if (contentDescription != null) {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text(contentDescription) } },
+            state = rememberTooltipState(),
+        ) {
+            IconButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = modifier.size(JervisSpacing.touchTarget),
+            ) {
+                Icon(icon, contentDescription = contentDescription, tint = tint)
+            }
+        }
+    } else {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.size(JervisSpacing.touchTarget),
+        ) {
+            Icon(icon, contentDescription = contentDescription, tint = tint)
+        }
     }
 }
 

@@ -1026,7 +1026,7 @@ Compact (<600dp):
 - **Last 30 days** -- Grouped by week (`Týden D.M. – D.M.`). Collapsed by default, expand on click to fetch items via `listMeetingsByRange()`.
 - **Last year** -- Grouped by month (`Leden 2025`). Same expand-on-click pattern.
 - **Older** -- Grouped by year (`Rok 2024`). Same expand-on-click pattern.
-- `TimelineGroupHeader` -- `OutlinedCard` with ▶/▼ icon, label, count, loading spinner.
+- `TimelineGroupHeader` -- `OutlinedCard` with `surfaceVariant` background, ▶/▼ icon, label, count, loading spinner. Uses distinct background to visually separate group headers from meeting cards.
 - `MeetingSummaryListItem` -- Lightweight card using `MeetingSummaryDto` (no transcript/correction data). On click, loads full `MeetingDto` via `selectMeetingById()`.
 
 **DTOs:**
