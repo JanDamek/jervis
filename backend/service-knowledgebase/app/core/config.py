@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # -- Model configuration ----------------------------------------------------
     EMBEDDING_MODEL: str = "qwen3-embedding:8b"             # Vector embedding model (CPU instance)
     LLM_MODEL: str = "qwen3-coder-tool:30b"                  # Default LLM for general KB tasks (30b = same as orchestrator, shares GPU)
-    VISION_MODEL: str = "qwen3-vl:latest"                   # VLM for image description
+    VISION_MODEL: str = "qwen3-vl-tool:latest"               # VLM for image description
 
     # Ingest model routing — consolidated: 30b for all tasks.
     # 7b removed (no model swapping needed, 30b always loaded on GPU).

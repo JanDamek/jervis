@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     gpu_idle_notify_after_s: int = 120   # 2 minutes (faster proactive task triggering)
     kotlin_server_url: str = "http://jervis-server:5500"
 
+    # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
+    # Whisper REST service runs on same GPU (p40-2). Before loading VLM,
+    # router asks whisper to release GPU VRAM.
+    whisper_gpu_url: str = "http://ollama.damek.local:8786"
+
     def parsed_gpu_backends(self) -> list[GpuBackendConfig]:
         raw = json.loads(self.gpu_backends)
         return [GpuBackendConfig(**entry) for entry in raw]

@@ -267,7 +267,7 @@ class RequestQueue:
         """
         is_critical = request.priority <= Priority.CRITICAL
         is_embedding = request.model in EMBEDDING_MODELS
-        is_vlm = request.model == "qwen3-vl:latest"
+        is_vlm = request.model == "qwen3-vl-tool:latest"
 
         # Try GPU backends (prefer one with model already loaded, least busy)
         gpu_candidates = []
@@ -279,13 +279,10 @@ class RequestQueue:
             # For NORMAL, skip reserved GPUs
             if not is_critical and b.reserved_by:
                 continue
-            # Embedding → only GPUs with embedding in their model set
-            if is_embedding:
-                gpu_set = GPU_MODEL_SETS.get(b.name, [])
-                if request.model not in gpu_set:
-                    continue
-            # VLM → only VLM_GPU
-            if is_vlm and b.name != VLM_GPU:
+            # Only route to GPUs that have this model in their model set.
+            # This prevents sending 30b to p40-2 (embedding+VLM only), etc.
+            gpu_set = GPU_MODEL_SETS.get(b.name, [])
+            if request.model not in gpu_set:
                 continue
             gpu_candidates.append(b)
 
@@ -341,6 +338,22 @@ class RequestQueue:
             self._cleanup_backend(backend, entry.request)
             self.notify_slot_freed()
 
+    async def _release_whisper_gpu(self) -> None:
+        """Ask whisper REST service to release GPU VRAM (before loading VLM on p40-2)."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(f"{settings.whisper_gpu_url}/gpu/release")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    logger.info("WHISPER_GPU_RELEASE: %s", data.get("status", "ok"))
+                elif resp.status_code == 409:
+                    logger.info("WHISPER_GPU_RELEASE: busy (transcription in progress)")
+                else:
+                    logger.warning("WHISPER_GPU_RELEASE: HTTP %d", resp.status_code)
+        except Exception as e:
+            logger.debug("WHISPER_GPU_RELEASE: not reachable (%s) — OK if whisper not running", e)
+
     async def _run_on_backend(self, backend: str, request: TrackedRequest) -> Response:
         """Actually proxy the request to a GPU backend."""
         if not backend.startswith("gpu:"):
@@ -355,6 +368,9 @@ class RequestQueue:
             )
         # Ensure model is loaded
         if not gpu.has_model(request.model):
+            # If loading VLM on p40-2, ask whisper to release GPU first
+            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
+                await self._release_whisper_gpu()
             loaded = await self.gpu_pool.load_model(
                 gpu, request.model, self._router._mgmt_client,
             )

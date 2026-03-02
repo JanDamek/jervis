@@ -230,8 +230,12 @@ def main():
             print(json.dumps(result, ensure_ascii=False))
             return
 
-    print(f"Loading model: {model_name} (device=cpu)", file=sys.stderr)
-    model = WhisperModel(model_name, device="cpu")
+    device = os.environ.get("WHISPER_DEVICE", "cpu")
+    compute_type = os.environ.get("WHISPER_COMPUTE_TYPE", "auto")
+    if compute_type == "auto":
+        compute_type = "float16" if device == "cuda" else "int8"
+    print(f"Loading model: {model_name} (device={device}, compute={compute_type})", file=sys.stderr)
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
     print(f"Model loaded, starting transcription: task={task}, lang={language or 'auto'}", file=sys.stderr)
 
     # Build transcribe kwargs

@@ -37,6 +37,7 @@
 │  • Python Orchestrator (reasoning, planning, response)  │
 │  • Knowledge Base (RAG, embeddings, graph prep)         │
 │  • Correction Agent (transcript corrections)            │
+│  • Foreground Chat (interactive LLM)                    │
 └────────────────────────┬─────────────────────────────────┘
                          │
                          ▼
@@ -48,25 +49,30 @@
               │  │ CRITICAL queue │  │  Unlimited, GPU-only
               │  │ (priority 0)  │  │  Preempts NORMAL
               │  ├────────────────┤  │
-              │  │ NORMAL queue   │  │  Max 10, GPU+CPU
+              │  │ NORMAL queue   │  │  Max 10, GPU-only
               │  │ (priority 1)  │  │  Back-pressure at limit
               │  └────────────────┘  │
               │                      │
               │  Dispatcher:         │
               │  • CRITICAL first    │
-              │  • Max 2 per backend │
-              │  • Least-busy GPU    │
+              │  • Max 1 per backend │
+              │  • GPU_MODEL_SETS    │
+              │    strict filtering  │
               └──────┬───────────────┘
                      │
-       ┌─────────────┼────────────────┐
-       │             │                │
-       ▼             ▼                ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
-│ GPU Backend 1│ │ GPU Backend 2│ │  CPU Backend     │
-│ (P40 24GB)   │ │ (P40 24GB)   │ │  (200GB RAM)     │
-│ Max 2 slots  │ │ Max 2 slots  │ │  Max 2 slots     │
-│ CRIT+NORMAL  │ │ CRIT+NORMAL  │ │  NORMAL only     │
-└──────────────┘ └──────────────┘ └──────────────────┘
+       ┌─────────────┴────────────────┐
+       │                              │
+       ▼                              ▼
+┌──────────────────────┐  ┌──────────────────────────────┐
+│ p40-1 (P40 24GB)     │  │ p40-2 (P40 24GB)             │
+│ Max 1 slot           │  │ Max 1 slot                   │
+│ CRIT+NORMAL          │  │ CRIT+NORMAL                  │
+│                      │  │                              │
+│ Models:              │  │ Models:                      │
+│ qwen3-coder-tool:30b │  │ qwen3-embedding:8b (5.5GB)  │
+│ (18.5GB, sole LLM)  │  │ qwen3-vl-tool:latest (8.8GB)│
+│                      │  │ + Whisper GPU (on-demand)    │
+└──────────────────────┘  └──────────────────────────────┘
 ```
 
 ### Request Queue
@@ -74,9 +80,9 @@
 Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 
 - **CRITICAL queue**: Unlimited — chat, foreground, interactive (orchestrator). Always GPU, never CPU. Preempts NORMAL if all GPU slots busy.
-- **NORMAL queue**: Bounded (max 10) — background, KB ingest, qualification. GPU preferred, CPU fallback for small models. Returns 429 back-pressure when full.
+- **NORMAL queue**: Bounded (max 10) — background, KB ingest, qualification. GPU only (no CPU backend). Returns 429 back-pressure when full.
 - **Dispatch**: Fast-path (immediate) if slot available, otherwise queued. Background dispatcher assigns queued requests to freed slots. CRITICAL always dispatched first.
-- **Concurrency**: Max 2 concurrent requests per backend (Ollama handles 2 parallel well; more degrades all).
+- **Concurrency**: Max 1 concurrent request per backend (serial is faster than parallel when VRAM spills to RAM).
 - **Client disconnect**: Monitored via `cancel_event` — request dequeued or proxy cancelled on disconnect.
 
 ### Priority Levels
@@ -108,7 +114,7 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 # 2. KB makes embedding request (no priority header)
 # → NORMAL queue
 # → GPU if slot available and no CRITICAL reservation blocks it
-# → CPU fallback for small models (<20GB VRAM estimate)
+# → Routed by GPU_MODEL_SETS (embedding → p40-2, LLM → p40-1)
 # → Queued if all backends busy
 
 # 3. Backend finishes a request
@@ -130,7 +136,7 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `max_concurrent_per_backend` | 2 | Max parallel requests per Ollama instance |
+| `max_concurrent_per_backend` | 1 | Max parallel requests per Ollama instance (serial is faster) |
 | `normal_queue_max` | 10 | NORMAL queue limit (429 when full) |
 | `orchestrator_idle_timeout_s` | 60 | Auto-release GPU reservation after idle |
 | `orchestrator_reservation_timeout_s` | 600 | Absolute reservation timeout (safety net) |
@@ -141,15 +147,51 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 
 ### VRAM Management
 
-Bigger model = higher VRAM priority. Only **embedding** models co-locate alongside :30b (small, won't impact perf). KB extraction uses :30b (same model as orchestrator).
+**p40-1**: Dedicated LLM GPU. Only `qwen3-coder-tool:30b` (18.5GB). All orchestrator, KB extraction, chat, correction tasks.
+
+**p40-2**: Shared utility GPU. Three workloads share VRAM via on-demand swap:
+- `qwen3-embedding:8b` (5.5GB) — **permanent**, never unloaded
+- `qwen3-vl-tool:latest` (8.8GB) — **on-demand**, loaded when VLM request arrives
+- Whisper GPU (medium ~914MB, large-v3 ~1.5GB) — **on-demand**, lazy-loaded on transcription
 
 ```
-GPU state (consolidated – always loaded, keep_alive="-1"):
-  qwen3-coder-tool:30b  (~25GB)  → GPU (all LLM tasks: orchestrator, KB, ingest)
-  qwen3-embedding:8b    (~5GB)   → GPU (alongside, ~0.3s)
+p40-1 (always loaded, keep_alive="-1"):
+  qwen3-coder-tool:30b  (18.5GB)  → sole LLM GPU
 
-Total capacity: 2 GPU × 2 = 4 GPU slots for all LLM work
-No model swapping needed – 30b handles everything.
+p40-2 VRAM budget (24GB total):
+  qwen3-embedding:8b    (5.5GB)   → permanent
+  qwen3-vl-tool:latest  (8.8GB)   → on-demand (never concurrent with whisper)
+  whisper medium         (0.9GB)   → on-demand (never concurrent with VLM)
+
+GPU_MODEL_SETS strict filtering:
+  p40-1: ["qwen3-coder-tool:30b"]
+  p40-2: ["qwen3-embedding:8b", "qwen3-vl-tool:latest"]
+  → prevents 30b from loading on p40-2 (routing bug fixed 2026-03-02)
+```
+
+### p40-2 VRAM Coordination (Whisper + VLM)
+
+Whisper and VLM share p40-2 via mutual exclusion:
+
+- **Before VLM load**: Router calls `POST whisper:8786/gpu/release` to unload whisper from GPU
+- **Before whisper transcription**: Whisper calls Ollama to unload VLM (`keep_alive: 0`)
+- **Whisper auto-unload**: After 60s idle, whisper releases GPU VRAM automatically
+- **Whisper lazy-load**: Model NOT pre-loaded on startup; loaded on first transcription request
+
+```
+Whisper transcription request flow:
+  1. Request arrives at whisper REST (port 8786)
+  2. whisper._acquire_gpu(): unload VLM via Ollama API
+  3. Load whisper model to CUDA
+  4. Transcribe (+ optional pyannote diarization)
+  5. After 60s idle → _release_gpu(): unload whisper, torch.cuda.empty_cache()
+
+VLM request flow:
+  1. Request arrives at router for qwen3-vl-tool:latest
+  2. Router finds p40-2 slot, model not loaded
+  3. Router calls POST whisper:8786/gpu/release
+  4. Router calls gpu_pool.load_model(p40-2, "qwen3-vl-tool:latest")
+  5. Ollama loads VLM to CUDA
 ```
 
 ### Caller Concurrency
@@ -174,6 +216,28 @@ Callers send requests freely — **router queue manages backend load**. Callers 
 | `app/config.py` | Settings via environment variables |
 | `app/models.py` | Priority, TrackedRequest, model sets |
 | `app/main.py` | FastAPI endpoints |
+
+### Whisper GPU REST Service (p40-2)
+
+Persistent FastAPI service on `ollama.damek.local:8786`, sharing P40 GPU with Ollama.
+
+| Setting | Value |
+|---------|-------|
+| **Host** | ollama.damek.local:8786 |
+| **Deploy** | `k8s/deploy_whisper_gpu.sh` (systemd on GPU VM, not K8s) |
+| **Device** | CUDA (int8_float32 — P40 lacks efficient float16) |
+| **Models** | medium (default), large-v3 (on request) |
+| **Diarization** | pyannote-audio 3.1 (requires HF_TOKEN) |
+| **Idle timeout** | 60s → auto-unloads GPU |
+| **Startup** | Lazy — no model pre-loaded |
+
+Key files:
+
+| File | Purpose |
+|------|---------|
+| `backend/service-whisper/whisper_rest_server.py` | REST server — GPU coordination, lazy-load, auto-unload |
+| `backend/service-whisper/whisper_runner.py` | Whisper transcription engine (range extraction, segment mapping) |
+| `k8s/deploy_whisper_gpu.sh` | SSH deployment to GPU VM (systemd service) |
 
 ---
 

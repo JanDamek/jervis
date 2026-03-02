@@ -38,8 +38,8 @@ class Capability(str, Enum):
 # with fallback to defaults. p40-1 stays stable (never swaps models).
 
 _DEFAULT_GPU_MODEL_SETS: dict[str, list[str]] = {
-    "p40-1": ["qwen3-coder-tool:30b"],                        # 48k ctx, stable
-    "p40-2": ["qwen3-coder-tool:30b", "qwen3-embedding:8b"],  # 32k ctx, + VLM on-demand
+    "p40-1": ["qwen3-coder-tool:30b"],                          # 48k ctx, sole LLM GPU
+    "p40-2": ["qwen3-embedding:8b", "qwen3-vl-tool:latest"],   # embedding (permanent) + VLM (on-demand swap with whisper)
 }
 
 def _load_gpu_model_sets() -> dict[str, list[str]]:
@@ -64,13 +64,14 @@ VLM_GPU = "p40-2"
 LOCAL_MODEL_CAPABILITIES: dict[str, list[str]] = {
     "qwen3-coder-tool:30b": ["thinking", "coding", "chat"],
     "qwen3-embedding:8b": ["embedding"],
-    "qwen3-vl:latest": ["visual"],
+    "qwen3-vl-tool:latest": ["visual"],
 }
 
 # Local model context limits (fixed num_ctx per GPU Modelfile)
+# p40-2 has no LLM (30b) anymore — only embedding + VLM. Context limit for VLM only.
 LOCAL_MODEL_CONTEXT: dict[str, int] = {
     "p40-1": 48_000,
-    "p40-2": 32_000,
+    "p40-2": 64_000,  # VLM context limit (VL + embedding fit up to 64k)
 }
 
 
@@ -79,15 +80,20 @@ LOCAL_MODEL_CONTEXT: dict[str, int] = {
 # keep_alive="-1" → Ollama keeps models in VRAM indefinitely.
 # Router manages what's loaded/unloaded explicitly — no Ollama auto-eviction.
 MODEL_SETS: dict[str, dict] = {
-    "primary": {
-        "models": ["qwen3-coder-tool:30b", "qwen3-embedding:8b"],
-        "vram_gb": 25.0,
-        "keep_alive": "-1",
+    "llm": {
+        "models": ["qwen3-coder-tool:30b"],
+        "vram_gb": 18.5,
+        "keep_alive": "-1",   # p40-1: always loaded
+    },
+    "embedding": {
+        "models": ["qwen3-embedding:8b"],
+        "vram_gb": 5.5,
+        "keep_alive": "-1",   # p40-2: always loaded
     },
     "vlm": {
-        "models": ["qwen3-vl:latest"],
-        "vram_gb": 12.0,
-        "keep_alive": "10m",  # VLM: auto-unload after 10min idle (loaded on-demand)
+        "models": ["qwen3-vl-tool:latest"],
+        "vram_gb": 8.8,
+        "keep_alive": "10m",  # p40-2: auto-unload after 10min idle (loaded on-demand)
     },
 }
 
@@ -101,7 +107,7 @@ for _set_name, _set_def in MODEL_SETS.items():
 MODEL_TO_PRIORITY: dict[str, Priority] = {
     "qwen3-coder-tool:30b": Priority.NORMAL,
     "qwen3-embedding:8b": Priority.NORMAL,
-    "qwen3-vl:latest": Priority.NORMAL,
+    "qwen3-vl-tool:latest": Priority.NORMAL,
 }
 
 # Embedding models (fast single-pass, don't preempt)
