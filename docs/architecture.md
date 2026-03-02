@@ -716,6 +716,30 @@ Gemini (1M context) is **NOT** in the routing queues. The orchestrator calls it 
 2. Used for context reduction — splitting huge documents into smaller scope chunks
 3. Orchestrator stores chunks in scope, then processes each chunk via normal routing
 
+### GPU Performance Profile (Tesla P40, qwen3-coder-tool:30b Q4_K_M)
+
+Benchmarked 2026-03-02 on both P40 GPUs. Key findings:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Prompt processing (warm) | 800–1,500 tok/s | KV cache already allocated |
+| Prompt processing (cold) | 260–530 tok/s | After num_ctx change / reload |
+| Token generation (1k ctx) | ~52 tok/s | |
+| Token generation (8k ctx) | ~45 tok/s | |
+| Token generation (16k ctx) | ~41 tok/s | |
+| Token generation (32k ctx) | ~33 tok/s | |
+| Token generation (48k ctx) | ~29 tok/s | |
+| Model load (p40-1, 251GB RAM) | ~14s | Cached in page cache |
+| Model load (p40-2, 8GB RAM) | ~200-260s | Full disk I/O, model > RAM |
+| VRAM usage (model only) | 19GB / 24GB | |
+
+**Critical rules:**
+- **NEVER change num_ctx between requests** — causes 2-5× slowdown (Ollama restarts runner)
+- **NEVER unload models** — especially on p40-2 where reload takes >200s
+- **Fixed num_ctx per GPU**: p40-1=48k, p40-2=32k (embedding coexists)
+- Both GPUs perform identically once warm (±5% variance)
+- Concurrent execution works — no interference between GPUs
+
 ---
 
 ## Security Architecture
