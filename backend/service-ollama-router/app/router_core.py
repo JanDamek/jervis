@@ -554,14 +554,14 @@ class OllamaRouter:
                                 resp = await self._mgmt_client.post(
                                     f"{backend.url}/api/embeddings",
                                     json=payload,
-                                    timeout=30.0,
+                                    timeout=settings.model_load_timeout_s,
                                 )
                             else:
                                 payload = {"model": model_name, "prompt": "", "keep_alive": -1, "stream": False}
                                 resp = await self._mgmt_client.post(
                                     f"{backend.url}/api/generate",
                                     json=payload,
-                                    timeout=30.0,
+                                    timeout=settings.model_load_timeout_s,
                                 )
                             if resp.status_code == 200:
                                 logger.debug("Warmup ping OK: %s model=%s", backend.name, model_name)
