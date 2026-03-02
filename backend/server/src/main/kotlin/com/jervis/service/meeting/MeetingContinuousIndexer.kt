@@ -119,6 +119,12 @@ class MeetingContinuousIndexer(
                 .onFailure { e -> logger.error(e) { "Meeting correction pipeline crashed" } }
         }
 
+        // Pipeline 3.5: CORRECTED -> re-index corrected transcript into KB -> INDEXED
+        scope.launch {
+            runCatching { reindexCorrectedContinuously() }
+                .onFailure { e -> logger.error(e) { "Meeting corrected re-indexing pipeline crashed" } }
+        }
+
         // Pipeline 4: Trash auto-purge (30-day retention)
         scope.launch {
             runCatching { trashPurgeContinuously() }
@@ -512,8 +518,8 @@ class MeetingContinuousIndexer(
     private suspend fun correctContinuously() {
         // Poll for INDEXED meetings that have been qualified
         continuousMeetingsInState(MeetingStateEnum.INDEXED).collect { meeting ->
-            // Only correct qualified meetings with clientId
-            if (!meeting.qualified || meeting.clientId == null) {
+            // Only correct qualified meetings with clientId that haven't been corrected yet
+            if (!meeting.qualified || meeting.clientId == null || meeting.correctedTranscriptText != null) {
                 return@collect
             }
             val meetingIdStr = meeting.id.toHexString()
@@ -523,14 +529,40 @@ class MeetingContinuousIndexer(
             }
             try {
                 transcriptCorrectionService.correct(meeting)
-                // After correction, re-index with corrected text
-                val correctedMeeting = meetingRepository.findById(meeting.id)
-                if (correctedMeeting != null && correctedMeeting.state == MeetingStateEnum.CORRECTED) {
-                    reindexCorrectedMeeting(correctedMeeting)
-                }
             } catch (e: Exception) {
                 logger.error(e) { "Failed to correct meeting ${meeting.id}" }
                 markAsFailed(meeting, "Correction error: ${e.message}")
+            } finally {
+                processingMeetingIds.remove(meetingIdStr)
+            }
+        }
+    }
+
+    // ===== Pipeline 3.5: Re-index CORRECTED meetings into KB =====
+
+    private suspend fun reindexCorrectedContinuously() {
+        continuousMeetingsInState(MeetingStateEnum.CORRECTED).collect { meeting ->
+            val meetingIdStr = meeting.id.toHexString()
+            if (!processingMeetingIds.add(meetingIdStr)) {
+                return@collect
+            }
+            try {
+                reindexCorrectedMeeting(meeting)
+                // Transition to INDEXED — pipeline complete
+                meetingRepository.save(
+                    meeting.copy(
+                        state = MeetingStateEnum.INDEXED,
+                        stateChangedAt = java.time.Instant.now(),
+                    ),
+                )
+                val clientIdStr = meeting.clientId?.toString().orEmpty()
+                notificationRpc.emitMeetingStateChanged(
+                    meetingIdStr, clientIdStr, MeetingStateEnum.INDEXED.name, meeting.title,
+                )
+                logger.info { "Meeting $meetingIdStr re-indexed after correction → INDEXED" }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to re-index corrected meeting $meetingIdStr" }
+                markAsFailed(meeting, "Re-indexing error: ${e.message}")
             } finally {
                 processingMeetingIds.remove(meetingIdStr)
             }
