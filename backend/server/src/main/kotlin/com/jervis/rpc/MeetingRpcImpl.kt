@@ -204,13 +204,11 @@ class MeetingRpcImpl(
     override suspend fun getAudioData(meetingId: String): String {
         val meeting = meetingRepository.findById(ObjectId(meetingId))
             ?: throw IllegalStateException("Meeting not found: $meetingId")
-        val audioPath = meeting.audioFilePath
-            ?: throw IllegalStateException("Meeting $meetingId has no audio file")
 
+        val file = resolveAudioPath(meeting)
         return withContext(Dispatchers.IO) {
-            val file = java.nio.file.Paths.get(audioPath)
             if (!Files.exists(file)) {
-                throw IllegalStateException("Audio file not found: $audioPath")
+                throw IllegalStateException("Audio file not found: $file")
             }
             Base64.getEncoder().encodeToString(Files.readAllBytes(file))
         }
@@ -526,23 +524,9 @@ class MeetingRpcImpl(
         val clientId = ClientId.fromString(request.clientId)
         val projectId = request.projectId?.let { ProjectId.fromString(it) }
 
-        // Move audio file to the correct directory if it exists
+        // Move audio file to the correct directory — path is derived from clientId/projectId
         val newAudioFilePath = meeting.audioFilePath?.let { oldPath ->
-            val targetDir = if (projectId != null) {
-                directoryStructureService.projectMeetingsDir(clientId, projectId)
-            } else {
-                directoryStructureService.clientAudioDir(clientId)
-            }
-            val oldFile = java.nio.file.Paths.get(oldPath)
-            val newFile = targetDir.resolve(oldFile.fileName)
-            withContext(Dispatchers.IO) {
-                if (Files.exists(oldFile)) {
-                    Files.move(oldFile, newFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                    newFile.toString()
-                } else {
-                    oldPath // keep original if file already moved/missing
-                }
-            }
+            moveAudioFile(java.nio.file.Paths.get(oldPath), meeting.id, clientId, projectId)
         }
 
         // If meeting was INDEXED without clientId, reset to TRANSCRIBED so Pipeline 2
@@ -595,24 +579,10 @@ class MeetingRpcImpl(
             }
         }
 
-        // Move audio file if client/project changed
-        val newAudioFilePath = if (reassign) {
+        // Move audio file if client/project changed or first classification
+        val newAudioFilePath = if (reassign || firstClassification) {
             meeting.audioFilePath?.let { oldPath ->
-                val targetDir = if (newProjectId != null) {
-                    directoryStructureService.projectMeetingsDir(newClientId, newProjectId)
-                } else {
-                    directoryStructureService.clientAudioDir(newClientId)
-                }
-                val oldFile = java.nio.file.Paths.get(oldPath)
-                val newFile = targetDir.resolve(oldFile.fileName)
-                withContext(Dispatchers.IO) {
-                    if (Files.exists(oldFile)) {
-                        Files.move(oldFile, newFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                        newFile.toString()
-                    } else {
-                        oldPath
-                    }
-                }
+                moveAudioFile(java.nio.file.Paths.get(oldPath), meeting.id, newClientId, newProjectId)
             }
         } else {
             null
@@ -672,6 +642,38 @@ class MeetingRpcImpl(
             Files.createDirectories(dir)
         }
         return dir
+    }
+
+    /** Compute audio file path from meeting's clientId/projectId — no DB path needed. */
+    private fun resolveAudioPath(meeting: MeetingDocument): java.nio.file.Path {
+        val fileName = "meeting_${meeting.id.toHexString()}.wav"
+        val dir = when {
+            meeting.projectId != null && meeting.clientId != null ->
+                directoryStructureService.projectMeetingsDir(meeting.clientId, meeting.projectId)
+            meeting.clientId != null ->
+                directoryStructureService.clientAudioDir(meeting.clientId)
+            else -> unclassifiedMeetingsDir()
+        }
+        return dir.resolve(fileName)
+    }
+
+    /** Move audio file to the directory matching new clientId/projectId. Always returns the correct target path. */
+    private suspend fun moveAudioFile(
+        oldFile: java.nio.file.Path, meetingId: ObjectId, clientId: ClientId, projectId: ProjectId?,
+    ): String {
+        val fileName = "meeting_${meetingId.toHexString()}.wav"
+        val targetDir = if (projectId != null) {
+            directoryStructureService.projectMeetingsDir(clientId, projectId)
+        } else {
+            directoryStructureService.clientAudioDir(clientId)
+        }
+        val newFile = targetDir.resolve(fileName)
+        withContext(Dispatchers.IO) {
+            if (Files.exists(oldFile) && oldFile != newFile) {
+                Files.move(oldFile, newFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+        return newFile.toString()
     }
 
     override suspend fun correctWithInstruction(meetingId: String, instruction: String): MeetingDto {
