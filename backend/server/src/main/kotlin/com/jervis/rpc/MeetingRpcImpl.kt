@@ -827,9 +827,9 @@ class MeetingRpcImpl(
         logger.debug { "listMeetingsByRange client=$clientId project=$projectId from=$fromIso to=$toIso" }
         val meetings = if (projectId != null) {
             val pid = ProjectId.fromString(projectId)
-            meetingRepository.findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, pid, from, to)
+            meetingRepository.findByClientIdAndProjectIdAndDateRange(cid, pid, from, to)
         } else {
-            meetingRepository.findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(cid, from, to)
+            meetingRepository.findByClientIdAndDateRange(cid, from, to)
         }
         val result = meetings.toList().map { it.toSummaryDto() }
         logger.debug { "listMeetingsByRange returned ${result.size} items" }

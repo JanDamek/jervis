@@ -6,6 +6,7 @@ import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import kotlinx.coroutines.flow.Flow
 import org.bson.types.ObjectId
+import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
@@ -63,16 +64,18 @@ interface MeetingRepository : CoroutineCrudRepository<MeetingDocument, ObjectId>
         startedAt: java.time.Instant,
     ): Flow<MeetingDocument>
 
-    fun findByClientIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(
+    @Query("{ 'clientId': ?0, 'deleted': false, 'startedAt': { \$gte: ?1, \$lt: ?2 } }", sort = "{ 'startedAt': -1 }")
+    fun findByClientIdAndDateRange(
         clientId: ClientId,
-        startedAtStart: java.time.Instant,
-        startedAtEnd: java.time.Instant,
+        from: java.time.Instant,
+        to: java.time.Instant,
     ): Flow<MeetingDocument>
 
-    fun findByClientIdAndProjectIdAndDeletedIsFalseAndStartedAtGreaterThanEqualAndStartedAtLessThanOrderByStartedAtDesc(
+    @Query("{ 'clientId': ?0, 'projectId': ?1, 'deleted': false, 'startedAt': { \$gte: ?2, \$lt: ?3 } }", sort = "{ 'startedAt': -1 }")
+    fun findByClientIdAndProjectIdAndDateRange(
         clientId: ClientId,
         projectId: ProjectId,
-        startedAtStart: java.time.Instant,
-        startedAtEnd: java.time.Instant,
+        from: java.time.Instant,
+        to: java.time.Instant,
     ): Flow<MeetingDocument>
 }
