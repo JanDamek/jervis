@@ -65,7 +65,6 @@ backend/
         context_store.py          # MongoDB orchestrator_context (hierarchical, TTL 30d)
         agent_result_parser.py    # Normalize variable agent responses
         context_assembler.py      # Per-node LLM context assembly (step/goal/epic)
-        distributed_lock.py       # MongoDB distributed lock for multi-pod
       agents/
         __init__.py
         job_runner.py             # K8s Job CRUD + log streaming
@@ -189,7 +188,6 @@ app/context/
   context_store.py          # MongoDB orchestrator_context collection (hierarchical)
   agent_result_parser.py    # Normalize variable agent responses
   context_assembler.py      # Build per-node LLM context (step/goal/epic levels)
-  distributed_lock.py       # MongoDB distributed lock for multi-pod concurrency
 ```
 
 **State model:**
@@ -259,7 +257,7 @@ Operational context (plans, results, summaries) stored in MongoDB `orchestrator_
 
 **Multi-pod support:**
 
-MongoDB distributed lock (`orchestrator_locks` collection) replaces `asyncio.Semaphore` for multi-pod deployments. Lock acquired atomically via `findOneAndUpdate`, lock heartbeat every 10s, stale recovery after 5 min.
+No global lock — multiple orchestrator pods can process requests concurrently. GPU concurrency is managed by the Ollama Router's request queue (priority-based dispatch). Kotlin BackgroundEngine ensures only one background task claims the GPU at a time (atomic DB claim).
 
 #### B. K8s Job Runner (`agents/job_runner.py`)
 
@@ -744,17 +742,9 @@ dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)         
 - Reaguje na HTTP 429 z `orchestrateStream()` → vrátí false
 
 **Python in-process vrstva** (`main.py`):
-- `asyncio.Semaphore(1)` – `/orchestrate/stream` a `/orchestrate` vrátí 429 pokud busy
-- `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
-- `/health` vrací `{"busy": true/false}` pro diagnostiku
-
-**MongoDB distributed lock** (`app/context/distributed_lock.py`):
-- Collection `orchestrator_locks`, single document `_id: "orchestration_slot"`
-- Lock acquired atomically via `findOneAndUpdate` (condition: `locked_by: null`)
-- Lock heartbeat every 10s updates `locked_at` to prevent stale detection
-- Stale lock recovery: locks older than 5 min without lock heartbeat are force-acquired
-- Pod ID from `HOSTNAME` env var (K8s pod name)
-- On startup: auto-recover stale locks from crashed pods
+- No artificial concurrency limits — router manages GPU queue, Kotlin manages task dispatch
+- `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()`
+- `/health` vrací `{"status": "ok", "active_tasks": N}` pro diagnostiku
 
 ### 11.3 Resume po approval (fire-and-forget)
 
@@ -762,7 +752,7 @@ dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)         
 POST /approve/{thread_id} {approved, reason}
   → Python: asyncio.create_task(_resume_in_background())
   → vrátí {"status": "resuming"} IHNED (neblokuje Kotlin)
-  → _resume_in_background() čeká na semaphore, pak resume_orchestration()
+  → _resume_in_background() calls resume_orchestration()
   → BackgroundEngine.runOrchestratorResultLoop() poluje GET /status
 ```
 
@@ -771,8 +761,8 @@ POST /approve/{thread_id} {approved, reason}
 | Situace | Chování |
 |---------|---------|
 | Nový task, orchestrátor volný | Dispatch OK, PYTHON_ORCHESTRATING |
-| Nový task, orchestrátor busy | Kotlin: count > 0 → skip. Python: 429 (fallback) |
-| Approval, orchestrátor busy (jiný task) | POST /approve OK, _resume čeká na semaphore |
+| Nový task, orchestrátor busy | Kotlin: count > 0 → skip dispatch |
+| Approval, orchestrátor busy (jiný task) | POST /approve OK, resume runs concurrently |
 | Approval, orchestrátor volný | POST /approve OK, resume okamžitě |
 
 ## 12. Cloud Model Policy – per-provider escalation

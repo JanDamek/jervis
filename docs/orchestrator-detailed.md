@@ -1158,13 +1158,7 @@ val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHES
 if (orchestratingCount >= maxConcurrent) return false  // skip dispatch
 ```
 
-**Python (definitive)**:
-```python
-_orchestration_semaphore = asyncio.Semaphore(settings.max_concurrent_orchestrations)  # default 5
-
-if _orchestration_semaphore.locked():
-    raise HTTPException(status_code=429, detail="Orchestrator busy")
-```
+**Python**: Žádný umělý limit — orchestrátor zpracovává neomezeně souběžných požadavků. Concurrency řídí router (GPU queue) a Kotlin (Kotlin early guard).
 
 **Per-agent type limits** (K8s Job level):
 ```python
@@ -1173,17 +1167,15 @@ MAX_CONCURRENT = {"aider": 3, "openhands": 2, "claude": 2, "junie": 1}
 
 ### 14.2 Non-blocking dispatch model
 
-S async agent dispatch se semaphore uvolní hned po `interrupt()` — ne po dokončení jobu:
+Async agent dispatch — Python vrátí HTTP 200 okamžitě, K8s Job běží na pozadí:
 
 ```
-Thread 1: dispatch → interrupt → semaphore released → thread free
-Thread 2: dispatch → interrupt → semaphore released → thread free
+Thread 1: dispatch → interrupt → thread free
+Thread 2: dispatch → interrupt → thread free
   [oba K8s Jobs běží paralelně, AgentTaskWatcher je resumuje]
 Thread 1: [watcher resumuje] → process result → done
 Thread 2: [watcher resumuje] → process result → done
 ```
-
-Config: `max_concurrent_orchestrations = 5` (v `app/config.py`)
 
 ### 14.3 Task state machine
 
@@ -1196,14 +1188,7 @@ NEW → PYTHON_ORCHESTRATING (dispatch to Python)
 
 ### 14.4 Multi-pod concurrency
 
-**Soubor**: `app/context/distributed_lock.py`
-
-MongoDB distributed lock:
-- Collection: `orchestrator_locks`
-- Document: `{_id: "orchestration_slot", locked_by: pod_id, thread_id, locked_at}`
-- Atomic acquire via `findOneAndUpdate`
-- Lock renewal: 10s interval (updates `locked_at`)
-- Stale recovery: 300s timeout → auto-release
+Orchestrátor nemá globální lock — více podů může zpracovávat požadavky souběžně. Kotlin BackgroundEngine zajišťuje, že na GPU jde vždy jen jeden background task (atomic claim přes DB). Chat (foreground) nemá žádné omezení počtu souběžných požadavků.
 
 ---
 
@@ -3037,10 +3022,7 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 - **W-10: Checkpoint Message Growth** — `save_message()` truncates TOOL role messages to `MAX_TOOL_RESULT_IN_MSG = 2000` chars before MongoDB write.
 
 #### `app/llm/provider.py`
-- **W-21: LLM Rate Limiting** — `asyncio.Semaphore(2)` for local (Ollama can't handle many concurrent requests), `asyncio.Semaphore(5)` for cloud. Applied in `completion()` method.
-
-#### `app/context/distributed_lock.py`
-- **W-9: Task Checkpoint Lock** — New `TaskCheckpointLock` class for per-task locking. Uses MongoDB document-level locking with 60s stale timeout. Allows multiple tasks concurrently but prevents concurrent checkpoint writes to same task. Singleton `task_checkpoint_lock` initialized at startup.
+- **W-21: REMOVED** — LLM rate limiting semaphores removed. Router manages all GPU concurrency via its request queue (priority-based dispatch, CRITICAL preemption). No artificial limits on orchestrator side.
 
 #### `app/graph/nodes/finalize.py`
 - **W-16: Background Quality Escalation** — Logs warning when background task has failed steps (quality check without LLM summary generation).
@@ -3052,7 +3034,6 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 
 | Collection | Purpose | Document schema |
 |-----------|---------|-----------------|
-| `task_checkpoint_locks` | W-9: Per-task checkpoint locking | `{_id: task_id, locked_by: pod_id, locked_at: timestamp}` |
 | `chat_sequence_counters` | W-20: Atomic sequence numbers | `{_id: "seq_{taskId}", counter: int}` |
 
 ### 30.4 New Constants
@@ -3065,8 +3046,6 @@ Systematic hardening of the Python orchestrator addressing 15 weak spots identif
 | `_MAX_SHORT_RETRIES` | 1 | respond.py | W-13: Retry limit |
 | `COMPRESS_MAX_RETRIES` | 2 | context.py | W-15: Compression retry limit |
 | `MAX_TOOL_RESULT_IN_MSG` | 2000 | context.py | W-10: Stored message truncation |
-| `_SEMAPHORE_LOCAL` | Semaphore(2) | provider.py | W-21: Local rate limit |
-| `_SEMAPHORE_CLOUD` | Semaphore(5) | provider.py | W-21: Cloud rate limit |
 
 ### 30.5 Test Suite
 
@@ -3180,6 +3159,7 @@ class ChatRequest(BaseModel):
     query: str
     workspace_path: str = ""
     processing_mode: str = "FOREGROUND"
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False

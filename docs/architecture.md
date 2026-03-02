@@ -1098,9 +1098,9 @@ Only **one orchestration at a time** (LLM cannot handle concurrent requests effi
 
 Two layers:
 1. **Kotlin** (early guard): `countByState(PYTHON_ORCHESTRATING) > 0` → skip dispatch
-2. **Python** (definitive): `asyncio.Semaphore(1)` → HTTP 429 if busy
+2. **Python**: No artificial concurrency limits — router manages GPU queue
 
-`/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background with semaphore.
+`/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background.
 
 ### Key Files
 
@@ -1110,7 +1110,6 @@ Two layers:
 | `backend/service-orchestrator/app/graph/orchestrator.py` | LangGraph StateGraph, 4-category routing, checkpointing |
 | `backend/service-orchestrator/app/graph/nodes/` | Modular nodes: intake, evidence, respond, plan, execute, evaluate, git_ops, finalize, coding, epic, design |
 | `backend/service-orchestrator/app/context/context_store.py` | MongoDB hierarchical context store (orchestrator_context) |
-| `backend/service-orchestrator/app/context/distributed_lock.py` | MongoDB distributed lock for multi-pod concurrency |
 | `backend/service-orchestrator/app/context/context_assembler.py` | Per-node LLM context assembly (step/goal/epic levels) |
 | `backend/service-orchestrator/app/config.py` | Configuration (MongoDB URL, K8s, LLM providers) |
 | `backend/server/.../AgentOrchestratorService.kt` | Dispatch + resume logic, JERVIS project resolution, concurrency guard |
@@ -1917,20 +1916,30 @@ When the LLM call fails mid-loop (timeout, connection error):
 - Partial content saved to MongoDB as assistant message (prevents context loss)
 - `error` SSE event includes the partial content for UI display
 
-### Foreground Preemption
+### Foreground Preemption & Smart Routing
 
-When a foreground chat is active, background task dispatch is paused:
+Chat routing uses capability-based route decision (`/route-decision` on Ollama Router):
+
+1. **`max_tier == NONE`** → always local GPU (CRITICAL priority, preempts background)
+2. **GPU free** → local GPU (no cost, no preemption needed)
+3. **GPU busy + OpenRouter allowed** → cloud (background keeps GPU undisturbed)
+4. **GPU busy + no cloud model** → local GPU (waits in queue)
+
+`max_openrouter_tier` is resolved hierarchically: project → group → client → default (`FREE`).
+
+Preemption is **deferred to after route decision** — only triggered when route=local:
 
 ```kotlin
 // BackgroundEngine.kt
 private val activeForegroundChats = AtomicInteger(0)
 
 fun registerForegroundChatStart() { activeForegroundChats.incrementAndGet() }
-fun registerForegroundChatEnd() { activeForegroundChats.decrementAndGet() }
+fun registerForegroundChatEnd() { activeForegroundChats.updateAndGet { if (it > 0) it - 1 else 0 } }
 fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
 ```
 
-Python registers foreground via `POST /internal/foreground-start` and `/internal/foreground-end`.
+Python calls `register_foreground_start()` only on first agentic iteration AND only when `route.target == "local"`.
+`register_foreground_end()` always called in `finally` block (counter underflow protected).
 BackgroundEngine skips `getNextBackgroundTask()` when `isForegroundChatActive()`.
 
 ### Long Message Processing — Pravidla

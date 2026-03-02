@@ -517,7 +517,6 @@ The orchestrator has been redesigned with a KB-first architecture:
 - `context_store.py` — MongoDB `orchestrator_context` collection, 30-day TTL
 - `context_assembler.py` — Per-node LLM context assembly (step/goal/epic levels)
 - `agent_result_parser.py` — Normalize variable agent responses
-- `distributed_lock.py` — MongoDB distributed lock for multi-pod concurrency
 
 **JERVIS Internal Project**: Each client gets max 1 `isJervisInternal=true` project (auto-created on first orchestration) for orchestrator tracker/wiki operations. `ProjectDocument.isJervisInternal` field, `ProjectRepository.findByClientIdAndIsJervisInternal()`, `ProjectService.getOrCreateJervisProject()`. The internal project ID can be pre-configured via `SystemConfig.jervisInternalProjectId` (Settings → General). `ProjectDto.filterVisible()` extension hides internal projects from all UI lists.
 
@@ -574,11 +573,10 @@ Only one Python orchestration runs at a time:
    - `taskRepository.countByState(PYTHON_ORCHESTRATING) > 0` → return false, skip dispatch
    - Handles HTTP 429 from `orchestrateStream()` → return false
 
-2. **Python guard** (`main.py`):
-   - `asyncio.Semaphore(1)` – single-pod fallback (kept for local dev)
-   - `DistributedLock` – MongoDB-based lock for multi-pod deployments
-   - `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()` + semaphore
-   - `/health` returns `{"busy": true/false}` for diagnostics
+2. **Python** (`main.py`):
+   - No artificial concurrency limits — router manages GPU queue
+   - `/approve/{thread_id}` fire-and-forget: `asyncio.create_task()`
+   - `/health` returns `{"status": "ok", "active_tasks": N}` for diagnostics
 
 3. **`PythonOrchestratorClient.approve()`** is now fire-and-forget (returns `Unit`).
    Python returns `{"status": "resuming"}` immediately. Result polled via GET /status.
@@ -648,7 +646,7 @@ Only one Python orchestration runs at a time:
 - `TaskDocument.processingMode`: FOREGROUND (chat) vs BACKGROUND (indexing)
 - `OrchestrateRequestDto.jervisProjectId`: JERVIS internal project for tracker ops
 - `OrchestrateRequestDto.chatHistory`: Conversation context (recent messages + compressed summaries)
-- MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument), `orchestrator_context` (hierarchical context), `orchestrator_locks` (distributed lock), `chat_messages` (conversation messages), `chat_summaries` (compressed history blocks)
+- MongoDB collections: `checkpoints` (LangGraph), `tasks` (TaskDocument), `orchestrator_context` (hierarchical context), `chat_messages` (conversation messages), `chat_summaries` (compressed history blocks)
 - K8s env: `MONGODB_URL` in `k8s/app_orchestrator.yaml` (from secrets)
 - Kotlin internal API endpoints: `/internal/tracker/create-issue`, `/internal/tracker/update-issue` (placeholders, Phase 2 delegation)
 
