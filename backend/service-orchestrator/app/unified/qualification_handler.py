@@ -172,14 +172,14 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
     # Route to appropriate backend
     estimated_tokens_count = estimate_tokens(system_prompt) + estimate_tokens(request.content[:2000]) + 500
     route = await route_request(
+        capability="thinking",
         estimated_tokens=estimated_tokens_count,
-        use_case="qualification",
-        max_openrouter_tier=request.max_openrouter_tier,
+        max_tier=request.max_openrouter_tier,
         prefer_cloud=False,  # qualification prefers GPU
     )
 
-    model_override = route.get("model") if route else None
-    api_base_override = route.get("api_base") if route else None
+    model_override = route.model
+    api_base_override = route.api_base
 
     for iteration in range(MAX_ITERATIONS):
         logger.info(
@@ -188,11 +188,12 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         )
 
         # Call LLM
-        response = await llm_provider.complete(
+        response = await llm_provider.completion(
             messages=messages,
             tools=tools if iteration < MAX_ITERATIONS - 1 else [],  # no tools on last iteration
             model_override=model_override,
             api_base_override=api_base_override,
+            api_key_override=route.api_key,
         )
 
         assistant_msg = response.choices[0].message
