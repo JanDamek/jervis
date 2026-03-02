@@ -86,15 +86,19 @@ class MeetingTranscriptionService(
                 )
             }
 
+            // Re-read from DB — user may have classified the meeting (set clientId/projectId)
+            // during the long-running transcription. Using stale `transcribing` would overwrite those fields.
+            val current = meetingRepository.findById(meeting.id) ?: transcribing
             val transcribed = meetingRepository.save(
-                transcribing.copy(
+                current.copy(
                     state = MeetingStateEnum.TRANSCRIBED,
                     stateChangedAt = Instant.now(),
                     transcriptText = result.text,
                     transcriptSegments = segments,
                 ),
             )
-            notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title)
+            val currentClientId = current.clientId?.toString().orEmpty()
+            notificationRpc.emitMeetingStateChanged(meetingIdStr, currentClientId, MeetingStateEnum.TRANSCRIBED.name, current.title)
 
             logger.info {
                 "Transcription complete for meeting ${meeting.id}: " +
