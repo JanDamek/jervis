@@ -249,6 +249,7 @@ class OrchestratorStatusHandler(
                             taskTitle = task.taskName,
                             summary = summary ?: "Completed",
                             success = true,
+                            taskId = task.id.toString(),
                         )
                     } catch (e: Exception) {
                         logger.warn(e) { "Failed to push background result to chat for task ${task.id}" }
@@ -311,6 +312,7 @@ class OrchestratorStatusHandler(
                     taskTitle = task.taskName,
                     summary = errorMsg,
                     success = false,
+                    taskId = task.id.toString(),
                 )
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to push background error to chat for task ${task.id}" }

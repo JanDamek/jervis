@@ -71,6 +71,9 @@ class ChatViewModel(
     private val _pendingMessageInfo = MutableStateFlow<PendingMessageInfo?>(null)
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
+    /** Context task ID for "Reagovat" — set when replying to a background result. */
+    private var _contextTaskId: String? = null
+
     /** Pending approval request from chat — action, tool, preview text */
     data class ApprovalRequest(
         val action: String,
@@ -144,6 +147,15 @@ class ChatViewModel(
         _inputText.value = text
     }
 
+    /**
+     * Set context for replying to a background task result.
+     * Pre-fills input and stores contextTaskId for sendMessage().
+     */
+    fun replyToTask(taskId: String) {
+        _contextTaskId = taskId
+        _inputText.value = ""  // Focus input, user types their reply
+    }
+
     fun attachFile() {
         val file = pickFile() ?: return
         if (file.sizeBytes > 10 * 1024 * 1024) {
@@ -202,11 +214,14 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
+                val taskContext = _contextTaskId
+                _contextTaskId = null  // Clear after use
                 repository.chat.sendMessage(
                     text = originalText,
                     clientMessageId = clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
+                    contextTaskId = taskContext,
                 )
                 println("=== Message sent successfully (RPC) ===")
 

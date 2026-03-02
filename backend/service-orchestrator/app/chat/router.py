@@ -5,6 +5,7 @@ Endpoints:
 - POST /internal/prepare-chat-context → replaces Kotlin prepareChatHistoryPayload()
 - POST /internal/compress-chat-async  → replaces Kotlin compressIfNeeded()
 - POST /orchestrate/v2                → Simplified background handler (new v6 flow)
+- POST /qualify                       → Qualification agent (fire-and-forget)
 """
 
 from __future__ import annotations
@@ -148,6 +149,60 @@ async def orchestrate_v2(request: dict):
             _active_tasks.pop(thread_id, None)
 
     task = asyncio.create_task(_run_background())
+    _active_tasks[thread_id] = task
+    return {"thread_id": thread_id}
+
+
+# ---------------------------------------------------------------------------
+# Qualification Agent endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/qualify")
+async def qualify(request: dict):
+    """Qualification agent — LLM with CORE tools analyzes KB results.
+
+    Fire-and-forget: returns thread_id immediately, pushes result to Kotlin
+    via /internal/qualification-done callback.
+    """
+    from app.main import _active_tasks
+    from app.tools.kotlin_client import kotlin_client
+    from app.unified.qualification_handler import QualifyRequest, handle_qualification
+
+    try:
+        qualify_request = QualifyRequest(**request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid qualify request: {e}")
+
+    thread_id = f"qual-{qualify_request.task_id}-{uuid.uuid4().hex[:8]}"
+    logger.info(
+        "QUALIFY_START | task_id=%s | thread_id=%s",
+        qualify_request.task_id, thread_id,
+    )
+
+    async def _run_qualification():
+        try:
+            result = await handle_qualification(qualify_request)
+            await kotlin_client.report_qualification_done(
+                task_id=qualify_request.task_id,
+                client_id=qualify_request.client_id,
+                decision=result.get("decision", "READY_FOR_GPU"),
+                priority_score=result.get("priority_score", 5),
+                reason=result.get("reason", ""),
+            )
+        except Exception as e:
+            logger.exception("Qualification failed: %s", e)
+            # On failure, default to READY_FOR_GPU (fail-safe)
+            await kotlin_client.report_qualification_done(
+                task_id=qualify_request.task_id,
+                client_id=qualify_request.client_id,
+                decision="READY_FOR_GPU",
+                priority_score=5,
+                reason=f"Qualification error: {e}",
+            )
+        finally:
+            _active_tasks.pop(thread_id, None)
+
+    task = asyncio.create_task(_run_qualification())
     _active_tasks[thread_id] = task
     return {"thread_id": thread_id}
 

@@ -449,6 +449,68 @@ class AgentOrchestratorService(
     }
 
     /**
+     * Dispatch a task to the Python qualification agent (POST /qualify).
+     *
+     * Fire-and-forget: Python runs LLM qualification with CORE tools (kb_search, etc.)
+     * and posts result back to /internal/qualification-done.
+     *
+     * @param chatTopics recent chat messages for context relevance check (provided by caller)
+     * @return true if dispatched successfully
+     */
+    suspend fun dispatchQualification(
+        task: TaskDocument,
+        kbResult: com.jervis.knowledgebase.model.FullIngestResult,
+        chatTopics: List<com.jervis.configuration.ChatTopicDto> = emptyList(),
+    ): Boolean {
+        if (!pythonOrchestratorClient.isHealthy()) {
+            logger.info { "QUALIFY_SKIP: Python orchestrator not healthy" }
+            return false
+        }
+
+        // Resolve client/project names
+        val clientName = try {
+            clientService.getClientByIdOrNull(task.clientId)?.name
+        } catch (e: Exception) { null }
+        val projectDoc = task.projectId?.let { pid ->
+            try { projectService.getProjectByIdOrNull(pid) } catch (e: Exception) { null }
+        }
+        val projectName = projectDoc?.name
+        val groupId = projectDoc?.groupId?.toString()
+
+        // Resolve cloud model policy for qualification agent
+        val effectivePolicy = cloudModelPolicyResolver.resolve(task.clientId, task.projectId)
+
+        val request = com.jervis.configuration.QualifyRequestDto(
+            taskId = task.id.toString(),
+            clientId = task.clientId.toString(),
+            projectId = task.projectId?.toString(),
+            groupId = groupId,
+            clientName = clientName,
+            projectName = projectName,
+            content = task.content.take(4000),
+            summary = kbResult.summary,
+            entities = kbResult.entities,
+            suggestedActions = kbResult.suggestedActions,
+            urgency = kbResult.urgency,
+            actionType = kbResult.actionType,
+            estimatedComplexity = kbResult.estimatedComplexity,
+            suggestedAgent = kbResult.suggestedAgent,
+            affectedFiles = kbResult.affectedFiles,
+            relatedKbNodes = kbResult.relatedKbNodes,
+            chatTopics = chatTopics,
+            sourceUrn = task.sourceUrn.value,
+            maxOpenRouterTier = effectivePolicy.maxOpenRouterTier.name,
+        )
+
+        return try {
+            pythonOrchestratorClient.qualify(request)
+        } catch (e: Exception) {
+            logger.error(e) { "QUALIFY_DISPATCH_FAILED: taskId=${task.id}" }
+            false
+        }
+    }
+
+    /**
      * Load project rules from PreferenceService (scope: PROJECT → CLIENT → GLOBAL).
      */
     private suspend fun loadProjectRules(

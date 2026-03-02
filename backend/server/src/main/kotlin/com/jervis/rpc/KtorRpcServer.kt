@@ -77,6 +77,10 @@ class KtorRpcServer(
     private val speakerRpcImpl: SpeakerRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
+    // Dependencies for qualification agent dispatch
+    private val agentOrchestratorService: com.jervis.service.agent.coordinator.AgentOrchestratorService,
+    private val chatService: com.jervis.service.chat.ChatService,
+    private val chatMessageService: com.jervis.service.chat.ChatMessageService,
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
     private val clientService: com.jervis.service.client.ClientService,
     private val projectService: com.jervis.service.project.ProjectService,
@@ -826,11 +830,46 @@ class KtorRpcServer(
                                             }
 
                                             val routingDecision = kbResultRouter.routeTask(task, kbResult, onProgress)
-                                            taskService.updateState(task, routingDecision.state)
+
+                                            // If qualification agent is needed, dispatch to Python /qualify
+                                            if (routingDecision.needsQualification && routingDecision.state == com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+                                                // Gather recent chat topics for context relevance check
+                                                val chatTopics = try {
+                                                    val session = chatService.getOrCreateActiveSession()
+                                                    val messages = chatMessageService.getLastMessages(session.id, 10)
+                                                    messages
+                                                        .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
+                                                        .map { com.jervis.configuration.ChatTopicDto(role = it.role.name.lowercase(), content = it.content.take(200)) }
+                                                } catch (e: Exception) {
+                                                    logger.debug(e) { "Failed to get chat topics for qualification" }
+                                                    emptyList()
+                                                }
+
+                                                // Set task to QUALIFYING state while qualification runs
+                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUALIFYING)
+
+                                                val dispatched = agentOrchestratorService.dispatchQualification(task, kbResult, chatTopics)
+                                                if (dispatched) {
+                                                    logger.info {
+                                                        "KB_DONE_CALLBACK: qualification dispatched taskId=${body.taskId} reason=${routingDecision.reason}"
+                                                    }
+                                                    onProgress(
+                                                        "Kvalifikační agent analyzuje úkol...",
+                                                        mapOf("step" to "qualifying", "agent" to "qualification_agent"),
+                                                    )
+                                                } else {
+                                                    // Qualification unavailable — fall back to direct READY_FOR_GPU
+                                                    logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to READY_FOR_GPU taskId=${body.taskId}" }
+                                                    taskService.updateState(task, routingDecision.state)
+                                                }
+                                            } else {
+                                                taskService.updateState(task, routingDecision.state)
+                                            }
 
                                             logger.info {
                                                 "KB_DONE_CALLBACK: routed taskId=${body.taskId} state=${routingDecision.state} " +
-                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated}"
+                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated} " +
+                                                    "needsQualification=${routingDecision.needsQualification}"
                                             }
                                         } catch (e: Exception) {
                                             logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
@@ -897,6 +936,113 @@ class KtorRpcServer(
                                 } catch (e: Exception) {
                                     logger.warn(e) { "Failed to report chat-on-cloud" }
                                     call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+
+                            // Active chat topics for qualification agent
+                            get("/internal/active-chat-topics") {
+                                try {
+                                    val session = chatService.getOrCreateActiveSession()
+                                    val messages = chatMessageService.getLastMessages(session.id, 10)
+                                    val topicsJson = kotlinx.serialization.json.buildJsonObject {
+                                        put("clientId", kotlinx.serialization.json.JsonPrimitive(session.lastClientId ?: ""))
+                                        put("projectId", kotlinx.serialization.json.JsonPrimitive(session.lastProjectId ?: ""))
+                                        put("topics", kotlinx.serialization.json.buildJsonArray {
+                                            messages
+                                                .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
+                                                .forEach { msg ->
+                                                    add(kotlinx.serialization.json.buildJsonObject {
+                                                        put("role", kotlinx.serialization.json.JsonPrimitive(msg.role.name.lowercase()))
+                                                        put("content", kotlinx.serialization.json.JsonPrimitive(msg.content.take(200)))
+                                                    })
+                                                }
+                                        })
+                                    }
+                                    call.respondText(topicsJson.toString(), io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to get active chat topics" }
+                                    call.respondText("""{"topics":[],"clientId":"","projectId":""}""", io.ktor.http.ContentType.Application.Json)
+                                }
+                            }
+
+                            // Qualification agent callback: Python sends qualification result here
+                            post("/internal/qualification-done") {
+                                try {
+                                    val body = call.receive<QualificationDoneCallback>()
+                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} decision=${body.decision}" }
+
+                                    launch {
+                                        try {
+                                            val taskId = com.jervis.common.types.TaskId(ObjectId(body.taskId))
+                                            val task = taskRepository.getById(taskId)
+
+                                            if (task == null) {
+                                                logger.error { "QUALIFICATION_DONE: task not found taskId=${body.taskId}" }
+                                                return@launch
+                                            }
+
+                                            if (task.state != com.jervis.dto.TaskStateEnum.QUALIFYING) {
+                                                logger.warn { "QUALIFICATION_DONE: task not in QUALIFYING state taskId=${body.taskId} state=${task.state}" }
+                                                return@launch
+                                            }
+
+                                            // Emit qualification progress
+                                            taskService.appendQualificationStep(
+                                                taskId,
+                                                com.jervis.entity.QualificationStepRecord(
+                                                    timestamp = java.time.Instant.now(),
+                                                    step = "qualification_done",
+                                                    message = body.reason ?: "Kvalifikace dokončena",
+                                                    metadata = mapOf(
+                                                        "agent" to "qualification_agent",
+                                                        "decision" to body.decision,
+                                                        "priority" to (body.priorityScore?.toString() ?: ""),
+                                                    ),
+                                                ),
+                                            )
+                                            notificationRpcImpl.emitQualificationProgress(
+                                                taskId = body.taskId,
+                                                clientId = body.clientId,
+                                                message = body.reason ?: "Kvalifikace dokončena",
+                                                step = "qualification_done",
+                                                metadata = mapOf("agent" to "qualification_agent", "decision" to body.decision),
+                                            )
+
+                                            when (body.decision) {
+                                                "READY_FOR_GPU" -> {
+                                                    // Qualification says: proceed to orchestration
+                                                    val updatedTask = task.copy(
+                                                        priorityScore = body.priorityScore ?: task.priorityScore,
+                                                        priorityReason = body.reason ?: task.priorityReason,
+                                                    )
+                                                    taskRepository.save(updatedTask)
+                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.READY_FOR_GPU)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → READY_FOR_GPU priority=${body.priorityScore}" }
+                                                }
+                                                "DONE" -> {
+                                                    // Qualification says: no orchestration needed
+                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE reason=${body.reason}" }
+                                                }
+                                                else -> {
+                                                    // Unknown decision — default to READY_FOR_GPU
+                                                    logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to READY_FOR_GPU" }
+                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.READY_FOR_GPU)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.error(e) { "QUALIFICATION_DONE: failed to process result taskId=${body.taskId}" }
+                                        }
+                                    }
+
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to process qualification done callback" }
+                                    call.respondText(
+                                        "{\"ok\":false}",
+                                        io.ktor.http.ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError,
+                                    )
                                 }
                             }
 
@@ -1309,6 +1455,18 @@ data class ClassifyMeetingRequest(
     val clientId: String,
     val projectId: String? = null,
     val title: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class QualificationDoneCallback(
+    @kotlinx.serialization.SerialName("task_id") val taskId: String,
+    @kotlinx.serialization.SerialName("client_id") val clientId: String,
+    /** "READY_FOR_GPU" or "DONE" */
+    val decision: String,
+    /** Priority score 0-100 (higher = more urgent) */
+    @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int? = null,
+    /** Human-readable reason for the decision */
+    val reason: String? = null,
 )
 
 /**

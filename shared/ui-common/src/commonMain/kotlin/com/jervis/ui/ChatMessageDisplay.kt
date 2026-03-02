@@ -71,6 +71,7 @@ internal fun ChatArea(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
+    onReplyToTask: (taskId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -108,6 +109,7 @@ internal fun ChatArea(
                         message = message,
                         orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
                         onEditMessage = onEditMessage,
+                        onReplyToTask = onReplyToTask,
                     )
 
                     // Compression boundary AFTER this message (before the next older one)
@@ -228,6 +230,7 @@ private fun ChatMessageItem(
     message: ChatMessage,
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
+    onReplyToTask: (taskId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -400,15 +403,40 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Timestamp
-                message.timestamp?.let { ts ->
-                    if (ts.isNotBlank()) {
-                        Text(
-                            text = formatMessageTime(ts),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
+                // Timestamp + Reply button row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    message.timestamp?.let { ts ->
+                        if (ts.isNotBlank()) {
+                            Text(
+                                text = formatMessageTime(ts),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        }
+                    }
+                    // "Reagovat" button — sends contextTaskId to chat
+                    val taskId = message.metadata["taskId"]
+                    if (taskId != null) {
+                        TextButton(
+                            onClick = { onReplyToTask(taskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Reagovat",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
             }

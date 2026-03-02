@@ -232,6 +232,40 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     // -----------------------------------------------------------------------
+    // Qualification endpoint: LLM agent for smarter routing decisions
+    // -----------------------------------------------------------------------
+
+    /**
+     * Dispatch task to qualification agent — POST /qualify.
+     *
+     * Fire-and-forget: returns immediately. Python runs LLM qualification agent
+     * with CORE tools (kb_search, etc.) and pushes result to Kotlin via
+     * POST /internal/qualification-done.
+     *
+     * @return true if dispatched successfully, false if unavailable
+     */
+    suspend fun qualify(request: QualifyRequestDto): Boolean {
+        logger.info { "PYTHON_QUALIFY_START: taskId=${request.taskId}" }
+        return try {
+            val response = client.post("$apiBaseUrl/qualify") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }
+            if (response.status.value == 429) {
+                logger.info { "PYTHON_QUALIFY_BUSY: returned 429, skipping" }
+                return false
+            }
+            circuitBreaker.recordSuccess()
+            logger.info { "PYTHON_QUALIFY_DISPATCHED: taskId=${request.taskId}" }
+            true
+        } catch (e: Exception) {
+            circuitBreaker.recordFailure()
+            logger.error(e) { "PYTHON_QUALIFY_FAILED: taskId=${request.taskId}" }
+            false
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // v6 endpoint: simplified background handler
     // -----------------------------------------------------------------------
 
@@ -377,5 +411,49 @@ data class ChatSummaryBlockDto(
     val topics: List<String> = emptyList(),
     @SerialName("is_checkpoint") val isCheckpoint: Boolean = false,
     @SerialName("checkpoint_reason") val checkpointReason: String? = null,
+)
+
+// --- Qualification Agent DTOs ---
+
+@Serializable
+data class QualifyRequestDto(
+    @SerialName("task_id") val taskId: String,
+    @SerialName("client_id") val clientId: String,
+    @SerialName("project_id") val projectId: String? = null,
+    @SerialName("group_id") val groupId: String? = null,
+    @SerialName("client_name") val clientName: String? = null,
+    @SerialName("project_name") val projectName: String? = null,
+    /** Original task content (source text). */
+    val content: String,
+    /** KB extraction summary. */
+    val summary: String,
+    /** KB-detected entities. */
+    val entities: List<String> = emptyList(),
+    /** KB-suggested actions (e.g., "decompose_issue", "analyze_code"). */
+    @SerialName("suggested_actions") val suggestedActions: List<String> = emptyList(),
+    /** KB urgency assessment. */
+    val urgency: String = "normal",
+    /** KB-inferred action type (e.g., "CODE_FIX"). */
+    @SerialName("action_type") val actionType: String? = null,
+    /** KB-inferred complexity (e.g., "MEDIUM"). */
+    @SerialName("estimated_complexity") val estimatedComplexity: String? = null,
+    /** KB-suggested agent. */
+    @SerialName("suggested_agent") val suggestedAgent: String? = null,
+    /** KB-detected related files. */
+    @SerialName("affected_files") val affectedFiles: List<String> = emptyList(),
+    /** KB-detected related graph nodes. */
+    @SerialName("related_kb_nodes") val relatedKbNodes: List<String> = emptyList(),
+    /** Recent chat topics for context relevance check. */
+    @SerialName("chat_topics") val chatTopics: List<ChatTopicDto> = emptyList(),
+    /** Source URN (email, jira, etc.). */
+    @SerialName("source_urn") val sourceUrn: String = "",
+    /** Cloud model tier available for qualification. */
+    @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
+)
+
+@Serializable
+data class ChatTopicDto(
+    val role: String,
+    val content: String,
 )
 

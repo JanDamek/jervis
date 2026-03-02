@@ -35,7 +35,7 @@
 The Jervis system is built on several key architectural patterns:
 
 - **Python Orchestrator (LangGraph)**: Agent runtime for coding workflows and complex task execution
-- **SimpleQualifierAgent**: CPU-based qualification agent calling KB microservice directly
+- **SimpleQualifierAgent**: CPU-based qualification agent calling KB microservice directly, with optional LLM qualification for complex items
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
@@ -929,26 +929,16 @@ One-tap recording from `PersistentTopBar` — no dialog, no client/project selec
 
 ## Coding Agents
 
-Jervis integrates four autonomous coding agents, each running as a standalone kRPC microservice. All implement the shared `ICodingClient` interface (`execute(CodingRequest): CodingResult`) and communicate with the server over WebSocket/CBOR.
+Jervis integrates coding agents running as standalone kRPC microservices. All implement the shared `ICodingClient` interface (`execute(CodingRequest): CodingResult`) and communicate with the server over WebSocket/CBOR.
 
 ### Agent Overview
 
 | Agent | Service | Port | Purpose | Default Provider |
 |-------|---------|------|---------|-----------------|
-| **Aider** | `service-aider` | 3100 | Fast, localized changes (1-3 files) | Ollama (qwen3-coder-tool:30b) |
-| **OpenHands** | `service-coding-engine` | 3200 | Complex multi-file refactoring | Ollama (qwen3-coder-tool:30b) |
-| **Junie** | `service-junie` | 3300 | Premium, ultra-fast (JetBrains) | Anthropic (claude-3-5-sonnet) |
 | **Claude** | `service-claude` | 3400 | Agentic coding with strong reasoning | Anthropic (claude-sonnet-4) |
+| **Kilo** | `service-kilo` | — | Future coding agent (placeholder) | TBD |
 
-### Decision Matrix (CodingTools.kt)
-
-The `execute()` tool auto-selects the agent based on strategy hints:
-
-- **FAST** -> Aider (small, localized edits)
-- **THOROUGH** -> OpenHands (deep multi-file refactoring)
-- **REASONING** -> Claude (complex reasoning and planning)
-- **PREMIUM** -> Junie (last resort, expensive, fastest)
-- **AUTO** -> Heuristic: few files -> Aider, else Claude
+Previous agents (Aider, OpenHands, Junie) have been removed.
 
 ### Claude Agent (`service-claude`)
 
@@ -1677,134 +1667,49 @@ build_*.sh:
 
 ---
 
-## Brain (Internal Jira + Confluence)
+## LLM Qualification Agent
 
 ### Overview
 
-Jervis has its own internal "brain" — a dedicated Jira project + Confluence space used by the
-orchestrator to plan work, track progress across ALL clients/projects, and store documentation.
+After KB ingestion, complex actionable content goes through an LLM qualification step
+before reaching the GPU orchestrator. This replaces the removed Brain/Jira/Confluence integration.
 
 **Purpose:**
-- **Central work tracking**: Orchestrator creates/updates issues for cross-project findings
-- **Proactive review**: Idle review loop periodically checks status of all tracked work
-- **Cross-project aggregation**: Qualifier writes actionable findings to brain Jira during ingestion
-- **Documentation**: Orchestrator stores architectural decisions and status summaries in Confluence
+- **Smart routing**: LLM agent searches KB for context, assesses urgency, decides routing
+- **Noise reduction**: Filters out content that doesn't need full orchestration
+- **Urgent alerts**: Pushes time-sensitive items directly to user's chat
 
-### System Configuration
-
-Brain connections are configured system-wide via `SystemConfigDocument` (MongoDB singleton):
-
-```kotlin
-data class SystemConfigDocument(
-    @Id val id: String = "singleton",
-    val jervisInternalProjectId: ObjectId?,         // Project for orchestrator planning (hidden from UI)
-    val brainBugtrackerConnectionId: ObjectId?,    // Atlassian connection for Jira
-    val brainBugtrackerProjectKey: String?,         // Jira project key (selected via dropdown)
-    val brainWikiConnectionId: ObjectId?,           // Atlassian connection for Confluence
-    val brainWikiSpaceKey: String?,                 // Confluence space key (selected via dropdown)
-    val brainWikiRootPageId: String?,               // Optional root page ID for Confluence
-)
-```
-
-**UI:** Settings → General → "Mozek Jervise" section with dropdowns for Atlassian connection, Jira project, and Confluence space. Issue type and root page are managed by brain agents (Jira agent, Confluence agent), not exposed in UI. Project/space lists loaded dynamically via `listAvailableResources(includeBrainReserved = true)`.
-
-**Brain resource isolation:** `ConnectionRpcImpl.listAvailableResources()` automatically filters out brain-reserved Jira project and Confluence space from resource lists when the requesting connection matches the brain connection. This prevents users from accidentally assigning brain resources to client projects. The `includeBrainReserved` parameter (default `false`) skips this filtering when `true` — used by the brain config UI itself so the selected project/space remains visible in dropdowns.
-
-### Architecture
+### Flow
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Brain Architecture                          │
-│                                                                      │
-│  ┌──────────────────┐    ┌──────────────────────────────────────┐   │
-│  │  Settings UI     │    │  SystemConfigDocument (MongoDB)      │   │
-│  │  "Mozek Jervise" │───►│  brainBugtrackerConnectionId        │   │
-│  │                  │    │  brainBugtrackerProjectKey           │   │
-│  └──────────────────┘    │  brainWikiConnectionId               │   │
-│                          │  brainWikiSpaceKey                    │   │
-│                          └──────────────┬───────────────────────┘   │
-│                                         │                            │
-│  ┌──────────────────────────────────────▼───────────────────────┐   │
-│  │  BrainWriteService (Kotlin)                                  │   │
-│  │  • Resolves connection credentials from SystemConfig         │   │
-│  │  • Delegates to BugTrackerService / WikiService              │   │
-│  │  • Issue type resolution: config override → Czech aliases    │   │
-│  │  • No approval flow — unrestricted access                    │   │
-│  └──────────┬──────────────────────────────┬────────────────────┘   │
-│             │                              │                         │
-│  ┌──────────▼──────────┐     ┌─────────────▼──────────────────┐    │
-│  │ Internal REST       │     │  Cross-Project Aggregation     │    │
-│  │ /internal/brain/*   │     │  (SimpleQualifierAgent)        │    │
-│  │ (for Python orchest)│     │  • Writes findings on ingest   │    │
-│  └──────────┬──────────┘     │  • Deduplicates by corrId      │    │
-│             │                └────────────────────────────────┘    │
-│  ┌──────────▼──────────┐                                           │
-│  │ Python Orchestrator │                                           │
-│  │ brain_* tools (8)   │                                           │
-│  │ • create/update/     │                                          │
-│  │   search issues      │                                          │
-│  │ • create/update/     │                                          │
-│  │   search pages       │                                          │
-│  └─────────────────────┘                                           │
-└──────────────────────────────────────────────────────────────────────┘
+KB /internal/kb-done → KbResultRouter.routeTask()
+  └─ needsQualification=true (Step 5: complex_actionable)
+      → QUALIFYING state
+      → Kotlin POST /qualify (fire-and-forget)
+      → Python qualification_handler.py:
+          1. kb_search — existing context
+          2. Urgency/relevance analysis
+          3. Decision: READY_FOR_GPU | DONE | URGENT_ALERT
+      → Python POST /internal/qualification-done (callback)
+      → Kotlin updates task state based on decision
 ```
 
-### Brain Tools (Orchestrator)
+### Configuration
 
-8 tools available to the Python orchestrator via `/internal/brain/*` REST endpoints:
-
-| Tool | Description |
-|------|-------------|
-| `brain_create_issue` | Create Jira issue in brain project |
-| `brain_update_issue` | Update existing brain issue |
-| `brain_add_comment` | Add comment to brain issue |
-| `brain_transition_issue` | Change issue status (To Do → In Progress → Done) |
-| `brain_search_issues` | Search brain Jira via JQL |
-| `brain_create_page` | Create Confluence page in brain wiki |
-| `brain_update_page` | Update Confluence page |
-| `brain_search_pages` | Search Confluence pages |
-
-### Idle Review Loop
-
-`BackgroundEngine` runs a periodic idle review loop (default: every 30 minutes):
-
-1. Checks: `idleReviewEnabled` is true
-2. Checks: Brain is configured (SystemConfig has connections)
-3. Checks: No active tasks (QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING)
-4. Checks: No existing IDLE_REVIEW task pending/running
-5. Creates synthetic `IDLE_REVIEW` task → state `READY_FOR_GPU` (skips qualification)
-6. Orchestrator uses brain tools to review open issues, check deadlines, update summaries
-
-**Configuration** (`BackgroundProperties`):
-- `idleReviewInterval`: Duration (default 30 min)
-- `idleReviewEnabled`: Boolean (default true)
-
-### Cross-Project Aggregation
-
-`SimpleQualifierAgent` writes actionable findings to brain Jira during KB ingestion:
-
-1. After successful KB ingest with `hasActionableContent = true`
-2. Checks if brain is configured
-3. Deduplicates by `corr:{correlationId}` label (JQL search)
-4. Creates issue with summary, source type, urgency, suggested actions
-5. Labels: `auto-ingest`, source type (e.g., `email`, `jira`), `corr:{correlationId}`
-6. **Non-critical**: Failure does not block qualification
+- **Tools:** CORE tier (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
+- **Max iterations:** 5
+- **Fail-safe:** If `/qualify` unavailable → direct READY_FOR_GPU (no data loss)
+- **Chat context:** Kotlin provides recent chat messages — agent detects if incoming data relates to active conversation
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `backend/server/.../entity/SystemConfigDocument.kt` | MongoDB singleton config |
-| `backend/server/.../repository/SystemConfigRepository.kt` | Spring Data repo |
-| `backend/server/.../service/SystemConfigService.kt` | CRUD service |
-| `backend/server/.../service/brain/BrainWriteService.kt` | Brain interface |
-| `backend/server/.../service/brain/BrainWriteServiceImpl.kt` | Brain implementation |
-| `backend/server/.../rpc/KtorRpcServer.kt` | Internal REST endpoints + Brain DTOs |
-| `backend/service-orchestrator/app/tools/brain_client.py` | Python HTTP client |
-| `backend/service-orchestrator/app/tools/definitions.py` | BRAIN_TOOLS definitions |
-| `backend/service-orchestrator/app/tools/executor.py` | Brain tool executors |
-| `backend/server/.../qualifier/SimpleQualifierAgent.kt` | Cross-project brain write |
-| `backend/server/.../service/background/BackgroundEngine.kt` | Idle review loop |
+| `backend/service-orchestrator/app/unified/qualification_handler.py` | LLM qualification agent |
+| `backend/server/.../qualifier/KbResultRouter.kt` | Routing decisions (needsQualification flag) |
+| `backend/server/.../rpc/KtorRpcServer.kt` | `/internal/qualification-done` callback + `/internal/active-chat-topics` |
+| `backend/server/.../configuration/PythonOrchestratorClient.kt` | `qualify()` HTTP client method |
+| `backend/server/.../service/agent/coordinator/AgentOrchestratorService.kt` | `dispatchQualification()` |
 | `shared/common-dto/.../dto/SystemConfigDto.kt` | System config DTO |
 | `shared/common-api/.../service/ISystemConfigService.kt` | RPC interface |
 
@@ -1993,40 +1898,49 @@ Zpráva > 50 požadavků → automaticky background task
 Zpráva < 16k chars → normální agentic loop
 ```
 
-### Python Chat Tools (26 tools)
+### Python Chat Tools
 
-Available tools in the agentic loop, organized by category:
+Available tools in the agentic loop, organized by tier:
 
-**Research tools** (direct Python calls):
+**CORE tools** (available in all modes):
 
 | Tool | Purpose |
 |------|---------|
 | `kb_search` | Search knowledge base (Weaviate RAG) |
+| `kb_delete` | Delete KB items |
 | `web_search` | Search the internet |
-| `code_search` | Search code patterns, functions, classes |
 | `store_knowledge` | Store new knowledge into KB |
 | `get_kb_stats` | KB statistics (document counts, types) |
 | `get_indexed_items` | List indexed items for client/project |
-
-**Memory tools** (direct Python calls):
-
-| Tool | Purpose |
-|------|---------|
 | `memory_store` | Store fact/decision for later recall |
 | `memory_recall` | Recall previously stored facts |
+| `push_urgent_alert` | Push urgent alert to chat |
+| `get_active_chat_topics` | Get recent chat topics for context |
+| `select_tier` | Request different LLM tier for next call |
 
-**Brain tools** (Kotlin `/internal/brain/*`):
+**EXTENDED tools** (CORE + background/research):
 
 | Tool | Purpose |
 |------|---------|
-| `brain_create_issue` | Create Jira issue in brain project |
-| `brain_update_issue` | Update existing brain issue |
-| `brain_add_comment` | Add comment to brain issue |
-| `brain_transition_issue` | Change issue status |
-| `brain_search_issues` | Search brain Jira via JQL |
-| `brain_create_page` | Create Confluence page |
-| `brain_update_page` | Update Confluence page |
-| `brain_search_pages` | Search Confluence pages |
+| `dispatch_coding_agent` | Dispatch coding agent |
+| `create_background_task` | Create task for background processing |
+| `search_tasks` | Search all tasks by text + optional state filter |
+| `respond_to_user_task` | Respond to approval/clarification |
+| `list_recent_tasks` | Recent tasks with time/state/client filters |
+| `classify_meeting` | Classify ad-hoc meeting |
+| `list_unclassified_meetings` | List unclassified meetings |
+| `set_filter_rule` / `list_filter_rules` / `remove_filter_rule` | Manage content filter rules |
+
+**FULL tools** (EXTENDED + chat-only):
+
+| Tool | Purpose |
+|------|---------|
+| `switch_context` | Switch client/project context |
+| `list_affairs` | List ongoing affairs/matters |
+| Work plan tools | `create_work_plan`, etc. |
+| Guidelines tools | Manage project guidelines |
+| Environment tools | Environment CRUD |
+| Action logging | Record actions taken |
 
 **Chat-specific tools** (Kotlin internal API):
 
@@ -2127,8 +2041,7 @@ User message → classify_intent() (regex)
 | Category | Tools | Max Iterations | Routing |
 |----------|-------|----------------|---------|
 | DIRECT | 0 | 1 | P40 (LOCAL_FAST) |
-| RESEARCH | 5 (kb_search, code_search, web_search, memory_recall, switch_context) | 3 | Cloud-first |
-| BRAIN | 11 (brain_* + switch_context) | 4 | Cloud-first |
+| RESEARCH | 5 (kb_search, web_search, memory_recall, switch_context) | 3 | Cloud-first |
 | TASK_MGMT | 11 (task lifecycle + meetings + KB) | 4 | Cloud-first |
 | COMPLEX | 7 (work plans, coding, research) | 6 | Cloud-first |
 | MEMORY | 6 (kb_search, kb_delete, memory_store, store_knowledge, memory_recall, code_search) | 3 | Cloud-first |
@@ -2136,7 +2049,7 @@ User message → classify_intent() (regex)
 ### Files
 
 - `app/chat/intent_router.py` — Two-pass classification, `_CATEGORY_TOOL_NAMES` mapping
-- `app/chat/prompts/` — Per-category focused prompts (core.py, direct.py, research.py, brain.py, task_mgmt.py, complex.py, memory.py, builder.py)
+- `app/chat/prompts/` — Per-category focused prompts (core.py, direct.py, research.py, task_mgmt.py, complex.py, memory.py, builder.py)
 - `app/chat/tools.py` — `select_tools_by_names()`, `_TOOL_BY_NAME` lookup
 - `app/llm/openrouter_resolver.py` — `CHAT_CLOUD` queue (claude-sonnet-4 → gpt-4o → p40 fallback)
 
@@ -2198,12 +2111,21 @@ Existing loops (execution, qualification) are unaffected — they never see BLOC
 ```kotlin
 // ChatRpcImpl
 fun isUserOnline(): Boolean = chatEventStream.subscriptionCount.value > 0
-suspend fun pushBackgroundResult(taskTitle, summary, success, metadata)
+suspend fun pushBackgroundResult(taskTitle, summary, success, taskId, metadata)
 suspend fun pushUrgentAlert(sourceUrn, summary, suggestedAction)
 ```
 
-**OrchestratorStatusHandler** pushes BACKGROUND_RESULT on task done/error (when user is online).
+**OrchestratorStatusHandler** pushes BACKGROUND_RESULT on task done/error (when user is online), including `taskId` in metadata.
 **KbResultRouter** pushes URGENT_ALERT for urgent KB results.
+
+### Interactive Background Results
+
+Background task results in chat include a "Reagovat" button (visible when `taskId` is in metadata).
+Clicking sets `contextTaskId` on ChatViewModel — the next user message is sent with `contextTaskId`
+so the agent knows which background task the user is responding to.
+
+Flow: `pushBackgroundResult(taskId=...)` → UI card with "Reagovat" → `replyToTask(taskId)` →
+`sendMessage(contextTaskId=taskId)` → Python agent receives context about which task to follow up on.
 
 ### LLM Context Integration
 

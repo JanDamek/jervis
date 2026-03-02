@@ -343,6 +343,7 @@ class ChatRpcImpl(
         taskTitle: String,
         summary: String,
         success: Boolean,
+        taskId: String? = null,
         metadata: Map<String, String> = emptyMap(),
     ) {
         val session = chatService.getOrCreateActiveSession()
@@ -352,12 +353,13 @@ class ChatRpcImpl(
             "[Background FAILED] $taskTitle: $summary"
         }
 
-        // Persist to DB
+        // Persist to DB (include taskId in metadata for "Reagovat" button)
+        val persistMetadata = if (taskId != null) metadata + ("taskId" to taskId) else metadata
         chatService.saveSystemMessage(
             sessionId = session.id,
             role = MessageRole.BACKGROUND,
             content = content,
-            metadata = metadata,
+            metadata = persistMetadata,
         )
 
         // Emit to live stream
@@ -365,6 +367,7 @@ class ChatRpcImpl(
             put("sender", "background")
             put("taskTitle", taskTitle)
             put("success", success.toString())
+            if (taskId != null) put("taskId", taskId)
             put("timestamp", java.time.Instant.now().toString())
             putAll(metadata)
         }

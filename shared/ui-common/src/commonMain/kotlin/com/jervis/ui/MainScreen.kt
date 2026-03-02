@@ -55,6 +55,7 @@ fun MainScreenView(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit = {},
+    onReplyToTask: (taskId: String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
@@ -108,6 +109,7 @@ fun MainScreenView(
                             onInputChanged = onInputChanged,
                             onSendClick = onSendClick,
                             onEditMessage = onEditMessage,
+                            onReplyToTask = onReplyToTask,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
                             onRemoveAttachment = onRemoveAttachment,
@@ -186,6 +188,7 @@ private fun ChatContent(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit,
+    onReplyToTask: (taskId: String) -> Unit = {},
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -225,6 +228,7 @@ private fun ChatContent(
             orchestratorProgress = orchestratorProgress,
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
+            onReplyToTask = onReplyToTask,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),

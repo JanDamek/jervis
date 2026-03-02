@@ -156,6 +156,37 @@ class KotlinServerClient:
             logger.warning("Failed to report status to Kotlin: %s", e)
             return False
 
+    async def report_qualification_done(
+        self,
+        task_id: str,
+        client_id: str,
+        decision: str,
+        priority_score: int = 5,
+        reason: str = "",
+        alert_message: str | None = None,
+    ) -> bool:
+        """Push qualification agent result to Kotlin server.
+
+        Called after qualification LLM agent finishes analyzing KB results.
+        Kotlin updates task state based on decision (DONE, READY_FOR_GPU, URGENT_ALERT).
+        """
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                "/internal/qualification-done",
+                json={
+                    "task_id": task_id,
+                    "client_id": client_id,
+                    "decision": decision,
+                    "priority_score": priority_score,
+                    "reason": reason,
+                },
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Failed to report qualification done for task %s: %s", task_id, e)
+            return False
+
     async def report_task_error(self, task_id: str, error: str) -> bool:
         """Report a critical task error to Kotlin server.
 

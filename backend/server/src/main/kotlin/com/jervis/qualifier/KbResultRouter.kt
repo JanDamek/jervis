@@ -52,6 +52,8 @@ class KbResultRouter(
         val state: TaskStateEnum,
         val reason: String,
         val scheduledCopyCreated: Boolean = false,
+        /** When true, task should go through LLM qualification agent before orchestration. */
+        val needsQualification: Boolean = false,
     )
 
     /**
@@ -216,16 +218,16 @@ class KbResultRouter(
             }
         }
 
-        // Step 5: Complex actionable → execute when available
+        // Step 5: Complex actionable → qualification agent for smarter routing
         logger.info {
             "KB_ROUTE: taskId=${task.id} reason=complexActionable urgency=${result.urgency} actions=${result.suggestedActions} " +
                 "actionType=${inferred.actionType} complexity=${inferred.estimatedComplexity}"
         }
         onProgress(
-            "Akční obsah → do fronty pro MOZEK",
-            mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Vyžaduje akci", "result" to "Čeká na MOZEK"),
+            "Akční obsah → kvalifikace LLM agentem",
+            mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Vyžaduje kvalifikaci", "result" to "Čeká na kvalifikaci"),
         )
-        return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "complex_actionable")
+        return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "complex_actionable", needsQualification = true)
     }
 
     private suspend fun handleSimpleAction(

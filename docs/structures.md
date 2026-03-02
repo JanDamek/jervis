@@ -631,8 +631,16 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
   │         original task → DONE (indexed, terminal)
   │
   └─ Step 5: Complex actions (suggestedActions ∩ COMPLEX_ACTIONS ≠ ∅)
-       → READY_FOR_GPU (needs orchestrator: decompose_issue, analyze_code,
-                        create_application, review_code, design_architecture)
+       ├─ needsQualification=true
+       │    → QUALIFYING → Python /qualify (LLM agent with CORE tools)
+       │       ├─ kb_search for context
+       │       ├─ urgency/relevance analysis
+       │       └─ Decision:
+       │           ├─ READY_FOR_GPU (with priority_score)
+       │           ├─ DONE (not worth orchestrating)
+       │           └─ URGENT_ALERT (push to chat)
+       └─ Fallback (qualification unavailable)
+            → READY_FOR_GPU (direct, same as before)
 ```
 
 **Note:** No age-based filter — the LLM (`_generate_summary()`) decides actionability even for old content (forgotten tasks, open issues, etc.)
@@ -799,14 +807,18 @@ whose backoff has elapsed:
 - **Deadline scan:** Also uses `ProcessingMode.IDLE` (periodic via scheduler loop, every 5 min)
 - **GPU idle callback:** `onGpuIdle()` immediately creates idle task when GPU has been idle ≥5 min
 
-### Cross-Project Aggregation (Qualifier → Brain)
+### LLM Qualification Agent (Python /qualify)
 
-After successful KB ingest with `hasActionableContent = true`, `SimpleQualifierAgent` writes findings to brain Jira:
+When `KbResultRouter` sets `needsQualification=true` (Step 5 — complex_actionable), the task is dispatched to Python `/qualify` endpoint for LLM-based qualification:
 
-- **Deduplication:** JQL search for `labels = "corr:{correlationId}"` before creating
-- **Labels:** `auto-ingest`, source type, `corr:{correlationId}`
-- **Non-critical:** Failure logged but does not block qualification or routing
-- **Brain service:** Uses `BrainWriteService.createIssue()` (reads SystemConfig for connection)
+- **Fire-and-forget:** Kotlin POSTs to `/qualify`, Python runs async, POSTs result back to `/internal/qualification-done`
+- **Tools:** CORE tier only (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
+- **Max iterations:** 5 (quick analysis, not deep orchestration)
+- **System prompt:** Czech, instructs agent to search KB for context, assess urgency, make routing decision
+- **Decisions:** READY_FOR_GPU (with priority 0-100), DONE (not actionable), URGENT_ALERT (push to chat)
+- **Fail-safe:** If Python `/qualify` is unavailable, task falls back to direct READY_FOR_GPU
+- **Chat topics:** Kotlin provides recent chat messages as context — agent can detect if incoming data relates to active conversation
+- **Source:** `backend/service-orchestrator/app/unified/qualification_handler.py`
 
 ### Orchestrator Dispatch Backoff
 
