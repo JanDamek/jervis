@@ -96,6 +96,7 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - KB document storage: `backend/server/.../storage/DirectoryStructureService.kt` (storeKbDocument, readKbDocument, deleteKbDocument)
 - KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*)
 - KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload, kb_document_list, kb_document_delete)
+- Graph Agent: `backend/service-orchestrator/app/graph_agent/` (models.py, graph.py, persistence.py, progress.py)
 
 ## Build Notes
 
