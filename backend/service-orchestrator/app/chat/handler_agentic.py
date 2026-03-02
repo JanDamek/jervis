@@ -280,7 +280,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "brain_create_issue", "switch_context"}
+            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context"}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
@@ -323,7 +323,7 @@ async def run_agentic_loop(
                         "content": (
                             f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
                             "Všechna dříve udělená oprávnění pro write akce "
-                            "(create_background_task, create_work_plan, dispatch_coding_agent, store_knowledge, brain_create_issue) "
+                            "(create_background_task, create_work_plan, dispatch_coding_agent, store_knowledge) "
                             "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
                             "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),

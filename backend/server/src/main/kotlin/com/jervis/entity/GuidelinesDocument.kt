@@ -214,14 +214,8 @@ private fun mergeApproval(base: ApprovalGuidelinesDto, override: ApprovalGuideli
         autoApproveCommit = mergeApprovalRule(base.autoApproveCommit, override.autoApproveCommit),
         autoApprovePush = mergeApprovalRule(base.autoApprovePush, override.autoApprovePush),
         autoApproveEmail = mergeApprovalRule(base.autoApproveEmail, override.autoApproveEmail),
-        autoApproveJiraComment = mergeApprovalRule(base.autoApproveJiraComment, override.autoApproveJiraComment),
-        autoApproveJiraCreate = mergeApprovalRule(base.autoApproveJiraCreate, override.autoApproveJiraCreate),
         autoApprovePrComment = mergeApprovalRule(base.autoApprovePrComment, override.autoApprovePrComment),
         autoApproveChatReply = mergeApprovalRule(base.autoApproveChatReply, override.autoApproveChatReply),
-        autoApproveConfluenceUpdate = mergeApprovalRule(
-            base.autoApproveConfluenceUpdate,
-            override.autoApproveConfluenceUpdate,
-        ),
         autoApproveCodingDispatch = mergeApprovalRule(
             base.autoApproveCodingDispatch,
             override.autoApproveCodingDispatch,

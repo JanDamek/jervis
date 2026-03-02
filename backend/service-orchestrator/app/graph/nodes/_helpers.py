@@ -382,33 +382,10 @@ def select_agent(
 ) -> AgentType:
     """Select coding agent based on task complexity and project rules.
 
-    Strategy:
-    - IF cloud_allowed (rules.auto_use_anthropic=True):
-      → VŠECHNO řeší Claude (SIMPLE, MEDIUM, COMPLEX, CRITICAL)
-    - ELSE (lokální default):
-      → SIMPLE: Aider (lokální Ollama, rychlé malé opravy)
-      → MEDIUM: OpenHands (lokální Ollama, levné zpracování)
-      → COMPLEX: OpenHands (lokální Ollama, větší analýzy)
-      → CRITICAL: Claude (TOP agent, nejlepší cena/výkon)
-    - Junie: Pouze když explicitně povoleno v projektu (premium, horší než Claude)
+    Only two agents: Claude CLI (default for everything) and Kilo (placeholder).
     """
     if preference != "auto":
-        # Uživatel explicitně zvolil agenta (včetně "junie" pro premium projekty)
         return AgentType(preference)
 
-    # Cloud allowed → všechno řeší Claude
-    cloud_allowed = rules.auto_use_anthropic if rules else False
-    if cloud_allowed:
-        return AgentType.CLAUDE  # Claude pro VŠE když je cloud allowed
-
-    # Lokální default strategie
-    match complexity:
-        case Complexity.SIMPLE:
-            return AgentType.AIDER        # Malé opravy, rychlé zjištění stavu
-        case Complexity.MEDIUM:
-            return AgentType.OPENHANDS    # Levné zpracování, lokální
-        case Complexity.COMPLEX:
-            return AgentType.OPENHANDS    # Větší analýzy, lokální
-        case Complexity.CRITICAL:
-            return AgentType.CLAUDE       # TOP agent pro kritické úkoly
-    return AgentType.CLAUDE  # Fallback na nejlepšího agenta
+    # Claude handles all complexities
+    return AgentType.CLAUDE

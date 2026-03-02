@@ -266,9 +266,9 @@ class ChatRpcImpl(
                     ),
                 )
             } finally {
-                // Always release foreground chat lock so background tasks can resume.
+                // Always release GPU reservation so background tasks can resume.
                 // Python's finally block in async generator is unreliable for this.
-                backgroundEngine.registerForegroundChatEnd()
+                backgroundEngine.releaseGpuForChat()
             }
         }
     }

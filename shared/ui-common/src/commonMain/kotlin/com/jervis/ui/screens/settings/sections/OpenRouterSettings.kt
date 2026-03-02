@@ -79,8 +79,8 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     // Model list (legacy flat list)
     var models by remember { mutableStateOf<List<OpenRouterModelEntryDto>>(emptyList()) }
 
-    // Model queues (only FREE active; PAID_LOW/PAID_HIGH disabled)
-    val queueNames = listOf("FREE")
+    // Model queues (FREE, PAID, PREMIUM)
+    val queueNames = listOf("FREE", "PAID", "PREMIUM")
     var modelQueues by remember { mutableStateOf<Map<String, List<QueueModelEntryDto>>>(emptyMap()) }
     var selectedQueueTab by remember { mutableStateOf(0) }
 
@@ -315,7 +315,7 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
 
-                            val queueLabels = listOf("Free")
+                            val queueLabels = listOf("Free", "Paid", "Premium")
 
                             TabRow(
                                 selectedTabIndex = selectedQueueTab,
@@ -337,7 +337,12 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                             val currentModels = modelQueues[currentQueueName] ?: emptyList()
 
                             Text(
-                                "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru.",
+                                when (currentQueueName) {
+                                    "FREE" -> "Automatický fallback při busy GPU. Pouze free modely z OpenRouteru."
+                                    "PAID" -> "Placené modely (Haiku, GPT-4o-mini). Aktivní pokud projekt povoluje tier PAID nebo vyšší."
+                                    "PREMIUM" -> "Premium reasoning modely (Sonnet, o3-mini). Aktivní pokud projekt povoluje tier PREMIUM."
+                                    else -> ""
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

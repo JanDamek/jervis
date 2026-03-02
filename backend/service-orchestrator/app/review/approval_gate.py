@@ -50,12 +50,6 @@ class ApprovalAction(str, Enum):
     GIT_CREATE_BRANCH = "GIT_CREATE_BRANCH"
     EMAIL_SEND = "EMAIL_SEND"
     EMAIL_REPLY = "EMAIL_REPLY"
-    JIRA_CREATE_ISSUE = "JIRA_CREATE_ISSUE"
-    JIRA_UPDATE_ISSUE = "JIRA_UPDATE_ISSUE"
-    JIRA_COMMENT = "JIRA_COMMENT"
-    JIRA_TRANSITION = "JIRA_TRANSITION"
-    CONFLUENCE_CREATE_PAGE = "CONFLUENCE_CREATE_PAGE"
-    CONFLUENCE_UPDATE_PAGE = "CONFLUENCE_UPDATE_PAGE"
     PR_CREATE = "PR_CREATE"
     PR_COMMENT = "PR_COMMENT"
     PR_MERGE = "PR_MERGE"
@@ -72,12 +66,6 @@ _ACTION_TO_RULE_FIELD: dict[ApprovalAction, str] = {
     ApprovalAction.GIT_PUSH: "autoApprovePush",
     ApprovalAction.EMAIL_SEND: "autoApproveEmail",
     ApprovalAction.EMAIL_REPLY: "autoApproveEmail",
-    ApprovalAction.JIRA_CREATE_ISSUE: "autoApproveJiraCreate",
-    ApprovalAction.JIRA_UPDATE_ISSUE: "autoApproveJiraComment",
-    ApprovalAction.JIRA_COMMENT: "autoApproveJiraComment",
-    ApprovalAction.JIRA_TRANSITION: "autoApproveJiraComment",
-    ApprovalAction.CONFLUENCE_CREATE_PAGE: "autoApproveConfluenceUpdate",
-    ApprovalAction.CONFLUENCE_UPDATE_PAGE: "autoApproveConfluenceUpdate",
     ApprovalAction.PR_CREATE: "autoApprovePrComment",
     ApprovalAction.PR_COMMENT: "autoApprovePrComment",
     ApprovalAction.PR_MERGE: "autoApprovePush",  # PR merge ≈ push

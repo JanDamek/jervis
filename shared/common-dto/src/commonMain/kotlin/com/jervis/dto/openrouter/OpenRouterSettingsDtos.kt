@@ -167,7 +167,7 @@ data class OpenRouterSettingsUpdateDto(
 /**
  * Named queue of models with fallback ordering.
  *
- * 3 queues for tiered routing: FREE, PAID_LOW, PAID_HIGH.
+ * 3 queues for tiered routing: FREE, PAID, PREMIUM.
  * The router iterates the list top-to-bottom:
  * first available model (local GPU free, or cloud always available) is used.
  * Each model has maxContextTokens — for large context (>48k), the router
@@ -176,14 +176,14 @@ data class OpenRouterSettingsUpdateDto(
  * Per-project `maxOpenRouterTier` determines which queues are accessible:
  * - NONE: local GPU only (no OpenRouter fallback)
  * - FREE: FREE queue only
- * - PAID_LOW: FREE + PAID_LOW
- * - PAID_HIGH: FREE + PAID_LOW + PAID_HIGH
+ * - PAID: FREE + PAID
+ * - PREMIUM: FREE + PAID + PREMIUM
  *
  * Gemini is NOT in queues — orchestrator calls it directly for huge context reduction.
  */
 @Serializable
 data class ModelQueueDto(
-    /** Queue name: "FREE", "PAID_LOW", or "PAID_HIGH" */
+    /** Queue name: "FREE", "PAID", or "PREMIUM" */
     val name: String,
 
     /** Ordered list of models in this queue (index 0 = highest priority) */

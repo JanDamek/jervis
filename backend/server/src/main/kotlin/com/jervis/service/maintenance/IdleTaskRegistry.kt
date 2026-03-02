@@ -24,12 +24,6 @@ class IdleTaskRegistry {
      */
     private val defaultTasks = listOf(
         IdleTaskConfig(
-            type = IdleTaskType.REVIEW_BRAIN_ISSUES,
-            enabled = true,
-            priority = 100,
-            intervalHours = 4,
-        ),
-        IdleTaskConfig(
             type = IdleTaskType.KB_CONSISTENCY_CHECK,
             enabled = true,
             priority = 80,
@@ -102,7 +96,6 @@ class IdleTaskRegistry {
      * Get task description for logging/reporting.
      */
     fun getTaskDescription(type: IdleTaskType): String = when (type) {
-        IdleTaskType.REVIEW_BRAIN_ISSUES -> "Review open brain JIRA issues"
         IdleTaskType.KB_CONSISTENCY_CHECK -> "Check KB for duplicates and contradictions"
         IdleTaskType.VULNERABILITY_SCAN -> "Scan dependencies for known CVEs"
         IdleTaskType.CODE_QUALITY_SCAN -> "Run basic code quality analysis"

@@ -235,7 +235,7 @@ async def handle_background(request: OrchestrateRequest) -> dict:
                 break
 
             # Semantic duplicate: same search tool called 3+ times (even with different args)
-            search_tools = {"brain_search_issues", "kb_search", "web_search", "brain_search_pages"}
+            search_tools = {"kb_search", "web_search"}
             if tool_name in search_tools:
                 same_tool_count = sum(1 for name, _ in tool_call_history if name == tool_name)
                 if same_tool_count >= 3:
@@ -574,7 +574,7 @@ async def _build_background_prompt(request: OrchestrateRequest) -> str:
         "• Použij dostupné nástroje k analýze a řešení",
         "• Pokud úkol vyžaduje kódování → dispatch_coding_agent",
         "• Pokud potřebuješ data → kb_search, web_search, read_file",
-        "• Pokud potřebuješ vytvořit Jira issue → brain_create_issue",
+        "• Pokud potřebuješ vytvořit úkol → create_background_task",
         "• Na konci SHRŇ co jsi udělal ve stručném souhrnu",
         "",
         "ZÁKAZY:",

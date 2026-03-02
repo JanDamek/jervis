@@ -126,11 +126,8 @@ data class ApprovalGuidelinesDto(
     val autoApproveCommit: ApprovalRule = ApprovalRule(),
     val autoApprovePush: ApprovalRule = ApprovalRule(),
     val autoApproveEmail: ApprovalRule = ApprovalRule(),
-    val autoApproveJiraComment: ApprovalRule = ApprovalRule(),
-    val autoApproveJiraCreate: ApprovalRule = ApprovalRule(),
     val autoApprovePrComment: ApprovalRule = ApprovalRule(),
     val autoApproveChatReply: ApprovalRule = ApprovalRule(),
-    val autoApproveConfluenceUpdate: ApprovalRule = ApprovalRule(),
     val autoApproveCodingDispatch: ApprovalRule = ApprovalRule(),
 )
 

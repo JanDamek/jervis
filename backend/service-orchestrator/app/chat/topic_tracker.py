@@ -108,9 +108,6 @@ def _topics_from_tools(used_tools: list[str]) -> list[dict]:
     """Derive topics from tool usage patterns."""
     _TOOL_TOPIC_MAP = {
         "kb_search": ("Knowledge Base", "question"),
-        "code_search": ("Kód", "code_review"),
-        "brain_search": ("Brain JIRA", "task"),
-        "brain_create_issue": ("Brain JIRA", "task"),
         "create_background_task": ("Správa úkolů", "planning"),
         "create_work_plan": ("Správa úkolů", "planning"),
         "dispatch_coding_agent": ("Coding", "task"),

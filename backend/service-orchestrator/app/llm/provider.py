@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+from datetime import datetime
 from typing import AsyncIterator
 
 import litellm
@@ -25,6 +27,34 @@ from app.config import settings, estimate_tokens
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
+
+# ── Gemini daily counter ──────────────────────────────────────────────────
+_gemini_lock = threading.Lock()
+_gemini_daily_count: int = 0
+_gemini_count_date: str = ""
+
+
+def check_gemini_available() -> bool:
+    """Check if Gemini daily limit not exceeded."""
+    global _gemini_daily_count, _gemini_count_date
+    today = datetime.now().strftime("%Y-%m-%d")
+    with _gemini_lock:
+        if _gemini_count_date != today:
+            _gemini_daily_count = 0
+            _gemini_count_date = today
+        return _gemini_daily_count < settings.gemini_daily_limit
+
+
+def increment_gemini_counter():
+    """Increment Gemini daily counter after a call."""
+    global _gemini_daily_count, _gemini_count_date
+    today = datetime.now().strftime("%Y-%m-%d")
+    with _gemini_lock:
+        if _gemini_count_date != today:
+            _gemini_daily_count = 0
+            _gemini_count_date = today
+        _gemini_daily_count += 1
+        logger.info("Gemini daily counter: %d/%d", _gemini_daily_count, settings.gemini_daily_limit)
 
 # Token-arrival timeout: no token for this long = stream dead
 TOKEN_TIMEOUT_SECONDS = 300  # 5 min
@@ -219,6 +249,17 @@ class LLMProvider:
         """
         config = dict(TIER_CONFIG[tier])  # Copy to avoid mutating global
 
+        # Gemini daily limit check
+        if tier == ModelTier.CLOUD_LARGE_CONTEXT:
+            if not check_gemini_available():
+                logger.warning(
+                    "Gemini daily limit exceeded (%d/%d) — skipping call",
+                    _gemini_daily_count, settings.gemini_daily_limit,
+                )
+                raise TokenTimeoutError(
+                    f"Gemini daily limit exceeded ({_gemini_daily_count}/{settings.gemini_daily_limit})"
+                )
+
         # Apply route decision overrides
         if model_override:
             if tier == ModelTier.CLOUD_OPENROUTER:
@@ -234,13 +275,19 @@ class LLMProvider:
 
         # Tool calls can't be reliably streamed — use blocking call
         if tools:
-            return await self._blocking_completion(
+            result = await self._blocking_completion(
                 config, messages, tools, temperature, max_tokens, extra_headers, tier,
             )
+            if tier == ModelTier.CLOUD_LARGE_CONTEXT:
+                increment_gemini_counter()
+            return result
 
-        return await self._streaming_completion(
+        result = await self._streaming_completion(
             config, messages, temperature, max_tokens, extra_headers,
         )
+        if tier == ModelTier.CLOUD_LARGE_CONTEXT:
+            increment_gemini_counter()
+        return result
 
     @staticmethod
     async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:

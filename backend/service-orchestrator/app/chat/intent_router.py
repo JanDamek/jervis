@@ -24,15 +24,8 @@ logger = logging.getLogger(__name__)
 _CATEGORY_TOOL_NAMES: dict[ChatCategory, list[str]] = {
     ChatCategory.DIRECT: [],  # No tools
     ChatCategory.RESEARCH: [
-        "kb_search", "code_search", "web_search",
+        "kb_search", "web_search",
         "memory_recall", "switch_context",
-    ],
-    ChatCategory.BRAIN: [
-        "brain_search_issues", "brain_get_issue", "brain_create_issue",
-        "brain_update_issue", "brain_transition_issue", "brain_add_comment",
-        "brain_search_pages", "brain_get_page", "brain_create_page",
-        "brain_update_page",
-        "switch_context",
     ],
     ChatCategory.TASK_MGMT: [
         "create_background_task", "list_recent_tasks", "respond_to_user_task",
@@ -41,20 +34,19 @@ _CATEGORY_TOOL_NAMES: dict[ChatCategory, list[str]] = {
     ],
     ChatCategory.COMPLEX: [
         "create_background_task", "create_work_plan",
-        "dispatch_coding_agent", "code_search", "kb_search",
-        "brain_search_issues", "web_search",
+        "dispatch_coding_agent", "kb_search",
+        "web_search",
         "switch_context",
     ],
     ChatCategory.MEMORY: [
         "kb_search", "kb_delete", "memory_store", "store_knowledge",
-        "memory_recall", "code_search",
+        "memory_recall",
     ],
 }
 
 # Regex category → ChatCategory mapping
 _REGEX_TO_CHAT_CATEGORY: dict[ToolCategory, ChatCategory] = {
     ToolCategory.RESEARCH: ChatCategory.RESEARCH,
-    ToolCategory.BRAIN: ChatCategory.BRAIN,
     ToolCategory.TASK_MGMT: ChatCategory.TASK_MGMT,
     ToolCategory.FILTERING: ChatCategory.TASK_MGMT,  # Filtering is part of task management
 }
@@ -70,7 +62,6 @@ def _build_routing_decision(
     max_iterations = {
         ChatCategory.DIRECT: settings.direct_max_iterations,
         ChatCategory.RESEARCH: settings.research_max_iterations,
-        ChatCategory.BRAIN: settings.brain_max_iterations,
         ChatCategory.TASK_MGMT: settings.task_mgmt_max_iterations,
         ChatCategory.COMPLEX: settings.complex_max_iterations,
         ChatCategory.MEMORY: settings.memory_max_iterations,

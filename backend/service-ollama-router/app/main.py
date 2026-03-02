@@ -345,9 +345,10 @@ async def route_decision(request: Request):
     """Capability-based routing decision endpoint.
 
     Called by orchestrator/chat to determine where to send an LLM request.
-    Router decides based on capability, max_tier, estimated_tokens, and GPU state.
+    Router decides based on capability, max_tier, estimated_tokens, prefer_cloud,
+    and GPU state.
 
-    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000}
+    Input: {"capability": "chat", "max_tier": "FREE", "estimated_tokens": 5000, "prefer_cloud": false}
     Output: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
     """
     body = await request.json()
@@ -355,6 +356,7 @@ async def route_decision(request: Request):
         capability=body.get("capability", "chat"),
         max_tier=body.get("max_tier", "NONE"),
         estimated_tokens=body.get("estimated_tokens", 0),
+        prefer_cloud=body.get("prefer_cloud", False),
     )
     return JSONResponse(content=decision)
 

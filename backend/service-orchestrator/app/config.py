@@ -81,14 +81,15 @@ class Settings(BaseSettings):
         "DEFAULT_OPENAI_MODEL", "gpt-4o"
     )
     default_large_context_model: str = os.getenv(
-        "DEFAULT_LARGE_CONTEXT_MODEL", "gemini-2.5-pro"
+        "DEFAULT_LARGE_CONTEXT_MODEL", "gemini-3.1-pro"
     )
 
+    # Gemini daily call limit (resets at midnight)
+    gemini_daily_limit: int = int(os.getenv("GEMINI_DAILY_LIMIT", "100"))
+
     # Agent timeouts (seconds)
-    agent_timeout_aider: int = 600
-    agent_timeout_openhands: int = 1800
     agent_timeout_claude: int = 1800
-    agent_timeout_junie: int = 1200
+    agent_timeout_kilo: int = 1800
 
     # Job cleanup
     job_ttl_seconds: int = 300
@@ -181,7 +182,6 @@ class Settings(BaseSettings):
     router_confidence_threshold: float = 0.7
     direct_max_iterations: int = 1
     research_max_iterations: int = 3
-    brain_max_iterations: int = 4
     task_mgmt_max_iterations: int = 4
     complex_max_iterations: int = 6
     memory_max_iterations: int = 3

@@ -50,27 +50,15 @@ class SystemConfigRpcImpl(
         val updated = existing.copy(
             jervisInternalProjectId = request.jervisInternalProjectId
                 ?.let { ObjectId(it) } ?: existing.jervisInternalProjectId,
-            brainBugtrackerConnectionId = request.brainBugtrackerConnectionId
-                ?.let { ObjectId(it) } ?: existing.brainBugtrackerConnectionId,
-            brainBugtrackerProjectKey = request.brainBugtrackerProjectKey
-                ?: existing.brainBugtrackerProjectKey,
-            brainBugtrackerIssueType = request.brainBugtrackerIssueType
-                ?: existing.brainBugtrackerIssueType,
-            brainWikiConnectionId = request.brainWikiConnectionId
-                ?.let { ObjectId(it) } ?: existing.brainWikiConnectionId,
-            brainWikiSpaceKey = request.brainWikiSpaceKey
-                ?: existing.brainWikiSpaceKey,
-            brainWikiRootPageId = request.brainWikiRootPageId
-                ?: existing.brainWikiRootPageId,
         )
 
         repository.save(updated)
-        logger.info { "System config updated: internalProject=${updated.jervisInternalProjectId}, bugtracker=${updated.brainBugtrackerConnectionId}, wiki=${updated.brainWikiConnectionId}" }
+        logger.info { "System config updated: internalProject=${updated.jervisInternalProjectId}" }
         return updated.toDto()
     }
 
     /**
-     * Get the raw document (used by internal services like BrainWriteService).
+     * Get the raw document (used by internal services).
      */
     suspend fun getDocument(): SystemConfigDocument {
         return repository.findById(SystemConfigDocument.SINGLETON_ID)
@@ -80,11 +68,5 @@ class SystemConfigRpcImpl(
     private fun SystemConfigDocument.toDto(): SystemConfigDto =
         SystemConfigDto(
             jervisInternalProjectId = jervisInternalProjectId?.toHexString(),
-            brainBugtrackerConnectionId = brainBugtrackerConnectionId?.toHexString(),
-            brainBugtrackerProjectKey = brainBugtrackerProjectKey,
-            brainBugtrackerIssueType = brainBugtrackerIssueType,
-            brainWikiConnectionId = brainWikiConnectionId?.toHexString(),
-            brainWikiSpaceKey = brainWikiSpaceKey,
-            brainWikiRootPageId = brainWikiRootPageId,
         )
 }

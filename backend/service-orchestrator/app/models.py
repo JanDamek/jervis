@@ -10,10 +10,8 @@ from pydantic import BaseModel, Field
 
 
 class AgentType(str, Enum):
-    AIDER = "aider"
-    OPENHANDS = "openhands"
     CLAUDE = "claude"
-    JUNIE = "junie"
+    KILO = "kilo"
 
 
 class Complexity(str, Enum):
@@ -88,7 +86,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
-    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM" (compat: "PAID_LOW" / "PAID_HIGH")
     # Git commit config (from client/project settings)
     git_author_name: str | None = None
     git_author_email: str | None = None
@@ -267,6 +265,7 @@ class OrchestrateRequest(BaseModel):
     jervis_project_id: str | None = None  # JERVIS internal project for planning
     chat_history: ChatHistoryPayload | None = None  # Conversation context
     processing_mode: str = "FOREGROUND"  # FOREGROUND = reserve GPU, BACKGROUND = no GPU reservation
+    max_openrouter_tier: str = "NONE"  # Resolved tier from CloudModelPolicyResolver (overrides rules.max_openrouter_tier)
 
 
 class OrchestrateResponse(BaseModel):

@@ -6,7 +6,6 @@ from app.chat.models import ChatCategory
 from app.chat.prompts.core import build_core_prompt
 from app.chat.prompts.direct import DIRECT_PROMPT
 from app.chat.prompts.research import RESEARCH_PROMPT
-from app.chat.prompts.brain import BRAIN_PROMPT
 from app.chat.prompts.task_mgmt import TASK_MGMT_PROMPT
 from app.chat.prompts.complex import COMPLEX_PROMPT
 from app.chat.prompts.memory import MEMORY_PROMPT
@@ -15,7 +14,6 @@ from app.chat.system_prompt import RuntimeContext
 _CATEGORY_PROMPTS: dict[ChatCategory, str] = {
     ChatCategory.DIRECT: DIRECT_PROMPT,
     ChatCategory.RESEARCH: RESEARCH_PROMPT,
-    ChatCategory.BRAIN: BRAIN_PROMPT,
     ChatCategory.TASK_MGMT: TASK_MGMT_PROMPT,
     ChatCategory.COMPLEX: COMPLEX_PROMPT,
     ChatCategory.MEMORY: MEMORY_PROMPT,

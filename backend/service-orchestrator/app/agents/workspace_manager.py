@@ -47,7 +47,7 @@ class WorkspaceManager:
             project_path: Relative path to project on PVC (e.g. "clients/acme/web-app").
             instructions: What the agent should do.
             files: Specific files to modify.
-            agent_type: "aider" | "openhands" | "claude" | "junie"
+            agent_type: "claude" | "kilo"
             kb_context: Pre-fetched KB context (markdown).
             environment_context: Resolved environment definition (dict).
             git_config: Git commit config from project/client settings.
@@ -99,8 +99,6 @@ class WorkspaceManager:
             self._setup_claude_workspace(
                 workspace, client_id, project_id, kb_context, environment_context
             )
-        elif agent_type == "aider":
-            self._setup_aider_workspace(workspace, files, kb_context)
 
         # 5. Git config (author, committer, GPG signing)
         if git_config:
@@ -450,22 +448,6 @@ class WorkspaceManager:
 
         logger.info("Git config set for workspace: %s", workspace)
 
-    def _setup_aider_workspace(
-        self,
-        workspace: Path,
-        files: list[str],
-        kb_context: str | None,
-    ):
-        """Aider: .aider.conf.yml + read-only KB context file."""
-
-        config_lines = ["yes: true"]  # --yes mode
-
-        # Aider --read flag for read-only context files
-        if kb_context:
-            config_lines.append("read: [.jervis/kb-context.md]")
-
-        (workspace / ".aider.conf.yml").write_text("\n".join(config_lines))
-
     def prepare_git_workspace(
         self,
         workspace_path: str,
@@ -499,7 +481,7 @@ class WorkspaceManager:
             logger.info("Cleaned up workspace: %s", workspace)
 
         # Remove generated config files
-        for cleanup_file in [".aider.conf.yml", "CLAUDE.md"]:
+        for cleanup_file in ["CLAUDE.md"]:
             p = workspace / cleanup_file
             if p.exists():
                 p.unlink()

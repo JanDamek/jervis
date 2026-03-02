@@ -4,18 +4,10 @@ import kotlinx.serialization.Serializable
 
 /**
  * System-level configuration DTO.
- * Contains brain connection settings (Jervis's own Jira + Confluence).
  */
 @Serializable
 data class SystemConfigDto(
     val jervisInternalProjectId: String? = null,
-    val brainBugtrackerConnectionId: String? = null,
-    val brainBugtrackerProjectKey: String? = null,
-    /** Jira issue type name for brain-created issues (e.g. "Task", "Úkol"). */
-    val brainBugtrackerIssueType: String? = null,
-    val brainWikiConnectionId: String? = null,
-    val brainWikiSpaceKey: String? = null,
-    val brainWikiRootPageId: String? = null,
 )
 
 /**
@@ -25,10 +17,4 @@ data class SystemConfigDto(
 @Serializable
 data class UpdateSystemConfigRequest(
     val jervisInternalProjectId: String? = null,
-    val brainBugtrackerConnectionId: String? = null,
-    val brainBugtrackerProjectKey: String? = null,
-    val brainBugtrackerIssueType: String? = null,
-    val brainWikiConnectionId: String? = null,
-    val brainWikiSpaceKey: String? = null,
-    val brainWikiRootPageId: String? = null,
 )

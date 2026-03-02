@@ -79,9 +79,9 @@ class SourceTracker:
     def add_tool_result(self, tool_name: str, result: str) -> None:
         """Process a tool result and extract source attributions.
 
-        Only processes kb_search, code_search, and brain_search results.
+        Only processes kb_search results (code_search kept for backward compat).
         """
-        if tool_name not in ("kb_search", "code_search", "brain_search", "brain_list_issues"):
+        if tool_name not in ("kb_search", "code_search"):
             return
 
         sources = extract_sources(result)

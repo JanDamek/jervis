@@ -353,7 +353,7 @@ class ProjectRules(BaseModel):
     auto_use_anthropic: bool = False        # Cloud model auto-eskalace
     auto_use_openai: bool = False
     auto_use_gemini: bool = False
-    max_openrouter_tier: str = "NONE"     # "NONE"/"FREE"/"PAID_LOW"/"PAID_HIGH" — OpenRouter fallback tier
+    max_openrouter_tier: str = "NONE"     # "NONE"/"FREE"/"PAID"/"PREMIUM" — OpenRouter fallback tier
 ```
 
 ### ChatHistoryPayload
@@ -807,19 +807,19 @@ Nahrazuje dynamickou eskalaci. Rozhoduje local vs cloud dle GPU stavu a `maxOpen
 ```python
 async def select_route(
     estimated_tokens: int,
-    max_tier: str = "NONE",       # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
+    max_tier: str = "NONE",       # "NONE" / "FREE" / "PAID" / "PREMIUM"
     priority: str = "CRITICAL",
 ) -> Route:
 ```
 
 Logika:
 1. `max_tier == "NONE"` → vždy local (čeká na GPU)
-2. `estimated_tokens > 48k` → LARGE_CONTEXT fronta (pokud `max_tier >= PAID_LOW`)
+2. `estimated_tokens > 48k` → LARGE_CONTEXT fronta (pokud `max_tier >= PAID`)
 3. GPU volná → local (`LOCAL_STANDARD`, 48k)
 4. GPU busy → iteruj fronty dle `max_tier`:
    - Vždy zkus FREE frontu první
-   - `max_tier >= PAID_LOW` → zkus PAID_LOW
-   - `max_tier >= PAID_HIGH` → zkus PAID_HIGH
+   - `max_tier >= PAID` → zkus PAID
+   - `max_tier >= PREMIUM` → zkus PREMIUM
 5. Fallback: čekej na local GPU
 
 ### 8.3 OpenRouter fronty
@@ -829,9 +829,9 @@ Logika:
 | Fronta | Modely (default) | Kdy |
 |--------|-------------------|-----|
 | `FREE` | p40 (local), qwen3-30b:free | GPU busy, maxTier >= FREE |
-| `PAID_LOW` | p40 (local), claude-haiku-4, gpt-4o-mini | maxTier >= PAID_LOW |
-| `PAID_HIGH` | p40 (local), claude-sonnet-4, o3-mini | maxTier >= PAID_HIGH |
-| `LARGE_CONTEXT` | gemini-2.5-pro (1M), claude-sonnet-4 (200k) | estimated > 48k, maxTier >= PAID_LOW |
+| `PAID` | p40 (local), claude-haiku-4, gpt-4o-mini | maxTier >= PAID |
+| `PREMIUM` | p40 (local), claude-sonnet-4, o3-mini | maxTier >= PREMIUM |
+| `LARGE_CONTEXT` | gemini-2.5-pro (1M), claude-sonnet-4 (200k) | estimated > 48k, maxTier >= PAID |
 
 ### 8.4 Cloud eskalace (`llm_with_cloud_fallback`)
 
@@ -3159,7 +3159,7 @@ class ChatRequest(BaseModel):
     query: str
     workspace_path: str = ""
     processing_mode: str = "FOREGROUND"
-    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM"
     auto_use_anthropic: bool = False
     auto_use_openai: bool = False
     auto_use_gemini: bool = False

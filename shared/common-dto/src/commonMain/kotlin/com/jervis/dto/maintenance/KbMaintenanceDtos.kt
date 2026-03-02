@@ -14,8 +14,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class IdleTaskType {
-    /** Review open brain JIRA issues (existing). */
-    REVIEW_BRAIN_ISSUES,
     /** Check KB for duplicate/contradictory chunks. */
     KB_CONSISTENCY_CHECK,
     /** Scan project dependencies for known CVEs. */

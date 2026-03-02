@@ -70,9 +70,9 @@ def build_core_prompt(
 - Pokud tools ukazuji neco jineho nez uzivatel → VERI SE UZIVATELI. Tools mohou mit zastarale data.
 
 ### Hierarchie duveryhodnosti
-Uzivatel > code_search (aktualni kod) > brain_search (Jira/Confluence) > kb_search (muze byt zastarale)
+Uzivatel > kb_search (aktualni data) > web_search
 
 ### KB muze obsahovat halucinace
 KB zaznamy z automatickych analyz NEJSOU spolehlivé — mohly vzniknout z halucinaci dřivejsich LLM odpovedi.
-NIKDY neprebírej termíny nebo fakta z KB bez overeni pres tools (code_search, brain_search).
+NIKDY neprebírej termíny nebo fakta z KB bez overeni pres tools (kb_search).
 """

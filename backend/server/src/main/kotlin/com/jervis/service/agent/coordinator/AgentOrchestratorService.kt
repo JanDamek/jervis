@@ -182,10 +182,11 @@ class AgentOrchestratorService(
         userInput: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): Boolean {
-        // Early guard: only one task can be PYTHON_ORCHESTRATING at a time
+        // Guard: limit concurrent orchestrations (resource-based scheduling)
+        val maxConcurrent = 4  // TODO: move to config
         val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
-        if (orchestratingCount > 0) {
-            logger.info { "PYTHON_DISPATCH_SKIP: $orchestratingCount task(s) already PYTHON_ORCHESTRATING" }
+        if (orchestratingCount >= maxConcurrent) {
+            logger.info { "PYTHON_DISPATCH_SKIP: $orchestratingCount/$maxConcurrent tasks already PYTHON_ORCHESTRATING" }
             return false
         }
 
@@ -354,6 +355,7 @@ class AgentOrchestratorService(
             environmentId = environmentId,
             jervisProjectId = jervisProjectId,
             processingMode = "BACKGROUND",
+            maxOpenRouterTier = rules.maxOpenRouterTier,
         )
 
         try {

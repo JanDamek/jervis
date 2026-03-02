@@ -35,13 +35,15 @@ async def route_request(
     capability: str = "chat",
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
+    prefer_cloud: bool = False,
 ) -> RouteDecision:
     """Ask router for routing decision based on capability.
 
     Args:
         capability: "thinking", "coding", "chat", "embedding", "visual"
-        max_tier: "NONE", "FREE", "PAID_LOW", "PAID_HIGH"
+        max_tier: "NONE", "FREE", "PAID", "PREMIUM" (also accepts old: "PAID_LOW", "PAID_HIGH")
         estimated_tokens: estimated context size in tokens
+        prefer_cloud: skip GPU check, go directly to OpenRouter (GPU fallback if no cloud model)
 
     Returns:
         RouteDecision with target, model, and optional api_base.
@@ -53,6 +55,7 @@ async def route_request(
                 "capability": capability,
                 "max_tier": max_tier,
                 "estimated_tokens": estimated_tokens,
+                "prefer_cloud": prefer_cloud,
             })
             resp.raise_for_status()
             data = resp.json()

@@ -16,7 +16,6 @@ class ChatCategory(str, Enum):
     """Category of user intent — determines tool set, prompt, and routing."""
     DIRECT = "direct"           # Simple answer, no tools needed (greeting, chit-chat, quick question)
     RESEARCH = "research"       # KB search, code search, web search
-    BRAIN = "brain"             # Jira, Confluence, external brain systems
     TASK_MGMT = "task_mgmt"    # Task lifecycle (create, schedule, list, cancel)
     COMPLEX = "complex"         # Multi-step work plan, decomposition, coding dispatch
     MEMORY = "memory"           # KB corrections, learning, fact verification
@@ -56,7 +55,7 @@ class ChatRequest(BaseModel):
     timestamp: str | None = None
 
     # Cloud routing policy (from CloudModelPolicy)
-    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID_LOW" / "PAID_HIGH"
+    max_openrouter_tier: str = "NONE"  # "NONE" / "FREE" / "PAID" / "PREMIUM" (compat: "PAID_LOW" / "PAID_HIGH")
 
 
 class ChatStreamEvent(BaseModel):

@@ -9,10 +9,10 @@ enum class OpenRouterTier {
     NONE,
     /** Free cloud models only (e.g. qwen3-30b:free) */
     FREE,
-    /** Standard paid models (e.g. Haiku, GPT-4o-mini) */
-    PAID_LOW,
-    /** Thinking/reasoning paid models (e.g. Sonnet, o3-mini) */
-    PAID_HIGH,
+    /** Paid models (e.g. Haiku, GPT-4o-mini) — was PAID_LOW */
+    PAID,
+    /** Premium reasoning models (e.g. Sonnet, o3-mini) — was PAID_HIGH */
+    PREMIUM,
 }
 
 data class CloudModelPolicy(

@@ -63,12 +63,12 @@ _DEFAULT_QUEUES: dict[str, list[dict]] = {
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
         {"modelId": "qwen/qwen3-30b-a3b:free", "isLocal": False, "maxContextTokens": 32_000},
     ],
-    "PAID_LOW": [
+    "PAID": [
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
         {"modelId": "anthropic/claude-haiku-4", "isLocal": False, "maxContextTokens": 200_000},
         {"modelId": "openai/gpt-4o-mini", "isLocal": False, "maxContextTokens": 128_000},
     ],
-    "PAID_HIGH": [
+    "PREMIUM": [
         {"modelId": "p40", "isLocal": True, "maxContextTokens": 48_000},
         {"modelId": "anthropic/claude-sonnet-4", "isLocal": False, "maxContextTokens": 200_000},
         {"modelId": "openai/o3-mini", "isLocal": False, "maxContextTokens": 200_000},
@@ -76,11 +76,20 @@ _DEFAULT_QUEUES: dict[str, list[dict]] = {
 }
 
 # Tier ordering for comparison
-TIER_LEVELS = {"NONE": 0, "FREE": 1, "PAID_LOW": 2, "PAID_HIGH": 3}
+TIER_LEVELS = {"NONE": 0, "FREE": 1, "PAID": 2, "PREMIUM": 3}
+
+# Backward compatibility: map old tier names to new ones
+_TIER_COMPAT = {"PAID_LOW": "PAID", "PAID_HIGH": "PREMIUM"}
+
+
+def normalize_tier(tier: str) -> str:
+    """Normalize tier name, mapping old names to new ones."""
+    return _TIER_COMPAT.get(tier, tier)
 
 
 async def get_queue(queue_name: str) -> list[dict]:
     """Get model queue by name from settings, falling back to defaults."""
+    queue_name = normalize_tier(queue_name)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
     or_settings = await _fetch_openrouter_settings()
     if or_settings:
         for q in or_settings.get("modelQueues", []):
@@ -94,20 +103,20 @@ async def get_queue(queue_name: str) -> list[dict]:
 async def find_cloud_model_for_context(estimated_tokens: int, tier_level: int) -> str | None:
     """Find first cloud model that fits the context, iterating queues by tier.
 
-    Tries FREE → PAID_LOW → PAID_HIGH in order, respecting tier_level limit.
+    Tries FREE -> PAID -> PREMIUM in order, respecting tier_level limit.
     Returns modelId or None.
     """
     cloud_model = await _first_cloud_model("FREE", estimated_tokens)
     if cloud_model:
         return cloud_model
 
-    if tier_level >= TIER_LEVELS["PAID_LOW"]:
-        cloud_model = await _first_cloud_model("PAID_LOW", estimated_tokens)
+    if tier_level >= TIER_LEVELS["PAID"]:
+        cloud_model = await _first_cloud_model("PAID", estimated_tokens)
         if cloud_model:
             return cloud_model
 
-    if tier_level >= TIER_LEVELS["PAID_HIGH"]:
-        cloud_model = await _first_cloud_model("PAID_HIGH", estimated_tokens)
+    if tier_level >= TIER_LEVELS["PREMIUM"]:
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens)
         if cloud_model:
             return cloud_model
 
@@ -132,16 +141,17 @@ async def get_max_context_tokens(max_tier: str = "NONE") -> int:
     Used to know when context is too large for any model and needs chunking.
     Returns: max context tokens (e.g. 200_000 for Sonnet, 48_000 for local only).
     """
+    max_tier = normalize_tier(max_tier)  # backward compat
     tier_level = TIER_LEVELS.get(max_tier, 0)
     if tier_level == 0:
         return 48_000
 
     max_ctx = 48_000
     queues_to_check = ["FREE"]
-    if tier_level >= TIER_LEVELS["PAID_LOW"]:
-        queues_to_check.append("PAID_LOW")
-    if tier_level >= TIER_LEVELS["PAID_HIGH"]:
-        queues_to_check.append("PAID_HIGH")
+    if tier_level >= TIER_LEVELS["PAID"]:
+        queues_to_check.append("PAID")
+    if tier_level >= TIER_LEVELS["PREMIUM"]:
+        queues_to_check.append("PREMIUM")
 
     for queue_name in queues_to_check:
         queue_models = await get_queue(queue_name)

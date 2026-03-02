@@ -1,6 +1,6 @@
 """Coding Agent -- central gateway to coding agents via K8s Jobs.
 
-Dispatches coding work to external agents (Aider, OpenHands, Claude, Junie)
+Dispatches coding work to external agents (Claude CLI, Kilo)
 running as Kubernetes Jobs. Prepares workspaces, creates jobs, and reads
 results. Does not sub-delegate to other agents.
 """
@@ -21,7 +21,7 @@ TOOL_K8S_JOB_CREATE: dict = {
         "name": "k8s_job_create",
         "description": (
             "Create and dispatch a Kubernetes Job for a coding agent. "
-            "The job runs the specified agent type (aider, openhands, claude, junie) "
+            "The job runs the specified agent type (claude, kilo) "
             "with the given instructions in the prepared workspace. "
             "Returns the job name and status."
         ),
@@ -30,7 +30,7 @@ TOOL_K8S_JOB_CREATE: dict = {
             "properties": {
                 "agent_type": {
                     "type": "string",
-                    "enum": ["aider", "openhands", "claude", "junie"],
+                    "enum": ["claude", "kilo"],
                     "description": "Coding agent to use for the job.",
                 },
                 "instructions": {
@@ -128,7 +128,7 @@ _CODING_TOOLS: list[dict] = [
 
 
 class CodingAgent(BaseAgent):
-    """Central gateway to coding agents (Aider/OpenHands/Claude/Junie).
+    """Central gateway to coding agents (Claude CLI, Kilo).
 
     Prepares workspaces, dispatches K8s Jobs for coding work, and reads
     results. Does not sub-delegate -- all coordination happens through
@@ -137,7 +137,7 @@ class CodingAgent(BaseAgent):
 
     name = "coding"
     description = (
-        "Central gateway to coding agents (Aider, OpenHands, Claude, Junie). "
+        "Central gateway to coding agents (Claude CLI, Kilo). "
         "Prepares workspaces, dispatches K8s Jobs for coding work, and "
         "reads results. Handles agent selection and workspace lifecycle."
     )
@@ -167,13 +167,11 @@ class CodingAgent(BaseAgent):
             "K8s Jobs to external coding agents, and reading their results.\n\n"
             "Your capabilities:\n"
             "- Prepare workspace (clone repo, checkout branch)\n"
-            "- Create K8s coding jobs with agent selection (aider, openhands, claude, junie)\n"
+            "- Create K8s coding jobs with agent selection (claude, kilo)\n"
             "- Read results from completed coding jobs\n\n"
             "Agent selection guidelines:\n"
-            "- aider: Best for focused, single-file or small-scope edits\n"
-            "- openhands: Good for multi-file refactoring and complex changes\n"
-            "- claude: Best for nuanced reasoning, architecture changes, documentation\n"
-            "- junie: Best for JetBrains-integrated projects (Kotlin, Java)\n\n"
+            "- claude: Best all-round agent — reasoning, architecture, code changes, documentation\n"
+            "- kilo: Placeholder for future Kilo Code agent\n\n"
             "Workflow:\n"
             "1. First prepare the workspace with workspace_prepare\n"
             "2. Create a K8s job with k8s_job_create, providing clear instructions\n"

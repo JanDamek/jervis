@@ -41,8 +41,6 @@ import org.springframework.stereotype.Service
  * Actions are routed to the appropriate backend service based on type:
  * - GIT_* → Python orchestrator (via existing dispatch)
  * - EMAIL_* → Email service
- * - JIRA_* → Brain client (internal Jira API)
- * - CONFLUENCE_* → Brain client (internal Confluence API)
  * - PR_* → Git provider service
  * - KB_* → Knowledge Base service
  * - CODING_DISPATCH → K8s Job dispatch
@@ -53,7 +51,6 @@ class ActionExecutorService(
     private val notificationRpc: NotificationRpcImpl,
     private val userTaskService: UserTaskService,
     private val guidelinesService: GuidelinesService,
-    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val approvalQueueRepository: ApprovalQueueRepository,
     private val approvalStatisticsRepository: ApprovalStatisticsRepository,
     private val chatReplyService: com.jervis.integration.chat.ChatReplyService,
@@ -207,11 +204,6 @@ class ActionExecutorService(
             ApprovalAction.GIT_PUSH -> approvalRules.autoApprovePush
             ApprovalAction.GIT_CREATE_BRANCH -> approvalRules.autoApproveCommit // branch ≈ commit
             ApprovalAction.EMAIL_SEND, ApprovalAction.EMAIL_REPLY -> approvalRules.autoApproveEmail
-            ApprovalAction.JIRA_CREATE_ISSUE -> approvalRules.autoApproveJiraCreate
-            ApprovalAction.JIRA_UPDATE_ISSUE, ApprovalAction.JIRA_COMMENT,
-            ApprovalAction.JIRA_TRANSITION -> approvalRules.autoApproveJiraComment
-            ApprovalAction.CONFLUENCE_CREATE_PAGE,
-            ApprovalAction.CONFLUENCE_UPDATE_PAGE -> approvalRules.autoApproveConfluenceUpdate
             ApprovalAction.PR_CREATE, ApprovalAction.PR_COMMENT -> approvalRules.autoApprovePrComment
             ApprovalAction.PR_MERGE -> approvalRules.autoApprovePush // merge ≈ push
             ApprovalAction.CHAT_REPLY -> approvalRules.autoApproveChatReply
@@ -243,18 +235,6 @@ class ActionExecutorService(
                 ApprovalAction.EMAIL_SEND,
                 ApprovalAction.EMAIL_REPLY,
                 -> dispatchEmailAction(request)
-
-                // Jira operations (via brain client)
-                ApprovalAction.JIRA_CREATE_ISSUE,
-                ApprovalAction.JIRA_UPDATE_ISSUE,
-                ApprovalAction.JIRA_COMMENT,
-                ApprovalAction.JIRA_TRANSITION,
-                -> dispatchJiraAction(request)
-
-                // Confluence operations (via brain client)
-                ApprovalAction.CONFLUENCE_CREATE_PAGE,
-                ApprovalAction.CONFLUENCE_UPDATE_PAGE,
-                -> dispatchConfluenceAction(request)
 
                 // PR operations
                 ApprovalAction.PR_CREATE,
@@ -362,12 +342,6 @@ class ActionExecutorService(
             ApprovalAction.GIT_CREATE_BRANCH -> "Create branch: ${payload["branch_name"] ?: "N/A"}"
             ApprovalAction.EMAIL_SEND -> "Send email to: ${payload["to"] ?: "N/A"}"
             ApprovalAction.EMAIL_REPLY -> "Reply to email: ${payload["subject"]?.take(80) ?: "N/A"}"
-            ApprovalAction.JIRA_CREATE_ISSUE -> "Create Jira issue: ${payload["summary"]?.take(80) ?: "N/A"}"
-            ApprovalAction.JIRA_UPDATE_ISSUE -> "Update issue: ${payload["issue_key"] ?: "N/A"}"
-            ApprovalAction.JIRA_COMMENT -> "Comment on: ${payload["issue_key"] ?: "N/A"}"
-            ApprovalAction.JIRA_TRANSITION -> "Transition: ${payload["issue_key"] ?: "N/A"} → ${payload["transition"] ?: "N/A"}"
-            ApprovalAction.CONFLUENCE_CREATE_PAGE -> "Create page: ${payload["title"]?.take(80) ?: "N/A"}"
-            ApprovalAction.CONFLUENCE_UPDATE_PAGE -> "Update page: ${payload["page_id"] ?: "N/A"}"
             ApprovalAction.PR_CREATE -> "Create PR: ${payload["title"]?.take(80) ?: "N/A"}"
             ApprovalAction.PR_COMMENT -> "PR comment: ${payload["pr_id"] ?: "N/A"}"
             ApprovalAction.PR_MERGE -> "Merge PR: ${payload["pr_id"] ?: "N/A"}"
@@ -399,126 +373,6 @@ class ActionExecutorService(
             message = "Email action approved (SMTP delivery pending implementation)",
             action = request.action,
         )
-    }
-
-    private suspend fun dispatchJiraAction(request: ActionExecutionRequest): ActionExecutionResult {
-        val payload = request.payload
-        return when (request.action) {
-            ApprovalAction.JIRA_CREATE_ISSUE -> {
-                val issue = brainWriteService.createIssue(
-                    summary = payload["summary"] ?: "Untitled",
-                    description = payload["description"],
-                    issueType = payload["issue_type"] ?: "Task",
-                    priority = payload["priority"],
-                    labels = payload["labels"]?.split(",")?.map { it.trim() } ?: emptyList(),
-                    epicKey = payload["epic_key"],
-                )
-                logger.info { "JIRA_CREATED: ${issue.key} — ${issue.summary}" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Created Jira issue: ${issue.key}",
-                    action = request.action,
-                    artifactId = issue.key,
-                )
-            }
-
-            ApprovalAction.JIRA_UPDATE_ISSUE -> {
-                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
-                val issue = brainWriteService.updateIssue(
-                    issueKey = issueKey,
-                    summary = payload["summary"],
-                    description = payload["description"],
-                    assignee = payload["assignee"],
-                    priority = payload["priority"],
-                    labels = payload["labels"]?.split(",")?.map { it.trim() },
-                )
-                logger.info { "JIRA_UPDATED: ${issue.key}" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Updated Jira issue: ${issue.key}",
-                    action = request.action,
-                    artifactId = issue.key,
-                )
-            }
-
-            ApprovalAction.JIRA_COMMENT -> {
-                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
-                val comment = brainWriteService.addComment(
-                    issueKey = issueKey,
-                    comment = payload["comment"] ?: payload["body"] ?: "",
-                )
-                logger.info { "JIRA_COMMENTED: $issueKey (${comment.id})" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Added comment to $issueKey",
-                    action = request.action,
-                    artifactId = issueKey,
-                )
-            }
-
-            ApprovalAction.JIRA_TRANSITION -> {
-                val issueKey = payload["issue_key"] ?: error("Missing issue_key")
-                val transition = payload["transition"] ?: error("Missing transition")
-                brainWriteService.transitionIssue(issueKey, transition)
-                logger.info { "JIRA_TRANSITIONED: $issueKey → $transition" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Transitioned $issueKey → $transition",
-                    action = request.action,
-                    artifactId = issueKey,
-                )
-            }
-
-            else -> ActionExecutionResult(
-                success = false,
-                message = "Unknown Jira action: ${request.action}",
-                action = request.action,
-            )
-        }
-    }
-
-    private suspend fun dispatchConfluenceAction(request: ActionExecutionRequest): ActionExecutionResult {
-        val payload = request.payload
-        return when (request.action) {
-            ApprovalAction.CONFLUENCE_CREATE_PAGE -> {
-                val page = brainWriteService.createPage(
-                    title = payload["title"] ?: "Untitled",
-                    content = payload["content"] ?: "",
-                    parentPageId = payload["parent_page_id"],
-                )
-                logger.info { "CONFLUENCE_CREATED: ${page.id} — ${page.title}" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Created Confluence page: ${page.title}",
-                    action = request.action,
-                    artifactId = page.id,
-                )
-            }
-
-            ApprovalAction.CONFLUENCE_UPDATE_PAGE -> {
-                val pageId = payload["page_id"] ?: error("Missing page_id")
-                val version = payload["version"]?.toIntOrNull() ?: 1
-                val page = brainWriteService.updatePage(
-                    pageId = pageId,
-                    title = payload["title"] ?: "",
-                    content = payload["content"] ?: "",
-                    version = version,
-                )
-                logger.info { "CONFLUENCE_UPDATED: ${page.id} — ${page.title}" }
-                ActionExecutionResult(
-                    success = true,
-                    message = "Updated Confluence page: ${page.title}",
-                    action = request.action,
-                    artifactId = page.id,
-                )
-            }
-
-            else -> ActionExecutionResult(
-                success = false,
-                message = "Unknown Confluence action: ${request.action}",
-                action = request.action,
-            )
-        }
     }
 
     private suspend fun dispatchPrAction(request: ActionExecutionRequest): ActionExecutionResult {
@@ -851,12 +705,6 @@ class ActionExecutorService(
             ApprovalAction.GIT_PUSH to "autoApprovePush",
             ApprovalAction.EMAIL_SEND to "autoApproveEmail",
             ApprovalAction.EMAIL_REPLY to "autoApproveEmail",
-            ApprovalAction.JIRA_CREATE_ISSUE to "autoApproveJiraCreate",
-            ApprovalAction.JIRA_UPDATE_ISSUE to "autoApproveJiraComment",
-            ApprovalAction.JIRA_COMMENT to "autoApproveJiraComment",
-            ApprovalAction.JIRA_TRANSITION to "autoApproveJiraComment",
-            ApprovalAction.CONFLUENCE_CREATE_PAGE to "autoApproveConfluenceUpdate",
-            ApprovalAction.CONFLUENCE_UPDATE_PAGE to "autoApproveConfluenceUpdate",
             ApprovalAction.PR_CREATE to "autoApprovePrComment",
             ApprovalAction.PR_COMMENT to "autoApprovePrComment",
             ApprovalAction.PR_MERGE to "autoApprovePush",

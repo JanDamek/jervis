@@ -702,7 +702,7 @@ Policy resolution: **project → group → client → default (FREE)**
 - Project can override group/client policy
 - Group can override client policy (new)
 - Resolved via `CloudModelPolicyResolver` in Kotlin server
-- Currently only NONE/FREE active (PAID_LOW/PAID_HIGH disabled in UI)
+- All 4 tiers available: NONE, FREE, PAID (Haiku/GPT-4o-mini), PREMIUM (Sonnet/o3-mini)
 
 ### Background vs Foreground
 

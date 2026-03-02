@@ -18,28 +18,22 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Agent image mapping
+# Agent image mapping (aider, openhands, junie removed — only claude + kilo)
 AGENT_IMAGES: dict[str, str] = {
-    "aider": f"{settings.container_registry}/jervis-aider:latest",
-    "openhands": f"{settings.container_registry}/jervis-coding-engine:latest",
     "claude": f"{settings.container_registry}/jervis-claude:latest",
-    "junie": f"{settings.container_registry}/jervis-junie:latest",
+    "kilo": f"{settings.container_registry}/jervis-kilo:latest",
 }
 
 # Agent timeouts (seconds)
 AGENT_TIMEOUTS: dict[str, int] = {
-    "aider": settings.agent_timeout_aider,
-    "openhands": settings.agent_timeout_openhands,
     "claude": settings.agent_timeout_claude,
-    "junie": settings.agent_timeout_junie,
+    "kilo": settings.agent_timeout_kilo,
 }
 
 # Max concurrent jobs per agent type
 MAX_CONCURRENT: dict[str, int] = {
-    "aider": 3,
-    "openhands": 2,
     "claude": 2,
-    "junie": 1,
+    "kilo": 2,
 }
 
 
@@ -88,7 +82,7 @@ class JobRunner:
 
         Args:
             task_id: Unique task identifier.
-            agent_type: "aider" | "openhands" | "claude" | "junie"
+            agent_type: "claude" | "kilo"
             client_id: Client ID for scoping.
             project_id: Project ID (optional).
             workspace_path: Absolute path to workspace on shared PVC.

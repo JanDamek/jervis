@@ -1,14 +1,15 @@
 """Chat-specific tool definitions for foreground chat.
 
 These tools are available ONLY in the foreground chat agentic loop.
-They extend the base tools (kb_search, web_search, brain_*, memory_*, store_knowledge)
+They extend the base tools (kb_search, web_search, memory_*, store_knowledge)
 with chat-specific capabilities like task management and meeting classification.
 
 Tool categories enable intent-based filtering (see intent.py):
-- CORE: always available (5 tools)
-- RESEARCH: code/KB introspection (4 tools)
-- BRAIN: Jira/Confluence CRUD (8 tools)
+- CORE: always available (4 tools)
+- RESEARCH: KB introspection (3 tools)
 - TASK_MGMT: task lifecycle + meetings (9 tools)
+
+Tool tier system is available via app.unified.tool_sets for future unification.
 """
 
 from __future__ import annotations
@@ -23,11 +24,12 @@ from app.tools.definitions import (
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
     TOOL_LIST_AFFAIRS,
-    TOOL_CODE_SEARCH,
     TOOL_GET_KB_STATS,
     TOOL_GET_INDEXED_ITEMS,
-    BRAIN_TOOLS,
 )
+
+# Tier system available for future unified handler
+from app.unified.tool_sets import ToolTier, get_tools, get_tool_names  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -572,19 +574,19 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_QUERY_ACTION_LOG,
 ]
 
-# All tools available in foreground chat = base research + brain + memory + chat-specific
+# All tools available in foreground chat = base research + memory + chat-specific
+# Note: code_search, git workspace, and filesystem tools removed —
+# those are delegated to coding agents via dispatch_coding_agent.
 CHAT_TOOLS: list[dict] = [
     TOOL_KB_SEARCH,
     TOOL_KB_DELETE,
     TOOL_WEB_SEARCH,
-    TOOL_CODE_SEARCH,
     TOOL_STORE_KNOWLEDGE,
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
     TOOL_LIST_AFFAIRS,
     TOOL_GET_KB_STATS,
     TOOL_GET_INDEXED_ITEMS,
-    *BRAIN_TOOLS,
     *CHAT_SPECIFIC_TOOLS,
 ]
 
@@ -601,7 +603,6 @@ class ToolCategory(str, Enum):
     """
     CORE = "core"
     RESEARCH = "research"
-    BRAIN = "brain"
     TASK_MGMT = "task_mgmt"
     FILTERING = "filtering"
 
@@ -618,12 +619,10 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_MEMORY_RECALL,
     ],
     ToolCategory.RESEARCH: [
-        TOOL_CODE_SEARCH,
         TOOL_GET_KB_STATS,
         TOOL_GET_INDEXED_ITEMS,
         TOOL_LIST_AFFAIRS,
     ],
-    ToolCategory.BRAIN: list(BRAIN_TOOLS),
     ToolCategory.TASK_MGMT: [
         TOOL_CREATE_BACKGROUND_TASK,
         TOOL_DISPATCH_CODING_AGENT,
@@ -649,13 +648,9 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
 
 # Domain mapping for drift detection (tool name → semantic domain)
 TOOL_DOMAINS: dict[str, str] = {
-    "kb_search": "search", "kb_delete": "memory", "web_search": "search", "code_search": "search",
+    "kb_search": "search", "kb_delete": "memory", "web_search": "search",
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
-    "brain_create_issue": "brain", "brain_update_issue": "brain",
-    "brain_add_comment": "brain", "brain_transition_issue": "brain",
-    "brain_search_issues": "brain", "brain_create_page": "brain",
-    "brain_update_page": "brain", "brain_search_pages": "brain",
     "create_background_task": "task", "create_work_plan": "task", "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
@@ -679,7 +674,7 @@ def select_tools_by_names(tool_names: list[str]) -> list[dict]:
     Used by intent router to build a focused tool set per category.
 
     Args:
-        tool_names: List of tool function names (e.g., ["kb_search", "code_search"]).
+        tool_names: List of tool function names (e.g., ["kb_search", "web_search"]).
 
     Returns:
         List of tool definition dicts (no duplicates, preserves order).

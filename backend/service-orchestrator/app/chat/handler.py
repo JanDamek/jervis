@@ -66,9 +66,9 @@ _NEEDS_TOOLS_MARKERS = ["potřebuji", "nemám informac", "nevím", "musím", "ne
 
 # Markers indicating the model is hallucinating tool usage
 _FAKE_TOOL_MARKERS = [
-    "pomocí kb_search", "pomocí brain_", "pomocí code_search",
+    "pomocí kb_search",
     "pomocí web_search", "pomocí memory_",
-    "kb_search", "brain_search", "code_search",
+    "kb_search",
     "web_search", "memory_recall",
     "krok 1:", "krok 2:", "step 1:", "step 2:",
     "vyhledal jsem", "našel jsem v",

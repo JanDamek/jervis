@@ -63,7 +63,6 @@ class KtorRpcServer(
     private val environmentK8sService: com.jervis.service.environment.EnvironmentK8sService,
     private val orchestratorWorkflowTracker: com.jervis.service.agent.coordinator.OrchestratorWorkflowTracker,
     private val orchestratorStatusHandler: com.jervis.service.agent.coordinator.OrchestratorStatusHandler,
-    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val oauth2Service: com.jervis.service.oauth2.OAuth2Service,
     private val taskRepository: com.jervis.repository.TaskRepository,
     private val taskService: com.jervis.service.background.TaskService,
@@ -532,216 +531,6 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // ==================== Brain endpoints (orchestrator → brain Jira/Confluence) ====================
-
-                            post("/internal/brain/jira/issue") {
-                                try {
-                                    val body = call.receive<BrainCreateIssueRequest>()
-                                    val issue = brainWriteService.createIssue(
-                                        summary = body.summary,
-                                        description = body.description,
-                                        issueType = body.issueType,
-                                        priority = body.priority,
-                                        labels = body.labels,
-                                        epicKey = body.epicKey,
-                                    )
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        com.jervis.integration.bugtracker.BugTrackerIssue.serializer(), issue,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain create issue failed" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/brain/jira/issue/{key}/update") {
-                                val issueKey = call.parameters["key"] ?: return@post call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing key\"}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val body = call.receive<BrainUpdateIssueRequest>()
-                                    val issue = brainWriteService.updateIssue(
-                                        issueKey = issueKey,
-                                        summary = body.summary,
-                                        description = body.description,
-                                        assignee = body.assignee,
-                                        priority = body.priority,
-                                        labels = body.labels,
-                                    )
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        com.jervis.integration.bugtracker.BugTrackerIssue.serializer(), issue,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain update issue failed: $issueKey" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/brain/jira/issue/{key}/comment") {
-                                val issueKey = call.parameters["key"] ?: return@post call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing key\"}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val body = call.receive<BrainAddCommentRequest>()
-                                    val comment = brainWriteService.addComment(issueKey, body.body)
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        com.jervis.integration.bugtracker.BugTrackerComment.serializer(), comment,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain add comment failed: $issueKey" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/brain/jira/issue/{key}/transition") {
-                                val issueKey = call.parameters["key"] ?: return@post call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing key\"}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val body = call.receive<BrainTransitionRequest>()
-                                    brainWriteService.transitionIssue(issueKey, body.transitionName)
-                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain transition failed: $issueKey" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/brain/jira/search") {
-                                try {
-                                    val jql = call.request.queryParameters["jql"] ?: "ORDER BY updated DESC"
-                                    val maxResults = call.request.queryParameters["maxResults"]?.toIntOrNull() ?: 20
-                                    val issues = brainWriteService.searchIssues(jql, maxResults)
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        kotlinx.serialization.builtins.ListSerializer(
-                                            com.jervis.integration.bugtracker.BugTrackerIssue.serializer(),
-                                        ),
-                                        issues,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain search issues failed" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/brain/confluence/page") {
-                                try {
-                                    val body = call.receive<BrainCreatePageRequest>()
-                                    val page = brainWriteService.createPage(
-                                        title = body.title,
-                                        content = body.content,
-                                        parentPageId = body.parentPageId,
-                                    )
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        com.jervis.integration.wiki.WikiPage.serializer(), page,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain create page failed" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            post("/internal/brain/confluence/page/{id}/update") {
-                                val pageId = call.parameters["id"] ?: return@post call.respondText(
-                                    "{\"ok\":false,\"error\":\"Missing id\"}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
-                                )
-                                try {
-                                    val body = call.receive<BrainUpdatePageRequest>()
-                                    val page = brainWriteService.updatePage(
-                                        pageId = pageId,
-                                        title = body.title,
-                                        content = body.content,
-                                        version = body.version,
-                                    )
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        com.jervis.integration.wiki.WikiPage.serializer(), page,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain update page failed: $pageId" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/brain/confluence/search") {
-                                try {
-                                    val query = call.request.queryParameters["query"] ?: ""
-                                    val maxResults = call.request.queryParameters["maxResults"]?.toIntOrNull() ?: 20
-                                    val pages = brainWriteService.searchPages(query, maxResults)
-                                    val json = kotlinx.serialization.json.Json.encodeToString(
-                                        kotlinx.serialization.builtins.ListSerializer(
-                                            com.jervis.integration.wiki.WikiPage.serializer(),
-                                        ),
-                                        pages,
-                                    )
-                                    call.respondText(json, io.ktor.http.ContentType.Application.Json)
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain search pages failed" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
-                            get("/internal/brain/config") {
-                                try {
-                                    val config = systemConfigRpcImpl.getDocument()
-                                    call.respondText(
-                                        kotlinx.serialization.json.Json.encodeToString(
-                                            BrainConfigResponse.serializer(),
-                                            BrainConfigResponse(
-                                                configured = config.brainBugtrackerConnectionId != null && config.brainBugtrackerProjectKey != null,
-                                                projectKey = config.brainBugtrackerProjectKey,
-                                                spaceKey = config.brainWikiSpaceKey,
-                                            ),
-                                        ),
-                                        io.ktor.http.ContentType.Application.Json,
-                                    )
-                                } catch (e: Exception) {
-                                    logger.error(e) { "Brain config fetch failed" }
-                                    call.respondText(
-                                        "{\"ok\":false,\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                                        io.ktor.http.ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError,
-                                    )
-                                }
-                            }
-
                             // Internal endpoint: orchestrator creates tracker issues
                             post("/internal/tracker/create-issue") {
                                 try {
@@ -1061,23 +850,52 @@ class KtorRpcServer(
 
                             // --- Chat internal endpoints (Python → Kotlin) ---
 
-                            // Foreground preemption: Python registers start/end of chat processing
+                            // GPU reservation: Python registers start/end of chat processing
                             post("/internal/foreground-start") {
                                 try {
-                                    backgroundEngine.registerForegroundChatStart()
+                                    backgroundEngine.reserveGpuForChat()
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to register foreground start" }
+                                    logger.warn(e) { "Failed to reserve GPU for chat" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+                            post("/internal/reserve-gpu-for-chat") {
+                                try {
+                                    backgroundEngine.reserveGpuForChat()
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to reserve GPU for chat" }
                                     call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
                                 }
                             }
 
                             post("/internal/foreground-end") {
                                 try {
-                                    backgroundEngine.registerForegroundChatEnd()
+                                    backgroundEngine.releaseGpuForChat()
                                     call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
                                 } catch (e: Exception) {
-                                    logger.warn(e) { "Failed to register foreground end" }
+                                    logger.warn(e) { "Failed to release GPU for chat" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+                            post("/internal/release-gpu-for-chat") {
+                                try {
+                                    backgroundEngine.releaseGpuForChat()
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to release GPU for chat" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
+                                }
+                            }
+
+                            // Chat on cloud: GPU remains available for background tasks
+                            post("/internal/chat-on-cloud") {
+                                try {
+                                    backgroundEngine.reportChatOnCloud()
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.warn(e) { "Failed to report chat-on-cloud" }
                                     call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json, HttpStatusCode.InternalServerError)
                                 }
                             }
@@ -1491,58 +1309,6 @@ data class ClassifyMeetingRequest(
     val clientId: String,
     val projectId: String? = null,
     val title: String? = null,
-)
-
-// --- Brain internal DTOs ---
-
-@kotlinx.serialization.Serializable
-data class BrainCreateIssueRequest(
-    val summary: String,
-    val description: String? = null,
-    val issueType: String = "Task",
-    val priority: String? = null,
-    val labels: List<String> = emptyList(),
-    val epicKey: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainUpdateIssueRequest(
-    val summary: String? = null,
-    val description: String? = null,
-    val assignee: String? = null,
-    val priority: String? = null,
-    val labels: List<String>? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainAddCommentRequest(
-    val body: String,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainTransitionRequest(
-    val transitionName: String,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainCreatePageRequest(
-    val title: String,
-    val content: String,
-    val parentPageId: String? = null,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainUpdatePageRequest(
-    val title: String,
-    val content: String,
-    val version: Int,
-)
-
-@kotlinx.serialization.Serializable
-data class BrainConfigResponse(
-    val configured: Boolean,
-    val projectKey: String? = null,
-    val spaceKey: String? = null,
 )
 
 /**

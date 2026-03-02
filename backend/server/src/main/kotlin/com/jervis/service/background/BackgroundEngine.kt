@@ -55,7 +55,7 @@ import java.util.concurrent.atomic.AtomicReference
  * - FOREGROUND preempts both BACKGROUND and IDLE
  * - BACKGROUND preempts IDLE (but never preempted by IDLE)
  * - IDLE never preempts anything — runs only when truly idle
- * - registerForegroundChatStart() interrupts any BACKGROUND/IDLE task
+ * - reserveGpuForChat() interrupts any BACKGROUND/IDLE task
  * - Execution loop checks preemption every iteration
  *
  * STARTUP ORDER:
@@ -80,7 +80,6 @@ class BackgroundEngine(
     private val taskNotifier: TaskNotifier,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val projectRepository: com.jervis.repository.ProjectRepository,
-    private val brainWriteService: com.jervis.service.brain.BrainWriteService,
     private val idleTaskRegistry: IdleTaskRegistry,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -444,13 +443,13 @@ class BackgroundEngine(
                 // 1. FOREGROUND tasks (chat) — highest priority
                 var task = taskService.getNextForegroundTask()
 
-                // 2. BACKGROUND tasks (user-scheduled) — skip if foreground chat is active
-                if (task == null && !isForegroundChatActive()) {
+                // 2. BACKGROUND tasks (user-scheduled) — skip if GPU reserved for chat
+                if (task == null && !isGpuReservedForChat()) {
                     task = taskService.getNextBackgroundTask()
                 }
 
-                // 3. IDLE tasks — only when truly idle (no FG, no BG, no active chat)
-                if (task == null && !isForegroundChatActive()) {
+                // 3. IDLE tasks — only when truly idle (no FG, no BG, no GPU reserved)
+                if (task == null && !isGpuReservedForChat()) {
                     task = taskService.getNextIdleTask()
                 }
 
@@ -1140,12 +1139,6 @@ class BackgroundEngine(
             return
         }
 
-        // Brain-dependent tasks need brain configured
-        if (nextTask.type == IdleTaskType.REVIEW_BRAIN_ISSUES && !brainWriteService.isConfigured()) {
-            logger.debug { "IDLE_TASK: Brain not configured, skipping REVIEW_BRAIN_ISSUES" }
-            return
-        }
-
         val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
         val prompt = buildIdleTaskPrompt(nextTask.type)
 
@@ -1181,7 +1174,6 @@ class BackgroundEngine(
             for (task in recentDone) {
                 val urn = task.sourceUrn.value
                 val taskType = when {
-                    urn.contains("review_brain_issues") || urn == "system:idle-review" -> IdleTaskType.REVIEW_BRAIN_ISSUES
                     urn.contains("kb_consistency_check") -> IdleTaskType.KB_CONSISTENCY_CHECK
                     urn.contains("vulnerability_scan") -> IdleTaskType.VULNERABILITY_SCAN
                     urn.contains("code_quality_scan") -> IdleTaskType.CODE_QUALITY_SCAN
@@ -1202,32 +1194,9 @@ class BackgroundEngine(
     /**
      * EPIC 7: Build the prompt for a specific idle task type.
      * Each type gets a specialized prompt that the Python orchestrator
-     * executes using its existing tool set (kb_search, brain_*, code_search, etc.).
+     * executes using its existing tool set (kb_search, code_search, etc.).
      */
     private fun buildIdleTaskPrompt(type: IdleTaskType): String = when (type) {
-        IdleTaskType.REVIEW_BRAIN_ISSUES -> """
-            |You are performing a proactive idle review of all projects managed by Jervis.
-            |
-            |Using the brain tools, perform the following review:
-            |
-            |1. **Check open issues**: Use brain_search_issues to find all open issues.
-            |   Review their status, check for overdue items, and update priorities if needed.
-            |
-            |2. **Review recent activity**: Check for issues that haven't been updated recently.
-            |   Add comments or transition stale issues as needed.
-            |
-            |3. **Check KB for new information**: Use kb_search to check if there's new
-            |   information that should be reflected in brain issues or wiki pages.
-            |
-            |4. **Summarize findings**: Create or update a summary page in Confluence
-            |   with the current status of all tracked work.
-            |
-            |5. **Create issues for any gaps**: If you find projects without proper tracking,
-            |   create new issues to ensure nothing falls through the cracks.
-            |
-            |Be concise and actionable. Focus on what needs attention.
-        """.trimMargin()
-
         IdleTaskType.KB_CONSISTENCY_CHECK -> """
             |You are performing a Knowledge Base consistency check.
             |
@@ -1237,7 +1206,7 @@ class BackgroundEngine(
             |3. **Stale references**: Find KB entries referencing deleted or moved content.
             |4. **Orphaned nodes**: Identify KB entries with no connections to other content.
             |
-            |For each finding, create a brain issue or update the KB entry directly.
+            |For each finding, update the KB entry directly or store findings to KB.
             |Summarize your findings at the end.
         """.trimMargin()
 
@@ -1539,21 +1508,22 @@ class BackgroundEngine(
         }
     }
 
-    // --- Foreground chat preemption ---
+    // --- GPU reservation for foreground chat ---
 
-    private val activeForegroundChats = java.util.concurrent.atomic.AtomicInteger(0)
+    private val gpuReservedForChat = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
-     * Register that a foreground chat is active. Called by Python /chat endpoint
-     * via /internal/foreground-start. While active, background and idle GPU tasks are
-     * interrupted to free the GPU for chat LLM calls.
+     * Reserve GPU for foreground chat. Called by Python /chat endpoint
+     * via /internal/foreground-start or /internal/reserve-gpu-for-chat.
+     * While reserved, background and idle GPU tasks are interrupted to free the GPU
+     * for chat LLM calls.
      */
-    fun registerForegroundChatStart() {
-        val count = activeForegroundChats.incrementAndGet()
-        logger.info { "FOREGROUND_CHAT_START: active=$count" }
+    fun reserveGpuForChat() {
+        val wasReserved = gpuReservedForChat.getAndSet(true)
+        logger.info { "GPU_RESERVE_FOR_CHAT: reserved=true (was=$wasReserved)" }
 
         // Interrupt currently running BACKGROUND or IDLE task if any
-        if (count == 1) {
+        if (!wasReserved) {
             scope.launch {
                 try {
                     val runningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
@@ -1563,7 +1533,7 @@ class BackgroundEngine(
                             it.processingMode == com.jervis.entity.ProcessingMode.IDLE
                     }
                     if (lowerPriorityTask != null) {
-                        logger.info { "FOREGROUND_CHAT_PREEMPT: Interrupting ${lowerPriorityTask.processingMode} task ${lowerPriorityTask.id}" }
+                        logger.info { "GPU_CHAT_PREEMPT: Interrupting ${lowerPriorityTask.processingMode} task ${lowerPriorityTask.id}" }
                         interruptLowerPriorityTask(lowerPriorityTask)
                     }
                 } catch (e: Exception) {
@@ -1574,21 +1544,37 @@ class BackgroundEngine(
     }
 
     /**
-     * Register that a foreground chat has ended. Called by Python /chat endpoint
-     * via /internal/foreground-end.
+     * Release GPU reservation after foreground chat ends. Called by Python /chat endpoint
+     * via /internal/foreground-end or /internal/release-gpu-for-chat.
      */
-    fun registerForegroundChatEnd() {
-        val count = activeForegroundChats.updateAndGet { current ->
-            if (current > 0) current - 1 else 0
-        }
-        logger.info { "FOREGROUND_CHAT_END: active=$count" }
+    fun releaseGpuForChat() {
+        val wasReserved = gpuReservedForChat.getAndSet(false)
+        logger.info { "GPU_RELEASE_FOR_CHAT: reserved=false (was=$wasReserved)" }
     }
 
     /**
-     * Check if a foreground chat is currently active.
+     * Check if GPU is currently reserved for foreground chat.
      * Used by execution loop to skip background task dispatch.
      */
-    fun isForegroundChatActive(): Boolean = activeForegroundChats.get() > 0
+    fun isGpuReservedForChat(): Boolean = gpuReservedForChat.get()
+
+    /**
+     * Chat is running on OpenRouter (cloud), GPU is available for background tasks.
+     * Don't reserve GPU — just log for observability.
+     */
+    fun reportChatOnCloud() {
+        logger.info { "CHAT_ON_CLOUD: Chat using OpenRouter, GPU available for background" }
+    }
+
+    // Backward-compatible aliases
+    @Deprecated("Use reserveGpuForChat()", ReplaceWith("reserveGpuForChat()"))
+    fun registerForegroundChatStart() = reserveGpuForChat()
+
+    @Deprecated("Use releaseGpuForChat()", ReplaceWith("releaseGpuForChat()"))
+    fun registerForegroundChatEnd() = releaseGpuForChat()
+
+    @Deprecated("Use isGpuReservedForChat()", ReplaceWith("isGpuReservedForChat()"))
+    fun isForegroundChatActive(): Boolean = isGpuReservedForChat()
 
     /**
      * EPIC 8: Dispatch a deadline scan task to the Python orchestrator.

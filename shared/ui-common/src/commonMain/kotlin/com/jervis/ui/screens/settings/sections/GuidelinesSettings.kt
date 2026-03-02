@@ -512,20 +512,11 @@ private fun ApprovalSection(approval: ApprovalGuidelinesDto, onUpdate: (Approval
             ApprovalRuleRow("Odeslání emailu", approval.autoApproveEmail) {
                 onUpdate(approval.copy(autoApproveEmail = it))
             }
-            ApprovalRuleRow("JIRA komentář", approval.autoApproveJiraComment) {
-                onUpdate(approval.copy(autoApproveJiraComment = it))
-            }
-            ApprovalRuleRow("JIRA vytvoření", approval.autoApproveJiraCreate) {
-                onUpdate(approval.copy(autoApproveJiraCreate = it))
-            }
             ApprovalRuleRow("PR komentář", approval.autoApprovePrComment) {
                 onUpdate(approval.copy(autoApprovePrComment = it))
             }
             ApprovalRuleRow("Chat odpověď", approval.autoApproveChatReply) {
                 onUpdate(approval.copy(autoApproveChatReply = it))
-            }
-            ApprovalRuleRow("Confluence update", approval.autoApproveConfluenceUpdate) {
-                onUpdate(approval.copy(autoApproveConfluenceUpdate = it))
             }
             ApprovalRuleRow("Spuštění coding agenta", approval.autoApproveCodingDispatch) {
                 onUpdate(approval.copy(autoApproveCodingDispatch = it))

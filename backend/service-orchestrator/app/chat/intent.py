@@ -21,17 +21,6 @@ logger = logging.getLogger(__name__)
 # Keyword patterns per category (Czech + English)
 # ---------------------------------------------------------------------------
 
-_BRAIN_PATTERNS = re.compile(
-    r"(?:"
-    r"jir[au]|issue|ticket|bug|epic|story|sprint|backlog|"
-    r"confluence|wiki|stránk[auy]|page|dokumentac|"
-    r"[A-Z]{2,8}-\d+|"                          # Ticket keys like TPT-12345
-    r"vytvoř\s+(?:issue|ticket|bug|stránk)|"
-    r"přesuň|transition|komentář|comment"
-    r")",
-    re.IGNORECASE,
-)
-
 _TASK_MGMT_PATTERNS = re.compile(
     r"(?:"
     r"úkol[yů]?|task[sy]?|background|na\s+pozadí|orchestr|"
@@ -64,7 +53,7 @@ _RESEARCH_PATTERNS = re.compile(
     r"přehled|prehled|overview|"
     r"analýz|analyz|bug|chyb[auy]?|error|tracing|debug|"
     r"affair|záležitost|zalezitost|téma[ta]?|tema[ta]?|"
-    # git/code operations also need code_search
+    # git/code operations trigger RESEARCH for KB lookup
     r"git\b|branch|větv[ei]|vetv[ei]|commit|repo|repozitář|repozitar"
     r")",
     re.IGNORECASE,
@@ -125,9 +114,6 @@ def classify_intent(
         logger.info("Chat intent: long message (%d chars), classifying from head+tail (1000 chars)", len(user_message))
     else:
         intent_text = user_message
-
-    if _BRAIN_PATTERNS.search(intent_text):
-        categories.add(ToolCategory.BRAIN)
 
     if _TASK_MGMT_PATTERNS.search(intent_text):
         categories.add(ToolCategory.TASK_MGMT)

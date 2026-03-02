@@ -15,9 +15,7 @@ import com.jervis.dto.connection.ProtocolEnum
 import com.jervis.dto.connection.ProviderDescriptor
 import com.jervis.dto.connection.ProviderEnum
 import com.jervis.dto.connection.RateLimitConfigDto
-import com.jervis.entity.SystemConfigDocument
 import com.jervis.entity.connection.ConnectionDocument
-import com.jervis.repository.SystemConfigRepository
 import com.jervis.service.IConnectionService
 import com.jervis.service.connection.ConnectionService
 import com.jervis.service.oauth2.OAuth2Service
@@ -33,7 +31,6 @@ class ConnectionRpcImpl(
     private val connectionService: ConnectionService,
     private val providerRegistry: ProviderRegistry,
     private val oauth2Service: OAuth2Service,
-    private val systemConfigRepository: SystemConfigRepository,
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -224,7 +221,6 @@ class ConnectionRpcImpl(
     override suspend fun listAvailableResources(
         connectionId: String,
         capability: ConnectionCapability,
-        includeBrainReserved: Boolean,
     ): List<ConnectionResourceDto> {
         val connection =
             connectionService.findById(ConnectionId.fromString(connectionId))
@@ -237,7 +233,7 @@ class ConnectionRpcImpl(
             val resources = providerRegistry.withClient(refreshedConnection.provider) {
                 it.listResources(refreshedConnection.toListResourcesRequest(capability))
             }
-            filterBrainReservedResources(resources, refreshedConnection, capability, includeBrainReserved)
+            resources
         } catch (e: com.jervis.common.http.ProviderAuthException) {
             // Token expired or revoked — attempt reactive refresh and retry once
             logger.warn { "Auth error for connection ${refreshedConnection.id} (${refreshedConnection.provider}): ${e.message}" }
@@ -248,7 +244,7 @@ class ConnectionRpcImpl(
                         it.listResources(retryConnection.toListResourcesRequest(capability))
                     }
                     logger.info { "Retry after token refresh succeeded for connection ${retryConnection.id}" }
-                    return filterBrainReservedResources(retryResources, retryConnection, capability, includeBrainReserved)
+                    return retryResources
                 } catch (retryEx: Exception) {
                     logger.warn { "Retry after token refresh also failed for ${retryConnection.id}: ${retryEx.message}" }
                 }
@@ -302,35 +298,6 @@ class ConnectionRpcImpl(
         }
 
         return connectionService.findById(connection.id)
-    }
-
-    /**
-     * Filter out brain-reserved resources (Jira project / Confluence space used by orchestrator).
-     */
-    private suspend fun filterBrainReservedResources(
-        resources: List<ConnectionResourceDto>,
-        connection: ConnectionDocument,
-        capability: ConnectionCapability,
-        includeBrainReserved: Boolean,
-    ): List<ConnectionResourceDto> {
-        if (includeBrainReserved) return resources
-
-        val config = systemConfigRepository.findById(SystemConfigDocument.SINGLETON_ID) ?: return resources
-        if (connection.id.toString() != when (capability) {
-                ConnectionCapability.BUGTRACKER -> config.brainBugtrackerConnectionId?.toString()
-                ConnectionCapability.WIKI -> config.brainWikiConnectionId?.toString()
-                else -> null
-            }
-        ) {
-            return resources
-        }
-        val excludeKey = when (capability) {
-            ConnectionCapability.BUGTRACKER -> config.brainBugtrackerProjectKey
-            ConnectionCapability.WIKI -> config.brainWikiSpaceKey
-            else -> null
-        } ?: return resources
-
-        return resources.filter { it.id != excludeKey }
     }
 
     override suspend fun listImportableProjects(connectionId: String): List<com.jervis.dto.connection.ConnectionImportProjectDto> {
