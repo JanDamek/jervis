@@ -190,9 +190,11 @@ class OllamaRouter:
 
         # Rule 3: GPU free → use local (no cost, no preemption needed)
         # Only check GPUs that have the requested model in their GPU_MODEL_SETS
+        # Also treat GPU as busy when Whisper holds it (transcription in progress)
         target_model = local_result["model"]
         gpu_free = any(
             b.healthy and b.active_request_count() == 0
+            and not (b.name == VLM_GPU and self._whisper_gpu_held)
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
@@ -200,10 +202,11 @@ class OllamaRouter:
             logger.info("Route decision: GPU free → local (cap=%s, model=%s, tokens=%d)", capability, target_model, estimated_tokens)
             return local_result
 
-        # Rule 4: GPU busy + OpenRouter allowed → cloud (let background keep GPU)
+        # Rule 4: GPU busy + OpenRouter allowed → cloud (let background/whisper keep GPU)
+        busy_reason = "whisper" if self._whisper_gpu_held else "active_request"
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
-            logger.info("Route decision: GPU busy → cloud %s (background keeps GPU)", cloud_model)
+            logger.info("Route decision: GPU busy (%s) → cloud %s", busy_reason, cloud_model)
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 

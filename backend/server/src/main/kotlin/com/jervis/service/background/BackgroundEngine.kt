@@ -25,7 +25,9 @@ import kotlinx.coroutines.withTimeout
 import mu.KotlinLogging
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
+import com.jervis.common.types.TaskId
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -94,6 +96,8 @@ class BackgroundEngine(
     private var workPlanJob: Job? = null
     private var consecutiveFailures = 0
     private val maxRetryDelay = 300_000L
+    /** Track preemption retry counts per task to avoid infinite loops. */
+    private val preemptRetries = ConcurrentHashMap<TaskId, Int>()
     private val schedulerAdvance = Duration.ofMinutes(10)
     private var lastDeadlineScan: java.time.Instant = java.time.Instant.EPOCH
 
@@ -390,19 +394,40 @@ class BackgroundEngine(
                         val preemptingTask = waitingForegroundTask ?: waitingBackgroundTask
 
                         if (shouldPreempt && preemptingTask != null) {
+                            val retries = preemptRetries.getOrDefault(runningTask.id, 0)
+
+                            if (retries >= 3) {
+                                // Orchestrator doesn't know this task — force-reset it in DB
+                                logger.warn {
+                                    "PREEMPT_FORCE_RESET: ${runningMode} task ${runningTask.id} " +
+                                        "unresponsive after $retries attempts → resetting to READY_FOR_GPU"
+                                }
+                                preemptRetries.remove(runningTask.id)
+                                taskRepository.save(
+                                    runningTask.copy(
+                                        state = TaskStateEnum.READY_FOR_GPU,
+                                        orchestratorThreadId = null,
+                                    ),
+                                )
+                                taskService.setRunningTask(null)
+                                continue
+                            }
+
                             logger.warn {
                                 "PREEMPT: ${preemptingTask.processingMode} task ${preemptingTask.id} " +
-                                    "arrived while ${runningMode} task ${runningTask.id} is running → interrupting"
+                                    "arrived while ${runningMode} task ${runningTask.id} is running → interrupting (attempt ${retries + 1}/3)"
                             }
 
                             val interrupted = interruptLowerPriorityTask(runningTask)
 
                             if (interrupted) {
+                                preemptRetries.remove(runningTask.id)
                                 logger.info { "PREEMPT_SUCCESS: ${runningMode} task ${runningTask.id} interrupted, will resume later" }
                                 continue
                             } else {
-                                logger.warn { "PREEMPT_FAILED: Could not interrupt ${runningMode} task ${runningTask.id}, will wait" }
-                                delay(1_000)
+                                preemptRetries[runningTask.id] = retries + 1
+                                logger.warn { "PREEMPT_FAILED: Could not interrupt ${runningMode} task ${runningTask.id}, attempt ${retries + 1}/3" }
+                                delay(2_000)
                                 continue
                             }
                         } else {
