@@ -158,6 +158,7 @@ class OllamaRouter:
 
         # Rule 1: No OpenRouter → always local
         if tier_level == 0:
+            logger.info("Route decision: max_tier=%s → local (no OpenRouter)", max_tier)
             return local_result
 
         # Rule 2: Context > 48k → must go to cloud
@@ -175,6 +176,7 @@ class OllamaRouter:
             for b in self.gpu_pool.all_backends
         )
         if gpu_free:
+            logger.info("Route decision: GPU free → local (cap=%s, tokens=%d)", capability, estimated_tokens)
             return local_result
 
         # Rule 4: GPU busy + OpenRouter allowed → cloud (let background keep GPU)

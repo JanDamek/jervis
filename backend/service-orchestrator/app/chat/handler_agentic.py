@@ -131,8 +131,8 @@ async def run_agentic_loop(
             max_tier=max_tier,
             estimated_tokens=estimated,
         )
-        logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s",
-                     estimated, tier.value, route.target, route.model or tier.value)
+        logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
+                     estimated, tier.value, route.target, route.model or tier.value, max_tier)
 
         # Preempt background only on first iteration AND only when using local GPU
         if iteration == 0 and route.target == "local":

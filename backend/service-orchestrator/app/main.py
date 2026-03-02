@@ -41,7 +41,6 @@ from app.graph.orchestrator import (
     close_checkpointer,
 )
 from app.context.context_store import context_store
-from app.context.distributed_lock import distributed_lock, task_checkpoint_lock
 from app.context.session_memory import session_memory_store
 from app.monitoring.delegation_metrics import metrics_collector
 from app.tools.kotlin_client import kotlin_client
@@ -75,10 +74,6 @@ class _HealthCheckAccessFilter(logging.Filter):
 
 # In-memory store for active orchestration asyncio tasks (for cancellation and crash cleanup)
 _active_tasks: dict[str, asyncio.Task] = {}
-
-# Concurrency: Router handles GPU/CPU routing, no artificial limit needed
-# Multiple orchestrations can run concurrently - router will manage resources
-_orchestration_semaphore = asyncio.Semaphore(10)  # Allow up to 10 concurrent orchestrations
 
 
 def _crash_cleanup():
@@ -141,12 +136,6 @@ async def lifespan(app: FastAPI):
     # Initialize context store (hierarchical MongoDB context)
     await context_store.init()
     logger.info("Context store ready (orchestrator_context collection)")
-    # Initialize distributed lock (multi-pod concurrency)
-    await distributed_lock.init()
-    logger.info("Distributed lock ready (multi-pod orchestration)")
-    # W-9: Initialize per-task checkpoint lock
-    await task_checkpoint_lock.init()
-    logger.info("Task checkpoint lock ready (per-task concurrency)")
     # Initialize multi-agent delegation system (opt-in)
     if settings.use_delegation_graph:
         logger.info("Initializing multi-agent delegation system...")
@@ -227,8 +216,6 @@ async def lifespan(app: FastAPI):
     from app.memory.agent import reset_lqm
     reset_lqm()
     logger.info("Memory Agent LQM cleared")
-    await distributed_lock.close()
-    await task_checkpoint_lock.close()
     await context_store.close()
     await close_checkpointer()
     await kotlin_client.close()
@@ -327,7 +314,7 @@ async def health():
     return {
         "status": "ok",
         "service": "orchestrator",
-        "busy": _orchestration_semaphore.locked(),
+        "active_tasks": len(_active_tasks),
     }
 
 

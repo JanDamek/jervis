@@ -10,8 +10,7 @@ Timeout strategy:
 - Streaming calls: per-chunk token-arrival timeout (TOKEN_TIMEOUT_SECONDS).
 - Blocking calls (tool calls): tier-based timeout via TIER_TIMEOUT_SECONDS.
 
-Hardening:
-- W-21: Rate limiting — asyncio.Semaphore per priority level
+Router handles all GPU/cloud concurrency — no artificial limits here.
 """
 
 from __future__ import annotations
@@ -29,12 +28,6 @@ logger = logging.getLogger(__name__)
 
 # Token-arrival timeout: no token for this long = stream dead
 TOKEN_TIMEOUT_SECONDS = 300  # 5 min
-
-# W-21: Rate limiting semaphores
-# Ollama can only handle limited concurrent requests
-_SEMAPHORE_LOCAL = asyncio.Semaphore(6)     # Router manages backend concurrency; this is just a safety limit
-_SEMAPHORE_CLOUD = asyncio.Semaphore(5)     # Max 5 concurrent cloud calls
-
 
 class TokenTimeoutError(Exception):
     """LLM stopped sending tokens within the allowed timeout."""
@@ -221,7 +214,6 @@ class LLMProvider:
         For OpenRouter: model_override is the cloud model ID (prefixed with "openrouter/").
         For local: model_override is the Ollama model name (prefixed with "ollama/").
 
-        W-21: Rate-limited via asyncio.Semaphore per provider type.
         """
         config = dict(TIER_CONFIG[tier])  # Copy to avoid mutating global
 
@@ -236,20 +228,15 @@ class LLMProvider:
         if api_base_override:
             config["api_base"] = api_base_override
 
-        # W-21: Select appropriate rate limiter
-        is_cloud = tier.value.startswith("cloud_")
-        semaphore = _SEMAPHORE_CLOUD if is_cloud else _SEMAPHORE_LOCAL
-
-        async with semaphore:
-            # Tool calls can't be reliably streamed — use blocking call
-            if tools:
-                return await self._blocking_completion(
-                    config, messages, tools, temperature, max_tokens, extra_headers, tier,
-                )
-
-            return await self._streaming_completion(
-                config, messages, temperature, max_tokens, extra_headers,
+        # Tool calls can't be reliably streamed — use blocking call
+        if tools:
+            return await self._blocking_completion(
+                config, messages, tools, temperature, max_tokens, extra_headers, tier,
             )
+
+        return await self._streaming_completion(
+            config, messages, temperature, max_tokens, extra_headers,
+        )
 
     @staticmethod
     async def _call_with_retry(fn, kwargs: dict, model: str, max_retries: int = 2) -> object:
@@ -425,11 +412,9 @@ class LLMProvider:
     ) -> AsyncIterator:
         """Stream LLM response (raw chunks for caller to process).
 
-        Rate-limited via semaphore. Pre-trims oversized messages for local tiers.
+        Pre-trims oversized messages for local tiers.
         """
         config = TIER_CONFIG[tier]
-        is_cloud = tier.value.startswith("cloud_")
-        semaphore = _SEMAPHORE_CLOUD if is_cloud else _SEMAPHORE_LOCAL
 
         kwargs: dict = {
             "model": config["model"],
@@ -447,9 +432,7 @@ class LLMProvider:
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
 
-        async with semaphore:
-            response = await self._call_with_retry(litellm.acompletion, kwargs, config["model"])
-        return response
+        return await self._call_with_retry(litellm.acompletion, kwargs, config["model"])
 
 def _build_response(content: str, model: str) -> object:
     """Build a litellm-compatible response object from streamed content."""
