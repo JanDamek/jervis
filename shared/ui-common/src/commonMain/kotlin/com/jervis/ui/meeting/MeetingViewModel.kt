@@ -58,7 +58,7 @@ class MeetingViewModel(
     private val connectionManager: RpcConnectionManager,
     internal val repository: JervisRepository,
 ) {
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _meetings = MutableStateFlow<List<MeetingDto>>(emptyList())
     val meetings: StateFlow<List<MeetingDto>> = _meetings.asStateFlow()
