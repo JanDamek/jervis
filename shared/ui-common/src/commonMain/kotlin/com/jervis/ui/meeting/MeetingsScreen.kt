@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -83,7 +85,6 @@ fun MeetingsScreen(
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
-    var classifyTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var editTarget by remember { mutableStateOf<MeetingDto?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
     var showPermanentDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
@@ -303,7 +304,7 @@ fun MeetingsScreen(
                                     UnclassifiedMeetingListItem(
                                         meeting = meeting,
                                         isPlaying = playingMeetingId == meeting.id,
-                                        onClassify = { classifyTarget = meeting },
+                                        onClassify = { editTarget = meeting },
                                         onClick = { viewModel.selectMeeting(meeting) },
                                         onPlayToggle = { viewModel.playAudio(meeting.id) },
                                     )
@@ -473,28 +474,7 @@ fun MeetingsScreen(
         dismissText = "Zahodit",
     )
 
-    // Classify meeting dialog
-    classifyTarget?.let { meeting ->
-        ClassifyMeetingDialog(
-            meeting = meeting,
-            clients = clients,
-            projects = vmProjects,
-            onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
-            onClassify = { clientId, projectId, title, meetingType ->
-                viewModel.classifyMeeting(
-                    meetingId = meeting.id,
-                    clientId = clientId,
-                    projectId = projectId,
-                    title = title,
-                    meetingType = meetingType,
-                )
-                classifyTarget = null
-            },
-            onDismiss = { classifyTarget = null },
-        )
-    }
-
-    // Edit meeting dialog
+    // Edit / classify meeting dialog
     editTarget?.let { meeting ->
         EditMeetingDialog(
             meeting = meeting,
@@ -502,13 +482,23 @@ fun MeetingsScreen(
             projects = vmProjects,
             onLoadProjects = { clientId -> viewModel.loadProjects(clientId) },
             onSave = { clientId, projectId, title, meetingType ->
-                viewModel.updateMeeting(
-                    meetingId = meeting.id,
-                    clientId = clientId,
-                    projectId = projectId,
-                    title = title,
-                    meetingType = meetingType,
-                )
+                if (meeting.clientId == null) {
+                    viewModel.classifyMeeting(
+                        meetingId = meeting.id,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    )
+                } else {
+                    viewModel.updateMeeting(
+                        meetingId = meeting.id,
+                        clientId = clientId,
+                        projectId = projectId,
+                        title = title,
+                        meetingType = meetingType,
+                    )
+                }
                 editTarget = null
             },
             onDismiss = { editTarget = null },
@@ -562,143 +552,6 @@ private fun UnclassifiedMeetingListItem(
     }
 }
 
-/**
- * Dialog for classifying an ad-hoc meeting — assign client, project, title, type.
- */
-@Composable
-private fun ClassifyMeetingDialog(
-    meeting: MeetingDto,
-    clients: List<ClientDto>,
-    projects: List<ProjectDto>,
-    onLoadProjects: (String) -> Unit,
-    onClassify: (clientId: String, projectId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selectedClientId by remember { mutableStateOf<String?>(null) }
-    var selectedProjectId by remember { mutableStateOf<String?>(null) }
-    var title by remember { mutableStateOf(meeting.title ?: "") }
-    var selectedMeetingType by remember { mutableStateOf<MeetingTypeEnum?>(meeting.meetingType) }
-
-    // Load projects when client changes
-    LaunchedEffect(selectedClientId) {
-        selectedClientId?.let { onLoadProjects(it) }
-    }
-
-    val filteredProjects = projects.filter { it.clientId == selectedClientId }
-
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Klasifikovat nahrávku") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                // Client selector
-                Text("Klient", style = MaterialTheme.typography.labelMedium)
-                Column {
-                    clients.forEach { client ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = selectedClientId == client.id,
-                                onClick = {
-                                    selectedClientId = client.id
-                                    selectedProjectId = null
-                                },
-                            )
-                            Text(
-                                text = client.name,
-                                modifier = Modifier.padding(start = 4.dp),
-                            )
-                        }
-                    }
-                }
-
-                // Project selector (optional)
-                if (filteredProjects.isNotEmpty()) {
-                    Text("Projekt (volitelný)", style = MaterialTheme.typography.labelMedium)
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = selectedProjectId == null,
-                                onClick = { selectedProjectId = null },
-                            )
-                            Text("(Žádný)", modifier = Modifier.padding(start = 4.dp))
-                        }
-                        filteredProjects.forEach { project ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                androidx.compose.material3.RadioButton(
-                                    selected = selectedProjectId == project.id,
-                                    onClick = { selectedProjectId = project.id },
-                                )
-                                Text(
-                                    text = project.name,
-                                    modifier = Modifier.padding(start = 4.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Title
-                androidx.compose.material3.OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Název (volitelný)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-
-                // Meeting type selector
-                Text("Typ meetingu", style = MaterialTheme.typography.labelMedium)
-                androidx.compose.foundation.layout.FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    MeetingTypeEnum.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedMeetingType == type,
-                            onClick = { selectedMeetingType = type },
-                            label = { Text(getMeetingTypeLabel(type)) },
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = {
-                    val clientId = selectedClientId ?: return@TextButton
-                    onClassify(
-                        clientId,
-                        selectedProjectId,
-                        title.takeIf { it.isNotBlank() },
-                        selectedMeetingType,
-                    )
-                },
-                enabled = selectedClientId != null,
-            ) {
-                Text("Klasifikovat")
-            }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text("Zrušit")
-            }
-        },
-    )
-}
-
 private fun getMeetingTypeLabel(type: MeetingTypeEnum): String = when (type) {
     MeetingTypeEnum.MEETING -> "Meeting"
     MeetingTypeEnum.TASK_DISCUSSION -> "Diskuze"
@@ -712,8 +565,9 @@ private fun getMeetingTypeLabel(type: MeetingTypeEnum): String = when (type) {
 }
 
 /**
- * Dialog for editing an already-classified meeting — change name, type, client, project.
- * If client/project changes, the backend will purge old KB data and re-index.
+ * Unified dialog for classifying an ad-hoc meeting or editing an already-classified one.
+ * When meeting.clientId == null, acts as classification (client required, title says "Klasifikovat").
+ * Otherwise acts as edit (fields pre-filled, reassignment warning shown).
  */
 @Composable
 private fun EditMeetingDialog(
@@ -724,6 +578,8 @@ private fun EditMeetingDialog(
     onSave: (clientId: String, projectId: String?, title: String?, meetingType: MeetingTypeEnum?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isClassification = meeting.clientId == null
+
     var selectedClientId by remember { mutableStateOf(meeting.clientId) }
     var selectedProjectId by remember { mutableStateOf(meeting.projectId) }
     var title by remember { mutableStateOf(meeting.title ?: "") }
@@ -731,7 +587,7 @@ private fun EditMeetingDialog(
 
     val clientChanged = selectedClientId != meeting.clientId
     val projectChanged = selectedProjectId != meeting.projectId
-    val reassign = clientChanged || projectChanged
+    val reassign = !isClassification && (clientChanged || projectChanged)
 
     // Load projects when client changes
     LaunchedEffect(selectedClientId) {
@@ -742,17 +598,18 @@ private fun EditMeetingDialog(
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Editovat meeting") },
+        title = { Text(if (isClassification) "Klasifikovat nahrávku" else "Editovat meeting") },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
             ) {
                 // Title
                 androidx.compose.material3.OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Název") },
+                    label = { Text(if (isClassification) "Název (volitelný)" else "Název") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
@@ -828,7 +685,7 @@ private fun EditMeetingDialog(
                     }
                 }
 
-                // Reassignment warning
+                // Reassignment warning (only for edit, not classification)
                 if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
                     Text(
                         text = "Přeřazení smaže indexované informace a znovu je vytvoří pro nového klienta/projekt.",
@@ -851,7 +708,7 @@ private fun EditMeetingDialog(
                 },
                 enabled = selectedClientId != null,
             ) {
-                Text("Uložit")
+                Text(if (isClassification) "Klasifikovat" else "Uložit")
             }
         },
         dismissButton = {

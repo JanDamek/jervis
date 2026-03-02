@@ -129,17 +129,15 @@ internal fun MeetingDetailView(
                                 expanded = showOverflowMenu,
                                 onDismissRequest = { showOverflowMenu = false },
                             ) {
-                                if (meeting.clientId != null) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
-                                                Text("Editovat")
-                                            }
-                                        },
-                                        onClick = { onEdit(); showOverflowMenu = false },
-                                    )
-                                }
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text("Editovat")
+                                        }
+                                    },
+                                    onClick = { onEdit(); showOverflowMenu = false },
+                                )
                                 DropdownMenuItem(
                                     text = {
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -182,9 +180,7 @@ internal fun MeetingDetailView(
                         }
                     } else {
                         // Expanded: all action buttons visible
-                        if (meeting.clientId != null) {
-                            JIconButton(onClick = onEdit, icon = Icons.Default.Edit, contentDescription = "Editovat")
-                        }
+                        JIconButton(onClick = onEdit, icon = Icons.Default.Edit, contentDescription = "Editovat")
                         JIconButton(onClick = onCorrections, icon = Icons.Default.MenuBook, contentDescription = "Pravidla oprav")
                         if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                             JIconButton(onClick = onRetranscribe, icon = Icons.Default.Replay, contentDescription = "Přepsat znovu")
