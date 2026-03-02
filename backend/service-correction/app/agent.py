@@ -184,6 +184,14 @@ class CorrectionAgent:
         # First pass: identify meeting phases, speakers, topics
         phase_analysis = await self._identify_meeting_phases(all_text, meeting_id, client_id)
 
+        # Targeted KB search based on identified names/terms from phase analysis
+        targeted_context = await self._load_targeted_context(client_id, project_id, phase_analysis)
+        if targeted_context:
+            project_context = (
+                f"{project_context}\n\n--- TARGETED KB RESULTS ---\n{targeted_context}"
+                if project_context else targeted_context
+            )
+
         # Sequential chunk correction with cumulative context
         corrected_segments = []
         all_questions = []
@@ -216,6 +224,16 @@ class CorrectionAgent:
 
         # Filter out questions whose originals are already known KB corrections
         all_questions = self._filter_known_questions(all_questions, corrections)
+
+        # Try to auto-resolve remaining questions from KB context
+        all_questions, auto_resolved = await self._resolve_questions_from_kb(
+            all_questions, client_id, project_id,
+        )
+        # Apply auto-resolved corrections to segments
+        for resolved in auto_resolved:
+            idx = resolved["segment_index"]
+            if 0 <= idx < len(corrected_segments):
+                corrected_segments[idx] = {**corrected_segments[idx], "text": resolved["corrected"]}
 
         # Emit 100% when done
         await self._emit_correction_progress(
@@ -429,6 +447,80 @@ class CorrectionAgent:
             )
         return filtered
 
+    async def _resolve_questions_from_kb(
+        self, questions: list[dict], client_id: str, project_id: str | None,
+    ) -> tuple[list[dict], list[dict]]:
+        """Try to auto-resolve questions by searching KB for the unclear terms.
+
+        Returns (remaining_questions, auto_resolved_corrections).
+        """
+        if not questions or not client_id:
+            return questions, []
+
+        remaining: list[dict] = []
+        auto_resolved: list[dict] = []
+
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
+            for q in questions:
+                original = q.get("original", "")
+                if not original:
+                    remaining.append(q)
+                    continue
+
+                try:
+                    resp = await http.post(
+                        f"{self.kb_url}/retrieve",
+                        json={
+                            "clientId": client_id,
+                            "projectId": project_id,
+                            "query": original,
+                            "maxResults": 3,
+                            "minConfidence": 0.75,
+                            "expandGraph": True,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        items = resp.json().get("items", [])
+                        resolved = self._match_kb_to_options(q, items)
+                        if resolved:
+                            auto_resolved.append(resolved)
+                            logger.info(
+                                "Auto-resolved question '%s' -> '%s' from KB",
+                                original, resolved["corrected"],
+                            )
+                            continue
+                except Exception as e:
+                    logger.debug("KB lookup failed for question '%s': %s", original, e)
+
+                remaining.append(q)
+
+        if auto_resolved:
+            logger.info(
+                "Auto-resolved %d/%d questions from KB",
+                len(auto_resolved), len(auto_resolved) + len(remaining),
+            )
+        return remaining, auto_resolved
+
+    def _match_kb_to_options(self, question: dict, kb_items: list[dict]) -> dict | None:
+        """Check if KB results clearly match one of the question's options."""
+        options = question.get("options", [])
+        if not options:
+            return None
+
+        kb_text = " ".join(it.get("content", "") for it in kb_items).lower()
+        if not kb_text.strip():
+            return None
+
+        for option in options:
+            if option.lower() in kb_text:
+                return {
+                    "segment_index": question.get("i", 0),
+                    "corrected": option,
+                    "original": question.get("original", ""),
+                    "source": "kb_auto",
+                }
+        return None
+
     async def _load_corrections(
         self,
         client_id: str,
@@ -499,31 +591,86 @@ class CorrectionAgent:
         Used to provide domain knowledge for more accurate corrections.
         Returns formatted context string, empty if unavailable.
         """
-        if not project_id:
+        if not client_id:
             return ""
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
                 resp = await http.post(
-                    f"{self.kb_url}/search",
+                    f"{self.kb_url}/retrieve",
                     json={
                         "clientId": client_id,
                         "projectId": project_id,
                         "query": "team members people names technologies project terminology",
                         "maxResults": 10,
+                        "minConfidence": 0.5,
+                        "expandGraph": True,
                     },
                 )
                 if resp.status_code == 200:
-                    results = resp.json().get("results", [])
-                    if results:
-                        parts = [r.get("text", "")[:500] for r in results[:10] if r.get("text")]
+                    items = resp.json().get("items", [])
+                    if items:
+                        parts = [it.get("content", "")[:500] for it in items if it.get("content")]
                         context = "\n".join(parts)
                         logger.info(
                             "Loaded project context from KB: %d results, %d chars",
-                            len(results), len(context),
+                            len(items), len(context),
                         )
                         return context
         except Exception as e:
             logger.warning("Failed to load project context from KB: %s", e)
+        return ""
+
+    async def _load_targeted_context(
+        self, client_id: str, project_id: str | None, phase_analysis: str,
+    ) -> str:
+        """Extract names/terms from phase analysis and search KB for each."""
+        if not phase_analysis or not client_id:
+            return ""
+
+        # Parse SPEAKERS and TERMINOLOGY lines from phase analysis
+        queries: list[str] = []
+        for line in phase_analysis.split("\n"):
+            line = line.strip()
+            if line.startswith("SPEAKERS:") or line.startswith("TERMINOLOGY:"):
+                items = line.split(":", 1)[1].strip()
+                queries.extend(item.strip() for item in items.split(",") if item.strip())
+
+        if not queries:
+            return ""
+
+        # Deduplicate, limit to 5 most relevant
+        queries = list(dict.fromkeys(queries))[:5]
+
+        all_results: list[str] = []
+        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
+            for query in queries:
+                try:
+                    resp = await http.post(
+                        f"{self.kb_url}/retrieve",
+                        json={
+                            "clientId": client_id,
+                            "projectId": project_id,
+                            "query": query,
+                            "maxResults": 3,
+                            "minConfidence": 0.6,
+                            "expandGraph": True,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        items = resp.json().get("items", [])
+                        for it in items:
+                            content = it.get("content", "")
+                            if content and content not in all_results:
+                                all_results.append(content[:300])
+                except Exception as e:
+                    logger.debug("Targeted KB search failed for '%s': %s", query, e)
+
+        if all_results:
+            logger.info(
+                "Targeted KB context: %d results for %d queries",
+                len(all_results), len(queries),
+            )
+            return "\n".join(all_results)
         return ""
 
     async def _identify_meeting_phases(

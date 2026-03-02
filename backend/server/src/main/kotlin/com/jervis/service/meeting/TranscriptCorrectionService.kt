@@ -89,7 +89,7 @@ class TranscriptCorrectionService(
                 ),
             )
 
-            val correctedSegments = result.segments.mapIndexed { i, corrSeg ->
+            var correctedSegments = result.segments.mapIndexed { i, corrSeg ->
                 val original = segments.getOrNull(i)
                 TranscriptSegment(
                     startSec = original?.startSec ?: corrSeg.startSec,
@@ -99,10 +99,8 @@ class TranscriptCorrectionService(
                 )
             }
 
-            val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
-
             // Map questions from Python response
-            val questions = result.questions.map { q ->
+            var questions = result.questions.map { q ->
                 CorrectionQuestion(
                     questionId = q.id,
                     segmentIndex = q.i,
@@ -112,6 +110,83 @@ class TranscriptCorrectionService(
                     context = q.context,
                 )
             }
+
+            // Proactive retranscription: if there are questions, re-transcribe those segments
+            // with high-accuracy settings BEFORE asking the user
+            if (questions.isNotEmpty() && meeting.audioFilePath != null) {
+                val questionSegmentIndices = questions.map { it.segmentIndex }.distinct()
+                logger.info {
+                    "Proactive retranscription for meeting $meetingIdStr: " +
+                        "${questionSegmentIndices.size} segments with questions (indices: $questionSegmentIndices)"
+                }
+
+                try {
+                    val retranscribed = proactiveRetranscribe(meeting, segments, questionSegmentIndices)
+                    if (retranscribed != null && retranscribed.isNotEmpty()) {
+                        // Merge retranscribed text into corrected segments
+                        val mergedSegments = correctedSegments.toMutableList()
+                        for ((idx, newText) in retranscribed) {
+                            if (idx in mergedSegments.indices) {
+                                mergedSegments[idx] = mergedSegments[idx].copy(text = newText)
+                            }
+                        }
+
+                        // Re-run targeted correction on retranscribed segments
+                        val allSegments = mergedSegments.mapIndexed { i, seg ->
+                            CorrectionSegmentDto(
+                                i = i,
+                                startSec = seg.startSec,
+                                endSec = seg.endSec,
+                                text = seg.text,
+                                speaker = seg.speaker,
+                            )
+                        }
+
+                        val targetedResult = correctionClient.correctTargeted(
+                            CorrectionTargetedRequestDto(
+                                clientId = clientIdStr,
+                                projectId = meeting.projectId?.toString(),
+                                meetingId = meetingIdStr,
+                                segments = allSegments,
+                                retranscribedIndices = retranscribed.keys.toList(),
+                                userCorrectedIndices = emptyMap(),
+                            ),
+                        )
+
+                        correctedSegments = targetedResult.segments.mapIndexed { i, corrSeg ->
+                            val original = segments.getOrNull(i)
+                            TranscriptSegment(
+                                startSec = original?.startSec ?: corrSeg.startSec,
+                                endSec = original?.endSec ?: corrSeg.endSec,
+                                text = corrSeg.text,
+                                speaker = original?.speaker ?: corrSeg.speaker,
+                            )
+                        }
+
+                        questions = targetedResult.questions.map { q ->
+                            CorrectionQuestion(
+                                questionId = q.id,
+                                segmentIndex = q.i,
+                                originalText = q.original,
+                                correctionOptions = q.options,
+                                question = q.question,
+                                context = q.context,
+                            )
+                        }
+
+                        logger.info {
+                            "Proactive retranscription complete for meeting $meetingIdStr: " +
+                                "${retranscribed.size} segments retranscribed, ${questions.size} questions remaining"
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn(e) {
+                        "Proactive retranscription failed for meeting $meetingIdStr, continuing with original corrections"
+                    }
+                }
+            }
+
+            val correctedText = correctedSegments.joinToString(" ") { it.text.trim() }
 
             val newState = if (questions.isNotEmpty()) {
                 MeetingStateEnum.CORRECTION_REVIEW
@@ -595,6 +670,49 @@ class TranscriptCorrectionService(
                 )
             }
         }
+    }
+
+    private suspend fun proactiveRetranscribe(
+        meeting: MeetingDocument,
+        segments: List<TranscriptSegment>,
+        segmentIndices: List<Int>,
+    ): Map<Int, String>? {
+        val audioFilePath = meeting.audioFilePath ?: return null
+        val workspacePath = java.nio.file.Paths.get(audioFilePath).parent.toString()
+        val paddingSec = 10.0
+
+        val extractionRanges = segmentIndices.mapNotNull { idx ->
+            val seg = segments.getOrNull(idx) ?: return@mapNotNull null
+            ExtractionRange(
+                start = (seg.startSec - paddingSec).coerceAtLeast(0.0),
+                end = seg.endSec + paddingSec,
+                segmentIndex = idx,
+            )
+        }
+        if (extractionRanges.isEmpty()) return null
+
+        val meetingIdStr = meeting.id.toHexString()
+        val clientIdStr = meeting.clientId?.toString().orEmpty()
+
+        val whisperResult = whisperJobRunner.retranscribe(
+            audioFilePath = audioFilePath,
+            workspacePath = workspacePath,
+            extractionRanges = extractionRanges,
+            meetingId = meetingIdStr,
+            clientId = clientIdStr,
+            projectId = meeting.projectId?.toString(),
+        )
+
+        if (whisperResult.error != null) {
+            logger.warn { "Proactive retranscription error: ${whisperResult.error}" }
+            return null
+        }
+
+        val results = whisperResult.textBySegment
+            .mapKeys { it.key.toInt() }
+            .filter { it.value.isNotBlank() }
+
+        return results.ifEmpty { null }
     }
 
     private fun isConnectionError(e: Exception): Boolean {
