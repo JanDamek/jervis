@@ -171,12 +171,15 @@ class OllamaRouter:
             return local_result
 
         # Rule 3: GPU free → use local (no cost, no preemption needed)
+        # Only check GPUs that have the requested model in their GPU_MODEL_SETS
+        target_model = local_result["model"]
         gpu_free = any(
             b.healthy and b.active_request_count() == 0
             for b in self.gpu_pool.all_backends
+            if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
         if gpu_free:
-            logger.info("Route decision: GPU free → local (cap=%s, tokens=%d)", capability, estimated_tokens)
+            logger.info("Route decision: GPU free → local (cap=%s, model=%s, tokens=%d)", capability, target_model, estimated_tokens)
             return local_result
 
         # Rule 4: GPU busy + OpenRouter allowed → cloud (let background keep GPU)
