@@ -169,29 +169,41 @@ GPU_MODEL_SETS strict filtering:
   → prevents 30b from loading on p40-2 (routing bug fixed 2026-03-02)
 ```
 
-### p40-2 VRAM Coordination (Whisper + VLM)
+### p40-2 VRAM Coordination (Router as Single Authority)
 
-Whisper and VLM share p40-2 via mutual exclusion:
+Router is the **single authority** for p40-2 GPU scheduling. Whisper and VLM share p40-2 via router-managed mutual exclusion. Embedding runs permanently, never blocked.
 
-- **Before VLM load**: Router calls `POST whisper:8786/gpu/release` to unload whisper from GPU
-- **Before whisper transcription**: Whisper calls Ollama to unload VLM (`keep_alive: 0`)
-- **Whisper auto-unload**: After 60s idle, whisper releases GPU VRAM automatically
-- **Whisper lazy-load**: Model NOT pre-loaded on startup; loaded on first transcription request
+**Whisper-Router coordination** (Kotlin server mediates):
+1. Kotlin `WhisperJobRunner` calls `POST /router/whisper-acquire` (blocks until granted)
+2. Router checks: no VLM active on p40-2 → grants immediately; VLM active → waits
+3. Kotlin calls whisper REST `POST /transcribe` (existing SSE stream)
+4. After transcription, Kotlin calls `POST /router/whisper-release`
+
+**VLM-Whisper coordination**:
+1. VLM request arrives at router for p40-2
+2. Router checks whisper lock: held → waits for `whisper-release` callback
+3. Once released, router calls `POST whisper:8786/gpu/release` to unload model from VRAM
+4. Router loads VLM via Ollama
+
+**Safety nets**:
+- Whisper lock watchdog: auto-release after 2h (Kotlin crash safety)
+- Whisper auto-unload: after 60s idle, whisper releases GPU VRAM independently
+- Router unreachable fallback: Kotlin proceeds without coordination
 
 ```
-Whisper transcription request flow:
-  1. Request arrives at whisper REST (port 8786)
-  2. whisper._acquire_gpu(): unload VLM via Ollama API
-  3. Load whisper model to CUDA
-  4. Transcribe (+ optional pyannote diarization)
-  5. After 60s idle → _release_gpu(): unload whisper, torch.cuda.empty_cache()
+Whisper transcription flow:
+  1. Kotlin → POST /router/whisper-acquire → Router grants (blocks if VLM active)
+  2. Kotlin → POST whisper:8786/transcribe → SSE stream
+  3. whisper._acquire_gpu(): unload VLM via Ollama, load whisper model
+  4. Transcribe (+ pyannote diarization)
+  5. Kotlin → POST /router/whisper-release
+  6. After 60s idle → whisper auto-unloads GPU
 
 VLM request flow:
   1. Request arrives at router for qwen3-vl-tool:latest
-  2. Router finds p40-2 slot, model not loaded
-  3. Router calls POST whisper:8786/gpu/release
+  2. Router: whisper_gpu_held? → wait for release event
+  3. Router calls POST whisper:8786/gpu/release (unload model)
   4. Router calls gpu_pool.load_model(p40-2, "qwen3-vl-tool:latest")
-  5. Ollama loads VLM to CUDA
 ```
 
 ### Caller Concurrency

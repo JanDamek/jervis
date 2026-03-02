@@ -103,6 +103,7 @@ data:
     # -- Whisper transcription (REST-only, max accuracy) -------------------------
     whisper:
       rest-remote-url: http://ollama.damek.local:8786
+      ollama-router-url: http://jervis-ollama-router:11430
       model: large-v3
       beam-size: 10
       vad-filter: true

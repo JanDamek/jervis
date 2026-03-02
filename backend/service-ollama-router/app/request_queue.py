@@ -368,8 +368,25 @@ class RequestQueue:
             )
         # Ensure model is loaded
         if not gpu.has_model(request.model):
-            # If loading VLM on p40-2, ask whisper to release GPU first
+            # If loading non-embedding on p40-2, coordinate with whisper first
             if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
+                # Wait for Kotlin to release whisper GPU lock (if held)
+                if self._router._whisper_gpu_held:
+                    logger.info("VLM_WAIT_WHISPER: waiting for whisper GPU release before loading %s", request.model)
+                    cancel_task = asyncio.create_task(request.cancel_event.wait())
+                    release_task = asyncio.create_task(self._router._whisper_release_event.wait())
+                    done, pending = await asyncio.wait(
+                        [cancel_task, release_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                        timeout=settings.whisper_gpu_acquire_timeout_s,
+                    )
+                    for t in pending:
+                        t.cancel()
+                    if cancel_task in done:
+                        return JSONResponse(status_code=499, content={"error": "cancelled_waiting_whisper"})
+                    if not any(t is release_task for t in done):
+                        logger.warning("VLM_WAIT_WHISPER: timeout waiting for whisper release")
+                # Ask whisper server to unload model from VRAM
                 await self._release_whisper_gpu()
             loaded = await self.gpu_pool.load_model(
                 gpu, request.model, self._router._mgmt_client,
@@ -388,6 +405,9 @@ class RequestQueue:
             gpu = self.gpu_pool.backends.get(gpu_name)
             if gpu:
                 gpu.active_requests.pop(request.request_id, None)
+                # Signal whisper acquire that VLM finished on p40-2
+                if gpu_name == VLM_GPU and request.model not in EMBEDDING_MODELS:
+                    self._router._p40_2_vlm_freed.set()
 
     # ── Send helpers ─────────────────────────────────────────────────────
 

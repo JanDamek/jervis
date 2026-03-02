@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -280,12 +281,19 @@ async def router_health():
     status = "healthy" if any_gpu_healthy else "unhealthy"
 
     qdepth = router._queue.queue_depth if router._queue else {"critical": 0, "normal": 0}
-    return HealthResponse(
-        status=status,
-        gpu_backends=gpu_backends,
-        orchestrator_reserved=router.is_reserved,
-        queue_depth=qdepth["critical"] + qdepth["normal"],
-    )
+    return {
+        "status": status,
+        "gpu_backends": gpu_backends,
+        "orchestrator_reserved": router.is_reserved,
+        "queue_depth": qdepth["critical"] + qdepth["normal"],
+        "whisper_gpu": {
+            "held": router._whisper_gpu_held,
+            "held_seconds": (
+                int(time.monotonic() - router._whisper_acquired_at)
+                if router._whisper_gpu_held and router._whisper_acquired_at else 0
+            ),
+        },
+    }
 
 
 @app.get("/router/status")
@@ -320,19 +328,26 @@ async def router_status():
 
     m.orchestrator_reserved.set(1 if router.is_reserved else 0)
 
-    return StatusResponse(
-        gpu_backends=gpu_backends,
-        orchestrator={
+    return {
+        "gpu_backends": gpu_backends,
+        "orchestrator": {
             "reserved": router.is_reserved,
             "reservations": router._reservations,
             "reservation_times": {k: v for k, v in router._reservation_times.items()},
             "last_activity": {k: v for k, v in router._last_critical_activity.items()},
         },
-        metrics={
+        "metrics": {
             "queue_depth": router._queue.queue_depth if router._queue else {},
             "note": "See /router/metrics for Prometheus format",
         },
-    )
+        "whisper_gpu": {
+            "held": router._whisper_gpu_held,
+            "held_seconds": (
+                int(time.monotonic() - router._whisper_acquired_at)
+                if router._whisper_gpu_held and router._whisper_acquired_at else 0
+            ),
+        },
+    }
 
 
 @app.post("/route-decision")
@@ -361,6 +376,45 @@ async def route_max_context(request: Request):
     from .openrouter_catalog import get_max_context_tokens
     max_ctx = await get_max_context_tokens(max_tier)
     return JSONResponse(content={"max_context_tokens": max_ctx})
+
+
+# ── Whisper GPU coordination (p40-2) ──────────────────────────────────
+
+@app.post("/router/whisper-acquire")
+async def whisper_acquire():
+    """Acquire p40-2 GPU for whisper transcription.
+
+    Called by Kotlin server before starting whisper transcription.
+    Blocks until p40-2 is available (no VLM running). Returns granted when
+    whisper can safely load its model.
+    """
+    timeout = settings.whisper_gpu_acquire_timeout_s
+    try:
+        granted = await asyncio.wait_for(
+            router.acquire_whisper_gpu(),
+            timeout=timeout,
+        )
+        if granted:
+            return JSONResponse(content={"status": "granted"})
+        return JSONResponse(status_code=503, content={"status": "denied"})
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=408,
+            content={"status": "timeout", "waited_s": timeout},
+        )
+
+
+@app.post("/router/whisper-release")
+async def whisper_release():
+    """Release p40-2 GPU after whisper transcription.
+
+    Called by Kotlin server after transcription completes (or on error).
+    Signals waiting VLM requests that p40-2 is available.
+    """
+    released = await router.release_whisper_gpu()
+    if released:
+        return JSONResponse(content={"status": "released"})
+    return JSONResponse(content={"status": "not_held"})
 
 
 @app.get("/queue-status")

@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class WhisperProperties(
     /** Remote Whisper REST server URL */
     val restRemoteUrl: String = "http://ollama.damek.local:8786",
+    /** Ollama Router URL for GPU coordination (acquire/release p40-2) */
+    val ollamaRouterUrl: String = "http://jervis-ollama-router:11430",
     /** Model size: large-v3 for max accuracy */
     val model: String = "large-v3",
     /** Beam search size (10 = max accuracy) */
