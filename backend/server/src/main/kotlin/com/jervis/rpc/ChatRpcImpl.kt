@@ -180,21 +180,30 @@ class ChatRpcImpl(
                             // Persist scope to session for UI restore on restart
                             val newClientId = event.metadata["clientId"]?.toString()
                             val newProjectId = event.metadata["projectId"]?.toString()?.takeIf { it.isNotBlank() }
-                            // Resolve groupId from project for cross-device scope restore
+                            // Resolve groupId from project — if project belongs to a group,
+                            // switch to group scope (groupId set, projectId cleared)
                             val newGroupId = newProjectId?.let { pid ->
                                 try {
                                     projectRepository.getById(ProjectId(ObjectId(pid)))?.groupId?.toString()
                                 } catch (_: Exception) { null }
                             }
+                            // When project belongs to a group, use group as the scope
+                            val effectiveProjectId = if (newGroupId != null) null else newProjectId
                             if (newClientId != null) {
-                                chatService.updateSessionScope(clientId = newClientId, projectId = newProjectId, groupId = newGroupId)
+                                chatService.updateSessionScope(clientId = newClientId, projectId = effectiveProjectId, groupId = newGroupId)
+                            }
+                            // Add groupId to metadata so UI can switch to group view
+                            val enrichedMetadata = metadata.toMutableMap()
+                            if (newGroupId != null) {
+                                enrichedMetadata["groupId"] = newGroupId
+                                enrichedMetadata.remove("projectId")
                             }
                             chatEventStream.emit(
                                 ChatResponseDto(
                                     message = event.content,
                                     type = responseType,
                                     messageId = responseMessageId,
-                                    metadata = metadata,
+                                    metadata = enrichedMetadata,
                                 ),
                             )
                         }
