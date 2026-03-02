@@ -393,3 +393,49 @@ class RagService:
 
         logger.info("RAG_READ: COMPLETE query='%s' results=%d", request.query, len(items))
         return EvidencePack(items=items)
+
+    async def retag_group(self, project_id: str, new_group_id: str | None) -> int:
+        """Update groupId on all Weaviate chunks for a project.
+
+        Called when a project's group membership changes.
+        Iterates over all chunks with matching projectId and updates groupId.
+        """
+        def _retag():
+            collection = self.client.collections.get("KnowledgeChunk")
+            updated = 0
+            offset = 0
+            batch_size = 200
+            target_group = new_group_id or ""
+
+            while True:
+                response = collection.query.fetch_objects(
+                    filters=wvq.Filter.by_property("projectId").equal(project_id),
+                    limit=batch_size,
+                    offset=offset,
+                    return_properties=["groupId"],
+                )
+                if not response.objects:
+                    break
+
+                for obj in response.objects:
+                    current = obj.properties.get("groupId", "")
+                    if current != target_group:
+                        collection.data.update(
+                            uuid=obj.uuid,
+                            properties={"groupId": target_group},
+                        )
+                        updated += 1
+
+                if len(response.objects) < batch_size:
+                    break
+                offset += batch_size
+
+            return updated
+
+        try:
+            updated = await asyncio.to_thread(_retag)
+            logger.info("retag_group (Weaviate): projectId=%s newGroupId=%s updated=%d chunks", project_id, new_group_id, updated)
+            return updated
+        except Exception as e:
+            logger.warning("retag_group (Weaviate) failed: projectId=%s error=%s", project_id, e)
+            return 0
