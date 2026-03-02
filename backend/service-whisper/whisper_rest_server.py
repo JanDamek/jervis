@@ -61,6 +61,7 @@ GPU_IDLE_S = int(os.environ.get("WHISPER_GPU_IDLE_S", "60"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_VLM_MODEL = os.environ.get("OLLAMA_VLM_MODEL", "qwen3-vl-tool:latest")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
+ROUTER_URL = os.environ.get("ROUTER_URL", "")
 
 # ---------------------------------------------------------------------------
 # Global model cache — lazy loaded, auto-unloaded after idle.
@@ -104,6 +105,31 @@ def _load_diarization_pipeline():
         print(f"Failed to load diarization pipeline: {e}", flush=True)
         print("Speaker diarization will be disabled", flush=True)
         _diarization_available = False
+
+
+def _router_notify_gpu():
+    """Tell router we want GPU. Blocks until VLM finishes (if running)."""
+    if not ROUTER_URL:
+        return
+    try:
+        resp = http_requests.post(
+            f"{ROUTER_URL}/router/whisper-notify",
+            timeout=3600,
+        )
+        print(f"Router: GPU notify → {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"Router: notify failed ({e}), proceeding anyway", flush=True)
+
+
+def _router_notify_done():
+    """Tell router we're done with GPU."""
+    if not ROUTER_URL:
+        return
+    try:
+        http_requests.post(f"{ROUTER_URL}/router/whisper-done", timeout=10)
+        print("Router: done notified", flush=True)
+    except Exception as e:
+        print(f"Router: done notify failed ({e})", flush=True)
 
 
 def _unload_ollama_vlm():
@@ -390,8 +416,8 @@ async def transcribe(
 
             def run_in_thread():
                 try:
-                    # Acquire GPU (unload VLM, load whisper) before transcription
-                    _acquire_gpu()
+                    _router_notify_gpu()   # Tell router: I want GPU (blocks until VLM done)
+                    _acquire_gpu()         # Unload VLM + load whisper
                     # Load diarization pipeline if needed and not yet loaded
                     if do_diarize and not _diarization_available and HF_TOKEN:
                         _load_diarization_pipeline()
@@ -403,6 +429,7 @@ async def transcribe(
                     traceback.print_exc()
                 finally:
                     _last_transcription_end = time.monotonic()
+                    _router_notify_done()  # Always tell router we're done
                     loop.call_soon_threadsafe(done_event.set)
 
             loop.run_in_executor(None, run_in_thread)

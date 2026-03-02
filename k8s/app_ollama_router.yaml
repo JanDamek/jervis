@@ -64,3 +64,28 @@ spec:
       port: 11430
       targetPort: 11430
   type: ClusterIP
+---
+# Ingress for local access from GPU VM (whisper → router coordination).
+# HTTP only — local domain, no TLS (Let's Encrypt won't sign .local).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jervis-ollama-router-ingress
+  namespace: jervis
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+spec:
+  rules:
+    - host: jervis-router.damek.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-ollama-router
+                port:
+                  number: 11430

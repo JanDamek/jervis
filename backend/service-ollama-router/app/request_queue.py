@@ -370,22 +370,12 @@ class RequestQueue:
         if not gpu.has_model(request.model):
             # If loading non-embedding on p40-2, coordinate with whisper first
             if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
-                # Wait for Kotlin to release whisper GPU lock (if held)
-                if self._router._whisper_gpu_held:
-                    logger.info("VLM_WAIT_WHISPER: waiting for whisper GPU release before loading %s", request.model)
-                    cancel_task = asyncio.create_task(request.cancel_event.wait())
-                    release_task = asyncio.create_task(self._router._whisper_release_event.wait())
-                    done, pending = await asyncio.wait(
-                        [cancel_task, release_task],
-                        return_when=asyncio.FIRST_COMPLETED,
-                        timeout=settings.whisper_gpu_acquire_timeout_s,
-                    )
-                    for t in pending:
-                        t.cancel()
-                    if cancel_task in done:
-                        return JSONResponse(status_code=499, content={"error": "cancelled_waiting_whisper"})
-                    if not any(t is release_task for t in done):
-                        logger.warning("VLM_WAIT_WHISPER: timeout waiting for whisper release")
+                # Check if whisper is actively transcribing (flag-based)
+                if self._router.check_whisper_busy():
+                    logger.info("VLM_WAIT_WHISPER: whisper active, waiting for done before loading %s", request.model)
+                    ok = await self._router.wait_for_whisper_done(timeout=settings.whisper_gpu_acquire_timeout_s)
+                    if not ok:
+                        logger.warning("VLM_WAIT_WHISPER: timeout waiting for whisper done")
                 # Ask whisper server to unload model from VRAM
                 await self._release_whisper_gpu()
             loaded = await self.gpu_pool.load_model(
@@ -405,9 +395,6 @@ class RequestQueue:
             gpu = self.gpu_pool.backends.get(gpu_name)
             if gpu:
                 gpu.active_requests.pop(request.request_id, None)
-                # Signal whisper acquire that VLM finished on p40-2
-                if gpu_name == VLM_GPU and request.model not in EMBEDDING_MODELS:
-                    self._router._p40_2_vlm_freed.set()
 
     # ── Send helpers ─────────────────────────────────────────────────────
 

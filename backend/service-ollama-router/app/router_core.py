@@ -69,16 +69,13 @@ class OllamaRouter:
         self._idle_notified: bool = False  # True after idle notification sent; reset on activity
 
         # Whisper GPU coordination (p40-2)
-        # Kotlin server acquires/releases this lock around whisper transcriptions.
-        # VLM requests wait for whisper release before loading on p40-2.
-        self._whisper_gpu_held: bool = False
-        self._whisper_acquired_at: float | None = None
-        self._whisper_lock = asyncio.Lock()
-        self._whisper_release_event = asyncio.Event()   # signaled when whisper releases
-        self._whisper_release_event.set()                # initially released
-        self._p40_2_vlm_freed = asyncio.Event()          # signaled when VLM finishes on p40-2
-        self._p40_2_vlm_freed.set()                      # initially free
-        self._whisper_watchdog_task: asyncio.Task | None = None
+        # Flag-based: whisper calls /router/whisper-notify and /router/whisper-done.
+        # No polling — router only knows what whisper tells it.
+        # Stale safety: auto-reset after 2h (crash resilience).
+        self._whisper_active = False
+        self._whisper_active_since: float = 0
+        self._whisper_done_event = asyncio.Event()
+        self._whisper_done_event.set()  # Initially idle
 
     async def startup(self) -> None:
         """Initialize router state on startup."""
@@ -97,8 +94,6 @@ class OllamaRouter:
         # Start warmup loop (keeps models in VRAM)
         if settings.warmup_enabled:
             self._warmup_task = asyncio.create_task(self._warmup_loop())
-        # Start whisper GPU watchdog (stale lock safety net)
-        self._whisper_watchdog_task = asyncio.create_task(self._whisper_gpu_watchdog())
         # Start GPU recovery only if any backend failed initial sync
         if any(not b.healthy for b in self.gpu_pool.all_backends):
             self._start_gpu_recovery()
@@ -119,8 +114,6 @@ class OllamaRouter:
             self._idle_notify_task.cancel()
         if self._warmup_task:
             self._warmup_task.cancel()
-        if self._whisper_watchdog_task:
-            self._whisper_watchdog_task.cancel()
         for task in self._bg_load_tasks.values():
             if not task.done():
                 task.cancel()
@@ -190,11 +183,12 @@ class OllamaRouter:
 
         # Rule 3: GPU free → use local (no cost, no preemption needed)
         # Only check GPUs that have the requested model in their GPU_MODEL_SETS
-        # Also treat GPU as busy when Whisper holds it (transcription in progress)
+        # Also treat GPU as busy when whisper is transcribing on p40-2
         target_model = local_result["model"]
+        whisper_busy = self.check_whisper_busy()
         gpu_free = any(
             b.healthy and b.active_request_count() == 0
-            and not (b.name == VLM_GPU and self._whisper_gpu_held)
+            and not (b.name == VLM_GPU and whisper_busy)
             for b in self.gpu_pool.all_backends
             if target_model in GPU_MODEL_SETS.get(b.name, [])
         )
@@ -203,7 +197,7 @@ class OllamaRouter:
             return local_result
 
         # Rule 4: GPU busy + OpenRouter allowed → cloud (let background/whisper keep GPU)
-        busy_reason = "whisper" if self._whisper_gpu_held else "active_request"
+        busy_reason = "whisper" if whisper_busy else "active_request"
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
             logger.info("Route decision: GPU busy (%s) → cloud %s", busy_reason, cloud_model)
@@ -649,77 +643,67 @@ class OllamaRouter:
                 logger.error("GPU recovery loop error: %s", e)
 
     # ── Whisper GPU coordination (p40-2) ────────────────────────────────
-    # Kotlin server acquires/releases this lock around whisper transcriptions.
-    # This ensures VLM and Whisper never compete for p40-2 VRAM simultaneously.
-    # Embedding is unaffected (permanent model, separate Ollama process).
+    # Flag-based: whisper calls notify/done. No polling, no health checks.
+    # Stale safety: auto-reset after 2h (crash resilience).
 
-    async def acquire_whisper_gpu(self) -> bool:
-        """Block until p40-2 is available for whisper transcription.
-
-        Called by Kotlin server before starting whisper transcription.
-        Waits if VLM is currently running on p40-2 (non-embedding request).
-        """
-        while True:
-            async with self._whisper_lock:
-                if self._whisper_gpu_held:
-                    # Another whisper session already holds (shouldn't happen with Kotlin semaphore)
-                    logger.warning("WHISPER_GPU_ACQUIRE: already held, waiting for release")
-                else:
-                    # Check: is p40-2 busy with VLM (non-embedding) request?
-                    p40_2 = self.gpu_pool.backends.get(VLM_GPU)
-                    vlm_active = p40_2 is not None and any(
-                        r.model not in EMBEDDING_MODELS
-                        for r in p40_2.active_requests.values()
-                    )
-                    if not vlm_active:
-                        self._whisper_gpu_held = True
-                        self._whisper_acquired_at = time.monotonic()
-                        self._whisper_release_event.clear()
-                        logger.info("WHISPER_GPU_ACQUIRE: granted")
-                        return True
-
-            # Wait for VLM to finish on p40-2 (or poll every 5s as fallback)
-            self._p40_2_vlm_freed.clear()
-            try:
-                await asyncio.wait_for(self._p40_2_vlm_freed.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                pass  # Poll again
-
-    async def release_whisper_gpu(self) -> bool:
-        """Release whisper GPU lock. Called by Kotlin after transcription completes."""
-        async with self._whisper_lock:
-            if not self._whisper_gpu_held:
-                logger.info("WHISPER_GPU_RELEASE: not held, ignoring")
-                return False
-            self._whisper_gpu_held = False
-            self._whisper_acquired_at = None
-            self._whisper_release_event.set()
-            logger.info("WHISPER_GPU_RELEASE: released")
+    def check_whisper_busy(self) -> bool:
+        """Check if whisper is actively transcribing (based on notify/done)."""
+        if not self._whisper_active:
+            return False
+        # Stale safety: auto-reset after 2h
+        if time.monotonic() - self._whisper_active_since > 7200:
+            logger.warning("WHISPER_STALE: active for >2h, auto-resetting")
+            self._whisper_active = False
+            self._whisper_done_event.set()
+            return False
         return True
 
-    async def _whisper_gpu_watchdog(self) -> None:
-        """Auto-release stale whisper GPU lock (safety net for Kotlin crash)."""
-        max_hold = settings.whisper_gpu_max_hold_s
-        logger.info("Whisper GPU watchdog started (check every 60s, max_hold=%ds)", max_hold)
-        while True:
-            try:
-                await asyncio.sleep(60)
-                if not self._whisper_gpu_held or self._whisper_acquired_at is None:
-                    continue
-                held_s = time.monotonic() - self._whisper_acquired_at
-                if held_s > max_hold:
-                    logger.warning(
-                        "WHISPER_GPU_WATCHDOG: held for %ds (limit=%ds), auto-releasing (possible Kotlin crash)",
-                        int(held_s), max_hold,
-                    )
-                    async with self._whisper_lock:
-                        self._whisper_gpu_held = False
-                        self._whisper_acquired_at = None
-                        self._whisper_release_event.set()
-            except asyncio.CancelledError:
-                return
-            except Exception as e:
-                logger.error("Whisper GPU watchdog error: %s", e)
+    async def wait_for_whisper_done(self, timeout: float = 3600) -> bool:
+        """Wait for whisper-done event (no polling — event-based)."""
+        if not self.check_whisper_busy():
+            return True
+        logger.info("WHISPER_WAIT: waiting for whisper-done event (timeout=%ds)", timeout)
+        try:
+            await asyncio.wait_for(self._whisper_done_event.wait(), timeout=timeout)
+            logger.info("WHISPER_WAIT: whisper done, GPU available")
+            return True
+        except asyncio.TimeoutError:
+            logger.warning("WHISPER_WAIT: timeout after %ds", timeout)
+            return False
+
+    async def notify_whisper_wants_gpu(self) -> bool:
+        """Called when whisper wants GPU. Sets flag, waits for VLM to finish."""
+        self._whisper_active = True
+        self._whisper_active_since = time.monotonic()
+        self._whisper_done_event.clear()
+
+        p40_2 = self.gpu_pool.backends.get(VLM_GPU)
+        if p40_2 is None:
+            logger.info("WHISPER_NOTIFY: no VLM GPU configured, granting immediately")
+            return True
+
+        vlm_active = any(
+            r.model not in EMBEDDING_MODELS
+            for r in p40_2.active_requests.values()
+        )
+        if not vlm_active:
+            logger.info("WHISPER_NOTIFY: GPU available, granting immediately")
+            return True
+
+        logger.info("WHISPER_NOTIFY: VLM active on p40-2, waiting for completion")
+        while any(
+            r.model not in EMBEDDING_MODELS
+            for r in p40_2.active_requests.values()
+        ):
+            await asyncio.sleep(2)
+        logger.info("WHISPER_NOTIFY: VLM finished, granting GPU to whisper")
+        return True
+
+    def notify_whisper_done(self) -> None:
+        """Called when whisper finishes transcription. Clears flag."""
+        self._whisper_active = False
+        self._whisper_done_event.set()
+        logger.info("WHISPER_DONE: flag cleared")
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

@@ -30,7 +30,6 @@ class WhisperJobRunner(
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val whisperRestClient: WhisperRestClient,
-    private val ollamaRouterClient: OllamaRouterClient,
 ) {
 
     companion object {
@@ -54,21 +53,6 @@ class WhisperJobRunner(
      * @return WhisperResult with transcription text, segments, and speaker labels
      */
     suspend fun transcribe(
-        audioFilePath: String,
-        meetingId: String? = null,
-        clientId: String? = null,
-        projectId: String? = null,
-    ): WhisperResult {
-        // Acquire GPU from router (blocks until p40-2 available)
-        ollamaRouterClient.acquireWhisperGpu()
-        try {
-            return doTranscribe(audioFilePath, meetingId, clientId, projectId)
-        } finally {
-            ollamaRouterClient.releaseWhisperGpu()
-        }
-    }
-
-    private suspend fun doTranscribe(
         audioFilePath: String,
         meetingId: String?,
         clientId: String?,
@@ -106,22 +90,6 @@ class WhisperJobRunner(
      * @return WhisperResult with text_by_segment mapping segment indices to re-transcribed text
      */
     suspend fun retranscribe(
-        audioFilePath: String,
-        extractionRanges: List<ExtractionRange>,
-        meetingId: String? = null,
-        clientId: String? = null,
-        projectId: String? = null,
-    ): WhisperResult {
-        // Acquire GPU from router (blocks until p40-2 available)
-        ollamaRouterClient.acquireWhisperGpu()
-        try {
-            return doRetranscribe(audioFilePath, extractionRanges, meetingId, clientId, projectId)
-        } finally {
-            ollamaRouterClient.releaseWhisperGpu()
-        }
-    }
-
-    private suspend fun doRetranscribe(
         audioFilePath: String,
         extractionRanges: List<ExtractionRange>,
         meetingId: String?,

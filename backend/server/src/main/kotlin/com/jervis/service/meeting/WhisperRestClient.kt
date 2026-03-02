@@ -4,7 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.forms.formData
-import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.forms.prepareFormWithBinaryData
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
@@ -29,6 +29,9 @@ private val json = Json { ignoreUnknownKeys = true }
  *
  * Sends audio file over HTTP multipart
  * to a persistent Whisper server and reads an SSE stream for progress + result.
+ *
+ * Uses Ktor's streaming `execute {}` pattern to read SSE events in real-time
+ * (not buffered). This is critical for UI progress display.
  *
  * SSE event types from server:
  * - "progress": {"percent": 45.2, "segments_done": 128, "elapsed_seconds": 340}
@@ -64,6 +67,9 @@ class WhisperRestClient {
      * Send audio file to remote Whisper REST service for transcription.
      * Reads SSE stream with progress updates and final result.
      *
+     * Uses `prepareFormWithBinaryData().execute {}` for true streaming — SSE events
+     * are read line-by-line from the network socket, not buffered in memory.
+     *
      * @param baseUrl Base URL of the Whisper REST service (e.g. "http://192.168.100.117:8786")
      * @param audioFilePath Local path to audio file
      * @param optionsJson JSON string with Whisper options
@@ -82,7 +88,10 @@ class WhisperRestClient {
 
         logger.info { "Sending audio to Whisper REST service: $baseUrl/transcribe (file=$fileName, ${audioBytes.size} bytes)" }
 
-        val response: HttpResponse = client.submitFormWithBinaryData(
+        // Use prepareFormWithBinaryData + execute for streaming SSE response.
+        // Regular submitFormWithBinaryData buffers the entire response body,
+        // causing all SSE progress events to arrive in a burst instead of real-time.
+        val statement = client.prepareFormWithBinaryData(
             url = "$baseUrl/transcribe",
             formData = formData {
                 append("audio", audioBytes, Headers.build {
@@ -93,26 +102,27 @@ class WhisperRestClient {
             },
         )
 
-        if (response.status != HttpStatusCode.OK) {
-            val errorText = try {
-                val channel = response.bodyAsChannel()
-                buildString {
-                    while (true) {
-                        val line = channel.readUTF8Line() ?: break
-                        append(line)
+        return statement.execute { response ->
+            if (response.status != HttpStatusCode.OK) {
+                val errorText = try {
+                    val channel = response.bodyAsChannel()
+                    buildString {
+                        while (true) {
+                            val line = channel.readUTF8Line() ?: break
+                            append(line)
+                        }
                     }
-                }
-            } catch (_: Exception) { "unknown error" }
-            logger.error { "Whisper REST service returned ${response.status}: ${errorText.take(500)}" }
-            return WhisperResult(
-                text = "",
-                segments = emptyList(),
-                error = "Whisper REST error (${response.status}): ${errorText.take(500)}",
-            )
-        }
+                } catch (_: Exception) { "unknown error" }
+                logger.error { "Whisper REST service returned ${response.status}: ${errorText.take(500)}" }
+                return@execute WhisperResult(
+                    text = "",
+                    segments = emptyList(),
+                    error = "Whisper REST error (${response.status}): ${errorText.take(500)}",
+                )
+            }
 
-        // Read SSE stream
-        return readSseStream(response, onProgress)
+            readSseStream(response, onProgress)
+        }
     }
 
     /**
@@ -155,7 +165,6 @@ class WhisperRestClient {
                             "progress" -> {
                                 try {
                                     val progress = json.decodeFromString<WhisperSseProgress>(data)
-                                    logger.debug { "Whisper REST progress: ${progress.percent}% (${progress.segmentsDone} segments)" }
                                     onProgress?.invoke(progress.percent, progress.segmentsDone, progress.elapsedSeconds, progress.lastSegmentText)
                                 } catch (e: Exception) {
                                     logger.warn { "Failed to parse progress SSE event: ${data.take(200)}" }

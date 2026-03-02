@@ -107,6 +107,7 @@ Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
+Environment=ROUTER_URL=http://jervis-router.damek.local
 $HF_TOKEN_LINE
 
 [Install]

@@ -286,13 +286,6 @@ async def router_health():
         "gpu_backends": gpu_backends,
         "orchestrator_reserved": router.is_reserved,
         "queue_depth": qdepth["critical"] + qdepth["normal"],
-        "whisper_gpu": {
-            "held": router._whisper_gpu_held,
-            "held_seconds": (
-                int(time.monotonic() - router._whisper_acquired_at)
-                if router._whisper_gpu_held and router._whisper_acquired_at else 0
-            ),
-        },
     }
 
 
@@ -328,6 +321,9 @@ async def router_status():
 
     m.orchestrator_reserved.set(1 if router.is_reserved else 0)
 
+    # Whisper state (flag-based, no HTTP call)
+    whisper_busy = router.check_whisper_busy()
+
     return {
         "gpu_backends": gpu_backends,
         "orchestrator": {
@@ -340,13 +336,7 @@ async def router_status():
             "queue_depth": router._queue.queue_depth if router._queue else {},
             "note": "See /router/metrics for Prometheus format",
         },
-        "whisper_gpu": {
-            "held": router._whisper_gpu_held,
-            "held_seconds": (
-                int(time.monotonic() - router._whisper_acquired_at)
-                if router._whisper_gpu_held and router._whisper_acquired_at else 0
-            ),
-        },
+        "whisper": {"busy": whisper_busy},
     }
 
 
@@ -380,18 +370,17 @@ async def route_max_context(request: Request):
 
 # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
 
-@app.post("/router/whisper-acquire")
-async def whisper_acquire():
-    """Acquire p40-2 GPU for whisper transcription.
+@app.post("/router/whisper-notify")
+async def whisper_notify():
+    """Whisper wants GPU. Blocks until VLM finishes (if running).
 
-    Called by Kotlin server before starting whisper transcription.
-    Blocks until p40-2 is available (no VLM running). Returns granted when
-    whisper can safely load its model.
+    Called by whisper REST server directly before loading model.
+    Returns immediately if GPU is free, or waits for VLM to finish.
     """
     timeout = settings.whisper_gpu_acquire_timeout_s
     try:
         granted = await asyncio.wait_for(
-            router.acquire_whisper_gpu(),
+            router.notify_whisper_wants_gpu(),
             timeout=timeout,
         )
         if granted:
@@ -404,17 +393,15 @@ async def whisper_acquire():
         )
 
 
-@app.post("/router/whisper-release")
-async def whisper_release():
-    """Release p40-2 GPU after whisper transcription.
+@app.post("/router/whisper-done")
+async def whisper_done():
+    """Whisper finished transcription. Clears active flag.
 
-    Called by Kotlin server after transcription completes (or on error).
-    Signals waiting VLM requests that p40-2 is available.
+    Called by whisper REST server after transcription completes.
+    Signals waiting VLM requests that GPU is available.
     """
-    released = await router.release_whisper_gpu()
-    if released:
-        return JSONResponse(content={"status": "released"})
-    return JSONResponse(content={"status": "not_held"})
+    router.notify_whisper_done()
+    return JSONResponse(content={"status": "ok"})
 
 
 @app.get("/queue-status")
