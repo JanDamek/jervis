@@ -545,15 +545,25 @@ class MeetingRpcImpl(
             }
         }
 
+        // If meeting was INDEXED without clientId, reset to TRANSCRIBED so Pipeline 2
+        // re-indexes with the new clientId (KB indexing + qualified=true)
+        val needsReindex = meeting.clientId == null && meeting.state == MeetingStateEnum.INDEXED
+        val newState = if (needsReindex) MeetingStateEnum.TRANSCRIBED else meeting.state
+
         val updated = meeting.copy(
             clientId = clientId,
             projectId = projectId,
             title = request.title ?: meeting.title,
             meetingType = request.meetingType ?: meeting.meetingType,
             audioFilePath = newAudioFilePath ?: meeting.audioFilePath,
+            state = newState,
+            stateChangedAt = if (needsReindex) Instant.now() else meeting.stateChangedAt,
         )
 
         val saved = meetingRepository.save(updated)
+        if (needsReindex) {
+            logger.info { "Meeting ${request.meetingId} classified and reset to TRANSCRIBED for KB indexing" }
+        }
         logger.info { "Classified meeting ${request.meetingId} to client=${request.clientId} project=${request.projectId}" }
         return saved.toDto()
     }
@@ -566,12 +576,13 @@ class MeetingRpcImpl(
         val newClientId = ClientId.fromString(request.clientId)
         val newProjectId = request.projectId?.let { ProjectId.fromString(it) }
 
+        val firstClassification = meeting.clientId == null && newClientId != null
         val clientChanged = meeting.clientId != null && newClientId != meeting.clientId
         val projectChanged = newProjectId != meeting.projectId
         val reassign = clientChanged || projectChanged
 
         // If reassigning and meeting was indexed, purge old KB data
-        if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
+        if (reassign && !firstClassification && meeting.state == MeetingStateEnum.INDEXED) {
             try {
                 val sourceUrn = com.jervis.common.types.SourceUrn.meeting(
                     meetingId = meeting.id.toHexString(),
@@ -607,21 +618,30 @@ class MeetingRpcImpl(
             null
         }
 
+        // Determine new state:
+        // - First classification of INDEXED meeting → TRANSCRIBED (needs full KB indexing via Pipeline 2)
+        // - Reassignment of INDEXED meeting → CORRECTED (re-index via Pipeline 3.5)
+        // - Otherwise → keep current state
+        val newState = when {
+            firstClassification && meeting.state == MeetingStateEnum.INDEXED -> MeetingStateEnum.TRANSCRIBED
+            reassign && meeting.state == MeetingStateEnum.INDEXED -> MeetingStateEnum.CORRECTED
+            else -> meeting.state
+        }
+
         val updated = meeting.copy(
             clientId = newClientId,
             projectId = newProjectId,
             title = request.title ?: meeting.title,
             meetingType = request.meetingType ?: meeting.meetingType,
             audioFilePath = newAudioFilePath ?: meeting.audioFilePath,
-            // Reset to CORRECTED if reassigned + was INDEXED, so pipeline re-indexes with new context
-            state = if (reassign && meeting.state == MeetingStateEnum.INDEXED) {
-                MeetingStateEnum.CORRECTED
-            } else {
-                meeting.state
-            },
+            state = newState,
+            stateChangedAt = if (newState != meeting.state) Instant.now() else meeting.stateChangedAt,
         )
 
         val saved = meetingRepository.save(updated)
+        if (firstClassification && meeting.state == MeetingStateEnum.INDEXED) {
+            logger.info { "Meeting ${request.meetingId} first classified, reset to TRANSCRIBED for KB indexing" }
+        }
         logger.info {
             "Updated meeting ${request.meetingId}: title=${request.title}, " +
                 "client=${request.clientId}, project=${request.projectId}, reassign=$reassign"
