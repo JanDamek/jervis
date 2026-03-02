@@ -295,15 +295,17 @@ class ChatRpcImpl(
         )
     }
 
-    override suspend fun updateScope(clientId: String?, projectId: String?) {
+    override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
         if (clientId.isNullOrBlank()) return
-        val groupId = projectId?.let { pid ->
+        // If groupId is explicitly provided (group selection), use it directly.
+        // Otherwise derive from project's groupId (project selection).
+        val resolvedGroupId = groupId ?: projectId?.let { pid ->
             try {
                 projectRepository.getById(ProjectId(ObjectId(pid)))?.groupId?.toString()
             } catch (_: Exception) { null }
         }
-        chatService.updateSessionScope(clientId = clientId, projectId = projectId, groupId = groupId)
-        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$projectId | groupId=$groupId" }
+        chatService.updateSessionScope(clientId = clientId, projectId = projectId, groupId = resolvedGroupId)
+        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$projectId | groupId=$resolvedGroupId" }
     }
 
     override suspend fun archiveSession() {

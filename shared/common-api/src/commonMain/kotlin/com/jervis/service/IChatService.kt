@@ -47,10 +47,10 @@ interface IChatService {
     suspend fun getChatHistory(limit: Int = 20, beforeMessageId: String? = null): ChatHistoryDto
 
     /**
-     * Update active scope (client/project) in the chat session.
-     * Called when user manually switches client/project in the UI dropdown.
+     * Update active scope (client/project/group) in the chat session.
+     * Called when user manually switches client/project/group in the UI dropdown.
      */
-    suspend fun updateScope(clientId: String?, projectId: String?)
+    suspend fun updateScope(clientId: String?, projectId: String?, groupId: String? = null)
 
     /**
      * Archive current session (starts fresh on next message).

@@ -344,7 +344,7 @@ class MainViewModel(
                 }
                 _selectedProjectId.value = projectId
                 _selectedGroupId.value = groupId
-                persistChatScope(clientId, projectId)
+                persistChatScope(clientId, projectId, groupId)
             } else if (clientChanged) {
                 // History restore or scope_change without projects — full selectClient flow
                 selectClient(clientId, chatProjectId = projectId, chatGroupId = groupId)
@@ -352,7 +352,7 @@ class MainViewModel(
                 // Same client, different project or group
                 _selectedProjectId.value = projectId
                 _selectedGroupId.value = groupId
-                persistChatScope(clientId, projectId)
+                persistChatScope(clientId, projectId, groupId)
             }
         }
     }
@@ -449,6 +449,12 @@ class MainViewModel(
         _selectedGroupId.value = groupId
         _selectedProjectId.value = null // Clear project selection when group is selected
         // Chat is global — do NOT clear chatMessages or cancel chatJob here.
+
+        // Persist scope so app restart restores group selection
+        val clientId = _selectedClientId.value
+        if (clientId != null) {
+            persistChatScope(clientId, null, groupId)
+        }
     }
 
     fun selectProject(projectId: String) {
@@ -499,12 +505,12 @@ class MainViewModel(
 
     /**
      * Persist current scope to chat session (fire-and-forget).
-     * Called on manual client/project switch so that app restart restores correct scope.
+     * Called on manual client/project/group switch so that app restart restores correct scope.
      */
-    private fun persistChatScope(clientId: String?, projectId: String?) {
+    private fun persistChatScope(clientId: String?, projectId: String?, groupId: String? = null) {
         scope.launch {
             try {
-                repository.chat.updateScope(clientId = clientId, projectId = projectId)
+                repository.chat.updateScope(clientId = clientId, projectId = projectId, groupId = groupId)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 // Non-critical — scope will be updated on next message send

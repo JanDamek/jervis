@@ -124,6 +124,7 @@ class GitHubBugTrackerPollingHandler(
                     allIssues.addAll(repoIssues)
                     logger.debug { "  Fetched ${repoIssues.size} issues from $repoKey" }
                 } catch (e: Exception) {
+                    if (e is com.jervis.common.http.ProviderAuthException) throw e
                     logger.error(e) { "  Failed to fetch issues from GitHub repo $repoKey: ${e.message}" }
                     // Continue with other repos
                 }

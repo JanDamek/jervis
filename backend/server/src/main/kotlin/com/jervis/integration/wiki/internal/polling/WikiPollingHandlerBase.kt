@@ -50,8 +50,11 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
         var totalCreated = 0
         var totalSkipped = 0
         var totalErrors = 0
+        var authError = false
 
         for (client in context.clients) {
+            if (authError) break
+
             // Check capability configuration - get resource filter
             val resourceFilter = context.getResourceFilter(client.id, ConnectionCapability.WIKI)
 
@@ -76,14 +79,20 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
                     }
                 }
             } catch (e: Exception) {
-                logger.error(e) { "    Error polling ${getSystemName()} for client ${client.name}" }
+                if (e is com.jervis.common.http.ProviderAuthException) {
+                    logger.error { "Auth error polling ${getSystemName()} for client ${client.name}: ${e.message}" }
+                    authError = true
+                } else {
+                    logger.error(e) { "    Error polling ${getSystemName()} for client ${client.name}" }
+                }
                 totalErrors++
             }
         }
 
         logger.info {
             "  ← ${getSystemName()} handler completed | " +
-                "Total: discovered=$totalDiscovered, created=$totalCreated, skipped=$totalSkipped, errors=$totalErrors"
+                "Total: discovered=$totalDiscovered, created=$totalCreated, skipped=$totalSkipped, errors=$totalErrors" +
+                if (authError) " | AUTH ERROR" else ""
         }
 
         return PollingResult(
@@ -91,6 +100,7 @@ abstract class WikiPollingHandlerBase<TPage : Any>(
             itemsCreated = totalCreated,
             itemsSkipped = totalSkipped,
             errors = totalErrors,
+            authenticationError = authError,
         )
     }
 

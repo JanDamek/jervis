@@ -114,6 +114,7 @@ class GitLabBugTrackerPollingHandler(
                     allIssues.addAll(projectIssues)
                     logger.debug { "  Fetched ${projectIssues.size} issues from $projectKey" }
                 } catch (e: Exception) {
+                    if (e is com.jervis.common.http.ProviderAuthException) throw e
                     logger.error(e) { "  Failed to fetch issues from GitLab project $projectKey: ${e.message}" }
                 }
             }
