@@ -802,11 +802,18 @@ private fun AddModelFromCatalogDialog(
 }
 
 private fun formatPrice(price: Double): String {
-    return if (price < 0.01) {
-        "%.4f".format(price)
-    } else if (price < 1.0) {
-        "%.2f".format(price)
-    } else {
-        "%.1f".format(price)
+    return when {
+        price < 0.01 -> {
+            val scaled = (price * 10000).toLong()
+            "${scaled / 10000}.${(scaled % 10000).toString().padStart(4, '0')}"
+        }
+        price < 1.0 -> {
+            val scaled = (price * 100).toLong()
+            "${scaled / 100}.${(scaled % 100).toString().padStart(2, '0')}"
+        }
+        else -> {
+            val scaled = (price * 10).toLong()
+            "${scaled / 10}.${scaled % 10}"
+        }
     }
 }
