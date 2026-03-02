@@ -8,7 +8,6 @@ import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
 import com.jervis.entity.meeting.MeetingDocument
 import com.jervis.repository.MeetingRepository
-import com.jervis.configuration.properties.WhisperProperties
 import com.jervis.service.background.TaskService
 import com.jervis.service.storage.DirectoryStructureService
 import jakarta.annotation.PostConstruct
@@ -62,19 +61,13 @@ class MeetingContinuousIndexer(
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val taskService: TaskService,
     private val directoryStructureService: DirectoryStructureService,
-    private val whisperProperties: WhisperProperties,
-    private val whisperJobRunner: WhisperJobRunner,
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
 ) {
     private val supervisor = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisor)
 
-    /** Semaphore for parallel transcription. Re-created when settings change. */
-    @Volatile
-    private var transcriptionSemaphore = Semaphore(DEFAULT_PARALLEL_TRANSCRIPTIONS)
-
-    @Volatile
-    private var currentMaxParallelJobs = DEFAULT_PARALLEL_TRANSCRIPTIONS
+    /** Single transcription at a time (GPU is shared, serial is optimal). */
+    private val transcriptionSemaphore = Semaphore(1)
 
     /** Track meeting IDs currently being processed to prevent duplicate launches. */
     private val processingMeetingIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -88,7 +81,7 @@ class MeetingContinuousIndexer(
         private const val TRASH_RETENTION_DAYS = 30L
         private const val WAV_HEADER_SIZE = 44
         private const val BYTES_PER_SECOND = 32_000 // 16kHz, 16-bit, mono
-        private const val DEFAULT_PARALLEL_TRANSCRIPTIONS = 3
+        private const val DEFAULT_PARALLEL_TRANSCRIPTIONS = 1
     }
 
     @PostConstruct
@@ -177,64 +170,17 @@ class MeetingContinuousIndexer(
             }
         }
 
-        // Recover TRANSCRIBING meetings — check for active K8s job first
+        // Recover TRANSCRIBING meetings — reset to UPLOADED for fresh transcription
         meetingRepository.findByStateOrderByStoppedAtAsc(MeetingStateEnum.TRANSCRIBING).collect { meeting ->
             try {
                 val meetingIdStr = meeting.id.toHexString()
-                val activeJobName = whisperJobRunner.findActiveJobForMeeting(meetingIdStr)
-
-                if (activeJobName != null) {
-                    // K8s job still running — re-attach to it instead of restarting
-                    logger.info { "Found active Whisper Job $activeJobName for TRANSCRIBING meeting $meetingIdStr, re-attaching" }
-                    val clientIdStr = meeting.clientId?.toString().orEmpty()
-                    processingMeetingIds.add(meetingIdStr)
-                    scope.launch {
-                        try {
-                            val result = whisperJobRunner.waitForExistingJob(
-                                jobName = activeJobName,
-                                audioFilePath = meeting.audioFilePath!!,
-                                meetingId = meetingIdStr,
-                                clientId = clientIdStr,
-                            )
-                            // Process result same as MeetingTranscriptionService would
-                            if (!result.error.isNullOrBlank()) {
-                                markAsFailed(meeting, "Whisper error: ${result.error}")
-                            } else {
-                                val segments = result.segments.map { seg ->
-                                    com.jervis.entity.meeting.TranscriptSegment(
-                                        startSec = seg.start, endSec = seg.end, text = seg.text.trim(),
-                                    )
-                                }
-                                meetingRepository.save(
-                                    meeting.copy(
-                                        state = MeetingStateEnum.TRANSCRIBED,
-                                        stateChangedAt = Instant.now(),
-                                        transcriptText = result.text,
-                                        transcriptSegments = segments,
-                                    ),
-                                )
-                                notificationRpc.emitMeetingStateChanged(
-                                    meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBED.name, meeting.title,
-                                )
-                                logger.info { "Re-attached Whisper Job $activeJobName completed: ${result.text.length} chars, ${segments.size} segments" }
-                            }
-                        } catch (e: Exception) {
-                            logger.error(e) { "Re-attached Whisper Job $activeJobName failed for meeting $meetingIdStr" }
-                            markAsFailed(meeting, "Transcription error (re-attached): ${e.message}")
-                        } finally {
-                            processingMeetingIds.remove(meetingIdStr)
-                        }
-                    }
-                } else {
-                    // No active K8s job — reset to UPLOADED for fresh transcription
-                    meetingRepository.save(
-                        meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
-                    )
-                    notificationRpc.emitMeetingStateChanged(
-                        meetingIdStr, meeting.clientId?.toString().orEmpty(), MeetingStateEnum.UPLOADED.name, meeting.title,
-                    )
-                    logger.info { "No active Whisper Job for TRANSCRIBING meeting $meetingIdStr, reset to UPLOADED" }
-                }
+                meetingRepository.save(
+                    meeting.copy(state = MeetingStateEnum.UPLOADED, stateChangedAt = Instant.now(), errorMessage = null),
+                )
+                notificationRpc.emitMeetingStateChanged(
+                    meetingIdStr, meeting.clientId?.toString().orEmpty(), MeetingStateEnum.UPLOADED.name, meeting.title,
+                )
+                logger.info { "Recovered TRANSCRIBING meeting $meetingIdStr, reset to UPLOADED (server restart)" }
             } catch (e: Exception) {
                 logger.error(e) { "Error recovering TRANSCRIBING meeting ${meeting.id}" }
             }
@@ -382,19 +328,14 @@ class MeetingContinuousIndexer(
     // ===== Pipeline 1: Transcription (parallel, up to MAX_PARALLEL_TRANSCRIPTIONS) =====
 
     private suspend fun transcribeContinuously() {
-        // Load initial max parallel jobs from settings
-        refreshMaxParallelJobs()
-
         while (true) {
-            // Periodically refresh max parallel jobs setting
-            refreshMaxParallelJobs()
 
             val meetings = meetingRepository
                 .findByStateAndDeletedIsFalseOrderByStoppedAtAsc(MeetingStateEnum.UPLOADED)
                 .toList()
 
             if (meetings.isNotEmpty()) {
-                logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (max parallel: $currentMaxParallelJobs)" }
+                logger.info { "Found ${meetings.size} UPLOADED meetings for transcription (serial)" }
 
                 for (meeting in meetings) {
                     val meetingIdStr = meeting.id.toHexString()
@@ -429,22 +370,6 @@ class MeetingContinuousIndexer(
         }
     }
 
-    /**
-     * Refresh the max parallel transcription jobs from DB settings.
-     * Re-creates semaphore if the limit has changed.
-     */
-    private suspend fun refreshMaxParallelJobs() {
-        try {
-            val settings = whisperProperties
-            if (settings.maxParallelJobs != currentMaxParallelJobs) {
-                logger.info { "Whisper max parallel jobs changed: $currentMaxParallelJobs -> ${settings.maxParallelJobs}" }
-                currentMaxParallelJobs = settings.maxParallelJobs
-                transcriptionSemaphore = Semaphore(settings.maxParallelJobs)
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to refresh whisper settings, using current: $currentMaxParallelJobs" }
-        }
-    }
 
     // ===== Pipeline 2: KB Indexing (raw transcript) =====
 

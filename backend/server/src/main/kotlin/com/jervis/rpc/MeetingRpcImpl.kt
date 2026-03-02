@@ -47,7 +47,6 @@ class MeetingRpcImpl(
     private val transcriptCorrectionService: TranscriptCorrectionService,
     private val orchestratorClient: PythonOrchestratorClient,
     private val correctionClient: com.jervis.configuration.CorrectionClient,
-    private val whisperJobRunner: com.jervis.service.meeting.WhisperJobRunner,
     private val notificationRpc: NotificationRpcImpl,
 ) : IMeetingService {
 
@@ -488,9 +487,6 @@ class MeetingRpcImpl(
         if (meeting.state != MeetingStateEnum.TRANSCRIBING) {
             throw IllegalStateException("Meeting is not in TRANSCRIBING state: ${meeting.state}")
         }
-
-        // Delete K8s job (best-effort)
-        whisperJobRunner.deleteJobForMeeting(meetingId)
 
         // Reset to UPLOADED for re-transcription
         meetingRepository.save(

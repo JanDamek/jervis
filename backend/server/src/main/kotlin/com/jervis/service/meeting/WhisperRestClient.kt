@@ -27,7 +27,7 @@ private val json = Json { ignoreUnknownKeys = true }
 /**
  * REST client for calling a remote Whisper transcription service.
  *
- * Used when deploymentMode=rest_remote — sends audio file over HTTP multipart
+ * Sends audio file over HTTP multipart
  * to a persistent Whisper server and reads an SSE stream for progress + result.
  *
  * SSE event types from server:

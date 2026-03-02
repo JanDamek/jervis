@@ -365,7 +365,6 @@ class TranscriptCorrectionService(
 
             val audioFilePath = meeting.audioFilePath
                 ?: throw IllegalStateException("Meeting ${meeting.id} has no audio file")
-            val workspacePath = java.nio.file.Paths.get(audioFilePath).parent.toString()
 
             // 2. Re-transcribe with high-accuracy settings
             logger.info {
@@ -374,7 +373,6 @@ class TranscriptCorrectionService(
             }
             val whisperResult = whisperJobRunner.retranscribe(
                 audioFilePath = audioFilePath,
-                workspacePath = workspacePath,
                 extractionRanges = extractionRanges,
                 meetingId = meetingIdStr,
                 clientId = clientIdStr,
@@ -547,7 +545,6 @@ class TranscriptCorrectionService(
 
             val audioFilePath = meeting.audioFilePath
                 ?: throw IllegalStateException("Meeting ${meeting.id} has no audio file")
-            val workspacePath = java.nio.file.Paths.get(audioFilePath).parent.toString()
 
             logger.info {
                 "Retranscribing ${extractionRanges.size} segments for meeting $meetingIdStr " +
@@ -556,7 +553,6 @@ class TranscriptCorrectionService(
 
             val whisperResult = whisperJobRunner.retranscribe(
                 audioFilePath = audioFilePath,
-                workspacePath = workspacePath,
                 extractionRanges = extractionRanges,
                 meetingId = meetingIdStr,
                 clientId = clientIdStr,
@@ -678,7 +674,6 @@ class TranscriptCorrectionService(
         segmentIndices: List<Int>,
     ): Map<Int, String>? {
         val audioFilePath = meeting.audioFilePath ?: return null
-        val workspacePath = java.nio.file.Paths.get(audioFilePath).parent.toString()
         val paddingSec = 10.0
 
         val extractionRanges = segmentIndices.mapNotNull { idx ->
@@ -696,7 +691,6 @@ class TranscriptCorrectionService(
 
         val whisperResult = whisperJobRunner.retranscribe(
             audioFilePath = audioFilePath,
-            workspacePath = workspacePath,
             extractionRanges = extractionRanges,
             meetingId = meetingIdStr,
             clientId = clientIdStr,

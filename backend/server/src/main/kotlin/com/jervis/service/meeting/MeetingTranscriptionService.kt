@@ -14,7 +14,7 @@ private val logger = KotlinLogging.logger {}
  * Orchestrates Whisper transcription for uploaded meeting recordings.
  *
  * Called by MeetingContinuousIndexer when a meeting reaches UPLOADED state.
- * Uses WhisperJobRunner (K8s Job in-cluster, subprocess locally).
+ * Uses WhisperJobRunner (REST remote).
  */
 @Service
 class MeetingTranscriptionService(
@@ -47,13 +47,8 @@ class MeetingTranscriptionService(
         notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.TRANSCRIBING.name, meeting.title)
 
         try {
-            // Derive workspace path from audio file path (parent of the audio file)
-            val audioPath = java.nio.file.Paths.get(meeting.audioFilePath)
-            val workspacePath = audioPath.parent.toString()
-
             val result = whisperJobRunner.transcribe(
                 audioFilePath = meeting.audioFilePath,
-                workspacePath = workspacePath,
                 meetingId = meetingIdStr,
                 clientId = clientIdStr,
                 projectId = meeting.projectId?.toString(),
@@ -83,6 +78,7 @@ class MeetingTranscriptionService(
                     startSec = seg.start,
                     endSec = seg.end,
                     text = seg.text.trim(),
+                    speaker = seg.speaker,
                 )
             }
 

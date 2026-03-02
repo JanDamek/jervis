@@ -100,18 +100,16 @@ data:
       indexing:
         skip-if-indexed-within: 30d
 
-    # -- Whisper transcription -------------------------------------------------
+    # -- Whisper transcription (REST-only, max accuracy) -------------------------
     whisper:
-      deployment-mode: rest_remote
       rest-remote-url: http://ollama.damek.local:8786
-      model: medium
-      beam-size: 8
+      model: large-v3
+      beam-size: 10
       vad-filter: true
-      word-timestamps: false
       condition-on-previous-text: true
-      no-speech-threshold: 0.6
-      max-parallel-jobs: 5
-      timeout-multiplier: 3
+      no-speech-threshold: 0.3
+      diarize: true
+      timeout-multiplier: 5
       min-timeout-seconds: 600
 
     # -- Coding tools (Aider, OpenHands, Claude, Junie) ------------------------
