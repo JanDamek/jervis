@@ -56,6 +56,7 @@ data class MeetingDto(
     val stateChangedAt: String? = null,
     val errorMessage: String? = null,
     val correctionChatHistory: List<CorrectionChatMessageDto> = emptyList(),
+    val speakerMapping: Map<String, String> = emptyMap(),
     val deleted: Boolean = false,
     val deletedAt: String? = null,
 )
@@ -85,6 +86,8 @@ data class TranscriptSegmentDto(
     val endSec: Double,
     val text: String,
     val speaker: String? = null,
+    val speakerName: String? = null,
+    val speakerId: String? = null,
 )
 
 @Serializable

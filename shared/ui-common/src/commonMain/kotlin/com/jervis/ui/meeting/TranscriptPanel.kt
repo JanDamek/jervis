@@ -187,9 +187,10 @@ private fun TranscriptSegmentRow(
 
         // Text column (fills remaining space)
         Row(modifier = Modifier.weight(1f)) {
-            if (segment.speaker != null) {
+            val speakerLabel = segment.speakerName ?: segment.speaker
+            if (speakerLabel != null) {
                 Text(
-                    text = "${segment.speaker}: ",
+                    text = "$speakerLabel: ",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )

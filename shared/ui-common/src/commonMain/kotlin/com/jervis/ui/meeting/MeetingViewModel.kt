@@ -15,7 +15,11 @@ import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingTypeEnum
 import com.jervis.dto.meeting.MeetingStateEnum
+import com.jervis.dto.meeting.SpeakerCreateDto
+import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.SpeakerMappingDto
 import com.jervis.dto.meeting.TranscriptCorrectionSubmitDto
+import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.di.RpcConnectionManager
 import com.jervis.dto.events.JervisEvent
 import com.jervis.repository.JervisRepository
@@ -132,6 +136,9 @@ class MeetingViewModel(
 
     private val _expandedGroups = MutableStateFlow<Map<String, List<MeetingSummaryDto>>>(emptyMap())
     val expandedGroups: StateFlow<Map<String, List<MeetingSummaryDto>>> = _expandedGroups.asStateFlow()
+
+    private val _clientSpeakers = MutableStateFlow<List<SpeakerDto>>(emptyList())
+    val clientSpeakers: StateFlow<List<SpeakerDto>> = _clientSpeakers.asStateFlow()
 
     private val _loadingGroups = MutableStateFlow<Set<String>>(emptySet())
     val loadingGroups: StateFlow<Set<String>> = _loadingGroups.asStateFlow()
@@ -781,6 +788,7 @@ class MeetingViewModel(
             cachedAudioBytes = null
         }
         _selectedMeeting.value = meeting
+        meeting?.clientId?.let { loadSpeakers(it) }
     }
 
     fun selectMeetingById(meetingId: String) {
@@ -788,6 +796,7 @@ class MeetingViewModel(
             try {
                 val meeting = repository.meetings.getMeeting(meetingId)
                 _selectedMeeting.value = meeting
+                meeting.clientId?.let { loadSpeakers(it) }
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se načíst detail: ${e.message}"
             }
@@ -1192,6 +1201,51 @@ class MeetingViewModel(
                 _recordingDuration.value = dur
                 platformRecordingService.updateDuration(dur)
                 delay(1000)
+            }
+        }
+    }
+
+    // ---- Speaker management ----
+
+    fun loadSpeakers(clientId: String) {
+        scope.launch {
+            try {
+                _clientSpeakers.value = repository.speakers.listSpeakers(clientId)
+            } catch (_: Exception) {
+                // Non-critical — speakers may not be available yet
+            }
+        }
+    }
+
+    fun assignSpeakers(meetingId: String, mapping: Map<String, String>) {
+        scope.launch {
+            try {
+                repository.speakers.assignSpeakers(SpeakerMappingDto(meetingId, mapping))
+                doRefreshMeeting(meetingId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při přiřazení mluvčích: ${e.message}"
+            }
+        }
+    }
+
+    fun createSpeaker(request: SpeakerCreateDto) {
+        scope.launch {
+            try {
+                repository.speakers.createSpeaker(request)
+                loadSpeakers(request.clientId)
+            } catch (e: Exception) {
+                _error.value = "Chyba při vytváření řečníka: ${e.message}"
+            }
+        }
+    }
+
+    fun setVoiceSample(speakerId: String, voiceSample: VoiceSampleRefDto) {
+        scope.launch {
+            try {
+                repository.speakers.setVoiceSample(speakerId, voiceSample)
+                _selectedMeeting.value?.clientId?.let { loadSpeakers(it) }
+            } catch (e: Exception) {
+                _error.value = "Chyba při ukládání vzorku hlasu: ${e.message}"
             }
         }
     }

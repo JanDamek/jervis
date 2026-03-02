@@ -1045,13 +1045,21 @@ Compact (<600dp):
 - `RecordingSetupDialog` -- Client, project, audio device selection, system audio toggle
 - `RecordingFinalizeDialog` -- Meeting type (radio buttons), optional title
 - `EditMeetingDialog` -- Edit name, type, client, project of classified meeting (with reassignment warning)
+- `SpeakerAssignmentPanel` -- Assign speaker profiles to diarization labels. Dropdown per label, create new speaker inline. Voice sample extraction. Toggle via People button in top bar.
 - `RecordingIndicator` -- Animated red dot + elapsed time + stop button (shown during recording)
 
 **State icons:** RECORDING, UPLOADING, UPLOADED/TRANSCRIBING/CORRECTING, TRANSCRIBED/CORRECTED/INDEXED, FAILED
 
 **Offline recording:** When server is unavailable, `MeetingViewModel.startRecording()` falls back to offline mode — generates a local UUID (prefix `offline_`), saves audio chunks to disk via `AudioChunkQueue`. On stop, metadata is saved via `OfflineMeetingStorage`. `OfflineMeetingSyncService` (created in `App.kt`) watches connection state and uploads offline meetings when connected. Offline meetings appear in a special "Offline nahrávky" section at the top of the list with sync state (PENDING/SYNCING/FAILED) and retry button.
 
-**MeetingDetailView** uses a split layout with transcript on top and agent chat on bottom:
+**Speaker management:**
+- `SpeakerDocument` (MongoDB collection `speakers`) -- per-client speaker profiles with name, nationality, languages, notes, voice sample reference
+- `speakerMapping` on `MeetingDocument` -- maps diarization labels ("SPEAKER_00") to speaker profile IDs
+- `TranscriptSegmentDto.speakerName` -- resolved from mapping, shown in transcript instead of raw labels
+- `SpeakerAssignmentPanel` -- replaces chat panel when toggled via People icon. JDropdown per speaker label, inline create form, voice sample save.
+- `ISpeakerService` kRPC -- CRUD + assignSpeakers + setVoiceSample
+
+**MeetingDetailView** uses a split layout with transcript on top and agent chat (or speaker panel) on bottom:
 
 **PipelineProgress** shows pipeline state with optional controls:
 - When `state == TRANSCRIBING`: a stop button (`Icons.Default.Stop`, error-tinted) appears on the right side. Calls `viewModel.stopTranscription()` which resets the meeting to UPLOADED and deletes the K8s Whisper job.

@@ -48,6 +48,7 @@ class MeetingRpcImpl(
     private val orchestratorClient: PythonOrchestratorClient,
     private val correctionClient: com.jervis.configuration.CorrectionClient,
     private val notificationRpc: NotificationRpcImpl,
+    private val speakerRepository: com.jervis.repository.SpeakerRepository,
 ) : IMeetingService {
 
     override suspend fun startRecording(request: MeetingCreateDto): MeetingDto {
@@ -189,7 +190,14 @@ class MeetingRpcImpl(
     override suspend fun getMeeting(meetingId: String): MeetingDto {
         val meeting = meetingRepository.findById(ObjectId(meetingId))
             ?: throw IllegalStateException("Meeting not found: $meetingId")
-        return meeting.toDto()
+        val speakerMap = buildSpeakerMap(meeting)
+        return meeting.toDto(speakerMap)
+    }
+
+    private suspend fun buildSpeakerMap(meeting: com.jervis.entity.meeting.MeetingDocument): Map<String, com.jervis.entity.SpeakerDocument> {
+        if (meeting.speakerMapping.isEmpty() || meeting.clientId == null) return emptyMap()
+        val speakers = speakerRepository.findByClientIdOrderByNameAsc(meeting.clientId).toList()
+        return speakers.associateBy { it.id.toHexString() }
     }
 
     override suspend fun getAudioData(meetingId: String): String {
@@ -879,7 +887,9 @@ private fun fixWavHeader(file: java.nio.file.Path, fileSize: Long) {
     }
 }
 
-private fun MeetingDocument.toDto(): MeetingDto =
+private fun MeetingDocument.toDto(
+    speakerMap: Map<String, com.jervis.entity.SpeakerDocument> = emptyMap(),
+): MeetingDto =
     MeetingDto(
         id = id.toHexString(),
         clientId = clientId?.toString(),
@@ -893,20 +903,26 @@ private fun MeetingDocument.toDto(): MeetingDto =
         stoppedAt = stoppedAt?.toString(),
         transcriptText = transcriptText,
         transcriptSegments = transcriptSegments.map { seg ->
+            val resolved = seg.speaker?.let { speakerMapping[it] }?.let { speakerMap[it] }
             TranscriptSegmentDto(
                 startSec = seg.startSec,
                 endSec = seg.endSec,
                 text = seg.text,
                 speaker = seg.speaker,
+                speakerName = resolved?.name,
+                speakerId = resolved?.id?.toHexString(),
             )
         },
         correctedTranscriptText = correctedTranscriptText,
         correctedTranscriptSegments = correctedTranscriptSegments.map { seg ->
+            val resolved = seg.speaker?.let { speakerMapping[it] }?.let { speakerMap[it] }
             TranscriptSegmentDto(
                 startSec = seg.startSec,
                 endSec = seg.endSec,
                 text = seg.text,
                 speaker = seg.speaker,
+                speakerName = resolved?.name,
+                speakerId = resolved?.id?.toHexString(),
             )
         },
         correctionQuestions = correctionQuestions.map { q ->
@@ -928,6 +944,7 @@ private fun MeetingDocument.toDto(): MeetingDto =
                 status = msg.status,
             )
         },
+        speakerMapping = speakerMapping,
         stateChangedAt = stateChangedAt?.toString(),
         errorMessage = errorMessage,
         deleted = deleted,

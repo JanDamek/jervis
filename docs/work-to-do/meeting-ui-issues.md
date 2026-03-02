@@ -50,15 +50,15 @@
   - Nebo: schovat chat panel dokud korekce neskončí
 - **Soubor:** `AgentChatPanel.kt`
 
-### 7. Řečníci — chybí nastavení v UI
-- V UI není viditelné nastavení řečníků pro meeting
-- Řečníci jsou klíčoví pro LLM kontext:
-  - Jméno řečníka → LLM ví kdo mluví
-  - Jazyk řečníka → LLM správně interpretuje přepis (např. "Pavol je Slovák" → přepis ve slovenštině)
-  - Kontext řečníka → LLM může lépe opravovat jména, termíny
-- **Řešit jako celek:**
-  - Kde se nastavují řečníci? (meeting detail, globálně, per-projekt?)
-  - Jak se řečníci mapují na segmenty přepisu? (diarizace → speaker labeling)
-  - UI pro přiřazení jmen k `Speaker 0`, `Speaker 1` atd.
-  - Metadata řečníka: jméno, jazyk, poznámky pro LLM
-- **Investigovat:** Aktuální stav diarizace + speaker labeling v kódu
+### 7. Řečníci — nastavení v UI ✅
+- **Implementováno:**
+  - `SpeakerDocument` (MongoDB) — profil řečníka per klient (jméno, národnost, jazyky, poznámky, vzorek hlasu)
+  - `speakerMapping` na `MeetingDocument` — mapování diarizačních labelů na profily
+  - `ISpeakerService` kRPC — CRUD + assignSpeakers + setVoiceSample
+  - `SpeakerAssignmentPanel` — UI pro přiřazení řečníků, vytvoření nového, uložení vzorku
+  - `TranscriptPanel` — zobrazuje resolved jména místo "SPEAKER_00"
+  - People tlačítko v top baru meeting detailu (přepíná chat/mluvči panel)
+- **Budoucí rozšíření:**
+  - LLM korekce s kontextem řečníků (národnost → očekávaný jazyk přepisu)
+  - Automatické rozpoznání hlasu přes voice sample
+  - Správa řečníků per klient v Settings

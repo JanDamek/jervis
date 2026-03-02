@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +50,9 @@ import com.jervis.dto.meeting.CorrectionAnswerDto
 import com.jervis.dto.meeting.CorrectionChatMessageDto
 import com.jervis.dto.meeting.MeetingDto
 import com.jervis.dto.meeting.MeetingStateEnum
+import com.jervis.dto.meeting.SpeakerCreateDto
+import com.jervis.dto.meeting.SpeakerDto
+import com.jervis.dto.meeting.VoiceSampleRefDto
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JDeleteButton
 import com.jervis.ui.design.JIconButton
@@ -87,6 +91,10 @@ internal fun MeetingDetailView(
     onStopTranscription: () -> Unit = {},
     errorMessage: String? = null,
     onDismissViewError: () -> Unit = {},
+    clientSpeakers: List<SpeakerDto> = emptyList(),
+    onAssignSpeakers: (mapping: Map<String, String>) -> Unit = {},
+    onCreateSpeaker: (SpeakerCreateDto) -> Unit = {},
+    onSetVoiceSample: (speakerId: String, voiceSample: VoiceSampleRefDto) -> Unit = { _, _ -> },
 ) {
     // Toggle between corrected and raw transcript
     var showCorrected by remember { mutableStateOf(true) }
@@ -94,6 +102,8 @@ internal fun MeetingDetailView(
     var segmentForCorrection by remember { mutableStateOf<SegmentEditState?>(null) }
     // Overflow menu for compact screens
     var showOverflowMenu by remember { mutableStateOf(false) }
+    // Bottom panel mode: chat or speaker assignment
+    var showSpeakerPanel by remember { mutableStateOf(false) }
     // Splitter fraction for expanded mode (transcript/chat split)
     var splitFraction by remember { mutableStateOf(0.7f) }
     // Splitter fraction for correction panel (metadata+corrections / transcript+chat)
@@ -147,6 +157,15 @@ internal fun MeetingDetailView(
                                     },
                                     onClick = { onCorrections(); showOverflowMenu = false },
                                 )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.People, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Text("Mluvci")
+                                        }
+                                    },
+                                    onClick = { showSpeakerPanel = !showSpeakerPanel; showOverflowMenu = false },
+                                )
                                 if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                                     DropdownMenuItem(
                                         text = {
@@ -182,6 +201,12 @@ internal fun MeetingDetailView(
                         // Expanded: all action buttons visible
                         JIconButton(onClick = onEdit, icon = Icons.Default.Edit, contentDescription = "Editovat")
                         JIconButton(onClick = onCorrections, icon = Icons.Default.MenuBook, contentDescription = "Pravidla oprav")
+                        JIconButton(
+                            onClick = { showSpeakerPanel = !showSpeakerPanel },
+                            icon = Icons.Default.People,
+                            contentDescription = "Mluvci",
+                            tint = if (showSpeakerPanel) MaterialTheme.colorScheme.primary else androidx.compose.material3.LocalContentColor.current,
+                        )
                         if (meeting.state in listOf(MeetingStateEnum.TRANSCRIBED, MeetingStateEnum.CORRECTING, MeetingStateEnum.CORRECTION_REVIEW, MeetingStateEnum.CORRECTED, MeetingStateEnum.INDEXED, MeetingStateEnum.FAILED)) {
                             JIconButton(onClick = onRetranscribe, icon = Icons.Default.Replay, contentDescription = "Přepsat znovu")
                         }
@@ -371,16 +396,25 @@ internal fun MeetingDetailView(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
 
-                    // Chat panel (fixed height in compact)
-                    AgentChatPanel(
-                        chatHistory = meeting.correctionChatHistory,
-                        pendingMessage = pendingChatMessage,
-                        isCorrecting = isCorrecting,
-                        onSendInstruction = onCorrectWithInstruction,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                    )
+                    // Bottom panel (chat or speaker assignment)
+                    if (showSpeakerPanel) {
+                        SpeakerAssignmentPanel(
+                            meeting = meeting,
+                            speakers = clientSpeakers,
+                            onAssignSpeakers = onAssignSpeakers,
+                            onCreateSpeaker = onCreateSpeaker,
+                            onSetVoiceSample = onSetVoiceSample,
+                            modifier = Modifier.fillMaxWidth().height(220.dp),
+                        )
+                    } else {
+                        AgentChatPanel(
+                            chatHistory = meeting.correctionChatHistory,
+                            pendingMessage = pendingChatMessage,
+                            isCorrecting = isCorrecting,
+                            onSendInstruction = onCorrectWithInstruction,
+                            modifier = Modifier.fillMaxWidth().height(180.dp),
+                        )
+                    }
                 }
             } else {
                 // Expanded mode: draggable splitter
@@ -416,13 +450,24 @@ internal fun MeetingDetailView(
                         )
                     },
                     bottomContent = { mod ->
-                        AgentChatPanel(
-                            chatHistory = meeting.correctionChatHistory,
-                            pendingMessage = pendingChatMessage,
-                            isCorrecting = isCorrecting,
-                            onSendInstruction = onCorrectWithInstruction,
-                            modifier = mod,
-                        )
+                        if (showSpeakerPanel) {
+                            SpeakerAssignmentPanel(
+                                meeting = meeting,
+                                speakers = clientSpeakers,
+                                onAssignSpeakers = onAssignSpeakers,
+                                onCreateSpeaker = onCreateSpeaker,
+                                onSetVoiceSample = onSetVoiceSample,
+                                modifier = mod,
+                            )
+                        } else {
+                            AgentChatPanel(
+                                chatHistory = meeting.correctionChatHistory,
+                                pendingMessage = pendingChatMessage,
+                                isCorrecting = isCorrecting,
+                                onSendInstruction = onCorrectWithInstruction,
+                                modifier = mod,
+                            )
+                        }
                     },
                 )
             }

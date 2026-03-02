@@ -83,6 +83,7 @@ fun MeetingsScreen(
     val olderGroups by viewModel.olderGroups.collectAsState()
     val expandedGroups by viewModel.expandedGroups.collectAsState()
     val loadingGroups by viewModel.loadingGroups.collectAsState()
+    val clientSpeakers by viewModel.clientSpeakers.collectAsState()
 
     var showSetupDialog by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
@@ -172,6 +173,10 @@ fun MeetingsScreen(
                 viewModel.retranscribeSegment(currentDetail.id, segmentIndex)
             },
             onStopTranscription = { viewModel.stopTranscription(currentDetail.id) },
+            clientSpeakers = clientSpeakers,
+            onAssignSpeakers = { mapping -> viewModel.assignSpeakers(currentDetail.id, mapping) },
+            onCreateSpeaker = { request -> viewModel.createSpeaker(request) },
+            onSetVoiceSample = { speakerId, voiceSample -> viewModel.setVoiceSample(speakerId, voiceSample) },
         )
         return
     }

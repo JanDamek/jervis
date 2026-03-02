@@ -79,6 +79,10 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Whisper settings: `shared/common-dto/.../whisper/WhisperSettingsDtos.kt`, `backend/server/.../rpc/WhisperSettingsRpcImpl.kt`
 - Whisper runner: `backend/service-whisper/whisper_runner.py`, `backend/service-whisper/entrypoint-whisper-job.sh`
 - Whisper REST server: `backend/service-whisper/whisper_rest_server.py`, `backend/service-whisper/Dockerfile.rest`
+- Speaker entity: `backend/server/.../entity/SpeakerDocument.kt`, `backend/server/.../repository/SpeakerRepository.kt`
+- Speaker DTOs: `shared/common-dto/.../meeting/SpeakerDtos.kt`
+- Speaker RPC: `shared/common-api/.../ISpeakerService.kt`, `backend/server/.../rpc/SpeakerRpcImpl.kt`
+- Speaker UI: `shared/ui-common/.../meeting/SpeakerAssignmentPanel.kt`
 - Whisper REST client: `backend/server/.../service/meeting/WhisperRestClient.kt`
 - Environment Manager: `shared/ui-common/.../screens/environment/` (EnvironmentManagerScreen, OverviewTab, ComponentsTab, ComponentEditPanel, PropertyMappingsTab, K8sResourcesTab, LogsEventsTab)
 - Environment sidebar: `shared/ui-common/.../environment/` (EnvironmentPanel, EnvironmentViewModel, EnvironmentTreeComponents)

@@ -58,6 +58,7 @@ data class MeetingDocument(
     val errorMessage: String? = null,
     val chunkCount: Int = 0,
     val correctionChatHistory: List<CorrectionChatMessage> = emptyList(),
+    val speakerMapping: Map<String, String> = emptyMap(),
     val qualified: Boolean = false,
     val deleted: Boolean = false,
     val deletedAt: Instant? = null,
