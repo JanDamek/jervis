@@ -2,6 +2,7 @@ package com.jervis.service.storage
 
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import org.bson.types.ObjectId
 import com.jervis.configuration.properties.DataRootProperties
 import com.jervis.domain.storage.DirectoryStructure
 import com.jervis.domain.storage.ProjectSubdirectoryEnum
@@ -276,6 +277,19 @@ class DirectoryStructureService(
         }
 
     fun projectMeetingsDir(project: ProjectDocument): Path = projectMeetingsDir(project.clientId, project.id)
+
+    /** Resolve the audio file path for a meeting based on its clientId/projectId. */
+    fun meetingAudioFile(meetingId: ObjectId, clientId: ClientId?, projectId: ProjectId?): Path {
+        val fileName = "meeting_${meetingId.toHexString()}.wav"
+        val dir = when {
+            projectId != null && clientId != null -> projectMeetingsDir(clientId, projectId)
+            clientId != null -> clientAudioDir(clientId)
+            else -> workspaceRoot().resolve("unclassified").resolve("meetings").also {
+                createDirectoryIfNotExists(it)
+            }
+        }
+        return dir.resolve(fileName)
+    }
 
     fun resolveProjectPath(
         clientId: ClientId,
