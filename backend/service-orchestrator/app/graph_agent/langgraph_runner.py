@@ -648,7 +648,8 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "- This ensures nothing is lost even if the conversation spans hours/days\n"
         "- When the user mentions another project (e.g., 'this would work in XYZ'), "
         "use target_project_name to cross-reference\n"
-        "Do NOT dump entire messages — store only the key decision in 1-2 sentences."
+        "Store the decision with enough detail to reconstruct it later — "
+        "not just keywords, but the reasoning and context behind the decision."
     ),
     VertexType.TASK: (
         "You are the Executor. Complete the assigned task using the provided "
@@ -656,7 +657,7 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "## Knowledge Persistence\n"
         "When discussing or refining requirements with the user:\n"
         "- After each confirmed decision, call `store_knowledge` with category "
-        "'specification' to persist it in KB\n"
+        "'specification' to persist it in KB with enough detail to reconstruct later\n"
         "- When the user mentions another project, use target_project_name to cross-reference"
     ),
     VertexType.VALIDATOR: (

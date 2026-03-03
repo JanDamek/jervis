@@ -751,13 +751,9 @@ async def _execute_store_knowledge(
     if not content.strip():
         return "Error: Content cannot be empty when storing knowledge."
 
-    # Anti-dump guard: reject oversized content (model tries to store entire user messages)
-    if len(content) > 2000:
-        return (
-            f"Error: Content too long ({len(content)} chars, max 2000). "
-            "Store only key facts in 1-2 sentences. Do NOT dump the user's entire message. "
-            "Summarize the essential information instead."
-        )
+    # Log large content but don't reject — LLM compression handles size during memory parking
+    if len(content) > 5000:
+        logger.warning("Large content stored (%d chars) for subject '%s'", len(content), subject)
 
     # EPIC 14-S3: Check for contradictions before writing
     try:
@@ -2010,13 +2006,9 @@ async def _execute_memory_store(
     if not content.strip():
         return "Error: Content cannot be empty."
 
-    # Anti-dump guard: reject oversized content (model tries to store entire user messages)
-    if len(content) > 2000:
-        return (
-            f"Error: Content too long ({len(content)} chars, max 2000). "
-            "Store only key facts in 1-2 sentences. Do NOT dump the user's entire message. "
-            "Summarize the essential information instead."
-        )
+    # Log large content but don't reject — LLM compression handles size during memory parking
+    if len(content) > 5000:
+        logger.warning("Large content stored (%d chars) for subject '%s'", len(content), subject)
 
     try:
         from app.memory.agent import _get_or_create_lqm
@@ -2032,9 +2024,10 @@ async def _execute_memory_store(
         lqm = _get_or_create_lqm()
 
         # Add to active affair key_facts if one exists
+        # No truncation — LLM compression handles this during parking
         active = lqm.get_active_affair(client_id)
         if active:
-            active.key_facts[subject] = content[:500]
+            active.key_facts[subject] = content
             lqm.store_affair(active)
 
         # Buffer KB write
@@ -2042,6 +2035,7 @@ async def _execute_memory_store(
         kind_map = {
             "fact": "user_knowledge_fact",
             "decision": "user_knowledge_preference",
+            "specification": "user_knowledge_specification",
             "order": "user_knowledge_general",
             "deadline": "user_knowledge_general",
             "contact": "user_knowledge_personal",

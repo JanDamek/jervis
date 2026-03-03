@@ -341,7 +341,10 @@ TOOL_STORE_KNOWLEDGE: dict = {
                 },
                 "content": {
                     "type": "string",
-                    "description": "The actual knowledge/fact to store. Be specific and factual.",
+                    "description": (
+                        "The actual knowledge/fact to store. Include enough detail and reasoning "
+                        "to reconstruct the decision later. No artificial length limits."
+                    ),
                 },
                 "category": {
                     "type": "string",
