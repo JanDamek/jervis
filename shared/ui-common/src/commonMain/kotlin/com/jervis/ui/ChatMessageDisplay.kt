@@ -133,7 +133,10 @@ internal fun ChatArea(
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(reversedItems.size) { index ->
+                items(
+                    count = reversedItems.size,
+                    key = { index -> reversedItems[index].stableKey },
+                ) { index ->
                     val item = reversedItems[index]
                     when (item) {
                         is ChatDisplayItem.Standalone -> ChatMessageItem(
