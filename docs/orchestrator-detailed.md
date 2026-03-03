@@ -3956,9 +3956,9 @@ PLANNER/DECOMPOSE vertices don't execute via agentic tool loop. `node_dispatch_v
 
 **Limits:** `MAX_DECOMPOSE_DEPTH=8`, `MAX_TOTAL_VERTICES=200`. When hit, vertex auto-converts to EXECUTOR.
 
-### 34.14 Trivial Request Short-Circuit
+### 34.14 Complexity is Always LLM-Decided
 
-`_is_trivial_request(query)` detects simple questions (<200 chars, question words, no multi-part structure). Trivial requests skip decomposition entirely — single EXECUTOR vertex created directly. This ensures "kolik je hodin?" doesn't go through the full decomposition pipeline.
+No heuristic short-circuit for "trivial" requests. Text length says nothing about complexity — "jaký je stav projektu?" is short but requires deep analysis. The decomposer LLM decides: simple request → 1 vertex, complex → multiple vertices with dependencies. The decomposer prompt includes: "If the request is simple enough for one vertex, return just one vertex with no synthesis."
 
 ### 34.15 ArangoDB Artifact Graph — Impact Analysis
 
