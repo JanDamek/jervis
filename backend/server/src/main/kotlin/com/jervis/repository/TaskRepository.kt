@@ -223,6 +223,17 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
      * Find task by correlationId for deduplication.
      * Used by AutoTaskCreationService to avoid creating duplicate tasks.
      */
+    suspend fun findByProcessingModeAndStateInOrderByPriorityScoreDescCreatedAtAsc(
+        processingMode: ProcessingMode,
+        states: List<TaskStateEnum>,
+    ): Flow<TaskDocument>
+
+    suspend fun findByClientIdAndProcessingModeAndStateInOrderByPriorityScoreDescCreatedAtAsc(
+        clientId: ClientId,
+        processingMode: ProcessingMode,
+        states: List<TaskStateEnum>,
+    ): Flow<TaskDocument>
+
     suspend fun findByCorrelationId(correlationId: String): TaskDocument?
 
     // Work plan hierarchy queries

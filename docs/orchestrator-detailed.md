@@ -4008,11 +4008,41 @@ ArangoDB-backed graph tracking ALL entities Jervis manages — code artifacts (f
 - Service startup blocks until ArangoDB is reachable — no partial-feature state
 - Each attempt logs a warning with attempt count and next retry delay
 
-### 34.17 Orchestration Entry Point
+### 34.17 Background Dispatch & Queue Priority
+
+**Background path:** When `use_graph_agent=True`, `handle_background()` routes directly to `run_graph_agent()`. No legacy 5-phase loop. Flow:
+
+```
+Chat LLM → create_background_task tool → Kotlin creates BACKGROUND TaskDocument
+  → BackgroundEngine picks up → Python /orchestrate/v2 → handle_background()
+  → run_graph_agent() (async, doesn't block chat)
+  → Progress via pushBackgroundResult → appears in chat
+```
+
+**Priority tools for PLANNER vertex:**
+
+| Tool | Purpose |
+|------|---------|
+| `task_queue_inspect` | List queued BACKGROUND tasks across all clients/projects (ordered by priorityScore) |
+| `task_queue_set_priority` | Set priorityScore (0–100) for a task — higher = sooner execution |
+
+**Priority as decomposition:** PLANNER vertex gets queue tools by default. When decomposing a new task, it can:
+1. Inspect the current queue (`task_queue_inspect`)
+2. Analyze dependencies between tasks
+3. Set optimal priority scores (`task_queue_set_priority`)
+4. Decompose its own task accordingly
+
+This means **LLM decides priority** based on understanding of tasks, not hardcoded rules. Cross-project, cross-client.
+
+**Kotlin internal API:**
+- `GET /internal/tasks/queue?clientId=&limit=` — queued BACKGROUND tasks ordered by priority
+- `POST /internal/tasks/{id}/priority` — set priorityScore (0–100)
+
+### 34.18 Orchestration Entry Point
 
 **Source:** `app/graph_agent/langgraph_runner.py`
 
-`run_graph_agent(request, thread_id)` — called from `run_orchestration()` when `use_graph_agent=True`:
+`run_graph_agent(request, thread_id)` — called from `handle_background()` (BACKGROUND tasks) or `run_orchestration()` (FOREGROUND):
 ```
 LangGraph.ainvoke(initial_state) → decompose → [select → dispatch → loop] → synthesize → END
 ```

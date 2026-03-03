@@ -1340,5 +1340,69 @@ LEARNING_AGENT_TOOLS: list[dict] = [TOOL_WEB_SEARCH, TOOL_KB_SEARCH, TOOL_CODE_S
 # All agent tools (full tool access)
 ALL_AGENT_TOOLS: list[dict] = ALL_RESPOND_TOOLS_FULL
 
+
+# ============================================================
+# Task Queue tools (for graph agent PLANNER — cross-project priority)
+# ============================================================
+
+TOOL_TASK_QUEUE_INSPECT: dict = {
+    "type": "function",
+    "function": {
+        "name": "task_queue_inspect",
+        "description": (
+            "Inspect the background task queue across all clients and projects. "
+            "Returns queued tasks ordered by priority (highest first). "
+            "Use this to understand what work is pending, identify dependencies, "
+            "and decide priority scores for new tasks."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Optional: filter by client ID. Omit to see all clients.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of tasks to return (default 20).",
+                    "default": 20,
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+TOOL_TASK_QUEUE_SET_PRIORITY: dict = {
+    "type": "function",
+    "function": {
+        "name": "task_queue_set_priority",
+        "description": (
+            "Set the priority score (0–100) for a background task. "
+            "Higher score = processed sooner. Default is 50. "
+            "Use after inspecting the queue to optimize execution order "
+            "based on dependencies, urgency, and cross-project impact."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "The ID of the task to reprioritize.",
+                },
+                "priority_score": {
+                    "type": "integer",
+                    "description": "Priority score 0–100. Higher = more urgent. Default 50.",
+                    "minimum": 0,
+                    "maximum": 100,
+                },
+            },
+            "required": ["task_id", "priority_score"],
+        },
+    },
+}
+
+QUEUE_TOOLS: list[dict] = [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY]
+
 # Backward compatibility alias
 LEGACY_AGENT_TOOLS: list[dict] = ALL_AGENT_TOOLS
