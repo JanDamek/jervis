@@ -26,7 +26,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -715,10 +715,6 @@ def _append_assistant_message(
         "content": content,
         "tool_calls": tc_list,
     })
-
-
-# Handler dispatch — all types use the unified agentic loop
-_VERTEX_HANDLERS: dict[VertexType, Any] = {}
 
 
 async def _dispatch_vertex_handler(

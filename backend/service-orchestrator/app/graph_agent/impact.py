@@ -28,7 +28,7 @@ from app.graph_agent.artifact_graph import (
     TouchKind,
     artifact_graph_store,
 )
-from app.graph_agent.graph import add_edge, add_vertex
+from app.graph_agent.graph import add_edge
 from app.graph_agent.models import (
     EdgeType,
     GraphVertex,
@@ -282,7 +282,7 @@ async def analyze_impact(
             depth=vertex.depth,
         )
 
-        add_vertex(graph, validator, parent_id=vertex.parent_id)
+        graph.vertices[validator_id] = validator
 
         # Add dependency edge from the completed vertex to the validator
         add_edge(
