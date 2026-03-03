@@ -32,6 +32,7 @@ from typing import TypedDict
 from pymongo import MongoClient
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
 
 from app.config import settings
 from app.graph.nodes._helpers import (
@@ -67,8 +68,8 @@ from app.graph_agent.progress import (
 from app.graph_agent.impact import analyze_impact
 from app.graph_agent.tool_sets import get_default_tools, get_tools_by_category
 from app.graph_agent.validation import validate_graph
-from app.models import CodingTask, DelegationMessage, OrchestrateRequest
-from app.tools.executor import execute_tool
+from app.models import ChatHistoryPayload, CodingTask, DelegationMessage, OrchestrateRequest
+from app.tools.executor import AskUserInterrupt, execute_tool
 from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,19 @@ async def node_decompose(state: GraphAgentState) -> dict:
         evidence = {}
     if resource_context:
         evidence["existing_resources"] = resource_context
+
+    # Include chat history for iterative requirement building
+    # (user may have described requirements across multiple messages)
+    chat_history_data = state.get("chat_history")
+    if chat_history_data:
+        chat_payload = ChatHistoryPayload(**chat_history_data) if isinstance(chat_history_data, dict) else chat_history_data
+        summary_parts = []
+        for block in chat_payload.summary_blocks:
+            summary_parts.append(block.summary)
+        for msg in chat_payload.recent_messages:
+            summary_parts.append(f"[{msg.role}] {msg.content}")
+        if summary_parts:
+            evidence["chat_history_summary"] = "\n".join(summary_parts)
 
     # LLM-driven decomposition — LLM decides complexity, not heuristics
     try:
@@ -652,11 +666,35 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         'proceed. Respond with JSON: {"proceed": true/false, "reason": "..."}'
     ),
     VertexType.SETUP: (
-        "You are the Setup Agent. Handle project scaffolding and environment "
-        "provisioning. Use environment tools to create, configure, and deploy "
-        "environments. Use coding tools to scaffold project structures, "
-        "generate boilerplate, and configure build systems. "
-        "Ensure environments are properly linked to projects and ready for use."
+        "You are the Setup Agent — responsible for project scaffolding, technology "
+        "decisions, and environment provisioning.\n\n"
+        "## Workflow\n"
+        "1. **Gather requirements**: Read the upstream context and conversation history "
+        "carefully. Requirements may have been built up incrementally across multiple "
+        "chat messages (e.g. 'app for home library' → 'with book database connectivity' "
+        "→ 'with user login' → 'implement it'). Combine ALL mentioned requirements.\n"
+        "2. **Get recommendations**: Call `get_stack_recommendations` with the FULL "
+        "accumulated requirements text. This returns structured architecture, platform, "
+        "storage, and feature recommendations with pros/cons.\n"
+        "3. **Present to user**: Use `ask_user` to present the recommendations and ask "
+        "the user to confirm or adjust choices. Format it clearly — list the recommended "
+        "architecture, each platform, storage option, and features with their pros/cons.\n"
+        "4. **Create infrastructure**: Based on confirmed choices:\n"
+        "   - `create_client` (if no client exists)\n"
+        "   - `create_project` (under the client)\n"
+        "   - `create_connection` (for Git hosting)\n"
+        "   - `create_git_repository` (GitHub/GitLab repo)\n"
+        "   - `update_project` (link the git remote URL)\n"
+        "5. **Scaffold code**: Use `dispatch_coding_agent` with the scaffolding "
+        "instructions from the recommendations. The coding agent will generate the "
+        "actual project structure, build files, and boilerplate.\n"
+        "6. **Provision environment**: Use environment tools (environment_create, "
+        "environment_add_component, environment_deploy) to create a dev environment.\n"
+        "7. **Initialize workspace**: Call `init_workspace` to clone the repo.\n\n"
+        "IMPORTANT: Do NOT generate code yourself. Always use `dispatch_coding_agent` "
+        "for code generation — it handles Git branches, commits, and PR creation.\n"
+        "IMPORTANT: Always confirm technology choices with the user via `ask_user` "
+        "BEFORE creating any infrastructure or dispatching coding agent."
     ),
 }
 
@@ -708,15 +746,32 @@ async def _agentic_vertex(
     tools = get_default_tools(vertex.vertex_type)
 
     # --- Build initial messages ---
+    user_content = (
+        f"## {vertex.title}\n\n{vertex.description}\n\n"
+        f"## Context\n{context}"
+    )
+
+    # For SETUP vertices, inject conversation history so the agent
+    # can see incrementally built requirements (e.g. multiple user messages)
+    if vertex.vertex_type == VertexType.SETUP:
+        chat_history_data = state.get("chat_history")
+        if chat_history_data:
+            try:
+                chat_payload = ChatHistoryPayload(**chat_history_data) if isinstance(chat_history_data, dict) else chat_history_data
+                history_parts = []
+                for block in chat_payload.summary_blocks:
+                    history_parts.append(f"[summary] {block.summary}")
+                for msg in chat_payload.recent_messages:
+                    history_parts.append(f"[{msg.role}] {msg.content}")
+                if history_parts:
+                    user_content += "\n\n## Conversation History (requirements may span multiple messages)\n"
+                    user_content += "\n".join(history_parts)
+            except Exception:
+                pass  # Don't fail vertex execution over history formatting
+
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": (
-                f"## {vertex.title}\n\n{vertex.description}\n\n"
-                f"## Context\n{context}"
-            ),
-        },
+        {"role": "user", "content": user_content},
     ]
 
     # --- Extract IDs for tool execution ---
@@ -812,6 +867,18 @@ async def _agentic_vertex(
                 )
             except asyncio.TimeoutError:
                 tool_result = f"Error: Tool '{tool_name}' timed out after {_VERTEX_TOOL_TIMEOUT_S}s"
+            except AskUserInterrupt as e:
+                # Agent wants to ask user — interrupt graph execution
+                logger.info("VERTEX %s: ask_user interrupt: %s", vertex.id, e.question)
+                user_response = interrupt({
+                    "type": "clarification_request",
+                    "action": "clarify",
+                    "description": e.question,
+                })
+                if isinstance(user_response, dict):
+                    tool_result = f"User answered: {user_response.get('reason', str(user_response))}"
+                else:
+                    tool_result = f"User answered: {user_response}"
             except Exception as e:
                 tool_result = f"Error executing {tool_name}: {e}"
 

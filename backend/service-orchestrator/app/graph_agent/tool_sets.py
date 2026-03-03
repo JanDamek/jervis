@@ -27,6 +27,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     from app.tools.definitions import (
         TOOL_KB_SEARCH,
         TOOL_WEB_SEARCH,
+        TOOL_ASK_USER,
         TOOL_LIST_PROJECT_FILES,
         TOOL_GET_REPOSITORY_INFO,
         TOOL_GET_RECENT_COMMITS,
@@ -128,8 +129,10 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         return _base + [_request_tools]
 
     # SETUP: project scaffolding + environment provisioning
+    # Includes ask_user for confirming technology choices (advisor pattern)
     if vertex_type == VertexType.SETUP:
         return _base + ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
+            TOOL_ASK_USER,
             TOOL_GET_REPOSITORY_INFO,
             TOOL_GET_REPOSITORY_STRUCTURE,
             TOOL_GET_TECHNOLOGY_STACK,
@@ -161,6 +164,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         TOOL_GET_INDEXED_ITEMS,
         TOOL_STORE_KNOWLEDGE,
         TOOL_WEB_SEARCH,
+        TOOL_ASK_USER,
         TOOL_LIST_PROJECT_FILES,
         TOOL_GET_REPOSITORY_INFO,
         TOOL_GET_RECENT_COMMITS,
@@ -191,7 +195,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         "environment": ENVIRONMENT_TOOLS,
         "project_management": PROJECT_MANAGEMENT_TOOLS,
         "setup": ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
-                 TOOL_DISPATCH_CODING_AGENT,
+                 TOOL_ASK_USER, TOOL_DISPATCH_CODING_AGENT,
                  TOOL_GET_REPOSITORY_INFO, TOOL_GET_REPOSITORY_STRUCTURE],
     }
 

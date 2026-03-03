@@ -491,8 +491,10 @@ async def execute_tool(
             result = await _execute_init_workspace(
                 project_id=arguments.get("project_id", ""),
             )
-        elif tool_name == "list_templates":
-            result = await _execute_list_templates()
+        elif tool_name in ("get_stack_recommendations", "list_templates"):
+            result = await _execute_get_stack_recommendations(
+                requirements=arguments.get("requirements", ""),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2807,11 +2809,71 @@ async def _execute_init_workspace(project_id: str) -> str:
         return f"Error initializing workspace: {str(e)[:300]}"
 
 
-async def _execute_list_templates() -> str:
-    """List available project scaffolding templates."""
-    templates = [
-        "kmp — Kotlin Multiplatform + Compose (Desktop/Android/iOS/Web)",
-        "spring-boot — Spring Boot 3.x (Kotlin) with Web, MongoDB, PostgreSQL",
-        "kmp-spring — Full-stack: KMP Compose frontend + Spring Boot backend",
-    ]
-    return "Available project templates:\n" + "\n".join(f"  - {t}" for t in templates)
+async def _execute_get_stack_recommendations(requirements: str) -> str:
+    """Get technology stack recommendations from the advisor service."""
+    if not requirements:
+        return "Error: requirements parameter is required. Pass the full project requirements."
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/project-advisor/recommendations",
+                json={"requirements": requirements},
+            )
+            if resp.status_code != 200:
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+
+            # Format recommendations for the LLM
+            parts = []
+
+            # Archetype
+            arch = data.get("archetype", {})
+            parts.append(f"## Recommended Architecture: {arch.get('name', 'unknown')}")
+            parts.append(f"Type: {arch.get('type', '')}")
+            parts.append(f"Description: {arch.get('description', '')}")
+            if arch.get("pros"):
+                parts.append(f"Pros: {', '.join(arch['pros'])}")
+            if arch.get("cons"):
+                parts.append(f"Cons: {', '.join(arch['cons'])}")
+            parts.append(f"Best for: {arch.get('bestFor', '')}")
+
+            # Platforms
+            platforms = data.get("platforms", [])
+            if platforms:
+                parts.append("\n## Platform Recommendations")
+                for p in platforms:
+                    rec = "RECOMMENDED" if p.get("recommended") else "optional"
+                    parts.append(f"- {p['platform']} [{rec}]: {p.get('rationale', '')}")
+                    for alt in p.get("alternatives", []):
+                        parts.append(f"    Alternative: {alt['name']} — {alt['description']}")
+
+            # Storage
+            storage = data.get("storage", [])
+            if storage:
+                parts.append("\n## Storage Recommendations")
+                for s in storage:
+                    rec = "RECOMMENDED" if s.get("recommended") else "optional"
+                    parts.append(f"- {s['technology']} [{rec}]: {s.get('useCase', '')}")
+                    parts.append(f"    Spring dependency: {s.get('springDependency', '')}")
+                    if s.get("pros"):
+                        parts.append(f"    Pros: {', '.join(s['pros'])}")
+                    if s.get("cons"):
+                        parts.append(f"    Cons: {', '.join(s['cons'])}")
+
+            # Features
+            features = data.get("features", [])
+            if features:
+                parts.append("\n## Feature Recommendations")
+                for f in features:
+                    parts.append(f"- {f['feature']}:")
+                    for opt in f.get("options", []):
+                        parts.append(f"    Option: {opt['name']} — {opt['description']}")
+
+            # Scaffolding instructions (for coding agent dispatch later)
+            instructions = data.get("scaffoldingInstructions", "")
+            if instructions:
+                parts.append(f"\n## Scaffolding Instructions (for coding agent)\n{instructions}")
+
+            return "\n".join(parts)
+    except Exception as e:
+        return f"Error getting stack recommendations: {str(e)[:300]}"

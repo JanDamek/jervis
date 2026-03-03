@@ -7,255 +7,321 @@ import org.springframework.stereotype.Service
 private val logger = KotlinLogging.logger {}
 
 /**
- * Provides project scaffolding templates for common technology stacks.
+ * Project technology advisor — returns structured recommendations
+ * with pro/contra for each technology choice.
  *
- * Returns file trees and content that can be committed to a new repository
- * by the coding agent or orchestrator. Supports:
- * - KMP (Kotlin Multiplatform) with Compose
- * - Spring Boot (Kotlin)
- * - KMP + Spring Boot (full-stack)
+ * Does NOT generate files. The SETUP vertex uses these recommendations
+ * to ask the user (via ask_user tool) and then dispatches the coding
+ * agent to scaffold the project based on confirmed choices.
  *
- * Templates are minimal but production-ready: proper Gradle setup,
- * .gitignore, CI config, and basic project structure.
+ * This keeps the LLM in control of actual code generation (which it
+ * does better than hard-coded templates) while providing structured
+ * decision points for user confirmation.
  */
 @Service
 class ProjectTemplateService {
 
     /**
-     * Get available template types with descriptions.
+     * Get technology recommendations based on project requirements.
+     *
+     * @param requirements Free-text description of what the user wants
+     * @return Structured recommendations across all decision dimensions
      */
-    fun listTemplates(): List<ProjectTemplate> = TEMPLATES
+    fun getRecommendations(requirements: String): ProjectRecommendations {
+        val platforms = detectPlatforms(requirements)
+        val storage = detectStorage(requirements)
+        val features = detectFeatures(requirements)
+
+        return ProjectRecommendations(
+            archetype = recommendArchetype(platforms, storage),
+            platforms = platforms,
+            storage = storage,
+            features = features,
+            scaffoldingInstructions = buildScaffoldingInstructions(platforms, storage, features),
+        )
+    }
 
     /**
-     * Generate file tree for a given template type.
-     *
-     * @param templateType Template identifier (kmp, spring-boot, kmp-spring)
-     * @param projectName  Project/module name (used in package names, settings)
-     * @param packageName  Base package (e.g. com.example.myapp)
-     * @return List of [TemplateFile] with relative paths and content
+     * List available archetypes with descriptions.
      */
-    fun generateTemplate(
-        templateType: String,
-        projectName: String,
-        packageName: String = "com.example.$projectName",
-    ): List<TemplateFile> {
-        return when (templateType.lowercase()) {
-            "kmp" -> generateKmpTemplate(projectName, packageName)
-            "spring-boot", "spring", "springboot" -> generateSpringBootTemplate(projectName, packageName)
-            "kmp-spring", "fullstack", "full-stack" -> generateKmpSpringTemplate(projectName, packageName)
-            else -> throw IllegalArgumentException(
-                "Unknown template type: $templateType. Available: kmp, spring-boot, kmp-spring",
-            )
+    fun listArchetypes(): List<StackArchetype> = ARCHETYPES
+
+    private fun detectPlatforms(req: String): List<PlatformRecommendation> {
+        val lower = req.lowercase()
+        val platforms = mutableListOf<PlatformRecommendation>()
+
+        if ("android" in lower || "mobile" in lower || "telefon" in lower) {
+            platforms.add(PlatformRecommendation(
+                platform = "android",
+                recommended = true,
+                rationale = "Native Android via Kotlin Multiplatform — shared UI with Compose",
+            ))
+        }
+        if ("ios" in lower || "iphone" in lower || "ipad" in lower || "apple" in lower || "mobile" in lower) {
+            platforms.add(PlatformRecommendation(
+                platform = "ios",
+                recommended = true,
+                rationale = "iOS via KMP + Compose Multiplatform — shared business logic and UI",
+            ))
+        }
+        if ("web" in lower || "browser" in lower || "prohlížeč" in lower) {
+            platforms.add(PlatformRecommendation(
+                platform = "web",
+                recommended = true,
+                rationale = "Web via Kotlin/Wasm + Compose — same codebase, runs in browser",
+                alternatives = listOf(
+                    Alternative("React/Next.js frontend", "Better SEO, larger ecosystem, but separate codebase"),
+                    Alternative("Kotlin/JS", "More mature than Wasm but less performant"),
+                ),
+            ))
+        }
+        if ("desktop" in lower || "pc" in lower || "windows" in lower || "mac" in lower || "linux" in lower) {
+            platforms.add(PlatformRecommendation(
+                platform = "desktop",
+                recommended = true,
+                rationale = "Desktop JVM via Compose Desktop — native performance, shared UI",
+            ))
+        }
+
+        // If nothing detected, recommend all
+        if (platforms.isEmpty()) {
+            platforms.addAll(listOf(
+                PlatformRecommendation("android", true, "Default KMP target"),
+                PlatformRecommendation("ios", true, "Default KMP target"),
+                PlatformRecommendation("desktop", true, "Default KMP target"),
+                PlatformRecommendation("web", false,
+                    "Kotlin/Wasm is experimental — consider adding later",
+                    listOf(Alternative("Add later", "Wait for Wasm stability")),
+                ),
+            ))
+        }
+
+        return platforms
+    }
+
+    private fun detectStorage(req: String): List<StorageRecommendation> {
+        val lower = req.lowercase()
+        val storage = mutableListOf<StorageRecommendation>()
+
+        if ("mongo" in lower || "nosql" in lower || "dokument" in lower || "document" in lower) {
+            storage.add(StorageRecommendation(
+                technology = "MongoDB",
+                recommended = true,
+                useCase = "Flexible document storage — good for catalogs, user preferences, notes",
+                springDependency = "spring-boot-starter-data-mongodb",
+                pros = listOf("Schema-flexible", "Easy JSON storage", "Good for nested data"),
+                cons = listOf("No ACID transactions across collections", "No joins"),
+            ))
+        }
+        if ("postgre" in lower || "sql" in lower || "relační" in lower || "relational" in lower) {
+            storage.add(StorageRecommendation(
+                technology = "PostgreSQL",
+                recommended = true,
+                useCase = "Relational data — users, borrowing records, relationships between entities",
+                springDependency = "spring-boot-starter-data-jpa + postgresql",
+                pros = listOf("ACID transactions", "Complex queries/joins", "Mature ecosystem"),
+                cons = listOf("Rigid schema", "Migrations needed for changes"),
+            ))
+        }
+        if ("redis" in lower || "cache" in lower || "keš" in lower) {
+            storage.add(StorageRecommendation(
+                technology = "Redis",
+                recommended = false,
+                useCase = "Caching layer — session storage, rate limiting",
+                springDependency = "spring-boot-starter-data-redis",
+                pros = listOf("Extremely fast", "Good for sessions/caching"),
+                cons = listOf("Not a primary database", "Data loss on restart without persistence"),
+            ))
+        }
+
+        // If nothing detected, recommend sensible defaults
+        if (storage.isEmpty()) {
+            storage.addAll(listOf(
+                StorageRecommendation(
+                    "PostgreSQL", true,
+                    "Primary relational storage for structured data",
+                    "spring-boot-starter-data-jpa + postgresql",
+                    listOf("ACID", "Joins", "Mature"), listOf("Schema migrations"),
+                ),
+            ))
+        }
+
+        return storage
+    }
+
+    private fun detectFeatures(req: String): List<FeatureRecommendation> {
+        val lower = req.lowercase()
+        val features = mutableListOf<FeatureRecommendation>()
+
+        if ("uživatel" in lower || "user" in lower || "login" in lower || "přihlášení" in lower || "auth" in lower) {
+            features.add(FeatureRecommendation(
+                feature = "Authentication",
+                recommended = true,
+                options = listOf(
+                    Alternative("Spring Security + JWT", "Standard, stateless, good for API"),
+                    Alternative("Spring Security + OAuth2", "Federated login (Google, GitHub)"),
+                    Alternative("Session-based", "Simple, but doesn't scale horizontally"),
+                ),
+            ))
+        }
+        if ("kniha" in lower || "book" in lower || "library" in lower || "knihovna" in lower ||
+            "katalog" in lower || "catalog" in lower
+        ) {
+            features.add(FeatureRecommendation(
+                feature = "External data sources",
+                recommended = true,
+                options = listOf(
+                    Alternative("Google Books API", "Free, large catalog, ISBN lookup"),
+                    Alternative("Open Library API", "Open data, community-driven"),
+                    Alternative("ČBDB (databázeknih.cz)", "Czech book database — scraping or API if available"),
+                    Alternative("Goodreads (unofficial)", "Reviews and ratings, limited API"),
+                ),
+            ))
+        }
+        if ("api" in lower || "rest" in lower || "endpoint" in lower) {
+            features.add(FeatureRecommendation(
+                feature = "API Style",
+                recommended = true,
+                options = listOf(
+                    Alternative("REST + JSON", "Standard, well-tooled, easy to debug"),
+                    Alternative("gRPC / kRPC", "Type-safe, fast, good for KMP clients"),
+                    Alternative("GraphQL", "Flexible queries, but more complex setup"),
+                ),
+            ))
+        }
+
+        return features
+    }
+
+    private fun recommendArchetype(
+        platforms: List<PlatformRecommendation>,
+        storage: List<StorageRecommendation>,
+    ): StackArchetype {
+        val hasMultiplePlatforms = platforms.count { it.recommended } > 1
+        val hasBackendStorage = storage.isNotEmpty()
+
+        return when {
+            hasMultiplePlatforms && hasBackendStorage -> ARCHETYPES.first { it.type == "kmp-spring" }
+            hasMultiplePlatforms -> ARCHETYPES.first { it.type == "kmp" }
+            hasBackendStorage -> ARCHETYPES.first { it.type == "spring-boot" }
+            else -> ARCHETYPES.first { it.type == "kmp-spring" }
         }
     }
 
-    private fun generateKmpTemplate(projectName: String, packageName: String): List<TemplateFile> {
-        val packagePath = packageName.replace('.', '/')
-        return listOf(
-            TemplateFile("settings.gradle.kts", """
-                rootProject.name = "$projectName"
+    private fun buildScaffoldingInstructions(
+        platforms: List<PlatformRecommendation>,
+        storage: List<StorageRecommendation>,
+        features: List<FeatureRecommendation>,
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("After user confirms choices, dispatch coding agent with these instructions:")
+        sb.appendLine()
+        sb.appendLine("## Platforms")
+        for (p in platforms.filter { it.recommended }) {
+            sb.appendLine("- ${p.platform}: ${p.rationale}")
+        }
+        sb.appendLine()
+        sb.appendLine("## Storage")
+        for (s in storage.filter { it.recommended }) {
+            sb.appendLine("- ${s.technology}: ${s.springDependency}")
+        }
+        sb.appendLine()
+        sb.appendLine("## Key instructions for coding agent")
+        sb.appendLine("- Use Kotlin 2.3.0, Compose 1.9.3, Spring Boot 3.4.x")
+        sb.appendLine("- KMP targets: ${platforms.filter { it.recommended }.joinToString { it.platform }}")
+        sb.appendLine("- Create proper Gradle multi-module structure")
+        sb.appendLine("- Include .gitignore, README.md with setup instructions")
+        sb.appendLine("- Do NOT hardcode credentials — use environment variables / application.yml")
 
-                pluginManagement {
-                    repositories {
-                        google()
-                        mavenCentral()
-                        gradlePluginPortal()
-                    }
-                }
+        if (features.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("## Features to scaffold")
+            for (f in features) {
+                sb.appendLine("- ${f.feature}")
+            }
+        }
 
-                dependencyResolutionManagement {
-                    repositories {
-                        google()
-                        mavenCentral()
-                    }
-                }
-            """.trimIndent()),
-            TemplateFile("build.gradle.kts", """
-                plugins {
-                    alias(libs.plugins.kotlinMultiplatform)
-                    alias(libs.plugins.composeMultiplatform)
-                    alias(libs.plugins.composeCompiler)
-                    alias(libs.plugins.androidApplication) apply false
-                }
-
-                kotlin {
-                    jvm("desktop")
-
-                    androidTarget {
-                        compilations.all {
-                            kotlinOptions { jvmTarget = "17" }
-                        }
-                    }
-
-                    iosArm64()
-                    iosSimulatorArm64()
-
-                    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
-                    wasmJs {
-                        browser()
-                    }
-
-                    sourceSets {
-                        val commonMain by getting {
-                            dependencies {
-                                implementation(compose.runtime)
-                                implementation(compose.foundation)
-                                implementation(compose.material3)
-                            }
-                        }
-                        val desktopMain by getting
-                        val androidMain by getting
-                        val iosMain by creating { dependsOn(commonMain) }
-                        val iosArm64Main by getting { dependsOn(iosMain) }
-                        val iosSimulatorArm64Main by getting { dependsOn(iosMain) }
-                        val wasmJsMain by getting
-                    }
-                }
-            """.trimIndent()),
-            TemplateFile("src/commonMain/kotlin/$packagePath/App.kt", """
-                package $packageName
-
-                import androidx.compose.material3.Text
-                import androidx.compose.runtime.Composable
-
-                @Composable
-                fun App() {
-                    Text("Hello from $projectName!")
-                }
-            """.trimIndent()),
-            TemplateFile(".gitignore", GITIGNORE_KOTLIN),
-        )
-    }
-
-    private fun generateSpringBootTemplate(projectName: String, packageName: String): List<TemplateFile> {
-        val packagePath = packageName.replace('.', '/')
-        return listOf(
-            TemplateFile("settings.gradle.kts", """
-                rootProject.name = "$projectName"
-            """.trimIndent()),
-            TemplateFile("build.gradle.kts", """
-                plugins {
-                    kotlin("jvm") version "2.3.0"
-                    kotlin("plugin.spring") version "2.3.0"
-                    id("org.springframework.boot") version "3.4.0"
-                    id("io.spring.dependency-management") version "1.1.6"
-                }
-
-                group = "$packageName"
-                version = "0.0.1-SNAPSHOT"
-
-                java {
-                    toolchain { languageVersion.set(JavaLanguageVersion.of(21)) }
-                }
-
-                repositories {
-                    mavenCentral()
-                }
-
-                dependencies {
-                    implementation("org.springframework.boot:spring-boot-starter-web")
-                    implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
-                    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-                    runtimeOnly("org.postgresql:postgresql")
-                    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-                    implementation("org.jetbrains.kotlin:kotlin-reflect")
-                    testImplementation("org.springframework.boot:spring-boot-starter-test")
-                }
-            """.trimIndent()),
-            TemplateFile("src/main/kotlin/$packagePath/Application.kt", """
-                package $packageName
-
-                import org.springframework.boot.autoconfigure.SpringBootApplication
-                import org.springframework.boot.runApplication
-
-                @SpringBootApplication
-                class Application
-
-                fun main(args: Array<String>) {
-                    runApplication<Application>(*args)
-                }
-            """.trimIndent()),
-            TemplateFile("src/main/resources/application.yml", """
-                spring:
-                  application:
-                    name: $projectName
-                  data:
-                    mongodb:
-                      uri: mongodb://localhost:27017/$projectName
-                  datasource:
-                    url: jdbc:postgresql://localhost:5432/$projectName
-                    username: postgres
-                    password: postgres
-                  jpa:
-                    hibernate:
-                      ddl-auto: update
-                    show-sql: false
-
-                server:
-                  port: 8080
-            """.trimIndent()),
-            TemplateFile(".gitignore", GITIGNORE_KOTLIN),
-        )
-    }
-
-    private fun generateKmpSpringTemplate(projectName: String, packageName: String): List<TemplateFile> {
-        val backendFiles = generateSpringBootTemplate("$projectName-server", "$packageName.server")
-            .map { TemplateFile("backend/${it.path}", it.content) }
-        val frontendFiles = generateKmpTemplate("$projectName-ui", "$packageName.ui")
-            .map { TemplateFile("frontend/${it.path}", it.content) }
-
-        val rootSettings = TemplateFile("settings.gradle.kts", """
-            rootProject.name = "$projectName"
-
-            include(":backend")
-            include(":frontend")
-        """.trimIndent())
-
-        return listOf(rootSettings, TemplateFile(".gitignore", GITIGNORE_KOTLIN)) +
-            backendFiles + frontendFiles
+        return sb.toString()
     }
 
     companion object {
-        private val TEMPLATES = listOf(
-            ProjectTemplate(
+        private val ARCHETYPES = listOf(
+            StackArchetype(
                 type = "kmp",
                 name = "Kotlin Multiplatform + Compose",
-                description = "KMP project with Compose Multiplatform UI (Desktop/Android/iOS/Web via Wasm)",
+                description = "Shared UI and business logic across Desktop, Android, iOS, Web (Wasm)",
+                pros = listOf("Single codebase", "Shared UI with Compose", "Native performance"),
+                cons = listOf("Compose for iOS/Web is newer", "Smaller ecosystem than native"),
+                bestFor = "Apps with shared UI across all platforms",
             ),
-            ProjectTemplate(
+            StackArchetype(
                 type = "spring-boot",
-                name = "Spring Boot (Kotlin)",
-                description = "Spring Boot 3.x backend with Kotlin, Web, MongoDB, PostgreSQL/JPA",
+                name = "Spring Boot (Kotlin) Backend",
+                description = "Production backend with REST API, MongoDB, PostgreSQL, and Spring ecosystem",
+                pros = listOf("Mature ecosystem", "Auto-configuration", "Spring Data for both Mongo and JPA"),
+                cons = listOf("JVM memory overhead", "Startup time"),
+                bestFor = "Backend services, APIs, data processing",
             ),
-            ProjectTemplate(
+            StackArchetype(
                 type = "kmp-spring",
                 name = "KMP + Spring Boot (Full-stack)",
-                description = "Multi-module project: KMP Compose frontend + Spring Boot backend",
+                description = "Multi-module: KMP Compose frontend + Spring Boot backend",
+                pros = listOf("Full-stack Kotlin", "Shared DTOs", "Type-safe API layer"),
+                cons = listOf("Complex build setup", "Two Gradle configurations to maintain"),
+                bestFor = "Full-stack apps where you control both client and server",
             ),
         )
-
-        private val GITIGNORE_KOTLIN = """
-            .gradle/
-            build/
-            !gradle/wrapper/gradle-wrapper.jar
-            .idea/
-            *.iml
-            out/
-            .kotlin/
-            local.properties
-        """.trimIndent()
     }
 }
 
+// --- Data classes ---
+
 @Serializable
-data class ProjectTemplate(
+data class StackArchetype(
     val type: String,
+    val name: String,
+    val description: String,
+    val pros: List<String> = emptyList(),
+    val cons: List<String> = emptyList(),
+    val bestFor: String = "",
+)
+
+@Serializable
+data class PlatformRecommendation(
+    val platform: String,
+    val recommended: Boolean,
+    val rationale: String,
+    val alternatives: List<Alternative> = emptyList(),
+)
+
+@Serializable
+data class StorageRecommendation(
+    val technology: String,
+    val recommended: Boolean,
+    val useCase: String,
+    val springDependency: String,
+    val pros: List<String> = emptyList(),
+    val cons: List<String> = emptyList(),
+)
+
+@Serializable
+data class FeatureRecommendation(
+    val feature: String,
+    val recommended: Boolean,
+    val options: List<Alternative> = emptyList(),
+)
+
+@Serializable
+data class Alternative(
     val name: String,
     val description: String,
 )
 
 @Serializable
-data class TemplateFile(
-    val path: String,
-    val content: String,
+data class ProjectRecommendations(
+    val archetype: StackArchetype,
+    val platforms: List<PlatformRecommendation>,
+    val storage: List<StorageRecommendation>,
+    val features: List<FeatureRecommendation>,
+    val scaffoldingInstructions: String,
 )

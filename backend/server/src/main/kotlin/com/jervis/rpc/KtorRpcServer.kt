@@ -89,6 +89,7 @@ class KtorRpcServer(
     private val projectService: com.jervis.service.project.ProjectService,
     private val connectionService: com.jervis.service.connection.ConnectionService,
     private val gitRepoCreationService: com.jervis.service.git.GitRepositoryCreationService,
+    private val projectTemplateService: com.jervis.service.project.ProjectTemplateService,
     private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -119,7 +120,7 @@ class KtorRpcServer(
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
-                            installInternalProjectManagementApi(clientService, projectService, connectionService)
+                            installInternalProjectManagementApi(clientService, projectService, connectionService, projectTemplateService)
                             installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
 
                             get("/") {
