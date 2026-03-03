@@ -67,12 +67,13 @@ class ChatRpcImpl(
                     ChatResponseDto(
                         message = msg.content,
                         type = responseType,
-                        metadata = mapOf(
-                            "sender" to msg.role.name.lowercase(),
-                            "timestamp" to msg.timestamp.toString(),
-                            "fromHistory" to "true",
-                            "sequence" to msg.sequence.toString(),
-                        ),
+                        metadata = buildMap {
+                            put("sender", msg.role.name.lowercase())
+                            put("timestamp", msg.timestamp.toString())
+                            put("fromHistory", "true")
+                            put("sequence", msg.sequence.toString())
+                            putAll(msg.metadata)  // Preserve DB metadata (taskId, taskTitle, success, contextTaskId)
+                        },
                     ),
                 )
             }
@@ -353,8 +354,13 @@ class ChatRpcImpl(
             "[Background FAILED] $taskTitle: $summary"
         }
 
-        // Persist to DB (include taskId in metadata for "Reagovat" button)
-        val persistMetadata = if (taskId != null) metadata + ("taskId" to taskId) else metadata
+        // Persist to DB (include taskId, taskTitle, success for threading after reload)
+        val persistMetadata = buildMap {
+            putAll(metadata)
+            if (taskId != null) put("taskId", taskId)
+            put("taskTitle", taskTitle)
+            put("success", success.toString())
+        }
         chatService.saveSystemMessage(
             sessionId = session.id,
             role = MessageRole.BACKGROUND,

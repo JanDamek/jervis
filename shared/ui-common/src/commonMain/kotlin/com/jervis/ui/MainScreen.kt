@@ -27,8 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.CompressionBoundaryDto
-import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.chat.ChatDisplayItem
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
@@ -45,13 +44,14 @@ import com.jervis.ui.util.PickedFile
 fun MainScreenView(
     selectedClientId: String?,
     selectedProjectId: String?,
-    chatMessages: List<ChatMessage>,
+    displayItems: List<ChatDisplayItem>,
+    expandedThreads: Set<String>,
+    onToggleThread: (String) -> Unit,
     inputText: String,
     isLoading: Boolean,
     isOffline: Boolean = false,
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
-    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     attachments: List<PickedFile> = emptyList(),
     queueSize: Int = 0,
     onInputChanged: (String) -> Unit,
@@ -101,13 +101,14 @@ fun MainScreenView(
                         ChatContent(
                             selectedClientId = selectedClientId,
                             selectedProjectId = selectedProjectId,
-                            chatMessages = chatMessages,
+                            displayItems = displayItems,
+                            expandedThreads = expandedThreads,
+                            onToggleThread = onToggleThread,
                             inputText = inputText,
                             isLoading = isLoading,
                             isOffline = isOffline,
                             hasMore = hasMore,
                             isLoadingMore = isLoadingMore,
-                            compressionBoundaries = compressionBoundaries,
                             attachments = attachments,
                             queueSize = queueSize,
                             onInputChanged = onInputChanged,
@@ -185,13 +186,14 @@ fun MainScreenView(
 private fun ChatContent(
     selectedClientId: String?,
     selectedProjectId: String?,
-    chatMessages: List<ChatMessage>,
+    displayItems: List<ChatDisplayItem>,
+    expandedThreads: Set<String>,
+    onToggleThread: (String) -> Unit,
     inputText: String,
     isLoading: Boolean,
     isOffline: Boolean = false,
     hasMore: Boolean,
     isLoadingMore: Boolean,
-    compressionBoundaries: List<CompressionBoundaryDto>,
     attachments: List<PickedFile>,
     queueSize: Int,
     onInputChanged: (String) -> Unit,
@@ -232,10 +234,11 @@ private fun ChatContent(
 
         // Chat area
         ChatArea(
-            messages = chatMessages,
+            displayItems = displayItems,
+            expandedThreads = expandedThreads,
+            onToggleThread = onToggleThread,
             hasMore = hasMore,
             isLoadingMore = isLoadingMore,
-            compressionBoundaries = compressionBoundaries,
             orchestratorProgress = orchestratorProgress,
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
