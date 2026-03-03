@@ -223,7 +223,12 @@ class ArtifactGraphStore:
         self._db = None
 
     async def init(self) -> None:
-        """Initialize ArangoDB connection and ensure collections exist."""
+        """Initialize ArangoDB connection and ensure collections exist.
+
+        Graceful degradation: if ArangoDB is unreachable the store stays
+        disabled (``self._db`` remains ``None``) and all operations become
+        no-ops via the ``available`` property.
+        """
         def _connect():
             from arango import ArangoClient
             client = ArangoClient(hosts=settings.arango_url)
@@ -238,11 +243,15 @@ class ArtifactGraphStore:
                 db.create_collection(self.ARTIFACTS_COLLECTION)
                 logger.info("Created collection: %s", self.ARTIFACTS_COLLECTION)
 
-            # Ensure edge collections
-            for edge_col in (self.DEPS_COLLECTION, self.LINKS_COLLECTION):
-                if not db.has_collection(edge_col):
-                    db.create_collection(edge_col, edge=True)
-                    logger.info("Created edge collection: %s", edge_col)
+            # Ensure document collection for task-artifact links
+            if not db.has_collection(self.LINKS_COLLECTION):
+                db.create_collection(self.LINKS_COLLECTION)
+                logger.info("Created collection: %s", self.LINKS_COLLECTION)
+
+            # Ensure edge collection for artifact dependencies
+            if not db.has_collection(self.DEPS_COLLECTION):
+                db.create_collection(self.DEPS_COLLECTION, edge=True)
+                logger.info("Created edge collection: %s", self.DEPS_COLLECTION)
 
             # Ensure indexes
             artifacts = db.collection(self.ARTIFACTS_COLLECTION)
@@ -256,16 +265,29 @@ class ArtifactGraphStore:
             links = db.collection(self.LINKS_COLLECTION)
             links.add_persistent_index(fields=["task_graph_id"], name="idx_task_graph")
             links.add_persistent_index(fields=["vertex_id"], name="idx_vertex")
+            links.add_persistent_index(fields=["artifact_key"], name="idx_artifact_key")
 
             return db
 
-        self._db = await asyncio.to_thread(_connect)
-        logger.info("ArtifactGraphStore initialized (ArangoDB)")
+        try:
+            self._db = await asyncio.to_thread(_connect)
+            logger.info("ArtifactGraphStore initialized (ArangoDB)")
+        except Exception:
+            self._db = None
+            logger.warning(
+                "ArtifactGraphStore: ArangoDB unavailable — artifact graph disabled",
+                exc_info=True,
+            )
+
+    @property
+    def available(self) -> bool:
+        """Whether ArangoDB is connected and ready."""
+        return self._db is not None
 
     @property
     def db(self):
         if self._db is None:
-            raise RuntimeError("ArtifactGraphStore not initialized — call init() first")
+            raise RuntimeError("ArtifactGraphStore not initialized or ArangoDB unavailable")
         return self._db
 
     # -------------------------------------------------------------------
@@ -345,15 +367,22 @@ class ArtifactGraphStore:
             if not col.has(key):
                 return False
 
-            # Delete all edges referencing this artifact
+            # Delete dependency edges referencing this artifact
             full_id = f"{self.ARTIFACTS_COLLECTION}/{key}"
-            for edge_col_name in (self.DEPS_COLLECTION, self.LINKS_COLLECTION):
-                aql = f"""
-                    FOR e IN {edge_col_name}
-                    FILTER e._from == @id OR e._to == @id
-                    REMOVE e IN {edge_col_name}
-                """
-                self.db.aql.execute(aql, bind_vars={"id": full_id})
+            aql_deps = f"""
+                FOR e IN {self.DEPS_COLLECTION}
+                FILTER e._from == @id OR e._to == @id
+                REMOVE e IN {self.DEPS_COLLECTION}
+            """
+            self.db.aql.execute(aql_deps, bind_vars={"id": full_id})
+
+            # Delete task-artifact links referencing this artifact
+            aql_links = f"""
+                FOR doc IN {self.LINKS_COLLECTION}
+                FILTER doc.artifact_id == @id
+                REMOVE doc IN {self.LINKS_COLLECTION}
+            """
+            self.db.aql.execute(aql_links, bind_vars={"id": full_id})
 
             col.delete(key)
             return True
@@ -418,16 +447,19 @@ class ArtifactGraphStore:
     # -------------------------------------------------------------------
 
     async def link_task_to_artifact(self, link: TaskArtifactLink) -> str:
-        """Link a TaskGraph vertex to an artifact it touches."""
+        """Link a TaskGraph vertex to an artifact it touches.
+
+        Stored as a document (not edge) with explicit artifact_key reference.
+        """
         art_key = _safe_key(link.artifact_key)
-        edge_key = _safe_key(
+        doc_key = _safe_key(
             f"{link.task_graph_id}__{link.vertex_id}--{link.touch_kind.value}--{link.artifact_key}"
         )
 
         doc = {
-            "_key": edge_key,
-            "_from": f"{self.ARTIFACTS_COLLECTION}/{art_key}",
-            "_to": f"{self.ARTIFACTS_COLLECTION}/{art_key}",  # self-edge to artifact
+            "_key": doc_key,
+            "artifact_key": art_key,
+            "artifact_id": f"{self.ARTIFACTS_COLLECTION}/{art_key}",
             "vertex_id": link.vertex_id,
             "task_graph_id": link.task_graph_id,
             "touch_kind": link.touch_kind.value,
@@ -436,11 +468,11 @@ class ArtifactGraphStore:
 
         def _link():
             col = self.db.collection(self.LINKS_COLLECTION)
-            if col.has(edge_key):
+            if col.has(doc_key):
                 col.update(doc)
             else:
                 col.insert(doc)
-            return edge_key
+            return doc_key
 
         return await asyncio.to_thread(_link)
 
@@ -450,7 +482,7 @@ class ArtifactGraphStore:
             aql = """
                 FOR link IN @@links
                 FILTER link.task_graph_id == @graph_id AND link.vertex_id == @vertex_id
-                LET artifact = DOCUMENT(link._from)
+                LET artifact = DOCUMENT(link.artifact_id)
                 RETURN MERGE(link, {artifact: artifact})
             """
             cursor = self.db.aql.execute(aql, bind_vars={
@@ -545,7 +577,7 @@ class ArtifactGraphStore:
 
                 FOR art_id IN all_affected
                     FOR link IN {self.LINKS_COLLECTION}
-                    FILTER link._from == art_id AND link.task_graph_id == @graph_id
+                    FILTER link.artifact_id == art_id AND link.task_graph_id == @graph_id
                     LET artifact = DOCUMENT(art_id)
                     RETURN {{
                         vertex_id: link.vertex_id,
@@ -587,7 +619,7 @@ class ArtifactGraphStore:
                 FOR link IN {self.LINKS_COLLECTION}
                 FILTER link.task_graph_id == @graph_id
                 AND link.touch_kind IN ["modifies", "renames", "deletes", "creates"]
-                COLLECT artifact_id = link._from INTO grouped
+                COLLECT artifact_id = link.artifact_id INTO grouped
                 LET artifact = DOCUMENT(artifact_id)
                 FILTER LENGTH(grouped) > 1
                 RETURN {{

@@ -176,6 +176,12 @@ async def node_select_next(state: GraphAgentState) -> dict:
         return {"current_vertex_id": None}
 
     graph = TaskGraph(**graph_data)
+
+    # Cancellation check — stop scheduling new vertices if cancelled
+    if graph.status == GraphStatus.CANCELLED:
+        logger.info("Graph %s cancelled — stopping vertex scheduling", graph.id)
+        return {"task_graph": graph.model_dump(), "current_vertex_id": None}
+
     ready = get_ready_vertices(graph)
 
     if not ready:
@@ -533,6 +539,13 @@ async def _agentic_vertex(
 
     while iteration < _MAX_VERTEX_TOOL_ITERATIONS:
         iteration += 1
+
+        # --- Cancellation check: bail out if graph was cancelled externally ---
+        graph = state.get("graph")
+        if graph and graph.status == GraphStatus.CANCELLED:
+            logger.info("Vertex %s: graph cancelled, aborting agentic loop", vertex.id)
+            vertex.status = VertexStatus.CANCELLED
+            return ("Cancelled by user.", "Cancelled")
 
         response = await llm_with_cloud_fallback(
             state=state,
