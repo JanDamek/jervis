@@ -200,7 +200,7 @@ class ChatViewModel(
             text = text,
             contextId = projectId,
             messageType = ChatMessage.MessageType.USER_MESSAGE,
-            metadata = if (taskContext != null) mapOf("contextTaskId" to taskContext) else emptyMap(),
+            metadata = if (!taskContext.isNullOrBlank()) mapOf("contextTaskId" to taskContext) else emptyMap(),
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
@@ -228,7 +228,7 @@ class ChatViewModel(
                     clientMessageId = clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
-                    contextTaskId = taskContext,
+                    contextTaskId = taskContext?.takeIf { it.isNotBlank() },
                 )
                 println("=== Message sent successfully (RPC) ===")
 

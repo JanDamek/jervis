@@ -419,25 +419,23 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    // "Reagovat" button — sends contextTaskId to chat
-                    val taskId = message.metadata["taskId"]
-                    if (taskId != null) {
-                        TextButton(
-                            onClick = { onReplyToTask(taskId) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Reagovat",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+                    // "Reagovat" button — always visible, taskId may be absent on old messages
+                    val taskId = message.metadata["taskId"] ?: ""
+                    TextButton(
+                        onClick = { onReplyToTask(taskId) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Reagovat",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
             }
