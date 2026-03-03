@@ -429,15 +429,21 @@ class ChatViewModel(
 
     fun loadMoreHistory() {
         val projectId = selectedProjectId.value ?: ""
-        val beforeId = oldestMessageId ?: return
+        val beforeId = oldestMessageId
+        if (beforeId == null) {
+            println("loadMoreHistory: oldestMessageId is null, skipping")
+            return
+        }
         if (_isLoadingMore.value) return
 
+        println("loadMoreHistory: loading before=$beforeId")
         scope.launch {
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
                     limit = 10, beforeMessageId = beforeId,
                 )
+                println("loadMoreHistory: got ${history.messages.size} messages, hasMore=${history.hasMore}, oldestId=${history.oldestMessageId}")
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
                         ChatMessage.Sender.Me

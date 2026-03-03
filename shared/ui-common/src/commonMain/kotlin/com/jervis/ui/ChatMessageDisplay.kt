@@ -60,7 +60,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,15 +95,16 @@ internal fun ChatArea(
     val reversedItems = remember(displayItems) { displayItems.asReversed() }
 
     // Auto-load older messages when scrolling near the top
-    LaunchedEffect(listState, hasMore, isLoadingMore) {
-        snapshotFlow {
+    val nearTop by remember {
+        derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = listState.layoutInfo.totalItemsCount
-            lastVisible to totalItems
-        }.collect { (lastVisible, totalItems) ->
-            if (hasMore && !isLoadingMore && totalItems > 0 && lastVisible >= totalItems - 2) {
-                onLoadMore()
-            }
+            totalItems > 0 && lastVisible >= totalItems - 3
+        }
+    }
+    LaunchedEffect(nearTop, hasMore, isLoadingMore) {
+        if (nearTop && hasMore && !isLoadingMore) {
+            onLoadMore()
         }
     }
 
