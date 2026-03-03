@@ -343,7 +343,18 @@ async def status(thread_id: str):
         status: "running" | "interrupted" | "done" | "error" | "unknown"
         Plus additional fields depending on status.
     """
-    graph_state = await get_graph_state(thread_id)
+    # Try Graph Agent checkpointer first (if enabled), then fall back to legacy
+    graph_state = None
+    if settings.use_graph_agent:
+        try:
+            from app.graph_agent.langgraph_runner import _get_compiled_graph
+            compiled = _get_compiled_graph()
+            config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+            graph_state = await compiled.aget_state(config)
+        except Exception:
+            pass  # Fall through to legacy checkpointer
+    if graph_state is None:
+        graph_state = await get_graph_state(thread_id)
 
     if graph_state is None:
         return {"status": "unknown", "thread_id": thread_id}
@@ -399,6 +410,90 @@ async def status(thread_id: str):
         }
 
     return {"status": "unknown", "thread_id": thread_id}
+
+
+@app.post("/approve/{thread_id}")
+async def approve(thread_id: str, request: Request):
+    """Resume an interrupted orchestration with user's approval/clarification response.
+
+    Called by Kotlin PythonOrchestratorClient.approve() after user responds
+    to an ask_user interrupt. Fire-and-forget: resumes the graph in background,
+    result pushed via status callback.
+
+    Request body: {approved: bool, reason: str?, modification: str?, chat_history: dict?}
+    """
+    body = await request.json()
+    approved = body.get("approved", False)
+    reason = body.get("reason")
+    modification = body.get("modification")
+    chat_history = body.get("chat_history")
+
+    logger.info(
+        "APPROVE_START | thread_id=%s | approved=%s | reason=%s",
+        thread_id, approved, reason,
+    )
+
+    # Build resume value that the interrupt() call will receive
+    resume_value = {
+        "approved": approved,
+        "reason": reason or "",
+        "modification": modification,
+    }
+
+    async def _run_resume():
+        try:
+            if settings.use_graph_agent:
+                from app.graph_agent.langgraph_runner import _get_compiled_graph
+                from langgraph.types import Command
+                compiled = _get_compiled_graph()
+                config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+
+                # Update chat_history if provided
+                if chat_history:
+                    await compiled.aupdate_state(config, {"chat_history": chat_history})
+
+                final_state = await compiled.ainvoke(
+                    Command(resume=resume_value), config=config,
+                )
+            else:
+                from app.graph.orchestrator import resume_orchestration
+                final_state = await resume_orchestration(
+                    thread_id=thread_id,
+                    resume_value=resume_value,
+                    chat_history=chat_history,
+                )
+
+            # Report completion
+            # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" or "graph-{task_id}-{uuid}"
+            parts = thread_id.split("-")
+            task_id = parts[1] if len(parts) >= 2 else thread_id
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id=thread_id,
+                status="done",
+                summary=final_state.get("final_result", ""),
+                branch=final_state.get("branch"),
+                artifacts=final_state.get("artifacts", []),
+                keep_environment_running=final_state.get("keep_environment_running", False),
+            )
+        except asyncio.CancelledError:
+            logger.info("APPROVE_INTERRUPTED | thread_id=%s — preempted", thread_id)
+        except Exception as e:
+            logger.exception("APPROVE_FAILED | thread_id=%s: %s", thread_id, e)
+            parts = thread_id.split("-")
+            task_id = parts[1] if len(parts) >= 2 else thread_id
+            await kotlin_client.report_status_change(
+                task_id=task_id,
+                thread_id=thread_id,
+                status="error",
+                error=str(e),
+            )
+        finally:
+            _active_tasks.pop(thread_id, None)
+
+    task = asyncio.create_task(_run_resume())
+    _active_tasks[thread_id] = task
+    return {"status": "resuming", "thread_id": thread_id}
 
 
 @app.post("/interrupt/{thread_id}")
