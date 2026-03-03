@@ -185,6 +185,24 @@ async def decompose_vertex(
 
 _DECOMPOSE_SYSTEM_PROMPT = """You are the Task Decomposition Engine. Your job is to break down a request into discrete processing vertices (sub-tasks) with dependencies between them.
 
+CRITICAL: DISTINGUISH DISCUSSION FROM IMPLEMENTATION
+
+Before decomposing, determine if the user is:
+A) **Discussing / specifying requirements** — vague or incomplete request, no explicit implementation command
+   → Return a SINGLE "executor" vertex that responds conversationally: asks clarifying questions, suggests options, helps refine requirements. Do NOT create setup/executor/coding vertices. Examples:
+   - "Klient by chtěl aplikaci na správu domácí knihovny" → discussion (ask: what platforms? what features? what storage?)
+   - "Mělo by to mít konektivitu na databázi knih" → discussion (refine: which API? what data to fetch?)
+   - "I want to build an e-commerce site" → discussion (ask: what products? what payment? mobile app?)
+
+B) **Commanding implementation** — explicit instruction to build/implement/create with sufficient context
+   → Decompose into proper vertices with setup, coding, validation etc. Examples:
+   - "Tak to implementuj" / "Build it" / "Create the project" → implementation (requirements accumulated in memories)
+   - "Napiš aplikaci pro domácí knihovnu v KMP s PostgreSQL backendem" → implementation (clear spec)
+   - "Fix the login bug in auth.py line 42" → implementation (concrete task)
+
+When requirements are vague: prefer a single conversational vertex over a complex graph.
+When requirements are clear + user commands implementation: create the full workflow.
+
 Each vertex has a RESPONSIBILITY TYPE that determines its system prompt, default tools, and behavior:
 - "investigator" — researches context (KB search, web search, codebase exploration, repository info)
 - "planner" — plans approach, breaks down further (codebase info, KB stats)
@@ -193,7 +211,7 @@ Each vertex has a RESPONSIBILITY TYPE that determines its system prompt, default
 - "validator" — verifies results: checks code, branches, commits
 - "reviewer" — reviews quality: code review, best practices, tech stack
 - "gate" — decision/approval point (proceed or stop)
-- "setup" — project scaffolding + environment provisioning (environment CRUD, deploy, coding agent)
+- "setup" — project scaffolding + environment provisioning (environment CRUD, deploy, coding agent). ONLY use when user explicitly commands implementation and requirements are sufficiently clear.
 - "decompose" — needs further breakdown before execution
 
 Each vertex gets a DEFAULT TOOL SET matching its responsibility. Vertices can also REQUEST ADDITIONAL TOOLS at runtime if needed.
@@ -230,6 +248,7 @@ Rules:
   - investigator → executor → validator (research → do → verify)
   - planner → multiple executors → reviewer (plan → parallel work → review)
   - investigator → gate → executor (research → decide → act)
+- For vague/discussion requests: return ONE executor vertex that asks clarifying questions
 
 Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning"""
 
