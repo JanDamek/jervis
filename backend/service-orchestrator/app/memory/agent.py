@@ -305,6 +305,7 @@ class MemoryAgent:
         kind_map = {
             "fact": "user_knowledge_fact",
             "decision": "user_knowledge_preference",
+            "specification": "user_knowledge_specification",
             "order": "user_knowledge_general",
             "deadline": "user_knowledge_general",
             "contact": "user_knowledge_personal",

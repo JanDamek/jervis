@@ -249,6 +249,8 @@ Rules:
   - planner → multiple executors → reviewer (plan → parallel work → review)
   - investigator → gate → executor (research → decide → act)
 - For vague/discussion requests: return ONE executor vertex that asks clarifying questions
+- Discussion vertex description MUST include: "After each confirmed decision, call store_knowledge with category 'specification' to persist it in KB. This ensures nothing is lost across sessions."
+- When user mentions another project (cross-reference), description MUST include: "Use target_project_name in store_knowledge to tag for the referenced project."
 
 Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning"""
 

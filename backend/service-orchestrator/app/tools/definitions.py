@@ -325,16 +325,19 @@ TOOL_STORE_KNOWLEDGE: dict = {
         "description": (
             "Store new knowledge or facts into the Knowledge Base. "
             "Use this when the user teaches you something new, provides definitions, "
-            "explains concepts, or shares information that should be remembered for future reference. "
+            "explains concepts, confirms requirements, or shares information that should be remembered. "
+            "IMPORTANT: During requirement discussions, store each confirmed decision/requirement "
+            "with category 'specification'. This ensures nothing is lost when the user later says "
+            "'implement it' — all decisions can be reconstructed from KB.\n"
             "Examples: 'BMS is Brokerage Management System', 'project uses Python 3.11', "
-            "'authentication uses JWT tokens', 'deployment is on AWS'."
+            "'Platform decision: Android + iOS', 'Storage: PostgreSQL for book catalog'."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "subject": {
                     "type": "string",
-                    "description": "Brief subject/title of the knowledge being stored (e.g., 'BMS definition', 'Tech stack info').",
+                    "description": "Brief subject/title of the knowledge being stored (e.g., 'BMS definition', 'Platform decision').",
                 },
                 "content": {
                     "type": "string",
@@ -344,6 +347,8 @@ TOOL_STORE_KNOWLEDGE: dict = {
                     "type": "string",
                     "description": (
                         "Category of knowledge. Choose the most specific match:\n"
+                        "- specification: project requirement, design decision, feature decision "
+                        "(e.g., 'Platform: Android + iOS', 'Storage: PostgreSQL', 'Auth: OAuth2')\n"
                         "- preference: coding style, tooling, workflow (e.g., 'preferuji Kotlin idiomaticky')\n"
                         "- domain: business domain, industry, location (e.g., 'jsme z Palkovic', 'BMS je...')\n"
                         "- team: people, roles, processes (e.g., 'Jan je tech lead', 'Scrum s 2-week sprinty')\n"
@@ -351,8 +356,17 @@ TOOL_STORE_KNOWLEDGE: dict = {
                         "- personal: personal info about the user (e.g., 'jmenuju se Jan')\n"
                         "- general: anything that doesn't fit above categories"
                     ),
-                    "enum": ["preference", "domain", "team", "tech_stack", "personal", "general"],
+                    "enum": ["specification", "preference", "domain", "team", "tech_stack", "personal", "general"],
                     "default": "general",
+                },
+                "target_project_name": {
+                    "type": "string",
+                    "description": (
+                        "Optional: name of a DIFFERENT project this knowledge applies to. "
+                        "Use when the user references another project during discussion "
+                        "(e.g., 'this logging solution would work in project XYZ'). "
+                        "The knowledge will be tagged for both the current and target project."
+                    ),
                 },
             },
             "required": ["subject", "content"],
