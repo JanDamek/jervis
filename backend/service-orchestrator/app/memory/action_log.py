@@ -16,6 +16,7 @@ from datetime import datetime
 import httpx
 
 from app.config import settings
+from app.memory.content_reducer import trim_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ async def query_action_log(
                     metadata = item.get("metadata", {})
                     lines.append(f"### {i}. {metadata.get('action', 'UNKNOWN')}")
                     lines.append(f"When: {metadata.get('timestamp', 'unknown')}")
-                    lines.append(f"Description: {metadata.get('description', content[:100])}")
+                    lines.append(f"Description: {metadata.get('description', trim_for_display(content, 100))}")
                     lines.append(f"Result: {metadata.get('result', 'N/A')}")
                     if metadata.get("relatedTaskId"):
                         lines.append(f"Task: {metadata['relatedTaskId']}")
@@ -154,4 +155,4 @@ async def query_action_log(
                 return "\n".join(lines)
             return f"Error: KB returned HTTP {resp.status_code}"
     except Exception as e:
-        return f"Error querying action log: {str(e)[:200]}"
+        return f"Error querying action log: {trim_for_display(str(e), 200)}"

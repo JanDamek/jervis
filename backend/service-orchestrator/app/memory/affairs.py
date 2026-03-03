@@ -16,6 +16,7 @@ import httpx
 
 from app.config import foreground_headers, estimate_tokens, KB_TIMEOUT_STANDARD
 from app.graph.nodes._helpers import parse_json_response
+from app.memory.content_reducer import reduce_messages_for_prompt
 from app.memory.lqm import LocalQuickMemory
 from app.memory.models import (
     Affair,
@@ -48,7 +49,7 @@ async def create_affair(
         client_id=client_id,
         project_id=project_id,
         messages=[
-            AffairMessage(role="user", content=initial_context[:2000], timestamp=now),
+            AffairMessage(role="user", content=initial_context, timestamp=now),
         ],
     )
     lqm.store_affair(affair)
@@ -210,15 +211,18 @@ async def _summarize_affair_for_parking(
     # Lazy import to avoid circular dependency
     from app.graph.nodes._helpers import llm_with_cloud_fallback
 
-    # Build context from affair messages
-    messages_text = "\n".join(
-        f"[{m.role}]: {m.content}" for m in affair.messages[-10:]
+    # Build context from affair messages — budget-aware, no hard truncation.
+    # Reserve ~6000 tokens for messages within the summarization prompt.
+    messages_text = await reduce_messages_for_prompt(
+        affair.messages, token_budget=6000, state=state,
     )
+
+    facts_json = json.dumps(affair.key_facts, ensure_ascii=False) if affair.key_facts else "(žádná)"
 
     prompt = f"""Shrň záležitost pro pozdější obnovení kontextu.
 
 ZÁLEŽITOST: {affair.title}
-DOSAVADNÍ FAKTA: {json.dumps(affair.key_facts, ensure_ascii=False) if affair.key_facts else "(žádná)"}
+DOSAVADNÍ FAKTA: {facts_json}
 POSLEDNÍ ZPRÁVY:
 {messages_text}
 
@@ -323,7 +327,7 @@ def _chunk_to_affair(chunk: dict, client_id: str) -> Affair | None:
         return Affair(
             id=affair_id,
             title=metadata.get("title", "Unknown"),
-            summary=chunk.get("content", "")[:1000],
+            summary=chunk.get("content", ""),
             status=status,
             topics=topics,
             client_id=client_id,

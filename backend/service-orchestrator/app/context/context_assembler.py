@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 from app.context.context_store import context_store
+from app.memory.content_reducer import reduce_for_prompt, trim_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +35,19 @@ async def assemble_step_context(
         prev_key = f"goal/{goal_index}/step/{step_index - 1}"
         prev_summary = await context_store.get_summary(task_id, "step", prev_key) or ""
 
-    # Goal brief
+    # Goal brief (display-only summaries for orientation)
     goal_summaries = await context_store.list_summaries(task_id, "goal")
     other_goals = [
-        f"{gs['scope_key']}: {gs['summary'][:50]}"
+        f"{gs['scope_key']}: {trim_for_display(gs['summary'], 50)}"
         for gs in goal_summaries
     ]
 
+    # KB context — reduce via LLM if it exceeds budget (not hard truncation)
+    kb_reduced = await reduce_for_prompt(kb_context, 4000, "context") if kb_context else ""
+
     return {
         "step_instructions": step_instructions,
-        "kb_context": kb_context[:4000] if kb_context else "",
+        "kb_context": kb_reduced,
         "prev_step_summary": prev_summary,
         "other_goals": other_goals,
     }
@@ -73,7 +77,7 @@ async def assemble_epic_review_context(task_id: str) -> dict:
     goal_summaries = await context_store.list_summaries(task_id, "goal")
 
     goals = [
-        {"key": gs["scope_key"], "summary": gs["summary"][:100]}
+        {"key": gs["scope_key"], "summary": trim_for_display(gs["summary"], 100)}
         for gs in goal_summaries
     ]
 

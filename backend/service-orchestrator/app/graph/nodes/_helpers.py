@@ -276,7 +276,8 @@ def parse_json_response(content: str) -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    logger.warning("Failed to parse JSON from LLM response: %s", content[:200])
+    from app.memory.content_reducer import trim_for_display
+    logger.warning("Failed to parse JSON from LLM response: %s", trim_for_display(content, 200))
     return {}
 
 

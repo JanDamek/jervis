@@ -81,20 +81,20 @@ def extract_kb_facts(output: AgentOutput) -> list[dict]:
     facts: list[dict] = []
     result_lower = output.result.lower()
 
-    # Extract decisions
+    # Extract decisions — full content, KB handles chunking
     if any(ind in result_lower for ind in _DECISION_INDICATORS):
         facts.append({
             "kind": "decision",
-            "content": output.result[:500],
+            "content": output.result,
             "source_agent": output.agent_name,
             "confidence": output.confidence,
         })
 
-    # Extract procedures
+    # Extract procedures — full content
     if any(ind in result_lower for ind in _PROCEDURE_INDICATORS):
         facts.append({
             "kind": "process",
-            "content": output.result[:500],
+            "content": output.result,
             "source_agent": output.agent_name,
             "confidence": output.confidence,
         })
@@ -109,16 +109,16 @@ def extract_kb_facts(output: AgentOutput) -> list[dict]:
         for conv in convention_patterns[:5]:
             facts.append({
                 "kind": "convention",
-                "content": conv.strip()[:200],
+                "content": conv.strip(),
                 "source_agent": output.agent_name,
                 "confidence": output.confidence,
             })
 
-    # Extract lessons learned from failures
+    # Extract lessons learned from failures — full content
     if output.agent_name in ("test", "security") and "lesson" in result_lower:
         facts.append({
             "kind": "lesson_learned",
-            "content": output.result[:500],
+            "content": output.result,
             "source_agent": output.agent_name,
             "confidence": output.confidence,
         })

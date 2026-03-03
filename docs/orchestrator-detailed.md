@@ -2949,11 +2949,13 @@ The Memory Agent provides structured working memory between turns, context switc
 ### Key Components (`app/memory/`)
 
 - **`models.py`** — `Affair`, `AffairStatus`, `SessionContext`, `ContextSwitchResult`, `PendingWrite`, `WritePriority`
+- **`content_reducer.py`** — **Central content reduction module.** `reduce_for_prompt()` (async LLM reduction), `reduce_messages_for_prompt()` (batch message fitting), `trim_for_display()` (display-only truncation). Replaces all hard-coded `[:N]` truncation. Supports cloud escalation via `state` parameter (auto-Gemini for content exceeding current model's context)
 - **`lqm.py`** — Local Quick Memory: 3-layer RAM cache (hot affairs dict, async write buffer queue, LRU warm cache with TTL)
-- **`context_switch.py`** — LLM-based context switch detection (Czech prompt, confidence threshold 0.7)
-- **`affairs.py`** — Affair lifecycle: create, park (with LLM summarization), resume, resolve, load from KB
-- **`composer.py`** — Token-budgeted context composition (40% active affair, 10% parked, 15% user context)
+- **`context_switch.py`** — LLM-based context switch detection (Czech prompt, confidence threshold 0.7). Uses `reduce_for_prompt` for summary/message in classification prompt
+- **`affairs.py`** — Affair lifecycle: create, park (with LLM summarization), resume, resolve, load from KB. Uses `reduce_messages_for_prompt` for budget-aware message building
+- **`composer.py`** — Token-budgeted context composition (40% active affair, 10% parked, 15% user context). **Async** — uses LLM reduction for large summaries/facts/messages instead of hard truncation
 - **`agent.py`** — `MemoryAgent` facade; process-global LQM singleton, per-orchestration agent instances
+- **`consolidation.py`** — Topic-aware memory consolidation. Uses `reduce_for_prompt` for combined summaries and `reduce_messages_for_prompt` for affair messages
 
 ### Graph Flow (when enabled)
 

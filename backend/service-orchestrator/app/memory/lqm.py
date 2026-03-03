@@ -207,7 +207,7 @@ class LocalQuickMemory:
             searchable = f"{item.source_urn} {item.content}".lower()
             if query_lower in searchable:
                 results.append({
-                    "content": item.content[:1000],
+                    "content": item.content,
                     "source_urn": item.source_urn,
                     "kind": item.kind,
                     "source": "write_buffer",
