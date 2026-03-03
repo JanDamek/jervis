@@ -545,7 +545,7 @@ async def run_orchestration(
     """Execute the full orchestration workflow (blocking).
 
     Three execution paths (checked in order):
-    1. Graph Agent (use_graph_agent) — vertex/edge DAG, own execution engine
+    1. Graph Agent (use_graph_agent) — LangGraph with dynamic vertex/edge decomposition
     2. Delegation graph (use_delegation_graph) — LangGraph 7-node multi-agent
     3. Legacy graph (default) — LangGraph 14-node orchestrator
     """
@@ -554,9 +554,10 @@ async def run_orchestration(
         request.processing_mode, request.task_id,
     )
 
-    # --- Graph Agent path (bypasses LangGraph entirely) ---
+    # --- Graph Agent path (LangGraph with dynamic decomposition) ---
     if settings.use_graph_agent:
-        return await _run_graph_agent(request)
+        from app.graph_agent.langgraph_runner import run_graph_agent
+        return await run_graph_agent(request, thread_id)
 
     graph = get_orchestrator_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}
@@ -612,41 +613,6 @@ async def run_orchestration(
     )
 
     return final_state
-
-
-async def _run_graph_agent(request: OrchestrateRequest) -> dict:
-    """Execute via Graph Agent (vertex/edge DAG, own execution engine).
-
-    Bypasses LangGraph entirely. Builds a TaskGraph from the request,
-    decomposes, validates, executes, and returns the final state dict
-    compatible with the existing orchestrator response format.
-    """
-    from app.graph_agent.orchestrate import run_graph_agent
-
-    # Build state dict compatible with graph_agent expectations
-    initial_state = await _build_initial_state(request)
-
-    # Try to get agent registry (if specialist agents enabled)
-    registry = None
-    if settings.use_specialist_agents:
-        try:
-            from app.agents.registry import AgentRegistry
-            registry = AgentRegistry.instance()
-        except Exception as e:
-            logger.warning("AgentRegistry not available: %s", e)
-
-    result = await run_graph_agent(state=initial_state, registry=registry)
-
-    # Map graph_agent result to orchestrator state format
-    return {
-        **initial_state,
-        "final_result": result.get("summary", ""),
-        "response_language": result.get("response_language", "en"),
-        "error": None if result.get("success") else result.get("summary"),
-        "artifacts": [],
-        "branch": None,
-        "kb_ingested": False,
-    }
 
 
 async def run_orchestration_streaming(

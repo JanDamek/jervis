@@ -184,11 +184,13 @@ async def lifespan(app: FastAPI):
             await procedural_memory.init()
             logger.info("Procedural memory ready")
 
-    # Initialize Graph Agent persistence (opt-in)
+    # Initialize Graph Agent (opt-in)
     if settings.use_graph_agent:
         from app.graph_agent.persistence import task_graph_store
+        from app.graph_agent.langgraph_runner import init_graph_agent_checkpointer
         await task_graph_store.init()
-        logger.info("Graph Agent TaskGraphStore ready (MongoDB: task_graphs)")
+        await init_graph_agent_checkpointer()
+        logger.info("Graph Agent ready (LangGraph + MongoDB: task_graphs)")
 
     # Memory Agent
     logger.info("Memory Agent ready (affairs + LQM)")
