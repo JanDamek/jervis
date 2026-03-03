@@ -353,8 +353,15 @@ class ChatRpcImpl(
             "[Background FAILED] $taskTitle: $summary"
         }
 
-        // Persist to DB (include taskId in metadata for "Reagovat" button)
-        val persistMetadata = if (taskId != null) metadata + ("taskId" to taskId) else metadata
+        // Persist to DB — same metadata as live stream so history looks identical
+        val persistMetadata = buildMap {
+            put("sender", "background")
+            put("taskTitle", taskTitle)
+            put("success", success.toString())
+            if (taskId != null) put("taskId", taskId)
+            put("timestamp", java.time.Instant.now().toString())
+            putAll(metadata)
+        }
         chatService.saveSystemMessage(
             sessionId = session.id,
             role = MessageRole.BACKGROUND,

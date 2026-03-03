@@ -48,6 +48,7 @@ class VertexStatus(str, Enum):
     COMPLETED = "completed"     # Done, result available
     FAILED = "failed"           # Execution failed
     SKIPPED = "skipped"         # Skipped (e.g. conditional branch not taken)
+    CANCELLED = "cancelled"     # Cancelled by user or parent graph cancellation
 
 
 class EdgeType(str, Enum):
@@ -66,6 +67,7 @@ class GraphStatus(str, Enum):
     EXECUTING = "executing"     # Vertices being processed
     COMPLETED = "completed"     # All vertices done
     FAILED = "failed"           # Unrecoverable failure
+    CANCELLED = "cancelled"     # Cancelled by user
 
 
 # ---------------------------------------------------------------------------

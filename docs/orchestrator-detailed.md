@@ -3746,9 +3746,9 @@ Současný delegation systém (sekce 18-25) používá fixní `parallel_groups` 
 ```python
 # Enums — responsibility-based vertex types
 VertexType:  ROOT | PLANNER | INVESTIGATOR | EXECUTOR | VALIDATOR | REVIEWER | SYNTHESIS | GATE | TASK | DECOMPOSE
-VertexStatus: PENDING | READY | RUNNING | COMPLETED | FAILED | SKIPPED
+VertexStatus: PENDING | READY | RUNNING | COMPLETED | FAILED | SKIPPED | CANCELLED
 EdgeType:    DEPENDENCY | DECOMPOSITION | SEQUENCE
-GraphStatus: BUILDING | READY | EXECUTING | COMPLETED | FAILED
+GraphStatus: BUILDING | READY | EXECUTING | COMPLETED | FAILED | CANCELLED
 
 # What flows through an edge (filled when source completes)
 class EdgePayload:
@@ -3972,7 +3972,7 @@ ArangoDB-backed graph tracking ALL entities Jervis manages — code artifacts (f
 |------------|------|---------|
 | `graph_artifacts` | Vertex | Entities of all kinds (code, docs, people, events, etc.) |
 | `artifact_deps` | Edge | Structural/organizational dependencies |
-| `task_artifact_links` | Edge | TaskGraph vertex → entity it touches |
+| `task_artifact_links` | Document | TaskGraph vertex → entity it touches (with `artifact_id`, `vertex_id`, `touch_kind`) |
 
 **Impact analysis flow (per vertex completion):**
 
@@ -3990,7 +3990,25 @@ ArangoDB-backed graph tracking ALL entities Jervis manages — code artifacts (f
 - `find_affected_task_vertices()` — two-step: traverse deps → join with `task_artifact_links`
 - `find_conflicting_vertices()` — group `task_artifact_links` by artifact, filter multi-vertex
 
-### 34.16 Orchestration Entry Point
+### 34.16 Cancellation & Graceful Degradation
+
+**Cancellation flow:**
+
+1. User clicks Cancel → Kotlin sends `POST /cancel/{thread_id}`
+2. `/cancel` endpoint marks `graph.status = CANCELLED` in MongoDB persistence
+3. `/cancel` then calls `task.cancel()` on the asyncio Task
+4. In the agentic tool loop (`_agentic_vertex`), each iteration checks `graph.status` before the next LLM call
+5. In `node_select_next`, a CANCELLED graph immediately returns `current_vertex_id = None` → no more vertices scheduled
+6. Running vertex gets `VertexStatus.CANCELLED`, returns `("Cancelled by user.", "Cancelled")`
+
+**Graceful degradation (ArangoDB unavailable):**
+
+- `artifact_graph_store.init()` is wrapped in `try/except` — if ArangoDB is unreachable, `self._db` stays `None`
+- `artifact_graph_store.available` property returns `False` when ArangoDB is down
+- `analyze_impact()` checks `available` at entry — returns `[]` (no impact analysis, no crash)
+- Graph Agent execution continues without impact analysis — all other features (decomposition, agentic loop, tools) work normally
+
+### 34.17 Orchestration Entry Point
 
 **Source:** `app/graph_agent/langgraph_runner.py`
 
@@ -4001,7 +4019,7 @@ LangGraph.ainvoke(initial_state) → decompose → [select → dispatch → loop
 
 Returns the final LangGraph state dict with `final_result` and `task_graph`.
 
-### 34.17 Key Files
+### 34.18 Key Files
 
 | File | Purpose |
 |------|---------|

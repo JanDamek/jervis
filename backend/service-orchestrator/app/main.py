@@ -437,6 +437,23 @@ async def cancel(thread_id: str):
     task = _active_tasks.get(thread_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"No active task for {thread_id}")
+
+    # Mark graph as CANCELLED in persistence so agentic loop stops gracefully
+    if settings.use_graph_agent:
+        try:
+            from app.graph_agent.persistence import task_graph_store
+            from app.graph_agent.models import GraphStatus
+            # thread_id format: "thread-{task_id}-{uuid}" → extract task_id
+            parts = thread_id.split("-")
+            graph_task_id = parts[1] if len(parts) >= 2 else thread_id
+            graph = await task_graph_store.load(graph_task_id)
+            if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
+                graph.status = GraphStatus.CANCELLED
+                await task_graph_store.save(graph)
+                logger.info("Marked graph %s as CANCELLED", graph.id)
+        except Exception as e:
+            logger.warning("Failed to mark graph as cancelled: %s", e)
+
     task.cancel()
     logger.info("Cancelled orchestration: thread=%s", thread_id)
     # Push cancelled status to Kotlin

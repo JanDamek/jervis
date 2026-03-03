@@ -201,6 +201,10 @@ async def analyze_impact(
     Returns:
         List of new vertex IDs created (validators, fixers).
     """
+    # Skip entirely if ArangoDB is unavailable
+    if not artifact_graph_store.available:
+        return []
+
     # Step 1: Extract touched artifacts
     links, artifacts, deps = await extract_touched_artifacts(vertex, state)
 
