@@ -86,14 +86,16 @@ class ChatService(
             }
         }
 
-        // 3. Save user message
+        // 3. Save user message (include contextTaskId in metadata for visual link in UI)
         val correlationId = ObjectId().toString()
+        val messageMetadata = if (contextTaskId != null) mapOf("contextTaskId" to contextTaskId) else emptyMap()
         val savedMessage = chatMessageService.addMessage(
             conversationId = sessionId,
             role = MessageRole.USER,
             content = text,
             correlationId = correlationId,
             clientMessageId = clientMessageId,
+            metadata = messageMetadata,
         )
 
         // 4. Update session (including active scope for UI restore on restart)

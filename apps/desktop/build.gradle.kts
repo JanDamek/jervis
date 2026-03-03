@@ -72,6 +72,13 @@ compose.desktop {
         // Pass server URL as system property
         jvmArgs += "-Djervis.server.url=$serverUrl"
 
+        // macOS: set app icon for dock, Stage Manager, Mission Control
+        val dockIcon = project.file("src/main/resources/icons/jervis_icon.png")
+        if (dockIcon.exists()) {
+            jvmArgs += "-Xdock:icon=${dockIcon.absolutePath}"
+            jvmArgs += "-Xdock:name=Jervis"
+        }
+
         nativeDistributions {
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,

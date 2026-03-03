@@ -30,10 +30,12 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,9 +56,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.chat.ChatDisplayItem
 import com.jervis.ui.chat.TaskGraphSection
 import com.jervis.ui.queue.OrchestratorProgressInfo
 import com.jervis.ui.util.copyToClipboard
@@ -67,10 +69,11 @@ import com.mikepenz.markdown.m3.markdownTypography
 
 @Composable
 internal fun ChatArea(
-    messages: List<ChatMessage>,
+    displayItems: List<ChatDisplayItem>,
+    expandedThreads: Set<String>,
+    onToggleThread: (String) -> Unit,
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
-    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
@@ -82,11 +85,9 @@ internal fun ChatArea(
     val listState = rememberLazyListState()
 
     // reverseLayout=true: item 0 is at the bottom of the screen.
-    // We reverse the messages so the newest message is item 0 (bottom).
-    val reversedMessages = remember(messages) { messages.asReversed() }
+    val reversedItems = remember(displayItems) { displayItems.asReversed() }
     Box(modifier = modifier) {
-        if (messages.isEmpty()) {
-            // Empty state
+        if (displayItems.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -105,33 +106,24 @@ internal fun ChatArea(
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(reversedMessages.size) { index ->
-                    val message = reversedMessages[index]
-                    // Original index in the non-reversed list
-                    val originalIndex = messages.size - 1 - index
-
-                    ChatMessageItem(
-                        message = message,
-                        orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
-                        onEditMessage = onEditMessage,
-                        onReplyToTask = onReplyToTask,
-                        taskGraphs = taskGraphs,
-                        onLoadTaskGraph = onLoadTaskGraph,
-                    )
-
-                    // Compression boundary AFTER this message (before the next older one)
-                    if (originalIndex > 0) {
-                        val prevSequence = messages[originalIndex - 1].sequence
-                        val currSequence = message.sequence
-                        if (prevSequence != null && currSequence != null) {
-                            val boundary =
-                                compressionBoundaries.find { b ->
-                                    b.afterSequence in prevSequence until currSequence
-                                }
-                            if (boundary != null) {
-                                CompressionBoundaryIndicator(boundary)
-                            }
-                        }
+                items(reversedItems.size) { index ->
+                    val item = reversedItems[index]
+                    when (item) {
+                        is ChatDisplayItem.Standalone -> ChatMessageItem(
+                            message = item.message,
+                            orchestratorProgress = if (item.message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
+                            onEditMessage = onEditMessage,
+                            onReplyToTask = onReplyToTask,
+                        )
+                        is ChatDisplayItem.Thread -> ThreadCard(
+                            thread = item,
+                            isExpanded = item.taskId in expandedThreads,
+                            onToggle = { onToggleThread(item.taskId) },
+                            onReplyToTask = onReplyToTask,
+                            onEditMessage = onEditMessage,
+                            taskGraphs = taskGraphs,
+                            onLoadTaskGraph = onLoadTaskGraph,
+                        )
                     }
                 }
 
@@ -160,13 +152,286 @@ internal fun ChatArea(
     }
 }
 
+// ── Thread Card ──────────────────────────────────────────────────────────
+
+/**
+ * Background task thread card — contains task result header + user/assistant replies.
+ * Collapsed: shows summary + unread badge. Expanded: full result + inline replies.
+ */
+@Composable
+private fun ThreadCard(
+    thread: ChatDisplayItem.Thread,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    onReplyToTask: (String) -> Unit,
+    onEditMessage: (String) -> Unit,
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val header = thread.header
+    val isSuccess = header.metadata["success"] != "false"
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Header row: icon + title + unread badge + expand arrow
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = header.metadata["taskTitle"] ?: "Background úloha",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                // Unread badge when collapsed
+                if (!isExpanded && thread.unreadCount > 0) {
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Text(thread.unreadCount.toString())
+                    }
+                }
+                IconButton(
+                    onClick = onToggle,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Skrýt" else "Zobrazit",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            // Collapsed: first line preview
+            AnimatedVisibility(visible = !isExpanded) {
+                Text(
+                    text = header.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
+            // Expanded: full result + replies
+            AnimatedVisibility(visible = isExpanded) {
+                Column {
+                    // Full markdown result
+                    SelectionContainer {
+                        Markdown(
+                            content = header.text,
+                            colors = markdownColor(
+                                text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                codeBackground = MaterialTheme.colorScheme.surface,
+                            ),
+                            typography = markdownTypography(
+                                text = MaterialTheme.typography.bodySmall,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+
+                    // Replies section
+                    if (thread.replies.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            thread.replies.forEach { reply ->
+                                ThreadReplyItem(
+                                    message = reply,
+                                    onEditMessage = onEditMessage,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Task graph section — lazy-loaded on demand
+            val graphTaskId = thread.taskId
+            val graphEntry = taskGraphs[graphTaskId]
+            if (graphEntry != null) {
+                TaskGraphSection(graph = graphEntry)
+            } else if (graphTaskId !in taskGraphs) {
+                TextButton(
+                    onClick = { onLoadTaskGraph(graphTaskId) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.AccountTree,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Zobrazit graf",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(vertical = 4.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 1.5.dp,
+                    )
+                    Text(
+                        "Načítání grafu…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // Footer: timestamp + reply button
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Show last activity timestamp
+                val displayTimestamp = thread.replies.lastOrNull()?.timestamp ?: header.timestamp
+                displayTimestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
+                        Text(
+                            text = formatMessageTime(ts),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = { onReplyToTask(thread.taskId) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Reply,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Reagovat",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Compact reply item inside a thread card — smaller than standalone chat bubbles.
+ */
+@Composable
+private fun ThreadReplyItem(
+    message: ChatMessage,
+    onEditMessage: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val isMe = message.from == ChatMessage.Sender.Me
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (isMe) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+            ),
+            modifier = Modifier.widthIn(max = 400.dp),
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                // Sender label
+                Text(
+                    text = if (isMe) "Já" else "Asistent",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Content
+                SelectionContainer {
+                    if (isMe) {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        val stableContent = remember(message.text) {
+                            message.text
+                                .replace("\r\n", "\n")
+                                .replace("\r", "\n")
+                                .replace("\u0000", "")
+                        }
+                        Markdown(
+                            content = stableContent,
+                            colors = markdownColor(
+                                text = MaterialTheme.colorScheme.onSurface,
+                                codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                            typography = markdownTypography(
+                                text = MaterialTheme.typography.bodySmall,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
+                        )
+                    }
+                }
+
+                // Timestamp
+                message.timestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
+                        Text(
+                            text = formatMessageTime(ts),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Compression Boundary ─────────────────────────────────────────────────
+
 /**
  * Visual indicator for context compression boundaries.
  * Shows a divider with summary of compressed messages.
  */
 @Composable
 private fun CompressionBoundaryIndicator(
-    boundary: CompressionBoundaryDto,
+    boundary: com.jervis.dto.CompressionBoundaryDto,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -232,14 +497,14 @@ private fun CompressionBoundaryIndicator(
     }
 }
 
+// ── Standalone Message Item ──────────────────────────────────────────────
+
 @Composable
 private fun ChatMessageItem(
     message: ChatMessage,
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
-    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
-    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -337,15 +602,14 @@ private fun ChatMessageItem(
             }
         }
     } else if (message.messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
-        // Background task result — collapsible card with surfaceVariant background
+        // Standalone background result (no taskId — old messages without threading)
         val isSuccess = message.metadata["success"] != "false"
         var expanded by remember { mutableStateOf(false) }
 
         Card(
-            colors =
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -358,15 +622,10 @@ private fun ChatMessageItem(
                         if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint =
-                            if (isSuccess) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
+                        tint = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     )
                     Text(
-                        text = message.metadata["task_title"] ?: "Background úloha",
+                        text = message.metadata["taskTitle"] ?: "Background úloha",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f),
                     )
@@ -382,7 +641,6 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Collapsed: first line only. Expanded: full text.
                 AnimatedVisibility(visible = !expanded) {
                     Text(
                         text = message.text,
@@ -397,67 +655,20 @@ private fun ChatMessageItem(
                     SelectionContainer {
                         Markdown(
                             content = message.text,
-                            colors =
-                                markdownColor(
-                                    text = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    codeBackground = MaterialTheme.colorScheme.surface,
-                                ),
-                            typography =
-                                markdownTypography(
-                                    text = MaterialTheme.typography.bodySmall,
-                                    code = MaterialTheme.typography.bodySmall,
-                                ),
+                            colors = markdownColor(
+                                text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                codeBackground = MaterialTheme.colorScheme.surface,
+                            ),
+                            typography = markdownTypography(
+                                text = MaterialTheme.typography.bodySmall,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                 }
 
-                // Task graph section — lazy-loaded on demand
-                val graphTaskId = message.metadata["taskId"]
-                if (graphTaskId != null) {
-                    val graphEntry = taskGraphs[graphTaskId]
-                    if (graphEntry != null) {
-                        // Graph loaded — show it
-                        TaskGraphSection(graph = graphEntry)
-                    } else if (graphTaskId !in taskGraphs) {
-                        // Not loaded yet — show "load graph" button
-                        TextButton(
-                            onClick = { onLoadTaskGraph(graphTaskId) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.AccountTree,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Zobrazit graf",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    } else {
-                        // Loading in progress (key exists, value is null)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 1.5.dp,
-                            )
-                            Text(
-                                "Načítání grafu…",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                // Timestamp + Reply button row
+                // Timestamp + Reply button
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -472,25 +683,22 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    // "Reagovat" button — sends contextTaskId to chat
-                    val taskId = message.metadata["taskId"]
-                    if (taskId != null) {
-                        TextButton(
-                            onClick = { onReplyToTask(taskId) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "Reagovat",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
+                    val taskId = message.metadata["taskId"] ?: ""
+                    TextButton(
+                        onClick = { onReplyToTask(taskId) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Reagovat",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
             }
@@ -644,6 +852,27 @@ private fun ChatMessageItem(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     )
                                 }
+                            }
+                        }
+
+                        // Reply context indicator — when this message is a reply to a background task
+                        if (isMe && message.metadata["contextTaskId"] != null) {
+                            Row(
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Reply,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                )
+                                Text(
+                                    text = "Reakce na background úlohu",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                )
                             }
                         }
 

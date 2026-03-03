@@ -114,9 +114,12 @@ async def run_agentic_loop(
         if disconnect_event and disconnect_event.is_set():
             logger.info("Chat: stopped by disconnect after %d iterations", iteration)
             partial = _build_interrupted_content(tool_summaries)
+            interrupted_meta = {"interrupted": "true"}
+            if request.context_task_id:
+                interrupted_meta["contextTaskId"] = request.context_task_id
             if partial:
-                await save_assistant_message(request.session_id, partial, {"interrupted": "true"}, compress=False)
-            yield ChatStreamEvent(type="done", metadata={"interrupted": True})
+                await save_assistant_message(request.session_id, partial, interrupted_meta, compress=False)
+            yield ChatStreamEvent(type="done", metadata={"interrupted": True, **({"contextTaskId": request.context_task_id} if request.context_task_id else {})})
             return
 
         logger.info("Chat: iteration %d/%d", iteration + 1, effective_max_iterations)
@@ -167,6 +170,7 @@ async def run_agentic_loop(
                     **({"created_tasks": ",".join(str(t.get("title", "")) for t in created_tasks)} if created_tasks else {}),
                     **({"responded_tasks": ",".join(responded_tasks)} if responded_tasks else {}),
                     **({"summarized": "true", "original_length": str(msg_len)} if is_summarized else {}),
+                    **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                     **fact_check_metadata(fc_result),
                     **topic_metadata(topics),
                     **source_tracker.build_metadata(),
@@ -179,6 +183,7 @@ async def run_agentic_loop(
             yield ChatStreamEvent(type="done", metadata={
                 "created_tasks": created_tasks, "responded_tasks": responded_tasks,
                 "used_tools": used_tools, "iterations": iteration + 1,
+                **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                 **confidence_badge(fc_result),
                 **topic_metadata(topics),
                 **source_tracker.build_done_metadata(),
@@ -226,6 +231,7 @@ async def run_agentic_loop(
             await save_assistant_message(
                 request.session_id, final_text,
                 {"drift_break": drift_reason, "used_tools": ",".join(used_tools),
+                 **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                  **fact_check_metadata(fc_result), **topic_metadata(drift_topics),
                  **source_tracker.build_metadata()},
             )
@@ -235,6 +241,7 @@ async def run_agentic_loop(
 
             yield ChatStreamEvent(type="done", metadata={
                 "drift_break": drift_reason, "iterations": iteration + 1,
+                **({"contextTaskId": request.context_task_id} if request.context_task_id else {}),
                 **confidence_badge(fc_result), **topic_metadata(drift_topics),
                 **source_tracker.build_done_metadata(),
             })

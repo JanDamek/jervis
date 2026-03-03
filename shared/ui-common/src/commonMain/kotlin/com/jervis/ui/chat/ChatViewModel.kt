@@ -25,9 +25,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -74,7 +77,15 @@ class ChatViewModel(
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
     /** Context task ID for "Reagovat" — set when replying to a background result. */
-    private var _contextTaskId: String? = null
+    private val _contextTaskId = MutableStateFlow<String?>(null)
+    val contextTaskId: StateFlow<String?> = _contextTaskId.asStateFlow()
+
+    /** Expanded thread IDs (taskId set). */
+    private val _expandedThreads = MutableStateFlow<Set<String>>(emptySet())
+    val expandedThreads: StateFlow<Set<String>> = _expandedThreads.asStateFlow()
+
+    /** Last seen timestamps per thread — used for unread badge calculation. */
+    private val _lastSeenTimestamps = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** Pending approval request from chat — action, tool, preview text */
     data class ApprovalRequest(
@@ -85,6 +96,12 @@ class ChatViewModel(
 
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
+
+    /** Grouped display items: standalone messages + threaded background task cards. */
+    val displayItems: StateFlow<List<ChatDisplayItem>> =
+        combine(_chatMessages, _lastSeenTimestamps) { messages, lastSeen ->
+            groupIntoDisplayItems(messages, lastSeen)
+        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Cached task graphs keyed by taskId. null value = loading in progress. */
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
@@ -155,11 +172,39 @@ class ChatViewModel(
 
     /**
      * Set context for replying to a background task result.
-     * Pre-fills input and stores contextTaskId for sendMessage().
+     * Pre-fills input, stores contextTaskId for sendMessage(), auto-expands the thread.
      */
     fun replyToTask(taskId: String) {
-        _contextTaskId = taskId
-        _inputText.value = ""  // Focus input, user types their reply
+        _contextTaskId.value = taskId
+        _inputText.value = ""
+        // Auto-expand thread when replying
+        _expandedThreads.value = _expandedThreads.value + taskId
+    }
+
+    /** Clear reply context (dismiss banner without sending). */
+    fun clearReplyContext() {
+        _contextTaskId.value = null
+    }
+
+    /** Toggle thread expand/collapse. Marks thread as seen when expanding. */
+    fun toggleThread(taskId: String) {
+        val current = _expandedThreads.value
+        if (taskId in current) {
+            _expandedThreads.value = current - taskId
+        } else {
+            markThreadSeen(taskId)
+            _expandedThreads.value = current + taskId
+        }
+    }
+
+    private fun markThreadSeen(taskId: String) {
+        val thread = displayItems.value
+            .filterIsInstance<ChatDisplayItem.Thread>()
+            .find { it.taskId == taskId }
+        val lastTimestamp = thread?.replies?.lastOrNull()?.timestamp
+        if (lastTimestamp != null) {
+            _lastSeenTimestamps.value = _lastSeenTimestamps.value + (taskId to lastTimestamp)
+        }
     }
 
     /**
@@ -210,12 +255,14 @@ class ChatViewModel(
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
+        val taskContext = _contextTaskId.value
 
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
             text = text,
             contextId = projectId,
             messageType = ChatMessage.MessageType.USER_MESSAGE,
+            metadata = if (!taskContext.isNullOrBlank()) mapOf("contextTaskId" to taskContext) else emptyMap(),
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
@@ -237,14 +284,13 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
-                val taskContext = _contextTaskId
-                _contextTaskId = null  // Clear after use
+                _contextTaskId.value = null  // Clear after use (taskContext captured above)
                 repository.chat.sendMessage(
                     text = originalText,
                     clientMessageId = clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
-                    contextTaskId = taskContext,
+                    contextTaskId = taskContext?.takeIf { it.isNotBlank() },
                 )
                 println("=== Message sent successfully (RPC) ===")
 

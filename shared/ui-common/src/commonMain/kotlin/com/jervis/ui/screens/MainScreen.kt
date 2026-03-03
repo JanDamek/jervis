@@ -17,14 +17,14 @@ fun MainScreen(
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val chatMessages by viewModel.chat.chatMessages.collectAsState()
+    val displayItems by viewModel.chat.displayItems.collectAsState()
+    val expandedThreads by viewModel.chat.expandedThreads.collectAsState()
     val inputText by viewModel.chat.inputText.collectAsState()
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
     val queueSize by viewModel.queue.queueSize.collectAsState()
     val hasMore by viewModel.chat.hasMore.collectAsState()
     val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
-    val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
     val approvalRequest by viewModel.chat.approvalRequest.collectAsState()
@@ -32,6 +32,7 @@ fun MainScreen(
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
     val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
+    val replyContextTaskId by viewModel.chat.contextTaskId.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -58,14 +59,15 @@ fun MainScreen(
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
-        chatMessages = chatMessages,
+        displayItems = displayItems,
+        expandedThreads = expandedThreads,
+        onToggleThread = viewModel.chat::toggleThread,
         inputText = inputText,
         isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,
         queueSize = queueSize,
         hasMore = hasMore,
         isLoadingMore = isLoadingMore,
-        compressionBoundaries = compressionBoundaries,
         attachments = attachments,
         onInputChanged = viewModel.chat::updateInputText,
         onSendClick = viewModel.chat::sendMessage,
@@ -87,6 +89,8 @@ fun MainScreen(
         orchestratorProgress = orchestratorProgress,
         taskGraphs = taskGraphs,
         onLoadTaskGraph = viewModel.chat::loadTaskGraph,
+        replyContextTaskId = replyContextTaskId,
+        onClearReplyContext = viewModel.chat::clearReplyContext,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,
