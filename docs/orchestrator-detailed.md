@@ -310,10 +310,12 @@ TaskSchedulingService creates task with processingMode=BACKGROUND
      ↓
 7. POST /approve/{thread_id} with {approved, reason}
      ↓
-8. Python _resume_in_background():
-   - Semaphore acquire
-   - resume_orchestration_streaming(thread_id, resume_value)
-   - Push progress + status to Kotlin
+8. Python approve() endpoint (main.py):
+   - Fire-and-forget: creates asyncio task, registers in _active_tasks
+   - Graph Agent path: compiled.ainvoke(Command(resume=resume_value), config)
+   - Legacy path: resume_orchestration(thread_id, resume_value, chat_history)
+   - On completion: report_status_change(status="done")
+   - On error: report_status_change(status="error")
 ```
 
 ---
@@ -3308,8 +3310,9 @@ Background tasks use a reduced tool set — excludes interactive and session-spe
 |----------|--------|---------|------|
 | `/chat` | POST | `app/chat/handler.handle_chat` | Synchronous (awaited) |
 | `/orchestrate/v2` | POST | `app/background/handler.handle_background` | Fire-and-forget |
+| `/approve/{thread_id}` | POST | `app/main.approve` | Fire-and-forget resume |
 
-Both are registered in `app/chat/router.py` alongside existing endpoints.
+`/chat` and `/orchestrate/v2` are registered in `app/chat/router.py`. `/approve/{thread_id}` is in `app/main.py`.
 
 ### 31.11 Kotlin Internal REST Endpoints (Implemented)
 

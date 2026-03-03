@@ -536,8 +536,9 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
 
     try:
         async with httpx.AsyncClient(timeout=10) as http:
-            # Fetch clients
-            resp = await http.get(f"{base}/internal/clients")
+            # Fetch clients — filter by clientId (tenant isolation)
+            params = {"clientId": client_id} if client_id else {}
+            resp = await http.get(f"{base}/internal/clients", params=params)
             if resp.status_code == 200:
                 clients = resp.json()
                 if clients:
@@ -546,7 +547,6 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
                         parts.append(f"  - {c.get('name', '?')} (id={c.get('id', '?')})")
 
             # Fetch projects for this client
-            params = {"clientId": client_id} if client_id else {}
             resp = await http.get(f"{base}/internal/projects", params=params)
             if resp.status_code == 200:
                 projects = resp.json()
@@ -555,8 +555,8 @@ async def _fetch_resource_context(client_id: str, project_id: str | None) -> str
                     for p in projects[:10]:
                         parts.append(f"  - {p.get('name', '?')} (id={p.get('id', '?')})")
 
-            # Fetch connections
-            resp = await http.get(f"{base}/internal/connections")
+            # Fetch connections — filter by clientId (tenant isolation)
+            resp = await http.get(f"{base}/internal/connections", params=params)
             if resp.status_code == 200:
                 conns = resp.json()
                 if conns:

@@ -36,11 +36,21 @@ from app.tools.ollama_parsing import extract_tool_calls
 logger = logging.getLogger(__name__)
 
 
-async def _run_graph_agent_background(request: OrchestrateRequest) -> dict:
-    """Run graph agent for a background task and adapt its return to handle_background format."""
+async def _run_graph_agent_background(
+    request: OrchestrateRequest,
+    thread_id: str | None = None,
+) -> dict:
+    """Run graph agent for a background task and adapt its return to handle_background format.
+
+    Args:
+        request: Orchestration request from Kotlin.
+        thread_id: Thread ID for LangGraph checkpointing. If None, generates one.
+                   Must match what's tracked in _active_tasks for interrupt/resume to work.
+    """
     from app.graph_agent.langgraph_runner import run_graph_agent
 
-    thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
+    if not thread_id:
+        thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
     logger.info(
         "GRAPH_AGENT_BACKGROUND | task_id=%s | thread=%s",
         request.task_id, thread_id,
@@ -57,6 +67,7 @@ async def _run_graph_agent_background(request: OrchestrateRequest) -> dict:
         "artifacts": state.get("artifacts", []),
         "step_results": [],
         "branch": state.get("branch"),
+        "thread_id": thread_id,
     }
 
 
@@ -67,7 +78,10 @@ def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
     return message_tokens + tools_tokens + settings.default_output_tokens
 
 
-async def handle_background(request: OrchestrateRequest) -> dict:
+async def handle_background(
+    request: OrchestrateRequest,
+    thread_id: str | None = None,
+) -> dict:
     """Handle a background task: analyze → execute → finalize.
 
     When use_graph_agent is enabled, routes to the LangGraph-based graph
@@ -76,13 +90,14 @@ async def handle_background(request: OrchestrateRequest) -> dict:
 
     Args:
         request: OrchestrateRequest from Kotlin BackgroundEngine.
+        thread_id: Thread ID for LangGraph checkpointing (Graph Agent only).
 
     Returns:
         dict with {success, summary, artifacts, step_results, branch}
     """
     # --- Graph Agent path (takes over entirely) ---
     if settings.use_graph_agent:
-        return await _run_graph_agent_background(request)
+        return await _run_graph_agent_background(request, thread_id=thread_id)
 
     start_time = time.time()
     task_id = request.task_id

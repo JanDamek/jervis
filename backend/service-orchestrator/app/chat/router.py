@@ -123,7 +123,37 @@ async def orchestrate_v2(request: dict):
 
     async def _run_background():
         try:
-            result = await handle_background(orchestrate_request)
+            result = await handle_background(orchestrate_request, thread_id=thread_id)
+
+            # Check if result indicates an LangGraph interrupt (ask_user)
+            # When Graph Agent's interrupt() fires, ainvoke() returns partial state
+            # with empty summary and the interrupt data is in the LangGraph checkpoint.
+            if not result.get("summary") and not result.get("success", True):
+                # Likely an interrupt — check checkpoint for interrupt data
+                try:
+                    from app.graph_agent.langgraph_runner import _get_compiled_graph
+                    compiled = _get_compiled_graph()
+                    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+                    graph_state = await compiled.aget_state(config)
+                    if graph_state and graph_state.next and graph_state.tasks:
+                        for task_item in graph_state.tasks:
+                            if hasattr(task_item, "interrupts") and task_item.interrupts:
+                                interrupt_data = task_item.interrupts[0].value
+                                await kotlin_client.report_status_change(
+                                    task_id=orchestrate_request.task_id,
+                                    thread_id=thread_id,
+                                    status="interrupted",
+                                    interrupt_action=interrupt_data.get("action", "clarify"),
+                                    interrupt_description=interrupt_data.get("description", ""),
+                                )
+                                logger.info(
+                                    "ORCHESTRATE_V2_ASK_USER | thread_id=%s | action=%s",
+                                    thread_id, interrupt_data.get("action"),
+                                )
+                                return  # Don't report "done" — graph is paused
+                except Exception as e:
+                    logger.debug("Interrupt check failed (non-fatal): %s", e)
+
             await kotlin_client.report_status_change(
                 task_id=orchestrate_request.task_id,
                 thread_id=thread_id,
