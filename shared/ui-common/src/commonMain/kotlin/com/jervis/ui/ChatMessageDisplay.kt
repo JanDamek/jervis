@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -54,7 +55,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
+import com.jervis.ui.chat.TaskGraphSection
 import com.jervis.ui.queue.OrchestratorProgressInfo
 import com.jervis.ui.util.copyToClipboard
 import com.jervis.ui.util.formatMessageTime
@@ -72,6 +75,8 @@ internal fun ChatArea(
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -110,6 +115,8 @@ internal fun ChatArea(
                         orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
                         onEditMessage = onEditMessage,
                         onReplyToTask = onReplyToTask,
+                        taskGraphs = taskGraphs,
+                        onLoadTaskGraph = onLoadTaskGraph,
                     )
 
                     // Compression boundary AFTER this message (before the next older one)
@@ -231,6 +238,8 @@ private fun ChatMessageItem(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -400,6 +409,51 @@ private fun ChatMessageItem(
                                 ),
                             modifier = Modifier.padding(top = 4.dp),
                         )
+                    }
+                }
+
+                // Task graph section — lazy-loaded on demand
+                val graphTaskId = message.metadata["taskId"]
+                if (graphTaskId != null) {
+                    val graphEntry = taskGraphs[graphTaskId]
+                    if (graphEntry != null) {
+                        // Graph loaded — show it
+                        TaskGraphSection(graph = graphEntry)
+                    } else if (graphTaskId !in taskGraphs) {
+                        // Not loaded yet — show "load graph" button
+                        TextButton(
+                            onClick = { onLoadTaskGraph(graphTaskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.AccountTree,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Zobrazit graf",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    } else {
+                        // Loading in progress (key exists, value is null)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                            )
+                            Text(
+                                "Načítání grafu…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
 

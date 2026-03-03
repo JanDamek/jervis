@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
@@ -70,6 +71,8 @@ fun MainScreenView(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -124,6 +127,8 @@ fun MainScreenView(
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
                             orchestratorProgress = orchestratorProgress,
+                            taskGraphs = taskGraphs,
+                            onLoadTaskGraph = onLoadTaskGraph,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -162,6 +167,8 @@ fun MainScreenView(
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
                     orchestratorProgress = orchestratorProgress,
+                    taskGraphs = taskGraphs,
+                    onLoadTaskGraph = onLoadTaskGraph,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -203,6 +210,8 @@ private fun ChatContent(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -229,6 +238,8 @@ private fun ChatContent(
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
             onReplyToTask = onReplyToTask,
+            taskGraphs = taskGraphs,
+            onLoadTaskGraph = onLoadTaskGraph,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),

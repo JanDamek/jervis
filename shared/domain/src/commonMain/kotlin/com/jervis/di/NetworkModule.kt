@@ -28,6 +28,7 @@ import com.jervis.service.IKbDocumentService
 import com.jervis.service.IOpenRouterSettingsService
 import com.jervis.service.ISpeakerService
 import com.jervis.service.ISystemConfigService
+import com.jervis.service.ITaskGraphService
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.HttpTimeout
@@ -154,6 +155,7 @@ object NetworkModule {
             kbDocumentService = rpcClient.withService<IKbDocumentService>(),
             openRouterSettingsService = rpcClient.withService<IOpenRouterSettingsService>(),
             speakerService = rpcClient.withService<ISpeakerService>(),
+            taskGraphService = rpcClient.withService<ITaskGraphService>(),
         )
 
     /**
@@ -188,5 +190,6 @@ object NetworkModule {
         val kbDocumentService: IKbDocumentService,
         val openRouterSettingsService: IOpenRouterSettingsService,
         val speakerService: ISpeakerService,
+        val taskGraphService: ITaskGraphService,
     )
 }

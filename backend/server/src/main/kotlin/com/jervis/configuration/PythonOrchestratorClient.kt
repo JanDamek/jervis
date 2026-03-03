@@ -2,6 +2,7 @@ package com.jervis.configuration
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -176,6 +177,26 @@ class PythonOrchestratorClient(baseUrl: String) {
         } catch (e: Exception) {
             logger.warn { "PYTHON_ORCHESTRATOR_STATUS_FAIL: threadId=$threadId ${e.message}" }
             throw e
+        }
+    }
+
+    /**
+     * Get the full TaskGraph for a given task ID.
+     *
+     * Returns the raw JSON string (Python snake_case format).
+     * Caller is responsible for deserialization with @SerialName mappings.
+     */
+    suspend fun getTaskGraph(taskId: String): String? {
+        return try {
+            val response = client.get("$apiBaseUrl/graph/$taskId")
+            if (response.status.value == 200) {
+                response.bodyAsText()
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            logger.warn { "PYTHON_ORCHESTRATOR_GRAPH_FAIL: taskId=$taskId ${e.message}" }
+            null
         }
     }
 

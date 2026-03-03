@@ -3,6 +3,7 @@ package com.jervis.ui.chat
 import com.jervis.di.RpcConnectionManager
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.model.PendingMessageInfo
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -83,6 +85,10 @@ class ChatViewModel(
 
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
+
+    /** Cached task graphs keyed by taskId. null value = loading in progress. */
+    private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
+    val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
     private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
@@ -154,6 +160,23 @@ class ChatViewModel(
     fun replyToTask(taskId: String) {
         _contextTaskId = taskId
         _inputText.value = ""  // Focus input, user types their reply
+    }
+
+    /**
+     * Load task graph on demand. Caches result so subsequent calls are no-ops.
+     * null value in the map means "loading in progress".
+     */
+    fun loadTaskGraph(taskId: String) {
+        if (taskId in _taskGraphs.value) return // already loaded or loading
+        _taskGraphs.update { it + (taskId to null) } // mark loading
+        scope.launch {
+            try {
+                val graph = repository.taskGraphs.getGraph(taskId)
+                _taskGraphs.update { it + (taskId to graph) }
+            } catch (_: Exception) {
+                _taskGraphs.update { it - taskId } // remove on error, allow retry
+            }
+        }
     }
 
     fun attachFile() {

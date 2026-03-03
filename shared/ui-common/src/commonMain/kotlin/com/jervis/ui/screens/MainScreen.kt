@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
@@ -30,6 +31,7 @@ fun MainScreen(
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
+    val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -83,6 +85,8 @@ fun MainScreen(
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
         orchestratorProgress = orchestratorProgress,
+        taskGraphs = taskGraphs,
+        onLoadTaskGraph = viewModel.chat::loadTaskGraph,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,

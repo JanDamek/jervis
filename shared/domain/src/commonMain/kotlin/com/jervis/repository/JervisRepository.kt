@@ -25,6 +25,7 @@ import com.jervis.service.IGuidelinesService
 import com.jervis.service.IOpenRouterSettingsService
 import com.jervis.service.ISpeakerService
 import com.jervis.service.ISystemConfigService
+import com.jervis.service.ITaskGraphService
 
 /**
  * Main repository facade for Jervis application.
@@ -60,4 +61,5 @@ class JervisRepository(
     val guidelines: IGuidelinesService get() = servicesProvider().guidelinesService
     val openRouterSettings: IOpenRouterSettingsService get() = servicesProvider().openRouterSettingsService
     val speakers: ISpeakerService get() = servicesProvider().speakerService
+    val taskGraphs: ITaskGraphService get() = servicesProvider().taskGraphService
 }
