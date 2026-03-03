@@ -193,12 +193,14 @@ class ChatViewModel(
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
+        val taskContext = _contextTaskId.value
 
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
             text = text,
             contextId = projectId,
             messageType = ChatMessage.MessageType.USER_MESSAGE,
+            metadata = if (taskContext != null) mapOf("contextTaskId" to taskContext) else emptyMap(),
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
@@ -220,8 +222,7 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
-                val taskContext = _contextTaskId.value
-                _contextTaskId.value = null  // Clear after use
+                _contextTaskId.value = null  // Clear after use (taskContext captured above)
                 repository.chat.sendMessage(
                     text = originalText,
                     clientMessageId = clientMessageId,

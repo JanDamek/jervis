@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
@@ -590,6 +591,27 @@ private fun ChatMessageItem(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     )
                                 }
+                            }
+                        }
+
+                        // Reply context indicator — when this message is a reply to a background task
+                        if (isMe && message.metadata["contextTaskId"] != null) {
+                            Row(
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Reply,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                )
+                                Text(
+                                    text = "Reakce na background úlohu",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                )
                             }
                         }
 
