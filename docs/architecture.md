@@ -1898,6 +1898,38 @@ Zpráva > 50 požadavků → automaticky background task
 Zpráva < 16k chars → normální agentic loop
 ```
 
+### Content Reducer (`app/memory/content_reducer.py`)
+
+Centrální modul pro **LLM-based content reduction** — nahrazuje veškeré hard-coded `[:N]` truncation v memory a context modulech.
+
+**Tři funkce:**
+
+| Funkce | Typ | Použití |
+|--------|-----|---------|
+| `reduce_for_prompt(content, token_budget, purpose, state=)` | async | LLM prompt composition — když content přesáhne token budget |
+| `reduce_messages_for_prompt(messages, token_budget, state=)` | async | Batch message building (newest-first, per-msg reduction) |
+| `trim_for_display(content, max_chars)` | sync | **POUZE** display/logging (error msgs, UI progress, debug logs) |
+
+**Reduction flow:**
+```
+content ≤ budget → return as-is (fast path, žádné LLM volání)
+content > budget && ≤ 24k tokens → single-pass LOCAL_COMPACT LLM reduction
+content > 24k tokens → multi-pass chunked reduction
+  └── state provided? → llm_with_cloud_fallback (auto-escalace na Gemini/OpenRouter)
+  └── no state? → LOCAL_COMPACT only
+LLM reduction fails → return full content (NIKDY neořezávat!)
+```
+
+**`trim_for_display` je přípustné POUZE pro:**
+- Error messages v logách (`logger.warning("... %s", trim_for_display(err, 200))`)
+- UI progress indikátory (`summarize_for_progress()`)
+- Debug logging (`summary[:80]` v context_store)
+
+**`trim_for_display` NIKDY pro:**
+- Data storage (key_facts, affair messages, KB writes)
+- LLM prompt building (context_switch, composer, consolidation)
+- Agent output extraction (retention_policy facts)
+
 ### Python Chat Tools
 
 Available tools in the agentic loop, organized by tier:

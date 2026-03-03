@@ -22,6 +22,7 @@ from app.memory.affairs import (
 from app.memory.composer import compose_affair_context
 from app.memory.context_switch import detect_context_switch
 from app.memory.lqm import LocalQuickMemory
+from app.memory.content_reducer import trim_for_display
 from app.memory.models import (
     Affair,
     AffairStatus,
@@ -296,7 +297,7 @@ class MemoryAgent:
         now = datetime.now(timezone.utc).isoformat()
 
         # Add to active affair key_facts if applicable
-        # No truncation — LLM-based compression handles this during parking
+        # No truncation — LLM-based reduction handles budget during context composition
         if affair_id and self.session.active_affair and self.session.active_affair.id == affair_id:
             self.session.active_affair.key_facts[subject] = content
         elif self.session.active_affair:
@@ -339,7 +340,7 @@ class MemoryAgent:
 
     async def compose_context(self, max_tokens: int = 8000) -> str:
         """Compose affair-aware context for LLM prompt."""
-        context, _remaining = compose_affair_context(
+        context, _remaining = await compose_affair_context(
             self.session, max_tokens=max_tokens,
         )
         return context
@@ -400,7 +401,7 @@ class MemoryAgent:
                     else:
                         logger.warning(
                             "KB write failed for %s: %d %s",
-                            write.source_urn, resp.status_code, resp.text[:200],
+                            write.source_urn, resp.status_code, trim_for_display(resp.text, 200),
                         )
             except Exception as e:
                 logger.warning(

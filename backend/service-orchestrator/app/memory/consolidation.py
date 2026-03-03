@@ -18,6 +18,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.config import estimate_tokens
+from app.memory.content_reducer import reduce_for_prompt, reduce_messages_for_prompt
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -152,11 +153,16 @@ async def _merge_topic_blocks(topic: str, blocks: list[dict]) -> dict:
 
     combined_text = "\n---\n".join(block_texts)
 
+    # Budget-aware: reduce combined summaries if they exceed LLM context budget
+    combined_reduced = await reduce_for_prompt(combined_text, 3000, "summary")
+    decisions_json = json.dumps(all_decisions, ensure_ascii=False)
+    decisions_reduced = await reduce_for_prompt(decisions_json, 500, "key_facts")
+
     prompt = (
         f"Konsoliduj tyto {len(blocks)} souhrnů konverzace pro téma '{topic}' "
         f"do jednoho uceleného shrnutí.\n\n"
-        f"SOUHRNY:\n{combined_text[:3000]}\n\n"
-        f"KLÍČOVÁ ROZHODNUTÍ: {json.dumps(all_decisions[:10], ensure_ascii=False)}\n\n"
+        f"SOUHRNY:\n{combined_reduced}\n\n"
+        f"KLÍČOVÁ ROZHODNUTÍ: {decisions_reduced}\n\n"
         "Odpověz POUZE validním JSON:\n"
         '{\n'
         '  "summary": "2-4 věty shrnující vývoj tématu",\n'
@@ -184,7 +190,7 @@ async def _merge_topic_blocks(topic: str, blocks: list[dict]) -> dict:
     try:
         result = json.loads(content)
     except json.JSONDecodeError:
-        result = {"summary": content[:500]}
+        result = {"summary": content}
 
     # Build consolidated block
     first_seq = _parse_sequence_start(seq_ranges[0]) if seq_ranges else 0
@@ -192,7 +198,7 @@ async def _merge_topic_blocks(topic: str, blocks: list[dict]) -> dict:
 
     return {
         "sequence_range": f"{first_seq}-{last_seq}",
-        "summary": result.get("summary", combined_text[:500]),
+        "summary": result.get("summary", combined_text),
         "key_decisions": result.get("key_decisions", all_decisions[:5]),
         "topics": list(all_topics),
         "is_checkpoint": any(b.get("is_checkpoint") for b in blocks),
@@ -226,22 +232,17 @@ async def consolidate_affair_messages(
 
     from app.chat.handler_streaming import call_llm
 
-    # Take first 5 and last 5 messages for context
-    head = affair_messages[:5]
-    tail = affair_messages[-5:] if len(affair_messages) > 5 else []
-
-    messages_text = "\n".join(
-        f"[{m.get('role', 'user')}]: {m.get('content', '')[:300]}"
-        for m in head + tail
+    # Budget-aware message inclusion instead of hard truncation
+    messages_text = await reduce_messages_for_prompt(
+        affair_messages, token_budget=max_tokens,
     )
 
     prompt = (
         f"Záležitost: {affair_title}\n"
         f"Celkem {len(affair_messages)} zpráv ({total_tokens} tokenů).\n\n"
-        f"ZPRÁVY (začátek + konec):\n{messages_text}\n\n"
+        f"ZPRÁVY:\n{messages_text}\n\n"
         "Vytvoř konsolidovaný souhrn celé konverzace k této záležitosti. "
-        "Zachovej klíčové fakta, rozhodnutí a otevřené otázky. "
-        "Max 500 znaků."
+        "Zachovej klíčové fakta, rozhodnutí a otevřené otázky."
     )
 
     try:

@@ -2,6 +2,9 @@
 
 Composes structured context from the SessionContext (active affair,
 parked affairs, user preferences) with dynamic token budget allocation.
+
+Uses LLM-based content reduction (via content_reducer) instead of hard
+truncation when individual messages or facts exceed their budget slice.
 """
 
 from __future__ import annotations
@@ -9,12 +12,13 @@ from __future__ import annotations
 import logging
 
 from app.config import estimate_tokens
+from app.memory.content_reducer import reduce_for_prompt, reduce_messages_for_prompt
 from app.memory.models import Affair, SessionContext
 
 logger = logging.getLogger(__name__)
 
 
-def compose_affair_context(
+async def compose_affair_context(
     session: SessionContext,
     max_tokens: int = 8000,
 ) -> tuple[str, int]:
@@ -35,7 +39,7 @@ def compose_affair_context(
     # 1. Active affair (40%)
     if session.active_affair:
         budget = int(max_tokens * 0.4)
-        section = _format_active_affair(session.active_affair, budget)
+        section = await _format_active_affair(session.active_affair, budget)
         sections.append(section)
         used_tokens += estimate_tokens(section)
 
@@ -49,7 +53,7 @@ def compose_affair_context(
     # 3. User context (15%)
     if session.user_preferences:
         budget = int(max_tokens * 0.15)
-        section = _format_user_context(session.user_preferences, budget)
+        section = await _format_user_context(session.user_preferences, budget)
         sections.append(section)
         used_tokens += estimate_tokens(section)
 
@@ -58,7 +62,7 @@ def compose_affair_context(
     return context, max(0, remaining)
 
 
-def _format_active_affair(affair: Affair, max_tokens: int) -> str:
+async def _format_active_affair(affair: Affair, max_tokens: int) -> str:
     """Format the active affair for the LLM context."""
     lines = [
         f"## Aktuální záležitost: {affair.title}",
@@ -66,44 +70,42 @@ def _format_active_affair(affair: Affair, max_tokens: int) -> str:
     ]
 
     if affair.summary:
-        lines.append(f"**Shrnutí**: {affair.summary}")
+        summary = affair.summary
+        summary_tokens = estimate_tokens(summary)
+        # If summary alone exceeds 1/3 of budget, reduce via LLM
+        budget_third = max_tokens // 3
+        if summary_tokens > budget_third:
+            summary = await reduce_for_prompt(summary, budget_third, "summary")
+        lines.append(f"**Shrnutí**: {summary}")
 
     if affair.key_facts:
-        facts_lines = [f"- {k}: {v}" for k, v in affair.key_facts.items()]
+        facts_text = "\n".join(f"- {k}: {v}" for k, v in affair.key_facts.items())
+        facts_tokens = estimate_tokens(facts_text)
+        budget_quarter = max_tokens // 4
+        if facts_tokens > budget_quarter:
+            facts_text = await reduce_for_prompt(facts_text, budget_quarter, "key_facts")
         lines.append("**Klíčové fakta**:")
-        lines.extend(facts_lines)
+        lines.append(facts_text)
 
     if affair.pending_actions:
         actions = ", ".join(affair.pending_actions)
         lines.append(f"**Čeká na**: {actions}")
 
-    # Add recent messages (trim from oldest if over budget)
+    # Add recent messages — budget-aware via reduce_messages_for_prompt
     if affair.messages:
         lines.append("")
         lines.append("### Poslední zprávy k této záležitosti:")
         current_text = "\n".join(lines)
         remaining = max_tokens - estimate_tokens(current_text)
 
-        msg_lines: list[str] = []
-        # Process messages newest-first, collect until budget exhausted
-        for msg in reversed(affair.messages[-20:]):
-            content = msg.content[:500]
-            line = f"[{msg.role}]: {content}"
-            if estimate_tokens(line) > remaining:
-                break
-            msg_lines.insert(0, line)
-            remaining -= estimate_tokens(line)
+        if remaining > 100:
+            messages_text = await reduce_messages_for_prompt(
+                affair.messages, token_budget=remaining,
+            )
+            if messages_text:
+                lines.append(messages_text)
 
-        lines.extend(msg_lines)
-
-    result = "\n".join(lines)
-
-    # Hard truncation if still over budget
-    max_chars = max_tokens * 4
-    if len(result) > max_chars:
-        result = result[:max_chars] + "\n(...zkráceno)"
-
-    return result
+    return "\n".join(lines)
 
 
 def _format_parked_affairs(affairs: list[Affair], max_tokens: int) -> str:
@@ -122,12 +124,18 @@ def _format_parked_affairs(affairs: list[Affair], max_tokens: int) -> str:
     return "\n".join(lines)
 
 
-def _format_user_context(preferences: dict, max_tokens: int) -> str:
+async def _format_user_context(preferences: dict, max_tokens: int) -> str:
     """Format user preferences and domain knowledge."""
     lines = ["## Uživatelský kontext:"]
 
     for key, value in preferences.items():
-        line = f"- **{key}**: {value}"
+        value_str = str(value)
+        value_tokens = estimate_tokens(value_str)
+        # If a single preference value is very large, reduce it
+        per_item_budget = max(max_tokens // max(len(preferences), 1), 100)
+        if value_tokens > per_item_budget:
+            value_str = await reduce_for_prompt(value_str, per_item_budget, "context")
+        line = f"- **{key}**: {value_str}"
         lines.append(line)
         if estimate_tokens("\n".join(lines)) > max_tokens:
             break

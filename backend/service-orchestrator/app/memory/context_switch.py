@@ -10,6 +10,7 @@ import json
 import logging
 
 from app.config import estimate_tokens
+from app.memory.content_reducer import reduce_for_prompt
 from app.memory.models import (
     Affair,
     ContextSwitchResult,
@@ -99,13 +100,19 @@ async def detect_context_switch(
             reasoning="No active affair, no matching parked affairs",
         )
 
-    # LLM path
+    # LLM path — reduce large content via LLM instead of hard truncation
     parked_titles = ", ".join(a.title for a in parked_affairs[:10]) or "(žádné)"
+
+    # Budget: ~500 tokens for summary, ~1000 tokens for user message
+    affair_summary = active_affair.summary or "(žádné shrnutí)"
+    affair_summary = await reduce_for_prompt(affair_summary, 500, "summary", state=state)
+    user_msg_reduced = await reduce_for_prompt(user_message, 1000, "message_summary", state=state)
+
     prompt = CONTEXT_SWITCH_PROMPT.format(
         active_affair_title=active_affair.title,
-        active_affair_summary=active_affair.summary[:500] or "(žádné shrnutí)",
+        active_affair_summary=affair_summary,
         parked_affair_titles=parked_titles,
-        user_message=user_message[:1000],
+        user_message=user_msg_reduced,
     )
 
     try:

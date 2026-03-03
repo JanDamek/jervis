@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from app.memory.content_reducer import trim_for_display
 from app.models import AgentOutput
 
 logger = logging.getLogger(__name__)
@@ -50,25 +51,26 @@ def summarize_agent_output(output: AgentOutput) -> str:
 
 
 def summarize_for_session(output: AgentOutput) -> str:
-    """Create a very short summary for session memory (max 200 chars).
+    """Create a very short summary for session memory display (max 200 chars).
 
     Session memory entries must be brief — they are loaded at the start
     of every orchestration and contribute to the context budget.
+    Uses trim_for_display (display-only truncation, not data processing).
     """
     status = "OK" if output.success else "FAIL"
-    result_preview = output.result[:150] if output.result else "no result"
+    result_preview = trim_for_display(output.result or "no result", 150)
 
     # Remove newlines for compactness
     result_preview = result_preview.replace("\n", " ").strip()
 
     summary = f"[{output.agent_name}:{status}] {result_preview}"
-    return summary[:200]
+    return trim_for_display(summary, 200)
 
 
 def summarize_for_progress(output: AgentOutput) -> str:
-    """Create a one-line summary for UI progress reporting."""
-    status = "✓" if output.success else "✗"
-    result_preview = (output.result or "")[:100].replace("\n", " ").strip()
+    """Create a one-line summary for UI progress reporting (display only)."""
+    status = "\u2713" if output.success else "\u2717"
+    result_preview = trim_for_display(output.result or "", 100).replace("\n", " ").strip()
     return f"{status} {output.agent_name}: {result_preview}"
 
 
@@ -77,7 +79,7 @@ def summarize_delegation_plan(
     domain: str,
     task_summary: str,
 ) -> str:
-    """Create a progress-friendly summary of the delegation plan."""
-    agents_str = " → ".join(agent_names)
-    task_preview = task_summary[:80].replace("\n", " ").strip()
+    """Create a progress-friendly summary of the delegation plan (display only)."""
+    agents_str = " \u2192 ".join(agent_names)
+    task_preview = trim_for_display(task_summary, 80).replace("\n", " ").strip()
     return f"[{domain}] {task_preview} | Agents: {agents_str}"

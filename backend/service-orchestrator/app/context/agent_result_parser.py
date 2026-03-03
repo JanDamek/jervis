@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from app.llm.provider import llm_provider
+from app.memory.content_reducer import reduce_for_prompt
 from app.models import ModelTier
 
 logger = logging.getLogger(__name__)
@@ -46,11 +47,12 @@ async def parse_agent_result(raw_response: Any) -> dict:
             "raw": text,
         }
 
-    summary = text[:500]  # Simple truncation as default
+    # LLM summarization first; if that fails, use LLM-based reduction (not blind truncation)
     try:
         summary = await _summarize_with_llm(text, max_tokens=200)
     except Exception as e:
-        logger.warning("LLM summarization failed, using truncation: %s", e)
+        logger.warning("LLM summarization failed, using content reduction: %s", e)
+        summary = await reduce_for_prompt(text, 500, "summary")
 
     return {
         "success": True,  # If agent didn't crash, consider it success
@@ -69,7 +71,7 @@ async def _summarize_with_llm(text: str, max_tokens: int = 200) -> str:
         },
         {
             "role": "user",
-            "content": text[:4000],  # Cap input
+            "content": text,
         },
     ]
 

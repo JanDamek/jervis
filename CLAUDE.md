@@ -107,6 +107,13 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Git repo creation: `backend/server/.../service/git/GitRepositoryCreationService.kt` (GitHub/GitLab API)
 - Project templates: `backend/server/.../service/project/ProjectTemplateService.kt` (KMP/Spring Boot/full-stack scaffolding)
 - Project management MCP tools: `backend/service-mcp/app/main.py` (create_client, create_project, create_connection, create_git_repository, init_workspace)
+- Content reducer: `backend/service-orchestrator/app/memory/content_reducer.py` (reduce_for_prompt, reduce_messages_for_prompt, trim_for_display)
+- Memory Agent: `backend/service-orchestrator/app/memory/agent.py` (MemoryAgent, LQM singleton)
+- Memory affairs: `backend/service-orchestrator/app/memory/affairs.py` (create, park, resume, resolve)
+- Memory composer: `backend/service-orchestrator/app/memory/composer.py` (compose_affair_context — async, token-budgeted)
+- Context switch: `backend/service-orchestrator/app/memory/context_switch.py` (detect_context_switch, LLM classification)
+- Memory consolidation: `backend/service-orchestrator/app/memory/consolidation.py` (topic-aware summary consolidation)
+- LQM: `backend/service-orchestrator/app/memory/lqm.py` (LocalQuickMemory — hot cache, write buffer, warm cache)
 
 ## Build Notes
 

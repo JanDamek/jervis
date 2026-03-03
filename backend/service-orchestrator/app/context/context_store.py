@@ -18,6 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 
 from app.config import settings
 from app.context.agent_result_parser import parse_agent_result
+from app.memory.content_reducer import trim_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class ContextStore:
 
         logger.debug(
             "Context saved: task=%s scope=%s key=%s summary=%s",
-            task_id, scope, scope_key, summary[:80],
+            task_id, scope, scope_key, trim_for_display(summary, 80),
         )
 
     async def get_summary(
