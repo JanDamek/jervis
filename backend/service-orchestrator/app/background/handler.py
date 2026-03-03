@@ -46,7 +46,8 @@ def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
 async def handle_background(request: OrchestrateRequest) -> dict:
     """Handle a background task: analyze → execute → finalize.
 
-    This is the simplified replacement for the old 14-node LangGraph.
+    When use_graph_agent is enabled, delegates to the Graph Agent
+    (vertex/edge DAG execution). Otherwise uses the 5-phase agentic loop.
 
     Args:
         request: OrchestrateRequest from Kotlin BackgroundEngine.
@@ -54,6 +55,10 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     Returns:
         dict with {success, summary, artifacts, step_results, branch}
     """
+    # --- Graph Agent path (feature-flagged) ---
+    if settings.use_graph_agent:
+        return await _handle_background_graph_agent(request)
+
     start_time = time.time()
     task_id = request.task_id
     client_id = request.client_id
@@ -789,4 +794,67 @@ async def _run_code_review(
     )
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# Graph Agent background path
+# ---------------------------------------------------------------------------
+
+
+async def _handle_background_graph_agent(request: OrchestrateRequest) -> dict:
+    """Handle background task via Graph Agent (vertex/edge DAG execution).
+
+    Builds a state dict from the request and delegates to run_graph_agent.
+    Returns a result dict compatible with the existing background handler format.
+    """
+    from app.graph_agent.orchestrate import run_graph_agent
+    from app.models import CodingTask
+
+    task_id = request.task_id
+    client_id = request.client_id
+
+    logger.info(
+        "BACKGROUND_GRAPH_AGENT | task_id=%s | client=%s | query=%s",
+        task_id, client_id, request.query[:100],
+    )
+
+    # Build state dict
+    state = {
+        "task": CodingTask(
+            id=task_id,
+            client_id=client_id,
+            project_id=request.project_id,
+            client_name=request.client_name,
+            project_name=request.project_name,
+            workspace_path=request.workspace_path,
+            query=request.query,
+            agent_preference=request.agent_preference,
+        ).model_dump(),
+        "rules": request.rules.model_dump(),
+        "environment": request.environment,
+        "evidence_pack": None,
+        "processing_mode": request.processing_mode,
+        "response_language": "en",
+        "allow_cloud_prompt": False,
+    }
+
+    # Try to get agent registry
+    registry = None
+    if settings.use_specialist_agents:
+        try:
+            from app.agents.registry import AgentRegistry
+            registry = AgentRegistry.instance()
+        except Exception as e:
+            logger.warning("AgentRegistry not available: %s", e)
+
+    result = await run_graph_agent(state=state, registry=registry)
+
+    return {
+        "success": result.get("success", False),
+        "summary": result.get("summary", ""),
+        "artifacts": [],
+        "step_results": [],
+        "branch": None,
+        "keep_environment_running": False,
+    }
 

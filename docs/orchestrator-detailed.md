@@ -2176,14 +2176,18 @@ use_delegation_graph: bool = False       # Main switch: 7-node delegation vs 14-
 use_specialist_agents: bool = False      # 19 specialist agents vs LegacyAgent fallback
 use_dag_execution: bool = False          # Parallel DAG execution vs sequential
 use_procedural_memory: bool = False      # KB procedure learning + lookup
+use_graph_agent: bool = False            # Graph Agent — vertex/edge DAG execution (overrides all above)
 ```
 
 | Flag | Default | Effect when True | Effect when False |
 |------|---------|-----------------|-------------------|
+| `use_graph_agent` | `False` | Both `run_orchestration` and `handle_background` use Graph Agent (vertex/edge DAG) — bypasses LangGraph entirely | Falls through to delegation/legacy graph |
 | `use_delegation_graph` | `False` | `get_orchestrator_graph()` returns 7-node delegation graph | Returns legacy 14-node graph |
 | `use_specialist_agents` | `False` | `plan_delegations` selects from 19 registered agents | Routes everything to `LegacyAgent` |
 | `use_dag_execution` | `False` | `execute_delegation` uses `DAGExecutor` (parallel) | Sequential execution only |
 | `use_procedural_memory` | `False` | `plan_delegations` looks up learned procedures in KB | No procedure lookup |
+
+**Priority:** `use_graph_agent` is checked first — if True, delegation_graph and legacy graph are never used.
 
 ### 25.1b Centralized LLM & handler settings
 
@@ -3831,7 +3835,7 @@ Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegatio
 | **1** | Done | Core data model, graph operations, persistence, progress |
 | **2** | Done | LLM-driven decomposition engine (root + recursive), graph validation |
 | **3** | Done | Execution engine (topological exec, fan-in, parallel, agent dispatch, synthesis) |
-| **4** | Planned | Integration with chat handler, orchestrator, qualifier |
+| **4** | Done | Integration: feature flag `use_graph_agent`, wired into `run_orchestration` + `handle_background` |
 
 ### 34.8 Decomposition Engine
 
