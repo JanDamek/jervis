@@ -30,6 +30,10 @@ fun main() {
         // Don't crash the app - just log the error
     }
 
+    // Set dock icon BEFORE Compose application starts
+    // so Stage Manager / Mission Control sees it immediately
+    MacOSUtils.setDockIcon()
+
     application {
         val serverBaseUrl =
             System.getProperty("jervis.server.url")
@@ -39,9 +43,8 @@ fun main() {
         var showMainWindow by remember { mutableStateOf(true) }
         var showDebug by remember { mutableStateOf(false) }
 
-        // Set dock icon and click handler on macOS
+        // Register dock icon click handler on macOS
         LaunchedEffect(Unit) {
-            MacOSUtils.setDockIcon()
             MacOSUtils.setDockIconClickHandler {
                 showMainWindow = true
             }
