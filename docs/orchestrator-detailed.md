@@ -4001,12 +4001,12 @@ ArangoDB-backed graph tracking ALL entities Jervis manages — code artifacts (f
 5. In `node_select_next`, a CANCELLED graph immediately returns `current_vertex_id = None` → no more vertices scheduled
 6. Running vertex gets `VertexStatus.CANCELLED`, returns `("Cancelled by user.", "Cancelled")`
 
-**Graceful degradation (ArangoDB unavailable):**
+**ArangoDB resilience (retry with backoff):**
 
-- `artifact_graph_store.init()` is wrapped in `try/except` — if ArangoDB is unreachable, `self._db` stays `None`
-- `artifact_graph_store.available` property returns `False` when ArangoDB is down
-- `analyze_impact()` checks `available` at entry — returns `[]` (no impact analysis, no crash)
-- Graph Agent execution continues without impact analysis — all other features (decomposition, agentic loop, tools) work normally
+- `artifact_graph_store.init()` retries with exponential backoff: `5s → 15s → 30s → 60s → 5min cap`
+- Matches the project-wide resilience pattern (workspace recovery, task dispatch)
+- Service startup blocks until ArangoDB is reachable — no partial-feature state
+- Each attempt logs a warning with attempt count and next retry delay
 
 ### 34.17 Orchestration Entry Point
 
