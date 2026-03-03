@@ -3829,11 +3829,59 @@ Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegatio
 | Part | Status | Description |
 |------|--------|-------------|
 | **1** | Done | Core data model, graph operations, persistence, progress |
-| **2** | Planned | LLM-driven decomposition engine (vertex → sub-vertices) |
+| **2** | Done | LLM-driven decomposition engine (root + recursive), graph validation |
 | **3** | Planned | Execution engine (topological exec, fan-in, parallel, context passing) |
 | **4** | Planned | Integration with chat handler, orchestrator, qualifier |
 
-### 34.8 Key Files
+### 34.8 Decomposition Engine
+
+**Source:** `app/graph_agent/decomposer.py`
+
+Two entry points:
+- `decompose_root(graph, state, evidence, guidelines)` — decomposes the root vertex from user request
+- `decompose_vertex(graph, vertex_id, state, guidelines)` — recursively decomposes a DECOMPOSE-type vertex
+
+**LLM Prompt Pattern:**
+
+The decomposer asks the LLM to return structured JSON:
+```json
+{
+  "vertices": [
+    {"title": "...", "description": "...", "type": "task|decompose|gate", "agent": "research", "depends_on": [0]},
+    ...
+  ],
+  "synthesis": {"title": "Combine results", "description": "..."}
+}
+```
+
+The `depends_on` field references indices within the vertices array. Synthesis vertex auto-depends on all others.
+
+**Limits:**
+- `MAX_VERTICES_PER_DECOMPOSE = 10` (per LLM call)
+- `MAX_TOTAL_VERTICES = 50` (entire graph)
+- `MAX_DECOMPOSE_DEPTH = 4` (recursive depth)
+
+**Fallback:** If decomposition fails, creates a single TASK vertex that executes the entire request directly.
+
+### 34.9 Graph Validation
+
+**Source:** `app/graph_agent/validation.py`
+
+`validate_graph(graph)` returns `ValidationResult(valid, errors, warnings)`:
+
+| Check | Type | Limit |
+|-------|------|-------|
+| Root exists | Error | — |
+| No cycles (DAG) | Error | — |
+| Vertex count | Error | max 50 |
+| Edge references exist | Error | — |
+| Orphan vertices | Warning | — |
+| Fan-in | Error | max 15 |
+| Fan-out | Warning | max 10 |
+| TASK has description | Error | — |
+| Depth limit | Error | max 4 |
+
+### 34.10 Key Files
 
 | File | Purpose |
 |------|---------|
@@ -3842,3 +3890,5 @@ Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegatio
 | `app/graph_agent/graph.py` | Graph operations (add/remove/traverse/complete/fail) |
 | `app/graph_agent/persistence.py` | MongoDB CRUD with atomic updates |
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
+| `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
+| `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans) |

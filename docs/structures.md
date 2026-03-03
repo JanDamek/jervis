@@ -1379,6 +1379,8 @@ Uses existing `kotlin_client.report_progress()` API with delegation fields (`del
 | `app/graph_agent/graph.py` | Graph operations (topological sort, context accumulation, readiness) |
 | `app/graph_agent/persistence.py` | MongoDB save/load, atomic updates |
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
+| `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
+| `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans, fan-in/out) |
 
 ---
 
