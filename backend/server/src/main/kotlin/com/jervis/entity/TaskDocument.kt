@@ -107,6 +107,7 @@ import java.time.Instant
     CompoundIndex(name = "state_type", def = "{'state': 1, 'type': 1}"),
     CompoundIndex(name = "state_type_createdAt", def = "{'state': 1, 'type': 1, 'createdAt': -1}"),
     CompoundIndex(name = "parent_state_idx", def = "{'parentTaskId': 1, 'state': 1}"),
+    CompoundIndex(name = "queue_priority_idx", def = "{'processingMode': 1, 'state': 1, 'priorityScore': -1, 'createdAt': 1}"),
 )
 data class TaskDocument(
     @Id

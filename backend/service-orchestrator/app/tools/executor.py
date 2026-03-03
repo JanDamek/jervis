@@ -451,6 +451,48 @@ async def execute_tool(
                 task_id=arguments["task_id"],
                 priority_score=arguments["priority_score"],
             )
+        # ---- Project management tools ----
+        elif tool_name == "create_client":
+            result = await _execute_create_client(
+                name=arguments.get("name", ""),
+                description=arguments.get("description", ""),
+            )
+        elif tool_name == "create_project":
+            result = await _execute_create_project(
+                client_id=arguments.get("client_id", ""),
+                name=arguments.get("name", ""),
+                description=arguments.get("description", ""),
+            )
+        elif tool_name == "create_connection":
+            result = await _execute_create_connection(
+                name=arguments.get("name", ""),
+                provider=arguments.get("provider", ""),
+                auth_type=arguments.get("auth_type", "BEARER"),
+                base_url=arguments.get("base_url", ""),
+                bearer_token=arguments.get("bearer_token", ""),
+                is_cloud=arguments.get("is_cloud", False),
+                client_id=arguments.get("client_id", ""),
+            )
+        elif tool_name == "create_git_repository":
+            result = await _execute_create_git_repository(
+                client_id=arguments.get("client_id", ""),
+                name=arguments.get("name", ""),
+                description=arguments.get("description", ""),
+                connection_id=arguments.get("connection_id", ""),
+                is_private=arguments.get("is_private", True),
+            )
+        elif tool_name == "update_project":
+            result = await _execute_update_project(
+                project_id=arguments.get("project_id", ""),
+                description=arguments.get("description", ""),
+                git_remote_url=arguments.get("git_remote_url", ""),
+            )
+        elif tool_name == "init_workspace":
+            result = await _execute_init_workspace(
+                project_id=arguments.get("project_id", ""),
+            )
+        elif tool_name == "list_templates":
+            result = await _execute_list_templates()
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2617,3 +2659,159 @@ async def _execute_task_queue_set_priority(
         return f"Error setting priority: {str(e)[:300]}"
 
 
+# ---- Project management tools ----
+
+
+async def _execute_create_client(name: str, description: str = "") -> str:
+    """Create a client via Kotlin internal API."""
+    if not name:
+        return "Error: name is required."
+    body: dict = {"name": name}
+    if description:
+        body["description"] = description
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/clients", json=body)
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return f"Client created: {data.get('name', name)} (id={data.get('id', '?')})"
+    except Exception as e:
+        return f"Error creating client: {str(e)[:300]}"
+
+
+async def _execute_create_project(client_id: str, name: str, description: str = "") -> str:
+    """Create a project via Kotlin internal API."""
+    if not client_id or not name:
+        return "Error: client_id and name are required."
+    body: dict = {"clientId": client_id, "name": name}
+    if description:
+        body["description"] = description
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/projects", json=body)
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return (
+                f"Project created: {data.get('name', name)} "
+                f"(id={data.get('id', '?')}, clientId={client_id})"
+            )
+    except Exception as e:
+        return f"Error creating project: {str(e)[:300]}"
+
+
+async def _execute_create_connection(
+    name: str, provider: str, auth_type: str = "BEARER",
+    base_url: str = "", bearer_token: str = "",
+    is_cloud: bool = False, client_id: str = "",
+) -> str:
+    """Create a connection via Kotlin internal API, optionally linking to a client."""
+    if not name or not provider:
+        return "Error: name and provider are required."
+    body: dict = {
+        "name": name,
+        "provider": provider,
+        "protocol": "HTTP",
+        "authType": auth_type,
+        "isCloud": is_cloud,
+    }
+    if base_url:
+        body["baseUrl"] = base_url
+    if bearer_token:
+        body["bearerToken"] = bearer_token
+    if client_id:
+        body["clientId"] = client_id
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/connections", json=body)
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return (
+                f"Connection created: {data.get('name', name)} "
+                f"(id={data.get('id', '?')}, provider={data.get('provider', provider)})"
+            )
+    except Exception as e:
+        return f"Error creating connection: {str(e)[:300]}"
+
+
+async def _execute_create_git_repository(
+    client_id: str, name: str, description: str = "",
+    connection_id: str = "", is_private: bool = True,
+) -> str:
+    """Create a git repository via Kotlin internal API."""
+    if not client_id or not name:
+        return "Error: client_id and name are required."
+    body: dict = {"clientId": client_id, "name": name, "isPrivate": is_private}
+    if description:
+        body["description"] = description
+    if connection_id:
+        body["connectionId"] = connection_id
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{_KOTLIN_INTERNAL_URL}/internal/git/repos", json=body)
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            return (
+                f"Repository created: {data.get('fullName', name)}\n"
+                f"  Clone URL: {data.get('cloneUrl', '?')}\n"
+                f"  Web URL: {data.get('htmlUrl', '?')}\n"
+                f"  Provider: {data.get('provider', '?')}"
+            )
+    except Exception as e:
+        return f"Error creating git repository: {str(e)[:300]}"
+
+
+async def _execute_update_project(
+    project_id: str, description: str = "", git_remote_url: str = "",
+) -> str:
+    """Update a project via Kotlin internal API."""
+    if not project_id:
+        return "Error: project_id is required."
+    body: dict = {"projectId": project_id}
+    if description:
+        body["description"] = description
+    if git_remote_url:
+        body["gitRemoteUrl"] = git_remote_url
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(
+                f"{_KOTLIN_INTERNAL_URL}/internal/projects/{project_id}", json=body,
+            )
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            return f"Project {project_id} updated."
+    except Exception as e:
+        return f"Error updating project: {str(e)[:300]}"
+
+
+async def _execute_init_workspace(project_id: str) -> str:
+    """Trigger workspace initialization via Kotlin internal API."""
+    if not project_id:
+        return "Error: project_id is required."
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{_KOTLIN_INTERNAL_URL}/internal/git/init-workspace",
+                json={"projectId": project_id},
+            )
+            if resp.status_code not in (200, 201):
+                return f"Error ({resp.status_code}): {resp.text[:300]}"
+            data = resp.json()
+            if data.get("ok"):
+                return f"Workspace init triggered for project {project_id}."
+            return f"Error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Error initializing workspace: {str(e)[:300]}"
+
+
+async def _execute_list_templates() -> str:
+    """List available project scaffolding templates."""
+    templates = [
+        "kmp — Kotlin Multiplatform + Compose (Desktop/Android/iOS/Web)",
+        "spring-boot — Spring Boot 3.x (Kotlin) with Web, MongoDB, PostgreSQL",
+        "kmp-spring — Full-stack: KMP Compose frontend + Spring Boot backend",
+    ]
+    return "Available project templates:\n" + "\n".join(f"  - {t}" for t in templates)

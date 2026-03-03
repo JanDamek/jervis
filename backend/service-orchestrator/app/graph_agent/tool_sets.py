@@ -43,6 +43,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         TOOL_TASK_QUEUE_INSPECT,
         TOOL_TASK_QUEUE_SET_PRIORITY,
         ENVIRONMENT_TOOLS,
+        PROJECT_MANAGEMENT_TOOLS,
     )
     from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
 
@@ -128,7 +129,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
 
     # SETUP: project scaffolding + environment provisioning
     if vertex_type == VertexType.SETUP:
-        return _base + ENVIRONMENT_TOOLS + [
+        return _base + ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
             TOOL_GET_REPOSITORY_INFO,
             TOOL_GET_REPOSITORY_STRUCTURE,
             TOOL_GET_TECHNOLOGY_STACK,
@@ -172,6 +173,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         TOOL_TASK_QUEUE_INSPECT,
         TOOL_TASK_QUEUE_SET_PRIORITY,
         ENVIRONMENT_TOOLS,
+        PROJECT_MANAGEMENT_TOOLS,
     )
     from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
 
@@ -187,7 +189,9 @@ def get_tools_by_category(category: str) -> list[dict]:
         "scheduling": [TOOL_CREATE_SCHEDULED_TASK],
         "queue": [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY],
         "environment": ENVIRONMENT_TOOLS,
-        "setup": ENVIRONMENT_TOOLS + [TOOL_DISPATCH_CODING_AGENT,
+        "project_management": PROJECT_MANAGEMENT_TOOLS,
+        "setup": ENVIRONMENT_TOOLS + PROJECT_MANAGEMENT_TOOLS + [
+                 TOOL_DISPATCH_CODING_AGENT,
                  TOOL_GET_REPOSITORY_INFO, TOOL_GET_REPOSITORY_STRUCTURE],
     }
 
@@ -209,7 +213,7 @@ def _build_request_tools_definition() -> dict:
             "name": "request_tools",
             "description": (
                 "Request additional tools if the current set is insufficient. "
-                "Available categories: kb, web, git, code, memory, scheduling, queue, environment, setup, all. "
+                "Available categories: kb, web, git, code, memory, scheduling, queue, environment, project_management, setup, all. "
                 "Use 'all' to get every available tool."
             ),
             "parameters": {
@@ -218,7 +222,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, queue, environment, setup, all",
+                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, queue, environment, project_management, setup, all",
                     },
                     "reason": {
                         "type": "string",
