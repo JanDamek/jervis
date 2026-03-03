@@ -154,6 +154,7 @@ fun MainScreenView(
                     onInputChanged = onInputChanged,
                     onSendClick = onSendClick,
                     onEditMessage = onEditMessage,
+                    onReplyToTask = onReplyToTask,
                     onLoadMore = onLoadMore,
                     onAttachFile = onAttachFile,
                     onRemoveAttachment = onRemoveAttachment,
