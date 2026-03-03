@@ -222,12 +222,15 @@ class ArtifactGraphStore:
     def __init__(self):
         self._db = None
 
+    # Retry backoff schedule (seconds): 5s → 15s → 30s → 60s → 5min cap
+    _BACKOFF_SCHEDULE = [5, 15, 30, 60, 300]
+
     async def init(self) -> None:
         """Initialize ArangoDB connection and ensure collections exist.
 
-        Graceful degradation: if ArangoDB is unreachable the store stays
-        disabled (``self._db`` remains ``None``) and all operations become
-        no-ops via the ``available`` property.
+        Retries with exponential backoff (5s → 15s → 30s → 60s → 5min cap)
+        until ArangoDB becomes reachable.  Matches the project-wide resilience
+        pattern used by workspace recovery and task dispatch.
         """
         def _connect():
             from arango import ArangoClient
@@ -269,25 +272,27 @@ class ArtifactGraphStore:
 
             return db
 
-        try:
-            self._db = await asyncio.to_thread(_connect)
-            logger.info("ArtifactGraphStore initialized (ArangoDB)")
-        except Exception:
-            self._db = None
-            logger.warning(
-                "ArtifactGraphStore: ArangoDB unavailable — artifact graph disabled",
-                exc_info=True,
-            )
-
-    @property
-    def available(self) -> bool:
-        """Whether ArangoDB is connected and ready."""
-        return self._db is not None
+        attempt = 0
+        while True:
+            try:
+                self._db = await asyncio.to_thread(_connect)
+                logger.info("ArtifactGraphStore initialized (ArangoDB)")
+                return
+            except Exception:
+                backoff = self._BACKOFF_SCHEDULE[min(attempt, len(self._BACKOFF_SCHEDULE) - 1)]
+                attempt += 1
+                logger.warning(
+                    "ArtifactGraphStore: ArangoDB unreachable (attempt %d), "
+                    "retrying in %ds…",
+                    attempt, backoff,
+                    exc_info=True,
+                )
+                await asyncio.sleep(backoff)
 
     @property
     def db(self):
         if self._db is None:
-            raise RuntimeError("ArtifactGraphStore not initialized or ArangoDB unavailable")
+            raise RuntimeError("ArtifactGraphStore not initialized — call init() first")
         return self._db
 
     # -------------------------------------------------------------------
