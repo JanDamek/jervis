@@ -48,6 +48,7 @@ fun Routing.installInternalProjectManagementApi(
     clientService: ClientService,
     projectService: ProjectService,
     connectionService: ConnectionService,
+    projectTemplateService: com.jervis.service.project.ProjectTemplateService,
 ) {
     // --- Create client ---
     post("/internal/clients") {
@@ -309,7 +310,57 @@ fun Routing.installInternalProjectManagementApi(
             )
         }
     }
+
+    // --- Get stack recommendations (advisor pattern) ---
+    post("/internal/project-advisor/recommendations") {
+        try {
+            val req = call.receive<GetRecommendationsRequest>()
+            val recommendations = projectTemplateService.getRecommendations(req.requirements)
+            call.respondText(
+                pmJson.encodeToString(
+                    com.jervis.service.project.ProjectRecommendations.serializer(),
+                    recommendations,
+                ),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=POST /internal/project-advisor/recommendations" }
+            call.respondText(
+                """{"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
+    // --- List archetypes ---
+    get("/internal/project-advisor/archetypes") {
+        try {
+            val archetypes = projectTemplateService.listArchetypes()
+            call.respondText(
+                pmJson.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(
+                        com.jervis.service.project.StackArchetype.serializer(),
+                    ),
+                    archetypes,
+                ),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=GET /internal/project-advisor/archetypes" }
+            call.respondText(
+                """{"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
+
+@Serializable
+data class GetRecommendationsRequest(
+    val requirements: String,
+)
 
 @Serializable
 data class CreateClientRequest(

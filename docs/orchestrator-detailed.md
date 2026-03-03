@@ -3946,7 +3946,7 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 | REVIEWER | KB search, files, repo, branches, commits, tech stack | Yes |
 | SYNTHESIS | KB search, memory recall, KB write, memory store | No |
 | GATE | KB search, memory recall | Yes |
-| SETUP | KB search, environment CRUD, project mgmt tools (create client/project/connection/repo, update project, init workspace, list templates), repo info/structure, tech stack, coding agent, KB write, memory | Yes |
+| SETUP | KB search, ask_user, environment CRUD, project mgmt tools (create client/project/connection/repo, update project, init workspace, get_stack_recommendations), repo info/structure, tech stack, coding agent, KB write, memory | Yes |
 
 **`request_tools` meta-tool:** Any vertex with this tool can dynamically request additional categories:
 - Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `queue`, `environment`, `project_management`, `setup`, `all`
@@ -4043,7 +4043,7 @@ This means **LLM decides priority** based on understanding of tasks, not hardcod
 
 ### 34.18 Project Management & Git Internal APIs
 
-**New internal REST endpoints** for SETUP vertex type and MCP tools:
+**Internal REST endpoints** for SETUP vertex type and MCP tools:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -4051,23 +4051,36 @@ This means **LLM decides priority** based on understanding of tasks, not hardcod
 | `/internal/clients` | GET | List all clients |
 | `/internal/projects` | POST | Create project for client |
 | `/internal/projects` | GET | List projects (optionally by clientId) |
+| `/internal/projects/{id}` | PUT | Update project (description, gitRemoteUrl) |
 | `/internal/connections` | POST | Create external service connection |
 | `/internal/connections` | GET | List all connections |
 | `/internal/git/repos` | POST | Create GitHub/GitLab repository via provider API |
 | `/internal/git/init-workspace` | POST | Trigger workspace clone for project |
+| `/internal/project-advisor/recommendations` | POST | Get stack recommendations (advisor pattern) |
+| `/internal/project-advisor/archetypes` | GET | List available architecture archetypes |
+
+**SETUP vertex advisor workflow:**
+1. SETUP vertex calls `get_stack_recommendations(requirements)` — accumulates all requirements from conversation history
+2. Recommendations include architecture archetype, platforms, storage, features — each with pros/cons/alternatives
+3. SETUP vertex presents choices to user via `ask_user` for confirmation
+4. After confirmation: create infrastructure (client, project, connection, git repo)
+5. Dispatch `coding_agent` with scaffolding instructions from recommendations
+6. Provision environment and init workspace
 
 **Source files:**
 - `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt`
 - `backend/server/.../rpc/internal/InternalGitRouting.kt`
 - `backend/server/.../service/git/GitRepositoryCreationService.kt`
-- `backend/server/.../service/project/ProjectTemplateService.kt`
+- `backend/server/.../service/project/ProjectTemplateService.kt` — advisor pattern (recommendations, not file generation)
 
-**MCP tools** (callable from chat/agents):
+**Orchestrator tools** (SETUP vertex + MCP):
 - `create_client(name, description)` — create client
 - `create_project(client_id, name, description)` — create project
-- `create_connection(name, provider, auth_type, base_url, bearer_token)` — create connection
+- `create_connection(name, provider, auth_type, base_url, bearer_token, client_id)` — create connection (optionally linked to client)
 - `create_git_repository(client_id, name, description, connection_id, is_private)` — create GitHub/GitLab repo
+- `update_project(project_id, description, git_remote_url)` — update project, link git repo
 - `init_workspace(project_id)` — trigger workspace clone
+- `get_stack_recommendations(requirements)` — get technology recommendations with pros/cons
 
 ### 34.19 Orchestration Entry Point
 

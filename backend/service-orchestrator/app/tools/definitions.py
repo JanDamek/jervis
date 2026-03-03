@@ -1456,20 +1456,34 @@ TOOL_INIT_WORKSPACE: dict = {
     },
 }
 
-TOOL_LIST_TEMPLATES: dict = {
+TOOL_GET_STACK_RECOMMENDATIONS: dict = {
     "type": "function",
     "function": {
-        "name": "list_templates",
+        "name": "get_stack_recommendations",
         "description": (
-            "List available project scaffolding templates (KMP, Spring Boot, full-stack)."
+            "Get technology stack recommendations for a project based on requirements. "
+            "Returns structured recommendations with pros/cons for architecture, platforms, "
+            "storage, and features. Use this BEFORE asking the user to confirm choices. "
+            "Pass the FULL accumulated requirements from the conversation."
         ),
         "parameters": {
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "requirements": {
+                    "type": "string",
+                    "description": (
+                        "Full description of project requirements accumulated from the conversation. "
+                        "Include all mentioned features, platforms, storage needs, integrations, etc."
+                    ),
+                },
+            },
+            "required": ["requirements"],
         },
     },
 }
+
+# Keep backward-compatible alias
+TOOL_LIST_TEMPLATES = TOOL_GET_STACK_RECOMMENDATIONS
 
 PROJECT_MANAGEMENT_TOOLS: list[dict] = [
     TOOL_CREATE_CLIENT,
@@ -1478,7 +1492,7 @@ PROJECT_MANAGEMENT_TOOLS: list[dict] = [
     TOOL_CREATE_GIT_REPOSITORY,
     TOOL_UPDATE_PROJECT,
     TOOL_INIT_WORKSPACE,
-    TOOL_LIST_TEMPLATES,
+    TOOL_GET_STACK_RECOMMENDATIONS,
 ]
 
 
