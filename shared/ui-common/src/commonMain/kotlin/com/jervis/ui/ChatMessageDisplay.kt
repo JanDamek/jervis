@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -37,6 +39,8 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,10 +53,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,9 +90,29 @@ internal fun ChatArea(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     // reverseLayout=true: item 0 is at the bottom of the screen.
     val reversedItems = remember(displayItems) { displayItems.asReversed() }
+
+    // Auto-load older messages when scrolling near the top
+    LaunchedEffect(listState, hasMore, isLoadingMore) {
+        snapshotFlow {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = listState.layoutInfo.totalItemsCount
+            lastVisible to totalItems
+        }.collect { (lastVisible, totalItems) ->
+            if (hasMore && !isLoadingMore && totalItems > 0 && lastVisible >= totalItems - 2) {
+                onLoadMore()
+            }
+        }
+    }
+
+    // Show scroll-to-bottom FAB when not at bottom (reverseLayout: firstVisibleItemIndex > 2)
+    val showScrollToBottom by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
+
     Box(modifier = modifier) {
         if (displayItems.isEmpty()) {
             Box(
@@ -122,25 +151,42 @@ internal fun ChatArea(
                     }
                 }
 
-                // "Load more" button at top (= end of reversed list)
+                // Loading indicator at top (= end of reversed list)
                 if (hasMore) {
                     item {
                         Box(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (isLoadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                TextButton(onClick = onLoadMore) {
-                                    Text("Načíst starší zprávy")
-                                }
-                            }
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                            )
                         }
                     }
+                }
+            }
+
+            // Scroll-to-bottom FAB
+            AnimatedVisibility(
+                visible = showScrollToBottom,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp),
+            ) {
+                FloatingActionButton(
+                    onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } },
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Na konec",
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
