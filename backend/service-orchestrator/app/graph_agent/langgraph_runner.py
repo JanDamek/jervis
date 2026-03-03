@@ -49,6 +49,7 @@ from app.graph_agent.graph import (
     get_stats,
 )
 from app.graph_agent.models import (
+    EdgeType,
     GraphStatus,
     GraphVertex,
     TaskGraph,
@@ -123,6 +124,13 @@ async def node_decompose(state: GraphAgentState) -> dict:
         root_title=task.query[:100],
         root_description=task.query,
     )
+
+    # Fetch existing resources context for the decomposer
+    resource_context = await _fetch_resource_context(task.client_id, task.project_id)
+    if evidence is None:
+        evidence = {}
+    if resource_context:
+        evidence["existing_resources"] = resource_context
 
     # LLM-driven decomposition — LLM decides complexity, not heuristics
     try:
@@ -231,20 +239,61 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
         return {"task_graph": graph.model_dump()}
 
     # Multiple ready vertices → execute in parallel with asyncio.gather
-    async def _run(vid: str) -> TaskGraph:
-        return await _execute_single_vertex(graph, vid, state)
+    # Each coroutine gets a deep-copy of the graph to avoid race conditions
+    # on shared mutable state (vertices dict, edges, token counts).
+    import copy
 
-    # Use gather for parallel execution; each coroutine works on its own vertex
+    async def _run(vid: str) -> TaskGraph:
+        graph_copy = TaskGraph(**copy.deepcopy(graph.model_dump()))
+        return await _execute_single_vertex(graph_copy, vid, state)
+
     results = await asyncio.gather(
         *[_run(vid) for vid in ready_ids],
         return_exceptions=True,
     )
 
-    # Merge results — each _run works on the shared graph object
+    # Merge results back: copy each executed vertex + updated edges/vertices
     for i, res in enumerate(results):
+        vid = ready_ids[i]
         if isinstance(res, Exception):
-            logger.error("Parallel vertex %s failed: %s", ready_ids[i], res)
-            fail_vertex(graph, ready_ids[i], str(res))
+            logger.error("Parallel vertex %s failed: %s", vid, res)
+            fail_vertex(graph, vid, str(res))
+        elif isinstance(res, TaskGraph):
+            # 1. Merge the executed vertex itself
+            if vid in res.vertices:
+                graph.vertices[vid] = res.vertices[vid]
+            # 2. Merge outgoing edge payloads filled by complete_vertex
+            for edge in res.edges:
+                if edge.payload and edge.source_id == vid:
+                    for orig_edge in graph.edges:
+                        if orig_edge.id == edge.id:
+                            orig_edge.payload = edge.payload
+                            break
+            # 3. Merge any new vertices/edges added by impact analysis
+            for new_vid, new_v in res.vertices.items():
+                if new_vid not in graph.vertices:
+                    graph.vertices[new_vid] = new_v
+            existing_edge_ids = {e.id for e in graph.edges}
+            for new_edge in res.edges:
+                if new_edge.id not in existing_edge_ids:
+                    graph.edges.append(new_edge)
+            # 4. Accumulate token/LLM counts
+            src_v = res.vertices.get(vid)
+            if src_v:
+                graph.total_token_count += src_v.token_count
+                graph.total_llm_calls += src_v.llm_calls
+
+    # Recalculate downstream readiness after all merges are done
+    from app.graph_agent.graph import get_outgoing_edges
+    for vid in ready_ids:
+        for edge in get_outgoing_edges(graph, vid):
+            target = graph.vertices.get(edge.target_id)
+            if target and target.status == VertexStatus.PENDING:
+                # Check if all incoming edges now have payloads
+                incoming = [e for e in graph.edges if e.target_id == edge.target_id
+                            and e.edge_type == EdgeType.DEPENDENCY]
+                if all(e.payload is not None for e in incoming):
+                    target.status = VertexStatus.READY
 
     return {"task_graph": graph.model_dump()}
 
@@ -457,6 +506,59 @@ def _get_compiled_graph():
     return _compiled_graph
 
 
+async def _fetch_resource_context(client_id: str, project_id: str | None) -> str:
+    """Fetch existing clients, projects, connections for decomposer context.
+
+    Returns a formatted string describing available resources so the decomposer
+    can make informed decisions about what already exists vs. what needs creation.
+    """
+    import httpx
+    from app.config import settings
+
+    parts: list[str] = []
+    base = settings.kotlin_server_url
+    if not base:
+        return ""
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            # Fetch clients
+            resp = await http.get(f"{base}/internal/clients")
+            if resp.status_code == 200:
+                clients = resp.json()
+                if clients:
+                    parts.append(f"Existing clients ({len(clients)}):")
+                    for c in clients[:10]:
+                        parts.append(f"  - {c.get('name', '?')} (id={c.get('id', '?')})")
+
+            # Fetch projects for this client
+            params = {"clientId": client_id} if client_id else {}
+            resp = await http.get(f"{base}/internal/projects", params=params)
+            if resp.status_code == 200:
+                projects = resp.json()
+                if projects:
+                    parts.append(f"Existing projects ({len(projects)}):")
+                    for p in projects[:10]:
+                        parts.append(f"  - {p.get('name', '?')} (id={p.get('id', '?')})")
+
+            # Fetch connections
+            resp = await http.get(f"{base}/internal/connections")
+            if resp.status_code == 200:
+                conns = resp.json()
+                if conns:
+                    parts.append(f"Available connections ({len(conns)}):")
+                    for c in conns[:10]:
+                        caps = c.get("capabilities", [])
+                        parts.append(
+                            f"  - {c.get('name', '?')} ({c.get('provider', '?')}) "
+                            f"caps={caps}"
+                        )
+    except Exception as e:
+        logger.debug("Failed to fetch resource context: %s", e)
+
+    return "\n".join(parts)
+
+
 async def run_graph_agent(
     request: OrchestrateRequest,
     thread_id: str = "default",
@@ -631,11 +733,13 @@ async def _agentic_vertex(
         iteration += 1
 
         # --- Cancellation check: bail out if graph was cancelled externally ---
-        graph = state.get("graph")
-        if graph and graph.status == GraphStatus.CANCELLED:
-            logger.info("Vertex %s: graph cancelled, aborting agentic loop", vertex.id)
-            vertex.status = VertexStatus.CANCELLED
-            return ("Cancelled by user.", "Cancelled")
+        graph_data = state.get("task_graph")
+        if graph_data:
+            live_graph = TaskGraph(**graph_data) if isinstance(graph_data, dict) else graph_data
+            if live_graph.status == GraphStatus.CANCELLED:
+                logger.info("Vertex %s: graph cancelled, aborting agentic loop", vertex.id)
+                vertex.status = VertexStatus.CANCELLED
+                return ("Cancelled by user.", "Cancelled")
 
         response = await llm_with_cloud_fallback(
             state=state,

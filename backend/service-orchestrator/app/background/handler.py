@@ -49,8 +49,10 @@ async def _run_graph_agent_background(request: OrchestrateRequest) -> dict:
     state = await run_graph_agent(request, thread_id)
 
     # Adapt LangGraph state to handle_background return format
+    graph_data = state.get("task_graph") or {}
+    graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
     return {
-        "success": state.get("status") != "failed",
+        "success": graph_status not in ("failed", "cancelled"),
         "summary": state.get("final_result", ""),
         "artifacts": state.get("artifacts", []),
         "step_results": [],

@@ -453,4 +453,8 @@ def _format_evidence(evidence: dict) -> str:
     if chat_summary:
         parts.append(f"### Conversation Context\n{chat_summary[:1000]}")
 
+    existing_resources = evidence.get("existing_resources", "")
+    if existing_resources:
+        parts.append(f"### Existing Resources\n{existing_resources}")
+
     return "\n".join(parts) if parts else "(no evidence available)"

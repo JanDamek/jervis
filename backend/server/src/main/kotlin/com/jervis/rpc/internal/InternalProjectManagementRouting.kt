@@ -16,6 +16,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
@@ -160,6 +161,59 @@ fun Routing.installInternalProjectManagementApi(
         }
     }
 
+    // --- Update project ---
+    put("/internal/projects/{id}") {
+        try {
+            val id = call.parameters["id"] ?: return@put call.respondText(
+                """{"error":"Missing id"}""", ContentType.Application.Json, HttpStatusCode.BadRequest,
+            )
+            val req = call.receive<UpdateProjectRequest>()
+            val project = projectService.getProjectByIdOrNull(ProjectId(ObjectId(id)))
+                ?: return@put call.respondText(
+                    """{"error":"Project $id not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            // Apply partial updates
+            var updated = project
+            if (req.description != null) {
+                updated = updated.copy(description = req.description)
+            }
+            if (req.gitRemoteUrl != null) {
+                // Find or create a REPOSITORY resource with this URL
+                val existingResources = updated.resources.toMutableList()
+                val hasRepo = existingResources.any {
+                    it.capability == com.jervis.dto.connection.ConnectionCapability.REPOSITORY
+                }
+                if (!hasRepo) {
+                    existingResources.add(
+                        com.jervis.entity.ProjectResource(
+                            connectionId = null,
+                            capability = com.jervis.dto.connection.ConnectionCapability.REPOSITORY,
+                            resourceIdentifier = req.gitRemoteUrl,
+                            displayName = req.gitRemoteUrl.substringAfterLast("/").removeSuffix(".git"),
+                        ),
+                    )
+                    updated = updated.copy(resources = existingResources)
+                }
+            }
+
+            val dto = projectService.saveProject(updated)
+            call.respondText(
+                pmJson.encodeToString(com.jervis.dto.ProjectDto.serializer(), dto),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=PUT /internal/projects/{id}" }
+            call.respondText(
+                """{"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
+
     // --- Create connection ---
     post("/internal/connections") {
         try {
@@ -180,6 +234,14 @@ fun Routing.installInternalProjectManagementApi(
                 password = req.password,
             )
             val saved = connectionService.save(doc)
+
+            // Link connection to client if clientId provided
+            if (req.clientId != null) {
+                val client = clientService.getClientById(ClientId(ObjectId(req.clientId)))
+                val updatedIds = client.connectionIds + saved.id
+                clientService.update(client.copy(connectionIds = updatedIds))
+            }
+
             call.respondText(
                 """{"id":"${saved.id}","name":"${saved.name}","provider":"${saved.provider}","state":"${saved.state}"}""",
                 ContentType.Application.Json,
@@ -263,6 +325,12 @@ data class CreateProjectRequest(
 )
 
 @Serializable
+data class UpdateProjectRequest(
+    val description: String? = null,
+    val gitRemoteUrl: String? = null,
+)
+
+@Serializable
 data class CreateConnectionRequest(
     val name: String,
     val provider: String,
@@ -273,4 +341,5 @@ data class CreateConnectionRequest(
     val bearerToken: String? = null,
     val username: String? = null,
     val password: String? = null,
+    val clientId: String? = null,
 )

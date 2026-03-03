@@ -75,10 +75,25 @@ class ProjectTemplateService {
                     alias(libs.plugins.kotlinMultiplatform)
                     alias(libs.plugins.composeMultiplatform)
                     alias(libs.plugins.composeCompiler)
+                    alias(libs.plugins.androidApplication) apply false
                 }
 
                 kotlin {
                     jvm("desktop")
+
+                    androidTarget {
+                        compilations.all {
+                            kotlinOptions { jvmTarget = "17" }
+                        }
+                    }
+
+                    iosArm64()
+                    iosSimulatorArm64()
+
+                    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+                    wasmJs {
+                        browser()
+                    }
 
                     sourceSets {
                         val commonMain by getting {
@@ -89,6 +104,11 @@ class ProjectTemplateService {
                             }
                         }
                         val desktopMain by getting
+                        val androidMain by getting
+                        val iosMain by creating { dependsOn(commonMain) }
+                        val iosArm64Main by getting { dependsOn(iosMain) }
+                        val iosSimulatorArm64Main by getting { dependsOn(iosMain) }
+                        val wasmJsMain by getting
                     }
                 }
             """.trimIndent()),
@@ -134,6 +154,9 @@ class ProjectTemplateService {
 
                 dependencies {
                     implementation("org.springframework.boot:spring-boot-starter-web")
+                    implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
+                    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+                    runtimeOnly("org.postgresql:postgresql")
                     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
                     implementation("org.jetbrains.kotlin:kotlin-reflect")
                     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -156,6 +179,17 @@ class ProjectTemplateService {
                 spring:
                   application:
                     name: $projectName
+                  data:
+                    mongodb:
+                      uri: mongodb://localhost:27017/$projectName
+                  datasource:
+                    url: jdbc:postgresql://localhost:5432/$projectName
+                    username: postgres
+                    password: postgres
+                  jpa:
+                    hibernate:
+                      ddl-auto: update
+                    show-sql: false
 
                 server:
                   port: 8080
@@ -186,12 +220,12 @@ class ProjectTemplateService {
             ProjectTemplate(
                 type = "kmp",
                 name = "Kotlin Multiplatform + Compose",
-                description = "KMP project with Compose Multiplatform UI (Desktop/Android/iOS)",
+                description = "KMP project with Compose Multiplatform UI (Desktop/Android/iOS/Web via Wasm)",
             ),
             ProjectTemplate(
                 type = "spring-boot",
                 name = "Spring Boot (Kotlin)",
-                description = "Spring Boot 3.x backend with Kotlin, Web starter, and YAML config",
+                description = "Spring Boot 3.x backend with Kotlin, Web, MongoDB, PostgreSQL/JPA",
             ),
             ProjectTemplate(
                 type = "kmp-spring",

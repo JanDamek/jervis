@@ -1265,6 +1265,224 @@ ALL_RESPOND_TOOLS_FULL: list[dict] = ALL_RESPOND_TOOLS_FULL_BASE + MEMORY_TOOLS 
 
 
 # ============================================================
+# Project Management Tools — SETUP vertex + MCP
+# ============================================================
+
+TOOL_CREATE_CLIENT: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_client",
+        "description": (
+            "Create a new client (organization / workspace). "
+            "Clients own projects, connections, and KB data."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Client name (must be unique).",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional client description.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+}
+
+TOOL_CREATE_PROJECT: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_project",
+        "description": (
+            "Create a new project within a client. "
+            "Projects group code repos, KB data, and tasks."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "ID of the client that owns this project.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Project name.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional project description.",
+                },
+            },
+            "required": ["client_id", "name"],
+        },
+    },
+}
+
+TOOL_CREATE_CONNECTION: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_connection",
+        "description": (
+            "Create a new external service connection (GitHub, GitLab, Atlassian, etc.). "
+            "Optionally link it to a client by providing client_id."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Connection name (must be unique).",
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Service provider: GITHUB, GITLAB, ATLASSIAN, AZURE_DEVOPS, GENERIC_EMAIL.",
+                },
+                "auth_type": {
+                    "type": "string",
+                    "description": "Authentication type: NONE, BASIC, BEARER, OAUTH2.",
+                    "default": "BEARER",
+                },
+                "base_url": {
+                    "type": "string",
+                    "description": "API base URL (leave empty for cloud providers).",
+                },
+                "bearer_token": {
+                    "type": "string",
+                    "description": "Bearer / personal access token.",
+                },
+                "is_cloud": {
+                    "type": "boolean",
+                    "description": "Use provider's default cloud URL.",
+                    "default": False,
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID to link this connection to (adds to client's connectionIds).",
+                },
+            },
+            "required": ["name", "provider"],
+        },
+    },
+}
+
+TOOL_CREATE_GIT_REPOSITORY: dict = {
+    "type": "function",
+    "function": {
+        "name": "create_git_repository",
+        "description": (
+            "Create a new git repository on GitHub or GitLab via the provider API. "
+            "Uses the specified connection's bearer token."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID whose connection will be used.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Repository name.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional repository description.",
+                },
+                "connection_id": {
+                    "type": "string",
+                    "description": "Specific connection ID to use (empty = auto-detect REPOSITORY connection).",
+                },
+                "is_private": {
+                    "type": "boolean",
+                    "description": "Whether the repository should be private.",
+                    "default": True,
+                },
+            },
+            "required": ["client_id", "name"],
+        },
+    },
+}
+
+TOOL_UPDATE_PROJECT: dict = {
+    "type": "function",
+    "function": {
+        "name": "update_project",
+        "description": (
+            "Update an existing project's fields (e.g., set git remote URL after repo creation)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "ID of the project to update.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "New project description.",
+                },
+                "git_remote_url": {
+                    "type": "string",
+                    "description": "Git remote URL (clone URL) to associate with the project.",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
+}
+
+TOOL_INIT_WORKSPACE: dict = {
+    "type": "function",
+    "function": {
+        "name": "init_workspace",
+        "description": (
+            "Initialize (clone) the workspace for a project. "
+            "Triggers an async git clone of the project's repository."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "ID of the project to initialize workspace for.",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
+}
+
+TOOL_LIST_TEMPLATES: dict = {
+    "type": "function",
+    "function": {
+        "name": "list_templates",
+        "description": (
+            "List available project scaffolding templates (KMP, Spring Boot, full-stack)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+}
+
+PROJECT_MANAGEMENT_TOOLS: list[dict] = [
+    TOOL_CREATE_CLIENT,
+    TOOL_CREATE_PROJECT,
+    TOOL_CREATE_CONNECTION,
+    TOOL_CREATE_GIT_REPOSITORY,
+    TOOL_UPDATE_PROJECT,
+    TOOL_INIT_WORKSPACE,
+    TOOL_LIST_TEMPLATES,
+]
+
+
+# ============================================================
 # Per-agent tool sets (multi-agent delegation system)
 # Each specialist agent gets ONLY its own tools.
 # ============================================================

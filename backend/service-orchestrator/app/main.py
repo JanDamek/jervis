@@ -472,17 +472,6 @@ async def get_task_graph(task_id: str):
     if not graph:
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
     return graph.model_dump()
-    # Push cancelled status to Kotlin
-    # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
-    parts = thread_id.split("-")
-    task_id = parts[1] if len(parts) >= 2 else thread_id
-    await kotlin_client.report_status_change(
-        task_id=task_id,
-        thread_id=thread_id,
-        status="error",
-        error="Orchestrace zrušena uživatelem",
-    )
-    return {"status": "cancelled"}
 
 
 # --- Entry point ---

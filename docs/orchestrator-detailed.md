@@ -3946,10 +3946,10 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 | REVIEWER | KB search, files, repo, branches, commits, tech stack | Yes |
 | SYNTHESIS | KB search, memory recall, KB write, memory store | No |
 | GATE | KB search, memory recall | Yes |
-| SETUP | KB search, environment CRUD/deploy/status, repo info/structure, tech stack, coding agent, KB write, memory | Yes |
+| SETUP | KB search, environment CRUD, project mgmt tools (create client/project/connection/repo, update project, init workspace, list templates), repo info/structure, tech stack, coding agent, KB write, memory | Yes |
 
 **`request_tools` meta-tool:** Any vertex with this tool can dynamically request additional categories:
-- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `queue`, `environment`, `setup`, `all`
+- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `queue`, `environment`, `project_management`, `setup`, `all`
 - Tools are appended to the current set (deduplicated by name)
 - Available in next LLM call iteration
 
