@@ -212,7 +212,7 @@ async def _summarize_affair_for_parking(
 
     # Build context from affair messages
     messages_text = "\n".join(
-        f"[{m.role}]: {m.content[:500]}" for m in affair.messages[-10:]
+        f"[{m.role}]: {m.content}" for m in affair.messages[-10:]
     )
 
     prompt = f"""Shrň záležitost pro pozdější obnovení kontextu.
@@ -244,7 +244,7 @@ Odpověz POUZE validním JSON:
 
     content = response.choices[0].message.content or ""
     result = parse_json_response(content)
-    return result if result else {"summary": content[:500]}
+    return result if result else {"summary": content}
 
 
 async def _load_affair_from_kb(

@@ -296,10 +296,11 @@ class MemoryAgent:
         now = datetime.now(timezone.utc).isoformat()
 
         # Add to active affair key_facts if applicable
+        # No truncation — LLM-based compression handles this during parking
         if affair_id and self.session.active_affair and self.session.active_affair.id == affair_id:
-            self.session.active_affair.key_facts[subject] = content[:500]
+            self.session.active_affair.key_facts[subject] = content
         elif self.session.active_affair:
-            self.session.active_affair.key_facts[subject] = content[:500]
+            self.session.active_affair.key_facts[subject] = content
 
         # Buffer KB write
         kind_map = {
