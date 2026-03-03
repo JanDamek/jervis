@@ -3967,11 +3967,29 @@ The decomposer distinguishes between **discussion/specification** and **implemen
 - "Klient by chtěl aplikaci na správu domácí knihovny" → single conversational vertex (asks "what platforms? what features?")
 - "Mělo by to mít konektivitu na databázi knih" → single vertex (refines: "which API? what data to fetch?")
 - Requirements accumulate in **memories (affairs)** across messages
+- Each confirmed decision is stored to KB via `store_knowledge(category='specification')`
+
+**Progressive KB capture during discussion:**
+Discussion executor vertices automatically persist each decision to KB with `category='specification'`. This creates structured, searchable entries like:
+- Subject: "Platform decision" → Content: "Android + iOS with KMP"
+- Subject: "Storage choice" → Content: "PostgreSQL for book catalog, Redis for caching"
+- Subject: "Feature: auth" → Content: "OAuth2 with Google and Apple Sign-In"
+
+These entries survive memory compression — when memories get compacted over hours/days of discussion, the full details remain in KB.
+
+**Cross-project references:**
+When the user mentions another project (e.g., "this logging solution would work in project XYZ"), `store_knowledge` accepts `target_project_name` parameter. The knowledge is stored for BOTH the current project and the referenced project. When later working on project XYZ, the knowledge is discoverable via KB search.
 
 **Implementation command** (explicit + sufficient context):
 - "Tak to implementuj" / "Build it" → full graph with SETUP, EXECUTOR, VALIDATOR vertices
 - "Napiš aplikaci v KMP s PostgreSQL backendem" → full workflow (clear spec in one message)
-- SETUP vertex reads accumulated requirements from memories/upstream context
+- SETUP vertex **reconstructs from KB**: first searches for all `specification` entries, then combines with memories summary to build complete requirements brief
+
+**SETUP reconstruction flow:**
+1. `kb_search("specification")` → finds all progressively stored requirements
+2. `kb_search("platform decision")`, `kb_search("feature")` → targeted searches for specific aspects
+3. Upstream context from memories → high-level summary
+4. Combine KB details + memory summary → complete requirements brief for `get_stack_recommendations`
 
 **Key principle:** The agent leads a natural discussion, asking clarifying questions, until the user explicitly commands implementation. The memories system accumulates requirements across messages. SETUP vertex is NEVER created for vague/incomplete requirements.
 

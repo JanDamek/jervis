@@ -187,6 +187,7 @@ async def execute_tool(
                 project_id=project_id,
                 processing_mode=processing_mode,
                 group_id=group_id,
+                target_project_name=arguments.get("target_project_name"),
             )
         elif tool_name == "create_scheduled_task":
             result = await _execute_create_scheduled_task(
@@ -737,11 +738,13 @@ async def _execute_store_knowledge(
     project_id: str | None = None,
     processing_mode: str = "FOREGROUND",
     group_id: str | None = None,
+    target_project_name: str | None = None,
 ) -> str:
     """Store new knowledge into the Knowledge Base via POST /api/v1/ingest.
 
     Stores user-provided facts, definitions, and information for future reference.
     Uses the write endpoint which routes to jervis-knowledgebase-write service.
+    When target_project_name is set, also stores a copy tagged for the target project.
     """
     if not subject.strip():
         return "Error: Subject cannot be empty when storing knowledge."
@@ -810,6 +813,59 @@ async def _execute_store_knowledge(
     except Exception as e:
         return f"Error: KB write failed: {str(e)[:200]}"
 
+    # Cross-project storage: if target_project_name is set, also store for that project
+    cross_project_note = ""
+    if target_project_name:
+        try:
+            # Look up target project by name
+            async with httpx.AsyncClient(timeout=10.0) as client2:
+                resp2 = await client2.get(
+                    f"{_KOTLIN_INTERNAL_URL}/internal/projects",
+                    params={"clientId": client_id},
+                )
+                if resp2.status_code == 200:
+                    projects = resp2.json()
+                    target_proj = next(
+                        (p for p in projects if target_project_name.lower() in p.get("name", "").lower()),
+                        None,
+                    )
+                    if target_proj:
+                        target_pid = target_proj.get("id", "")
+                        cross_payload = {
+                            "clientId": client_id,
+                            "projectId": target_pid,
+                            "sourceUrn": f"cross-ref:{category}:{subject}:{timestamp}",
+                            "kind": f"user_knowledge_{category}",
+                            "content": f"# {subject} (cross-reference from other context)\n\n{content}",
+                            "metadata": {
+                                "subject": subject,
+                                "category": category,
+                                "stored_at": timestamp,
+                                "source": "cross_project_reference",
+                                "source_project_id": project_id or "",
+                            },
+                        }
+                        resp3 = await client2.post(
+                            f"{kb_write_url}/api/v1/ingest",
+                            json=cross_payload,
+                            headers=headers,
+                        )
+                        if resp3.status_code in (200, 201, 202):
+                            cross_project_note = (
+                                f"\n✓ Also stored for project '{target_project_name}' (cross-reference)."
+                            )
+                        else:
+                            cross_project_note = (
+                                f"\n⚠ Cross-project store for '{target_project_name}' failed: {resp3.status_code}"
+                            )
+                    else:
+                        cross_project_note = (
+                            f"\n⚠ Project '{target_project_name}' not found — "
+                            "cross-reference not stored. Knowledge is still saved in current project."
+                        )
+        except Exception as e:
+            cross_project_note = f"\n⚠ Cross-project store failed: {str(e)[:100]}"
+
     # Success response
     chunk_count = data.get("chunk_count", 0)
     return (
@@ -817,7 +873,7 @@ async def _execute_store_knowledge(
         f"Subject: {subject}\n"
         f"Category: {category}\n"
         f"Chunks created: {chunk_count}\n"
-        f"This information is now available for future queries.\n"
+        f"This information is now available for future queries.{cross_project_note}\n"
         f"If there are other parts to handle, continue with those now."
     )
 
