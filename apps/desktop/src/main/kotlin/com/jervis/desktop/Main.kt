@@ -107,6 +107,7 @@ fun main() {
             Window(
                 onCloseRequest = { showMainWindow = false },
                 title = "JERVIS Assistant",
+                icon = painterResource("icons/jervis_icon.png"),
                 state = rememberWindowState(width = 1200.dp, height = 800.dp),
             ) {
                 window.minimumSize = Dimension(800, 600)
