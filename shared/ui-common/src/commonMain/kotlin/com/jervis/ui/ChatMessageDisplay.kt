@@ -31,16 +31,19 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -74,7 +77,7 @@ internal fun ChatArea(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
-    onReplyToTask: (taskId: String) -> Unit = {},
+    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -108,13 +111,12 @@ internal fun ChatArea(
                             message = item.message,
                             orchestratorProgress = if (item.message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
                             onEditMessage = onEditMessage,
-                            onReplyToTask = onReplyToTask,
                         )
                         is ChatDisplayItem.Thread -> ThreadCard(
                             thread = item,
                             isExpanded = item.taskId in expandedThreads,
                             onToggle = { onToggleThread(item.taskId) },
-                            onReplyToTask = onReplyToTask,
+                            onSendReply = { text -> onSendThreadReply(item.taskId, text) },
                             onEditMessage = onEditMessage,
                         )
                     }
@@ -156,10 +158,12 @@ private fun ThreadCard(
     thread: ChatDisplayItem.Thread,
     isExpanded: Boolean,
     onToggle: () -> Unit,
-    onReplyToTask: (String) -> Unit,
+    onSendReply: (String) -> Unit,
     onEditMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var isReplying by remember { mutableStateOf(false) }
+    var replyText by remember { mutableStateOf("") }
     val header = thread.header
     val isSuccess = header.metadata["success"] != "false"
 
@@ -259,7 +263,7 @@ private fun ThreadCard(
                 }
             }
 
-            // Footer: timestamp + reply button
+            // Footer: timestamp + reply toggle
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -276,21 +280,80 @@ private fun ThreadCard(
                         )
                     }
                 }
-                TextButton(
-                    onClick = { onReplyToTask(thread.taskId) },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp),
+                if (!isReplying) {
+                    TextButton(
+                        onClick = { isReplying = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Reply,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Reagovat",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
+
+            // Inline reply input (shown when "Reagovat" clicked)
+            AnimatedVisibility(visible = isReplying) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(
-                        Icons.Default.Reply,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                    IconButton(
+                        onClick = {
+                            isReplying = false
+                            replyText = ""
+                        },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Zrušit",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = replyText,
+                        onValueChange = { replyText = it },
+                        modifier = Modifier.weight(1f),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "Napsat odpověď...",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        },
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "Reagovat",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+                    IconButton(
+                        onClick = {
+                            if (replyText.isNotBlank()) {
+                                onSendReply(replyText)
+                                replyText = ""
+                                isReplying = false
+                            }
+                        },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Send,
+                            contentDescription = "Odeslat",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (replyText.isNotBlank()) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -455,7 +518,6 @@ private fun ChatMessageItem(
     message: ChatMessage,
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
-    onReplyToTask: (taskId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -619,36 +681,14 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Timestamp + Reply button
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    message.timestamp?.let { ts ->
-                        if (ts.isNotBlank()) {
-                            Text(
-                                text = formatMessageTime(ts),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            )
-                        }
-                    }
-                    val taskId = message.metadata["taskId"] ?: ""
-                    TextButton(
-                        onClick = { onReplyToTask(taskId) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Reply,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
+                // Timestamp
+                message.timestamp?.let { ts ->
+                    if (ts.isNotBlank()) {
                         Text(
-                            "Reagovat",
+                            text = formatMessageTime(ts),
                             style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                 }

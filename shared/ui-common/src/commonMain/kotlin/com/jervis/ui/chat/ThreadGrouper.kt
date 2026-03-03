@@ -60,6 +60,6 @@ fun groupIntoDisplayItems(
     // Standalone messages
     standalones.forEach { items.add(ChatDisplayItem.Standalone(it)) }
 
-    // Sort by last activity
-    return items.sortedBy { it.sortTimestamp ?: "" }
+    // Sort by last activity (null timestamps = most recent, sort to end)
+    return items.sortedBy { it.sortTimestamp ?: "\uFFFF" }
 }

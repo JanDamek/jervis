@@ -162,10 +162,11 @@ class ChatRpcImpl(
                     ChatResponseDto(
                         message = text,
                         type = ChatResponseType.USER_MESSAGE,
-                        metadata = mapOf(
-                            "sender" to "user",
-                            "timestamp" to java.time.Instant.now().toString(),
-                        ),
+                        metadata = buildMap {
+                            put("sender", "user")
+                            put("timestamp", java.time.Instant.now().toString())
+                            if (!contextTaskId.isNullOrBlank()) put("contextTaskId", contextTaskId)
+                        },
                     ),
                 )
 

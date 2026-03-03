@@ -165,19 +165,57 @@ class ChatViewModel(
     }
 
     /**
-     * Set context for replying to a background task result.
-     * Pre-fills input, stores contextTaskId for sendMessage(), auto-expands the thread.
+     * Send a reply from the inline input inside a ThreadCard.
+     * Creates optimistic message with contextTaskId, sends via RPC, auto-expands thread.
      */
-    fun replyToTask(taskId: String) {
-        _contextTaskId.value = taskId
-        _inputText.value = ""
-        // Auto-expand thread when replying
-        _expandedThreads.value = _expandedThreads.value + taskId
-    }
+    @OptIn(ExperimentalUuidApi::class)
+    fun sendThreadReply(taskId: String, text: String) {
+        if (text.isBlank() || _isLoading.value) return
+        _isLoading.value = true
 
-    /** Clear reply context (dismiss banner without sending). */
-    fun clearReplyContext() {
-        _contextTaskId.value = null
+        val clientId = selectedClientId.value
+        val projectId = selectedProjectId.value
+        val clientMessageId = Uuid.random().toString()
+
+        // Optimistic message with contextTaskId for immediate thread grouping
+        val optimisticMsg = ChatMessage(
+            from = ChatMessage.Sender.Me,
+            text = text,
+            contextId = projectId,
+            messageType = ChatMessage.MessageType.USER_MESSAGE,
+            metadata = mapOf("contextTaskId" to taskId),
+        )
+        _chatMessages.value = _chatMessages.value + optimisticMsg
+        // Auto-expand thread
+        _expandedThreads.value = _expandedThreads.value + taskId
+
+        scope.launch {
+            try {
+                repository.chat.sendMessage(
+                    text = text,
+                    clientMessageId = clientMessageId,
+                    activeClientId = clientId,
+                    activeProjectId = projectId,
+                    contextTaskId = taskId,
+                )
+                println("=== Thread reply sent (taskId=$taskId) ===")
+
+                val progressMsg = ChatMessage(
+                    from = ChatMessage.Sender.Assistant,
+                    text = "Zpracovávám...",
+                    contextId = projectId,
+                    messageType = ChatMessage.MessageType.PROGRESS,
+                )
+                _chatMessages.value = _chatMessages.value + progressMsg
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                println("Error sending thread reply: ${e.message}")
+                onError("Chyba při odesílání: ${e.message}")
+                _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     /** Toggle thread expand/collapse. Marks thread as seen when expanding. */
@@ -519,12 +557,14 @@ class ChatViewModel(
                             it.timestamp == null
                     }
                     if (idx >= 0) {
+                        // Merge: preserve optimistic metadata (e.g. contextTaskId) with server echo
+                        val mergedMetadata = messages[idx].metadata + response.metadata
                         messages[idx] = ChatMessage(
                             from = ChatMessage.Sender.Me,
                             text = response.message,
                             contextId = projectId,
                             messageType = ChatMessage.MessageType.USER_MESSAGE,
-                            metadata = response.metadata,
+                            metadata = mergedMetadata,
                             timestamp = response.metadata["timestamp"],
                         )
                     }
@@ -588,6 +628,7 @@ class ChatViewModel(
                         contextId = projectId,
                         messageType = messageType,
                         metadata = response.metadata,
+                        timestamp = response.metadata["timestamp"] ?: java.time.Instant.now().toString(),
                         workflowSteps = parseWorkflowSteps(response.metadata),
                     ),
                 )
@@ -602,6 +643,7 @@ class ChatViewModel(
                         contextId = projectId,
                         messageType = messageType,
                         metadata = response.metadata,
+                        timestamp = response.metadata["timestamp"] ?: java.time.Instant.now().toString(),
                     ),
                 )
             }

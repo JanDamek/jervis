@@ -30,8 +30,6 @@ fun MainScreen(
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
-    val replyContextTaskId by viewModel.chat.contextTaskId.collectAsState()
-
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
     val resolvedEnvId by viewModel.environment.resolvedEnvId.collectAsState()
@@ -70,7 +68,7 @@ fun MainScreen(
         onInputChanged = viewModel.chat::updateInputText,
         onSendClick = viewModel.chat::sendMessage,
         onEditMessage = viewModel.chat::editMessage,
-        onReplyToTask = viewModel.chat::replyToTask,
+        onSendThreadReply = viewModel.chat::sendThreadReply,
         onLoadMore = viewModel.chat::loadMoreHistory,
         onAttachFile = viewModel.chat::attachFile,
         onRemoveAttachment = viewModel.chat::removeAttachment,
@@ -85,8 +83,6 @@ fun MainScreen(
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
         orchestratorProgress = orchestratorProgress,
-        replyContextTaskId = replyContextTaskId,
-        onClearReplyContext = viewModel.chat::clearReplyContext,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,

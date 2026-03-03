@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
@@ -31,7 +30,6 @@ import com.jervis.ui.chat.ChatDisplayItem
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
-import com.jervis.ui.design.JIconButton
 import com.jervis.ui.model.PendingMessageInfo
 import com.jervis.ui.util.PickedFile
 
@@ -57,7 +55,7 @@ fun MainScreenView(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit = {},
-    onReplyToTask: (taskId: String) -> Unit = {},
+    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
@@ -72,8 +70,6 @@ fun MainScreenView(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
-    replyContextTaskId: String? = null,
-    onClearReplyContext: () -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -114,7 +110,7 @@ fun MainScreenView(
                             onInputChanged = onInputChanged,
                             onSendClick = onSendClick,
                             onEditMessage = onEditMessage,
-                            onReplyToTask = onReplyToTask,
+                            onSendThreadReply = onSendThreadReply,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
                             onRemoveAttachment = onRemoveAttachment,
@@ -129,8 +125,6 @@ fun MainScreenView(
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
                             orchestratorProgress = orchestratorProgress,
-                            replyContextTaskId = replyContextTaskId,
-                            onClearReplyContext = onClearReplyContext,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -156,7 +150,7 @@ fun MainScreenView(
                     onInputChanged = onInputChanged,
                     onSendClick = onSendClick,
                     onEditMessage = onEditMessage,
-                    onReplyToTask = onReplyToTask,
+                    onSendThreadReply = onSendThreadReply,
                     onLoadMore = onLoadMore,
                     onAttachFile = onAttachFile,
                     onRemoveAttachment = onRemoveAttachment,
@@ -171,8 +165,6 @@ fun MainScreenView(
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
                     orchestratorProgress = orchestratorProgress,
-                    replyContextTaskId = replyContextTaskId,
-                    onClearReplyContext = onClearReplyContext,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -200,7 +192,7 @@ private fun ChatContent(
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit,
-    onReplyToTask: (taskId: String) -> Unit = {},
+    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -215,8 +207,6 @@ private fun ChatContent(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
-    replyContextTaskId: String? = null,
-    onClearReplyContext: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -243,7 +233,7 @@ private fun ChatContent(
             orchestratorProgress = orchestratorProgress,
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
-            onReplyToTask = onReplyToTask,
+            onSendThreadReply = onSendThreadReply,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -268,11 +258,6 @@ private fun ChatContent(
             )
         }
 
-        // Reply context banner — shown when replying to a background task
-        if (replyContextTaskId != null) {
-            ReplyContextBanner(onClear = onClearReplyContext)
-        }
-
         HorizontalDivider()
 
         // Input area — always enabled, messages queue when offline
@@ -285,7 +270,6 @@ private fun ChatContent(
             attachments = attachments,
             onAttachFile = onAttachFile,
             onRemoveAttachment = onRemoveAttachment,
-            requestFocus = replyContextTaskId != null,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
@@ -431,46 +415,6 @@ private fun OrchestratorHealthBanner(modifier: Modifier = Modifier) {
                 text = "Orchestrátor není dostupný. Tasky budou zpracovány po obnovení.",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
-            )
-        }
-    }
-}
-
-/**
- * Banner shown when replying to a background task result ("Reagovat").
- * Displays a short label and a close button to dismiss the reply context.
- */
-@Composable
-private fun ReplyContextBanner(
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Default.Reply,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Reakce na background úlohu",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.weight(1f),
-            )
-            JIconButton(
-                onClick = onClear,
-                icon = Icons.Default.Close,
-                contentDescription = "Zrušit reakci",
-                modifier = Modifier.size(44.dp),
             )
         }
     }
