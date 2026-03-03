@@ -38,7 +38,7 @@ from app.graph.nodes._helpers import (
     llm_with_cloud_fallback,
     parse_json_response,
 )
-from app.graph_agent.decomposer import decompose_root
+from app.graph_agent.decomposer import decompose_root, decompose_vertex
 from app.graph_agent.graph import (
     complete_vertex,
     fail_vertex,
@@ -62,6 +62,7 @@ from app.graph_agent.progress import (
     report_vertex_completed,
     report_vertex_started,
 )
+from app.graph_agent.impact import analyze_impact
 from app.graph_agent.tool_sets import get_default_tools, get_tools_by_category
 from app.graph_agent.validation import validate_graph
 from app.models import CodingTask, DelegationMessage, OrchestrateRequest
@@ -103,8 +104,10 @@ class GraphAgentState(TypedDict, total=False):
 async def node_decompose(state: GraphAgentState) -> dict:
     """Decompose the user request into a TaskGraph (vertices + edges).
 
-    Creates a root vertex, calls LLM to break it into sub-vertices,
-    validates the result. The TaskGraph is stored in state.
+    Short-circuits trivial requests (< 200 chars, simple questions) into a
+    single EXECUTOR vertex — no LLM decomposition needed for "kolik je hodin?".
+
+    For complex requests, calls LLM to break into sub-vertices, validates result.
     """
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack")
@@ -118,7 +121,43 @@ async def node_decompose(state: GraphAgentState) -> dict:
         root_description=task.query,
     )
 
-    # LLM-driven decomposition
+    # --- Short-circuit for trivial requests ---
+    if _is_trivial_request(task.query):
+        logger.info("Trivial request detected — single vertex, no decomposition")
+        from app.graph_agent.graph import add_vertex as gav, add_edge as gae
+        import uuid as _uuid
+
+        single_id = f"exec_{_uuid.uuid4().hex[:8]}"
+        single_vertex = GraphVertex(
+            id=single_id,
+            title=task.query[:100],
+            description=task.query,
+            vertex_type=VertexType.EXECUTOR,
+            status=VertexStatus.PENDING,
+            input_request=task.query,
+            parent_id=graph.root_vertex_id,
+            depth=1,
+        )
+        gav(graph, single_vertex, parent_id=graph.root_vertex_id)
+        gae(graph, source_id=graph.root_vertex_id, target_id=single_id,
+            edge_type=EdgeType.DECOMPOSITION)
+
+        # Mark root as completed
+        root = graph.vertices[graph.root_vertex_id]
+        root.status = VertexStatus.COMPLETED
+        root.result = "Trivial request — direct execution"
+        root.result_summary = "Direct execution"
+
+        graph.status = GraphStatus.EXECUTING
+
+        await task_graph_store.save(graph)
+        return {
+            "task_graph": graph.model_dump(),
+            "current_vertex_id": None,
+            "graph_error": None,
+        }
+
+    # --- Full LLM-driven decomposition ---
     try:
         graph = await decompose_root(
             graph=graph,
@@ -215,26 +254,47 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
     await report_vertex_started(graph, vertex_id)
 
     try:
-        # Build context from incoming edges
-        context = _build_context(vertex)
+        # PLANNER/DECOMPOSE → recursive decomposition (creates sub-graph)
+        if vertex.vertex_type in (VertexType.PLANNER, VertexType.DECOMPOSE):
+            graph = await _handle_decompose_vertex(graph, vertex, state)
+        else:
+            # All other types → agentic tool loop
+            context = _build_context(vertex)
+            result, summary = await _dispatch_vertex_handler(vertex, context, state)
 
-        # All vertex types go through the unified agentic loop
-        # (vertex type determines system prompt + default tools)
-        result, summary = await _dispatch_vertex_handler(vertex, context, state)
-
-        # Complete vertex — fills outgoing edge payloads
-        complete_vertex(
-            graph, vertex_id,
-            result=result,
-            result_summary=summary,
-            local_context=result,
-        )
+            # Complete vertex — fills outgoing edge payloads
+            complete_vertex(
+                graph, vertex_id,
+                result=result,
+                result_summary=summary,
+                local_context=result,
+            )
 
     except Exception as e:
         logger.error("Vertex %s failed: %s", vertex_id, e, exc_info=True)
         fail_vertex(graph, vertex_id, str(e))
 
     await report_vertex_completed(graph, vertex_id)
+
+    # --- Impact analysis: propagate changes through artifact graph ---
+    # Only for completed non-decompose vertices (decompose vertices create sub-graphs, not changes)
+    completed_vertex = graph.vertices.get(vertex_id)
+    if (
+        completed_vertex
+        and completed_vertex.status == VertexStatus.COMPLETED
+        and completed_vertex.vertex_type not in (VertexType.PLANNER, VertexType.DECOMPOSE)
+        and settings.use_graph_agent  # Only when graph agent is enabled
+    ):
+        try:
+            new_ids = await analyze_impact(graph, completed_vertex, state)
+            if new_ids:
+                logger.info(
+                    "Impact analysis created %d new vertices for vertex %s",
+                    len(new_ids), vertex_id,
+                )
+        except Exception as e:
+            logger.warning("Impact analysis failed for vertex %s: %s", vertex_id, e)
+
     await task_graph_store.save(graph)
 
     return {"task_graph": graph.model_dump()}
@@ -705,6 +765,74 @@ async def _dispatch_vertex_handler(
     return await _agentic_vertex(vertex, context, state)
 
 
+async def _handle_decompose_vertex(
+    graph: TaskGraph,
+    vertex: GraphVertex,
+    state: dict,
+) -> TaskGraph:
+    """Handle PLANNER/DECOMPOSE vertex — recursive decomposition.
+
+    Instead of executing the vertex via LLM tool loop, calls decompose_vertex()
+    to create sub-vertices + edges in the graph. The vertex itself is marked
+    COMPLETED and its children will be picked up by subsequent select_next cycles.
+
+    If decomposition fails or hits depth/count limits, the vertex is converted
+    to EXECUTOR and falls through to the agentic tool loop on next dispatch.
+    """
+    from app.graph_agent.decomposer import MAX_DECOMPOSE_DEPTH, MAX_TOTAL_VERTICES
+
+    vertex_id = vertex.id
+
+    # Check limits — if exceeded, convert to EXECUTOR and let agentic loop handle it
+    if vertex.depth >= MAX_DECOMPOSE_DEPTH:
+        logger.info(
+            "Vertex %s at depth %d — max depth reached, converting to EXECUTOR",
+            vertex_id, vertex.depth,
+        )
+        vertex.vertex_type = VertexType.EXECUTOR
+        context = _build_context(vertex)
+        result, summary = await _agentic_vertex(vertex, context, state)
+        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
+        return graph
+
+    if len(graph.vertices) >= MAX_TOTAL_VERTICES:
+        logger.info(
+            "Graph has %d vertices — max reached, converting %s to EXECUTOR",
+            len(graph.vertices), vertex_id,
+        )
+        vertex.vertex_type = VertexType.EXECUTOR
+        context = _build_context(vertex)
+        result, summary = await _agentic_vertex(vertex, context, state)
+        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
+        return graph
+
+    # Recursive decomposition — creates sub-vertices + edges
+    try:
+        guidelines = state.get("rules", {}).get("guidelines_text", "")
+        graph = await decompose_vertex(
+            graph=graph,
+            vertex_id=vertex_id,
+            state=state,
+            guidelines=guidelines,
+        )
+        logger.info(
+            "Decomposed vertex %s (depth=%d) — graph now has %d vertices",
+            vertex_id, vertex.depth, len(graph.vertices),
+        )
+    except Exception as e:
+        # Decomposition failed — convert to EXECUTOR as fallback
+        logger.warning(
+            "Decomposition failed for vertex %s, falling back to EXECUTOR: %s",
+            vertex_id, e,
+        )
+        vertex.vertex_type = VertexType.EXECUTOR
+        context = _build_context(vertex)
+        result, summary = await _agentic_vertex(vertex, context, state)
+        complete_vertex(graph, vertex_id, result=result, result_summary=summary, local_context=result)
+
+    return graph
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -723,3 +851,38 @@ def _build_context(vertex: GraphVertex) -> str:
             f"Context:\n{payload.context}"
         )
     return "\n".join(parts)
+
+
+# Trivial request heuristic — questions under 200 chars, no complex structure
+_TRIVIAL_MAX_LEN = 200
+_TRIVIAL_INDICATORS = {"?", "kolik", "what", "who", "when", "kde", "jak", "how"}
+
+
+def _is_trivial_request(query: str) -> bool:
+    """Detect trivial requests that don't need decomposition.
+
+    Simple questions, greetings, and short commands go straight to a single
+    EXECUTOR vertex. Complex multi-part requests get full decomposition.
+    """
+    if len(query) > _TRIVIAL_MAX_LEN:
+        return False
+
+    q_lower = query.lower().strip()
+
+    # Contains newlines or bullet points → likely multi-part
+    if "\n" in q_lower or "- " in q_lower or "1." in q_lower:
+        return False
+
+    # Contains "and" / "a" connectors suggesting multiple tasks
+    if " and " in q_lower or " a zároveň " in q_lower or " a pak " in q_lower:
+        return False
+
+    # Short question with question indicators → trivial
+    if len(query) < 100 and any(ind in q_lower for ind in _TRIVIAL_INDICATORS):
+        return True
+
+    # Very short (under 50 chars) → probably trivial
+    if len(query) < 50:
+        return True
+
+    return False

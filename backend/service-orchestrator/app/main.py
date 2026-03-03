@@ -188,9 +188,11 @@ async def lifespan(app: FastAPI):
     if settings.use_graph_agent:
         from app.graph_agent.persistence import task_graph_store
         from app.graph_agent.langgraph_runner import init_graph_agent_checkpointer
+        from app.graph_agent.artifact_graph import artifact_graph_store
         await task_graph_store.init()
         await init_graph_agent_checkpointer()
-        logger.info("Graph Agent ready (LangGraph + MongoDB: task_graphs)")
+        await artifact_graph_store.init()
+        logger.info("Graph Agent ready (LangGraph + MongoDB + ArangoDB artifact graph)")
 
     # Memory Agent
     logger.info("Memory Agent ready (affairs + LQM)")
