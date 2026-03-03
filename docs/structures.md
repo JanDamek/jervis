@@ -1233,14 +1233,15 @@ All default to `False` (opt-in):
 
 ### Overview
 
-The Graph Agent is a new execution model that replaces the fixed delegation pipeline with a dynamic vertex/edge DAG. Instead of rigid parallel groups, the request is decomposed into **vertices** (processing units) connected by **edges** that carry **context + summary** from source to target.
+The Graph Agent is a new execution model that replaces the fixed delegation pipeline with a dynamic vertex/edge DAG. Uses **LangGraph** (proven framework) for execution, with **TaskGraph** as the planning structure. Each vertex type has a distinct **responsibility** — determining its system prompt, default tool set, and behavior.
 
 **Key principles:**
-- **Input → vertices → edges → result**: a request is decomposed into main vertices, each further decomposable
+- **Input → vertices → edges → result**: a request is decomposed into vertices, each further decomposable
+- **Responsibility-based types**: each vertex type (planner, investigator, executor, validator, reviewer) gets tools matching its role
 - **Context accumulation**: each edge carries `summary` + `full context` (searchable). After 10 vertices, target has 10 contexts
 - **Fan-in**: if 10 edges converge into a vertex, it receives 10 summaries + 10 full contexts
-- **Fan-out**: a vertex can decompose into multiple sub-vertices
-- **Results compose from vertex results**
+- **Dynamic tool requests**: vertices get default tools but can request additional categories at runtime via `request_tools`
+- **LangGraph execution**: LangGraph handles checkpointing, interrupt/resume, and execution flow. TaskGraph teaches it HOW to think
 
 ### Data Model
 
@@ -1248,11 +1249,16 @@ The Graph Agent is a new execution model that replaces the fixed delegation pipe
 
 ```python
 class VertexType(str, Enum):
-    ROOT = "root"               # Initial request decomposition
-    TASK = "task"               # Concrete work item (agent executes it)
-    DECOMPOSE = "decompose"     # Intermediate — further breaks down
-    SYNTHESIS = "synthesis"     # Combines results from upstream
+    ROOT = "root"               # Initial request — decomposes into sub-vertices
+    PLANNER = "planner"         # Plans approach / breaks down further
+    INVESTIGATOR = "investigator"  # Researches context (KB, web, code search)
+    EXECUTOR = "executor"       # Performs concrete work (coding, tracker ops)
+    VALIDATOR = "validator"     # Verifies results (tests, checks, lint)
+    REVIEWER = "reviewer"       # Reviews quality (code review, output review)
+    SYNTHESIS = "synthesis"     # Combines results from upstream vertices
     GATE = "gate"               # Decision / approval point
+    TASK = "task"               # Legacy alias for EXECUTOR
+    DECOMPOSE = "decompose"     # Alias for PLANNER
 
 class VertexStatus(str, Enum):
     PENDING = "pending"         # Waiting for incoming edges
@@ -1371,6 +1377,43 @@ Supports atomic vertex status updates via MongoDB dot notation without rewriting
 
 Uses existing `kotlin_client.report_progress()` API with delegation fields (`delegation_id`, `delegation_agent`, `delegation_depth`) to communicate graph execution state.
 
+### LangGraph Execution
+
+**Source:** `backend/service-orchestrator/app/graph_agent/langgraph_runner.py`
+
+LangGraph StateGraph flow:
+```
+decompose → select_next → dispatch_vertex → select_next → ... → synthesize → END
+```
+
+- `node_decompose` — calls LLM decomposer, creates TaskGraph in state
+- `node_select_next` — finds next READY vertex (all incoming edges have payloads)
+- `node_dispatch_vertex` — runs the agentic tool loop for the vertex (type determines system prompt + tools)
+- `node_synthesize` — composes final result from completed vertices
+
+**Agentic tool loop** (per vertex, max 6 iterations):
+1. Load default tools for vertex type via `get_default_tools()`
+2. Call LLM with tools
+3. If tool calls → execute them → append results → repeat
+4. If `request_tools` meta-tool → add requested categories to tool set
+5. If text (no tool calls) → that's the final result
+
+### Default Tool Sets per Vertex Type
+
+**Source:** `backend/service-orchestrator/app/graph_agent/tool_sets.py`
+
+| Vertex Type | Default Tools |
+|-------------|--------------|
+| PLANNER/DECOMPOSE | KB search, memory recall, repo info, structure, tech stack, KB stats, request_tools |
+| INVESTIGATOR | Above + web search, file listing, commits, branches, indexed items |
+| EXECUTOR/TASK | KB search, web search, files, repo, dispatch coding agent, KB write, memory, scheduling |
+| VALIDATOR | KB search, files, repo, branches, commits |
+| REVIEWER | KB search, files, repo, branches, commits, tech stack |
+| SYNTHESIS | KB search, memory recall, KB write, memory store |
+| GATE | KB search, memory recall, request_tools |
+
+Any vertex with `request_tools` can dynamically add tool categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `all`.
+
 ### Key Files
 
 | File | Purpose |
@@ -1381,8 +1424,8 @@ Uses existing `kotlin_client.report_progress()` API with delegation fields (`del
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
 | `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
 | `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans, fan-in/out) |
-| `app/graph_agent/executor.py` | Execution engine (parallel batches, fan-in, agent dispatch) |
-| `app/graph_agent/orchestrate.py` | Entry point: decompose → validate → execute → result |
+| `app/graph_agent/langgraph_runner.py` | LangGraph execution: StateGraph, agentic tool loop, entry point |
+| `app/graph_agent/tool_sets.py` | Default tool sets per vertex type, dynamic `request_tools` meta-tool |
 
 ---
 

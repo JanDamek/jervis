@@ -2181,7 +2181,7 @@ use_graph_agent: bool = False            # Graph Agent — vertex/edge DAG execu
 
 | Flag | Default | Effect when True | Effect when False |
 |------|---------|-----------------|-------------------|
-| `use_graph_agent` | `False` | Both `run_orchestration` and `handle_background` use Graph Agent (vertex/edge DAG) — bypasses LangGraph entirely | Falls through to delegation/legacy graph |
+| `use_graph_agent` | `False` | `run_orchestration` uses Graph Agent (LangGraph-based vertex/edge DAG with responsibility-typed vertices) | Falls through to delegation/legacy graph |
 | `use_delegation_graph` | `False` | `get_orchestrator_graph()` returns 7-node delegation graph | Returns legacy 14-node graph |
 | `use_specialist_agents` | `False` | `plan_delegations` selects from 19 registered agents | Routes everything to `LegacyAgent` |
 | `use_dag_execution` | `False` | `execute_delegation` uses `DAGExecutor` (parallel) | Sequential execution only |
@@ -3727,7 +3727,7 @@ Background results and urgent alerts pushed to chat:
 
 ## 34. Graph Agent — Vertex/Edge Task Decomposition DAG
 
-> **Status:** Part 1 implemented (data model, graph operations, persistence, progress)
+> **Status:** Fully implemented — LangGraph execution with responsibility-based vertex types and agentic tool loop
 > **Source:** `backend/service-orchestrator/app/graph_agent/`
 
 ### 34.1 Motivace
@@ -3744,8 +3744,8 @@ Současný delegation systém (sekce 18-25) používá fixní `parallel_groups` 
 ### 34.2 Data Model
 
 ```python
-# Enums
-VertexType:  ROOT | TASK | DECOMPOSE | SYNTHESIS | GATE
+# Enums — responsibility-based vertex types
+VertexType:  ROOT | PLANNER | INVESTIGATOR | EXECUTOR | VALIDATOR | REVIEWER | SYNTHESIS | GATE | TASK | DECOMPOSE
 VertexStatus: PENDING | READY | RUNNING | COMPLETED | FAILED | SKIPPED
 EdgeType:    DEPENDENCY | DECOMPOSITION | SEQUENCE
 GraphStatus: BUILDING | READY | EXECUTING | COMPLETED | FAILED
@@ -3828,14 +3828,15 @@ await store.update_graph_status(task_id, GraphStatus.COMPLETED)
 
 Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegation_agent`, `delegation_depth` to stream vertex progress to UI.
 
-### 34.7 Planned Parts
+### 34.7 Implementation Parts
 
 | Part | Status | Description |
 |------|--------|-------------|
 | **1** | Done | Core data model, graph operations, persistence, progress |
 | **2** | Done | LLM-driven decomposition engine (root + recursive), graph validation |
-| **3** | Done | Execution engine (topological exec, fan-in, parallel, agent dispatch, synthesis) |
-| **4** | Done | Integration: feature flag `use_graph_agent`, wired into `run_orchestration` + `handle_background` |
+| **3** | Done | LangGraph execution: StateGraph, responsibility-based vertex types, agentic tool loop |
+| **4** | Done | Default tool sets per vertex type, `request_tools` meta-tool for dynamic expansion |
+| **5** | Done | Integration: feature flag `use_graph_agent`, wired into `run_orchestration` |
 
 ### 34.8 Decomposition Engine
 
@@ -3847,11 +3848,11 @@ Two entry points:
 
 **LLM Prompt Pattern:**
 
-The decomposer asks the LLM to return structured JSON:
+The decomposer asks the LLM to choose the correct **responsibility type** for each vertex:
 ```json
 {
   "vertices": [
-    {"title": "...", "description": "...", "type": "task|decompose|gate", "agent": "research", "depends_on": [0]},
+    {"title": "...", "description": "...", "type": "investigator|planner|executor|task|validator|reviewer|gate|decompose", "agent": "research", "depends_on": [0]},
     ...
   ],
   "synthesis": {"title": "Combine results", "description": "..."}
@@ -3859,6 +3860,11 @@ The decomposer asks the LLM to return structured JSON:
 ```
 
 The `depends_on` field references indices within the vertices array. Synthesis vertex auto-depends on all others.
+
+**Typical decomposition patterns:**
+- `investigator → executor → validator` (research → do → verify)
+- `planner → multiple executors → reviewer` (plan → parallel work → review)
+- `investigator → gate → executor` (research → decide → act)
 
 **Limits:**
 - `MAX_VERTICES_PER_DECOMPOSE = 10` (per LLM call)
@@ -3885,49 +3891,86 @@ The `depends_on` field references indices within the vertices array. Synthesis v
 | TASK has description | Error | — |
 | Depth limit | Error | max 4 |
 
-### 34.10 Execution Engine
+### 34.10 LangGraph Execution
 
-**Source:** `app/graph_agent/executor.py`
+**Source:** `app/graph_agent/langgraph_runner.py`
 
-Main loop (`execute_graph`):
-1. Find READY vertices (all incoming edges have payloads)
-2. Handle DECOMPOSE vertices first (recursive decomposition)
-3. Execute TASK/SYNTHESIS/GATE vertices in parallel batches (max 5)
-4. Fill outgoing edge payloads with results
-5. Repeat until all terminal
+Uses LangGraph `StateGraph` for execution. TaskGraph is carried in LangGraph state — LangGraph handles checkpointing, interrupt/resume, and execution flow.
 
-**Vertex type handlers:**
-
-| Type | Handler | Description |
-|------|---------|-------------|
-| TASK | `_execute_task_vertex` | Dispatch to specialist agent via AgentRegistry, or LLM fallback |
-| SYNTHESIS | `_execute_synthesis_vertex` | LLM merges all incoming edge payloads into coherent result |
-| GATE | `_execute_gate_vertex` | LLM evaluates upstream results, returns proceed/block |
-| DECOMPOSE | `decompose_vertex` | Recursive decomposition (adds new vertices to graph) |
-
-**Context building:** Each vertex receives `_build_vertex_context()` — input_request + all incoming edge summaries + full contexts. This is the core context accumulation mechanism.
-
-### 34.11 Orchestration Entry Point
-
-**Source:** `app/graph_agent/orchestrate.py`
-
-`run_graph_agent(state, registry)` — full pipeline:
+**StateGraph flow:**
 ```
-create_task_graph → decompose_root → validate_graph → execute_graph → get_final_result
+decompose → select_next → dispatch_vertex → select_next → ... → synthesize → END
 ```
 
-Returns dict: `{task_id, graph_id, success, summary, stats, graph_status}`
+**LangGraph nodes:**
 
-### 34.12 Key Files
+| Node | Responsibility |
+|------|---------------|
+| `node_decompose` | Call LLM decomposer, create TaskGraph, validate, persist |
+| `node_select_next` | Find next READY vertex (all incoming edges have payloads) |
+| `node_dispatch_vertex` | Run agentic tool loop for the vertex |
+| `node_synthesize` | Compose final result from completed vertices |
+
+**Routing:** `route_after_select` → dispatch_vertex (if vertex found) or synthesize (if done). `route_after_dispatch` → always back to select_next.
+
+**Checkpointing:** MongoDB (`jervis_graph_agent` DB) via `MongoDBSaver`. Recursion limit: 200.
+
+### 34.11 Agentic Tool Loop
+
+Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
+
+1. Load default tools for vertex type via `get_default_tools(vertex_type)`
+2. Build system prompt from `_SYSTEM_PROMPTS[vertex_type]`
+3. Call LLM with tools (max 6 iterations)
+4. If LLM returns tool calls → execute each → append results to messages → repeat
+5. If LLM calls `request_tools` meta-tool → add requested categories to tool set
+6. If LLM returns text (no tool calls) → that's the final result
+
+**Special cases:**
+- EXECUTOR/TASK with `agent_name` + `use_specialist_agents` → try specialist agent dispatch first, fall back to LLM
+- Tool loop detection via `detect_tool_loop()` (skip duplicate calls)
+- Per-tool timeout: 60s via `asyncio.wait_for()`
+
+### 34.12 Default Tool Sets
+
+**Source:** `app/graph_agent/tool_sets.py`
+
+| Vertex Type | Default Tools | Can Request More? |
+|-------------|--------------|-------------------|
+| PLANNER/DECOMPOSE | KB search, memory recall, repo info/structure, tech stack, KB stats | Yes |
+| INVESTIGATOR | Above + web search, file listing, commits, branches, indexed items | Yes |
+| EXECUTOR/TASK | KB search, web search, files, repo, coding agent, KB write, memory, scheduling | Yes |
+| VALIDATOR | KB search, files, repo, branches, commits | Yes |
+| REVIEWER | KB search, files, repo, branches, commits, tech stack | Yes |
+| SYNTHESIS | KB search, memory recall, KB write, memory store | No |
+| GATE | KB search, memory recall | Yes |
+
+**`request_tools` meta-tool:** Any vertex with this tool can dynamically request additional categories:
+- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `all`
+- Tools are appended to the current set (deduplicated by name)
+- Available in next LLM call iteration
+
+### 34.13 Orchestration Entry Point
+
+**Source:** `app/graph_agent/langgraph_runner.py`
+
+`run_graph_agent(request, thread_id)` — called from `run_orchestration()` when `use_graph_agent=True`:
+```
+LangGraph.ainvoke(initial_state) → decompose → [select → dispatch → loop] → synthesize → END
+```
+
+Returns the final LangGraph state dict with `final_result` and `task_graph`.
+
+### 34.14 Key Files
 
 | File | Purpose |
 |------|---------|
 | `app/graph_agent/__init__.py` | Package docstring |
-| `app/graph_agent/models.py` | All data models and enums |
+| `app/graph_agent/models.py` | All data models and enums (responsibility-based VertexType) |
 | `app/graph_agent/graph.py` | Graph operations (add/remove/traverse/complete/fail) |
 | `app/graph_agent/persistence.py` | MongoDB CRUD with atomic updates |
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
 | `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
 | `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans) |
-| `app/graph_agent/executor.py` | Execution engine (parallel batches, fan-in, agent dispatch) |
-| `app/graph_agent/orchestrate.py` | Entry point: decompose → validate → execute → result |
+| `app/graph_agent/langgraph_runner.py` | LangGraph execution: StateGraph, agentic tool loop, entry point |
+| `app/graph_agent/tool_sets.py` | Default tool sets per vertex type, `request_tools` meta-tool |

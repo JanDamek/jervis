@@ -19,13 +19,24 @@ from pydantic import BaseModel, Field
 
 
 class VertexType(str, Enum):
-    """What kind of processing this vertex performs."""
+    """What kind of processing this vertex performs.
+
+    Each type maps to a distinct responsibility — the LangGraph runner
+    dispatches to the correct handler based on this type.
+    """
 
     ROOT = "root"               # Initial request — decomposes into sub-vertices
-    TASK = "task"               # Concrete work item (agent executes it)
-    DECOMPOSE = "decompose"     # Intermediate — further breaks down into sub-vertices
+    PLANNER = "planner"         # Plans approach / breaks down further
+    INVESTIGATOR = "investigator"  # Researches context (KB, web, code search)
+    EXECUTOR = "executor"       # Performs concrete work (coding, tracker ops)
+    VALIDATOR = "validator"     # Verifies results (tests, checks, lint)
+    REVIEWER = "reviewer"       # Reviews quality (code review, output review)
     SYNTHESIS = "synthesis"     # Combines results from multiple upstream vertices
     GATE = "gate"               # Decision / approval point
+
+    # Legacy aliases (backward compat)
+    TASK = "task"               # Generic task — auto-routed by agent_name
+    DECOMPOSE = "decompose"     # Alias for PLANNER
 
 
 class VertexStatus(str, Enum):
