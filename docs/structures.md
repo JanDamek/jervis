@@ -1414,6 +1414,47 @@ decompose → select_next → dispatch_vertex → select_next → ... → synthe
 
 Any vertex with `request_tools` can dynamically add tool categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `all`.
 
+### Recursive Decomposition
+
+PLANNER/DECOMPOSE vertices don't execute via the agentic tool loop. Instead, `node_dispatch_vertex` calls `decompose_vertex()` which creates new sub-vertices + edges in the graph. These children are picked up by subsequent `select_next` cycles.
+
+**Limits:** `MAX_DECOMPOSE_DEPTH=8`, `MAX_TOTAL_VERTICES=200`. When limits are hit, PLANNER is auto-converted to EXECUTOR and handled by the agentic loop.
+
+**Fallback:** If recursive decomposition fails, vertex is converted to EXECUTOR.
+
+### ArangoDB Artifact Graph — Impact Analysis
+
+**Source:** `backend/service-orchestrator/app/graph_agent/artifact_graph.py`
+
+ArangoDB-backed graph that tracks ALL entities Jervis manages — not just code. Entities include code artifacts (from Joern CPG via KB), documents, meetings, people, test plans, etc.
+
+**Collections:**
+
+| Collection | Type | Purpose |
+|------------|------|---------|
+| `graph_artifacts` | Vertex | Entities: classes, files, documents, meetings, people, etc. |
+| `artifact_deps` | Edge | Structural/organizational dependencies between entities |
+| `task_artifact_links` | Edge | Which TaskGraph vertex touches which entity |
+
+**Entity types (ArtifactKind):**
+- Code: module, file, class, function, api, db_table, config, test, schema, component, service
+- Docs: document, spec, test_plan, test_scenario, release_note, report
+- Organization: person, team, role
+- PM: milestone, task, meeting, decision, training, budget
+- Infra: environment, pipeline, resource
+
+**Impact flow:**
+1. Vertex completes → LLM extracts touched entities from result
+2. Entities + dependencies persisted in ArangoDB
+3. For each modifying touch → AQL graph traversal (INBOUND) finds affected entities
+4. Check which OTHER planned vertices touch affected entities
+5. If found → create VALIDATOR vertex (injected into graph, blocks affected vertices)
+6. Detect conflicts (two vertices modifying same entity)
+
+**Source:** `backend/service-orchestrator/app/graph_agent/impact.py`
+
+Code artifacts link to existing KnowledgeNodes (Joern CPG) via `kb_node_key` — no duplication.
+
 ### Key Files
 
 | File | Purpose |
@@ -1422,10 +1463,12 @@ Any vertex with `request_tools` can dynamically add tool categories: `kb`, `web`
 | `app/graph_agent/graph.py` | Graph operations (topological sort, context accumulation, readiness) |
 | `app/graph_agent/persistence.py` | MongoDB save/load, atomic updates |
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
-| `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
+| `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive, depth 8) |
 | `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans, fan-in/out) |
 | `app/graph_agent/langgraph_runner.py` | LangGraph execution: StateGraph, agentic tool loop, entry point |
 | `app/graph_agent/tool_sets.py` | Default tool sets per vertex type, dynamic `request_tools` meta-tool |
+| `app/graph_agent/artifact_graph.py` | ArangoDB artifact/entity graph — impact analysis, conflict detection |
+| `app/graph_agent/impact.py` | Impact propagation: extract touched entities, traverse deps, create validators |
 
 ---
 

@@ -31,8 +31,8 @@ from app.graph_agent.models import (
 logger = logging.getLogger(__name__)
 
 # Limits
-MAX_TOTAL_VERTICES = 50
-MAX_DEPTH = 4
+MAX_TOTAL_VERTICES = 200
+MAX_DEPTH = 8
 MAX_FAN_IN = 15
 MAX_FAN_OUT = 10
 

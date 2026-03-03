@@ -35,6 +35,12 @@ class Settings(BaseSettings):
         "KNOWLEDGEBASE_WRITE_URL", "http://jervis-knowledgebase-write:8080"
     )
 
+    # ArangoDB (direct access for Graph Agent artifact graph)
+    arango_url: str = os.getenv("ARANGO_URL", "http://192.168.100.117:8529")
+    arango_db: str = os.getenv("ARANGO_DB", "jervis")
+    arango_user: str = os.getenv("ARANGO_USER", "root")
+    arango_password: str = os.getenv("ARANGO_PASSWORD", "")
+
     # MCP Server (HTTP – unified KB + environment + orchestrator tools)
     mcp_url: str = os.getenv(
         "MCP_URL", "http://jervis-mcp:8100"
