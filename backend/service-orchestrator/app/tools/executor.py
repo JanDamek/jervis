@@ -441,6 +441,16 @@ async def execute_tool(
                 target_client_id=arguments.get("target_client_id"),
                 target_project_id=arguments.get("target_project_id"),
             )
+        elif tool_name == "task_queue_inspect":
+            result = await _execute_task_queue_inspect(
+                client_id=arguments.get("client_id"),
+                limit=arguments.get("limit", 20),
+            )
+        elif tool_name == "task_queue_set_priority":
+            result = await _execute_task_queue_set_priority(
+                task_id=arguments["task_id"],
+                priority_score=arguments["priority_score"],
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2550,5 +2560,60 @@ async def _execute_environment_auto_suggest_mappings(environment_id: str) -> str
             )
     except Exception as e:
         return f"Error auto-suggesting mappings: {str(e)[:300]}"
+
+
+# ============================================================
+# Task Queue tools (cross-project priority management)
+# ============================================================
+
+
+async def _execute_task_queue_inspect(
+    client_id: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Inspect the background task queue via Kotlin internal API."""
+    from app.tools.kotlin_client import kotlin_client
+
+    try:
+        client = await kotlin_client._get_client()
+        params = {"limit": str(limit)}
+        if client_id:
+            params["clientId"] = client_id
+        resp = await client.get("/internal/tasks/queue", params=params)
+        if resp.status_code != 200:
+            return f"Error: HTTP {resp.status_code}"
+        tasks = resp.json()
+        if not tasks:
+            return "Queue is empty — no background tasks waiting."
+        lines = [f"Background task queue ({len(tasks)} tasks):"]
+        for t in tasks:
+            lines.append(
+                f"  [{t['state']}] {t['title']} "
+                f"(id={t['id']}, priority={t.get('priorityScore', '50')}, "
+                f"client={t['clientId'][:8]}…)"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error inspecting queue: {str(e)[:300]}"
+
+
+async def _execute_task_queue_set_priority(
+    task_id: str,
+    priority_score: int,
+) -> str:
+    """Set priority score for a task via Kotlin internal API."""
+    from app.tools.kotlin_client import kotlin_client
+
+    try:
+        client = await kotlin_client._get_client()
+        resp = await client.post(
+            f"/internal/tasks/{task_id}/priority",
+            json={"priorityScore": priority_score},
+        )
+        if resp.status_code != 200:
+            return f"Error: HTTP {resp.status_code} — {resp.text}"
+        return f"Priority set to {priority_score} for task {task_id}."
+    except Exception as e:
+        return f"Error setting priority: {str(e)[:300]}"
 
 

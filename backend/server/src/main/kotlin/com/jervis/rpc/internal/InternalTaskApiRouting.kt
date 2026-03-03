@@ -350,6 +350,103 @@ fun Routing.installInternalTaskApi(
             call.respondText("[]", ContentType.Application.Json)
         }
     }
+    // --- Queue inspection & priority management (for graph agent PLANNER) ---
+
+    // Get queued tasks across all clients/projects (for LLM prioritization)
+    get("/internal/tasks/queue") {
+        try {
+            val mode = call.request.queryParameters["mode"]?.uppercase()
+            val clientIdStr = call.request.queryParameters["clientId"]
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 20
+
+            val tasks = mutableListOf<Map<String, String>>()
+
+            // Query BACKGROUND tasks ordered by priority (same order as BackgroundEngine)
+            val flow = if (clientIdStr != null) {
+                taskRepository.findByClientIdAndProcessingModeAndStateInOrderByPriorityScoreDescCreatedAtAsc(
+                    ClientId(ObjectId(clientIdStr)),
+                    ProcessingMode.BACKGROUND,
+                    listOf(
+                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.QUALIFYING,
+                        TaskStateEnum.READY_FOR_GPU,
+                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                        TaskStateEnum.BLOCKED,
+                    ),
+                )
+            } else {
+                taskRepository.findByProcessingModeAndStateInOrderByPriorityScoreDescCreatedAtAsc(
+                    ProcessingMode.BACKGROUND,
+                    listOf(
+                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.QUALIFYING,
+                        TaskStateEnum.READY_FOR_GPU,
+                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                        TaskStateEnum.BLOCKED,
+                    ),
+                )
+            }
+
+            flow.collect { task ->
+                if (tasks.size < limit) {
+                    tasks.add(mapOf(
+                        "id" to task.id.toString(),
+                        "title" to task.taskName,
+                        "state" to task.state.name,
+                        "content" to task.content.take(300),
+                        "clientId" to task.clientId.toString(),
+                        "projectId" to (task.projectId?.toString() ?: ""),
+                        "createdAt" to task.createdAt.toString(),
+                        "priorityScore" to (task.priorityScore?.toString() ?: "50"),
+                        "processingMode" to task.processingMode.name,
+                        "parentTaskId" to (task.parentTaskId?.toString() ?: ""),
+                        "phase" to (task.phase ?: ""),
+                        "estimatedComplexity" to (task.estimatedComplexity ?: ""),
+                    ))
+                }
+            }
+
+            call.respondText(
+                Json.encodeToString(tasks),
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/queue" }
+            call.respondText("[]", ContentType.Application.Json)
+        }
+    }
+
+    // Set priority score for a task — for graph agent LLM prioritization
+    post("/internal/tasks/{taskId}/priority") {
+        try {
+            val taskIdStr = call.parameters["taskId"] ?: ""
+            val body = call.receive<InternalSetPriorityRequest>()
+            val taskId = TaskId(ObjectId(taskIdStr))
+            val task = taskRepository.getById(taskId)
+                ?: return@post call.respondText(
+                    """{"ok":false,"error":"Task not found"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound,
+                )
+
+            val updated = task.copy(
+                priorityScore = body.priorityScore.coerceIn(0, 100),
+            )
+            taskRepository.save(updated)
+            logger.info("TASK_PRIORITY_SET | taskId=$taskIdStr | score=${body.priorityScore} | title=${task.taskName}")
+            call.respondText(
+                """{"ok":true,"taskId":"$taskIdStr","priorityScore":${updated.priorityScore}}""",
+                ContentType.Application.Json,
+            )
+        } catch (e: Exception) {
+            logger.warn(e) { "INTERNAL_API_ERROR | endpoint=tasks/priority | taskId=${call.parameters["taskId"]}" }
+            call.respondText(
+                """{"ok":false,"error":"${e.message?.replace("\"", "\\\"")}"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError,
+            )
+        }
+    }
 }
 
 private fun parseSince(since: String): Instant = when (since) {
@@ -400,4 +497,9 @@ data class WorkPlanTask(
 @Serializable
 data class InternalRespondToTaskRequest(
     val response: String,
+)
+
+@Serializable
+data class InternalSetPriorityRequest(
+    val priorityScore: Int,
 )

@@ -36,6 +36,28 @@ from app.tools.ollama_parsing import extract_tool_calls
 logger = logging.getLogger(__name__)
 
 
+async def _run_graph_agent_background(request: OrchestrateRequest) -> dict:
+    """Run graph agent for a background task and adapt its return to handle_background format."""
+    from app.graph_agent.langgraph_runner import run_graph_agent
+
+    thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
+    logger.info(
+        "GRAPH_AGENT_BACKGROUND | task_id=%s | thread=%s",
+        request.task_id, thread_id,
+    )
+
+    state = await run_graph_agent(request, thread_id)
+
+    # Adapt LangGraph state to handle_background return format
+    return {
+        "success": state.get("status") != "failed",
+        "summary": state.get("final_result", ""),
+        "artifacts": state.get("artifacts", []),
+        "step_results": [],
+        "branch": state.get("branch"),
+    }
+
+
 def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
     """Estimate total token count for routing decisions."""
     message_tokens = sum(estimate_tokens(str(m)) for m in messages)
@@ -46,9 +68,9 @@ def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
 async def handle_background(request: OrchestrateRequest) -> dict:
     """Handle a background task: analyze → execute → finalize.
 
-    When use_graph_agent is enabled, background tasks also route through
-    the LangGraph-based graph agent (via orchestrate/v2 → run_orchestration).
-    This function handles the legacy 5-phase agentic loop.
+    When use_graph_agent is enabled, routes to the LangGraph-based graph
+    agent (vertex/edge DAG with decomposition).  Otherwise falls through
+    to the legacy 5-phase agentic loop.
 
     Args:
         request: OrchestrateRequest from Kotlin BackgroundEngine.
@@ -56,6 +78,10 @@ async def handle_background(request: OrchestrateRequest) -> dict:
     Returns:
         dict with {success, summary, artifacts, step_results, branch}
     """
+    # --- Graph Agent path (takes over entirely) ---
+    if settings.use_graph_agent:
+        return await _run_graph_agent_background(request)
+
     start_time = time.time()
     task_id = request.task_id
     client_id = request.client_id
