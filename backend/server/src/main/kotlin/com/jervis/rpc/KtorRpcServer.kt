@@ -21,8 +21,10 @@ import io.ktor.server.websocket.WebSockets
 import com.jervis.rpc.internal.installInternalChatContextApi
 import com.jervis.rpc.internal.installInternalEnvironmentApi
 import com.jervis.rpc.internal.installInternalFilterRulesApi
+import com.jervis.rpc.internal.installInternalGitApi
 import com.jervis.rpc.internal.installInternalGuidelinesApi
 import com.jervis.rpc.internal.installInternalOpenRouterApi
+import com.jervis.rpc.internal.installInternalProjectManagementApi
 import com.jervis.rpc.internal.installInternalTaskApi
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -85,6 +87,9 @@ class KtorRpcServer(
     // Dependencies for internal routing modules (injected, used by install*Api extensions)
     private val clientService: com.jervis.service.client.ClientService,
     private val projectService: com.jervis.service.project.ProjectService,
+    private val connectionService: com.jervis.service.connection.ConnectionService,
+    private val gitRepoCreationService: com.jervis.service.git.GitRepositoryCreationService,
+    private val applicationEventPublisher: org.springframework.context.ApplicationEventPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -114,6 +119,8 @@ class KtorRpcServer(
                             installInternalFilterRulesApi(filteringRulesService)
                             installInternalEnvironmentApi(environmentService, environmentK8sService)
                             installInternalOpenRouterApi(openRouterSettingsRpcImpl)
+                            installInternalProjectManagementApi(clientService, projectService, connectionService)
+                            installInternalGitApi(gitRepoCreationService, projectService, applicationEventPublisher)
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)

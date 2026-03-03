@@ -3745,7 +3745,7 @@ Současný delegation systém (sekce 18-25) používá fixní `parallel_groups` 
 
 ```python
 # Enums — responsibility-based vertex types
-VertexType:  ROOT | PLANNER | INVESTIGATOR | EXECUTOR | VALIDATOR | REVIEWER | SYNTHESIS | GATE | TASK | DECOMPOSE
+VertexType:  ROOT | PLANNER | INVESTIGATOR | EXECUTOR | VALIDATOR | REVIEWER | SYNTHESIS | GATE | SETUP | TASK | DECOMPOSE
 VertexStatus: PENDING | READY | RUNNING | COMPLETED | FAILED | SKIPPED | CANCELLED
 EdgeType:    DEPENDENCY | DECOMPOSITION | SEQUENCE
 GraphStatus: BUILDING | READY | EXECUTING | COMPLETED | FAILED | CANCELLED
@@ -3820,7 +3820,7 @@ Collection: `task_graphs` (TTL: 30 days, unique index on `task_id`)
 Supports atomic vertex status updates via MongoDB dot notation:
 ```python
 await store.update_vertex_status(task_id, vertex_id, VertexStatus.COMPLETED, result="...")
-await store.update_edge_payload(task_id, edge_index, payload)
+await store.update_edge_payload(task_id, edge_id, payload)
 await store.update_graph_status(task_id, GraphStatus.COMPLETED)
 ```
 
@@ -3852,7 +3852,7 @@ The decomposer asks the LLM to choose the correct **responsibility type** for ea
 ```json
 {
   "vertices": [
-    {"title": "...", "description": "...", "type": "investigator|planner|executor|task|validator|reviewer|gate|decompose", "agent": "research", "depends_on": [0]},
+    {"title": "...", "description": "...", "type": "investigator|planner|executor|task|validator|reviewer|gate|setup|decompose", "agent": "research", "depends_on": [0]},
     ...
   ],
   "synthesis": {"title": "Combine results", "description": "..."}
@@ -3868,8 +3868,8 @@ The `depends_on` field references indices within the vertices array. Synthesis v
 
 **Limits:**
 - `MAX_VERTICES_PER_DECOMPOSE = 10` (per LLM call)
-- `MAX_TOTAL_VERTICES = 50` (entire graph)
-- `MAX_DECOMPOSE_DEPTH = 4` (recursive depth)
+- `MAX_TOTAL_VERTICES = 200` (entire graph)
+- `MAX_DECOMPOSE_DEPTH = 8` (recursive depth)
 
 **Fallback:** If decomposition fails, creates a single TASK vertex that executes the entire request directly.
 
@@ -3907,9 +3907,9 @@ decompose → select_next → dispatch_vertex → select_next → ... → synthe
 | Node | Responsibility |
 |------|---------------|
 | `node_decompose` | Call LLM decomposer, create TaskGraph, validate, persist |
-| `node_select_next` | Find next READY vertex (all incoming edges have payloads) |
-| `node_dispatch_vertex` | Run agentic tool loop for the vertex |
-| `node_synthesize` | Compose final result from completed vertices |
+| `node_select_next` | Find ALL READY vertices (all incoming edges have payloads) |
+| `node_dispatch_vertex` | Run agentic tool loop — parallel `asyncio.gather` for multiple ready vertices |
+| `node_synthesize` | LLM-based synthesis of results (falls back to concatenation if LLM fails) |
 
 **Routing:** `route_after_select` → dispatch_vertex (if vertex found) or synthesize (if done). `route_after_dispatch` → always back to select_next.
 
@@ -3921,7 +3921,7 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 
 1. Load default tools for vertex type via `get_default_tools(vertex_type)`
 2. Build system prompt from `_SYSTEM_PROMPTS[vertex_type]`
-3. Call LLM with tools (max 6 iterations)
+3. Call LLM with tools (max 12 iterations)
 4. If LLM returns tool calls → execute each → append results to messages → repeat
 5. If LLM calls `request_tools` meta-tool → add requested categories to tool set
 6. If LLM returns text (no tool calls) → that's the final result
@@ -3930,6 +3930,8 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 - EXECUTOR/TASK with `agent_name` + `use_specialist_agents` → try specialist agent dispatch first, fall back to LLM
 - Tool loop detection via `detect_tool_loop()` (skip duplicate calls)
 - Per-tool timeout: 60s via `asyncio.wait_for()`
+- Per-vertex overall timeout: 600s (wraps entire vertex execution)
+- Parallel execution: multiple READY vertices run concurrently via `asyncio.gather()`
 
 ### 34.12 Default Tool Sets
 
@@ -3944,9 +3946,10 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 | REVIEWER | KB search, files, repo, branches, commits, tech stack | Yes |
 | SYNTHESIS | KB search, memory recall, KB write, memory store | No |
 | GATE | KB search, memory recall | Yes |
+| SETUP | KB search, environment CRUD/deploy/status, repo info/structure, tech stack, coding agent, KB write, memory | Yes |
 
 **`request_tools` meta-tool:** Any vertex with this tool can dynamically request additional categories:
-- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `all`
+- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `queue`, `environment`, `setup`, `all`
 - Tools are appended to the current set (deduplicated by name)
 - Available in next LLM call iteration
 
@@ -4038,7 +4041,35 @@ This means **LLM decides priority** based on understanding of tasks, not hardcod
 - `GET /internal/tasks/queue?clientId=&limit=` — queued BACKGROUND tasks ordered by priority
 - `POST /internal/tasks/{id}/priority` — set priorityScore (0–100)
 
-### 34.18 Orchestration Entry Point
+### 34.18 Project Management & Git Internal APIs
+
+**New internal REST endpoints** for SETUP vertex type and MCP tools:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/internal/clients` | POST | Create new client |
+| `/internal/clients` | GET | List all clients |
+| `/internal/projects` | POST | Create project for client |
+| `/internal/projects` | GET | List projects (optionally by clientId) |
+| `/internal/connections` | POST | Create external service connection |
+| `/internal/connections` | GET | List all connections |
+| `/internal/git/repos` | POST | Create GitHub/GitLab repository via provider API |
+| `/internal/git/init-workspace` | POST | Trigger workspace clone for project |
+
+**Source files:**
+- `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt`
+- `backend/server/.../rpc/internal/InternalGitRouting.kt`
+- `backend/server/.../service/git/GitRepositoryCreationService.kt`
+- `backend/server/.../service/project/ProjectTemplateService.kt`
+
+**MCP tools** (callable from chat/agents):
+- `create_client(name, description)` — create client
+- `create_project(client_id, name, description)` — create project
+- `create_connection(name, provider, auth_type, base_url, bearer_token)` — create connection
+- `create_git_repository(client_id, name, description, connection_id, is_private)` — create GitHub/GitLab repo
+- `init_workspace(project_id)` — trigger workspace clone
+
+### 34.19 Orchestration Entry Point
 
 **Source:** `app/graph_agent/langgraph_runner.py`
 

@@ -33,6 +33,7 @@ class VertexType(str, Enum):
     REVIEWER = "reviewer"       # Reviews quality (code review, output review)
     SYNTHESIS = "synthesis"     # Combines results from multiple upstream vertices
     GATE = "gate"               # Decision / approval point
+    SETUP = "setup"             # Project scaffolding + environment provisioning
 
     # Legacy aliases (backward compat)
     TASK = "task"               # Generic task — auto-routed by agent_name
