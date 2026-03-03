@@ -3830,7 +3830,7 @@ Uses existing `kotlin_client.report_progress()` with `delegation_id`, `delegatio
 |------|--------|-------------|
 | **1** | Done | Core data model, graph operations, persistence, progress |
 | **2** | Done | LLM-driven decomposition engine (root + recursive), graph validation |
-| **3** | Planned | Execution engine (topological exec, fan-in, parallel, context passing) |
+| **3** | Done | Execution engine (topological exec, fan-in, parallel, agent dispatch, synthesis) |
 | **4** | Planned | Integration with chat handler, orchestrator, qualifier |
 
 ### 34.8 Decomposition Engine
@@ -3881,7 +3881,40 @@ The `depends_on` field references indices within the vertices array. Synthesis v
 | TASK has description | Error | — |
 | Depth limit | Error | max 4 |
 
-### 34.10 Key Files
+### 34.10 Execution Engine
+
+**Source:** `app/graph_agent/executor.py`
+
+Main loop (`execute_graph`):
+1. Find READY vertices (all incoming edges have payloads)
+2. Handle DECOMPOSE vertices first (recursive decomposition)
+3. Execute TASK/SYNTHESIS/GATE vertices in parallel batches (max 5)
+4. Fill outgoing edge payloads with results
+5. Repeat until all terminal
+
+**Vertex type handlers:**
+
+| Type | Handler | Description |
+|------|---------|-------------|
+| TASK | `_execute_task_vertex` | Dispatch to specialist agent via AgentRegistry, or LLM fallback |
+| SYNTHESIS | `_execute_synthesis_vertex` | LLM merges all incoming edge payloads into coherent result |
+| GATE | `_execute_gate_vertex` | LLM evaluates upstream results, returns proceed/block |
+| DECOMPOSE | `decompose_vertex` | Recursive decomposition (adds new vertices to graph) |
+
+**Context building:** Each vertex receives `_build_vertex_context()` — input_request + all incoming edge summaries + full contexts. This is the core context accumulation mechanism.
+
+### 34.11 Orchestration Entry Point
+
+**Source:** `app/graph_agent/orchestrate.py`
+
+`run_graph_agent(state, registry)` — full pipeline:
+```
+create_task_graph → decompose_root → validate_graph → execute_graph → get_final_result
+```
+
+Returns dict: `{task_id, graph_id, success, summary, stats, graph_status}`
+
+### 34.12 Key Files
 
 | File | Purpose |
 |------|---------|
@@ -3892,3 +3925,5 @@ The `depends_on` field references indices within the vertices array. Synthesis v
 | `app/graph_agent/progress.py` | Progress reporting to Kotlin server |
 | `app/graph_agent/decomposer.py` | LLM-driven decomposition (root + recursive) |
 | `app/graph_agent/validation.py` | Structural validation (cycles, limits, orphans) |
+| `app/graph_agent/executor.py` | Execution engine (parallel batches, fan-in, agent dispatch) |
+| `app/graph_agent/orchestrate.py` | Entry point: decompose → validate → execute → result |
