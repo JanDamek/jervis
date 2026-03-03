@@ -72,7 +72,8 @@ class ChatViewModel(
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
     /** Context task ID for "Reagovat" — set when replying to a background result. */
-    private var _contextTaskId: String? = null
+    private val _contextTaskId = MutableStateFlow<String?>(null)
+    val contextTaskId: StateFlow<String?> = _contextTaskId.asStateFlow()
 
     /** Pending approval request from chat — action, tool, preview text */
     data class ApprovalRequest(
@@ -152,8 +153,13 @@ class ChatViewModel(
      * Pre-fills input and stores contextTaskId for sendMessage().
      */
     fun replyToTask(taskId: String) {
-        _contextTaskId = taskId
+        _contextTaskId.value = taskId
         _inputText.value = ""  // Focus input, user types their reply
+    }
+
+    /** Clear reply context (dismiss banner without sending). */
+    fun clearReplyContext() {
+        _contextTaskId.value = null
     }
 
     fun attachFile() {
@@ -214,8 +220,8 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
-                val taskContext = _contextTaskId
-                _contextTaskId = null  // Clear after use
+                val taskContext = _contextTaskId.value
+                _contextTaskId.value = null  // Clear after use
                 repository.chat.sendMessage(
                     text = originalText,
                     clientMessageId = clientMessageId,

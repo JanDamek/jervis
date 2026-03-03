@@ -23,8 +23,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -48,8 +52,17 @@ internal fun InputArea(
     attachments: List<PickedFile> = emptyList(),
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
+    requestFocus: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) {
+            focusRequester.requestFocus()
+        }
+    }
+
     Column(modifier = modifier) {
         // Attachment chips row
         if (attachments.isNotEmpty()) {
@@ -112,6 +125,7 @@ internal fun InputArea(
                     Modifier
                         .weight(1f)
                         .heightIn(min = 56.dp, max = 120.dp)
+                        .focusRequester(focusRequester)
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown) {
                                 if (keyEvent.isShiftPressed) {
