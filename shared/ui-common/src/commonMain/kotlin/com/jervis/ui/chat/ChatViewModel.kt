@@ -468,8 +468,10 @@ class ChatViewModel(
                     )
                 }
                 _chatMessages.value = olderMessages + _chatMessages.value
-                _hasMore.value = history.hasMore
-                oldestMessageId = history.oldestMessageId
+                _hasMore.value = history.hasMore || olderMessages.size >= 10
+                if (olderMessages.isNotEmpty()) {
+                    oldestMessageId = history.oldestMessageId
+                }
                 _compressionBoundaries.value =
                     (history.compressionBoundaries + _compressionBoundaries.value)
                         .distinctBy { it.afterSequence }
@@ -741,8 +743,10 @@ class ChatViewModel(
                 newMessages.none { db -> db.text == flight.text && db.from == flight.from }
             }
             _chatMessages.value = newMessages + deduped
-            _hasMore.value = history.hasMore
+            // Defensive: if we got a full page, assume more exist even if backend says otherwise
+            _hasMore.value = history.hasMore || newMessages.size >= 10
             oldestMessageId = history.oldestMessageId
+            println("reloadHistory: ${newMessages.size} messages, hasMore=${history.hasMore}→${_hasMore.value}, oldestId=${history.oldestMessageId}")
             _compressionBoundaries.value = history.compressionBoundaries
 
             // Restore UI scope from chat session (persisted client/project/group)
