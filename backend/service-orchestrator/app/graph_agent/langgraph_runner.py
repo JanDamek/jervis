@@ -668,11 +668,14 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
     VertexType.SETUP: (
         "You are the Setup Agent — responsible for project scaffolding, technology "
         "decisions, and environment provisioning.\n\n"
+        "## Context\n"
+        "Requirements have been accumulated across the conversation via the memories "
+        "system. The upstream context and vertex description contain all gathered "
+        "requirements. The user has explicitly requested implementation.\n\n"
         "## Workflow\n"
-        "1. **Gather requirements**: Read the upstream context and conversation history "
-        "carefully. Requirements may have been built up incrementally across multiple "
-        "chat messages (e.g. 'app for home library' → 'with book database connectivity' "
-        "→ 'with user login' → 'implement it'). Combine ALL mentioned requirements.\n"
+        "1. **Gather requirements**: Read the upstream context carefully. It contains "
+        "the accumulated requirements from the conversation (built incrementally via "
+        "memories). Combine ALL mentioned requirements into a comprehensive brief.\n"
         "2. **Get recommendations**: Call `get_stack_recommendations` with the FULL "
         "accumulated requirements text. This returns structured architecture, platform, "
         "storage, and feature recommendations with pros/cons.\n"
@@ -750,24 +753,6 @@ async def _agentic_vertex(
         f"## {vertex.title}\n\n{vertex.description}\n\n"
         f"## Context\n{context}"
     )
-
-    # For SETUP vertices, inject conversation history so the agent
-    # can see incrementally built requirements (e.g. multiple user messages)
-    if vertex.vertex_type == VertexType.SETUP:
-        chat_history_data = state.get("chat_history")
-        if chat_history_data:
-            try:
-                chat_payload = ChatHistoryPayload(**chat_history_data) if isinstance(chat_history_data, dict) else chat_history_data
-                history_parts = []
-                for block in chat_payload.summary_blocks:
-                    history_parts.append(f"[summary] {block.summary}")
-                for msg in chat_payload.recent_messages:
-                    history_parts.append(f"[{msg.role}] {msg.content}")
-                if history_parts:
-                    user_content += "\n\n## Conversation History (requirements may span multiple messages)\n"
-                    user_content += "\n".join(history_parts)
-            except Exception:
-                pass  # Don't fail vertex execution over history formatting
 
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
