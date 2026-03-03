@@ -456,6 +456,22 @@ async def cancel(thread_id: str):
 
     task.cancel()
     logger.info("Cancelled orchestration: thread=%s", thread_id)
+
+
+@app.get("/graph/{task_id}")
+async def get_task_graph(task_id: str):
+    """Return the full TaskGraph for a given task_id.
+
+    Called by Kotlin to serve graph data to the UI.
+    """
+    if not settings.use_graph_agent:
+        raise HTTPException(status_code=404, detail="Graph agent not enabled")
+
+    from app.graph_agent.persistence import task_graph_store
+    graph = await task_graph_store.load(task_id)
+    if not graph:
+        raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
+    return graph.model_dump()
     # Push cancelled status to Kotlin
     # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
     parts = thread_id.split("-")

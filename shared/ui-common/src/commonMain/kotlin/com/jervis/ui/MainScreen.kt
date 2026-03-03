@@ -16,8 +16,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Badge
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.jervis.ui.chat.ChatDisplayItem
+import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
+import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.chat.ChatViewModel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
@@ -44,20 +44,19 @@ import com.jervis.ui.util.PickedFile
 fun MainScreenView(
     selectedClientId: String?,
     selectedProjectId: String?,
-    displayItems: List<ChatDisplayItem>,
-    expandedThreads: Set<String>,
-    onToggleThread: (String) -> Unit,
+    chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
     isOffline: Boolean = false,
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
+    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     attachments: List<PickedFile> = emptyList(),
     queueSize: Int = 0,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit = {},
-    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onReplyToTask: (taskId: String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onAttachFile: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
@@ -72,10 +71,8 @@ fun MainScreenView(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
-    showBackgrounds: Boolean = false,
-    onToggleBackgrounds: () -> Unit = {},
-    backgroundMessageCount: Int = 0,
-    userTaskCount: Int = 0,
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -103,20 +100,19 @@ fun MainScreenView(
                         ChatContent(
                             selectedClientId = selectedClientId,
                             selectedProjectId = selectedProjectId,
-                            displayItems = displayItems,
-                            expandedThreads = expandedThreads,
-                            onToggleThread = onToggleThread,
+                            chatMessages = chatMessages,
                             inputText = inputText,
                             isLoading = isLoading,
                             isOffline = isOffline,
                             hasMore = hasMore,
                             isLoadingMore = isLoadingMore,
+                            compressionBoundaries = compressionBoundaries,
                             attachments = attachments,
                             queueSize = queueSize,
                             onInputChanged = onInputChanged,
                             onSendClick = onSendClick,
                             onEditMessage = onEditMessage,
-                            onSendThreadReply = onSendThreadReply,
+                            onReplyToTask = onReplyToTask,
                             onLoadMore = onLoadMore,
                             onAttachFile = onAttachFile,
                             onRemoveAttachment = onRemoveAttachment,
@@ -131,10 +127,8 @@ fun MainScreenView(
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
                             orchestratorProgress = orchestratorProgress,
-                            showBackgrounds = showBackgrounds,
-                            onToggleBackgrounds = onToggleBackgrounds,
-                            backgroundMessageCount = backgroundMessageCount,
-                            userTaskCount = userTaskCount,
+                            taskGraphs = taskGraphs,
+                            onLoadTaskGraph = onLoadTaskGraph,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -148,19 +142,17 @@ fun MainScreenView(
                 ChatContent(
                     selectedClientId = selectedClientId,
                     selectedProjectId = selectedProjectId,
-                    displayItems = displayItems,
-                    expandedThreads = expandedThreads,
-                    onToggleThread = onToggleThread,
+                    chatMessages = chatMessages,
                     inputText = inputText,
                     isLoading = isLoading,
                     hasMore = hasMore,
                     isLoadingMore = isLoadingMore,
+                    compressionBoundaries = compressionBoundaries,
                     attachments = attachments,
                     queueSize = queueSize,
                     onInputChanged = onInputChanged,
                     onSendClick = onSendClick,
                     onEditMessage = onEditMessage,
-                    onSendThreadReply = onSendThreadReply,
                     onLoadMore = onLoadMore,
                     onAttachFile = onAttachFile,
                     onRemoveAttachment = onRemoveAttachment,
@@ -175,10 +167,8 @@ fun MainScreenView(
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
                     orchestratorProgress = orchestratorProgress,
-                    showBackgrounds = showBackgrounds,
-                    onToggleBackgrounds = onToggleBackgrounds,
-                    backgroundMessageCount = backgroundMessageCount,
-                    userTaskCount = userTaskCount,
+                    taskGraphs = taskGraphs,
+                    onLoadTaskGraph = onLoadTaskGraph,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -193,20 +183,19 @@ fun MainScreenView(
 private fun ChatContent(
     selectedClientId: String?,
     selectedProjectId: String?,
-    displayItems: List<ChatDisplayItem>,
-    expandedThreads: Set<String>,
-    onToggleThread: (String) -> Unit,
+    chatMessages: List<ChatMessage>,
     inputText: String,
     isLoading: Boolean,
     isOffline: Boolean = false,
     hasMore: Boolean,
     isLoadingMore: Boolean,
+    compressionBoundaries: List<CompressionBoundaryDto>,
     attachments: List<PickedFile>,
     queueSize: Int,
     onInputChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onEditMessage: (String) -> Unit,
-    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onReplyToTask: (taskId: String) -> Unit = {},
     onLoadMore: () -> Unit,
     onAttachFile: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -221,10 +210,8 @@ private fun ChatContent(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
-    showBackgrounds: Boolean = false,
-    onToggleBackgrounds: () -> Unit = {},
-    backgroundMessageCount: Int = 0,
-    userTaskCount: Int = 0,
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -241,40 +228,18 @@ private fun ChatContent(
             OrchestratorHealthBanner()
         }
 
-        // Background filter chip
-        if (backgroundMessageCount > 0 || showBackgrounds) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = showBackgrounds,
-                    onClick = onToggleBackgrounds,
-                    label = {
-                        Text(if (showBackgrounds) "Skrýt pozadí" else "Zobrazit pozadí ($backgroundMessageCount)")
-                    },
-                    leadingIcon = if (userTaskCount > 0 && !showBackgrounds) {
-                        {
-                            Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                Text("$userTaskCount")
-                            }
-                        }
-                    } else null,
-                )
-            }
-        }
-
         // Chat area
         ChatArea(
-            displayItems = displayItems,
-            expandedThreads = expandedThreads,
-            onToggleThread = onToggleThread,
+            messages = chatMessages,
             hasMore = hasMore,
             isLoadingMore = isLoadingMore,
+            compressionBoundaries = compressionBoundaries,
             orchestratorProgress = orchestratorProgress,
             onLoadMore = onLoadMore,
             onEditMessage = onEditMessage,
-            onSendThreadReply = onSendThreadReply,
+            onReplyToTask = onReplyToTask,
+            taskGraphs = taskGraphs,
+            onLoadTaskGraph = onLoadTaskGraph,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),

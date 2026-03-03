@@ -17,11 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -31,43 +30,34 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Badge
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
-import com.jervis.ui.chat.ChatDisplayItem
+import com.jervis.ui.chat.TaskGraphSection
 import com.jervis.ui.queue.OrchestratorProgressInfo
 import com.jervis.ui.util.copyToClipboard
 import com.jervis.ui.util.formatMessageTime
@@ -77,46 +67,26 @@ import com.mikepenz.markdown.m3.markdownTypography
 
 @Composable
 internal fun ChatArea(
-    displayItems: List<ChatDisplayItem>,
-    expandedThreads: Set<String>,
-    onToggleThread: (String) -> Unit,
+    messages: List<ChatMessage>,
     hasMore: Boolean = false,
     isLoadingMore: Boolean = false,
+    compressionBoundaries: List<CompressionBoundaryDto> = emptyList(),
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
-    onSendThreadReply: (taskId: String, text: String) -> Unit = { _, _ -> },
+    onReplyToTask: (taskId: String) -> Unit = {},
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
     // reverseLayout=true: item 0 is at the bottom of the screen.
-    val reversedItems = remember(displayItems) { displayItems.asReversed() }
-
-    // Auto-load older messages when user scrolls near the top.
-    // derivedStateOf reacts to actual layout changes (not stale values).
-    val nearTop by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val total = info.totalItemsCount
-            total > 0 && lastVisible >= total - 2
-        }
-    }
-    LaunchedEffect(nearTop, hasMore, isLoadingMore) {
-        if (nearTop && hasMore && !isLoadingMore) {
-            onLoadMore()
-        }
-    }
-
-    // Show scroll-to-bottom FAB when not at bottom (reverseLayout: firstVisibleItemIndex > 2)
-    val showScrollToBottom by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 2 }
-    }
-
+    // We reverse the messages so the newest message is item 0 (bottom).
+    val reversedMessages = remember(messages) { messages.asReversed() }
     Box(modifier = modifier) {
-        if (displayItems.isEmpty()) {
+        if (messages.isEmpty()) {
+            // Empty state
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -135,56 +105,50 @@ internal fun ChatArea(
                 contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(
-                    count = reversedItems.size,
-                    key = { index -> reversedItems[index].stableKey },
-                ) { index ->
-                    val item = reversedItems[index]
-                    when (item) {
-                        is ChatDisplayItem.Standalone -> ChatMessageItem(
-                            message = item.message,
-                            orchestratorProgress = if (item.message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
-                            onEditMessage = onEditMessage,
-                        )
-                        is ChatDisplayItem.Thread -> ThreadCard(
-                            thread = item,
-                            isExpanded = item.taskId in expandedThreads,
-                            onToggle = { onToggleThread(item.taskId) },
-                            onSendReply = { text -> onSendThreadReply(item.taskId, text) },
-                            onEditMessage = onEditMessage,
-                        )
+                items(reversedMessages.size) { index ->
+                    val message = reversedMessages[index]
+                    // Original index in the non-reversed list
+                    val originalIndex = messages.size - 1 - index
+
+                    ChatMessageItem(
+                        message = message,
+                        orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
+                        onEditMessage = onEditMessage,
+                        onReplyToTask = onReplyToTask,
+                        taskGraphs = taskGraphs,
+                        onLoadTaskGraph = onLoadTaskGraph,
+                    )
+
+                    // Compression boundary AFTER this message (before the next older one)
+                    if (originalIndex > 0) {
+                        val prevSequence = messages[originalIndex - 1].sequence
+                        val currSequence = message.sequence
+                        if (prevSequence != null && currSequence != null) {
+                            val boundary =
+                                compressionBoundaries.find { b ->
+                                    b.afterSequence in prevSequence until currSequence
+                                }
+                            if (boundary != null) {
+                                CompressionBoundaryIndicator(boundary)
+                            }
+                        }
                     }
                 }
 
-                // "Load more" indicator at top (= end of reversed list)
-                // Auto-triggers via snapshotFlow above; clickable as fallback.
+                // "Load more" button at top (= end of reversed list)
                 if (hasMore) {
-                    item(key = "load_more") {
+                    item {
                         Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (isLoadingMore) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        "Načítám starší zprávy…",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                )
                             } else {
                                 TextButton(onClick = onLoadMore) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowUp,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(4.dp))
                                     Text("Načíst starší zprávy")
                                 }
                             }
@@ -192,324 +156,9 @@ internal fun ChatArea(
                     }
                 }
             }
-
-            // Scroll-to-bottom FAB
-            AnimatedVisibility(
-                visible = showScrollToBottom,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp),
-            ) {
-                FloatingActionButton(
-                    onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } },
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Na konec",
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
         }
     }
 }
-
-// ── Thread Card ──────────────────────────────────────────────────────────
-
-/**
- * Background task thread card — contains task result header + user/assistant replies.
- * Collapsed: shows summary + unread badge. Expanded: full result + inline replies.
- */
-@Composable
-private fun ThreadCard(
-    thread: ChatDisplayItem.Thread,
-    isExpanded: Boolean,
-    onToggle: () -> Unit,
-    onSendReply: (String) -> Unit,
-    onEditMessage: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var isReplying by remember { mutableStateOf(false) }
-    var replyText by remember { mutableStateOf("") }
-    val header = thread.header
-    val isSuccess = header.metadata["success"] != "false"
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Header row: icon + title + unread badge + expand arrow
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
-                Text(
-                    text = header.metadata["taskTitle"] ?: "Background úloha",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                // Unread badge when collapsed
-                if (!isExpanded && thread.unreadCount > 0) {
-                    Badge(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ) {
-                        Text(thread.unreadCount.toString())
-                    }
-                }
-                IconButton(
-                    onClick = onToggle,
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    Icon(
-                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) "Skrýt" else "Zobrazit",
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-
-            // Collapsed: first line preview
-            AnimatedVisibility(visible = !isExpanded) {
-                Text(
-                    text = header.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            // Expanded: full result + replies
-            AnimatedVisibility(visible = isExpanded) {
-                Column {
-                    // Full markdown result
-                    SelectionContainer {
-                        Markdown(
-                            content = header.text,
-                            colors = markdownColor(
-                                text = MaterialTheme.colorScheme.onSurfaceVariant,
-                                codeBackground = MaterialTheme.colorScheme.surface,
-                            ),
-                            typography = markdownTypography(
-                                text = MaterialTheme.typography.bodySmall,
-                                code = MaterialTheme.typography.bodySmall,
-                            ),
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-
-                    // Replies section
-                    if (thread.replies.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            thread.replies.forEach { reply ->
-                                ThreadReplyItem(
-                                    message = reply,
-                                    onEditMessage = onEditMessage,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Footer: timestamp + reply toggle
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Show last activity timestamp
-                val displayTimestamp = thread.replies.lastOrNull()?.timestamp ?: header.timestamp
-                displayTimestamp?.let { ts ->
-                    if (ts.isNotBlank()) {
-                        Text(
-                            text = formatMessageTime(ts),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        )
-                    }
-                }
-                if (!isReplying) {
-                    TextButton(
-                        onClick = { isReplying = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Reply,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "Reagovat",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-            }
-
-            // Inline reply input (shown when "Reagovat" clicked)
-            AnimatedVisibility(visible = isReplying) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    IconButton(
-                        onClick = {
-                            isReplying = false
-                            replyText = ""
-                        },
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Zrušit",
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    OutlinedTextField(
-                        value = replyText,
-                        onValueChange = { replyText = it },
-                        modifier = Modifier.weight(1f),
-                        textStyle = MaterialTheme.typography.bodyMedium,
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                "Napsat odpověď...",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        },
-                    )
-                    IconButton(
-                        onClick = {
-                            if (replyText.isNotBlank()) {
-                                onSendReply(replyText)
-                                replyText = ""
-                                isReplying = false
-                            }
-                        },
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Send,
-                            contentDescription = "Odeslat",
-                            modifier = Modifier.size(18.dp),
-                            tint = if (replyText.isNotBlank()) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Compact reply item inside a thread card — smaller than standalone chat bubbles.
- */
-@Composable
-private fun ThreadReplyItem(
-    message: ChatMessage,
-    onEditMessage: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
-) {
-    val isMe = message.from == ChatMessage.Sender.Me
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start,
-    ) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (isMe) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
-            ),
-            modifier = Modifier.widthIn(max = 400.dp),
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                // Sender label
-                Text(
-                    text = if (isMe) "Já" else "Asistent",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // Content
-                SelectionContainer {
-                    if (isMe) {
-                        Text(
-                            text = message.text,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    } else {
-                        val stableContent = remember(message.text) {
-                            message.text
-                                .replace("\r\n", "\n")
-                                .replace("\r", "\n")
-                                .replace("\u0000", "")
-                        }
-                        Markdown(
-                            content = stableContent,
-                            colors = markdownColor(
-                                text = MaterialTheme.colorScheme.onSurface,
-                                codeBackground = MaterialTheme.colorScheme.surfaceVariant,
-                            ),
-                            typography = markdownTypography(
-                                text = MaterialTheme.typography.bodySmall,
-                                code = MaterialTheme.typography.bodySmall,
-                            ),
-                        )
-                    }
-                }
-
-                // Timestamp
-                message.timestamp?.let { ts ->
-                    if (ts.isNotBlank()) {
-                        Text(
-                            text = formatMessageTime(ts),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Compression Boundary ─────────────────────────────────────────────────
 
 /**
  * Visual indicator for context compression boundaries.
@@ -517,7 +166,7 @@ private fun ThreadReplyItem(
  */
 @Composable
 private fun CompressionBoundaryIndicator(
-    boundary: com.jervis.dto.CompressionBoundaryDto,
+    boundary: CompressionBoundaryDto,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -583,13 +232,14 @@ private fun CompressionBoundaryIndicator(
     }
 }
 
-// ── Standalone Message Item ──────────────────────────────────────────────
-
 @Composable
 private fun ChatMessageItem(
     message: ChatMessage,
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
+    onReplyToTask: (taskId: String) -> Unit = {},
+    taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
+    onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
@@ -687,14 +337,15 @@ private fun ChatMessageItem(
             }
         }
     } else if (message.messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
-        // Standalone background result (no taskId — old messages without threading)
+        // Background task result — collapsible card with surfaceVariant background
         val isSuccess = message.metadata["success"] != "false"
         var expanded by remember { mutableStateOf(false) }
 
         Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -707,10 +358,15 @@ private fun ChatMessageItem(
                         if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        tint =
+                            if (isSuccess) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
                     )
                     Text(
-                        text = message.metadata["taskTitle"] ?: "Background úloha",
+                        text = message.metadata["task_title"] ?: "Background úloha",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f),
                     )
@@ -726,6 +382,7 @@ private fun ChatMessageItem(
                     }
                 }
 
+                // Collapsed: first line only. Expanded: full text.
                 AnimatedVisibility(visible = !expanded) {
                     Text(
                         text = message.text,
@@ -740,28 +397,100 @@ private fun ChatMessageItem(
                     SelectionContainer {
                         Markdown(
                             content = message.text,
-                            colors = markdownColor(
-                                text = MaterialTheme.colorScheme.onSurfaceVariant,
-                                codeBackground = MaterialTheme.colorScheme.surface,
-                            ),
-                            typography = markdownTypography(
-                                text = MaterialTheme.typography.bodySmall,
-                                code = MaterialTheme.typography.bodySmall,
-                            ),
+                            colors =
+                                markdownColor(
+                                    text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    codeBackground = MaterialTheme.colorScheme.surface,
+                                ),
+                            typography =
+                                markdownTypography(
+                                    text = MaterialTheme.typography.bodySmall,
+                                    code = MaterialTheme.typography.bodySmall,
+                                ),
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                 }
 
-                // Timestamp
-                message.timestamp?.let { ts ->
-                    if (ts.isNotBlank()) {
-                        Text(
-                            text = formatMessageTime(ts),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
+                // Task graph section — lazy-loaded on demand
+                val graphTaskId = message.metadata["taskId"]
+                if (graphTaskId != null) {
+                    val graphEntry = taskGraphs[graphTaskId]
+                    if (graphEntry != null) {
+                        // Graph loaded — show it
+                        TaskGraphSection(graph = graphEntry)
+                    } else if (graphTaskId !in taskGraphs) {
+                        // Not loaded yet — show "load graph" button
+                        TextButton(
+                            onClick = { onLoadTaskGraph(graphTaskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.AccountTree,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Zobrazit graf",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    } else {
+                        // Loading in progress (key exists, value is null)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                            )
+                            Text(
+                                "Načítání grafu…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                // Timestamp + Reply button row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    message.timestamp?.let { ts ->
+                        if (ts.isNotBlank()) {
+                            Text(
+                                text = formatMessageTime(ts),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        }
+                    }
+                    // "Reagovat" button — sends contextTaskId to chat
+                    val taskId = message.metadata["taskId"]
+                    if (taskId != null) {
+                        TextButton(
+                            onClick = { onReplyToTask(taskId) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Reagovat",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
             }
@@ -915,27 +644,6 @@ private fun ChatMessageItem(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     )
                                 }
-                            }
-                        }
-
-                        // Reply context indicator — when this message is a reply to a background task
-                        if (isMe && message.metadata["contextTaskId"] != null) {
-                            Row(
-                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Icon(
-                                    Icons.Default.Reply,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                                )
-                                Text(
-                                    text = "Reakce na background úlohu",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                                )
                             }
                         }
 

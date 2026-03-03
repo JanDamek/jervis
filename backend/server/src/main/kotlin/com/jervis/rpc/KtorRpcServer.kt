@@ -75,6 +75,7 @@ class KtorRpcServer(
     private val kbDocumentRpcImpl: KbDocumentRpcImpl,
     private val openRouterSettingsRpcImpl: OpenRouterSettingsRpcImpl,
     private val speakerRpcImpl: SpeakerRpcImpl,
+    private val taskGraphRpcImpl: TaskGraphRpcImpl,
     private val guidelinesService: com.jervis.service.guidelines.GuidelinesService,
     private val filteringRulesService: com.jervis.service.filtering.FilteringRulesService,
     // Dependencies for qualification agent dispatch
@@ -1277,6 +1278,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.IKbDocumentService> { kbDocumentRpcImpl }
                                 registerService<com.jervis.service.IOpenRouterSettingsService> { openRouterSettingsRpcImpl }
                                 registerService<com.jervis.service.ISpeakerService> { speakerRpcImpl }
+                                registerService<com.jervis.service.ITaskGraphService> { taskGraphRpcImpl }
                             }
                         }
                     }

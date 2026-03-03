@@ -1,0 +1,510 @@
+package com.jervis.ui.chat
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.jervis.dto.graph.GraphEdgeDto
+import com.jervis.dto.graph.GraphVertexDto
+import com.jervis.dto.graph.TaskGraphDto
+
+/**
+ * Expandable section showing a task decomposition graph inside a BACKGROUND_RESULT bubble.
+ * Initially collapsed — shows summary line. Expanded — shows vertex tree and edges.
+ */
+@Composable
+internal fun TaskGraphSection(
+    graph: TaskGraphDto,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 6.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+
+        // Header row — graph icon + summary + expand toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                Icons.Default.AccountTree,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = graphSummaryLine(graph),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Skrýt graf" else "Zobrazit graf",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+
+        // Expanded content — graph details
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // Graph-level stats
+                GraphStatsRow(graph)
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Vertices — rendered as a flat list sorted by depth
+                val sortedVertices = remember(graph.vertices) {
+                    graph.vertices.values.sortedWith(compareBy({ it.depth }, { it.id }))
+                }
+
+                sortedVertices.forEach { vertex ->
+                    val incomingEdges = remember(graph.edges, vertex.id) {
+                        graph.edges.filter { it.targetId == vertex.id }
+                    }
+                    VertexCard(
+                        vertex = vertex,
+                        incomingEdges = incomingEdges,
+                        depthIndent = vertex.depth,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One-line graph summary: status, vertex count, token count.
+ */
+private fun graphSummaryLine(graph: TaskGraphDto): String {
+    val vCount = graph.vertices.size
+    val statusLabel = when (graph.status) {
+        "completed" -> "Dokončeno"
+        "running" -> "Probíhá"
+        "failed" -> "Selhalo"
+        "cancelled" -> "Zrušeno"
+        "pending" -> "Čeká"
+        else -> graph.status
+    }
+    return "Graf: $statusLabel — $vCount vrcholů, ${graph.totalLlmCalls} LLM volání, ${formatTokens(graph.totalTokenCount)} tokenů"
+}
+
+/**
+ * Graph-level statistics row.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GraphStatsRow(
+    graph: TaskGraphDto,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        StatChip("Stav", statusLabel(graph.status))
+        StatChip("Vrcholy", graph.vertices.size.toString())
+        StatChip("Hrany", graph.edges.size.toString())
+        StatChip("LLM volání", graph.totalLlmCalls.toString())
+        StatChip("Tokeny", formatTokens(graph.totalTokenCount))
+        if (graph.projectId != null) {
+            StatChip("Projekt", graph.projectId!!)
+        }
+    }
+}
+
+/**
+ * Small chip displaying a label-value pair.
+ */
+@Composable
+private fun StatChip(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Expandable vertex card with depth-based indentation.
+ * Collapsed: type icon + title + status. Expanded: description, tools, stats, incoming edges.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VertexCard(
+    vertex: GraphVertexDto,
+    incomingEdges: List<GraphEdgeDto>,
+    depthIndent: Int,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val indentDp = (depthIndent * 16).dp
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = vertexContainerColor(vertex.status),
+        ),
+        border = CardDefaults.outlinedCardBorder(),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = indentDp),
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            // Header: icon + title + status badge + expand toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    vertexTypeIcon(vertex.vertexType),
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = statusColor(vertex.status),
+                )
+                Text(
+                    text = vertex.title.ifBlank { vertex.vertexType },
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                // Status badge
+                Text(
+                    text = statusLabel(vertex.status),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor(vertex.status),
+                )
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+
+            // Expanded content
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // Description
+                    if (vertex.description.isNotBlank()) {
+                        Text(
+                            text = vertex.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // Debug stats
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        if (vertex.agentName != null) {
+                            StatChip("Agent", vertex.agentName!!)
+                        }
+                        StatChip("Typ", vertexTypeLabel(vertex.vertexType))
+                        StatChip("Hloubka", vertex.depth.toString())
+                        StatChip("Tokeny", formatTokens(vertex.tokenCount))
+                        StatChip("LLM", vertex.llmCalls.toString())
+                        if (vertex.toolsUsed.isNotEmpty()) {
+                            StatChip("Nástroje", vertex.toolsUsed.joinToString(", "))
+                        }
+                    }
+
+                    // Timing
+                    if (vertex.startedAt != null || vertex.completedAt != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            vertex.startedAt?.let {
+                                StatChip("Začátek", formatTimestamp(it))
+                            }
+                            vertex.completedAt?.let {
+                                StatChip("Konec", formatTimestamp(it))
+                            }
+                        }
+                    }
+
+                    // Error
+                    if (vertex.error != null) {
+                        Text(
+                            text = "Chyba: ${vertex.error}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    // Input request
+                    if (vertex.inputRequest.isNotBlank()) {
+                        ExpandableTextSection("Vstupní požadavek", vertex.inputRequest)
+                    }
+
+                    // Result summary / full result
+                    if (vertex.resultSummary.isNotBlank()) {
+                        ExpandableTextSection("Souhrn výsledku", vertex.resultSummary)
+                    }
+                    if (vertex.result.isNotBlank() && vertex.result != vertex.resultSummary) {
+                        ExpandableTextSection("Plný výsledek", vertex.result)
+                    }
+
+                    // Local context
+                    if (vertex.localContext.isNotBlank()) {
+                        ExpandableTextSection("Lokální kontext", vertex.localContext)
+                    }
+
+                    // Incoming edges — why this vertex was triggered
+                    if (incomingEdges.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Příchozí hrany:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                        incomingEdges.forEach { edge ->
+                            EdgeRow(edge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Expandable text section — shows first line collapsed, full text expanded.
+ */
+@Composable
+private fun ExpandableTextSection(
+    title: String,
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+            IconButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.size(20.dp),
+            ) {
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+        }
+        AnimatedVisibility(visible = expanded) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    .padding(6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Single edge row — shows source vertex title, edge type, and payload summary.
+ */
+@Composable
+private fun EdgeRow(
+    edge: GraphEdgeDto,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.padding(start = 8.dp, top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Default.ArrowForward,
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
+        val sourceTitle = edge.payload?.sourceVertexTitle ?: edge.sourceId
+        Text(
+            text = "$sourceTitle (${edgeTypeLabel(edge.edgeType)})",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (edge.payload?.summary?.isNotBlank() == true) {
+            Text(
+                text = "— ${edge.payload!!.summary}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// --- Helpers ---
+
+@Composable
+private fun vertexContainerColor(status: String): Color {
+    return when (status) {
+        "completed" -> MaterialTheme.colorScheme.surface
+        "running" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        "failed" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+        "cancelled" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+}
+
+@Composable
+private fun statusColor(status: String): Color {
+    return when (status) {
+        "completed" -> MaterialTheme.colorScheme.primary
+        "running" -> MaterialTheme.colorScheme.tertiary
+        "failed" -> MaterialTheme.colorScheme.error
+        "cancelled" -> MaterialTheme.colorScheme.onSurfaceVariant
+        "ready" -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+private fun statusLabel(status: String): String = when (status) {
+    "completed" -> "Dokončeno"
+    "running" -> "Probíhá"
+    "failed" -> "Selhalo"
+    "cancelled" -> "Zrušeno"
+    "pending" -> "Čeká"
+    "ready" -> "Připraveno"
+    else -> status
+}
+
+private fun vertexTypeIcon(type: String): ImageVector = when (type) {
+    "planner" -> Icons.Default.AccountTree
+    "investigator" -> Icons.Default.Schedule
+    "executor" -> Icons.Default.PlayArrow
+    "validator" -> Icons.Default.CheckCircle
+    "reviewer" -> Icons.Default.Build
+    "synthesis" -> Icons.Default.CheckCircle
+    "gate" -> Icons.Default.HourglassEmpty
+    else -> Icons.Default.AccountTree
+}
+
+private fun vertexTypeLabel(type: String): String = when (type) {
+    "planner" -> "Plánovač"
+    "investigator" -> "Průzkumník"
+    "executor" -> "Exekutor"
+    "validator" -> "Validátor"
+    "reviewer" -> "Recenzent"
+    "synthesis" -> "Syntéza"
+    "gate" -> "Brána"
+    else -> type
+}
+
+private fun edgeTypeLabel(type: String): String = when (type) {
+    "dependency" -> "závislost"
+    "context" -> "kontext"
+    "result" -> "výsledek"
+    "validation" -> "validace"
+    else -> type
+}
+
+private fun formatTokens(count: Int): String {
+    return if (count >= 1000) "${count / 1000}k" else count.toString()
+}
+
+private fun formatTimestamp(iso: String): String {
+    // Extract HH:mm:ss from ISO timestamp
+    val timeStart = iso.indexOf('T')
+    if (timeStart < 0) return iso
+    val timePart = iso.substring(timeStart + 1)
+    return timePart.take(8) // HH:mm:ss
+}

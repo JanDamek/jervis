@@ -4049,7 +4049,38 @@ LangGraph.ainvoke(initial_state) → decompose → [select → dispatch → loop
 
 Returns the final LangGraph state dict with `final_result` and `task_graph`.
 
-### 34.18 Key Files
+### 34.18 Graph Visualization in Chat UI
+
+**Data flow:**
+```
+Python GET /graph/{task_id} → JSON
+  → PythonOrchestratorClient.getTaskGraph()
+  → TaskGraphRpcImpl (ITaskGraphService) → lenient JSON → TaskGraphDto
+  → ChatViewModel.loadTaskGraph() → _taskGraphs cache
+  → ChatMessageDisplay BACKGROUND_RESULT → TaskGraphSection composable
+```
+
+**DTOs** (`shared/common-dto/.../graph/TaskGraphDtos.kt`): `TaskGraphDto`, `GraphVertexDto`, `GraphEdgeDto`, `EdgePayloadDto` — mirror Python models with `@SerialName` snake_case mapping.
+
+**UI components** (`shared/ui-common/.../chat/TaskGraphComponents.kt`):
+
+| Component | Purpose |
+|-----------|---------|
+| `TaskGraphSection` | Expandable section in BACKGROUND_RESULT card. Collapsed: graph icon + summary line. Expanded: stats row + vertex tree |
+| `GraphStatsRow` | FlowRow of `StatChip`s: status, vertex count, edge count, LLM calls, tokens, project |
+| `VertexCard` | Depth-indented card per vertex. Header: type icon + title + status badge. Expandable body: description, debug stats (agent, depth, tokens, LLM calls, tools), timing, errors, input request, result, local context, incoming edges |
+| `EdgeRow` | Source vertex title + edge type + payload summary |
+| `ExpandableTextSection` | Collapse/expand for long text fields (input, result, context) |
+
+**Loading pattern:** Lazy — graph is fetched on demand when user clicks "Zobrazit graf" button in the BACKGROUND_RESULT card. Cached in `ChatViewModel._taskGraphs: Map<String, TaskGraphDto?>`. `null` value = loading in progress.
+
+**Vertex status colors:**
+- `completed` → surface (default)
+- `running` → primaryContainer (30% alpha)
+- `failed` → errorContainer (20% alpha)
+- `cancelled` → surfaceVariant (50% alpha)
+
+### 34.19 Key Files
 
 | File | Purpose |
 |------|---------|
@@ -4064,3 +4095,7 @@ Returns the final LangGraph state dict with `final_result` and `task_graph`.
 | `app/graph_agent/tool_sets.py` | Default tool sets per vertex type, `request_tools` meta-tool |
 | `app/graph_agent/artifact_graph.py` | ArangoDB entity graph: artifacts, deps, impact traversal |
 | `app/graph_agent/impact.py` | Impact propagation: extract entities, traverse deps, create validators |
+| `shared/common-dto/.../graph/TaskGraphDtos.kt` | KMP DTOs for graph transfer (TaskGraphDto, GraphVertexDto, GraphEdgeDto) |
+| `shared/common-api/.../ITaskGraphService.kt` | kRPC interface: `getGraph(taskId)` |
+| `backend/server/.../rpc/TaskGraphRpcImpl.kt` | Kotlin RPC impl — calls Python, deserializes with lenient JSON |
+| `shared/ui-common/.../chat/TaskGraphComponents.kt` | Compose UI: TaskGraphSection, VertexCard, EdgeRow, StatChip |

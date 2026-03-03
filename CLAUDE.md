@@ -97,6 +97,8 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*)
 - KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload, kb_document_list, kb_document_delete)
 - Graph Agent: `backend/service-orchestrator/app/graph_agent/` (models.py, graph.py, decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py)
+- Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)
+- Graph DTOs: `shared/common-dto/.../graph/TaskGraphDtos.kt`, `shared/common-api/.../ITaskGraphService.kt`, `backend/server/.../rpc/TaskGraphRpcImpl.kt`
 - Graph Agent background dispatch: `backend/service-orchestrator/app/background/handler.py` (_run_graph_agent_background)
 - Task queue API: `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` (GET /internal/tasks/queue, POST /internal/tasks/{id}/priority)
 - Queue tools: `backend/service-orchestrator/app/tools/definitions.py` (TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY, QUEUE_TOOLS)

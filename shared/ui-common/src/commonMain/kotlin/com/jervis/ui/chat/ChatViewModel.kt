@@ -3,6 +3,7 @@ package com.jervis.ui.chat
 import com.jervis.di.RpcConnectionManager
 import com.jervis.dto.ChatResponseType
 import com.jervis.dto.CompressionBoundaryDto
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.model.PendingMessageInfo
@@ -24,12 +25,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -75,27 +74,7 @@ class ChatViewModel(
     val pendingMessageInfo: StateFlow<PendingMessageInfo?> = _pendingMessageInfo.asStateFlow()
 
     /** Context task ID for "Reagovat" — set when replying to a background result. */
-    private val _contextTaskId = MutableStateFlow<String?>(null)
-    val contextTaskId: StateFlow<String?> = _contextTaskId.asStateFlow()
-
-    /** Expanded thread IDs (taskId set). */
-    private val _expandedThreads = MutableStateFlow<Set<String>>(emptySet())
-    val expandedThreads: StateFlow<Set<String>> = _expandedThreads.asStateFlow()
-
-    /** Last seen timestamps per thread — used for unread badge calculation. */
-    private val _lastSeenTimestamps = MutableStateFlow<Map<String, String>>(emptyMap())
-
-    /** Whether background messages are shown in chat. Default: hidden. */
-    private val _showBackgrounds = MutableStateFlow(false)
-    val showBackgrounds: StateFlow<Boolean> = _showBackgrounds.asStateFlow()
-
-    /** Count of tasks in USER_TASK state (needing user attention). */
-    private val _userTaskCount = MutableStateFlow(0)
-    val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
-
-    /** Total background messages in session (for "N skrytých" label). */
-    private val _backgroundMessageCount = MutableStateFlow(0)
-    val backgroundMessageCount: StateFlow<Int> = _backgroundMessageCount.asStateFlow()
+    private var _contextTaskId: String? = null
 
     /** Pending approval request from chat — action, tool, preview text */
     data class ApprovalRequest(
@@ -107,14 +86,9 @@ class ChatViewModel(
     private val _approvalRequest = MutableStateFlow<ApprovalRequest?>(null)
     val approvalRequest: StateFlow<ApprovalRequest?> = _approvalRequest.asStateFlow()
 
-    /** Grouped display items: standalone messages + threaded background task cards. */
-    val displayItems: StateFlow<List<ChatDisplayItem>> =
-        combine(_chatMessages, _lastSeenTimestamps, _showBackgrounds) { messages, lastSeen, showBg ->
-            val filtered = if (showBg) messages else messages.filter {
-                it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT
-            }
-            groupIntoDisplayItems(filtered, lastSeen)
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Cached task graphs keyed by taskId. null value = loading in progress. */
+    private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
+    val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
     private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
@@ -180,83 +154,28 @@ class ChatViewModel(
     }
 
     /**
-     * Send a reply from the inline input inside a ThreadCard.
-     * Creates optimistic message with contextTaskId, sends via RPC, auto-expands thread.
+     * Set context for replying to a background task result.
+     * Pre-fills input and stores contextTaskId for sendMessage().
      */
-    @OptIn(ExperimentalUuidApi::class)
-    fun sendThreadReply(taskId: String, text: String) {
-        if (text.isBlank() || _isLoading.value) return
-        _isLoading.value = true
+    fun replyToTask(taskId: String) {
+        _contextTaskId = taskId
+        _inputText.value = ""  // Focus input, user types their reply
+    }
 
-        val clientId = selectedClientId.value
-        val projectId = selectedProjectId.value
-        val clientMessageId = Uuid.random().toString()
-
-        // Optimistic message with contextTaskId for immediate thread grouping
-        val optimisticMsg = ChatMessage(
-            from = ChatMessage.Sender.Me,
-            text = text,
-            contextId = projectId,
-            messageType = ChatMessage.MessageType.USER_MESSAGE,
-            metadata = mapOf("contextTaskId" to taskId),
-        )
-        _chatMessages.value = _chatMessages.value + optimisticMsg
-        // Auto-expand thread
-        _expandedThreads.value = _expandedThreads.value + taskId
-
+    /**
+     * Load task graph on demand. Caches result so subsequent calls are no-ops.
+     * null value in the map means "loading in progress".
+     */
+    fun loadTaskGraph(taskId: String) {
+        if (taskId in _taskGraphs.value) return // already loaded or loading
+        _taskGraphs.update { it + (taskId to null) } // mark loading
         scope.launch {
             try {
-                repository.chat.sendMessage(
-                    text = text,
-                    clientMessageId = clientMessageId,
-                    activeClientId = clientId,
-                    activeProjectId = projectId,
-                    contextTaskId = taskId,
-                )
-                println("=== Thread reply sent (taskId=$taskId) ===")
-
-                val progressMsg = ChatMessage(
-                    from = ChatMessage.Sender.Assistant,
-                    text = "Zpracovávám...",
-                    contextId = projectId,
-                    messageType = ChatMessage.MessageType.PROGRESS,
-                )
-                _chatMessages.value = _chatMessages.value + progressMsg
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                println("Error sending thread reply: ${e.message}")
-                onError("Chyba při odesílání: ${e.message}")
-                _chatMessages.value = _chatMessages.value.filter { it !== optimisticMsg }
-            } finally {
-                _isLoading.value = false
+                val graph = repository.taskGraphs.getGraph(taskId)
+                _taskGraphs.update { it + (taskId to graph) }
+            } catch (_: Exception) {
+                _taskGraphs.update { it - taskId } // remove on error, allow retry
             }
-        }
-    }
-
-    /** Toggle background message visibility + reload from server with appropriate filter. */
-    fun toggleBackgrounds() {
-        _showBackgrounds.value = !_showBackgrounds.value
-        scope.launch { reloadHistory() }
-    }
-
-    /** Toggle thread expand/collapse. Marks thread as seen when expanding. */
-    fun toggleThread(taskId: String) {
-        val current = _expandedThreads.value
-        if (taskId in current) {
-            _expandedThreads.value = current - taskId
-        } else {
-            markThreadSeen(taskId)
-            _expandedThreads.value = current + taskId
-        }
-    }
-
-    private fun markThreadSeen(taskId: String) {
-        val thread = displayItems.value
-            .filterIsInstance<ChatDisplayItem.Thread>()
-            .find { it.taskId == taskId }
-        val lastTimestamp = thread?.replies?.lastOrNull()?.timestamp
-        if (lastTimestamp != null) {
-            _lastSeenTimestamps.value = _lastSeenTimestamps.value + (taskId to lastTimestamp)
         }
     }
 
@@ -291,14 +210,12 @@ class ChatViewModel(
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
-        val taskContext = _contextTaskId.value
 
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
             text = text,
             contextId = projectId,
             messageType = ChatMessage.MessageType.USER_MESSAGE,
-            metadata = if (!taskContext.isNullOrBlank()) mapOf("contextTaskId" to taskContext) else emptyMap(),
         )
         _chatMessages.value = _chatMessages.value + optimisticMsg
 
@@ -320,13 +237,14 @@ class ChatViewModel(
             _attachments.value = emptyList()
 
             try {
-                _contextTaskId.value = null  // Clear after use (taskContext captured above)
+                val taskContext = _contextTaskId
+                _contextTaskId = null  // Clear after use
                 repository.chat.sendMessage(
                     text = originalText,
                     clientMessageId = clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
-                    contextTaskId = taskContext?.takeIf { it.isNotBlank() },
+                    contextTaskId = taskContext,
                 )
                 println("=== Message sent successfully (RPC) ===")
 
@@ -450,22 +368,15 @@ class ChatViewModel(
 
     fun loadMoreHistory() {
         val projectId = selectedProjectId.value ?: ""
-        val beforeId = oldestMessageId
-        if (beforeId == null) {
-            println("loadMoreHistory: oldestMessageId is null, skipping")
-            return
-        }
+        val beforeId = oldestMessageId ?: return
         if (_isLoadingMore.value) return
 
-        println("loadMoreHistory: loading before=$beforeId")
         scope.launch {
             _isLoadingMore.value = true
             try {
-                val excludeBg = !_showBackgrounds.value
                 val history = repository.chat.getChatHistory(
-                    limit = 20, beforeMessageId = beforeId, excludeBackground = excludeBg,
+                    limit = 10, beforeMessageId = beforeId,
                 )
-                println("loadMoreHistory: got ${history.messages.size} messages, hasMore=${history.hasMore}, oldestId=${history.oldestMessageId}")
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
                         ChatMessage.Sender.Me
@@ -490,10 +401,8 @@ class ChatViewModel(
                     )
                 }
                 _chatMessages.value = olderMessages + _chatMessages.value
-                _hasMore.value = history.hasMore || olderMessages.size >= 20
-                if (olderMessages.isNotEmpty()) {
-                    oldestMessageId = history.oldestMessageId
-                }
+                _hasMore.value = history.hasMore
+                oldestMessageId = history.oldestMessageId
                 _compressionBoundaries.value =
                     (history.compressionBoundaries + _compressionBoundaries.value)
                         .distinctBy { it.afterSequence }
@@ -510,9 +419,6 @@ class ChatViewModel(
 
     private suspend fun handleChatResponse(response: com.jervis.dto.ChatResponseDto) {
         val projectId = selectedProjectId.value ?: ""
-        // Skip bootstrap messages — reloadHistory() already loaded them with proper pagination metadata.
-        // Processing them again would create duplicates and break oldestMessageId tracking.
-        if (response.metadata["fromHistory"] == "true") return
         if (response.metadata["status"] == "synchronized" ||
             response.type == ChatResponseType.QUEUE_STATUS
         ) return
@@ -590,14 +496,12 @@ class ChatViewModel(
                             it.timestamp == null
                     }
                     if (idx >= 0) {
-                        // Merge: preserve optimistic metadata (e.g. contextTaskId) with server echo
-                        val mergedMetadata = messages[idx].metadata + response.metadata
                         messages[idx] = ChatMessage(
                             from = ChatMessage.Sender.Me,
                             text = response.message,
                             contextId = projectId,
                             messageType = ChatMessage.MessageType.USER_MESSAGE,
-                            metadata = mergedMetadata,
+                            metadata = response.metadata,
                             timestamp = response.metadata["timestamp"],
                         )
                     }
@@ -661,7 +565,6 @@ class ChatViewModel(
                         contextId = projectId,
                         messageType = messageType,
                         metadata = response.metadata,
-                        timestamp = response.metadata["timestamp"] ?: java.time.Instant.now().toString(),
                         workflowSteps = parseWorkflowSteps(response.metadata),
                     ),
                 )
@@ -676,7 +579,6 @@ class ChatViewModel(
                         contextId = projectId,
                         messageType = messageType,
                         metadata = response.metadata,
-                        timestamp = response.metadata["timestamp"] ?: java.time.Instant.now().toString(),
                     ),
                 )
             }
@@ -688,10 +590,6 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
-                // Track new background messages for badge
-                if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT && !_showBackgrounds.value) {
-                    _backgroundMessageCount.value++
-                }
                 // Append directly — no deduplication needed, these are push-only
                 messages.add(
                     ChatMessage(
@@ -733,83 +631,77 @@ class ChatViewModel(
 
     private suspend fun reloadHistory() {
         val projectId = selectedProjectId.value ?: ""
-        // Retry up to 3 times — server may be restarting during reconnect
-        repeat(3) { attempt ->
-            try {
-                val excludeBg = !_showBackgrounds.value
-                val history = repository.chat.getChatHistory(limit = 20, excludeBackground = excludeBg)
-                _userTaskCount.value = history.userTaskCount
-                _backgroundMessageCount.value = history.backgroundMessageCount
-                val newMessages = history.messages.map { msg ->
-                    val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
-                        ChatMessage.Sender.Me
-                    } else {
-                        ChatMessage.Sender.Assistant
-                    }
-                    val msgType = when (msg.role) {
-                        com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                        com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
-                        com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
-                        else -> ChatMessage.MessageType.FINAL
-                    }
-                    ChatMessage(
-                        from = sender,
-                        text = msg.content,
-                        contextId = projectId,
-                        messageType = msgType,
-                        metadata = msg.metadata,
-                        timestamp = msg.timestamp,
-                        workflowSteps = parseWorkflowSteps(msg.metadata),
-                        sequence = msg.sequence,
-                    )
+        try {
+            val history = repository.chat.getChatHistory(limit = 10)
+            val newMessages = history.messages.map { msg ->
+                val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+                    ChatMessage.Sender.Me
+                } else {
+                    ChatMessage.Sender.Assistant
                 }
-                // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
-                // Stream-delivered messages have no sequence — DB messages always have one.
-                val inFlight = _chatMessages.value.filter { msg ->
-                    msg.sequence == null &&
-                        msg.metadata["streaming"] != "true" &&
-                        (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
-                            msg.messageType == ChatMessage.MessageType.PROGRESS ||
-                            msg.messageType == ChatMessage.MessageType.FINAL)
+                val msgType = when (msg.role) {
+                    com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                    com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                    com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                    else -> ChatMessage.MessageType.FINAL
                 }
-                // Deduplicate: drop in-flight if DB already has a message with same text+sender
-                val deduped = inFlight.filter { flight ->
-                    newMessages.none { db -> db.text == flight.text && db.from == flight.from }
-                }
-                _chatMessages.value = newMessages + deduped
-                _hasMore.value = history.hasMore || newMessages.size >= 20
-                oldestMessageId = history.oldestMessageId
-                println("reloadHistory: ${newMessages.size} messages, hasMore=${history.hasMore}→${_hasMore.value}, oldestId=${history.oldestMessageId}")
-                _compressionBoundaries.value = history.compressionBoundaries
-
-                // Restore UI scope from chat session (persisted client/project/group)
-                val restoredClientId = history.activeClientId
-                if (!restoredClientId.isNullOrBlank()) {
-                    onScopeChange(restoredClientId, history.activeProjectId, null, history.activeGroupId)
-                }
-
-                pendingState?.let { state ->
-                    if (!state.isExpired()) {
-                        println("=== Scheduling retry for pending message after reconnect ===")
-                        if (state.lastErrorType == "server") {
-                            pendingState = state.copy(lastErrorType = "network")
-                            PendingMessageStorage.save(pendingState)
-                        }
-                        updatePendingInfo()
-                        scheduleAutoRetry()
-                    } else {
-                        pendingState = null
-                        PendingMessageStorage.save(null)
-                        _pendingMessageInfo.value = null
-                    }
-                }
-                return  // Success — exit retry loop
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                if (e is IllegalStateException && e.message?.contains("cancelled") == true) return
-                println("Failed to reload history (attempt ${attempt + 1}/3): ${e.message}")
-                if (attempt < 2) delay(2000)
+                ChatMessage(
+                    from = sender,
+                    text = msg.content,
+                    contextId = projectId,
+                    messageType = msgType,
+                    metadata = msg.metadata,
+                    timestamp = msg.timestamp,
+                    workflowSteps = parseWorkflowSteps(msg.metadata),
+                    sequence = msg.sequence,
+                )
             }
+            // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
+            // Stream-delivered messages have no sequence — DB messages always have one.
+            val inFlight = _chatMessages.value.filter { msg ->
+                msg.sequence == null &&
+                    msg.metadata["streaming"] != "true" &&
+                    (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
+                        msg.messageType == ChatMessage.MessageType.PROGRESS ||
+                        msg.messageType == ChatMessage.MessageType.FINAL)
+            }
+            // Deduplicate: drop in-flight if DB already has a message with same text+sender
+            val deduped = inFlight.filter { flight ->
+                newMessages.none { db -> db.text == flight.text && db.from == flight.from }
+            }
+            _chatMessages.value = newMessages + deduped
+            _hasMore.value = history.hasMore
+            oldestMessageId = history.oldestMessageId
+            _compressionBoundaries.value = history.compressionBoundaries
+
+            // Restore UI scope from chat session (persisted client/project/group)
+            val restoredClientId = history.activeClientId
+            if (!restoredClientId.isNullOrBlank()) {
+                onScopeChange(restoredClientId, history.activeProjectId, null, history.activeGroupId)
+            }
+
+            pendingState?.let { state ->
+                if (!state.isExpired()) {
+                    println("=== Scheduling retry for pending message after reconnect ===")
+                    // After reconnect, reclassify old "server" errors as "network" if they were
+                    // caused by a dead connection (e.g., "RpcClient was cancelled" was previously
+                    // classified as server error before the fix). Fresh connection = always retry.
+                    if (state.lastErrorType == "server") {
+                        pendingState = state.copy(lastErrorType = "network")
+                        PendingMessageStorage.save(pendingState)
+                    }
+                    updatePendingInfo()
+                    scheduleAutoRetry()
+                } else {
+                    pendingState = null
+                    PendingMessageStorage.save(null)
+                    _pendingMessageInfo.value = null
+                }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            if (e is IllegalStateException && e.message?.contains("cancelled") == true) return
+            println("Failed to reload history: ${e.message}")
         }
     }
 

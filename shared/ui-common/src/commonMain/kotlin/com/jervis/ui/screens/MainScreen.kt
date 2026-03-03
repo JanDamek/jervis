@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
 import com.jervis.ui.MainScreenView as MainScreenViewInternal
@@ -16,23 +17,22 @@ fun MainScreen(
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val displayItems by viewModel.chat.displayItems.collectAsState()
-    val expandedThreads by viewModel.chat.expandedThreads.collectAsState()
+    val chatMessages by viewModel.chat.chatMessages.collectAsState()
     val inputText by viewModel.chat.inputText.collectAsState()
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
     val queueSize by viewModel.queue.queueSize.collectAsState()
     val hasMore by viewModel.chat.hasMore.collectAsState()
     val isLoadingMore by viewModel.chat.isLoadingMore.collectAsState()
+    val compressionBoundaries by viewModel.chat.compressionBoundaries.collectAsState()
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
     val approvalRequest by viewModel.chat.approvalRequest.collectAsState()
-    val showBackgrounds by viewModel.chat.showBackgrounds.collectAsState()
-    val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
-    val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
+    val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
+
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
     val resolvedEnvId by viewModel.environment.resolvedEnvId.collectAsState()
@@ -58,20 +58,19 @@ fun MainScreen(
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
-        displayItems = displayItems,
-        expandedThreads = expandedThreads,
-        onToggleThread = viewModel.chat::toggleThread,
+        chatMessages = chatMessages,
         inputText = inputText,
         isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,
         queueSize = queueSize,
         hasMore = hasMore,
         isLoadingMore = isLoadingMore,
+        compressionBoundaries = compressionBoundaries,
         attachments = attachments,
         onInputChanged = viewModel.chat::updateInputText,
         onSendClick = viewModel.chat::sendMessage,
         onEditMessage = viewModel.chat::editMessage,
-        onSendThreadReply = viewModel.chat::sendThreadReply,
+        onReplyToTask = viewModel.chat::replyToTask,
         onLoadMore = viewModel.chat::loadMoreHistory,
         onAttachFile = viewModel.chat::attachFile,
         onRemoveAttachment = viewModel.chat::removeAttachment,
@@ -86,10 +85,8 @@ fun MainScreen(
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
         orchestratorProgress = orchestratorProgress,
-        showBackgrounds = showBackgrounds,
-        onToggleBackgrounds = viewModel.chat::toggleBackgrounds,
-        backgroundMessageCount = backgroundMessageCount,
-        userTaskCount = userTaskCount,
+        taskGraphs = taskGraphs,
+        onLoadTaskGraph = viewModel.chat::loadTaskGraph,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,
