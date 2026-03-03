@@ -102,6 +102,11 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - Graph Agent background dispatch: `backend/service-orchestrator/app/background/handler.py` (_run_graph_agent_background)
 - Task queue API: `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` (GET /internal/tasks/queue, POST /internal/tasks/{id}/priority)
 - Queue tools: `backend/service-orchestrator/app/tools/definitions.py` (TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY, QUEUE_TOOLS)
+- Project management internal API: `backend/server/.../rpc/internal/InternalProjectManagementRouting.kt` (create client/project/connection REST)
+- Git internal API: `backend/server/.../rpc/internal/InternalGitRouting.kt` (create repo, init workspace)
+- Git repo creation: `backend/server/.../service/git/GitRepositoryCreationService.kt` (GitHub/GitLab API)
+- Project templates: `backend/server/.../service/project/ProjectTemplateService.kt` (KMP/Spring Boot/full-stack scaffolding)
+- Project management MCP tools: `backend/service-mcp/app/main.py` (create_client, create_project, create_connection, create_git_repository, init_workspace)
 
 ## Build Notes
 

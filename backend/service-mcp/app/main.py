@@ -1787,6 +1787,178 @@ async def get_namespace_status(namespace: str) -> str:
         return "\n".join(lines)
 
 
+# ── Project Management Tools ─────────────────────────────────────────────
+# Create clients, projects, connections via Kotlin internal API.
+
+
+@mcp.tool
+async def create_client(name: str, description: str = "") -> str:
+    """Create a new client (organization / workspace).
+
+    Args:
+        name: Client name (must be unique)
+        description: Optional description
+    """
+    body = {"name": name}
+    if description:
+        body["description"] = description
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/clients",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return f"Client created: {data.get('name', name)} (id={data.get('id', '?')})"
+
+
+@mcp.tool
+async def create_project(
+    client_id: str,
+    name: str,
+    description: str = "",
+) -> str:
+    """Create a new project within a client.
+
+    Args:
+        client_id: ID of the client that owns this project
+        name: Project name
+        description: Optional project description
+    """
+    body = {"clientId": client_id, "name": name}
+    if description:
+        body["description"] = description
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/projects",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return (
+            f"Project created: {data.get('name', name)} "
+            f"(id={data.get('id', '?')}, clientId={client_id})"
+        )
+
+
+@mcp.tool
+async def create_connection(
+    name: str,
+    provider: str,
+    auth_type: str = "BEARER",
+    base_url: str = "",
+    bearer_token: str = "",
+    is_cloud: bool = False,
+) -> str:
+    """Create a new external service connection (GitHub, GitLab, Atlassian, etc.).
+
+    Args:
+        name: Connection name (must be unique)
+        provider: Service provider: GITHUB, GITLAB, ATLASSIAN, AZURE_DEVOPS, GENERIC_EMAIL, etc.
+        auth_type: Authentication type: NONE, BASIC, BEARER, OAUTH2
+        base_url: API base URL (leave empty for cloud providers)
+        bearer_token: Bearer/personal access token (for BEARER auth)
+        is_cloud: Whether to use provider's default cloud URL
+    """
+    body: dict = {
+        "name": name,
+        "provider": provider,
+        "protocol": "HTTP",
+        "authType": auth_type,
+        "isCloud": is_cloud,
+    }
+    if base_url:
+        body["baseUrl"] = base_url
+    if bearer_token:
+        body["bearerToken"] = bearer_token
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/connections",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return (
+            f"Connection created: {data.get('name', name)} "
+            f"(id={data.get('id', '?')}, provider={data.get('provider', provider)})"
+        )
+
+
+@mcp.tool
+async def create_git_repository(
+    client_id: str,
+    name: str,
+    description: str = "",
+    connection_id: str = "",
+    is_private: bool = True,
+) -> str:
+    """Create a new git repository on GitHub or GitLab via the client's connection.
+
+    Uses the client's REPOSITORY connection to call the provider API.
+    Supports GitHub (POST /user/repos) and GitLab (POST /api/v4/projects).
+
+    Args:
+        client_id: Client ID whose connection will be used
+        name: Repository name
+        description: Optional repository description
+        connection_id: Specific connection ID to use (empty = auto-detect)
+        is_private: Whether the repository should be private (default: true)
+    """
+    body: dict = {
+        "clientId": client_id,
+        "name": name,
+        "isPrivate": is_private,
+    }
+    if description:
+        body["description"] = description
+    if connection_id:
+        body["connectionId"] = connection_id
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/git/repos",
+            json=body,
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        return (
+            f"Repository created: {data.get('fullName', name)}\n"
+            f"  Clone URL: {data.get('cloneUrl', '?')}\n"
+            f"  Web URL: {data.get('htmlUrl', '?')}\n"
+            f"  Provider: {data.get('provider', '?')}"
+        )
+
+
+@mcp.tool
+async def init_workspace(project_id: str) -> str:
+    """Initialize (clone) the workspace for a project.
+
+    Triggers an async git clone for the project's repository.
+    The workspace will be available once cloning completes.
+
+    Args:
+        project_id: ID of the project to initialize workspace for
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{settings.kotlin_server_url}/internal/git/init-workspace",
+            json={"projectId": project_id},
+        )
+        if resp.status_code not in (200, 201):
+            return f"Error ({resp.status_code}): {resp.text}"
+        data = resp.json()
+        if data.get("ok"):
+            return f"Workspace initialization triggered for project {project_id}"
+        return f"Error: {data.get('error', 'unknown')}"
+
+
 # ── Health endpoint (custom route) ───────────────────────────────────────
 
 @mcp.custom_route("/health", methods=["GET"])

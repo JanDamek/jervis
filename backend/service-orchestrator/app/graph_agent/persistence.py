@@ -147,16 +147,16 @@ class TaskGraphStore:
     async def update_edge_payload(
         self,
         task_id: str,
-        edge_index: int,
+        edge_id: str,
         payload: EdgePayload,
     ) -> bool:
-        """Atomically update an edge's payload."""
+        """Atomically update an edge's payload by edge ID (not index)."""
         coll = await self._ensure_collection()
         result_op = await coll.update_one(
-            {"task_id": task_id},
+            {"task_id": task_id, "edges.id": edge_id},
             {
                 "$set": {
-                    f"edges.{edge_index}.payload": payload.model_dump(),
+                    "edges.$.payload": payload.model_dump(),
                     "updated_at": datetime.now(timezone.utc),
                 },
             },

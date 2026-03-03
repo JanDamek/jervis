@@ -42,6 +42,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         TOOL_CREATE_SCHEDULED_TASK,
         TOOL_TASK_QUEUE_INSPECT,
         TOOL_TASK_QUEUE_SET_PRIORITY,
+        ENVIRONMENT_TOOLS,
     )
     from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
 
@@ -125,6 +126,18 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     if vertex_type == VertexType.GATE:
         return _base + [_request_tools]
 
+    # SETUP: project scaffolding + environment provisioning
+    if vertex_type == VertexType.SETUP:
+        return _base + ENVIRONMENT_TOOLS + [
+            TOOL_GET_REPOSITORY_INFO,
+            TOOL_GET_REPOSITORY_STRUCTURE,
+            TOOL_GET_TECHNOLOGY_STACK,
+            TOOL_DISPATCH_CODING_AGENT,
+            TOOL_STORE_KNOWLEDGE,
+            TOOL_MEMORY_STORE,
+            _request_tools,
+        ]
+
     # ROOT: decomposition only (handled separately)
     return _base
 
@@ -158,6 +171,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         TOOL_CREATE_SCHEDULED_TASK,
         TOOL_TASK_QUEUE_INSPECT,
         TOOL_TASK_QUEUE_SET_PRIORITY,
+        ENVIRONMENT_TOOLS,
     )
     from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
 
@@ -172,6 +186,9 @@ def get_tools_by_category(category: str) -> list[dict]:
         "memory": [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL],
         "scheduling": [TOOL_CREATE_SCHEDULED_TASK],
         "queue": [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY],
+        "environment": ENVIRONMENT_TOOLS,
+        "setup": ENVIRONMENT_TOOLS + [TOOL_DISPATCH_CODING_AGENT,
+                 TOOL_GET_REPOSITORY_INFO, TOOL_GET_REPOSITORY_STRUCTURE],
     }
 
     if category == "all":
@@ -192,7 +209,7 @@ def _build_request_tools_definition() -> dict:
             "name": "request_tools",
             "description": (
                 "Request additional tools if the current set is insufficient. "
-                "Available categories: kb, web, git, code, memory, scheduling, queue, all. "
+                "Available categories: kb, web, git, code, memory, scheduling, queue, environment, setup, all. "
                 "Use 'all' to get every available tool."
             ),
             "parameters": {
@@ -201,7 +218,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, queue, all",
+                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, queue, environment, setup, all",
                     },
                     "reason": {
                         "type": "string",

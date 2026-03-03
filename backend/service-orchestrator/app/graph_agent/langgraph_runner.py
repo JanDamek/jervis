@@ -11,6 +11,7 @@ that performs a specific responsibility:
   REVIEWER     → reviews quality (code review, output review)
   SYNTHESIS    → combines results from upstream vertices
   GATE         → decision / approval point
+  SETUP        → project scaffolding + environment provisioning
 
 The graph is a loop:
   decompose → select_next → dispatch_vertex → complete_vertex → [loop back to select_next]
@@ -92,6 +93,7 @@ class GraphAgentState(TypedDict, total=False):
     # Graph Agent specific
     task_graph: dict | None             # TaskGraph serialized
     current_vertex_id: str | None       # Vertex being processed
+    ready_vertex_ids: list[str]         # All READY vertices for parallel execution
     graph_error: str | None             # Error if graph-level failure
     final_result: str | None            # Composed final result
 
@@ -188,13 +190,15 @@ async def node_select_next(state: GraphAgentState) -> dict:
         return {
             "task_graph": graph.model_dump(),
             "current_vertex_id": None,
+            "ready_vertex_ids": [],
         }
 
-    # Pick first ready vertex (topological order is maintained by readiness)
-    vertex = ready[0]
+    # Return all ready vertices for parallel execution
+    ready_ids = [v.id for v in ready]
     return {
         "task_graph": graph.model_dump(),
-        "current_vertex_id": vertex.id,
+        "current_vertex_id": ready_ids[0],
+        "ready_vertex_ids": ready_ids,
     }
 
 
@@ -204,34 +208,73 @@ async def node_select_next(state: GraphAgentState) -> dict:
 
 
 async def node_dispatch_vertex(state: GraphAgentState) -> dict:
-    """Execute the current vertex based on its type (responsibility).
+    """Execute ready vertices — parallel when multiple are ready.
 
     Each VertexType maps to a specific handler:
-    - PLANNER/DECOMPOSE → _handle_planner
-    - INVESTIGATOR      → _handle_investigator
-    - EXECUTOR/TASK     → _handle_executor
-    - VALIDATOR         → _handle_validator
-    - REVIEWER          → _handle_reviewer
-    - SYNTHESIS         → _handle_synthesis
-    - GATE              → _handle_gate
+    - PLANNER/DECOMPOSE → recursive decomposition
+    - All others        → agentic tool loop
     """
     graph = TaskGraph(**state["task_graph"])
-    vertex_id = state["current_vertex_id"]
-    vertex = start_vertex(graph, vertex_id)
+    ready_ids = state.get("ready_vertex_ids", [])
 
-    if not vertex:
+    # Fallback to single vertex for backward compat
+    if not ready_ids:
+        vid = state.get("current_vertex_id")
+        ready_ids = [vid] if vid else []
+
+    if not ready_ids:
         return {"task_graph": graph.model_dump()}
+
+    # If only one vertex → execute directly (no asyncio.gather overhead)
+    if len(ready_ids) == 1:
+        graph = await _execute_single_vertex(graph, ready_ids[0], state)
+        return {"task_graph": graph.model_dump()}
+
+    # Multiple ready vertices → execute in parallel with asyncio.gather
+    async def _run(vid: str) -> TaskGraph:
+        return await _execute_single_vertex(graph, vid, state)
+
+    # Use gather for parallel execution; each coroutine works on its own vertex
+    results = await asyncio.gather(
+        *[_run(vid) for vid in ready_ids],
+        return_exceptions=True,
+    )
+
+    # Merge results — each _run works on the shared graph object
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.error("Parallel vertex %s failed: %s", ready_ids[i], res)
+            fail_vertex(graph, ready_ids[i], str(res))
+
+    return {"task_graph": graph.model_dump()}
+
+
+async def _execute_single_vertex(
+    graph: TaskGraph,
+    vertex_id: str,
+    state: dict,
+) -> TaskGraph:
+    """Execute a single vertex (shared logic for serial and parallel paths)."""
+    vertex = start_vertex(graph, vertex_id)
+    if not vertex:
+        return graph
 
     await report_vertex_started(graph, vertex_id)
 
     try:
         # PLANNER/DECOMPOSE → recursive decomposition (creates sub-graph)
         if vertex.vertex_type in (VertexType.PLANNER, VertexType.DECOMPOSE):
-            graph = await _handle_decompose_vertex(graph, vertex, state)
+            graph = await asyncio.wait_for(
+                _handle_decompose_vertex(graph, vertex, state),
+                timeout=_VERTEX_OVERALL_TIMEOUT_S,
+            )
         else:
-            # All other types → agentic tool loop
+            # All other types → agentic tool loop (with overall timeout)
             context = _build_context(vertex)
-            result, summary = await _dispatch_vertex_handler(vertex, context, state)
+            result, summary = await asyncio.wait_for(
+                _dispatch_vertex_handler(vertex, context, state),
+                timeout=_VERTEX_OVERALL_TIMEOUT_S,
+            )
 
             # Complete vertex — fills outgoing edge payloads
             complete_vertex(
@@ -241,6 +284,9 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
                 local_context=result,
             )
 
+    except asyncio.TimeoutError:
+        logger.error("Vertex %s timed out after %ds", vertex_id, _VERTEX_OVERALL_TIMEOUT_S)
+        fail_vertex(graph, vertex_id, f"Vertex timed out after {_VERTEX_OVERALL_TIMEOUT_S}s")
     except Exception as e:
         logger.error("Vertex %s failed: %s", vertex_id, e, exc_info=True)
         fail_vertex(graph, vertex_id, str(e))
@@ -248,13 +294,12 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
     await report_vertex_completed(graph, vertex_id)
 
     # --- Impact analysis: propagate changes through artifact graph ---
-    # Only for completed non-decompose vertices (decompose vertices create sub-graphs, not changes)
     completed_vertex = graph.vertices.get(vertex_id)
     if (
         completed_vertex
         and completed_vertex.status == VertexStatus.COMPLETED
         and completed_vertex.vertex_type not in (VertexType.PLANNER, VertexType.DECOMPOSE)
-        and settings.use_graph_agent  # Only when graph agent is enabled
+        and settings.use_graph_agent
     ):
         try:
             new_ids = await analyze_impact(graph, completed_vertex, state)
@@ -268,7 +313,7 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
 
     await task_graph_store.save(graph)
 
-    return {"task_graph": graph.model_dump()}
+    return graph
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +322,7 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
 
 
 async def node_synthesize(state: GraphAgentState) -> dict:
-    """Compose the final result from completed vertices."""
+    """Compose the final result from completed vertices using LLM synthesis."""
     graph_data = state.get("task_graph")
     if not graph_data:
         return {"final_result": state.get("graph_error", "No graph available")}
@@ -286,8 +331,44 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     graph.status = GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
 
-    result = get_final_result(graph)
+    raw_result = get_final_result(graph)
     stats = get_stats(graph)
+
+    # LLM synthesis — combine vertex results intelligently
+    if raw_result and len(graph.vertices) > 2:
+        try:
+            task_data = state.get("task", {})
+            original_request = task_data.get("message", "")
+            response = await llm_with_cloud_fallback(
+                state=state,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a synthesis agent. Combine the results from multiple "
+                            "sub-tasks into a coherent, well-structured final answer. "
+                            "Remove redundancy, resolve conflicts, and present a unified response. "
+                            "Use the user's language."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"## Original request\n{original_request}\n\n"
+                            f"## Sub-task results\n{raw_result}\n\n"
+                            "Synthesize these results into a coherent final answer."
+                        ),
+                    },
+                ],
+                task_type="graph_synthesis",
+                max_tokens=settings.default_output_tokens,
+            )
+            result = response.choices[0].message.content or raw_result
+        except Exception as e:
+            logger.warning("LLM synthesis failed, using concatenation: %s", e)
+            result = raw_result
+    else:
+        result = raw_result
 
     await task_graph_store.save(graph)
     await report_graph_status(graph, "Graph execution completed")
@@ -468,12 +549,21 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "You are the Gate. Evaluate upstream results and decide whether to "
         'proceed. Respond with JSON: {"proceed": true/false, "reason": "..."}'
     ),
+    VertexType.SETUP: (
+        "You are the Setup Agent. Handle project scaffolding and environment "
+        "provisioning. Use environment tools to create, configure, and deploy "
+        "environments. Use coding tools to scaffold project structures, "
+        "generate boilerplate, and configure build systems. "
+        "Ensure environments are properly linked to projects and ready for use."
+    ),
 }
 
 # Max agentic loop iterations per vertex (tool call rounds)
-_MAX_VERTEX_TOOL_ITERATIONS = 6
+_MAX_VERTEX_TOOL_ITERATIONS = 12
 # Timeout for a single tool execution within vertex loop
 _VERTEX_TOOL_TIMEOUT_S = 60
+# Overall timeout for an entire vertex execution (all iterations combined)
+_VERTEX_OVERALL_TIMEOUT_S = 600
 
 
 # ---------------------------------------------------------------------------

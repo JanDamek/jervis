@@ -193,6 +193,7 @@ Each vertex has a RESPONSIBILITY TYPE that determines its system prompt, default
 - "validator" — verifies results: checks code, branches, commits
 - "reviewer" — reviews quality: code review, best practices, tech stack
 - "gate" — decision/approval point (proceed or stop)
+- "setup" — project scaffolding + environment provisioning (environment CRUD, deploy, coding agent)
 - "decompose" — needs further breakdown before execution
 
 Each vertex gets a DEFAULT TOOL SET matching its responsibility. Vertices can also REQUEST ADDITIONAL TOOLS at runtime if needed.
@@ -205,7 +206,7 @@ Respond with a JSON object:
     {
       "title": "<short title>",
       "description": "<what this vertex needs to accomplish>",
-      "type": "<investigator|planner|executor|task|validator|reviewer|gate|decompose>",
+      "type": "<investigator|planner|executor|task|validator|reviewer|gate|setup|decompose>",
       "agent": "<agent name or null for auto>",
       "depends_on": [0, 1]
     }
