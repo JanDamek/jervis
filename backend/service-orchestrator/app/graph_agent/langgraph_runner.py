@@ -104,10 +104,11 @@ class GraphAgentState(TypedDict, total=False):
 async def node_decompose(state: GraphAgentState) -> dict:
     """Decompose the user request into a TaskGraph (vertices + edges).
 
-    Short-circuits trivial requests (< 200 chars, simple questions) into a
-    single EXECUTOR vertex — no LLM decomposition needed for "kolik je hodin?".
+    ALWAYS goes through LLM decomposition — even simple questions like
+    "kolik je hodin?" because complexity can't be judged from text length.
+    ("jaký je stav projektu?" is short but needs deep analysis.)
 
-    For complex requests, calls LLM to break into sub-vertices, validates result.
+    The decomposer LLM decides: simple → 1 vertex, complex → multiple vertices.
     """
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack")
@@ -121,43 +122,7 @@ async def node_decompose(state: GraphAgentState) -> dict:
         root_description=task.query,
     )
 
-    # --- Short-circuit for trivial requests ---
-    if _is_trivial_request(task.query):
-        logger.info("Trivial request detected — single vertex, no decomposition")
-        from app.graph_agent.graph import add_vertex as gav, add_edge as gae
-        import uuid as _uuid
-
-        single_id = f"exec_{_uuid.uuid4().hex[:8]}"
-        single_vertex = GraphVertex(
-            id=single_id,
-            title=task.query[:100],
-            description=task.query,
-            vertex_type=VertexType.EXECUTOR,
-            status=VertexStatus.PENDING,
-            input_request=task.query,
-            parent_id=graph.root_vertex_id,
-            depth=1,
-        )
-        gav(graph, single_vertex, parent_id=graph.root_vertex_id)
-        gae(graph, source_id=graph.root_vertex_id, target_id=single_id,
-            edge_type=EdgeType.DECOMPOSITION)
-
-        # Mark root as completed
-        root = graph.vertices[graph.root_vertex_id]
-        root.status = VertexStatus.COMPLETED
-        root.result = "Trivial request — direct execution"
-        root.result_summary = "Direct execution"
-
-        graph.status = GraphStatus.EXECUTING
-
-        await task_graph_store.save(graph)
-        return {
-            "task_graph": graph.model_dump(),
-            "current_vertex_id": None,
-            "graph_error": None,
-        }
-
-    # --- Full LLM-driven decomposition ---
+    # LLM-driven decomposition — LLM decides complexity, not heuristics
     try:
         graph = await decompose_root(
             graph=graph,
@@ -852,37 +817,3 @@ def _build_context(vertex: GraphVertex) -> str:
         )
     return "\n".join(parts)
 
-
-# Trivial request heuristic — questions under 200 chars, no complex structure
-_TRIVIAL_MAX_LEN = 200
-_TRIVIAL_INDICATORS = {"?", "kolik", "what", "who", "when", "kde", "jak", "how"}
-
-
-def _is_trivial_request(query: str) -> bool:
-    """Detect trivial requests that don't need decomposition.
-
-    Simple questions, greetings, and short commands go straight to a single
-    EXECUTOR vertex. Complex multi-part requests get full decomposition.
-    """
-    if len(query) > _TRIVIAL_MAX_LEN:
-        return False
-
-    q_lower = query.lower().strip()
-
-    # Contains newlines or bullet points → likely multi-part
-    if "\n" in q_lower or "- " in q_lower or "1." in q_lower:
-        return False
-
-    # Contains "and" / "a" connectors suggesting multiple tasks
-    if " and " in q_lower or " a zároveň " in q_lower or " a pak " in q_lower:
-        return False
-
-    # Short question with question indicators → trivial
-    if len(query) < 100 and any(ind in q_lower for ind in _TRIVIAL_INDICATORS):
-        return True
-
-    # Very short (under 50 chars) → probably trivial
-    if len(query) < 50:
-        return True
-
-    return False
