@@ -13,18 +13,18 @@
 
 ## Table of Contents
 
-1. [Ollama Router – Priority-Based GPU/CPU Routing](#ollama-router--priority-based-gpucpu-routing)
+1. [Ollama Router – Priority-Based GPU Routing](#ollama-router--priority-based-gpu-routing)
 2. [Graph-Based Routing Architecture](#graph-based-routing-architecture)
 3. [Background Engine & Task Processing](#background-engine--task-processing)
 4. [Multi-Agent Delegation System Data Models](#multi-agent-delegation-system-data-models)
 
 ---
 
-## Ollama Router – Priority-Based GPU/CPU Routing
+## Ollama Router – Priority-Based GPU Routing
 
 ### Overview
 
-**All LLM requests** in the system (Orchestrator, KB, Correction Agent) route through **Ollama Router** (port 11430), which uses a **two-tier request queue** to distribute requests between GPU and CPU backends based on priority and availability.
+**All LLM requests** in the system (Orchestrator, KB, Correction Agent) route through **Ollama Router** (port 11430), which uses a **two-tier request queue** to distribute requests across GPU backends (p40-1 and p40-2) based on priority and model sets.
 
 **Router ALWAYS accepts requests.** Never returns 503/reject. Each request is queued and dispatched when a backend slot becomes available.
 
@@ -80,7 +80,7 @@
 Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 
 - **CRITICAL queue**: Unlimited — chat, foreground, interactive (orchestrator). Always GPU, never CPU. Preempts NORMAL if all GPU slots busy.
-- **NORMAL queue**: Bounded (max 10) — background, KB ingest, indexing. GPU only (no CPU backend). Returns 429 back-pressure when full.
+- **NORMAL queue**: Bounded (max 10) — background, KB ingest, indexing. Returns 429 back-pressure when full.
 - **Dispatch**: Fast-path (immediate) if slot available, otherwise queued. Background dispatcher assigns queued requests to freed slots. CRITICAL always dispatched first.
 - **Concurrency**: Max 1 concurrent request per backend (serial is faster than parallel when VRAM spills to RAM).
 - **Client disconnect**: Monitored via `cancel_event` — request dequeued or proxy cancelled on disconnect.
@@ -796,7 +796,7 @@ Max ONE idle task at a time. Automatically preempted when any FG/BG work arrives
 
 - **Deployment strategy:** `Recreate` — old pod is stopped before new pod starts (no overlap)
 - **Atomic task claiming:** MongoDB `findAndModify` ensures only one instance processes each task
-- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (PROCESSING, QUALIFYING) for >10 minutes back to their retryable state. FOREGROUND completed tasks are preserved (not stuck).
+- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (PROCESSING, QUALIFYING) for >10 minutes back to their retryable state. QUALIFYING → INDEXING (GPU agent crashed, re-index + re-qualify). INDEXING with `indexingClaimedAt > 10min` → unset `indexingClaimedAt` (KB callback never arrived). FOREGROUND completed tasks are preserved (not stuck).
 - **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
 ### Workspace Retry with Exponential Backoff
@@ -872,9 +872,9 @@ For Python orchestrator task flow see [orchestrator-final-spec.md § 9](orchestr
 
 ---
 
-## Ollama Router Architecture (Priority-Based GPU/CPU Routing)
+## Ollama Router Architecture (Priority-Based GPU Routing)
 
-All services call a single endpoint – the **Ollama Router** (:11430) – which transparently proxies to GPU or CPU Ollama based on priority and model availability.
+All services call a single endpoint – the **Ollama Router** (:11430) – which routes to GPU backends (p40-1: LLM 30b, p40-2: embedding + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -882,7 +882,7 @@ All services call a single endpoint – the **Ollama Router** (:11430) – which
 │  • Priority routing (CRITICAL / NORMAL)                                         │
 │  • VRAM priority (bigger model = higher VRAM priority)                          │
 │  • Multi-GPU pool with per-GPU reservations                                     │
-│  • Preemption (background → CPU on orchestrator request)                       │
+│  • GPU_MODEL_SETS routing (p40-1=[30b], p40-2=[embedding,vl-tool])             │
 │  • Auto-reservation (60s idle timeout, no announce/release API)                │
 │  └──────┬──────────────────────────┬──────────────────────┬────────────────────│
 │         │                          │                      │                    │

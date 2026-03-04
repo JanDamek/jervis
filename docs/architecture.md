@@ -9,7 +9,7 @@
 
 1. [Framework Overview](#framework-overview)
 2. [Workspace & Directory Architecture](#workspace--directory-architecture)
-3. [GPU/CPU Routing & Ollama Router](#gpucpu-routing--ollama-router)
+3. [GPU Routing & Ollama Router](#gpu-routing--ollama-router)
 4. [Kotlin RPC (kRPC) Architecture](#kotlin-rpc-krpc-architecture)
 5. [Polling & Indexing Pipeline](#polling--indexing-pipeline)
 6. [Knowledge Graph Design](#knowledge-graph-design)
@@ -150,11 +150,11 @@ if (workspace != WorkspaceStatus.READY) {
 
 ---
 
-## GPU/CPU Routing & Ollama Router
+## GPU Routing & Ollama Router
 
 ### Overview
 
-**Ollama Router** is a transparent proxy service that intelligently routes LLM requests between GPU and CPU backends based on priority, resource availability, and model requirements.
+**Ollama Router** is a transparent proxy service that routes LLM requests across GPU backends (p40-1: LLM 30b, p40-2: embedding + VLM + whisper) based on priority, capability, and `GPU_MODEL_SETS`. No CPU backend — all inference on GPU only.
 
 ### Architecture
 

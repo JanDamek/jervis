@@ -295,7 +295,7 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
 3. KB processes in background:
    a. Content hashing (SHA256[:16]) for idempotent re-ingest
    b. RAG ingest (embedding + Weaviate) with `contentHash` property
-   c. `_generate_summary()` — LLM call (14B model, `ingest_llm_complex`, CPU via Ollama Router)
+   c. `_generate_summary()` — LLM call (30b model via Ollama Router → GPU-1)
    d. Graph extraction enqueued to background worker
 4. Progress events pushed to `/internal/kb-progress` (real-time WebSocket updates)
 5. On completion: KB POSTs `FullIngestResult` to `/internal/kb-done` callback
@@ -373,14 +373,24 @@ All writes (CRITICAL and NORMAL) are **fully asynchronous**. The ingest endpoint
 
 **Priority propagation through full stack:**
 1. **HTTP level** — `acquire_write_slot_with_priority()` routes to priority or normal semaphore
-2. **RAG embedding** — CRITICAL embeddings run on GPU (`X-Ollama-Priority: 0`), NORMAL can fall back to CPU
+2. **RAG embedding** — All embeddings run on GPU-2 (`X-Ollama-Priority` header), concurrency controlled by `MAX_CONCURRENT_EMBEDDINGS`
 3. **LLM Extraction Queue** — SQLite `priority` column, dequeue `ORDER BY priority ASC, created_at ASC`
 4. **Graph LLM calls** — Worker passes priority to graph service → Ollama Router `X-Ollama-Priority` header
 
 **Effect:** Ingest endpoint returns in milliseconds (after embedding). CRITICAL extraction tasks are processed before NORMAL ones in the background queue.
 
+**Embedding concurrency (GPU-2 sweet spot):**
+- Embeddings run exclusively on GPU-2 (p40-2, `GPU_MODEL_SETS` enforcement)
+- GPU-2 benchmark: sweet spot = 4-5 concurrent requests → ~8.8 RPS (medium text)
+- `MAX_CONCURRENT_EMBEDDINGS` env var controls per-worker semaphore
+- KB READ (4 uvicorn workers × 2 semaphore = 8 max concurrent) — near GPU sweet spot
+- KB WRITE (1 uvicorn worker × 5 semaphore = 5) — optimal for single-process batch embedding
+- Text length vs latency: linear above ~800 tokens (~220ms per 1k chars)
+
 **Key files:**
 - `app/main.py` — dual semaphore, `acquire_write_slot_with_priority()`
+- `app/core/config.py` — `MAX_CONCURRENT_EMBEDDINGS` (default 5)
+- `app/services/rag_service.py` — `_embedding_semaphore`, configurable concurrency
 - `app/services/knowledge_service.py` — always enqueues, never synchronous extraction
 - `app/services/graph_service.py` — `_llm_call(prompt, priority)` with httpx
 - `app/services/llm_extraction_queue.py` — priority column, priority-aware dequeue
@@ -396,6 +406,10 @@ KB data is scoped hierarchically:
 | Client | `"X"` | `""` | `""` | Visible to client X |
 | Group | `"X"` | `""` | `"G"` | Visible to all projects in group G |
 | Project | `"X"` | `"Y"` | `"G"` | Visible only to project Y |
+
+**GLOBAL keyword (MCP):** When storing via MCP `kb_store`, use `client_id="GLOBAL"` for explicit global writes (empty clientId in KB). This prevents accidental global writes when clientId is simply forgotten. Without `client_id` (and no default configured), MCP returns a descriptive error explaining the tenant hierarchy.
+
+**Tenant validation:** KB validates hierarchy: `projectId` requires `clientId`. Error messages include actual values and hierarchy explanation (`global → client → project`).
 
 **Group cross-visibility**: When retrieving data for a project that belongs to a group,
 the filter includes: `(projectId == "" OR projectId == myProject OR groupId == myGroup)`.
@@ -1079,7 +1093,7 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 
 ### Key Practices
 
-1. **Two-stage processing:** CPU indexing + orchestrator execution
+1. **Two-stage processing:** KB indexing (GPU-1 for LLM, GPU-2 for embedding) + orchestrator execution
 2. **Bidirectional knowledge:** RAG (semantic) + Graph (structured)
 3. **Evidence-based relationships:** Every edge has supporting evidence
 4. **Multi-tenancy:** Per-client isolation in all storage layers
@@ -1095,8 +1109,8 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 
 ### Benefits
 
-1. **Cost efficiency:** GPU models only when necessary
-2. **Scalability:** Parallel CPU indexing, orchestrator execution on idle
+1. **Cost efficiency:** Local GPU for all operations, OpenRouter only for foreground chat when configured
+2. **Scalability:** Parallel embedding (GPU-2), orchestrator execution on idle
 3. **Explainability:** Evidence links for all relationships
 4. **Flexibility:** Schema-less graph for new entity types
 5. **Performance:** Hybrid search combining semantic + structured
@@ -1192,6 +1206,28 @@ class SessionEntry(BaseModel):
 | `app/context/procedural_memory.py` | ArangoDB CRUD for procedural memory |
 | `app/context/retention_policy.py` | Decides what to save to KB vs context_store |
 | `app/context/summarizer.py` | Summarization utilities (no truncation of agent outputs) |
+
+---
+
+## K8s Deployment (Read/Write Split)
+
+KB runs as two separate deployments (`k8s/app_knowledgebase.yaml`):
+
+| Deployment | Mode | Workers | Embedding Concurrency | Priority | Purpose |
+|------------|------|---------|----------------------|----------|---------|
+| `jervis-knowledgebase-read` | `read` | 4 (uvicorn) | 2 per worker (8 total) | `high-priority` | Search, traverse, resolve |
+| `jervis-knowledgebase-write` | `write` | 1 (uvicorn) | 5 per worker (5 total) | normal | Ingest, crawl, purge |
+
+**Services:** `jervis-knowledgebase` (read, default) + `jervis-knowledgebase-write` (write)
+
+**Probe configuration (read — stability-critical):**
+- Startup: 30 × 5s = 150s max startup time
+- Liveness: 30s timeout, 30s period, 5 failures → restart
+- Readiness: 15s timeout, 15s period, 4 failures → remove from service
+
+**Workers:** Configurable via `UVICORN_WORKERS` env var (Dockerfile: `--workers ${UVICORN_WORKERS:-1}`). Multi-worker prevents event loop blocking during heavy graph traversal from killing liveness probes.
+
+**Build:** `k8s/build_knowledgebase.sh`
 
 ---
 
