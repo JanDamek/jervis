@@ -465,12 +465,8 @@ class GitRepositoryService(
             throw RuntimeException("Clone failed for $repoUrl: $output")
         }
 
-        // Strip credentials from remote URL after clone
-        val safeUrl = repoUrl.replace(Regex("://[^@]+@"), "://")
-        executeGitCommand(
-            listOf("git", "remote", "set-url", "origin", safeUrl),
-            workingDir = targetDir,
-        )
+        // Strip credentials from remote URL after clone (use sanitizeRemoteUrl for reliability)
+        sanitizeRemoteUrl(targetDir)
 
         // Store credentials in git credential helper
         configureCredentials(targetDir, connection)
