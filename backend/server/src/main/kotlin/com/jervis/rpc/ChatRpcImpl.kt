@@ -451,6 +451,7 @@ class ChatRpcImpl(
             "error" -> ChatResponseType.ERROR
             "thinking" -> ChatResponseType.PLANNING
             "scope_change" -> ChatResponseType.SCOPE_CHANGE
+            "work_plan_update" -> ChatResponseType.WORK_PLAN_UPDATE
             else -> ChatResponseType.EXECUTING
         }
 

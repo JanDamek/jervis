@@ -198,18 +198,22 @@ class ChatViewModel(
      * null value in the map means "loading in progress".
      */
     fun loadTaskGraph(taskId: String) {
-        if (taskId in _taskGraphs.value) return // already loaded or loading
+        val existing = _taskGraphs.value[taskId]
+        if (existing != null) return // already loaded with data
         _taskGraphs.update { it + (taskId to null) } // mark loading
         scope.launch {
             try {
                 val graph = repository.taskGraphs.getGraph(taskId)
                 if (graph != null) {
+                    println("ChatViewModel: graph loaded for taskId=$taskId — ${graph.vertices.size} vertices")
                     _taskGraphs.update { it + (taskId to graph) }
                 } else {
-                    _taskGraphs.update { it - taskId } // not found — remove, allow retry
+                    println("ChatViewModel: graph NOT FOUND for taskId=$taskId")
+                    _taskGraphs.update { it - taskId }
                 }
-            } catch (_: Exception) {
-                _taskGraphs.update { it - taskId } // remove on error, allow retry
+            } catch (e: Exception) {
+                println("ChatViewModel: graph load FAILED for taskId=$taskId — ${e.message}")
+                _taskGraphs.update { it - taskId }
             }
         }
     }
@@ -528,6 +532,7 @@ class ChatViewModel(
 
             ChatResponseType.BACKGROUND_RESULT -> ChatMessage.MessageType.BACKGROUND_RESULT
             ChatResponseType.URGENT_ALERT -> ChatMessage.MessageType.URGENT_ALERT
+            ChatResponseType.WORK_PLAN_UPDATE -> ChatMessage.MessageType.WORK_PLAN_UPDATE
 
             else -> null
         }
@@ -652,6 +657,21 @@ class ChatViewModel(
                     _backgroundMessageCount.value++
                 }
                 // Append directly — no deduplication needed, these are push-only
+                messages.add(
+                    ChatMessage(
+                        from = ChatMessage.Sender.Assistant,
+                        text = response.message,
+                        contextId = projectId,
+                        messageType = messageType,
+                        metadata = response.metadata,
+                        timestamp = response.metadata["timestamp"],
+                    ),
+                )
+            }
+
+            ChatMessage.MessageType.WORK_PLAN_UPDATE -> {
+                // Remove progress messages — plan update replaces "thinking" state
+                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,

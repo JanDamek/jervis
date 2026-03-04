@@ -50,6 +50,7 @@ def build_system_prompt(
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
+    active_plan_section = _build_active_plan_section(active_client_id)
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
 
@@ -61,7 +62,7 @@ def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_plan_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 - Hledej znalosti: **kb_search** (interní znalosti, kód, architektura) → web_search (internet) → zeptej se
@@ -277,3 +278,41 @@ def _build_learned_procedures_section(procedures: list[str]) -> str:
         lines.append(f"- {proc}")
     lines.append("")
     return "\n".join(lines)
+
+
+def _build_active_plan_section(client_id: str | None) -> str:
+    """Build active draft plan section if one exists in LQM affairs."""
+    if not client_id:
+        return ""
+    try:
+        from app.memory.agent import _get_or_create_lqm
+        from app.chat.work_plan_draft import PLAN_DRAFT_KEY, deserialize_plan
+
+        lqm = _get_or_create_lqm()
+        affair = lqm.get_active_affair(client_id)
+        if not affair or PLAN_DRAFT_KEY not in affair.key_facts:
+            # Also check parked affairs
+            for parked in lqm.get_parked_affairs(client_id):
+                if PLAN_DRAFT_KEY in parked.key_facts:
+                    plan = deserialize_plan(parked.key_facts[PLAN_DRAFT_KEY])
+                    task_count = sum(len(p.tasks) for p in plan.phases)
+                    return (
+                        f"\n## Odložený plán\n"
+                        f"- **{plan.title}** (v{plan.version}, {task_count} úkolů, "
+                        f"{len(plan.gaps)} otevřených otázek) — ODLOŽENO\n"
+                        f"- Pokud se uživatel ptá na rozpracované věci, zmiň tento plán.\n"
+                    )
+            return ""
+
+        plan = deserialize_plan(affair.key_facts[PLAN_DRAFT_KEY])
+        task_count = sum(len(p.tasks) for p in plan.phases)
+        gap_info = f", {len(plan.gaps)} otevřených otázek" if plan.gaps else ""
+        return (
+            f"\n## Aktivní plán\n"
+            f"- **{plan.title}** (v{plan.version}, {task_count} úkolů{gap_info})\n"
+            f"- Stav: {plan.status}\n"
+            f"- Pokračuj v práci na tomto plánu, pokud uživatel neřekne jinak.\n"
+        )
+    except Exception as e:
+        logger.debug("Failed to build active plan section: %s", e)
+        return ""

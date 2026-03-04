@@ -27,6 +27,7 @@ data class ChatMessage(
         APPROVAL_REQUEST,   // Approval dialog (approve/deny/always)
         BACKGROUND_RESULT,  // Background task result pushed to chat
         URGENT_ALERT,       // Urgent notification pushed to chat
+        WORK_PLAN_UPDATE,   // Draft work plan update from iterative chat planning
     }
 
     @Serializable

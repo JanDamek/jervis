@@ -137,6 +137,117 @@ async def _handle_create_work_plan(args, client_id, project_id, kotlin_client):
     return result
 
 
+async def _handle_update_work_plan_draft(args, client_id, project_id, _kotlin_client):
+    """Store draft plan in active affair and return rendered markdown."""
+    from app.chat.work_plan_draft import (
+        DraftPlan, DraftPlanPhase, DraftPlanTask,
+        PLAN_DRAFT_KEY, PLAN_VERSION_KEY,
+        render_plan_markdown, serialize_plan,
+    )
+    from app.memory.agent import _get_or_create_lqm
+
+    lqm = _get_or_create_lqm()
+
+    # Build plan model from args
+    phases = []
+    for p in args.get("phases", []):
+        tasks = [
+            DraftPlanTask(
+                title=t["title"],
+                description=t.get("description", ""),
+                action_type=t.get("action_type", "CODE"),
+                status=t.get("status", "draft"),
+                depends_on=t.get("depends_on", []),
+            )
+            for t in p.get("tasks", [])
+        ]
+        phases.append(DraftPlanPhase(name=p["name"], tasks=tasks))
+
+    # Get active affair for this client
+    affair = lqm.get_active_affair(client_id) if client_id else None
+
+    prev_version = 0
+    if affair and PLAN_VERSION_KEY in affair.key_facts:
+        try:
+            prev_version = int(affair.key_facts[PLAN_VERSION_KEY])
+        except (ValueError, TypeError):
+            pass
+
+    plan = DraftPlan(
+        title=args["title"],
+        phases=phases,
+        gaps=args.get("gaps", []),
+        status=args.get("status", "drafting"),
+        version=prev_version + 1,
+    )
+
+    # Store in affair
+    if affair:
+        affair.key_facts[PLAN_DRAFT_KEY] = serialize_plan(plan)
+        affair.key_facts[PLAN_VERSION_KEY] = str(plan.version)
+        affair.title = f"Plan: {plan.title}"
+        lqm.store_affair(affair)
+    else:
+        logger.warning("No active affair for client %s — plan in tool result only", client_id)
+
+    return render_plan_markdown(plan)
+
+
+async def _handle_finalize_work_plan(args, client_id, project_id, kotlin_client):
+    """Convert draft plan to real tasks via create_work_plan Kotlin API."""
+    from app.chat.work_plan_draft import (
+        PLAN_DRAFT_KEY, PLAN_VERSION_KEY,
+        deserialize_plan, serialize_plan,
+    )
+    from app.memory.agent import _get_or_create_lqm
+    from app.memory.models import AffairStatus
+
+    effective_client_id = args.get("client_id") or client_id
+    if not effective_client_id:
+        return "Chyba: client_id je povinný. Zeptej se uživatele na klienta."
+
+    lqm = _get_or_create_lqm()
+    affair = lqm.get_active_affair(effective_client_id)
+    if not affair or PLAN_DRAFT_KEY not in affair.key_facts:
+        return "Chyba: žádný rozpracovaný plán. Nejdřív vytvoř plán pomocí update_work_plan_draft."
+
+    plan = deserialize_plan(affair.key_facts[PLAN_DRAFT_KEY])
+
+    # Convert to create_work_plan format
+    phases = []
+    for phase in plan.phases:
+        tasks = [
+            {
+                "title": t.title,
+                "description": t.description,
+                "action_type": t.action_type,
+                "depends_on": t.depends_on,
+            }
+            for t in phase.tasks
+            if t.status != "removed"
+        ]
+        if tasks:
+            phases.append({"name": phase.name, "tasks": tasks})
+
+    if not phases:
+        return "Chyba: plán neobsahuje žádné aktivní úkoly."
+
+    result = await kotlin_client.create_work_plan(
+        title=plan.title,
+        phases=phases,
+        client_id=effective_client_id,
+        project_id=args.get("project_id", project_id),
+    )
+
+    # Mark plan as executing, resolve affair
+    plan.status = "executing"
+    affair.key_facts[PLAN_DRAFT_KEY] = serialize_plan(plan)
+    affair.status = AffairStatus.RESOLVED
+    lqm.store_affair(affair)
+
+    return f"Plan finalizován a tasky vytvořeny.\n{result}"
+
+
 async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
     effective_client_id = args.get("client_id") or client_id
     effective_project_id = args.get("project_id") or project_id
@@ -282,6 +393,8 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "create_work_plan": _handle_create_work_plan,
+    "update_work_plan_draft": _handle_update_work_plan_draft,
+    "finalize_work_plan": _handle_finalize_work_plan,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
     "search_user_tasks": _handle_search_tasks,
     "search_tasks": _handle_search_tasks,

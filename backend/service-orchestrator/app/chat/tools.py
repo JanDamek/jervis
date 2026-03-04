@@ -451,6 +451,106 @@ TOOL_CREATE_WORK_PLAN: dict = {
     },
 }
 
+TOOL_UPDATE_WORK_PLAN_DRAFT: dict = {
+    "type": "function",
+    "function": {
+        "name": "update_work_plan_draft",
+        "description": (
+            "Vytvoř nebo aktualizuj rozpracovaný plán práce. Volej po každé odpovědi "
+            "uživatele během plánování. Plán se zobrazí vizuálně v chatu. "
+            "Pokud je plán kompletní (žádné gaps), nastav status na 'ready'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Název celého plánu.",
+                },
+                "phases": {
+                    "type": "array",
+                    "description": "Fáze plánu (v pořadí vykonání).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Název fáze.",
+                            },
+                            "tasks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "description": {"type": "string"},
+                                        "action_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "DECIDE", "RESEARCH", "DESIGN",
+                                                "CODE", "REVIEW", "TEST",
+                                                "CLARIFY", "ESTIMATE",
+                                            ],
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "enum": ["draft", "confirmed", "removed"],
+                                            "description": "draft=otevřený, confirmed=odsouhlasený, removed=smazaný.",
+                                        },
+                                        "depends_on": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "Názvy úkolů na kterých závisí.",
+                                        },
+                                    },
+                                    "required": ["title", "description"],
+                                },
+                            },
+                        },
+                        "required": ["name", "tasks"],
+                    },
+                },
+                "gaps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Otevřené otázky které je třeba zodpovědět.",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["drafting", "ready"],
+                    "description": "drafting=rozpracováno, ready=plán je kompletní k odsouhlasení.",
+                },
+            },
+            "required": ["title", "phases", "status"],
+        },
+    },
+}
+
+TOOL_FINALIZE_WORK_PLAN: dict = {
+    "type": "function",
+    "function": {
+        "name": "finalize_work_plan",
+        "description": (
+            "Finalizuj odsouhlasený plán — vytvoř skutečné background tasky z draft plánu. "
+            "Volej POUZE po explicitním souhlasu uživatele."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID.",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (volitelné).",
+                },
+            },
+            "required": ["client_id"],
+        },
+    },
+}
+
 TOOL_QUERY_ACTION_LOG: dict = {
     "type": "function",
     "function": {
@@ -565,6 +665,8 @@ TOOL_UPDATE_GUIDELINE: dict = {
 CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_CREATE_BACKGROUND_TASK,
     TOOL_CREATE_WORK_PLAN,
+    TOOL_UPDATE_WORK_PLAN_DRAFT,
+    TOOL_FINALIZE_WORK_PLAN,
     TOOL_DISPATCH_CODING_AGENT,
     TOOL_SEARCH_TASKS,
     TOOL_GET_TASK_STATUS,
@@ -658,7 +760,9 @@ TOOL_DOMAINS: dict[str, str] = {
     "kb_search": "search", "kb_delete": "memory", "web_search": "search",
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
-    "create_background_task": "task", "create_work_plan": "task", "dispatch_coding_agent": "task",
+    "create_background_task": "task", "create_work_plan": "task",
+    "update_work_plan_draft": "task", "finalize_work_plan": "task",
+    "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",

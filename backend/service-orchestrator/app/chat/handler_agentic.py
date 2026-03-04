@@ -421,6 +421,18 @@ async def run_agentic_loop(
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))
 
+                # Emit visual plan update for UI
+                if tool_name == "update_work_plan_draft":
+                    yield ChatStreamEvent(
+                        type="work_plan_update",
+                        content=result,
+                        metadata={
+                            "plan_status": arguments.get("status", "drafting"),
+                            "plan_title": arguments.get("title", ""),
+                            "gap_count": str(len(arguments.get("gaps", []))),
+                        },
+                    )
+
                 # Track scope from tool arguments
                 tool_client = arguments.get("client_id")
                 tool_project = arguments.get("project_id")

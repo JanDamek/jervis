@@ -2085,7 +2085,7 @@ User message → classify_intent() (regex)
 | DIRECT | 0 | 1 | P40 (LOCAL_FAST) |
 | RESEARCH | 5 (kb_search, web_search, memory_recall, switch_context) | 3 | Cloud-first |
 | TASK_MGMT | 11 (task lifecycle + meetings + KB) | 4 | Cloud-first |
-| COMPLEX | 7 (work plans, coding, research) | 6 | Cloud-first |
+| COMPLEX | 9 (work plans, iterative planning, coding, research) | 6 | Cloud-first |
 | MEMORY | 6 (kb_search, kb_delete, memory_store, store_knowledge, memory_recall, code_search) | 3 | Cloud-first |
 
 ### Files
@@ -2106,7 +2106,20 @@ When `True`: handler.py calls `route_intent()` → builds routed prompt → sele
 
 ### Overview
 
-Tasks can form parent-child hierarchies for work plan decomposition. The `create_work_plan` chat tool creates a root task (BLOCKED state) with child tasks organized in phases with dependency tracking.
+Tasks can form parent-child hierarchies for work plan decomposition. Two mechanisms exist:
+
+**Iterative Chat Planning** (`update_work_plan_draft` + `finalize_work_plan` tools):
+Agent builds a draft plan incrementally through dialogue with the user. Draft is stored in an affair's `key_facts["__plan_draft__"]` via the memory system (LQM). The plan can be parked ("dej to bokem") and resumed later. When the user approves, `finalize_work_plan` converts the draft into real tasks via `create_work_plan` API.
+
+- `app/chat/work_plan_draft.py` — DraftPlan model, markdown renderer, serialization
+- `app/chat/tools.py` — Tool definitions for both planning tools
+- `app/chat/handler_tools.py` — Tool handlers (affair-based storage)
+- `app/chat/prompts/complex.py` — Iterative planning system prompt
+- `app/chat/system_prompt.py` — Active plan injection into system prompt
+- UI: `WORK_PLAN_UPDATE` event type → `WorkPlanCard` composable in `ChatMessageDisplay.kt`
+
+**Direct Work Plan** (`create_work_plan` tool):
+Creates a root task (BLOCKED state) with child tasks organized in phases with dependency tracking. Used for immediate task creation without iterative planning.
 
 ### Task States for Hierarchy
 
