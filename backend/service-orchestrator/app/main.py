@@ -93,7 +93,7 @@ def _crash_cleanup():
         return
 
     for thread_id in list(_active_tasks.keys()):
-        # Extract task_id from thread_id format: "thread-{task_id}-{uuid}"
+        # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" / "graph-{task_id}-{uuid}"
         parts = thread_id.split("-")
         task_id = parts[1] if len(parts) >= 2 else thread_id
         try:
@@ -528,20 +528,25 @@ async def interrupt(thread_id: str):
 
 @app.post("/cancel/{thread_id}")
 async def cancel(thread_id: str):
-    """Cancel a running orchestration."""
+    """Cancel a running orchestration.
+
+    Reports 'cancelled' status to Kotlin so the task doesn't stay stuck in
+    PYTHON_ORCHESTRATING.  Then cancels the asyncio task (CancelledError).
+    """
     task = _active_tasks.get(thread_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"No active task for {thread_id}")
+
+    # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" / "graph-{task_id}-{uuid}"
+    parts = thread_id.split("-")
+    cancel_task_id = parts[1] if len(parts) >= 2 else thread_id
 
     # Mark graph as CANCELLED in persistence so agentic loop stops gracefully
     if settings.use_graph_agent:
         try:
             from app.graph_agent.persistence import task_graph_store
             from app.graph_agent.models import GraphStatus
-            # thread_id format: "thread-{task_id}-{uuid}" → extract task_id
-            parts = thread_id.split("-")
-            graph_task_id = parts[1] if len(parts) >= 2 else thread_id
-            graph = await task_graph_store.load(graph_task_id)
+            graph = await task_graph_store.load(cancel_task_id)
             if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
                 graph.status = GraphStatus.CANCELLED
                 await task_graph_store.save(graph)
@@ -549,8 +554,23 @@ async def cancel(thread_id: str):
         except Exception as e:
             logger.warning("Failed to mark graph as cancelled: %s", e)
 
+    # Report cancelled status to Kotlin so UI updates immediately
+    try:
+        from app.tools.kotlin_client import kotlin_client
+        await kotlin_client.report_status_change(
+            task_id=cancel_task_id,
+            thread_id=thread_id,
+            status="cancelled",
+            summary="Úkol zrušen uživatelem.",
+        )
+    except Exception as e:
+        logger.warning("Failed to report cancel to Kotlin: %s", e)
+
+    # Cancel the asyncio task — CancelledError will fire in _run_background
     task.cancel()
-    logger.info("Cancelled orchestration: thread=%s", thread_id)
+    _active_tasks.pop(thread_id, None)
+    logger.info("Cancelled orchestration: thread=%s task=%s", thread_id, cancel_task_id)
+    return {"status": "cancelled", "thread_id": thread_id}
 
 
 @app.get("/graph/{task_id}")
