@@ -441,7 +441,7 @@ class ChatViewModel(
             _isLoadingMore.value = true
             try {
                 val history = repository.chat.getChatHistory(
-                    limit = 10, beforeMessageId = beforeId,
+                    limit = 20, beforeMessageId = beforeId,
                 )
                 println("loadMoreHistory: got ${history.messages.size} messages, hasMore=${history.hasMore}, oldestId=${history.oldestMessageId}")
                 val olderMessages = history.messages.map { msg ->
@@ -468,7 +468,7 @@ class ChatViewModel(
                     )
                 }
                 _chatMessages.value = olderMessages + _chatMessages.value
-                _hasMore.value = history.hasMore || olderMessages.size >= 10
+                _hasMore.value = history.hasMore || olderMessages.size >= 20
                 if (olderMessages.isNotEmpty()) {
                     oldestMessageId = history.oldestMessageId
                 }
@@ -488,6 +488,9 @@ class ChatViewModel(
 
     private suspend fun handleChatResponse(response: com.jervis.dto.ChatResponseDto) {
         val projectId = selectedProjectId.value ?: ""
+        // Skip bootstrap messages — reloadHistory() already loaded them with proper pagination metadata.
+        // Processing them again would create duplicates and break oldestMessageId tracking.
+        if (response.metadata["fromHistory"] == "true") return
         if (response.metadata["status"] == "synchronized" ||
             response.type == ChatResponseType.QUEUE_STATUS
         ) return
@@ -704,79 +707,80 @@ class ChatViewModel(
 
     private suspend fun reloadHistory() {
         val projectId = selectedProjectId.value ?: ""
-        try {
-            val history = repository.chat.getChatHistory(limit = 10)
-            val newMessages = history.messages.map { msg ->
-                val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
-                    ChatMessage.Sender.Me
-                } else {
-                    ChatMessage.Sender.Assistant
-                }
-                val msgType = when (msg.role) {
-                    com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
-                    com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
-                    com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
-                    else -> ChatMessage.MessageType.FINAL
-                }
-                ChatMessage(
-                    from = sender,
-                    text = msg.content,
-                    contextId = projectId,
-                    messageType = msgType,
-                    metadata = msg.metadata,
-                    timestamp = msg.timestamp,
-                    workflowSteps = parseWorkflowSteps(msg.metadata),
-                    sequence = msg.sequence,
-                )
-            }
-            // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
-            // Stream-delivered messages have no sequence — DB messages always have one.
-            val inFlight = _chatMessages.value.filter { msg ->
-                msg.sequence == null &&
-                    msg.metadata["streaming"] != "true" &&
-                    (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
-                        msg.messageType == ChatMessage.MessageType.PROGRESS ||
-                        msg.messageType == ChatMessage.MessageType.FINAL)
-            }
-            // Deduplicate: drop in-flight if DB already has a message with same text+sender
-            val deduped = inFlight.filter { flight ->
-                newMessages.none { db -> db.text == flight.text && db.from == flight.from }
-            }
-            _chatMessages.value = newMessages + deduped
-            // Defensive: if we got a full page, assume more exist even if backend says otherwise
-            _hasMore.value = history.hasMore || newMessages.size >= 10
-            oldestMessageId = history.oldestMessageId
-            println("reloadHistory: ${newMessages.size} messages, hasMore=${history.hasMore}→${_hasMore.value}, oldestId=${history.oldestMessageId}")
-            _compressionBoundaries.value = history.compressionBoundaries
-
-            // Restore UI scope from chat session (persisted client/project/group)
-            val restoredClientId = history.activeClientId
-            if (!restoredClientId.isNullOrBlank()) {
-                onScopeChange(restoredClientId, history.activeProjectId, null, history.activeGroupId)
-            }
-
-            pendingState?.let { state ->
-                if (!state.isExpired()) {
-                    println("=== Scheduling retry for pending message after reconnect ===")
-                    // After reconnect, reclassify old "server" errors as "network" if they were
-                    // caused by a dead connection (e.g., "RpcClient was cancelled" was previously
-                    // classified as server error before the fix). Fresh connection = always retry.
-                    if (state.lastErrorType == "server") {
-                        pendingState = state.copy(lastErrorType = "network")
-                        PendingMessageStorage.save(pendingState)
+        // Retry up to 3 times — server may be restarting during reconnect
+        repeat(3) { attempt ->
+            try {
+                val history = repository.chat.getChatHistory(limit = 20)
+                val newMessages = history.messages.map { msg ->
+                    val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
+                        ChatMessage.Sender.Me
+                    } else {
+                        ChatMessage.Sender.Assistant
                     }
-                    updatePendingInfo()
-                    scheduleAutoRetry()
-                } else {
-                    pendingState = null
-                    PendingMessageStorage.save(null)
-                    _pendingMessageInfo.value = null
+                    val msgType = when (msg.role) {
+                        com.jervis.dto.ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+                        com.jervis.dto.ChatRole.BACKGROUND -> ChatMessage.MessageType.BACKGROUND_RESULT
+                        com.jervis.dto.ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+                        else -> ChatMessage.MessageType.FINAL
+                    }
+                    ChatMessage(
+                        from = sender,
+                        text = msg.content,
+                        contextId = projectId,
+                        messageType = msgType,
+                        metadata = msg.metadata,
+                        timestamp = msg.timestamp,
+                        workflowSteps = parseWorkflowSteps(msg.metadata),
+                        sequence = msg.sequence,
+                    )
                 }
+                // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
+                // Stream-delivered messages have no sequence — DB messages always have one.
+                val inFlight = _chatMessages.value.filter { msg ->
+                    msg.sequence == null &&
+                        msg.metadata["streaming"] != "true" &&
+                        (msg.messageType == ChatMessage.MessageType.USER_MESSAGE ||
+                            msg.messageType == ChatMessage.MessageType.PROGRESS ||
+                            msg.messageType == ChatMessage.MessageType.FINAL)
+                }
+                // Deduplicate: drop in-flight if DB already has a message with same text+sender
+                val deduped = inFlight.filter { flight ->
+                    newMessages.none { db -> db.text == flight.text && db.from == flight.from }
+                }
+                _chatMessages.value = newMessages + deduped
+                _hasMore.value = history.hasMore || newMessages.size >= 20
+                oldestMessageId = history.oldestMessageId
+                println("reloadHistory: ${newMessages.size} messages, hasMore=${history.hasMore}→${_hasMore.value}, oldestId=${history.oldestMessageId}")
+                _compressionBoundaries.value = history.compressionBoundaries
+
+                // Restore UI scope from chat session (persisted client/project/group)
+                val restoredClientId = history.activeClientId
+                if (!restoredClientId.isNullOrBlank()) {
+                    onScopeChange(restoredClientId, history.activeProjectId, null, history.activeGroupId)
+                }
+
+                pendingState?.let { state ->
+                    if (!state.isExpired()) {
+                        println("=== Scheduling retry for pending message after reconnect ===")
+                        if (state.lastErrorType == "server") {
+                            pendingState = state.copy(lastErrorType = "network")
+                            PendingMessageStorage.save(pendingState)
+                        }
+                        updatePendingInfo()
+                        scheduleAutoRetry()
+                    } else {
+                        pendingState = null
+                        PendingMessageStorage.save(null)
+                        _pendingMessageInfo.value = null
+                    }
+                }
+                return  // Success — exit retry loop
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is IllegalStateException && e.message?.contains("cancelled") == true) return
+                println("Failed to reload history (attempt ${attempt + 1}/3): ${e.message}")
+                if (attempt < 2) delay(2000)
             }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            if (e is IllegalStateException && e.message?.contains("cancelled") == true) return
-            println("Failed to reload history: ${e.message}")
         }
     }
 

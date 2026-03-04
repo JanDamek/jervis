@@ -94,20 +94,6 @@ internal fun ChatArea(
     // reverseLayout=true: item 0 is at the bottom of the screen.
     val reversedItems = remember(displayItems) { displayItems.asReversed() }
 
-    // Auto-load older messages when scrolling near the top
-    val nearTop by remember {
-        derivedStateOf {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val totalItems = listState.layoutInfo.totalItemsCount
-            totalItems > 0 && lastVisible >= totalItems - 3
-        }
-    }
-    LaunchedEffect(nearTop, hasMore, isLoadingMore) {
-        if (nearTop && hasMore && !isLoadingMore) {
-            onLoadMore()
-        }
-    }
-
     // Show scroll-to-bottom FAB when not at bottom (reverseLayout: firstVisibleItemIndex > 2)
     val showScrollToBottom by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 2 }
@@ -154,17 +140,29 @@ internal fun ChatArea(
                     }
                 }
 
-                // Loading indicator at top (= end of reversed list)
+                // "Load more" button at top (= end of reversed list)
                 if (hasMore) {
-                    item {
+                    item(key = "load_more") {
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                            )
+                            if (isLoadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                TextButton(onClick = onLoadMore) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Načíst starší zprávy")
+                                }
+                            }
                         }
                     }
                 }
