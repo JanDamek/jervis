@@ -361,7 +361,7 @@ class KotlinServerClient:
         These are appended to the task description so the coding agent sees them
         in its workspace instructions.
 
-        agent_preference: "auto" (tier-based), "aider", "openhands", "claude", "kilo"
+        agent_preference: "auto" (= Claude CLI), "claude", "kilo"
         """
         try:
             # Build enhanced workspace instructions

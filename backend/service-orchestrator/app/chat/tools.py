@@ -81,8 +81,8 @@ TOOL_DISPATCH_CODING_AGENT: dict = {
         "description": (
             "Pošli coding úkol na coding agenta. Default: background (asynchronně). "
             "Agent poběží asynchronně, výsledek přijde jako notifikace. "
-            "Coding agent se vybere automaticky podle složitosti (Aider pro jednoduché, "
-            "OpenHands pro střední, Claude pro kritické), nebo dle agent_preference."
+            "Coding agent: Claude CLI (default), Kilo (alternativa). "
+            "Auto = Claude pro vše."
         ),
         "parameters": {
             "type": "object",
@@ -101,8 +101,8 @@ TOOL_DISPATCH_CODING_AGENT: dict = {
                 },
                 "agent_preference": {
                     "type": "string",
-                    "enum": ["auto", "aider", "openhands", "claude", "kilo"],
-                    "description": "Preferred coding agent. 'auto' = select by complexity (default).",
+                    "enum": ["auto", "claude", "kilo"],
+                    "description": "Preferred coding agent. 'auto' = Claude CLI (default). 'kilo' = Kilo Code.",
                 },
             },
             "required": ["task_description", "client_id", "project_id"],

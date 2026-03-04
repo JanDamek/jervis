@@ -385,8 +385,12 @@ def select_agent(
 
     Only two agents: Claude CLI (default for everything) and Kilo (placeholder).
     """
-    if preference != "auto":
-        return AgentType(preference)
+    if preference and preference != "auto":
+        try:
+            return AgentType(preference)
+        except ValueError:
+            logger.warning("Unknown agent preference %r, falling back to Claude", preference)
+            return AgentType.CLAUDE
 
     # Claude handles all complexities
     return AgentType.CLAUDE
