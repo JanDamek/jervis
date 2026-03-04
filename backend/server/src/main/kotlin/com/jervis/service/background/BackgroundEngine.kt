@@ -1333,7 +1333,13 @@ class BackgroundEngine(
                         initializeProjectWorkspace(project)
                     }
                 }
-                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_AUTH,
+                com.jervis.entity.WorkspaceStatus.CLONE_FAILED_AUTH -> {
+                    // Auth failure — retry on startup: token refresh may restore the connection
+                    logger.info { "Project ${project.name} workspace CLONE_FAILED_AUTH — retrying (token refresh may fix it)" }
+                    scope.launch {
+                        initializeProjectWorkspace(project)
+                    }
+                }
                 com.jervis.entity.WorkspaceStatus.CLONE_FAILED_NOT_FOUND -> {
                     // Non-retryable: user must fix connection/URL — skip on startup
                     logger.info { "Project ${project.name} workspace ${project.workspaceStatus} — user action required, skipping" }
