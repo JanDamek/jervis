@@ -137,9 +137,23 @@ class GitRepositoryService(
                 try {
                     syncRepository(project, resource)
                 } catch (e: GitAuthenticationException) {
-                    logger.error { "Auth failed for ${resource.resourceIdentifier}: ${e.message}" }
-                    invalidateConnection(resource.connectionId)
-                    errorLogService.recordError(e, project.clientId.value, project.id.value)
+                    // Reactive refresh: try force-refresh before marking INVALID
+                    val conn = connectionService.findById(ConnectionId(resource.connectionId))
+                    val refreshed = conn != null && oauth2Service.refreshAccessToken(conn, force = true)
+                    if (refreshed) {
+                        logger.info { "Token refreshed for ${resource.resourceIdentifier} — retrying sync" }
+                        try {
+                            syncRepository(project, resource)
+                        } catch (retryEx: GitAuthenticationException) {
+                            logger.error { "Auth failed after refresh for ${resource.resourceIdentifier}: ${retryEx.message}" }
+                            invalidateConnection(resource.connectionId)
+                            errorLogService.recordError(retryEx, project.clientId.value, project.id.value)
+                        }
+                    } else {
+                        logger.error { "Auth failed for ${resource.resourceIdentifier} (no refresh token): ${e.message}" }
+                        invalidateConnection(resource.connectionId)
+                        errorLogService.recordError(e, project.clientId.value, project.id.value)
+                    }
                 } catch (e: Exception) {
                     logger.error(e) { "Failed to sync repo ${resource.resourceIdentifier} for project ${project.name}" }
                 }
@@ -207,17 +221,17 @@ class GitRepositoryService(
             return
         }
 
-        // Skip INVALID connections
-        if (initialConnection.state == ConnectionStateEnum.INVALID) {
-            logger.info { "Skipping sync for INVALID connection ${initialConnection.id} (${initialConnection.name})" }
-            return
-        }
-
-        // Refresh OAuth2 token if expired (before using bearerToken for git ops)
-        val connection = if (oauth2Service.refreshAccessToken(initialConnection)) {
+        // Try to refresh OAuth2 token if expired (even if INVALID — refresh may restore it)
+        val connection = if (oauth2Service.refreshAccessToken(initialConnection, force = initialConnection.state == ConnectionStateEnum.INVALID)) {
             connectionService.findById(ConnectionId(resource.connectionId))!!
         } else {
             initialConnection
+        }
+
+        // Skip INVALID connections (only after refresh attempt failed)
+        if (connection.state == ConnectionStateEnum.INVALID) {
+            logger.info { "Skipping sync for INVALID connection ${connection.id} (${connection.name}) — no refresh token or refresh failed" }
+            return
         }
 
         val repoUrl = buildRepoUrl(connection, resource)
@@ -267,18 +281,18 @@ class GitRepositoryService(
                 "Connection not found: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId}",
             )
 
-        // INVALID connections → auth error
-        if (initialConnection.state == ConnectionStateEnum.INVALID) {
-            throw GitAuthenticationException(
-                "Connection INVALID: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} connectionName=${initialConnection.name}",
-            )
-        }
-
-        // Refresh OAuth2 token if expired
-        val connection = if (oauth2Service.refreshAccessToken(initialConnection)) {
+        // Try to refresh OAuth2 token if expired (even if INVALID — refresh may restore it)
+        val connection = if (oauth2Service.refreshAccessToken(initialConnection, force = initialConnection.state == ConnectionStateEnum.INVALID)) {
             connectionService.findById(ConnectionId(resource.connectionId))!!
         } else {
             initialConnection
+        }
+
+        // INVALID connections → auth error (only after refresh attempt)
+        if (connection.state == ConnectionStateEnum.INVALID) {
+            throw GitAuthenticationException(
+                "Connection INVALID: project=${project.name} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} connectionName=${connection.name} (refresh failed or no refresh token)",
+            )
         }
 
         val repoUrl = buildRepoUrl(connection, resource)
@@ -308,7 +322,31 @@ class GitRepositoryService(
             logger.info { "Agent workspace ready: $agentRepoDir (branch: $defaultBranch)" }
             return agentRepoDir
         } catch (e: GitAuthenticationException) {
-            logger.error { "WORKSPACE_AUTH_FAILED: project=${project.name} projectId=${project.id} resource=${resource.resourceIdentifier} connectionId=${resource.connectionId} error=${e.message}" }
+            // Reactive refresh: token may have expired — try force-refresh before giving up
+            logger.warn { "WORKSPACE_AUTH_FAILED: project=${project.name} — attempting token refresh before invalidating" }
+            val refreshed = oauth2Service.refreshAccessToken(connection, force = true)
+            if (refreshed) {
+                logger.info { "Token refreshed for connection ${connection.id} — retrying workspace operation" }
+                val refreshedConn = connectionService.findById(ConnectionId(resource.connectionId))!!
+                val refreshedUrl = buildRepoUrl(refreshedConn, resource)!!
+                try {
+                    if (!isCloned) {
+                        cloneRepository(refreshedUrl, agentRepoDir, refreshedConn)
+                    } else {
+                        fetchAll(agentRepoDir, refreshedConn)
+                    }
+                    val defaultBranch = detectDefaultBranch(agentRepoDir)
+                    checkoutBranch(agentRepoDir, defaultBranch)
+                    logger.info { "Agent workspace ready after token refresh: $agentRepoDir (branch: $defaultBranch)" }
+                    return agentRepoDir
+                } catch (retryEx: GitAuthenticationException) {
+                    logger.error { "WORKSPACE_AUTH_FAILED_AFTER_REFRESH: project=${project.name} — marking INVALID" }
+                    invalidateConnection(resource.connectionId)
+                    errorLogService.recordError(retryEx, project.clientId.value, project.id.value)
+                    throw retryEx
+                }
+            }
+            logger.error { "WORKSPACE_AUTH_FAILED: project=${project.name} — no refresh token available, marking INVALID" }
             invalidateConnection(resource.connectionId)
             errorLogService.recordError(e, project.clientId.value, project.id.value)
             throw e

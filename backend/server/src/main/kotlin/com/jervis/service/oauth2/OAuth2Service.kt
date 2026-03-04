@@ -268,8 +268,8 @@ class OAuth2Service(
      * Refresh an expired OAuth2 access token using the stored refresh token.
      * Returns true if the token was refreshed, false if no refresh needed or no refresh token available.
      *
-     * Note: GitHub OAuth tokens are long-lived and don't expire, so refresh is not needed.
-     * Only Atlassian and GitLab support/require refresh tokens.
+     * GitHub Apps issue user-to-server tokens that expire after 8 hours (with refresh_token).
+     * Classic GitHub OAuth Apps issue non-expiring tokens (no refresh_token) — skipped.
      *
      * @param force When true, skip the time-based expiration check and force a refresh.
      *              Use this for reactive refresh after receiving a 401 from the provider.
@@ -279,15 +279,9 @@ class OAuth2Service(
 
         val provider = determineProvider(connection)
 
-        // GitHub tokens don't expire and don't have refresh tokens - skip refresh
-        if (provider == OAuth2Provider.GITHUB) {
-            return false
-        }
-
-        // For providers that support refresh tokens, warn if missing
+        // No refresh token → cannot refresh (classic GitHub OAuth, or missing token)
         if (connection.refreshToken == null) {
-            // Only log warning for providers that should have refresh tokens
-            if (provider == OAuth2Provider.ATLASSIAN || provider == OAuth2Provider.GITLAB) {
+            if (force && provider != OAuth2Provider.GITHUB) {
                 log.warn { "Connection ${connection.id} (${provider.name}) has no refresh token, cannot refresh. Re-authorize the connection." }
             }
             return false
