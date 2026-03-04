@@ -26,6 +26,8 @@ spec:
           env:
             - name: KB_MODE
               value: "read"
+            - name: UVICORN_WORKERS
+              value: "2"
           envFrom:
             - configMapRef:
                 name: jervis-knowledgebase-config
@@ -42,16 +44,16 @@ spec:
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 30
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /health
               port: 8080
             initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            periodSeconds: 15
+            timeoutSeconds: 15
+            failureThreshold: 4
           startupProbe:
             httpGet:
               path: /health

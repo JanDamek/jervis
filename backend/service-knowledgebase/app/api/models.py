@@ -48,7 +48,11 @@ class IngestRequest(BaseModel):
     def validate_tenant_hierarchy(self):
         """Ensure project is not set without client."""
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId - project requires client")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 class IngestResult(BaseModel):
@@ -86,7 +90,11 @@ class RetrievalRequest(BaseModel):
     def validate_tenant_hierarchy(self):
         """Ensure project is not set without client."""
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId - project requires client")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 class EvidenceItem(BaseModel):
@@ -126,7 +134,11 @@ class TraversalRequest(BaseModel):
     def validate_tenant_hierarchy(self):
         """Ensure project is not set without client."""
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId - project requires client")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 class CrawlRequest(BaseModel):
@@ -146,7 +158,11 @@ class CrawlRequest(BaseModel):
     def validate_tenant_hierarchy(self):
         """Ensure project is not set without client."""
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId - project requires client")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 
@@ -189,7 +205,11 @@ class FullIngestRequest(BaseModel):
     def validate_tenant_hierarchy(self):
         """Ensure project is not set without client."""
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId - project requires client")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 
@@ -264,7 +284,11 @@ class HybridRetrievalRequest(BaseModel):
     @model_validator(mode='after')
     def validate_tenant_hierarchy(self):
         if self.projectId and not self.clientId:
-            raise ValueError("projectId cannot be set without clientId")
+            raise ValueError(
+                f"projectId='{self.projectId}' was provided but clientId is empty. "
+                "Project-scoped data MUST have a clientId. Either provide clientId or omit projectId for global storage. "
+                "Hierarchy: global (no clientId) → client (clientId) → project (clientId + projectId)."
+            )
         return self
 
 

@@ -315,6 +315,14 @@ async def kb_store(
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
+    # Validate: projectId requires clientId
+    if pid and not cid:
+        return (
+            "Error: project_id was provided but client_id is empty and no default is configured. "
+            "Knowledge scoped to a project MUST have a client_id. "
+            "Either provide client_id explicitly or configure MCP_DEFAULT_CLIENT_ID."
+        )
+
     # Fire-and-forget: KB queues processing (embedding + extraction) in background
     headers = {"X-Ollama-Priority": "0"}
     payload = {
@@ -328,12 +336,16 @@ async def kb_store(
     if group_id:
         payload["groupId"] = group_id
     async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-        resp = await client.post(
-            f"{settings.knowledgebase_write_url}/api/v1/ingest-queue",
-            json=payload,
-        )
-        resp.raise_for_status()
-        return f"Queued for processing."
+        try:
+            resp = await client.post(
+                f"{settings.knowledgebase_write_url}/api/v1/ingest-queue",
+                json=payload,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:500] if e.response else str(e)
+            return f"Error storing to KB (HTTP {e.response.status_code}): {detail}"
+        return f"Queued for processing (clientId={cid}, projectId={pid or 'none'})."
 
 
 # ── KB Document Tools ───────────────────────────────────────────────────
