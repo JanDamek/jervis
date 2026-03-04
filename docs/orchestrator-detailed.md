@@ -183,7 +183,7 @@ Při dokončení/chybě/interruptu:
 await kotlin_client.report_status_change(
     task_id=task_id,
     thread_id=thread_id,
-    status="done",           # "done" | "error" | "interrupted"
+    status="done",           # "done" | "error" | "interrupted" | "cancelled"
     summary="...",           # pro "done"
     error="...",             # pro "error"
     interrupt_action="...",  # pro "interrupted": "clarify", "commit", "push"
@@ -4022,12 +4022,13 @@ ArangoDB-backed graph tracking ALL entities Jervis manages — code artifacts (f
 
 **Cancellation flow:**
 
-1. User clicks Cancel → Kotlin sends `POST /cancel/{thread_id}`
+1. User clicks Cancel → Kotlin calls `cancelOrchestration(taskId)` → reads `orchestratorThreadId` → `POST /cancel/{thread_id}`
 2. `/cancel` endpoint marks `graph.status = CANCELLED` in MongoDB persistence
-3. `/cancel` then calls `task.cancel()` on the asyncio Task
-4. In the agentic tool loop (`_agentic_vertex`), each iteration checks `graph.status` before the next LLM call
-5. In `node_select_next`, a CANCELLED graph immediately returns `current_vertex_id = None` → no more vertices scheduled
-6. Running vertex gets `VertexStatus.CANCELLED`, returns `("Cancelled by user.", "Cancelled")`
+3. `/cancel` reports `status="cancelled"` to Kotlin via `POST /internal/orchestrator-status`
+4. Kotlin `OrchestratorStatusHandler.handleCancelled()` transitions task to `DONE`, saves cancel message, cleans up
+5. `/cancel` then calls `task.cancel()` on the asyncio Task + removes from `_active_tasks`
+6. In the agentic tool loop (`_agentic_vertex`), each iteration checks `graph.status` before the next LLM call
+7. Running vertex gets `VertexStatus.CANCELLED`, returns `("Cancelled by user.", "Cancelled")`
 
 **ArangoDB resilience (retry with backoff):**
 

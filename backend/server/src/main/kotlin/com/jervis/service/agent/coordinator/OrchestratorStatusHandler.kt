@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service
  *
  * State transitions:
  * - "done" → DISPATCHED_GPU (or re-queue if inline messages arrived)
+ * - "cancelled" → DONE (user-initiated cancel, clean terminal state)
  * - "interrupted" → USER_TASK (clarification or approval)
  * - "error" → ERROR + escalate
  */
@@ -98,6 +99,7 @@ class OrchestratorStatusHandler(
             }
             "interrupted" -> handleInterrupted(task, interruptAction, interruptDescription)
             "done" -> handleDone(task, summary, keepEnvironmentRunning)
+            "cancelled" -> handleCancelled(task, summary)
             "error" -> handleError(task, error)
             else -> {
                 logger.debug { "ORCHESTRATOR_STATUS_HANDLER: unknown status=$status for task $taskId" }
@@ -279,6 +281,54 @@ class OrchestratorStatusHandler(
         }
 
         logger.info { "ORCHESTRATOR_COMPLETE: taskId=${task.id} hasInlineMessages=$hasInlineMessages keepEnvRunning=$keepEnvironmentRunning" }
+    }
+
+    private suspend fun handleCancelled(task: TaskDocument, summary: String?) {
+        val cancelMsg = summary ?: "Úkol zrušen uživatelem"
+        logger.info { "ORCHESTRATOR_CANCELLED: taskId=${task.id} summary=$cancelMsg" }
+
+        // Persist cancel message for FOREGROUND tasks
+        if (task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
+            try {
+                val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
+                chatMessageRepository.save(
+                    com.jervis.entity.ChatMessageDocument(
+                        conversationId = task.id.value,
+                        correlationId = task.correlationId,
+                        role = com.jervis.entity.MessageRole.ASSISTANT,
+                        content = cancelMsg,
+                        sequence = sequence,
+                        metadata = mapOf("status" to "cancelled"),
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to save cancel message for task ${task.id}" }
+            }
+        }
+
+        // Transition to terminal DONE state and clean up orchestrator references
+        val updatedTask = task.copy(
+            state = TaskStateEnum.DONE,
+            orchestratorThreadId = null,
+            orchestrationStartedAt = null,
+        )
+        taskRepository.save(updatedTask)
+
+        // For background tasks, delete (same as successful background completion)
+        if (task.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
+            task.processingMode == com.jervis.entity.ProcessingMode.IDLE
+        ) {
+            taskRepository.delete(updatedTask)
+        }
+
+        // Save to task history
+        saveTaskHistory(task, "cancelled")
+
+        // Auto-stop environment
+        autoStopEnvironment(task)
+
+        // Emit idle queue status
+        emitQueueIdle(task)
     }
 
     private suspend fun handleError(task: TaskDocument, error: String?) {
