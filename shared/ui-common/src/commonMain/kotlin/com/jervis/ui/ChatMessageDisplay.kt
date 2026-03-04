@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
@@ -37,6 +38,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,10 +48,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -84,13 +91,33 @@ internal fun ChatArea(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     // reverseLayout=true: item 0 is at the bottom of the screen.
-    // We reverse the messages so the newest message is item 0 (bottom).
     val reversedMessages = remember(messages) { messages.asReversed() }
+
+    // Auto-load older messages when user scrolls near the top
+    val nearTop by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = info.totalItemsCount
+            total > 0 && lastVisible >= total - 2
+        }
+    }
+    LaunchedEffect(nearTop, hasMore, isLoadingMore) {
+        if (nearTop && hasMore && !isLoadingMore) {
+            onLoadMore()
+        }
+    }
+
+    // Show scroll-to-bottom FAB when not at bottom (reverseLayout: firstVisibleItemIndex > 2)
+    val showScrollToBottom by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
+
     Box(modifier = modifier) {
         if (messages.isEmpty()) {
-            // Empty state
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -111,7 +138,6 @@ internal fun ChatArea(
             ) {
                 items(reversedMessages.size) { index ->
                     val message = reversedMessages[index]
-                    // Original index in the non-reversed list
                     val originalIndex = messages.size - 1 - index
 
                     ChatMessageItem(
@@ -139,25 +165,62 @@ internal fun ChatArea(
                     }
                 }
 
-                // "Load more" button at top (= end of reversed list)
+                // "Load more" indicator at top (= end of reversed list)
+                // Auto-triggers via nearTop above; clickable as fallback.
                 if (hasMore) {
-                    item {
+                    item(key = "load_more") {
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (isLoadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "Načítám starší zprávy…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             } else {
                                 TextButton(onClick = onLoadMore) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(4.dp))
                                     Text("Načíst starší zprávy")
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            // Scroll-to-bottom FAB
+            AnimatedVisibility(
+                visible = showScrollToBottom,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp),
+            ) {
+                FloatingActionButton(
+                    onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } },
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    elevation = FloatingActionButtonDefaults.elevation(4.dp),
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Scroll to bottom",
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
