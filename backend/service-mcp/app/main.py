@@ -303,24 +303,36 @@ async def kb_store(
 
     Use for findings, decisions, patterns, bugs, or conventions discovered during work.
 
+    Scoping rules:
+    - client_id + project_id → project-scoped (visible only to that project)
+    - client_id only → client-scoped (visible to all projects of that client)
+    - "GLOBAL" as client_id → global data (visible everywhere, no client/project)
+    - empty client_id → uses server default (MCP_DEFAULT_CLIENT_ID)
+
     Args:
         content: The knowledge content to store
-        client_id: Client ID (leave empty for default)
+        client_id: Client ID. Use "GLOBAL" for global data visible to all clients.
         project_id: Project ID (leave empty for default)
         group_id: Group ID for cross-project visibility (leave empty for single-project)
         kind: Type: "finding", "decision", "pattern", "bug", "convention"
         source_urn: Source identifier
         metadata: Additional metadata as JSON string
     """
-    cid = client_id or settings.default_client_id
-    pid = project_id or settings.default_project_id or None
+    # Handle GLOBAL keyword — explicit global storage (empty clientId in KB)
+    if client_id.upper() == "GLOBAL":
+        cid = ""
+        pid = None  # Global data cannot have projectId
+    else:
+        cid = client_id or settings.default_client_id
+        pid = project_id or settings.default_project_id or None
 
     # Validate: projectId requires clientId
     if pid and not cid:
         return (
             "Error: project_id was provided but client_id is empty and no default is configured. "
             "Knowledge scoped to a project MUST have a client_id. "
-            "Either provide client_id explicitly or configure MCP_DEFAULT_CLIENT_ID."
+            "Either provide client_id explicitly, use 'GLOBAL' for global data, "
+            "or configure MCP_DEFAULT_CLIENT_ID."
         )
 
     # Fire-and-forget: KB queues processing (embedding + extraction) in background

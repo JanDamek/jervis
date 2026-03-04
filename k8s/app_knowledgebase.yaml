@@ -27,7 +27,7 @@ spec:
             - name: KB_MODE
               value: "read"
             - name: UVICORN_WORKERS
-              value: "2"
+              value: "4"
           envFrom:
             - configMapRef:
                 name: jervis-knowledgebase-config
