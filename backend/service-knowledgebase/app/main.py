@@ -73,8 +73,9 @@ async def lifespan(app: FastAPI):
     app.state.knowledge_service = knowledge_service
     app.state.extraction_worker = worker
 
-    logger.info("Knowledge Service ready (mode=%s, read_limit=%d, write_limit=%d)",
-                settings.KB_MODE, settings.MAX_CONCURRENT_READS, settings.MAX_CONCURRENT_WRITES)
+    logger.info("Knowledge Service ready (mode=%s, read_limit=%d, write_limit=%d, embedding_concurrency=%d)",
+                settings.KB_MODE, settings.MAX_CONCURRENT_READS, settings.MAX_CONCURRENT_WRITES,
+                settings.MAX_CONCURRENT_EMBEDDINGS)
 
     yield
 
