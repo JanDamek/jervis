@@ -255,12 +255,10 @@ Rules:
 Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning
 
 CODING AGENT SELECTION:
-When executor/setup vertices dispatch coding tasks via `dispatch_coding_agent`, Kotlin selects the coding agent by complexity:
-- SIMPLE tasks → Aider (fast, local GPU, free)
-- MEDIUM/COMPLEX tasks → OpenHands (local GPU, free)
-- CRITICAL tasks → Claude CLI (cloud API, paid)
-- Kilo → alternative premium agent (if explicitly configured)
-The agent_preference parameter can override this: "auto" (default tier-based), "aider", "openhands", "claude", "kilo".
+When executor/setup vertices dispatch coding tasks via `dispatch_coding_agent`:
+- Default: Claude CLI (cloud API) — handles all complexity levels
+- Alternative: Kilo Code (if explicitly configured by user)
+The agent_preference parameter: "auto" (= Claude CLI, default), "claude", "kilo".
 Prefer "auto" unless the user explicitly requested a specific agent.
 
 INTERACTIVE DIALOG:
