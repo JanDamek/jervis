@@ -46,7 +46,13 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
         ENVIRONMENT_TOOLS,
         PROJECT_MANAGEMENT_TOOLS,
     )
-    from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
+    from app.chat.tools import (
+        TOOL_DISPATCH_CODING_AGENT,
+        TOOL_GET_GUIDELINES,
+        TOOL_UPDATE_GUIDELINE,
+        TOOL_CLASSIFY_MEETING,
+        TOOL_LIST_UNCLASSIFIED_MEETINGS,
+    )
 
     # --- Tool sets by responsibility ---
 
@@ -65,6 +71,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GET_KB_STATS,
             TOOL_TASK_QUEUE_INSPECT,
             TOOL_TASK_QUEUE_SET_PRIORITY,
+            TOOL_GET_GUIDELINES,
             _request_tools,
         ]
 
@@ -80,12 +87,14 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_KB_STATS,
             TOOL_GET_INDEXED_ITEMS,
+            TOOL_LIST_UNCLASSIFIED_MEETINGS,
             _request_tools,
         ]
 
-    # EXECUTOR: performs concrete work (coding, tracker, KB write)
+    # EXECUTOR: performs concrete work (coding, tracker, KB write, interactive dialog)
     if vertex_type in (VertexType.EXECUTOR, VertexType.TASK):
         return _base + [
+            TOOL_ASK_USER,
             TOOL_WEB_SEARCH,
             TOOL_LIST_PROJECT_FILES,
             TOOL_GET_REPOSITORY_INFO,
@@ -94,10 +103,14 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_STORE_KNOWLEDGE,
             TOOL_MEMORY_STORE,
             TOOL_CREATE_SCHEDULED_TASK,
+            TOOL_GET_GUIDELINES,
+            TOOL_UPDATE_GUIDELINE,
+            TOOL_CLASSIFY_MEETING,
+            TOOL_LIST_UNCLASSIFIED_MEETINGS,
             _request_tools,
         ]
 
-    # VALIDATOR: verifies results (needs read access)
+    # VALIDATOR: verifies results (read access + can dispatch coding agent for tests)
     if vertex_type == VertexType.VALIDATOR:
         return _base + [
             TOOL_LIST_PROJECT_FILES,
@@ -105,6 +118,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GET_REPOSITORY_STRUCTURE,
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_RECENT_COMMITS,
+            TOOL_DISPATCH_CODING_AGENT,
             _request_tools,
         ]
 
@@ -117,6 +131,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_GIT_BRANCH_LIST,
             TOOL_GET_RECENT_COMMITS,
             TOOL_GET_TECHNOLOGY_STACK,
+            TOOL_GET_GUIDELINES,
             _request_tools,
         ]
 
@@ -124,9 +139,9 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     if vertex_type == VertexType.SYNTHESIS:
         return _base + [TOOL_STORE_KNOWLEDGE, TOOL_MEMORY_STORE]
 
-    # GATE: decision point (minimal tools)
+    # GATE: decision point (can ask user for approval/clarification)
     if vertex_type == VertexType.GATE:
-        return _base + [_request_tools]
+        return _base + [TOOL_ASK_USER, _request_tools]
 
     # SETUP: project scaffolding + environment provisioning
     # Includes ask_user for confirming technology choices (advisor pattern)
@@ -139,6 +154,8 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
             TOOL_DISPATCH_CODING_AGENT,
             TOOL_STORE_KNOWLEDGE,
             TOOL_MEMORY_STORE,
+            TOOL_GET_GUIDELINES,
+            TOOL_UPDATE_GUIDELINE,
             _request_tools,
         ]
 
@@ -155,7 +172,8 @@ def get_all_tools() -> list[dict]:
 def get_tools_by_category(category: str) -> list[dict]:
     """Get tools by category name.
 
-    Categories: kb, web, git, code, memory, scheduling, all
+    Categories: kb, web, git, code, memory, scheduling, interactive,
+                guidelines, meetings, queue, environment, project_management, setup, all
     """
     from app.tools.definitions import (
         TOOL_KB_SEARCH,
@@ -179,7 +197,13 @@ def get_tools_by_category(category: str) -> list[dict]:
         ENVIRONMENT_TOOLS,
         PROJECT_MANAGEMENT_TOOLS,
     )
-    from app.chat.tools import TOOL_DISPATCH_CODING_AGENT
+    from app.chat.tools import (
+        TOOL_DISPATCH_CODING_AGENT,
+        TOOL_GET_GUIDELINES,
+        TOOL_UPDATE_GUIDELINE,
+        TOOL_CLASSIFY_MEETING,
+        TOOL_LIST_UNCLASSIFIED_MEETINGS,
+    )
 
     categories = {
         "kb": [TOOL_KB_SEARCH, TOOL_KB_DELETE, TOOL_GET_KB_STATS,
@@ -191,6 +215,9 @@ def get_tools_by_category(category: str) -> list[dict]:
                  TOOL_DISPATCH_CODING_AGENT],
         "memory": [TOOL_MEMORY_STORE, TOOL_MEMORY_RECALL],
         "scheduling": [TOOL_CREATE_SCHEDULED_TASK],
+        "interactive": [TOOL_ASK_USER],
+        "guidelines": [TOOL_GET_GUIDELINES, TOOL_UPDATE_GUIDELINE],
+        "meetings": [TOOL_CLASSIFY_MEETING, TOOL_LIST_UNCLASSIFIED_MEETINGS],
         "queue": [TOOL_TASK_QUEUE_INSPECT, TOOL_TASK_QUEUE_SET_PRIORITY],
         "environment": ENVIRONMENT_TOOLS,
         "project_management": PROJECT_MANAGEMENT_TOOLS,
@@ -217,7 +244,11 @@ def _build_request_tools_definition() -> dict:
             "name": "request_tools",
             "description": (
                 "Request additional tools if the current set is insufficient. "
-                "Available categories: kb, web, git, code, memory, scheduling, queue, environment, project_management, setup, all. "
+                "Available categories: kb, web, git, code, memory, scheduling, "
+                "interactive, guidelines, meetings, queue, environment, project_management, setup, all. "
+                "Use 'interactive' to get ask_user for dialog with the user. "
+                "Use 'guidelines' to read/update project rules. "
+                "Use 'meetings' to classify/list meeting recordings. "
                 "Use 'all' to get every available tool."
             ),
             "parameters": {
@@ -226,7 +257,7 @@ def _build_request_tools_definition() -> dict:
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, queue, environment, project_management, setup, all",
+                        "description": "Tool categories to add: kb, web, git, code, memory, scheduling, interactive, guidelines, meetings, queue, environment, project_management, setup, all",
                     },
                     "reason": {
                         "type": "string",

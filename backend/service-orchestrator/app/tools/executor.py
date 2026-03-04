@@ -496,6 +496,38 @@ async def execute_tool(
             result = await _execute_get_stack_recommendations(
                 requirements=arguments.get("requirements", ""),
             )
+        # --- Guidelines tools (available in graph agent + chat) ---
+        elif tool_name == "get_guidelines":
+            result = await _execute_get_guidelines(
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
+            )
+        elif tool_name == "update_guideline":
+            result = await _execute_update_guideline(
+                scope=arguments.get("scope", "GLOBAL"),
+                category=arguments.get("category", ""),
+                rules=arguments.get("rules", {}),
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
+            )
+        # --- Meeting tools ---
+        elif tool_name == "classify_meeting":
+            result = await _execute_classify_meeting(
+                meeting_id=arguments.get("meeting_id", ""),
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
+                title=arguments.get("title"),
+            )
+        elif tool_name == "list_unclassified_meetings":
+            result = await _execute_list_unclassified_meetings()
+        # --- Coding agent dispatch (graph agent + chat) ---
+        elif tool_name == "dispatch_coding_agent":
+            result = await _execute_dispatch_coding_agent(
+                task_description=arguments.get("task_description", ""),
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
+                agent_preference=arguments.get("agent_preference", "auto"),
+            )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
 
@@ -2927,3 +2959,108 @@ async def _execute_get_stack_recommendations(requirements: str) -> str:
             return "\n".join(parts)
     except Exception as e:
         return f"Error getting stack recommendations: {str(e)[:300]}"
+
+
+# ---------------------------------------------------------------------------
+# Guidelines tools (shared between chat handler and graph agent)
+# ---------------------------------------------------------------------------
+
+
+async def _execute_get_guidelines(
+    client_id: str | None,
+    project_id: str | None,
+) -> str:
+    """Fetch merged guidelines for the given scope."""
+    from app.tools.kotlin_client import kotlin_client
+
+    scope = "GLOBAL" if not client_id else ("CLIENT" if not project_id else "PROJECT")
+    return await kotlin_client.get_guidelines(
+        scope=scope,
+        client_id=client_id,
+        project_id=project_id,
+    )
+
+
+async def _execute_update_guideline(
+    scope: str,
+    category: str,
+    rules: dict,
+    client_id: str | None,
+    project_id: str | None,
+) -> str:
+    """Update guidelines for the given scope and category."""
+    from app.tools.kotlin_client import kotlin_client
+
+    if not category:
+        return "Error: category is required."
+    if scope in ("CLIENT", "PROJECT") and not client_id:
+        return "Error: client_id is required for CLIENT/PROJECT scope."
+    if scope == "PROJECT" and not project_id:
+        return "Error: project_id is required for PROJECT scope."
+
+    return await kotlin_client.update_guideline(
+        scope=scope,
+        category=category,
+        rules=rules,
+        client_id=client_id,
+        project_id=project_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Meeting tools (shared between chat handler and graph agent)
+# ---------------------------------------------------------------------------
+
+
+async def _execute_classify_meeting(
+    meeting_id: str,
+    client_id: str,
+    project_id: str | None,
+    title: str | None = None,
+) -> str:
+    """Classify a meeting recording."""
+    from app.tools.kotlin_client import kotlin_client
+
+    if not meeting_id:
+        return "Error: meeting_id is required."
+    if not client_id:
+        return "Error: client_id is required."
+    result = await kotlin_client.classify_meeting(
+        meeting_id=meeting_id,
+        client_id=client_id,
+        project_id=project_id,
+        title=title,
+    )
+    return f"Meeting classified: {result}"
+
+
+async def _execute_list_unclassified_meetings() -> str:
+    """List unclassified meeting recordings."""
+    from app.tools.kotlin_client import kotlin_client
+
+    return await kotlin_client.list_unclassified_meetings()
+
+
+# ---------------------------------------------------------------------------
+# Dispatch coding agent (shared — used by chat handler and graph agent)
+# ---------------------------------------------------------------------------
+
+
+async def _execute_dispatch_coding_agent(
+    task_description: str,
+    client_id: str,
+    project_id: str | None,
+    agent_preference: str = "auto",
+) -> str:
+    """Dispatch a coding agent for a task."""
+    from app.tools.kotlin_client import kotlin_client
+
+    if not client_id or not project_id:
+        return "Error: client_id and project_id are required for dispatch_coding_agent."
+    result = await kotlin_client.dispatch_coding_agent(
+        task_description=task_description,
+        client_id=client_id,
+        project_id=project_id,
+        agent_preference=agent_preference,
+    )
+    return f"Coding agent dispatched: {result}"

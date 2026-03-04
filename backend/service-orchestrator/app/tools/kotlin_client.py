@@ -353,12 +353,15 @@ class KotlinServerClient:
         plan: dict | None = None,
         guidelines_text: str | None = None,
         review_checklist: list[str] | None = None,
+        agent_preference: str = "auto",
     ) -> str:
         """Dispatch coding agent via Kotlin internal API.
 
         EPIC 2-S5: Enhanced with guidelines, plan, and review checklist injection.
         These are appended to the task description so the coding agent sees them
         in its workspace instructions.
+
+        agent_preference: "auto" (tier-based), "aider", "openhands", "claude", "kilo"
         """
         try:
             # Build enhanced workspace instructions
@@ -373,14 +376,18 @@ class KotlinServerClient:
                 workspace_instructions += "\n\n## Review Checklist\n"
                 workspace_instructions += "\n".join(f"- [ ] {item}" for item in review_checklist)
 
+            payload = {
+                "taskDescription": workspace_instructions,
+                "clientId": client_id,
+                "projectId": project_id,
+            }
+            if agent_preference and agent_preference != "auto":
+                payload["agentPreference"] = agent_preference
+
             client = await self._get_client()
             resp = await client.post(
                 "/internal/dispatch-coding-agent",
-                json={
-                    "taskDescription": workspace_instructions,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                },
+                json=payload,
             )
             return resp.json() if resp.status_code == 200 else f"Error: {resp.status_code}"
         except Exception as e:

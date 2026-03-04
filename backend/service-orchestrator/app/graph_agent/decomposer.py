@@ -252,7 +252,26 @@ Rules:
 - Discussion vertex description MUST include: "After each confirmed decision, call store_knowledge with category 'specification' to persist it in KB. This ensures nothing is lost across sessions."
 - When user mentions another project (cross-reference), description MUST include: "Use target_project_name in store_knowledge to tag for the referenced project."
 
-Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning"""
+Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning
+
+CODING AGENT SELECTION:
+When executor/setup vertices dispatch coding tasks via `dispatch_coding_agent`, Kotlin selects the coding agent by complexity:
+- SIMPLE tasks → Aider (fast, local GPU, free)
+- MEDIUM/COMPLEX tasks → OpenHands (local GPU, free)
+- CRITICAL tasks → Claude CLI (cloud API, paid)
+- Kilo → alternative premium agent (if explicitly configured)
+The agent_preference parameter can override this: "auto" (default tier-based), "aider", "openhands", "claude", "kilo".
+Prefer "auto" unless the user explicitly requested a specific agent.
+
+INTERACTIVE DIALOG:
+- Executor and gate vertices have `ask_user` tool for interactive dialog with the user
+- Use ask_user when clarification is needed, or when presenting options for user decision
+- After each confirmed decision, store it via `store_knowledge` with category "specification"
+
+GUIDELINES:
+- Executor, setup, planner, and reviewer vertices can read/update project guidelines
+- Use `get_guidelines` to check current rules before making decisions
+- Use `update_guideline` (after user confirmation via ask_user) to persist new rules"""
 
 _DECOMPOSE_USER_TEMPLATE = """## Request
 {request}
@@ -261,6 +280,7 @@ _DECOMPOSE_USER_TEMPLATE = """## Request
 {evidence}
 
 {guidelines_section}
+{agent_section}
 
 Decompose this request into vertices (sub-tasks) with dependencies.
 If it's simple enough for a single vertex, just return one vertex."""
@@ -283,10 +303,18 @@ async def _llm_decompose(
     if guidelines:
         guidelines_section = f"## Guidelines\n{guidelines}"
 
+    # Include agent_preference from request context
+    request_ctx = state.get("request_context", {})
+    agent_pref = request_ctx.get("agent_preference", "auto") if isinstance(request_ctx, dict) else "auto"
+    agent_section = ""
+    if agent_pref and agent_pref != "auto":
+        agent_section = f"\n## Agent Preference\nUser configured: {agent_pref} (use this for dispatch_coding_agent calls)"
+
     user_prompt = _DECOMPOSE_USER_TEMPLATE.format(
         request=vertex.description,
         evidence=evidence_text or "(no additional context)",
         guidelines_section=guidelines_section,
+        agent_section=agent_section,
     )
 
     # Add incoming context for non-root vertices

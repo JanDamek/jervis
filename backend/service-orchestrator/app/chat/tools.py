@@ -79,8 +79,10 @@ TOOL_DISPATCH_CODING_AGENT: dict = {
     "function": {
         "name": "dispatch_coding_agent",
         "description": (
-            "Pošli coding úkol na Claude Agenta. Default: background (asynchronně). "
-            "Agent poběží asynchronně, výsledek přijde jako notifikace."
+            "Pošli coding úkol na coding agenta. Default: background (asynchronně). "
+            "Agent poběží asynchronně, výsledek přijde jako notifikace. "
+            "Coding agent se vybere automaticky podle složitosti (Aider pro jednoduché, "
+            "OpenHands pro střední, Claude pro kritické), nebo dle agent_preference."
         ),
         "parameters": {
             "type": "object",
@@ -96,6 +98,11 @@ TOOL_DISPATCH_CODING_AGENT: dict = {
                 "project_id": {
                     "type": "string",
                     "description": "Project ID (povinný pro coding).",
+                },
+                "agent_preference": {
+                    "type": "string",
+                    "enum": ["auto", "aider", "openhands", "claude", "kilo"],
+                    "description": "Preferred coding agent. 'auto' = select by complexity (default).",
                 },
             },
             "required": ["task_description", "client_id", "project_id"],
