@@ -17,7 +17,11 @@ fun MainScreen(
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val chatMessages by viewModel.chat.chatMessages.collectAsState()
+    val filteredMessages by viewModel.chat.filteredMessages.collectAsState()
+    val showTasks by viewModel.chat.showTasks.collectAsState()
+    val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
+    val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
+    val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
     val inputText by viewModel.chat.inputText.collectAsState()
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
@@ -58,7 +62,7 @@ fun MainScreen(
     MainScreenViewInternal(
         selectedClientId = selectedClientId,
         selectedProjectId = selectedProjectId,
-        chatMessages = chatMessages,
+        chatMessages = filteredMessages,
         inputText = inputText,
         isLoading = isChatLoading || isInitialLoading,
         isOffline = isOffline,
@@ -87,6 +91,12 @@ fun MainScreen(
         orchestratorProgress = orchestratorProgress,
         taskGraphs = taskGraphs,
         onLoadTaskGraph = viewModel.chat::loadTaskGraph,
+        showTasks = showTasks,
+        onToggleTasks = viewModel.chat::toggleTasks,
+        showNeedReaction = showNeedReaction,
+        onToggleNeedReaction = viewModel.chat::toggleNeedReaction,
+        backgroundMessageCount = backgroundMessageCount,
+        userTaskCount = userTaskCount,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,

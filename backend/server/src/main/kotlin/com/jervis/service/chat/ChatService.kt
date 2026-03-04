@@ -152,10 +152,8 @@ class ChatService(
         val totalCount = chatMessageService.getMessageCount(session.id, excludeBackground)
         val hasMore = messages.size == limit && messages.size.toLong() < totalCount
 
-        // Count background messages for badge (only when they're excluded from results)
-        val backgroundCount = if (excludeBackground) {
-            chatMessageService.countByRole(session.id, com.jervis.entity.MessageRole.BACKGROUND).toInt()
-        } else 0
+        // Count background messages for badge (always — UI needs it for filter chip label)
+        val backgroundCount = chatMessageService.countByRole(session.id, com.jervis.entity.MessageRole.BACKGROUND).toInt()
 
         return ChatHistoryResult(
             sessionId = session.id.toString(),

@@ -16,6 +16,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +76,12 @@ fun MainScreenView(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    showTasks: Boolean = false,
+    onToggleTasks: () -> Unit = {},
+    showNeedReaction: Boolean = false,
+    onToggleNeedReaction: () -> Unit = {},
+    backgroundMessageCount: Int = 0,
+    userTaskCount: Int = 0,
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -129,6 +138,12 @@ fun MainScreenView(
                             orchestratorProgress = orchestratorProgress,
                             taskGraphs = taskGraphs,
                             onLoadTaskGraph = onLoadTaskGraph,
+                            showTasks = showTasks,
+                            onToggleTasks = onToggleTasks,
+                            showNeedReaction = showNeedReaction,
+                            onToggleNeedReaction = onToggleNeedReaction,
+                            backgroundMessageCount = backgroundMessageCount,
+                            userTaskCount = userTaskCount,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -169,6 +184,12 @@ fun MainScreenView(
                     orchestratorProgress = orchestratorProgress,
                     taskGraphs = taskGraphs,
                     onLoadTaskGraph = onLoadTaskGraph,
+                    showTasks = showTasks,
+                    onToggleTasks = onToggleTasks,
+                    showNeedReaction = showNeedReaction,
+                    onToggleNeedReaction = onToggleNeedReaction,
+                    backgroundMessageCount = backgroundMessageCount,
+                    userTaskCount = userTaskCount,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -212,6 +233,12 @@ private fun ChatContent(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    showTasks: Boolean = false,
+    onToggleTasks: () -> Unit = {},
+    showNeedReaction: Boolean = false,
+    onToggleNeedReaction: () -> Unit = {},
+    backgroundMessageCount: Int = 0,
+    userTaskCount: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -226,6 +253,30 @@ private fun ChatContent(
         // Orchestrator health banner
         if (!orchestratorHealthy) {
             OrchestratorHealthBanner()
+        }
+
+        // Background filter chips
+        if (backgroundMessageCount > 0 || userTaskCount > 0 || showTasks || showNeedReaction) {
+            Row(
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (userTaskCount > 0 || showNeedReaction) {
+                    FilterChip(
+                        selected = showNeedReaction,
+                        onClick = onToggleNeedReaction,
+                        modifier = Modifier.height(28.dp),
+                        label = { Text("K reakci ($userTaskCount)", style = MaterialTheme.typography.labelSmall) },
+                    )
+                }
+                FilterChip(
+                    selected = showTasks,
+                    onClick = onToggleTasks,
+                    modifier = Modifier.height(28.dp),
+                    label = { Text("Tasky ($backgroundMessageCount)", style = MaterialTheme.typography.labelSmall) },
+                )
+            }
         }
 
         // Chat area

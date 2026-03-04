@@ -482,6 +482,8 @@ class GitRepositoryService(
         repoDir: Path,
         connection: ConnectionDocument,
     ) = withContext(Dispatchers.IO) {
+        // Strip any credentials embedded in remote URL (legacy repos cloned before credential-stripping fix)
+        sanitizeRemoteUrl(repoDir)
         configureCredentials(repoDir, connection)
 
         val result = executeGitCommand(
@@ -494,6 +496,24 @@ class GitRepositoryService(
                 throw GitAuthenticationException("Git auth failed in $repoDir: $output")
             }
             logger.warn { "Fetch failed in $repoDir (non-auth error, skipping): $output" }
+        }
+    }
+
+    private fun sanitizeRemoteUrl(repoDir: Path) {
+        val result = executeGitCommand(
+            listOf("git", "remote", "get-url", "origin"),
+            workingDir = repoDir,
+        )
+        if (result.success) {
+            val url = result.output.trim()
+            if (url.contains("@") && url.matches(Regex("https?://[^@]+@.*"))) {
+                val safeUrl = url.replace(Regex("://[^@]+@"), "://")
+                executeGitCommand(
+                    listOf("git", "remote", "set-url", "origin", safeUrl),
+                    workingDir = repoDir,
+                )
+                logger.info { "Sanitized remote URL in $repoDir (removed embedded credentials)" }
+            }
         }
     }
 

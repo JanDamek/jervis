@@ -25,9 +25,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -89,6 +92,25 @@ class ChatViewModel(
     /** Cached task graphs keyed by taskId. null value = loading in progress. */
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
     val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
+
+    /** Show all background task results in chat. */
+    private val _showTasks = MutableStateFlow(false)
+    val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
+
+    /** Show only background tasks needing user reaction. */
+    private val _showNeedReaction = MutableStateFlow(false)
+    val showNeedReaction: StateFlow<Boolean> = _showNeedReaction.asStateFlow()
+
+    /** Total background messages in session (for filter chip label). */
+    private val _backgroundMessageCount = MutableStateFlow(0)
+    val backgroundMessageCount: StateFlow<Int> = _backgroundMessageCount.asStateFlow()
+
+    /** Messages filtered by background visibility toggles. */
+    val filteredMessages: StateFlow<List<ChatMessage>> =
+        combine(_chatMessages, _showTasks, _showNeedReaction) { msgs, showAll, showReaction ->
+            if (showAll || showReaction) msgs
+            else msgs.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
+        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
@@ -177,6 +199,18 @@ class ChatViewModel(
                 _taskGraphs.update { it - taskId } // remove on error, allow retry
             }
         }
+    }
+
+    /** Toggle "Tasky" filter — all background task results. */
+    fun toggleTasks() {
+        _showTasks.value = !_showTasks.value
+        scope.launch { reloadHistory() }
+    }
+
+    /** Toggle "K reakci" filter — backgrounds needing user reaction. */
+    fun toggleNeedReaction() {
+        _showNeedReaction.value = !_showNeedReaction.value
+        scope.launch { reloadHistory() }
     }
 
     fun attachFile() {
@@ -374,8 +408,9 @@ class ChatViewModel(
         scope.launch {
             _isLoadingMore.value = true
             try {
+                val showBg = _showTasks.value || _showNeedReaction.value
                 val history = repository.chat.getChatHistory(
-                    limit = 10, beforeMessageId = beforeId,
+                    limit = 10, beforeMessageId = beforeId, excludeBackground = !showBg,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -398,6 +433,7 @@ class ChatViewModel(
                         timestamp = msg.timestamp,
                         workflowSteps = parseWorkflowSteps(msg.metadata),
                         sequence = msg.sequence,
+                        id = msg.messageId,
                     )
                 }
                 _chatMessages.value = olderMessages + _chatMessages.value
@@ -590,6 +626,10 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
+                // Track new background messages for filter chip counter
+                if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT) {
+                    _backgroundMessageCount.value++
+                }
                 // Append directly — no deduplication needed, these are push-only
                 messages.add(
                     ChatMessage(
@@ -632,7 +672,9 @@ class ChatViewModel(
     private suspend fun reloadHistory() {
         val projectId = selectedProjectId.value ?: ""
         try {
-            val history = repository.chat.getChatHistory(limit = 10)
+            val showBg = _showTasks.value || _showNeedReaction.value
+            val history = repository.chat.getChatHistory(limit = 10, excludeBackground = !showBg)
+            _backgroundMessageCount.value = history.backgroundMessageCount
             val newMessages = history.messages.map { msg ->
                 val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
                     ChatMessage.Sender.Me
@@ -654,6 +696,7 @@ class ChatViewModel(
                     timestamp = msg.timestamp,
                     workflowSteps = parseWorkflowSteps(msg.metadata),
                     sequence = msg.sequence,
+                    id = msg.messageId,
                 )
             }
             // Merge: preserve in-flight messages (not yet in DB) so they don't vanish on reconnect.
