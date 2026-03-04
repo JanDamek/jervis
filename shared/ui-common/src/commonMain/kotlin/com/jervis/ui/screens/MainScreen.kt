@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.jervis.dto.ui.ChatMessage
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.ui.MainViewModel
 import com.jervis.ui.environment.EnvironmentPanel
@@ -17,11 +18,22 @@ fun MainScreen(
     val isOffline by viewModel.connection.isOffline.collectAsState()
     val selectedClientId by viewModel.selectedClientId.collectAsState()
     val selectedProjectId by viewModel.selectedProjectId.collectAsState()
-    val filteredMessages by viewModel.chat.filteredMessages.collectAsState()
+    val chatMessages by viewModel.chat.chatMessages.collectAsState()
+    val showChat by viewModel.chat.showChat.collectAsState()
     val showTasks by viewModel.chat.showTasks.collectAsState()
     val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
+
+    // Client-side filtering — instant toggle, no server reload
+    val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
+        chatMessages.filter { msg ->
+            when (msg.messageType) {
+                ChatMessage.MessageType.BACKGROUND_RESULT -> showTasks || showNeedReaction
+                else -> showChat
+            }
+        }
+    }
     val inputText by viewModel.chat.inputText.collectAsState()
     val isChatLoading by viewModel.chat.isLoading.collectAsState()
     val isInitialLoading by viewModel.connection.isInitialLoading.collectAsState()
@@ -91,6 +103,8 @@ fun MainScreen(
         orchestratorProgress = orchestratorProgress,
         taskGraphs = taskGraphs,
         onLoadTaskGraph = viewModel.chat::loadTaskGraph,
+        showChat = showChat,
+        onToggleChat = viewModel.chat::toggleChat,
         showTasks = showTasks,
         onToggleTasks = viewModel.chat::toggleTasks,
         showNeedReaction = showNeedReaction,

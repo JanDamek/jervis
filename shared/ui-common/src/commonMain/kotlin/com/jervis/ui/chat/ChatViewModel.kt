@@ -25,12 +25,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -93,6 +90,10 @@ class ChatViewModel(
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
     val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
+    /** Show chat messages (user/assistant). Default ON. */
+    private val _showChat = MutableStateFlow(true)
+    val showChat: StateFlow<Boolean> = _showChat.asStateFlow()
+
     /** Show all background task results in chat. */
     private val _showTasks = MutableStateFlow(false)
     val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
@@ -105,12 +106,8 @@ class ChatViewModel(
     private val _backgroundMessageCount = MutableStateFlow(0)
     val backgroundMessageCount: StateFlow<Int> = _backgroundMessageCount.asStateFlow()
 
-    /** Messages filtered by background visibility toggles. */
-    val filteredMessages: StateFlow<List<ChatMessage>> =
-        combine(_chatMessages, _showTasks, _showNeedReaction) { msgs, showAll, showReaction ->
-            if (showAll || showReaction) msgs
-            else msgs.filter { it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT }
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
+    // to avoid stateIn timing issues with the initial empty emission.
 
     private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
@@ -194,23 +191,30 @@ class ChatViewModel(
         scope.launch {
             try {
                 val graph = repository.taskGraphs.getGraph(taskId)
-                _taskGraphs.update { it + (taskId to graph) }
+                if (graph != null) {
+                    _taskGraphs.update { it + (taskId to graph) }
+                } else {
+                    _taskGraphs.update { it - taskId } // not found — remove, allow retry
+                }
             } catch (_: Exception) {
                 _taskGraphs.update { it - taskId } // remove on error, allow retry
             }
         }
     }
 
+    /** Toggle chat messages visibility. */
+    fun toggleChat() {
+        _showChat.value = !_showChat.value
+    }
+
     /** Toggle "Tasky" filter — all background task results. */
     fun toggleTasks() {
         _showTasks.value = !_showTasks.value
-        scope.launch { reloadHistory() }
     }
 
     /** Toggle "K reakci" filter — backgrounds needing user reaction. */
     fun toggleNeedReaction() {
         _showNeedReaction.value = !_showNeedReaction.value
-        scope.launch { reloadHistory() }
     }
 
     fun attachFile() {
@@ -408,9 +412,8 @@ class ChatViewModel(
         scope.launch {
             _isLoadingMore.value = true
             try {
-                val showBg = _showTasks.value || _showNeedReaction.value
                 val history = repository.chat.getChatHistory(
-                    limit = 10, beforeMessageId = beforeId, excludeBackground = !showBg,
+                    limit = 10, beforeMessageId = beforeId,
                 )
                 val olderMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
@@ -672,8 +675,7 @@ class ChatViewModel(
     private suspend fun reloadHistory() {
         val projectId = selectedProjectId.value ?: ""
         try {
-            val showBg = _showTasks.value || _showNeedReaction.value
-            val history = repository.chat.getChatHistory(limit = 10, excludeBackground = !showBg)
+            val history = repository.chat.getChatHistory(limit = 10)
             _backgroundMessageCount.value = history.backgroundMessageCount
             val newMessages = history.messages.map { msg ->
                 val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {

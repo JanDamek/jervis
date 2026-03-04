@@ -76,6 +76,8 @@ fun MainScreenView(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    showChat: Boolean = true,
+    onToggleChat: () -> Unit = {},
     showTasks: Boolean = false,
     onToggleTasks: () -> Unit = {},
     showNeedReaction: Boolean = false,
@@ -138,6 +140,8 @@ fun MainScreenView(
                             orchestratorProgress = orchestratorProgress,
                             taskGraphs = taskGraphs,
                             onLoadTaskGraph = onLoadTaskGraph,
+                            showChat = showChat,
+                            onToggleChat = onToggleChat,
                             showTasks = showTasks,
                             onToggleTasks = onToggleTasks,
                             showNeedReaction = showNeedReaction,
@@ -184,6 +188,8 @@ fun MainScreenView(
                     orchestratorProgress = orchestratorProgress,
                     taskGraphs = taskGraphs,
                     onLoadTaskGraph = onLoadTaskGraph,
+                    showChat = showChat,
+                    onToggleChat = onToggleChat,
                     showTasks = showTasks,
                     onToggleTasks = onToggleTasks,
                     showNeedReaction = showNeedReaction,
@@ -233,6 +239,8 @@ private fun ChatContent(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
+    showChat: Boolean = true,
+    onToggleChat: () -> Unit = {},
     showTasks: Boolean = false,
     onToggleTasks: () -> Unit = {},
     showNeedReaction: Boolean = false,
@@ -255,13 +263,25 @@ private fun ChatContent(
             OrchestratorHealthBanner()
         }
 
-        // Background filter chips
+        // Filter chips — chat / backgrounds / reaction-needed
         if (backgroundMessageCount > 0 || userTaskCount > 0 || showTasks || showNeedReaction) {
             Row(
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                FilterChip(
+                    selected = showChat,
+                    onClick = onToggleChat,
+                    modifier = Modifier.height(28.dp),
+                    label = { Text("Chat", style = MaterialTheme.typography.labelSmall) },
+                )
+                FilterChip(
+                    selected = showTasks,
+                    onClick = onToggleTasks,
+                    modifier = Modifier.height(28.dp),
+                    label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
+                )
                 if (userTaskCount > 0 || showNeedReaction) {
                     FilterChip(
                         selected = showNeedReaction,
@@ -270,12 +290,6 @@ private fun ChatContent(
                         label = { Text("K reakci ($userTaskCount)", style = MaterialTheme.typography.labelSmall) },
                     )
                 }
-                FilterChip(
-                    selected = showTasks,
-                    onClick = onToggleTasks,
-                    modifier = Modifier.height(28.dp),
-                    label = { Text("Tasky ($backgroundMessageCount)", style = MaterialTheme.typography.labelSmall) },
-                )
             }
         }
 
