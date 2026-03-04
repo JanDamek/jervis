@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Badge
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +72,10 @@ fun MainScreenView(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
+    showBackgrounds: Boolean = false,
+    onToggleBackgrounds: () -> Unit = {},
+    backgroundMessageCount: Int = 0,
+    userTaskCount: Int = 0,
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -125,6 +131,10 @@ fun MainScreenView(
                             onRetryWorkspace = onRetryWorkspace,
                             orchestratorHealthy = orchestratorHealthy,
                             orchestratorProgress = orchestratorProgress,
+                            showBackgrounds = showBackgrounds,
+                            onToggleBackgrounds = onToggleBackgrounds,
+                            backgroundMessageCount = backgroundMessageCount,
+                            userTaskCount = userTaskCount,
                             modifier = Modifier.fillMaxSize(),
                         )
                     },
@@ -165,6 +175,10 @@ fun MainScreenView(
                     onRetryWorkspace = onRetryWorkspace,
                     orchestratorHealthy = orchestratorHealthy,
                     orchestratorProgress = orchestratorProgress,
+                    showBackgrounds = showBackgrounds,
+                    onToggleBackgrounds = onToggleBackgrounds,
+                    backgroundMessageCount = backgroundMessageCount,
+                    userTaskCount = userTaskCount,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -207,6 +221,10 @@ private fun ChatContent(
     onRetryWorkspace: () -> Unit = {},
     orchestratorHealthy: Boolean = true,
     orchestratorProgress: OrchestratorProgressInfo? = null,
+    showBackgrounds: Boolean = false,
+    onToggleBackgrounds: () -> Unit = {},
+    backgroundMessageCount: Int = 0,
+    userTaskCount: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -221,6 +239,29 @@ private fun ChatContent(
         // Orchestrator health banner
         if (!orchestratorHealthy) {
             OrchestratorHealthBanner()
+        }
+
+        // Background filter chip
+        if (backgroundMessageCount > 0 || showBackgrounds) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = showBackgrounds,
+                    onClick = onToggleBackgrounds,
+                    label = {
+                        Text(if (showBackgrounds) "Skrýt pozadí" else "Zobrazit pozadí ($backgroundMessageCount)")
+                    },
+                    leadingIcon = if (userTaskCount > 0 && !showBackgrounds) {
+                        {
+                            Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                Text("$userTaskCount")
+                            }
+                        }
+                    } else null,
+                )
+            }
         }
 
         // Chat area

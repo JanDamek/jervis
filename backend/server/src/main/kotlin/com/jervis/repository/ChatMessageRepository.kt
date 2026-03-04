@@ -92,6 +92,37 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     ): Flow<ChatMessageDocument>
 
     /**
+     * Load messages excluding a specific role (newest first).
+     * Used for background message filtering in chat history.
+     */
+    suspend fun findByConversationIdAndRoleNotOrderByIdDesc(
+        conversationId: ObjectId,
+        role: MessageRole,
+    ): Flow<ChatMessageDocument>
+
+    /**
+     * Load messages before a cursor, excluding a specific role.
+     * Used for filtered pagination.
+     */
+    suspend fun findByConversationIdAndRoleNotAndIdLessThanOrderByIdDesc(
+        conversationId: ObjectId,
+        role: MessageRole,
+        id: ObjectId,
+    ): Flow<ChatMessageDocument>
+
+    /**
+     * Count messages excluding a specific role.
+     * Used for hasMore calculation with background filter.
+     */
+    suspend fun countByConversationIdAndRoleNot(conversationId: ObjectId, role: MessageRole): Long
+
+    /**
+     * Count messages by role.
+     * Used for background message count badge.
+     */
+    suspend fun countByConversationIdAndRole(conversationId: ObjectId, role: MessageRole): Long
+
+    /**
      * Check if a message with the given client-generated ID already exists.
      * Used for deduplication — prevents duplicate processing on retry.
      */

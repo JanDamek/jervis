@@ -27,6 +27,9 @@ fun MainScreen(
     val attachments by viewModel.chat.attachments.collectAsState()
     val pendingMessageInfo by viewModel.chat.pendingMessageInfo.collectAsState()
     val approvalRequest by viewModel.chat.approvalRequest.collectAsState()
+    val showBackgrounds by viewModel.chat.showBackgrounds.collectAsState()
+    val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
+    val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
     val workspaceInfo by viewModel.workspaceInfo.collectAsState()
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
@@ -83,6 +86,10 @@ fun MainScreen(
         onRetryWorkspace = viewModel::retryWorkspace,
         orchestratorHealthy = orchestratorHealthy,
         orchestratorProgress = orchestratorProgress,
+        showBackgrounds = showBackgrounds,
+        onToggleBackgrounds = viewModel.chat::toggleBackgrounds,
+        backgroundMessageCount = backgroundMessageCount,
+        userTaskCount = userTaskCount,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,

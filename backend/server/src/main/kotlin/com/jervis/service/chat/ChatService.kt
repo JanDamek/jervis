@@ -138,19 +138,24 @@ class ChatService(
         userId: String = "jan",
         limit: Int = 20,
         beforeMessageId: String? = null,
+        excludeBackground: Boolean = false,
     ): ChatHistoryResult {
         val session = chatSessionRepository.findFirstByUserIdAndArchivedOrderByLastMessageAtDesc(userId, false)
             ?: return ChatHistoryResult(messages = emptyList(), hasMore = false)
 
         val messages = if (beforeMessageId != null) {
-            chatMessageService.getMessagesBefore(session.id, ObjectId(beforeMessageId), limit)
+            chatMessageService.getMessagesBefore(session.id, ObjectId(beforeMessageId), limit, excludeBackground)
         } else {
-            chatMessageService.getLastMessages(session.id, limit)
+            chatMessageService.getLastMessages(session.id, limit, excludeBackground)
         }
 
-        val totalCount = chatMessageService.getMessageCount(session.id)
-        // If we got exactly `limit` messages, there are probably more
+        val totalCount = chatMessageService.getMessageCount(session.id, excludeBackground)
         val hasMore = messages.size == limit && messages.size.toLong() < totalCount
+
+        // Count background messages for badge (only when they're excluded from results)
+        val backgroundCount = if (excludeBackground) {
+            chatMessageService.countByRole(session.id, com.jervis.entity.MessageRole.BACKGROUND).toInt()
+        } else 0
 
         return ChatHistoryResult(
             sessionId = session.id.toString(),
@@ -161,6 +166,7 @@ class ChatService(
             activeClientId = session.lastClientId,
             activeProjectId = session.lastProjectId,
             activeGroupId = session.lastGroupId,
+            backgroundMessageCount = backgroundCount,
         )
     }
 
@@ -251,4 +257,5 @@ data class ChatHistoryResult(
     val activeClientId: String? = null,
     val activeProjectId: String? = null,
     val activeGroupId: String? = null,
+    val backgroundMessageCount: Int = 0,
 )

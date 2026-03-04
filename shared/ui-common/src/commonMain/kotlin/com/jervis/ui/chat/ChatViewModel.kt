@@ -85,6 +85,18 @@ class ChatViewModel(
     /** Last seen timestamps per thread — used for unread badge calculation. */
     private val _lastSeenTimestamps = MutableStateFlow<Map<String, String>>(emptyMap())
 
+    /** Whether background messages are shown in chat. Default: hidden. */
+    private val _showBackgrounds = MutableStateFlow(false)
+    val showBackgrounds: StateFlow<Boolean> = _showBackgrounds.asStateFlow()
+
+    /** Count of tasks in USER_TASK state (needing user attention). */
+    private val _userTaskCount = MutableStateFlow(0)
+    val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
+
+    /** Total background messages in session (for "N skrytých" label). */
+    private val _backgroundMessageCount = MutableStateFlow(0)
+    val backgroundMessageCount: StateFlow<Int> = _backgroundMessageCount.asStateFlow()
+
     /** Pending approval request from chat — action, tool, preview text */
     data class ApprovalRequest(
         val action: String,
@@ -97,8 +109,11 @@ class ChatViewModel(
 
     /** Grouped display items: standalone messages + threaded background task cards. */
     val displayItems: StateFlow<List<ChatDisplayItem>> =
-        combine(_chatMessages, _lastSeenTimestamps) { messages, lastSeen ->
-            groupIntoDisplayItems(messages, lastSeen)
+        combine(_chatMessages, _lastSeenTimestamps, _showBackgrounds) { messages, lastSeen, showBg ->
+            val filtered = if (showBg) messages else messages.filter {
+                it.messageType != ChatMessage.MessageType.BACKGROUND_RESULT
+            }
+            groupIntoDisplayItems(filtered, lastSeen)
         }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var oldestMessageId: String? = null
@@ -216,6 +231,12 @@ class ChatViewModel(
                 _isLoading.value = false
             }
         }
+    }
+
+    /** Toggle background message visibility + reload from server with appropriate filter. */
+    fun toggleBackgrounds() {
+        _showBackgrounds.value = !_showBackgrounds.value
+        scope.launch { reloadHistory() }
     }
 
     /** Toggle thread expand/collapse. Marks thread as seen when expanding. */
@@ -440,8 +461,9 @@ class ChatViewModel(
         scope.launch {
             _isLoadingMore.value = true
             try {
+                val excludeBg = !_showBackgrounds.value
                 val history = repository.chat.getChatHistory(
-                    limit = 20, beforeMessageId = beforeId,
+                    limit = 20, beforeMessageId = beforeId, excludeBackground = excludeBg,
                 )
                 println("loadMoreHistory: got ${history.messages.size} messages, hasMore=${history.hasMore}, oldestId=${history.oldestMessageId}")
                 val olderMessages = history.messages.map { msg ->
@@ -666,6 +688,10 @@ class ChatViewModel(
             ChatMessage.MessageType.BACKGROUND_RESULT,
             ChatMessage.MessageType.URGENT_ALERT,
             -> {
+                // Track new background messages for badge
+                if (messageType == ChatMessage.MessageType.BACKGROUND_RESULT && !_showBackgrounds.value) {
+                    _backgroundMessageCount.value++
+                }
                 // Append directly — no deduplication needed, these are push-only
                 messages.add(
                     ChatMessage(
@@ -710,7 +736,10 @@ class ChatViewModel(
         // Retry up to 3 times — server may be restarting during reconnect
         repeat(3) { attempt ->
             try {
-                val history = repository.chat.getChatHistory(limit = 20)
+                val excludeBg = !_showBackgrounds.value
+                val history = repository.chat.getChatHistory(limit = 20, excludeBackground = excludeBg)
+                _userTaskCount.value = history.userTaskCount
+                _backgroundMessageCount.value = history.backgroundMessageCount
                 val newMessages = history.messages.map { msg ->
                     val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
                         ChatMessage.Sender.Me

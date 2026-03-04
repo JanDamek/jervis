@@ -9,7 +9,9 @@ import com.jervis.entity.MessageRole
 import com.jervis.common.types.ClientId
 import com.jervis.entity.OpenRouterTier
 import com.jervis.common.types.ProjectId
+import com.jervis.dto.TaskStateEnum
 import com.jervis.repository.ProjectRepository
+import com.jervis.repository.TaskRepository
 import com.jervis.service.CloudModelPolicyResolver
 import com.jervis.service.IChatService
 import com.jervis.service.background.BackgroundEngine
@@ -40,6 +42,7 @@ class ChatRpcImpl(
     private val backgroundEngine: BackgroundEngine,
     private val projectRepository: ProjectRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
+    private val taskRepository: TaskRepository,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -55,7 +58,7 @@ class ChatRpcImpl(
 
         // Load recent history first
         try {
-            val history = chatService.getHistory(limit = 15)
+            val history = chatService.getHistory(limit = 15, excludeBackground = true)
             for (msg in history.messages) {
                 val responseType = when (msg.role) {
                     MessageRole.USER -> ChatResponseType.USER_MESSAGE
@@ -275,8 +278,12 @@ class ChatRpcImpl(
         }
     }
 
-    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?): ChatHistoryDto {
-        val result = chatService.getHistory(limit = limit, beforeMessageId = beforeMessageId)
+    override suspend fun getChatHistory(limit: Int, beforeMessageId: String?, excludeBackground: Boolean): ChatHistoryDto {
+        val result = chatService.getHistory(
+            limit = limit,
+            beforeMessageId = beforeMessageId,
+            excludeBackground = excludeBackground,
+        )
 
         val messages = result.messages.map { msg ->
             ChatMessageDto(
@@ -296,6 +303,8 @@ class ChatRpcImpl(
             )
         }
 
+        val userTaskCount = taskRepository.countByState(TaskStateEnum.USER_TASK).toInt()
+
         return ChatHistoryDto(
             messages = messages,
             hasMore = result.hasMore,
@@ -303,6 +312,8 @@ class ChatRpcImpl(
             activeClientId = result.activeClientId,
             activeProjectId = result.activeProjectId,
             activeGroupId = result.activeGroupId,
+            userTaskCount = userTaskCount,
+            backgroundMessageCount = result.backgroundMessageCount,
         )
     }
 

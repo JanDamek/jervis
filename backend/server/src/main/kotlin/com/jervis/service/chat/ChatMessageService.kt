@@ -86,15 +86,23 @@ class ChatMessageService(
     suspend fun getLastMessages(
         conversationId: ObjectId,
         limit: Int = 10,
+        excludeBackground: Boolean = false,
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
 
-        val messages = chatMessageRepository
-            .findByConversationIdOrderByIdDesc(conversationId)
-            .take(limit)
-            .toList()
+        val messages = if (excludeBackground) {
+            chatMessageRepository
+                .findByConversationIdAndRoleNotOrderByIdDesc(conversationId, MessageRole.BACKGROUND)
+                .take(limit)
+                .toList()
+        } else {
+            chatMessageRepository
+                .findByConversationIdOrderByIdDesc(conversationId)
+                .take(limit)
+                .toList()
+        }
 
-        logger.debug { "MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size} | limit=$limit" }
+        logger.debug { "MESSAGES_LOADED | conversationId=$conversationId | count=${messages.size} | limit=$limit | excludeBg=$excludeBackground" }
 
         return messages.reversed()
     }
@@ -119,18 +127,25 @@ class ChatMessageService(
         conversationId: ObjectId,
         beforeId: ObjectId,
         limit: Int = 10,
+        excludeBackground: Boolean = false,
     ): List<ChatMessageDocument> {
         require(limit > 0) { "Limit must be positive" }
 
-        val messages =
+        val messages = if (excludeBackground) {
+            chatMessageRepository
+                .findByConversationIdAndRoleNotAndIdLessThanOrderByIdDesc(conversationId, MessageRole.BACKGROUND, beforeId)
+                .toList()
+                .take(limit)
+        } else {
             chatMessageRepository
                 .findByConversationIdAndIdLessThanOrderByIdDesc(conversationId, beforeId)
                 .toList()
                 .take(limit)
+        }
 
         logger.debug {
             "MESSAGES_BEFORE_ID | conversationId=$conversationId | beforeId=$beforeId | " +
-                "count=${messages.size} | limit=$limit"
+                "count=${messages.size} | limit=$limit | excludeBg=$excludeBackground"
         }
 
         return messages.reversed()
@@ -171,8 +186,18 @@ class ChatMessageService(
     /**
      * Get message count for a conversation.
      */
-    suspend fun getMessageCount(conversationId: ObjectId): Long =
-        chatMessageRepository.countByConversationId(conversationId)
+    suspend fun getMessageCount(conversationId: ObjectId, excludeBackground: Boolean = false): Long =
+        if (excludeBackground) {
+            chatMessageRepository.countByConversationIdAndRoleNot(conversationId, MessageRole.BACKGROUND)
+        } else {
+            chatMessageRepository.countByConversationId(conversationId)
+        }
+
+    /**
+     * Count messages by role in a conversation (e.g. count BACKGROUND messages for badge).
+     */
+    suspend fun countByRole(conversationId: ObjectId, role: MessageRole): Long =
+        chatMessageRepository.countByConversationIdAndRole(conversationId, role)
 
     /**
      * Find a message by client-generated ID (for deduplication).
