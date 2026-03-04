@@ -94,6 +94,22 @@ internal fun ChatArea(
     // reverseLayout=true: item 0 is at the bottom of the screen.
     val reversedItems = remember(displayItems) { displayItems.asReversed() }
 
+    // Auto-load older messages when user scrolls near the top.
+    // derivedStateOf reacts to actual layout changes (not stale values).
+    val nearTop by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = info.totalItemsCount
+            total > 0 && lastVisible >= total - 2
+        }
+    }
+    LaunchedEffect(nearTop, hasMore, isLoadingMore) {
+        if (nearTop && hasMore && !isLoadingMore) {
+            onLoadMore()
+        }
+    }
+
     // Show scroll-to-bottom FAB when not at bottom (reverseLayout: firstVisibleItemIndex > 2)
     val showScrollToBottom by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 2 }
@@ -140,7 +156,8 @@ internal fun ChatArea(
                     }
                 }
 
-                // "Load more" button at top (= end of reversed list)
+                // "Load more" indicator at top (= end of reversed list)
+                // Auto-triggers via snapshotFlow above; clickable as fallback.
                 if (hasMore) {
                     item(key = "load_more") {
                         Box(
@@ -148,10 +165,18 @@ internal fun ChatArea(
                             contentAlignment = Alignment.Center,
                         ) {
                             if (isLoadingMore) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "Načítám starší zprávy…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             } else {
                                 TextButton(onClick = onLoadMore) {
                                     Icon(
