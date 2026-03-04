@@ -189,6 +189,12 @@ data class TaskDocument(
     val phase: String? = null,
     /** Ordering within a phase (0-based). */
     val orderInPhase: Int = 0,
+    // Indexing claim: atomic claim for KB processing (state stays INDEXING, claimed via timestamp)
+    /** When this INDEXING task was claimed for KB dispatch. Null = unclaimed, available for pickup. */
+    val indexingClaimedAt: Instant? = null,
+    // Qualifier prepared context: GPU agent enriches task before orchestrator
+    /** JSON context prepared by the qualifying GPU agent (KB search results, suggested approach). */
+    val qualifierPreparedContext: String? = null,
 ) {
     companion object {
         /**
@@ -239,6 +245,8 @@ data class TaskDocument(
             blockedByTaskIds: List<ObjectId>?,
             phase: String?,
             orderInPhase: Int?,
+            indexingClaimedAt: Instant?,
+            qualifierPreparedContext: String?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -279,6 +287,8 @@ data class TaskDocument(
             blockedByTaskIds = blockedByTaskIds?.map { TaskId(it) } ?: emptyList(),
             phase = phase,
             orderInPhase = orderInPhase ?: 0,
+            indexingClaimedAt = indexingClaimedAt,
+            qualifierPreparedContext = qualifierPreparedContext,
         )
     }
 }

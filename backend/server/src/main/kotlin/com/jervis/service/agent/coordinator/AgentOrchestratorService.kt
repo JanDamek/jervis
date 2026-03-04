@@ -356,6 +356,7 @@ class AgentOrchestratorService(
             jervisProjectId = jervisProjectId,
             processingMode = "BACKGROUND",
             maxOpenRouterTier = rules.maxOpenRouterTier,
+            qualifierContext = task.qualifierPreparedContext,
         )
 
         try {

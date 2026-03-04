@@ -426,12 +426,12 @@ class TaskService(
      * Operational errors (timeout, connection refused) never mark as ERROR - they keep retrying.
      * The task is stored in DB with a future nextQualificationRetryAt timestamp.
      */
-    suspend fun returnToQueue(task: TaskDocument) {
+    suspend fun returnToIndexingQueue(task: TaskDocument) {
         // Reload from DB to get current state (caller may have stale in-memory object)
         val current = task.id?.let { taskRepository.getById(it) } ?: task
-        if (current.state != TaskStateEnum.QUALIFYING) {
+        if (current.state != TaskStateEnum.INDEXING) {
             logger.warn {
-                "Cannot return task to queue - expected QUALIFYING but was ${current.state}: ${current.id}"
+                "Cannot return task to indexing queue - expected INDEXING but was ${current.state}: ${current.id}"
             }
             return
         }
@@ -445,65 +445,83 @@ class TaskService(
         )
         val nextRetryAt = Instant.now().plusMillis(backoffMs)
 
-        val updated = current.copy(
-            state = TaskStateEnum.INDEXING,
-            qualificationRetries = newRetryCount,
-            nextQualificationRetryAt = nextRetryAt,
-        )
-        taskRepository.save(updated)
+        // Release the claim and set backoff — task stays INDEXING, ready for retry
+        val query = Query(Criteria.where("_id").`is`(current.id.value))
+        val update = Update()
+            .unset("indexingClaimedAt")
+            .set("qualificationRetries", newRetryCount)
+            .set("nextQualificationRetryAt", nextRetryAt)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
 
         logger.info {
-            "TASK_RETURNED_TO_QUEUE: id=${current.id} correlationId=${current.correlationId} " +
+            "TASK_RETURNED_TO_INDEXING_QUEUE: id=${current.id} correlationId=${current.correlationId} " +
                 "retry=$newRetryCount backoffMs=$backoffMs nextRetryAt=$nextRetryAt"
         }
     }
 
     /**
-     * Return all tasks eligible for qualification now:
-     * - INDEXING where nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
+     * Return all UNCLAIMED INDEXING tasks eligible for KB dispatch now:
+     * - INDEXING where indexingClaimedAt is null (unclaimed)
+     * - AND nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
      *
-     * Tasks with future nextQualificationRetryAt are hidden until their backoff window elapses.
+     * Tasks already claimed (indexingClaimedAt != null) or with future backoff are hidden.
      * Order: queuePosition ASC NULLS LAST (manually prioritized first), then createdAt ASC (FIFO).
      */
-    suspend fun findTasksForQualification(): Flow<TaskDocument> =
+    suspend fun findTasksForIndexing(): Flow<TaskDocument> =
         flow {
-            // New tasks (never retried, no nextQualificationRetryAt)
-            // Ordered by queuePosition (manually prioritized) then createdAt (FIFO)
-            emitAll(
-                taskRepository.findByStateAndNextQualificationRetryAtIsNullOrderByQueuePositionAscCreatedAtAsc(
-                    TaskStateEnum.INDEXING,
+            val now = Instant.now()
+            // Unclaimed new tasks (never retried)
+            val newQuery = Query(
+                Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
+                    .and("indexingClaimedAt").`is`(null)
+                    .and("nextQualificationRetryAt").`is`(null),
+            ).with(
+                org.springframework.data.domain.Sort.by(
+                    org.springframework.data.domain.Sort.Order.asc("queuePosition"),
+                    org.springframework.data.domain.Sort.Order.asc("createdAt"),
                 ),
             )
-            // Retried tasks where backoff has elapsed
-            emitAll(
-                taskRepository.findByStateAndNextQualificationRetryAtLessThanEqualOrderByQueuePositionAscCreatedAtAsc(
-                    TaskStateEnum.INDEXING,
-                    Instant.now(),
+            mongoTemplate.find(newQuery, TaskDocument::class.java)
+                .collectList().awaitSingle()
+                .forEach { emit(it) }
+
+            // Unclaimed retried tasks where backoff has elapsed
+            val retriedQuery = Query(
+                Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
+                    .and("indexingClaimedAt").`is`(null)
+                    .and("nextQualificationRetryAt").lte(now),
+            ).with(
+                org.springframework.data.domain.Sort.by(
+                    org.springframework.data.domain.Sort.Order.asc("queuePosition"),
+                    org.springframework.data.domain.Sort.Order.asc("createdAt"),
                 ),
             )
+            mongoTemplate.find(retriedQuery, TaskDocument::class.java)
+                .collectList().awaitSingle()
+                .forEach { emit(it) }
         }.filter { it.type != TaskTypeEnum.USER_TASK }
 
     /**
-     * Atomically claim a task for qualification using MongoDB findAndModify.
-     * This ensures that only ONE worker can claim a specific task, even in concurrent scenarios.
+     * Atomically claim an INDEXING task for KB dispatch using MongoDB findAndModify.
+     * State stays INDEXING — claim is tracked via indexingClaimedAt timestamp.
      *
      * SINGLETON GUARANTEE (Level 4 - per-task atomicity):
-     * - Uses MongoDB findAndModify with state check (INDEXING -> QUALIFYING)
+     * - Uses MongoDB findAndModify with state + indexingClaimedAt=null check
      * - Atomic operation ensures only one thread/process can claim the task
-     * - If a task is already claimed (not INDEXING), returns null
-     * - This works even across multiple application instances (distributed lock)
+     * - If already claimed (indexingClaimedAt != null), returns null
+     * - Works across multiple application instances (distributed lock)
      *
-     * Returns: Updated task with QUALIFYING state if successfully claimed, null if already claimed
+     * Returns: Updated task with indexingClaimedAt set if successfully claimed, null if already claimed
      */
-    suspend fun setToQualifying(task: TaskDocument): TaskDocument? {
-        // Custom findAndModify that also sets qualificationStartedAt and clears old steps
+    suspend fun claimForIndexing(task: TaskDocument): TaskDocument? {
         val query = Query(
             Criteria.where("_id").`is`(task.id.value)
-                .and("state").`is`(TaskStateEnum.INDEXING.name),
+                .and("state").`is`(TaskStateEnum.INDEXING.name)
+                .and("indexingClaimedAt").`is`(null),
         )
         val now = Instant.now()
         val update = Update()
-            .set("state", TaskStateEnum.QUALIFYING.name)
+            .set("indexingClaimedAt", now)
             .set("qualificationStartedAt", now)
             .set("qualificationSteps", emptyList<Any>())
         val options = FindAndModifyOptions.options().returnNew(true)
@@ -513,16 +531,25 @@ class TaskService(
 
         if (result != null) {
             logger.info {
-                "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
-                    "from=INDEXING to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
+                "INDEXING_CLAIMED: id=${task.id} correlationId=${task.correlationId} " +
+                    "type=${task.type} (ATOMICALLY CLAIMED via indexingClaimedAt)"
             }
         } else {
             logger.debug {
-                "TASK_CLAIM_FAILED: id=${task.id} - already claimed by another instance"
+                "INDEXING_CLAIM_FAILED: id=${task.id} - already claimed by another instance"
             }
         }
 
         return result
+    }
+
+    /**
+     * Save qualifier prepared context on a task (from GPU qualification agent callback).
+     */
+    suspend fun saveQualifierContext(taskId: TaskId, context: String) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = Update().set("qualifierPreparedContext", context)
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
     }
 
     /**
@@ -603,11 +630,13 @@ class TaskService(
     suspend fun resetStaleTasks(): Int {
         var resetCount = 0
 
-        // Reset QUALIFYING → INDEXING
+        // Reset QUALIFYING → INDEXING (GPU qualification agent crashed, re-index + re-qualify)
         val qualifyingQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name),
         )
-        val qualifyingUpdate = Update().set("state", TaskStateEnum.INDEXING.name)
+        val qualifyingUpdate = Update()
+            .set("state", TaskStateEnum.INDEXING.name)
+            .unset("indexingClaimedAt")
         val qualifyingResult = mongoTemplate.updateMulti(qualifyingQuery, qualifyingUpdate, TaskDocument::class.java)
             .awaitSingle()
         val qualifyingCount = qualifyingResult.modifiedCount.toInt()
@@ -615,6 +644,23 @@ class TaskService(
 
         if (qualifyingCount > 0) {
             logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → INDEXING" }
+        }
+
+        // Release stale indexing claims (KB dispatch in progress when pod crashed)
+        val staleClaimQuery = Query(
+            Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
+                .and("indexingClaimedAt").ne(null),
+        )
+        val staleClaimUpdate = Update()
+            .unset("indexingClaimedAt")
+            .unset("qualificationStartedAt")
+        val staleClaimResult = mongoTemplate.updateMulti(staleClaimQuery, staleClaimUpdate, TaskDocument::class.java)
+            .awaitSingle()
+        val staleClaimCount = staleClaimResult.modifiedCount.toInt()
+        resetCount += staleClaimCount
+
+        if (staleClaimCount > 0) {
+            logger.warn { "STALE_RECOVERY: Released $staleClaimCount stale INDEXING claims" }
         }
 
         // Reset ALL PROCESSING → QUEUED on pod restart.
@@ -673,12 +719,12 @@ class TaskService(
     }
 
     /**
-     * Recover stuck tasks when the KB qualification queue is empty.
+     * Recover stuck tasks when the KB indexing queue is empty.
      * Called by TaskQualificationService after a cycle finds no work.
      *
      * Recovers:
      * 1. ERROR indexing tasks → INDEXING (max 2 recoveries, then stays ERROR)
-     * 2. QUALIFYING tasks stuck >10 min → INDEXING (error handler failure)
+     * 2. INDEXING tasks with stale indexingClaimedAt >10 min → release claim (KB callback never arrived)
      */
     suspend fun recoverStuckIndexingTasks(): Int {
         var count = 0
@@ -711,20 +757,20 @@ class TaskService(
             logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $errorCount ERROR indexing tasks → INDEXING" }
         }
 
-        // 2. QUALIFYING tasks stuck >10 min (error handler failed, task left in QUALIFYING)
+        // 2. INDEXING tasks with stale claim >10 min (KB callback never arrived)
         val stuckThreshold = Instant.now().minus(Duration.ofMinutes(10))
         val stuckQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name)
-                .and("qualificationStartedAt").lt(stuckThreshold),
+            Criteria.where("state").`is`(TaskStateEnum.INDEXING.name)
+                .and("indexingClaimedAt").lt(stuckThreshold),
         )
         val stuckUpdate = Update()
-            .set("state", TaskStateEnum.INDEXING.name)
+            .unset("indexingClaimedAt")
             .unset("qualificationStartedAt")
         val stuckResult = mongoTemplate.updateMulti(stuckQuery, stuckUpdate, TaskDocument::class.java).awaitSingle()
         val stuckCount = stuckResult.modifiedCount.toInt()
         count += stuckCount
         if (stuckCount > 0) {
-            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $stuckCount stuck QUALIFYING tasks (>10min) → INDEXING" }
+            logger.warn { "EMPTY_QUEUE_RECOVERY: Released $stuckCount stale INDEXING claims (>10min)" }
         }
 
         return count

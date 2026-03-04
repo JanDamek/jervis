@@ -279,7 +279,7 @@ private fun ChatContent(
                 selected = showTasks,
                 onClick = onToggleTasks,
                 modifier = Modifier.height(28.dp),
-                label = { Text("Tasky ($backgroundMessageCount)", style = MaterialTheme.typography.labelSmall) },
+                label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
             )
             FilterChip(
                 selected = showNeedReaction,

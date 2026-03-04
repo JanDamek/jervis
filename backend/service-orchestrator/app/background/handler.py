@@ -642,6 +642,22 @@ async def _build_background_prompt(request: OrchestrateRequest) -> str:
         if rules_info:
             parts.append(f"\nProject rules: {', '.join(rules_info)}")
 
+    # Add qualifier context (prepared by GPU qualification agent)
+    if request.qualifier_context:
+        try:
+            ctx = json.loads(request.qualifier_context)
+            parts.append("\n## Kontext od kvalifikačního agenta")
+            if ctx.get("context"):
+                parts.append(f"Zjištění:\n{ctx['context']}")
+            if ctx.get("approach"):
+                parts.append(f"Navrhovaný postup:\n{ctx['approach']}")
+            if ctx.get("actionType"):
+                parts.append(f"Typ akce: {ctx['actionType']}")
+            if ctx.get("complexity"):
+                parts.append(f"Složitost: {ctx['complexity']}")
+        except (json.JSONDecodeError, TypeError):
+            parts.append(f"\nKontext od kvalifikačního agenta: {request.qualifier_context}")
+
     # Add guidelines via proper resolver (cached, non-blocking)
     try:
         from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_prompt

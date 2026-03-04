@@ -758,8 +758,8 @@ class KtorRpcServer(
                                                 return@launch
                                             }
 
-                                            if (task.state != com.jervis.dto.TaskStateEnum.QUALIFYING) {
-                                                logger.warn { "KB_DONE_CALLBACK: task not in QUALIFYING state taskId=${body.taskId} state=${task.state}" }
+                                            if (task.state != com.jervis.dto.TaskStateEnum.INDEXING) {
+                                                logger.warn { "KB_DONE_CALLBACK: task not in INDEXING state taskId=${body.taskId} state=${task.state}" }
                                                 return@launch
                                             }
 
@@ -840,45 +840,47 @@ class KtorRpcServer(
 
                                             val routingDecision = kbResultRouter.routeTask(task, kbResult, onProgress)
 
-                                            // If qualification agent is needed, dispatch to Python /qualify
-                                            if (routingDecision.needsQualification && routingDecision.state == com.jervis.dto.TaskStateEnum.QUEUED) {
-                                                // Gather recent chat topics for context relevance check
-                                                val chatTopics = try {
-                                                    val session = chatService.getOrCreateActiveSession()
-                                                    val messages = chatMessageService.getLastMessages(session.id, 10)
-                                                    messages
-                                                        .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
-                                                        .map { com.jervis.configuration.ChatTopicDto(role = it.role.name.lowercase(), content = it.content.take(200)) }
-                                                } catch (e: Exception) {
-                                                    logger.debug(e) { "Failed to get chat topics for qualification" }
-                                                    emptyList()
-                                                }
-
-                                                // Set task to QUALIFYING state while qualification runs
-                                                taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUALIFYING)
-
-                                                val dispatched = agentOrchestratorService.dispatchQualification(task, kbResult, chatTopics)
-                                                if (dispatched) {
-                                                    logger.info {
-                                                        "KB_DONE_CALLBACK: qualification dispatched taskId=${body.taskId} reason=${routingDecision.reason}"
+                                            when (routingDecision.state) {
+                                                com.jervis.dto.TaskStateEnum.QUALIFYING -> {
+                                                    // Actionable → dispatch to GPU qualification agent
+                                                    val chatTopics = try {
+                                                        val session = chatService.getOrCreateActiveSession()
+                                                        val messages = chatMessageService.getLastMessages(session.id, 10)
+                                                        messages
+                                                            .filter { it.role == com.jervis.entity.MessageRole.USER || it.role == com.jervis.entity.MessageRole.ASSISTANT }
+                                                            .map { com.jervis.configuration.ChatTopicDto(role = it.role.name.lowercase(), content = it.content.take(200)) }
+                                                    } catch (e: Exception) {
+                                                        logger.debug(e) { "Failed to get chat topics for qualification" }
+                                                        emptyList()
                                                     }
-                                                    onProgress(
-                                                        "Kvalifikační agent analyzuje úkol...",
-                                                        mapOf("step" to "qualifying", "agent" to "qualification_agent"),
-                                                    )
-                                                } else {
-                                                    // Qualification unavailable — fall back to direct QUEUED
-                                                    logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to QUEUED taskId=${body.taskId}" }
+
+                                                    // Transition INDEXING → QUALIFYING
+                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUALIFYING)
+
+                                                    val dispatched = agentOrchestratorService.dispatchQualification(task, kbResult, chatTopics)
+                                                    if (dispatched) {
+                                                        logger.info {
+                                                            "KB_DONE_CALLBACK: qualification dispatched taskId=${body.taskId} reason=${routingDecision.reason}"
+                                                        }
+                                                        onProgress(
+                                                            "GPU kvalifikační agent analyzuje úkol...",
+                                                            mapOf("step" to "qualifying", "agent" to "qualification_agent"),
+                                                        )
+                                                    } else {
+                                                        // GPU unavailable → fall back to QUEUED (skip qualification)
+                                                        logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to QUEUED taskId=${body.taskId}" }
+                                                        taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                    }
+                                                }
+                                                else -> {
+                                                    // DONE or other terminal state
                                                     taskService.updateState(task, routingDecision.state)
                                                 }
-                                            } else {
-                                                taskService.updateState(task, routingDecision.state)
                                             }
 
                                             logger.info {
                                                 "KB_DONE_CALLBACK: routed taskId=${body.taskId} state=${routingDecision.state} " +
-                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated} " +
-                                                    "needsQualification=${routingDecision.needsQualification}"
+                                                    "reason=${routingDecision.reason} scheduled=${routingDecision.scheduledCopyCreated}"
                                             }
                                         } catch (e: Exception) {
                                             logger.error(e) { "KB_DONE_CALLBACK: failed to process result taskId=${body.taskId}" }
@@ -1017,19 +1019,35 @@ class KtorRpcServer(
                                                 metadata = mapOf("agent" to "qualification_agent", "decision" to body.decision),
                                             )
 
+                                            // Save prepared context from GPU qualification agent
+                                            val preparedContext = body.contextSummary ?: body.suggestedApproach
+                                            if (preparedContext != null || body.contextSummary != null) {
+                                                val contextJson = buildString {
+                                                    append("{")
+                                                    body.contextSummary?.let { append("\"context\":\"${it.replace("\"", "\\\"").replace("\n", "\\n")}\",") }
+                                                    body.suggestedApproach?.let { append("\"approach\":\"${it.replace("\"", "\\\"").replace("\n", "\\n")}\",") }
+                                                    body.actionType?.let { append("\"actionType\":\"$it\",") }
+                                                    body.estimatedComplexity?.let { append("\"complexity\":\"$it\",") }
+                                                    append("\"priority\":${body.priorityScore ?: 5}")
+                                                    append("}")
+                                                }
+                                                taskService.saveQualifierContext(taskId, contextJson)
+                                            }
+
                                             when (body.decision) {
                                                 "QUEUED" -> {
-                                                    // Qualification says: proceed to orchestration
+                                                    // Qualification says: proceed to orchestration (with prepared context)
                                                     val updatedTask = task.copy(
                                                         priorityScore = body.priorityScore ?: task.priorityScore,
                                                         priorityReason = body.reason ?: task.priorityReason,
+                                                        actionType = body.actionType ?: task.actionType,
+                                                        estimatedComplexity = body.estimatedComplexity ?: task.estimatedComplexity,
                                                     )
                                                     taskRepository.save(updatedTask)
                                                     taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED priority=${body.priorityScore}" }
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED priority=${body.priorityScore} actionType=${body.actionType}" }
                                                 }
                                                 "DONE" -> {
-                                                    // Qualification says: no orchestration needed
                                                     taskService.updateState(task, com.jervis.dto.TaskStateEnum.DONE)
                                                     logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE reason=${body.reason}" }
                                                 }
@@ -1479,6 +1497,14 @@ data class QualificationDoneCallback(
     @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int? = null,
     /** Human-readable reason for the decision */
     val reason: String? = null,
+    /** Prepared context from GPU qualification agent (KB search results, related items) */
+    @kotlinx.serialization.SerialName("context_summary") val contextSummary: String? = null,
+    /** Suggested approach/plan for the orchestrator */
+    @kotlinx.serialization.SerialName("suggested_approach") val suggestedApproach: String? = null,
+    /** Refined action type from qualification (e.g., CODE_FIX, RESPOND_EMAIL) */
+    @kotlinx.serialization.SerialName("action_type") val actionType: String? = null,
+    /** Refined complexity estimate from qualification */
+    @kotlinx.serialization.SerialName("estimated_complexity") val estimatedComplexity: String? = null,
 )
 
 /**

@@ -341,6 +341,7 @@ data class OrchestrateRequestDto(
     @SerialName("chat_history") val chatHistory: ChatHistoryPayloadDto? = null,
     @SerialName("processing_mode") val processingMode: String = "FOREGROUND",
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
+    @SerialName("qualifier_context") val qualifierContext: String? = null,
 )
 
 @Serializable

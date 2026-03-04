@@ -164,6 +164,10 @@ class KotlinServerClient:
         priority_score: int = 5,
         reason: str = "",
         alert_message: str | None = None,
+        context_summary: str = "",
+        suggested_approach: str = "",
+        action_type: str = "",
+        estimated_complexity: str = "",
     ) -> bool:
         """Push qualification agent result to Kotlin server.
 
@@ -180,6 +184,10 @@ class KotlinServerClient:
                     "decision": decision,
                     "priority_score": priority_score,
                     "reason": reason,
+                    "context_summary": context_summary,
+                    "suggested_approach": suggested_approach,
+                    "action_type": action_type,
+                    "estimated_complexity": estimated_complexity,
                 },
             )
             return resp.status_code == 200

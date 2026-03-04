@@ -266,6 +266,7 @@ class OrchestrateRequest(BaseModel):
     chat_history: ChatHistoryPayload | None = None  # Conversation context
     processing_mode: str = "FOREGROUND"  # FOREGROUND = reserve GPU, BACKGROUND = no GPU reservation
     max_openrouter_tier: str = "NONE"  # Resolved tier from CloudModelPolicyResolver (overrides rules.max_openrouter_tier)
+    qualifier_context: str | None = None  # JSON context prepared by GPU qualification agent (KB findings, approach)
 
 
 class OrchestrateResponse(BaseModel):

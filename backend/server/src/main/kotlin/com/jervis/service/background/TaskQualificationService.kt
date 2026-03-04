@@ -13,20 +13,22 @@ import mu.KotlinLogging
 import org.springframework.stereotype.Service
 
 /**
- * Qualification service — dispatches tasks to KB microservice for async processing.
+ * Indexing service — dispatches INDEXING tasks to KB microservice for async processing.
  *
  * Flow (fire-and-forget):
- * 1. Claim INDEXING tasks (atomic MongoDB update → QUALIFYING)
+ * 1. Claim INDEXING tasks (atomic via indexingClaimedAt, state stays INDEXING)
  * 2. Extract text + load attachments (local, fast)
  * 3. Submit to KB's /ingest/full/async endpoint (returns immediately with HTTP 202)
  * 4. Move on to next task — KB processes in background
- * 5. KB calls /internal/kb-done when finished → KbResultRouter handles routing
+ * 5. KB calls /internal/kb-done when finished → KbResultRouter decides:
+ *    - Not actionable → DONE
+ *    - Actionable → QUALIFYING (GPU agent prepares context)
  *
  * Since dispatch is fast (no blocking on KB), concurrency=1 is sufficient.
  * Each dispatch takes seconds (Tika extraction + HTTP POST), not minutes.
  *
  * Error handling:
- * - If KB is unreachable or rejects the request → return to queue with backoff
+ * - If KB is unreachable or rejects the request → release claim with backoff
  * - KB handles its own retry logic internally (Ollama busy, timeouts, etc.)
  * - When KB permanently fails, it calls /internal/kb-done with status="error"
  */
@@ -45,17 +47,17 @@ class TaskQualificationService(
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun processAllQualifications() {
         if (!isQualificationRunning.compareAndSet(false, true)) {
-            logger.debug { "QUALIFICATION_SKIPPED: Another cycle already running" }
+            logger.debug { "INDEXING_SKIPPED: Another cycle already running" }
             return
         }
 
         try {
-            logger.debug { "QUALIFICATION_CYCLE_START" }
+            logger.debug { "INDEXING_CYCLE_START" }
 
             var dispatchedCount = 0
 
             taskService
-                .findTasksForQualification()
+                .findTasksForIndexing()
                 .buffer(1)
                 .flatMapMerge(concurrency = 1) { task ->
                     flow {
@@ -63,13 +65,13 @@ class TaskQualificationService(
                             .onFailure { e ->
                                 try {
                                     logger.error(e) {
-                                        "QUALIFICATION_DISPATCH_ERROR: task=${task.id} type=${task.type} msg=${e.message}"
+                                        "INDEXING_DISPATCH_ERROR: task=${task.id} type=${task.type} msg=${e.message}"
                                     }
-                                    // KB is unreachable or rejected the request → return to queue
-                                    taskService.returnToQueue(task)
+                                    // KB is unreachable or rejected the request → release claim with backoff
+                                    taskService.returnToIndexingQueue(task)
                                 } catch (inner: Exception) {
                                     logger.error(inner) {
-                                        "QUALIFICATION_ERROR_HANDLER_FAILED: task=${task.id} — stuck in QUALIFYING until recovery"
+                                        "INDEXING_ERROR_HANDLER_FAILED: task=${task.id} — stuck until stale claim recovery"
                                     }
                                 }
                             }
@@ -77,14 +79,14 @@ class TaskQualificationService(
                     }
                 }.onEach { dispatchedCount++ }
                 .catch { e ->
-                    logger.error(e) { "Qualification stream failure: ${e.message}" }
+                    logger.error(e) { "Indexing stream failure: ${e.message}" }
                 }.collect()
 
-            // Recover tasks stuck in QUALIFYING >10min (e.g. KB callback never arrived)
+            // Recover stale claims and ERROR indexing tasks
             taskService.recoverStuckIndexingTasks()
 
             if (dispatchedCount > 0) {
-                logger.info { "QUALIFICATION_CYCLE_COMPLETE: dispatched=$dispatchedCount" }
+                logger.info { "INDEXING_CYCLE_COMPLETE: dispatched=$dispatchedCount" }
             }
         } finally {
             isQualificationRunning.set(false)
@@ -93,12 +95,12 @@ class TaskQualificationService(
 
     private suspend fun processOne(original: TaskDocument) {
         val task =
-            taskService.setToQualifying(original) ?: run {
-                logger.debug { "QUALIFICATION_SKIP: id=${original.id} - task already claimed" }
+            taskService.claimForIndexing(original) ?: run {
+                logger.debug { "INDEXING_SKIP: id=${original.id} - task already claimed" }
                 return
             }
 
-        // Dispatch to KB (fire-and-forget) — task stays in QUALIFYING until KB calls back
+        // Dispatch to KB (fire-and-forget) — task stays INDEXING (claimed) until KB calls back
         simpleQualifierAgent.dispatch(task) { message, metadata ->
             val step = metadata["step"] ?: "unknown"
 
@@ -123,6 +125,6 @@ class TaskQualificationService(
             )
         }
 
-        logger.info { "QUALIFICATION_DISPATCHED: id=${task.id} type=${task.type}" }
+        logger.info { "INDEXING_DISPATCHED: id=${task.id} type=${task.type}" }
     }
 }

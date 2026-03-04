@@ -7,7 +7,6 @@ import com.jervis.dto.TaskStateEnum
 import com.jervis.dto.TaskTypeEnum
 import com.jervis.dto.filtering.FilterAction
 import com.jervis.dto.filtering.FilterSourceType
-import com.jervis.dto.pipeline.ActionType
 import com.jervis.entity.TaskDocument
 import com.jervis.knowledgebase.model.FullIngestResult
 import com.jervis.service.background.AutoTaskCreationService
@@ -22,12 +21,11 @@ import java.time.Instant
 /**
  * Routes a task based on KB ingest result.
  *
- * Extracted from SimpleQualifierAgent so it can be called both:
- * - Synchronously from qualification (legacy)
- * - From the /internal/kb-done callback (async fire-and-forget flow)
+ * After KB indexing completes, decides:
+ * - DONE: Not actionable, filtered, or simple action handled locally
+ * - QUALIFYING: Actionable content → GPU agent prepares context + decides priority
  *
- * EPIC 2: Enhanced with ActionTypeInferrer for structured routing
- * and AutoTaskCreationService for automatic task creation from findings.
+ * All actionable tasks go through QUALIFYING (GPU agent) for context preparation.
  */
 @Service
 class KbResultRouter(
@@ -41,35 +39,30 @@ class KbResultRouter(
 
     companion object {
         const val SCHEDULE_LEAD_DAYS = 2L
-
-        val COMPLEX_ACTIONS = setOf(
-            "decompose_issue", "analyze_code", "create_application",
-            "review_code", "design_architecture",
-        )
     }
 
     data class RoutingDecision(
         val state: TaskStateEnum,
         val reason: String,
         val scheduledCopyCreated: Boolean = false,
-        /** When true, task should go through LLM qualification agent before orchestration. */
-        val needsQualification: Boolean = false,
     )
 
     /**
      * Route task based on KB analysis result.
      *
-     * EPIC 2: Enhanced routing with structured ActionType/Complexity inference
-     * and automatic task creation for actionable findings.
-     *
-     * @param onProgress optional callback for emitting progress steps (UI updates)
+     * Routing rules:
+     * 1. Not actionable → DONE (info only, indexed)
+     * 2. Filtered (IGNORE) → DONE
+     * 3. Simple actions (reply_email, schedule_meeting) → handled locally → DONE
+     * 4. Future deadline → schedule copy → DONE
+     * 5. ALL other actionable content → QUALIFYING (GPU agent prepares context)
      */
     suspend fun routeTask(
         task: TaskDocument,
         result: FullIngestResult,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit = { _, _ -> },
     ): RoutingDecision {
-        // EPIC 2: Infer structured fields from KB result
+        // Infer structured fields from KB result
         val inferred = actionTypeInferrer.infer(result)
 
         // Step 1: Not actionable → indexed only
@@ -85,7 +78,7 @@ class KbResultRouter(
             return RoutingDecision(TaskStateEnum.DONE, "info_only")
         }
 
-        // EPIC 10-S3: Evaluate filtering rules before routing
+        // Step 2: Evaluate filtering rules
         val filterAction = evaluateFilters(task, result)
         if (filterAction == FilterAction.IGNORE) {
             logger.info {
@@ -119,27 +112,49 @@ class KbResultRouter(
             }
         }
 
-        // Step 2: Simple actions → handle locally without orchestrator
-        // EPIC 10-S3: URGENT/HIGH_PRIORITY filter overrides → treat as complex
+        // Step 3: Simple actions → handle locally without GPU agent
         val hasComplex = filterAction in listOf(FilterAction.URGENT, FilterAction.HIGH_PRIORITY) ||
-            result.suggestedActions.any { it in COMPLEX_ACTIONS }
+            result.suggestedActions.any { it in setOf("decompose_issue", "analyze_code", "create_application", "review_code", "design_architecture") }
         if (!hasComplex) {
             handleSimpleAction(task, result, onProgress)
             logger.info {
                 "KB_ROUTE: taskId=${task.id} reason=simpleAction actions=${result.suggestedActions}"
             }
-
-            // EPIC 2: Also create structured auto-task for tracked pipeline processing
             try {
                 autoTaskCreationService.createFromQualifierFinding(task, result, inferred)
             } catch (e: Exception) {
                 logger.warn(e) { "AUTO_TASK_CREATION_FAILED: taskId=${task.id} (non-fatal)" }
             }
-
             return RoutingDecision(TaskStateEnum.DONE, "simple_action_handled")
         }
 
-        // EPIC 2: For complex actionable content, create auto-task and let it handle routing
+        // Step 4: Future deadline → schedule copy (original → DONE, copy runs later)
+        val suggestedDeadline = result.suggestedDeadline
+        if (result.hasFutureDeadline && suggestedDeadline != null) {
+            val deadline = parseDeadline(suggestedDeadline)
+            if (deadline != null) {
+                val now = Instant.now()
+                val leadTime = Duration.ofDays(SCHEDULE_LEAD_DAYS)
+                val scheduledAt = deadline.minus(leadTime)
+
+                // Deadline in the past or too close → QUALIFYING (GPU agent will handle)
+                if (deadline.isBefore(now) || scheduledAt.isBefore(now)) {
+                    // Fall through to step 5
+                } else {
+                    createScheduledCopy(task, result, scheduledAt)
+                    logger.info {
+                        "KB_ROUTE: taskId=${task.id} reason=scheduled scheduledAt=$scheduledAt deadline=$suggestedDeadline"
+                    }
+                    onProgress(
+                        "Naplánováno na $scheduledAt (termín: $suggestedDeadline)",
+                        mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Naplánováno", "result" to "Zaindexováno + naplánováno"),
+                    )
+                    return RoutingDecision(TaskStateEnum.DONE, "scheduled", scheduledCopyCreated = true)
+                }
+            }
+        }
+
+        // Create auto-task for pipeline tracking
         try {
             val autoTask = autoTaskCreationService.createFromQualifierFinding(task, result, inferred)
             if (autoTask != null) {
@@ -158,76 +173,19 @@ class KbResultRouter(
                 )
             }
         } catch (e: Exception) {
-            logger.warn(e) { "AUTO_TASK_CREATION_FAILED: taskId=${task.id} (non-fatal, continuing with legacy routing)" }
+            logger.warn(e) { "AUTO_TASK_CREATION_FAILED: taskId=${task.id} (non-fatal)" }
         }
 
-        // Step 3: Complex + assigned to me → immediate
-        if (result.isAssignedToMe) {
-            logger.info {
-                "KB_ROUTE: taskId=${task.id} reason=assignedToMe urgency=${result.urgency}"
-            }
-            onProgress(
-                "Přiřazený úkol → do fronty pro MOZEK",
-                mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Přiřazeno mně", "result" to "Čeká na MOZEK"),
-            )
-            return RoutingDecision(TaskStateEnum.QUEUED, "assigned_to_me")
-        }
-
-        // Step 4: Complex + future deadline → schedule or immediate
-        val suggestedDeadline = result.suggestedDeadline
-        if (result.hasFutureDeadline && suggestedDeadline != null) {
-            val deadline = parseDeadline(suggestedDeadline)
-            if (deadline != null) {
-                val now = Instant.now()
-
-                // Deadline already in the past → ignore scheduling (old email / stale content)
-                if (deadline.isBefore(now)) {
-                    logger.info {
-                        "KB_ROUTE: taskId=${task.id} reason=deadlineAlreadyPassed deadline=$suggestedDeadline"
-                    }
-                    onProgress(
-                        "Prošlý termín ($suggestedDeadline) → zpracovat bez plánování",
-                        mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Prošlý termín", "result" to "Čeká na MOZEK"),
-                    )
-                    return RoutingDecision(TaskStateEnum.QUEUED, "deadline_already_passed")
-                }
-
-                val leadTime = Duration.ofDays(SCHEDULE_LEAD_DAYS)
-                val scheduledAt = deadline.minus(leadTime)
-
-                if (scheduledAt.isBefore(now)) {
-                    logger.info {
-                        "KB_ROUTE: taskId=${task.id} reason=deadlineTooClose deadline=$suggestedDeadline"
-                    }
-                    onProgress(
-                        "Blízký termín → do fronty pro MOZEK",
-                        mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Blízký termín", "result" to "Čeká na MOZEK"),
-                    )
-                    return RoutingDecision(TaskStateEnum.QUEUED, "deadline_too_close")
-                }
-
-                createScheduledCopy(task, result, scheduledAt)
-                logger.info {
-                    "KB_ROUTE: taskId=${task.id} reason=scheduled scheduledAt=$scheduledAt deadline=$suggestedDeadline"
-                }
-                onProgress(
-                    "Naplánováno na $scheduledAt (termín: $suggestedDeadline)",
-                    mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Naplánováno", "result" to "Zaindexováno + naplánováno"),
-                )
-                return RoutingDecision(TaskStateEnum.DONE, "scheduled", scheduledCopyCreated = true)
-            }
-        }
-
-        // Step 5: Complex actionable → qualification agent for smarter routing
+        // Step 5: ALL actionable content → QUALIFYING (GPU agent prepares context + decides)
         logger.info {
-            "KB_ROUTE: taskId=${task.id} reason=complexActionable urgency=${result.urgency} actions=${result.suggestedActions} " +
-                "actionType=${inferred.actionType} complexity=${inferred.estimatedComplexity}"
+            "KB_ROUTE: taskId=${task.id} reason=actionable → QUALIFYING urgency=${result.urgency} " +
+                "actions=${result.suggestedActions} actionType=${inferred.actionType} complexity=${inferred.estimatedComplexity}"
         }
         onProgress(
-            "Akční obsah → kvalifikace LLM agentem",
-            mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Vyžaduje kvalifikaci", "result" to "Čeká na kvalifikaci"),
+            "Akční obsah → GPU kvalifikační agent připravuje kontext",
+            mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Kvalifikace GPU agentem", "result" to "Čeká na kvalifikaci"),
         )
-        return RoutingDecision(TaskStateEnum.QUEUED, "complex_actionable", needsQualification = true)
+        return RoutingDecision(TaskStateEnum.QUALIFYING, "actionable")
     }
 
     private suspend fun handleSimpleAction(
@@ -285,10 +243,6 @@ class KbResultRouter(
         }
     }
 
-    /**
-     * EPIC 10-S3: Evaluate filtering rules for a task.
-     * Maps SourceUrn to FilterSourceType and calls FilteringRulesService.
-     */
     private suspend fun evaluateFilters(task: TaskDocument, result: FullIngestResult): FilterAction? {
         return try {
             val sourceType = extractSourceType(task.sourceUrn)

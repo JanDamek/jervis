@@ -218,6 +218,10 @@ async def qualify(request: dict):
                 decision=result.get("decision", "QUEUED"),
                 priority_score=result.get("priority_score", 5),
                 reason=result.get("reason", ""),
+                context_summary=result.get("context_summary", ""),
+                suggested_approach=result.get("suggested_approach", ""),
+                action_type=result.get("action_type", ""),
+                estimated_complexity=result.get("estimated_complexity", ""),
             )
         except Exception as e:
             logger.exception("Qualification failed: %s", e)
@@ -228,6 +232,10 @@ async def qualify(request: dict):
                 decision="QUEUED",
                 priority_score=5,
                 reason=f"Qualification error: {e}",
+                context_summary="",
+                suggested_approach="",
+                action_type="",
+                estimated_complexity="",
             )
         finally:
             _active_tasks.pop(thread_id, None)
