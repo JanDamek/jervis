@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_READS: int = 1000  # Effectively unlimited (pod capacity limit)
     MAX_CONCURRENT_WRITES: int = 10   # Max parallel write requests (queue others)
 
+    # -- Embedding concurrency --------------------------------------------------
+    # GPU-2 benchmark (2026-03-04): sweet spot = 4-5 concurrent requests
+    # With multi-worker uvicorn, total concurrent = workers × this value
+    # READ (4 workers): set to 2 → max 8 concurrent (near GPU sweet spot)
+    # WRITE (1 worker): set to 5 → optimal for single process batch embedding
+    MAX_CONCURRENT_EMBEDDINGS: int = 5
+
     class Config:
         env_file = ".env"
 

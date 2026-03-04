@@ -28,6 +28,8 @@ spec:
               value: "read"
             - name: UVICORN_WORKERS
               value: "4"
+            - name: MAX_CONCURRENT_EMBEDDINGS
+              value: "2"
           envFrom:
             - configMapRef:
                 name: jervis-knowledgebase-config

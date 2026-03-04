@@ -3,7 +3,6 @@ import logging
 import uuid
 import httpx
 
-from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 from app.db.weaviate import get_weaviate_client
@@ -15,24 +14,19 @@ logger = logging.getLogger(__name__)
 
 
 class RagService:
-    # Max concurrent embedding requests to prevent GPU starvation.
-    # Without this, multiple simultaneous ingest calls can flood the GPU with
-    # embedding requests (e.g. 35 at once), starving CRITICAL chat requests.
-    MAX_CONCURRENT_EMBEDDINGS = 5
 
     def __init__(self):
-        self.embeddings = OllamaEmbeddings(
-            base_url=settings.OLLAMA_EMBEDDING_BASE_URL,
-            model=settings.EMBEDDING_MODEL
-        )
         # Default: no priority header (NORMAL). Callers pass explicit priority via header.
         self.embedding_priority = None
-        self.http_client = httpx.AsyncClient(timeout=3600.0)  # 1 hour — CPU embedding is slow, queues behind other work
+        self.http_client = httpx.AsyncClient(timeout=300.0)  # 5 min — embedding + router queue
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
         )
-        self._embedding_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_EMBEDDINGS)
+        # Concurrency tuned per GPU-2 benchmark: sweet spot 4-5 concurrent.
+        # With multi-worker uvicorn, total concurrent = UVICORN_WORKERS × this value.
+        self._max_concurrent = settings.MAX_CONCURRENT_EMBEDDINGS
+        self._embedding_semaphore = asyncio.Semaphore(self._max_concurrent)
         self.client = get_weaviate_client()
         self._ensure_schema()
 
@@ -89,7 +83,7 @@ class RagService:
 
         logger.info("RAG: EMBEDDING model=%s priority=%s (explicit=%s default=%s) semaphore_free=%d/%d",
                     settings.EMBEDDING_MODEL, effective_priority, priority, self.embedding_priority,
-                    self._embedding_semaphore._value, self.MAX_CONCURRENT_EMBEDDINGS)
+                    self._embedding_semaphore._value, self._max_concurrent)
 
         max_retries = 2
         for attempt in range(1 + max_retries):
