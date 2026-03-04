@@ -23,13 +23,17 @@ fun MainScreen(
     val showTasks by viewModel.chat.showTasks.collectAsState()
     val showNeedReaction by viewModel.chat.showNeedReaction.collectAsState()
     val backgroundMessageCount by viewModel.chat.backgroundMessageCount.collectAsState()
-    val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
+    val userTaskCount by viewModel.chat.userTaskCount.collectAsState()
 
     // Client-side filtering — instant toggle, no server reload
     val filteredMessages = remember(chatMessages, showChat, showTasks, showNeedReaction) {
         chatMessages.filter { msg ->
             when (msg.messageType) {
-                ChatMessage.MessageType.BACKGROUND_RESULT -> showTasks || showNeedReaction
+                ChatMessage.MessageType.BACKGROUND_RESULT -> when {
+                    showTasks -> true   // "Tasky" shows ALL backgrounds
+                    showNeedReaction -> msg.metadata["needsReaction"] == "true"
+                    else -> false       // both off → hide backgrounds
+                }
                 else -> showChat
             }
         }

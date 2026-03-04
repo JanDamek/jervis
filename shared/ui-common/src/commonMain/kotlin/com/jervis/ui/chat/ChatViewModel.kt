@@ -98,13 +98,17 @@ class ChatViewModel(
     private val _showTasks = MutableStateFlow(false)
     val showTasks: StateFlow<Boolean> = _showTasks.asStateFlow()
 
-    /** Show only background tasks needing user reaction. */
-    private val _showNeedReaction = MutableStateFlow(false)
+    /** Show only background tasks needing user reaction. Default ON. */
+    private val _showNeedReaction = MutableStateFlow(true)
     val showNeedReaction: StateFlow<Boolean> = _showNeedReaction.asStateFlow()
 
     /** Total background messages in session (for filter chip label). */
     private val _backgroundMessageCount = MutableStateFlow(0)
     val backgroundMessageCount: StateFlow<Int> = _backgroundMessageCount.asStateFlow()
+
+    /** Global USER_TASK count (all clients) — from ChatHistoryDto, matches dock badge. */
+    private val _userTaskCount = MutableStateFlow(0)
+    val userTaskCount: StateFlow<Int> = _userTaskCount.asStateFlow()
 
     // Filtering is done at the Compose layer via remember() in screens/MainScreen.kt
     // to avoid stateIn timing issues with the initial empty emission.
@@ -677,6 +681,7 @@ class ChatViewModel(
         try {
             val history = repository.chat.getChatHistory(limit = 10)
             _backgroundMessageCount.value = history.backgroundMessageCount
+            _userTaskCount.value = history.userTaskCount
             val newMessages = history.messages.map { msg ->
                 val sender = if (msg.role == com.jervis.dto.ChatRole.USER) {
                     ChatMessage.Sender.Me

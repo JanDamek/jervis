@@ -263,34 +263,36 @@ private fun ChatContent(
             OrchestratorHealthBanner()
         }
 
-        // Filter chips — chat / backgrounds / reaction-needed
-        if (backgroundMessageCount > 0 || userTaskCount > 0 || showTasks || showNeedReaction) {
-            Row(
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = showChat,
-                    onClick = onToggleChat,
-                    modifier = Modifier.height(28.dp),
-                    label = { Text("Chat", style = MaterialTheme.typography.labelSmall) },
-                )
-                FilterChip(
-                    selected = showTasks,
-                    onClick = onToggleTasks,
-                    modifier = Modifier.height(28.dp),
-                    label = { Text("Tasky", style = MaterialTheme.typography.labelSmall) },
-                )
-                if (userTaskCount > 0 || showNeedReaction) {
-                    FilterChip(
-                        selected = showNeedReaction,
-                        onClick = onToggleNeedReaction,
-                        modifier = Modifier.height(28.dp),
-                        label = { Text("K reakci ($userTaskCount)", style = MaterialTheme.typography.labelSmall) },
+        // Filter chips — always visible
+        Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = showChat,
+                onClick = onToggleChat,
+                modifier = Modifier.height(28.dp),
+                label = { Text("Chat", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = showTasks,
+                onClick = onToggleTasks,
+                modifier = Modifier.height(28.dp),
+                label = { Text("Tasky ($backgroundMessageCount)", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = showNeedReaction,
+                onClick = onToggleNeedReaction,
+                modifier = Modifier.height(28.dp),
+                label = {
+                    Text(
+                        if (userTaskCount > 0) "K reakci ($userTaskCount)"
+                        else "K reakci",
+                        style = MaterialTheme.typography.labelSmall,
                     )
-                }
-            }
+                },
+            )
         }
 
         // Chat area

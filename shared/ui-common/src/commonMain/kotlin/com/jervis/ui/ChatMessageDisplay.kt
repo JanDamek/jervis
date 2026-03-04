@@ -64,6 +64,10 @@ import com.jervis.ui.util.formatMessageTime
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.MarkdownColors
+import com.mikepenz.markdown.model.MarkdownTypography
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.parser.MarkdownParser
 
 @Composable
 internal fun ChatArea(
@@ -395,19 +399,18 @@ private fun ChatMessageItem(
                 }
                 AnimatedVisibility(visible = expanded) {
                     SelectionContainer {
-                        Markdown(
+                        SafeMarkdown(
                             content = message.text,
-                            colors =
-                                markdownColor(
-                                    text = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    codeBackground = MaterialTheme.colorScheme.surface,
-                                ),
-                            typography =
-                                markdownTypography(
-                                    text = MaterialTheme.typography.bodySmall,
-                                    code = MaterialTheme.typography.bodySmall,
-                                ),
+                            colors = markdownColor(
+                                text = MaterialTheme.colorScheme.onSurfaceVariant,
+                                codeBackground = MaterialTheme.colorScheme.surface,
+                            ),
+                            typography = markdownTypography(
+                                text = MaterialTheme.typography.bodySmall,
+                                code = MaterialTheme.typography.bodySmall,
+                            ),
                             modifier = Modifier.padding(top = 4.dp),
+                            fallbackStyle = MaterialTheme.typography.bodySmall,
                         )
                     }
                 }
@@ -527,18 +530,17 @@ private fun ChatMessageItem(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 SelectionContainer {
-                    Markdown(
+                    SafeMarkdown(
                         content = message.text,
-                        colors =
-                            markdownColor(
-                                text = MaterialTheme.colorScheme.onErrorContainer,
-                                codeBackground = MaterialTheme.colorScheme.errorContainer,
-                            ),
-                        typography =
-                            markdownTypography(
-                                text = MaterialTheme.typography.bodyMedium,
-                                code = MaterialTheme.typography.bodySmall,
-                            ),
+                        colors = markdownColor(
+                            text = MaterialTheme.colorScheme.onErrorContainer,
+                            codeBackground = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        typography = markdownTypography(
+                            text = MaterialTheme.typography.bodyMedium,
+                            code = MaterialTheme.typography.bodySmall,
+                        ),
+                        fallbackStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
 
@@ -658,31 +660,21 @@ private fun ChatMessageItem(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             } else {
-                                // Assistant messages - Markdown rendering
-                                // Sanitize: normalize line endings to prevent AST/text length mismatch
-                                // (StringIndexOutOfBoundsException in markdown parser)
-                                val stableContent =
-                                    remember(message.text) {
-                                        message.text
-                                            .replace("\r\n", "\n")
-                                            .replace("\r", "\n")
-                                            .replace("\u0000", "")
-                                    }
-                                Markdown(
-                                    content = stableContent,
-                                    colors =
-                                        markdownColor(
-                                            text = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            codeBackground = MaterialTheme.colorScheme.surfaceVariant,
-                                        ),
-                                    typography =
-                                        markdownTypography(
-                                            text = MaterialTheme.typography.bodyMedium,
-                                            code = MaterialTheme.typography.bodySmall,
-                                            h1 = MaterialTheme.typography.headlineMedium,
-                                            h2 = MaterialTheme.typography.headlineSmall,
-                                            h3 = MaterialTheme.typography.titleLarge,
-                                        ),
+                                // Assistant messages - Markdown rendering with safe fallback
+                                SafeMarkdown(
+                                    content = message.text,
+                                    colors = markdownColor(
+                                        text = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+                                    ),
+                                    typography = markdownTypography(
+                                        text = MaterialTheme.typography.bodyMedium,
+                                        code = MaterialTheme.typography.bodySmall,
+                                        h1 = MaterialTheme.typography.headlineMedium,
+                                        h2 = MaterialTheme.typography.headlineSmall,
+                                        h3 = MaterialTheme.typography.titleLarge,
+                                    ),
+                                    fallbackStyle = MaterialTheme.typography.bodyMedium,
                                 )
                             }
                         }
@@ -856,5 +848,40 @@ private fun ConfidenceBadge(
             style = MaterialTheme.typography.labelSmall,
             color = badgeColor,
         )
+    }
+}
+
+/**
+ * Safe Markdown renderer that pre-validates AST ranges.
+ * Falls back to plain Text if the markdown parser produces
+ * out-of-bounds source positions (StringIndexOutOfBoundsException).
+ */
+@Composable
+private fun SafeMarkdown(
+    content: String,
+    colors: MarkdownColors,
+    typography: MarkdownTypography,
+    modifier: Modifier = Modifier,
+    fallbackStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
+) {
+    // Sanitize line endings + validate AST ranges
+    val sanitized = remember(content) {
+        content.replace("\r\n", "\n").replace("\r", "\n").replace("\u0000", "").trimEnd()
+    }
+    val canRender = remember(sanitized) {
+        try {
+            val tree = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(sanitized)
+            // Recursively check all AST node ranges fit within the sanitized string
+            fun valid(node: org.intellij.markdown.ast.ASTNode): Boolean =
+                node.endOffset <= sanitized.length && node.children.all(::valid)
+            valid(tree)
+        } catch (_: Exception) {
+            false
+        }
+    }
+    if (canRender) {
+        Markdown(content = sanitized, colors = colors, typography = typography, modifier = modifier)
+    } else {
+        Text(text = content, style = fallbackStyle, modifier = modifier)
     }
 }
