@@ -34,14 +34,14 @@ import java.util.concurrent.atomic.AtomicReference
  * Background cognitive engine that processes PendingTasks.
  *
  * NEW ARCHITECTURE (Graph-Based Routing):
- * - Qualifier structures data → routes to DONE or READY_FOR_GPU
+ * - Qualifier structures data → routes to DONE or QUEUED
  * - GPU tasks processed only during idle time (no user requests)
  * - Preemption: User requests to immediately interrupt background tasks
  *
  * FOUR INDEPENDENT LOOPS:
  * 1. Qualification loop (CPU) - runs continuously, checks DB every 30s
  *    - Creates Graph nodes and RAG chunks with chunking for large documents
- *    - Routes tasks: DONE (simple) or READY_FOR_GPU (complex)
+ *    - Routes tasks: DONE (simple) or QUEUED (complex)
  *
  * 2. Execution loop (GPU) - three-tier priority: FOREGROUND > BACKGROUND > IDLE
  *    - FOREGROUND (chat) tasks always processed first
@@ -271,10 +271,10 @@ class BackgroundEngine(
             try {
                 // Check if there are active FOREGROUND or BACKGROUND tasks
                 val activeFgBg = taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.READY_FOR_GPU,
+                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.QUEUED,
                 ) + taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.READY_FOR_GPU,
-                ) + taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
+                ) + taskRepository.countByState(TaskStateEnum.PROCESSING)
 
                 if (activeFgBg > 0) {
                     logger.debug { "GPU_IDLE_NOTIFY: System has $activeFgBg active FG/BG tasks, skipping" }
@@ -365,11 +365,11 @@ class BackgroundEngine(
         while (scope.isActive) {
             try {
                 // 0. Check if Python orchestrator is already processing a task
-                val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+                val orchestratingCount = taskRepository.countByState(TaskStateEnum.PROCESSING)
 
                 if (orchestratingCount > 0) {
                     val runningTasks =
-                        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PROCESSING)
                             .toList()
                     val runningTask = runningTasks.firstOrNull()
 
@@ -399,12 +399,12 @@ class BackgroundEngine(
                                 // Orchestrator doesn't know this task — force-reset it in DB
                                 logger.warn {
                                     "PREEMPT_FORCE_RESET: ${runningMode} task ${runningTask.id} " +
-                                        "unresponsive after $retries attempts → resetting to READY_FOR_GPU"
+                                        "unresponsive after $retries attempts → resetting to QUEUED"
                                 }
                                 preemptRetries.remove(runningTask.id)
                                 taskRepository.save(
                                     runningTask.copy(
-                                        state = TaskStateEnum.READY_FOR_GPU,
+                                        state = TaskStateEnum.QUEUED,
                                         orchestratorThreadId = null,
                                     ),
                                 )
@@ -510,11 +510,11 @@ class BackgroundEngine(
             val success = pythonOrchestratorClient.interrupt(task.orchestratorThreadId)
 
             if (success) {
-                // Reset task state to READY_FOR_GPU so it can be resumed later
+                // Reset task state to QUEUED so it can be resumed later
                 // The checkpoint is already saved in MongoDB by the orchestrator
                 taskRepository.save(
                     task.copy(
-                        state = TaskStateEnum.READY_FOR_GPU,
+                        state = TaskStateEnum.QUEUED,
                         // Keep orchestratorThreadId so it can resume from checkpoint
                     ),
                 )
@@ -522,7 +522,7 @@ class BackgroundEngine(
                 // Clear running task tracking
                 taskService.setRunningTask(null)
 
-                logger.info { "PREEMPT_COMPLETE: Task ${task.id} interrupted and reset to READY_FOR_GPU" }
+                logger.info { "PREEMPT_COMPLETE: Task ${task.id} interrupted and reset to QUEUED" }
                 return true
             } else {
                 logger.warn { "PREEMPT_FAILED: Orchestrator returned false for interrupt" }
@@ -552,7 +552,7 @@ class BackgroundEngine(
 
                     // Check if task was dispatched to Python orchestrator (fire-and-forget)
                     val freshTask = taskRepository.getById(task.id)
-                    if (freshTask?.state == TaskStateEnum.PYTHON_ORCHESTRATING) {
+                    if (freshTask?.state == TaskStateEnum.PROCESSING) {
                         // Reset dispatch retry count on successful dispatch
                         if (freshTask.dispatchRetryCount > 0) {
                             taskRepository.save(freshTask.copy(dispatchRetryCount = 0, nextDispatchRetryAt = null))
@@ -564,9 +564,9 @@ class BackgroundEngine(
                         return@launch
                     }
 
-                    // Dispatch to orchestrator failed — task still DISPATCHED_GPU, reset for retry
+                    // Dispatch to orchestrator failed — task still PROCESSING, reset for retry
                     // This is a TEMPORARY condition (orchestrator busy/down) — silent retry with exponential backoff
-                    if (freshTask?.state == TaskStateEnum.DISPATCHED_GPU && finalResponse.message.isNotBlank()) {
+                    if (freshTask?.state == TaskStateEnum.PROCESSING && finalResponse.message.isNotBlank()) {
                         val newRetryCount = freshTask.dispatchRetryCount + 1
                         // Exponential backoff: 5s, 15s, 30s, 60s, 5min (cap)
                         val backoffMs = minOf(
@@ -577,7 +577,7 @@ class BackgroundEngine(
                         logger.info { "PYTHON_DISPATCH_BUSY: taskId=${task.id} — retry #$newRetryCount, backoff ${backoffMs}ms, next at $nextRetryAt" }
                         taskRepository.save(
                             freshTask.copy(
-                                state = TaskStateEnum.READY_FOR_GPU,
+                                state = TaskStateEnum.QUEUED,
                                 dispatchRetryCount = newRetryCount,
                                 nextDispatchRetryAt = nextRetryAt,
                             ),
@@ -594,10 +594,10 @@ class BackgroundEngine(
                         com.jervis.entity.ProcessingMode.FOREGROUND -> {
                             // FOREGROUND tasks (chat) are NEVER deleted - they serve as conversation context
                             // Agent checkpoint is preserved in agentCheckpointJson for future continuations
-                            // BUT: Change state to DISPATCHED_GPU so task is not picked up again
-                            taskService.updateState(task, TaskStateEnum.DISPATCHED_GPU)
+                            // Mark as DONE — terminal state, not picked up again
+                            taskService.updateState(task, TaskStateEnum.DONE)
                             logger.info {
-                                "FOREGROUND_TASK_COMPLETED | taskId=${task.id} | state=DISPATCHED_GPU | keeping for chat continuation"
+                                "FOREGROUND_TASK_COMPLETED | taskId=${task.id} | state=DONE | keeping for chat continuation"
                             }
                         }
 
@@ -752,7 +752,7 @@ class BackgroundEngine(
      * Checks every 60s for SCHEDULED_TASK documents in state NEW where
      * scheduledAt <= now + schedulerAdvance (10 min).
      *
-     * For one-shot tasks: transitions to READY_FOR_QUALIFICATION (enters normal pipeline).
+     * For one-shot tasks: transitions to INDEXING (enters normal pipeline).
      * For recurring tasks (cronExpression): creates a copy for execution and updates
      * the original with the next scheduled time.
      */
@@ -815,7 +815,7 @@ class BackgroundEngine(
     /**
      * Dispatch a single scheduled task into the processing pipeline.
      *
-     * One-shot (no cron): Transition task NEW → READY_FOR_QUALIFICATION, clear scheduledAt.
+     * One-shot (no cron): Transition task NEW → INDEXING, clear scheduledAt.
      * Recurring (cron): Keep original task with next scheduledAt, create a new task for execution.
      * Overdue (>24h past scheduledAt): Escalate as urgent USER_TASK.
      */
@@ -841,13 +841,13 @@ class BackgroundEngine(
         if (cron.isNullOrBlank()) {
             // One-shot: transition directly into the pipeline
             val dispatched = task.copy(
-                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                state = TaskStateEnum.INDEXING,
                 scheduledAt = null, // No longer scheduled
             )
             taskRepository.save(dispatched)
             taskNotifier.notifyNewTask()
             logger.info {
-                "SCHEDULED_DISPATCH: one-shot task ${task.id} '${task.taskName}' → READY_FOR_QUALIFICATION"
+                "SCHEDULED_DISPATCH: one-shot task ${task.id} '${task.taskName}' → INDEXING"
             }
         } else {
             // Recurring: calculate next run time and create execution copy
@@ -870,7 +870,7 @@ class BackgroundEngine(
                 content = task.content,
                 clientId = task.clientId,
                 projectId = task.projectId,
-                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                state = TaskStateEnum.INDEXING,
                 correlationId = "${task.correlationId}:${java.time.Instant.now().epochSecond}",
                 sourceUrn = task.sourceUrn,
             )
@@ -896,7 +896,7 @@ class BackgroundEngine(
     }
 
     /**
-     * Orchestrator result loop – SAFETY NET for tasks in PYTHON_ORCHESTRATING state.
+     * Orchestrator result loop – SAFETY NET for tasks in PROCESSING state.
      *
      * Primary communication is push-based: Python → POST /internal/orchestrator-status
      * → OrchestratorStatusHandler handles state transitions.
@@ -908,7 +908,7 @@ class BackgroundEngine(
      *
      * Stuck detection is purely timestamp-based (no in-memory heartbeat tracker):
      * - Uses task.orchestrationStartedAt from DB (survives pod restarts)
-     * - If task has been in PYTHON_ORCHESTRATING longer than threshold AND
+     * - If task has been in PROCESSING longer than threshold AND
      *   Python is unreachable → reset for retry
      */
     private suspend fun runOrchestratorResultLoop() {
@@ -917,7 +917,7 @@ class BackgroundEngine(
         while (scope.isActive) {
             try {
                 val orchestratingTasks = taskRepository
-                    .findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                    .findByStateOrderByCreatedAtAsc(TaskStateEnum.PROCESSING)
 
                 orchestratingTasks.collect { task ->
                     try {
@@ -944,7 +944,7 @@ class BackgroundEngine(
      * Timestamp-based stuck detection (no in-memory heartbeat):
      * 1. If task has been orchestrating < STUCK_THRESHOLD → skip (too early to worry)
      * 2. If task has been orchestrating >= STUCK_THRESHOLD → poll Python for status
-     * 3. If Python unreachable → reset to READY_FOR_GPU for retry
+     * 3. If Python unreachable → reset to QUEUED for retry
      * 4. If Python says "running" but task age >= STUCK_THRESHOLD → stale, reset
      * 5. Otherwise delegate terminal states to OrchestratorStatusHandler
      */
@@ -970,9 +970,9 @@ class BackgroundEngine(
             logger.debug { "Python orchestrator unreachable for thread $threadId: ${e.message}" }
 
             // Python unreachable + task old enough → likely crashed, reset for retry
-            logger.warn { "ORCHESTRATOR_STUCK: taskId=$taskIdStr age=${orchestrationAge}min, Python unreachable → resetting to READY_FOR_GPU" }
+            logger.warn { "ORCHESTRATOR_STUCK: taskId=$taskIdStr age=${orchestrationAge}min, Python unreachable → resetting to QUEUED" }
             val resetTask = task.copy(
-                state = TaskStateEnum.READY_FOR_GPU,
+                state = TaskStateEnum.QUEUED,
                 orchestratorThreadId = null,
                 orchestrationStartedAt = null,
             )
@@ -987,10 +987,10 @@ class BackgroundEngine(
         if (state == "running" && orchestrationAge >= STUCK_THRESHOLD_MINUTES) {
             logger.warn {
                 "ORCHESTRATOR_STALE_RUNNING: taskId=$taskIdStr — Python says 'running' but " +
-                    "task age is ${orchestrationAge}min → resetting to READY_FOR_GPU"
+                    "task age is ${orchestrationAge}min → resetting to QUEUED"
             }
             val resetTask = task.copy(
-                state = TaskStateEnum.READY_FOR_GPU,
+                state = TaskStateEnum.QUEUED,
                 orchestratorThreadId = null,
                 orchestrationStartedAt = null,
             )
@@ -1028,7 +1028,7 @@ class BackgroundEngine(
      * Skips if:
      * - idleReviewEnabled is false
      * - Brain is not configured (no Jira/Confluence connection)
-     * - There are active tasks (QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING)
+     * - There are active tasks (QUALIFYING, QUEUED, PROCESSING)
      * - An existing IDLE_REVIEW task is already pending/running
      */
     /**
@@ -1060,12 +1060,12 @@ class BackgroundEngine(
 
                 // Don't create idle tasks if there's any real work pending
                 val hasFgBgWork = taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.READY_FOR_GPU,
+                    com.jervis.entity.ProcessingMode.FOREGROUND, TaskStateEnum.QUEUED,
                 ) + taskRepository.countByProcessingModeAndState(
-                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.READY_FOR_GPU,
-                ) + taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING) +
+                    com.jervis.entity.ProcessingMode.BACKGROUND, TaskStateEnum.QUEUED,
+                ) + taskRepository.countByState(TaskStateEnum.PROCESSING) +
                     taskRepository.countByState(TaskStateEnum.QUALIFYING) +
-                    taskRepository.countByState(TaskStateEnum.READY_FOR_QUALIFICATION)
+                    taskRepository.countByState(TaskStateEnum.INDEXING)
 
                 if (hasFgBgWork > 0) {
                     logger.debug { "IDLE_TASK: System busy ($hasFgBgWork active tasks), skipping" }
@@ -1097,10 +1097,10 @@ class BackgroundEngine(
             type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
             states = listOf(
                 TaskStateEnum.NEW,
-                TaskStateEnum.READY_FOR_QUALIFICATION,
+                TaskStateEnum.INDEXING,
                 TaskStateEnum.QUALIFYING,
-                TaskStateEnum.READY_FOR_GPU,
-                TaskStateEnum.PYTHON_ORCHESTRATING,
+                TaskStateEnum.QUEUED,
+                TaskStateEnum.PROCESSING,
             ),
         )
         return existing != null
@@ -1147,7 +1147,7 @@ class BackgroundEngine(
             taskName = taskName,
             content = prompt,
             clientId = defaultClientId,
-            state = TaskStateEnum.READY_FOR_GPU,
+            state = TaskStateEnum.QUEUED,
             processingMode = com.jervis.entity.ProcessingMode.IDLE,
             sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
         )
@@ -1532,7 +1532,7 @@ class BackgroundEngine(
         if (!wasReserved) {
             scope.launch {
                 try {
-                    val runningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+                    val runningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PROCESSING)
                         .toList()
                     val lowerPriorityTask = runningTasks.firstOrNull {
                         it.processingMode == com.jervis.entity.ProcessingMode.BACKGROUND ||
@@ -1593,10 +1593,10 @@ class BackgroundEngine(
             type = com.jervis.dto.TaskTypeEnum.SCHEDULED_TASK,
             states = listOf(
                 TaskStateEnum.NEW,
-                TaskStateEnum.READY_FOR_QUALIFICATION,
+                TaskStateEnum.INDEXING,
                 TaskStateEnum.QUALIFYING,
-                TaskStateEnum.READY_FOR_GPU,
-                TaskStateEnum.PYTHON_ORCHESTRATING,
+                TaskStateEnum.QUEUED,
+                TaskStateEnum.PROCESSING,
             ),
         )
         if (existing != null && existing.sourceUrn.value == "system:deadline-scan") {
@@ -1618,7 +1618,7 @@ class BackgroundEngine(
             taskName = "Deadline Scan",
             content = DEADLINE_SCAN_PROMPT,
             clientId = defaultClientId,
-            state = TaskStateEnum.READY_FOR_GPU,
+            state = TaskStateEnum.QUEUED,
             processingMode = com.jervis.entity.ProcessingMode.IDLE,
             sourceUrn = com.jervis.common.types.SourceUrn("system:deadline-scan"),
         )
@@ -1631,7 +1631,7 @@ class BackgroundEngine(
     companion object {
         private val currentTaskJob = AtomicReference<Job?>(null)
 
-        /** Task in PYTHON_ORCHESTRATING for this long without completion = stuck (timestamp-based). */
+        /** Task in PROCESSING for this long without completion = stuck (timestamp-based). */
         private const val STUCK_THRESHOLD_MINUTES = 15L
 
         /** Scheduled tasks overdue by more than this are escalated as urgent USER_TASKs. */
@@ -1667,11 +1667,11 @@ class BackgroundEngine(
      * Work Plan Executor loop — manages hierarchical task dependencies.
      *
      * Every 15 seconds:
-     * 1. Find BLOCKED tasks → check if ALL blockedByTaskIds are DONE → unblock (READY_FOR_QUALIFICATION)
-     * 2. Find PLANNING root tasks (have children) → if all children DONE → root = DONE
+     * 1. Find BLOCKED tasks → check if ALL blockedByTaskIds are DONE → unblock (INDEXING)
+     * 2. Find BLOCKED root tasks (have children) → if all children DONE → root = DONE
      * 3. If any child ERROR → escalate root to USER_TASK
      *
-     * This loop only touches BLOCKED and PLANNING states — never interferes with other loops.
+     * This loop only touches BLOCKED states — never interferes with other loops.
      */
     private suspend fun runWorkPlanLoop() {
         delay(backgroundProperties.waitOnStartup)
@@ -1688,7 +1688,7 @@ class BackgroundEngine(
                 for (task in blockedTasks) {
                     if (task.blockedByTaskIds.isEmpty()) {
                         // No dependencies — should not be BLOCKED, unblock immediately
-                        taskService.updateState(task, TaskStateEnum.READY_FOR_QUALIFICATION)
+                        taskService.updateState(task, TaskStateEnum.INDEXING)
                         unblocked++
                         continue
                     }
@@ -1700,14 +1700,14 @@ class BackgroundEngine(
                     }
 
                     if (allDone) {
-                        taskService.updateState(task, TaskStateEnum.READY_FOR_QUALIFICATION)
+                        taskService.updateState(task, TaskStateEnum.INDEXING)
                         unblocked++
                         logger.info { "WorkPlan: Unblocked task ${task.id} (${task.taskName}), all ${task.blockedByTaskIds.size} deps done" }
                     }
                 }
 
-                // 2. Check PLANNING root tasks — complete when all children done
-                val planningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PLANNING)
+                // 2. Check BLOCKED root tasks (with children) — complete when all children done
+                val planningTasks = taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.BLOCKED)
                     .toList()
 
                 for (rootTask in planningTasks) {

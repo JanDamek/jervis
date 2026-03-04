@@ -1,6 +1,6 @@
 """Background watcher for async coding agent K8s Jobs.
 
-Polls MongoDB for tasks in WAITING_FOR_AGENT state, checks their K8s Job
+Polls MongoDB for tasks in CODING state, checks their K8s Job
 status, and resumes the orchestrator graph when a job completes.
 
 Survives pod restarts — all state is in MongoDB (TaskDocument + LangGraph checkpoints).
@@ -45,7 +45,7 @@ class AgentTaskWatcher:
         logger.info("AgentTaskWatcher stopped")
 
     async def _watch_loop(self):
-        """Main loop — poll for WAITING_FOR_AGENT tasks and check their jobs."""
+        """Main loop — poll for CODING tasks and check their jobs."""
         while self._running:
             try:
                 await self._poll_once()
@@ -58,26 +58,26 @@ class AgentTaskWatcher:
 
     async def _poll_once(self):
         """Single poll iteration — find waiting tasks, check jobs, resume if done."""
-        # Query Kotlin server for tasks in WAITING_FOR_AGENT state
+        # Query Kotlin server for tasks in CODING state
         import httpx
 
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
                     f"{settings.kotlin_server_url}/internal/tasks/by-state",
-                    params={"state": "WAITING_FOR_AGENT"},
+                    params={"state": "CODING"},
                 )
                 if resp.status_code != 200:
                     return
                 tasks = resp.json()
         except Exception as e:
-            logger.debug("Failed to fetch WAITING_FOR_AGENT tasks: %s", e)
+            logger.debug("Failed to fetch CODING tasks: %s", e)
             return
 
         if not tasks:
             return
 
-        logger.debug("Checking %d WAITING_FOR_AGENT tasks", len(tasks))
+        logger.debug("Checking %d CODING tasks", len(tasks))
 
         for task_data in tasks:
             task_id = task_data.get("id", "")
@@ -86,7 +86,7 @@ class AgentTaskWatcher:
 
             if not job_name or not thread_id:
                 logger.warning(
-                    "Task %s in WAITING_FOR_AGENT but missing job_name=%s or thread_id=%s",
+                    "Task %s in CODING but missing job_name=%s or thread_id=%s",
                     task_id, job_name, thread_id,
                 )
                 continue
@@ -125,7 +125,7 @@ class AgentTaskWatcher:
                     task_id, job_name, job_status,
                 )
 
-            # Update task state back to PYTHON_ORCHESTRATING and clear agent fields
+            # Update task state back to PROCESSING and clear agent fields
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
                     await client.post(

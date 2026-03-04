@@ -30,13 +30,13 @@ interface IAgentOrchestratorService {
 
     /**
      * Reorder a task within its queue by setting a new position.
-     * Only works for tasks in READY_FOR_GPU state.
+     * Only works for tasks in QUEUED state.
      */
     suspend fun reorderTask(taskId: String, newPosition: Int)
 
     /**
      * Move a task between FOREGROUND and BACKGROUND queues.
-     * Only works for tasks in READY_FOR_GPU state.
+     * Only works for tasks in QUEUED state.
      * @param targetMode "FOREGROUND" or "BACKGROUND"
      */
     suspend fun moveTask(taskId: String, targetMode: String)

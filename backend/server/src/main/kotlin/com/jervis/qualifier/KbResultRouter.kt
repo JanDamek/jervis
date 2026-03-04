@@ -170,7 +170,7 @@ class KbResultRouter(
                 "Přiřazený úkol → do fronty pro MOZEK",
                 mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Přiřazeno mně", "result" to "Čeká na MOZEK"),
             )
-            return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "assigned_to_me")
+            return RoutingDecision(TaskStateEnum.QUEUED, "assigned_to_me")
         }
 
         // Step 4: Complex + future deadline → schedule or immediate
@@ -189,7 +189,7 @@ class KbResultRouter(
                         "Prošlý termín ($suggestedDeadline) → zpracovat bez plánování",
                         mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Prošlý termín", "result" to "Čeká na MOZEK"),
                     )
-                    return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "deadline_already_passed")
+                    return RoutingDecision(TaskStateEnum.QUEUED, "deadline_already_passed")
                 }
 
                 val leadTime = Duration.ofDays(SCHEDULE_LEAD_DAYS)
@@ -203,7 +203,7 @@ class KbResultRouter(
                         "Blízký termín → do fronty pro MOZEK",
                         mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Blízký termín", "result" to "Čeká na MOZEK"),
                     )
-                    return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "deadline_too_close")
+                    return RoutingDecision(TaskStateEnum.QUEUED, "deadline_too_close")
                 }
 
                 createScheduledCopy(task, result, scheduledAt)
@@ -227,7 +227,7 @@ class KbResultRouter(
             "Akční obsah → kvalifikace LLM agentem",
             mapOf("step" to "routing", "agent" to "simple_qualifier", "route" to "Vyžaduje kvalifikaci", "result" to "Čeká na kvalifikaci"),
         )
-        return RoutingDecision(TaskStateEnum.READY_FOR_GPU, "complex_actionable", needsQualification = true)
+        return RoutingDecision(TaskStateEnum.QUEUED, "complex_actionable", needsQualification = true)
     }
 
     private suspend fun handleSimpleAction(

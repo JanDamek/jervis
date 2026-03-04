@@ -59,7 +59,7 @@ fun Routing.installInternalTaskApi(
                 correlationId = "chat-tool-${java.util.UUID.randomUUID().toString().take(8)}",
                 sourceUrn = SourceUrn(body.createdBy?.let { "agent://$it" } ?: "chat://foreground"),
                 projectId = projectId,
-                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                state = TaskStateEnum.INDEXING,
                 taskName = taskName,
             )
             call.respondText(
@@ -94,7 +94,7 @@ fun Routing.installInternalTaskApi(
                 )
 
             val updated = task.copy(
-                state = TaskStateEnum.READY_FOR_QUALIFICATION,
+                state = TaskStateEnum.INDEXING,
                 content = "${task.content}\n\n[User response]: ${body.response}",
                 pendingUserQuestion = null,
             )
@@ -194,7 +194,7 @@ fun Routing.installInternalTaskApi(
         }
     }
 
-    // Create a hierarchical work plan — root task (PLANNING) + child tasks (BLOCKED/READY)
+    // Create a hierarchical work plan — root task (BLOCKED) + child tasks (BLOCKED/INDEXING)
     post("/internal/tasks/create-work-plan") {
         try {
             val body = call.receive<InternalCreateWorkPlanRequest>()
@@ -202,7 +202,7 @@ fun Routing.installInternalTaskApi(
             val projectId = body.projectId?.let { ProjectId(ObjectId(it)) }
             val correlationPrefix = "workplan-${java.util.UUID.randomUUID().toString().take(8)}"
 
-            // 1. Create root task (PLANNING state)
+            // 1. Create root task (BLOCKED state)
             val rootTask = taskService.createTask(
                 taskType = TaskTypeEnum.USER_INPUT_PROCESSING,
                 content = buildString {
@@ -221,7 +221,7 @@ fun Routing.installInternalTaskApi(
                 correlationId = correlationPrefix,
                 sourceUrn = SourceUrn("chat://work-plan"),
                 projectId = projectId,
-                state = TaskStateEnum.PLANNING,
+                state = TaskStateEnum.BLOCKED,
                 taskName = body.title,
             )
 
@@ -258,9 +258,9 @@ fun Routing.installInternalTaskApi(
                         ?.mapNotNull { depTitle -> titleToId[depTitle] }
                         ?: emptyList()
 
-                    // First phase tasks with no dependencies start as READY_FOR_QUALIFICATION
+                    // First phase tasks with no dependencies start as INDEXING
                     val state = if (phaseIndex == 0 && blockedBy.isEmpty()) {
-                        TaskStateEnum.READY_FOR_QUALIFICATION
+                        TaskStateEnum.INDEXING
                     } else {
                         TaskStateEnum.BLOCKED
                     }
@@ -367,10 +367,10 @@ fun Routing.installInternalTaskApi(
                     ClientId(ObjectId(clientIdStr)),
                     ProcessingMode.BACKGROUND,
                     listOf(
-                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.INDEXING,
                         TaskStateEnum.QUALIFYING,
-                        TaskStateEnum.READY_FOR_GPU,
-                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                        TaskStateEnum.QUEUED,
+                        TaskStateEnum.PROCESSING,
                         TaskStateEnum.BLOCKED,
                     ),
                 )
@@ -378,10 +378,10 @@ fun Routing.installInternalTaskApi(
                 taskRepository.findByProcessingModeAndStateInOrderByPriorityScoreDescCreatedAtAsc(
                     ProcessingMode.BACKGROUND,
                     listOf(
-                        TaskStateEnum.READY_FOR_QUALIFICATION,
+                        TaskStateEnum.INDEXING,
                         TaskStateEnum.QUALIFYING,
-                        TaskStateEnum.READY_FOR_GPU,
-                        TaskStateEnum.PYTHON_ORCHESTRATING,
+                        TaskStateEnum.QUEUED,
+                        TaskStateEnum.PROCESSING,
                         TaskStateEnum.BLOCKED,
                     ),
                 )

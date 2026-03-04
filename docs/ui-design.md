@@ -597,6 +597,9 @@ private enum class TopBarMenuItem(val icon: ImageVector, val title: String, val 
 - `PROGRESS` — compact row with `CircularProgressIndicator` (16dp) + bodySmall text
 - `FINAL` — assistant bubble (secondaryContainer, left-aligned)
 - `ERROR` — compact row with `Icons.Default.Warning` (16dp, error tint) + bodySmall text in `MaterialTheme.colorScheme.error`
+- `BACKGROUND_RESULT` — background task result (surfaceVariant, hidden by default, shown via "Tasky" filter chip)
+- `URGENT_ALERT` — urgent notification (errorContainer border, always visible)
+- `APPROVAL_REQUEST` — handled via `ApprovalBanner`, not as a chat message
 
 **Chat bubble layout** (`ChatMessageDisplay.kt`):
 
@@ -619,10 +622,21 @@ iMessage/WhatsApp-style chat with content-based width:
 - Assistant messages: `Icons.Default.ContentCopy` only
 - Cross-platform clipboard via `ClipboardUtil` (expect/actual: JVM uses `java.awt.Toolkit`, iOS uses `UIPasteboard`, Android stub)
 
+**Background message filtering** (`ChatContent` filter chips):
+- Three `FilterChip` components above `ChatArea`, inside a `Row` with `Modifier.height(28.dp)` and `labelSmall` typography
+- Visible when any background messages exist or user task count > 0
+- **"Chat"** (default ON): toggles visibility of regular chat messages (USER_MESSAGE, PROGRESS, FINAL, ERROR)
+- **"Tasky"** (default OFF): toggles visibility of all BACKGROUND_RESULT messages
+- **"K reakci (N)"** (default OFF, shown when N > 0): toggles visibility of BACKGROUND_RESULT messages needing user reaction. N = global USER_TASK count from `ChatHistoryDto.userTaskCount` (matches dock badge)
+- Filtering is pure **client-side** via Compose `remember()` in `screens/MainScreen.kt` — no server reload on toggle
+- Server always loads chat-only (`excludeBackground=true`), live-pushed backgrounds (via SSE) are added to `_chatMessages` and filtered client-side
+- `backgroundMessageCount` and `userTaskCount` come from `ChatHistoryDto` (set in `reloadHistory()`)
+- Implementation: `ChatViewModel` exposes `showChat`, `showTasks`, `showNeedReaction`, `backgroundMessageCount`, `userTaskCount` StateFlows + toggle methods
+
 **History pagination** (`ChatArea` component):
-- Initial load: 10 messages via `getChatHistory(limit=10)`
+- Initial load: 10 messages via `getChatHistory(limit=10, excludeBackground=true)`
 - "Načíst starší zprávy" `TextButton` at top of LazyColumn when `hasMore == true`
-- Clicking loads next 10 messages using `beforeSequence` cursor, prepends to existing
+- Clicking loads next 10 messages using `beforeMessageId` cursor (ObjectId), prepends to existing
 - Shows `CircularProgressIndicator` while loading
 
 **Context compression markers** (`CompressionBoundaryIndicator`):
@@ -885,7 +899,7 @@ State: Frontend expanded
 - Orchestrator progress: goal/step counters, node spinner, status message, progress bar
 - Stop button (`cancelOrchestration`)
 - When idle: `JEmptyState("Agent je necinny", Icons.Default.HourglassEmpty)`
-- Note: KB qualification progress is shown in IndexingQueueScreen, NOT here
+- Note: KB indexing progress is shown in IndexingQueueScreen, NOT here
 
 **QueueSectionContent** (Frontend):
 - `LazyColumn` with client-side windowing (20 initial, load more on scroll)
@@ -1301,7 +1315,7 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 +---------------------------------------------------------------+
 | [Bug] GH-100 · GitHub · Commerzbank                    1m 23s |
 |   ● Rozhodnutí: obsah informační...      <1s  ← routing step  |
-|     Rozhodnutí: → info_only · DISPATCHED_GPU                   |
+|     Rozhodnutí: → info_only · DONE                             |
 |   · Analýza: entity detected...          21s   ← step duration |
 |     Entity: X, Y · Actionable · Urgence: high                  |
 |   · RAG uloženo: 5 chunks                3s                    |
@@ -1334,8 +1348,8 @@ Dashboard showing the full indexing pipeline with 4 accordion sections. One sect
 
 **Accordion sections (3):**
 1. **KB zpracování** (QUALIFYING) — items currently processed by SimpleQualifierAgent, with **elapsed time** (from `qualificationStartedAt`, not queue time), **live progress timeline** (current step on top, completed below), **step durations** (how long each step took), structured metadata. Merge: stored DB steps (base) + live steps newer than 1s after last stored (dedup by step name via `distinctBy`). Routing decision always visible (explicit routing step before "done", terminal events delayed 5s before removal from live map).
-2. **KB fronta** (READY_FOR_QUALIFICATION) — waiting + retrying items, with pagination + reorder controls. Items show type label (Email/Issue/Wiki/Git) instead of "Čeká"
-3. **Hotovo** (DISPATCHED_GPU) — completed tasks with **expandable qualification history**. Click to expand stored `qualificationSteps`. Shows qualification duration and full step log with metadata + per-step durations. Auto-refreshed every 10s (page 0 always updated so new items appear immediately).
+2. **KB fronta** (INDEXING) — waiting + retrying items, with pagination + reorder controls. Items show type label (Email/Issue/Wiki/Git) instead of "Čeká"
+3. **Hotovo** (DONE) — completed tasks with **expandable indexing history**. Click to expand stored `qualificationSteps`. Shows indexing duration and full step log with metadata + per-step durations. Auto-refreshed every 10s (page 0 always updated so new items appear immediately).
 
 **Live Qualification Progress with Audit Trail:**
 - `QueueViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` — per-task progress from events
@@ -1759,7 +1773,7 @@ shared/ui-common/src/commonMain/kotlin/com/jervis/ui/
 |   |   +-- PropertyMappingsTab.kt      <- Property mappings tab: auto-suggest, manual add, expandable cards
 |   |   +-- K8sResourcesTab.kt          <- K8s resources tab: pods, deployments, services (migrated from EnvironmentViewerScreen)
 |   |   +-- LogsEventsTab.kt            <- Logs & Events tab: pod log viewer + K8s namespace events
-|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (4 accordion sections + live qualification progress)
+|   +-- IndexingQueueScreen.kt        <- Indexing queue dashboard (4 accordion sections + live indexing progress)
 |   +-- IndexingQueueSections.kt      <- ConnectionGroupCard, CapabilityGroupSection, PipelineSection, PollingIntervalDialog (internal)
 |   +-- ConnectionsScreen.kt          <- Placeholder (desktop has full UI)
 |   +-- PipelineMonitoringScreen.kt  <- Pipeline funnel view with auto-refresh (E2-S7)

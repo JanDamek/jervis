@@ -57,7 +57,7 @@ import java.time.Instant
  *
  * Background Workflow (BACKGROUND):
  * 1. Task created with processingMode=BACKGROUND (Confluence, Jira, scheduled tasks)
- * 2. BackgroundEngine picks oldest READY_FOR_GPU task with processingMode=BACKGROUND
+ * 2. BackgroundEngine picks oldest QUEUED task with processingMode=BACKGROUND
  * 3. Agent processes autonomously (no chat window)
  * 4. If needs user input: state=USER_TASK (stays BACKGROUND until moved to chat)
  * 5. User can move to FOREGROUND (chat) to continue interactively
@@ -88,7 +88,7 @@ import java.time.Instant
  * @property projectId Project context (null for general tasks)
  * @property clientId Client who owns this task
  * @property createdAt Task creation timestamp
- * @property state Current task state (NEW, READY_FOR_GPU, RUNNING, DONE, ERROR, etc.)
+ * @property state Current task state (NEW, INDEXING, QUEUED, PROCESSING, DONE, ERROR, etc.)
  * @property processingMode FOREGROUND (chat), BACKGROUND (user-scheduled), or IDLE (system idle work)
  * @property queuePosition Position in foreground queue (null for BACKGROUND)
  * @property correlationId Unique ID for tracing execution flow
@@ -136,7 +136,7 @@ data class TaskDocument(
     val cronExpression: String? = null,
     // NEW: Agent session persistence for continuous conversation
     val agentCheckpointJson: String? = null,
-    // Python orchestrator thread ID for async dispatch (state = PYTHON_ORCHESTRATING)
+    // Python orchestrator thread ID for async dispatch (state = PROCESSING)
     val orchestratorThreadId: String? = null,
     // Timestamp when task was dispatched to Python orchestrator (for inline message detection)
     val orchestrationStartedAt: Instant? = null,
@@ -147,7 +147,7 @@ data class TaskDocument(
     /**
      * Question agent is waiting for user to answer (when state = USER_TASK).
      * On resume, agent knows: "user is answering THIS question".
-     * Cleared when user responds and task returns to READY_FOR_GPU.
+     * Cleared when user responds and task returns to QUEUED.
      */
     val pendingUserQuestion: String? = null,
     /**
@@ -155,7 +155,7 @@ data class TaskDocument(
      * Helps user understand what agent needs and why.
      */
     val userQuestionContext: String? = null,
-    // Non-blocking coding agent dispatch (state = WAITING_FOR_AGENT)
+    // Non-blocking coding agent dispatch (state = CODING)
     /** K8s Job name for the coding agent (when dispatched async). */
     val agentJobName: String? = null,
     /** State of the agent job: RUNNING, SUCCEEDED, FAILED. */

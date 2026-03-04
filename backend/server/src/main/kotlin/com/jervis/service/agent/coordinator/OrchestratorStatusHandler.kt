@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service
  * Polling (safety net, 60s): BackgroundEngine → getStatus() → this handler
  *
  * State transitions:
- * - "done" → DISPATCHED_GPU (or re-queue if inline messages arrived)
+ * - "done" → DONE (or re-queue if inline messages arrived)
  * - "cancelled" → DONE (user-initiated cancel, clean terminal state)
  * - "interrupted" → USER_TASK (clarification or approval)
  * - "error" → ERROR + escalate
@@ -87,9 +87,9 @@ class OrchestratorStatusHandler(
             return
         }
 
-        // Only process tasks in PYTHON_ORCHESTRATING state
-        if (task.state != TaskStateEnum.PYTHON_ORCHESTRATING) {
-            logger.debug { "ORCHESTRATOR_STATUS_HANDLER: task $taskId not in PYTHON_ORCHESTRATING (state=${task.state}), skipping" }
+        // Only process tasks in PROCESSING state
+        if (task.state != TaskStateEnum.PROCESSING) {
+            logger.debug { "ORCHESTRATOR_STATUS_HANDLER: task $taskId not in PROCESSING (state=${task.state}), skipping" }
             return
         }
 
@@ -148,15 +148,15 @@ class OrchestratorStatusHandler(
                 logger.warn(e) { "Failed to save clarification message for task ${task.id}" }
             }
 
-            // Set to DISPATCHED_GPU — keeps orchestratorThreadId for resume.
+            // Set to DONE — keeps orchestratorThreadId for resume.
             // When user types next message in chat, existing task gets reused → resume.
             val updatedTask = task.copy(
-                state = TaskStateEnum.DISPATCHED_GPU,
+                state = TaskStateEnum.DONE,
                 pendingUserQuestion = pendingQuestion,
             )
             taskRepository.save(updatedTask)
 
-            logger.info { "ORCHESTRATOR_INTERRUPTED_CHAT: taskId=${task.id} action=$action phase=$phase → DISPATCHED_GPU (chat clarification)" }
+            logger.info { "ORCHESTRATOR_INTERRUPTED_CHAT: taskId=${task.id} action=$action phase=$phase → DONE (chat clarification)" }
             return
         }
 
@@ -226,7 +226,7 @@ class OrchestratorStatusHandler(
         if (hasInlineMessages && task.processingMode == com.jervis.entity.ProcessingMode.FOREGROUND) {
             // New messages arrived during orchestration — auto-requeue for processing
             val requeuedTask = task.copy(
-                state = TaskStateEnum.READY_FOR_GPU,
+                state = TaskStateEnum.QUEUED,
                 orchestratorThreadId = null,
                 orchestrationStartedAt = null,
             )
@@ -235,7 +235,7 @@ class OrchestratorStatusHandler(
         } else {
             // Normal completion
             val updatedTask = task.copy(
-                state = TaskStateEnum.DISPATCHED_GPU,
+                state = TaskStateEnum.DONE,
                 orchestratorThreadId = null,
                 orchestrationStartedAt = null,
             )
@@ -363,6 +363,7 @@ class OrchestratorStatusHandler(
                     summary = errorMsg,
                     success = false,
                     taskId = task.id.toString(),
+                    metadata = mapOf("needsReaction" to "true"),
                 )
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to push background error to chat for task ${task.id}" }

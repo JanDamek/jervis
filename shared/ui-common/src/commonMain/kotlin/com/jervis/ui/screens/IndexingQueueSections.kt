@@ -706,9 +706,10 @@ private fun pipelineStateLabel(state: String): String = when (state) {
     "WAITING" -> "Čeká"
     "QUALIFYING" -> "Indexuje"
     "RETRYING" -> "Opakuje"
-    "READY_FOR_GPU" -> "Kvalifikováno"
-    "DISPATCHED_GPU" -> "Odesláno"
-    "PYTHON_ORCHESTRATING" -> "Zpracovává"
+    "QUEUED" -> "Ve frontě"
+    "PROCESSING" -> "Zpracovává"
+    "CODING" -> "Kódování"
+    "DONE" -> "Hotovo"
     else -> state
 }
 
@@ -717,9 +718,10 @@ private fun pipelineStateColor(state: String): Color = when (state) {
     "WAITING" -> MaterialTheme.colorScheme.onSurfaceVariant
     "QUALIFYING" -> MaterialTheme.colorScheme.tertiary
     "RETRYING" -> MaterialTheme.colorScheme.error
-    "READY_FOR_GPU" -> MaterialTheme.colorScheme.primary
-    "DISPATCHED_GPU" -> MaterialTheme.colorScheme.tertiary
-    "PYTHON_ORCHESTRATING" -> MaterialTheme.colorScheme.primary
+    "QUEUED" -> MaterialTheme.colorScheme.primary
+    "PROCESSING" -> MaterialTheme.colorScheme.primary
+    "CODING" -> MaterialTheme.colorScheme.tertiary
+    "DONE" -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 

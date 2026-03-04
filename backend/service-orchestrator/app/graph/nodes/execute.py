@@ -199,7 +199,7 @@ async def _execute_code_step(
         dispatch_info["job_name"], task.id,
     )
 
-    # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+    # Notify Kotlin server — sets task state to CODING
     await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])
 
     # Interrupt: graph checkpoints here, AgentTaskWatcher will resume when job completes

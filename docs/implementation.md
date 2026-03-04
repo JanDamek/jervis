@@ -540,7 +540,7 @@ freezing the entire BackgroundEngine execution loop.
 **Solution**: Async dispatch with separate result polling loop.
 
 1. `POST /orchestrate/stream` returns `thread_id` immediately (non-blocking)
-2. Task state → `PYTHON_ORCHESTRATING`, execution slot released
+2. Task state → `PROCESSING`, execution slot released
 3. `runOrchestratorResultLoop()` polls `GET /status/{thread_id}` every 5s
 4. Results handled asynchronously without blocking other tasks
 
@@ -570,7 +570,7 @@ UI freezes and excessive memory usage.
 Only one Python orchestration runs at a time:
 
 1. **Kotlin guard** (`AgentOrchestratorService.dispatchToPythonOrchestrator()`):
-   - `taskRepository.countByState(PYTHON_ORCHESTRATING) > 0` → return false, skip dispatch
+   - `taskRepository.countByState(PROCESSING) > 0` → return false, skip dispatch
    - Handles HTTP 429 from `orchestrateStream()` → return false
 
 2. **Python** (`main.py`):
@@ -591,18 +591,18 @@ Only one Python orchestration runs at a time:
 
 1. **Detection** (lines 269-280):
    ```kotlin
-   val orchestratingCount = taskRepository.countByState(PYTHON_ORCHESTRATING)
+   val orchestratingCount = taskRepository.countByState(PROCESSING)
    if (orchestratingCount > 0) {
        val waitingForegroundTask = taskService.getNextForegroundTask()
        if (waitingForegroundTask != null) {
            // Find currently running task from DB
            val runningTasks = taskRepository
-               .findByStateOrderByCreatedAtAsc(PYTHON_ORCHESTRATING)
+               .findByStateOrderByCreatedAtAsc(PROCESSING)
                .toList()
            val runningTask = runningTasks.firstOrNull()
    ```
 
-   **CRITICAL**: Must query DB for `PYTHON_ORCHESTRATING` tasks, NOT use `getCurrentRunningTask()`.
+   **CRITICAL**: Must query DB for `PROCESSING` tasks, NOT use `getCurrentRunningTask()`.
    When tasks are dispatched to Python, `setRunningTask(null)` is called immediately (line 430),
    so the in-memory tracker is cleared even though the task is still running in Python.
 
@@ -611,7 +611,7 @@ Only one Python orchestration runs at a time:
    if (runningTask.processingMode == ProcessingMode.BACKGROUND) {
        val interrupted = interruptBackgroundTask(runningTask)
        if (interrupted) {
-           // Reset to READY_FOR_GPU with orchestratorThreadId preserved
+           // Reset to QUEUED with orchestratorThreadId preserved
            // Next iteration picks up FOREGROUND task
            continue
        }
@@ -621,7 +621,7 @@ Only one Python orchestration runs at a time:
 3. **State Preservation** (`interruptBackgroundTask()`, lines 359-395):
    - Calls `pythonOrchestratorClient.interrupt(threadId)`
    - Python orchestrator saves LangGraph checkpoint to MongoDB
-   - Task reset to `READY_FOR_GPU` (keeps `orchestratorThreadId` for resume)
+   - Task reset to `QUEUED` (keeps `orchestratorThreadId` for resume)
    - Cleared from running tracker
 
 4. **Resume** (next cycle):
@@ -641,7 +641,7 @@ Only one Python orchestration runs at a time:
 
 ### Key Technical Details
 
-- `TaskStateEnum.PYTHON_ORCHESTRATING`: New state for dispatched tasks
+- `TaskStateEnum.PROCESSING`: State for dispatched tasks
 - `TaskDocument.orchestratorThreadId`: Links to LangGraph checkpoint
 - `TaskDocument.processingMode`: FOREGROUND (chat) vs BACKGROUND (indexing)
 - `OrchestrateRequestDto.jervisProjectId`: JERVIS internal project for tracker ops

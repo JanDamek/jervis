@@ -570,7 +570,7 @@ MongoDB je **stejná instance** jako Kotlin server → žádná nová infrastruk
 | Restart | Dopad | Obnova |
 |---------|-------|--------|
 | Python restart | Checkpoints v MongoDB přežijí | Kotlin polling najde thread_id v TaskDocument, Python obnoví graf z checkpointu |
-| Kotlin restart | TaskDocument v MongoDB přežije | BackgroundEngine restartuje, runOrchestratorResultLoop() najde PYTHON_ORCHESTRATING tasky |
+| Kotlin restart | TaskDocument v MongoDB přežije | BackgroundEngine restartuje, runOrchestratorResultLoop() najde PROCESSING tasky |
 | Oba restart | Oba stavy v MongoDB | Plná obnova – thread_id propojí TaskDocument ↔ LangGraph checkpoint |
 
 ---
@@ -588,12 +588,12 @@ BackgroundEngine.executeTask(task)
     → shouldUsePythonOrchestrator(userInput) = true
     → dispatchToPythonOrchestrator():
         POST /orchestrate/stream → {thread_id, stream_url}   // NEBLOKUJE
-        task.state = PYTHON_ORCHESTRATING
+        task.state = PROCESSING
         task.orchestratorThreadId = thread_id
         taskRepository.save(updatedTask)
         return true
     → return ChatResponseDto("")   // Prázdná odpověď = dispatch signál
-  → freshTask.state == PYTHON_ORCHESTRATING
+  → freshTask.state == PROCESSING
   → uvolní execution slot, return
 ```
 
@@ -602,12 +602,12 @@ BackgroundEngine.executeTask(task)
 `BackgroundEngine.runOrchestratorResultLoop()` – nezávislý loop, běží každých 5s:
 
 ```
-findByStateOrderByCreatedAtAsc(PYTHON_ORCHESTRATING)
+findByStateOrderByCreatedAtAsc(PROCESSING)
   → pro každý task:
       GET /status/{thread_id}
       "running"     → skip
       "interrupted" → userTaskService.failAndEscalateToUserTask() + notifikace
-      "done"        → emit výsledek + state=DISPATCHED_GPU (nebo delete pro BACKGROUND)
+      "done"        → emit výsledek + state=DONE (nebo delete pro BACKGROUND)
       "error"       → failAndEscalateToUserTask() + state=ERROR
       Python nedostupný → skip, retry next cycle
 ```
@@ -615,27 +615,27 @@ findByStateOrderByCreatedAtAsc(PYTHON_ORCHESTRATING)
 ### 9.3 Stavový diagram tasku s orchestrátorem
 
 ```
-READY_FOR_GPU
+QUEUED
   │
   ├─── dispatchToPythonOrchestrator()
   │    │
   │    ▼
-  │  PYTHON_ORCHESTRATING  ←─── resumePythonOrchestrator()
+  │  PROCESSING  ←─── resumePythonOrchestrator()
   │    │                          ▲
-  │    ├── "done" ──────────► DISPATCHED_GPU (FOREGROUND) / DELETE (BACKGROUND)
+  │    ├── "done" ──────────► DONE (FOREGROUND) / DELETE (BACKGROUND)
   │    ├── "error" ─────────► ERROR → USER_TASK
   │    └── "interrupted" ───► USER_TASK
   │                             │
   │                             │  uživatel odpoví (sendToAgent)
   │                             │  task.content = odpověď uživatele
   │                             ▼
-  │                          READY_FOR_GPU (orchestratorThreadId zachován)
+  │                          QUEUED (orchestratorThreadId zachován)
   │                             │
   │                             └── BackgroundEngine pickup
   │                                 → agentOrchestrator.run()
   │                                 → Path 1: resumePythonOrchestrator()
   │                                 → POST /approve/{thread_id}
-  │                                 → PYTHON_ORCHESTRATING (opakuje se)
+  │                                 → PROCESSING (opakuje se)
   │
   └─── Error: orchestrátor nedostupný
 ```
@@ -655,12 +655,12 @@ READY_FOR_GPU
 5. Uživatel vidí USER_TASK v UI, odpoví "ano, schvaluji"
 6. `UserTaskRpcImpl.sendToAgent()`:
    - `task.content = "ano, schvaluji"` (odpověď uživatele)
-   - state = READY_FOR_GPU, pendingUserQuestion = null
+   - state = QUEUED, pendingUserQuestion = null
 7. BackgroundEngine pickup → `agentOrchestrator.run(task, "ano, schvaluji", ...)`
 8. Path 1: `task.orchestratorThreadId != null` → `resumePythonOrchestrator()`
    - Parsuje odpověď: "ano" → approved=true
    - `POST /approve/{thread_id}` s `{approved: true, reason: "ano, schvaluji"}`
-   - state = PYTHON_ORCHESTRATING
+   - state = PROCESSING
 9. Python obnoví graf z MongoDB checkpointu → pokračuje z interrupt bodu
 10. Commit vykonán → možný další interrupt pro push → opakuje se od kroku 2
 
@@ -732,13 +732,13 @@ Python orchestrátor **smí zpracovávat maximálně jednu orchestraci najednou*
 Vrstva 1: Kotlin (early guard)                    Vrstva 2: Python (in-process)        Vrstva 3: MongoDB (multi-pod)
 ─────────────────────────────                      ────────────────────────────────      ────────────────────────────
 dispatchToPythonOrchestrator():                    asyncio.Semaphore(1)                 DistributedLock (orchestrator_locks)
-  countByState(PYTHON_ORCHESTRATING) > 0?          POST /orchestrate/stream → 429       findOneAndUpdate + lock heartbeat 10s
+  countByState(PROCESSING) > 0?                    POST /orchestrate/stream → 429       findOneAndUpdate + lock heartbeat 10s
   → return false (skip dispatch)                   GET /health → {"busy": true/false}    stale recovery after 5 min
 ```
 
 **Kotlin vrstva** (`AgentOrchestratorService`):
-- `taskRepository.countByState(PYTHON_ORCHESTRATING)` před dispatch
-- Pokud > 0, vrátí false → task zůstane READY_FOR_GPU → BackgroundEngine retry
+- `taskRepository.countByState(PROCESSING)` před dispatch
+- Pokud > 0, vrátí false → task zůstane QUEUED → BackgroundEngine retry
 - Reaguje na HTTP 429 z `orchestrateStream()` → vrátí false
 
 **Python in-process vrstva** (`main.py`):
@@ -760,7 +760,7 @@ POST /approve/{thread_id} {approved, reason}
 
 | Situace | Chování |
 |---------|---------|
-| Nový task, orchestrátor volný | Dispatch OK, PYTHON_ORCHESTRATING |
+| Nový task, orchestrátor volný | Dispatch OK, PROCESSING |
 | Nový task, orchestrátor busy | Kotlin: count > 0 → skip dispatch |
 | Approval, orchestrátor busy (jiný task) | POST /approve OK, resume runs concurrently |
 | Approval, orchestrátor volný | POST /approve OK, resume okamžitě |

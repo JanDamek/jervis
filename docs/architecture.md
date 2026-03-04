@@ -35,7 +35,7 @@
 The Jervis system is built on several key architectural patterns:
 
 - **Python Orchestrator (LangGraph)**: Agent runtime for coding workflows and complex task execution
-- **SimpleQualifierAgent**: CPU-based qualification agent calling KB microservice directly, with optional LLM qualification for complex items
+- **SimpleQualifierAgent**: CPU-based indexing agent calling KB microservice directly, with optional LLM qualification for complex items
 - **Kotlin RPC (kRPC)**: Type-safe, cross-platform messaging framework for client-server communication
 - **3-Stage Polling Pipeline**: Polling → Indexing → Pending Tasks → Qualifier Agent
 - **Knowledge Graph (ArangoDB)**: Centralized structured relationships between all entities
@@ -424,7 +424,7 @@ Weaviate and python-arango clients are thread-safe for read operations. Write op
 
 ### Vision Integration
 
-- **Vision as a pipeline stage**: Separate processing step in qualification pipeline
+- **Vision as a pipeline stage**: Separate processing step in indexing pipeline
 - **Model selection**: Automatic selection of appropriate vision model
 - **Context preservation**: Vision context preserved through all phases
 
@@ -831,7 +831,7 @@ and delegates domain logic to specialized sub-ViewModels:
 ## Benefits of Architecture
 
 1. **Cost efficiency**: Expensive GPU models only when necessary
-2. **Scalability**: Parallel CPU qualification, GPU execution on idle
+2. **Scalability**: Parallel CPU indexing, orchestrator execution on idle
 3. **Explainability**: Evidence links for all relationships
 4. **Flexibility**: Schema-less graph for new entity types
 5. **Performance**: Hybrid search combining semantic + structured
@@ -1090,9 +1090,9 @@ User sends message → Kotlin ChatService saves to chat_messages (conversationId
 ### Task State Machine (Python orchestrator path)
 
 ```
-READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
+QUEUED → PROCESSING → done → DONE / DELETE
                     │                → error → ERROR
-                    └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
+                    └── interrupted → USER_TASK → user responds → QUEUED (loop)
 ```
 
 ### Approval Flow (USER_TASK)
@@ -1102,7 +1102,7 @@ READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
 3. Python pushes `orchestrator-status` with `status=interrupted` to Kotlin
 4. `OrchestratorStatusHandler` creates USER_TASK with notification
 5. UI receives `OrchestratorTaskStatusChange` event via Flow subscription
-6. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = READY_FOR_GPU
+6. User responds via UI → `UserTaskRpcImpl.sendToAgent()` → state = QUEUED
 7. BackgroundEngine picks up task → `resumePythonOrchestrator()` → POST /approve/{thread_id}
 8. LangGraph resumes from MongoDB checkpoint → continues from interrupt point
 
@@ -1111,7 +1111,7 @@ READY_FOR_GPU → PYTHON_ORCHESTRATING → done → DISPATCHED_GPU / DELETE
 Only **one orchestration at a time** (LLM cannot handle concurrent requests efficiently).
 
 Two layers:
-1. **Kotlin** (early guard): `countByState(PYTHON_ORCHESTRATING) > 0` → skip dispatch
+1. **Kotlin** (early guard): `countByState(PROCESSING) > 0` → skip dispatch
 2. **Python**: No artificial concurrency limits — router manages GPU queue
 
 `/approve/{thread_id}` is fire-and-forget: returns immediately, Python resumes graph in background.
@@ -1227,24 +1227,24 @@ Repository: `TaskRepository` has a dedicated query for background queue items.
 
 ### Inline Message Delivery During Orchestration
 
-When a user sends a message to a project whose task is currently in `PYTHON_ORCHESTRATING` state, the message cannot be processed immediately (the orchestrator is busy). Instead of dropping or blocking the message:
+When a user sends a message to a project whose task is currently in `PROCESSING` state, the message cannot be processed immediately (the orchestrator is busy). Instead of dropping or blocking the message:
 
 1. The message is saved to `ChatMessageDocument` (MongoDB) as usual -- it is persisted
 2. `TaskDocument` has an `orchestrationStartedAt: Instant?` field set when orchestration begins
 3. When orchestration completes ("done"), `BackgroundEngine` checks if any new USER messages arrived after `orchestrationStartedAt` (via `ChatMessageRepository.countByTimestamp`)
-4. If new messages found: the task is auto-requeued to `READY_FOR_GPU` (not `DISPATCHED_GPU`), so the agent re-processes with full context including the new messages
+4. If new messages found: the task is auto-requeued to `QUEUED`, so the agent re-processes with full context including the new messages
 5. If no new messages: normal completion flow continues
 
 ```
-User sends message while PYTHON_ORCHESTRATING
+User sends message while PROCESSING
     │
     ├── Message saved to ChatMessageDocument (persisted)
     │
     └── Orchestration completes ("done")
          │
          ├── New USER messages after orchestrationStartedAt?
-         │   YES → auto-requeue to READY_FOR_GPU (re-process with new context)
-         │   NO  → normal completion (DISPATCHED_GPU or DELETE)
+         │   YES → auto-requeue to QUEUED (re-process with new context)
+         │   NO  → normal completion (DONE or DELETE)
          │
          └── TaskDocument.orchestrationStartedAt reset
 ```
@@ -1255,7 +1255,7 @@ User sends message while PYTHON_ORCHESTRATING
 |------|---------|
 | `TaskDocument.kt` | `orchestrationStartedAt` field for tracking orchestration start time |
 | `AgentOrchestratorService.kt` | Sets `orchestrationStartedAt` on dispatch |
-| `AgentOrchestratorRpcImpl.kt` | PYTHON_ORCHESTRATING handling, 3 new queue RPC methods |
+| `AgentOrchestratorRpcImpl.kt` | PROCESSING handling, 3 new queue RPC methods |
 | `BackgroundEngine.kt` | Auto-requeue logic, dual-queue status emissions |
 | `ChatMessageRepository.kt` | Count messages by timestamp query |
 | `TaskService.kt` | `getPendingBackgroundTasks()`, `reorderTaskInQueue()`, `moveTaskToQueue()` |
@@ -1672,7 +1672,7 @@ build_*.sh:
 ### Overview
 
 After KB ingestion, complex actionable content goes through an LLM qualification step
-before reaching the GPU orchestrator. This replaces the removed Brain/Jira/Confluence integration.
+before reaching the orchestrator. This replaces the removed Brain/Jira/Confluence integration.
 
 **Purpose:**
 - **Smart routing**: LLM agent searches KB for context, assesses urgency, decides routing
@@ -1689,7 +1689,7 @@ KB /internal/kb-done → KbResultRouter.routeTask()
       → Python qualification_handler.py:
           1. kb_search — existing context
           2. Urgency/relevance analysis
-          3. Decision: READY_FOR_GPU | DONE | URGENT_ALERT
+          3. Decision: QUEUED | DONE | URGENT_ALERT
       → Python POST /internal/qualification-done (callback)
       → Kotlin updates task state based on decision
 ```
@@ -1698,7 +1698,7 @@ KB /internal/kb-done → KbResultRouter.routeTask()
 
 - **Tools:** CORE tier (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
 - **Max iterations:** 5
-- **Fail-safe:** If `/qualify` unavailable → direct READY_FOR_GPU (no data loss)
+- **Fail-safe:** If `/qualify` unavailable → direct QUEUED (no data loss)
 - **Chat context:** Kotlin provides recent chat messages — agent detects if incoming data relates to active conversation
 
 ### Key Files
@@ -1803,7 +1803,7 @@ Python streams these event types to Kotlin via SSE:
 
 Chat LLM calls are configured as follows:
 
-- **Priority**: `X-Ollama-Priority: 0` (CRITICAL) — preempts background/qualification tasks in ollama-router queue
+- **Priority**: `X-Ollama-Priority: 0` (CRITICAL) — preempts background/indexing tasks in ollama-router queue
 - **Context estimation**: Dynamic — `message_tokens + tools_tokens + output_tokens` (same pattern as orchestrator respond node)
 - **Tools**: 26 tools (~4000 tokens in JSON) → tier typically `LOCAL_STANDARD` (32k context)
 - **Timeout**: `LLM_TIMEOUT_SECONDS` (300s) via `asyncio.wait_for()` on blocking LLM call
@@ -2009,7 +2009,7 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 | `backend/server/.../rpc/ChatRpcImpl.kt` | kRPC bridge: UI ↔ ChatService ↔ Python |
 | `backend/server/.../rpc/internal/InternalChatContextRouting.kt` | Ktor routing: clients-projects, pending tasks, meetings count |
 | `backend/server/.../rpc/internal/InternalTaskApiRouting.kt` | Ktor routing: task status, search, recent tasks |
-| `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession) |
+| `shared/common-api/.../service/IChatService.kt` | kRPC interface (subscribeToChatEvents, sendMessage, getChatHistory, archiveSession). `getChatHistory` has `excludeBackground: Boolean = true` for filtering |
 | `backend/server/.../entity/ChatSessionDocument.kt` | MongoDB session entity |
 | `backend/server/.../repository/ChatSessionRepository.kt` | Spring Data repo |
 | `backend/service-orchestrator/app/chat/handler.py` | Chat entry-point: context, intent, decompose, agentic loop |
@@ -2027,6 +2027,16 @@ Installed in `KtorRpcServer` routing block via extension functions on `Routing`.
 | `backend/service-orchestrator/app/tools/ollama_parsing.py` | Shared Ollama JSON tool-call parsing |
 | `backend/service-orchestrator/app/tools/kotlin_client.py` | Python HTTP client for Kotlin internal API |
 | `backend/service-orchestrator/app/main.py` | FastAPI endpoints incl. /chat, /chat/stop |
+
+### Background Message Filtering
+
+Background task results (BACKGROUND_RESULT) are hidden from chat by default to prevent flooding (can be 400+ messages). Three FilterChips in the chat UI control visibility:
+
+- **"Chat"** (default ON): shows regular chat messages (USER_MESSAGE, PROGRESS, FINAL, ERROR)
+- **"Tasky"** (default OFF): shows all BACKGROUND_RESULT messages from the current session
+- **"K reakci (N)"** (default OFF): shows backgrounds needing user reaction (N = global USER_TASK count)
+
+**Architecture:** Server always loads with `excludeBackground=true` (DB-level filtering via `ChatMessageRepository.findByConversationIdAndRoleNotOrderByIdDesc`). Live background messages arrive via SSE push and are added to `_chatMessages`. Filtering is pure client-side via Compose `remember()` — no server reload on toggle. `ChatHistoryDto` carries `backgroundMessageCount` and `userTaskCount` for chip labels. The dock badge (macOS) sums USER_TASK count across all clients, while the "K reakci" chip shows the same global count from `ChatRpcImpl.taskRepository.countByState(USER_TASK)`.
 
 ### Migration from Old Chat Flow
 
@@ -2096,14 +2106,13 @@ When `True`: handler.py calls `route_intent()` → builds routed prompt → sele
 
 ### Overview
 
-Tasks can form parent-child hierarchies for work plan decomposition. The `create_work_plan` chat tool creates a root task (PLANNING state) with child tasks organized in phases with dependency tracking.
+Tasks can form parent-child hierarchies for work plan decomposition. The `create_work_plan` chat tool creates a root task (BLOCKED state) with child tasks organized in phases with dependency tracking.
 
-### New Task States
+### Task States for Hierarchy
 
 | State | Purpose |
 |-------|---------|
-| `BLOCKED` | Waiting for dependency tasks (`blockedByTaskIds`) to complete |
-| `PLANNING` | Root task undergoing decomposition into child tasks |
+| `BLOCKED` | Waiting for dependency tasks (`blockedByTaskIds`) to complete; also used for root tasks undergoing decomposition |
 
 ### TaskDocument Hierarchy Fields
 
@@ -2117,15 +2126,15 @@ val orderInPhase: Int = 0,             // Ordering within phase
 ### WorkPlanExecutor
 
 New loop in `BackgroundEngine` (15s interval) that:
-1. Finds BLOCKED tasks → checks if ALL `blockedByTaskIds` have state DONE → unblocks to READY_FOR_QUALIFICATION
-2. Finds PLANNING root tasks → if all children DONE → root.state = DONE with summary
+1. Finds BLOCKED tasks → checks if ALL `blockedByTaskIds` have state DONE → unblocks to INDEXING
+2. Finds BLOCKED root tasks (with children) → if all children DONE → root.state = DONE with summary
 3. If any child ERROR → root task escalated to USER_TASK for user attention
 
-Existing loops (execution, qualification) are unaffected — they never see BLOCKED tasks.
+Existing loops (execution, indexing) are unaffected — they never see BLOCKED tasks.
 
 ### Kotlin Endpoint
 
-`POST /internal/tasks/create-work-plan` — accepts phases with tasks and dependencies, creates root (PLANNING) + children (BLOCKED/READY_FOR_QUALIFICATION).
+`POST /internal/tasks/create-work-plan` — accepts phases with tasks and dependencies, creates root (BLOCKED) + children (BLOCKED/INDEXING).
 
 ---
 

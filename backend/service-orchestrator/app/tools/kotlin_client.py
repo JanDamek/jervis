@@ -168,7 +168,7 @@ class KotlinServerClient:
         """Push qualification agent result to Kotlin server.
 
         Called after qualification LLM agent finishes analyzing KB results.
-        Kotlin updates task state based on decision (DONE, READY_FOR_GPU, URGENT_ALERT).
+        Kotlin updates task state based on decision (DONE, QUEUED, URGENT_ALERT).
         """
         try:
             client = await self._get_client()
@@ -207,7 +207,7 @@ class KotlinServerClient:
     async def notify_agent_dispatched(self, task_id: str, job_name: str) -> bool:
         """Notify Kotlin server that a coding agent K8s Job was dispatched.
 
-        Sets task state to WAITING_FOR_AGENT with agentJobName.
+        Sets task state to CODING with agentJobName.
         """
         try:
             client = await self._get_client()
@@ -314,7 +314,7 @@ class KotlinServerClient:
     ) -> str:
         """Create a hierarchical work plan via Kotlin internal API.
 
-        Creates a root task (PLANNING) with child tasks organized in phases.
+        Creates a root task (BLOCKED) with child tasks organized in phases.
         Children are BLOCKED until their dependencies complete, then auto-unblocked
         by WorkPlanExecutor.
         """

@@ -1,7 +1,7 @@
 # Data Processing Pipeline & Routing
 
 **Status:** Production Documentation (2026-02-18)
-**Purpose:** Two-stage data processing architecture (CPU qualification → GPU execution)
+**Purpose:** Two-stage data processing architecture (CPU indexing → orchestrator execution)
 
 > **Related docs:**
 > - [knowledge-base.md](knowledge-base.md) – Knowledge Base SSOT (graph schema, RAG, ingest, normalization, indexers)
@@ -80,7 +80,7 @@
 Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 
 - **CRITICAL queue**: Unlimited — chat, foreground, interactive (orchestrator). Always GPU, never CPU. Preempts NORMAL if all GPU slots busy.
-- **NORMAL queue**: Bounded (max 10) — background, KB ingest, qualification. GPU only (no CPU backend). Returns 429 back-pressure when full.
+- **NORMAL queue**: Bounded (max 10) — background, KB ingest, indexing. GPU only (no CPU backend). Returns 429 back-pressure when full.
 - **Dispatch**: Fast-path (immediate) if slot available, otherwise queued. Background dispatcher assigns queued requests to freed slots. CRITICAL always dispatched first.
 - **Concurrency**: Max 1 concurrent request per backend (serial is faster than parallel when VRAM spills to RAM).
 - **Client disconnect**: Monitored via `cancel_event` — request dequeued or proxy cancelled on disconnect.
@@ -94,7 +94,7 @@ Two-tier queue with backend-aware dispatch (`app/request_queue.py`):
 
 ### GPU Reservations
 
-When a CRITICAL request is dispatched to a GPU, the router automatically creates a reservation for that GPU. Reservations prevent NORMAL requests from using the GPU while the orchestrator session is active.
+When a CRITICAL request is dispatched to a GPU, the router automatically creates a reservation for that GPU. Reservations prevent NORMAL requests from using the GPU while the orchestrator is processing.
 
 - **Auto-created**: On first CRITICAL dispatch to a GPU
 - **Refreshed**: On each subsequent CRITICAL dispatch to the same GPU
@@ -259,7 +259,7 @@ Key files:
 
 ```
 RECORDING → UPLOADED → TRANSCRIBING → TRANSCRIBED → INDEXED (raw text)
-  → (after qualification, qualified=true)
+  → (after indexing, qualified=true)
   → CORRECTING → CORRECTED (or CORRECTION_REVIEW) → re-indexed
 ```
 
@@ -276,7 +276,7 @@ The correction agent (`backend/service-correction/app/agent.py`) processes trans
 ### Key Design Decisions
 
 - **Sequential, not parallel**: Chunks must be processed in order — each chunk needs context from previous corrections for consistency
-- **Correction after qualification**: Pipeline indexes raw transcript first, then corrects after client/project is known (provides domain context)
+- **Correction after indexing**: Pipeline indexes raw transcript first, then corrects after client/project is known (provides domain context)
 - **Cumulative running context**: Previous corrections (name spellings, terms) are passed to subsequent chunks
 - **Retry on connection errors**: 2× with exponential backoff (2-4s) for router restarts
 
@@ -297,7 +297,7 @@ The correction agent (`backend/service-correction/app/agent.py`) processes trans
 
 **Original architecture:** Auto-indexed everything directly into RAG without structuring, causing context overflow for large documents and inefficient use of expensive GPU models.
 
-**Solution:** Two-stage architecture with CPU-based qualification (structuring) and GPU-based execution (analysis/actions).
+**Solution:** Two-stage architecture with CPU-based indexing (structuring) and orchestrator-based execution (analysis/actions).
 
 ### Archived Client = No Activity
 
@@ -306,10 +306,10 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 | Stage | Mechanism |
 |-------|-----------|
 | **CentralPoller** | `findByArchivedFalseAndConnectionIdsContaining()` — archived clients excluded from polling, no new tasks created |
-| **Pipeline tasks** | `TaskService.markArchivedClientTasksAsDone()` — bulk DB update marks READY_FOR_QUALIFICATION/QUALIFYING/READY_FOR_GPU as DONE (runs on startup + every 5 min) |
+| **Pipeline tasks** | `TaskService.markArchivedClientTasksAsDone()` — bulk DB update marks INDEXING/QUALIFYING/QUEUED as DONE (runs on startup + every 5 min) |
 | **Scheduler** | `clientRepository.getById()` check before dispatch — archived client's scheduled tasks stay in NEW, resume when unarchived |
 | **Idle review** | Client archived check before creating IDLE_REVIEW task |
-| **Running tasks** | PYTHON_ORCHESTRATING tasks finish normally — no new tasks follow |
+| **Running tasks** | PROCESSING tasks finish normally — no new tasks follow |
 
 ```
 ┌─────────────────┐
@@ -323,7 +323,7 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 └─────────────────┘ (INDEXED = "content passed to Jervis", not "already in RAG"!)
         ↓
 ┌─────────────────────────────────────────────────┐
-│ BackgroundEngine - Qualification Loop (CPU)     │
+│ BackgroundEngine - Indexing Loop (CPU)           │
 │ • Runs continuously (30s interval)              │
 │ • Processes tasks               │
 └─────────────────────────────────────────────────┘
@@ -331,21 +331,21 @@ When `ClientDocument.archived = true`, the entire pipeline is blocked for that c
 ┌─────────────────────────────────────────────────┐
 │ Qualifier – SimpleQualifierAgent (CPU - OLLAMA) │
 │ • Calls KB microservice for indexing/linking   │
-│ • TaskRoutingTool (DONE vs READY_FOR_GPU)      │
+│ • TaskRoutingTool (DONE vs QUEUED)             │
 │ • TaskMemory creation (context summary)        │
 └─────────────────────────────────────────────────┘
         ↓
     ┌───┴───┐
     ↓       ↓
 ┌────────┐ ┌──────────────────────────────────────┐
-│  DONE  │ │ READY_FOR_GPU (complex analysis)     │
+│  DONE  │ │ QUEUED (complex analysis)             │
 └────────┘ └──────────────────────────────────────┘
                     ↓
-        ┌─────────────────────────────────────────┐
-        │ BackgroundEngine - Execution Loop (GPU) │
-        │ • Runs ONLY when idle (no user requests)│
-        │ • Preemption: interrupted by user       │
-        └─────────────────────────────────────────┘
+        ┌──────────────────────────────────────────────┐
+        │ BackgroundEngine - Execution Loop (Orchestr.) │
+        │ • Runs ONLY when idle (no user requests)     │
+        │ • Preemption: interrupted by user            │
+        └──────────────────────────────────────────────┘
                     ↓
         ┌──────────────────────────────────────────────────┐
         │ Python Orchestrator (LangGraph, KB-First)        │
@@ -493,7 +493,7 @@ fun createRelationship(
 // TaskRoutingTool - routing decision
 @Tool
 fun routeTask(
-    routing: String, // "DONE" or "READY_FOR_GPU"
+    routing: String, // "DONE" or "QUEUED"
     reason: String,
     contextSummary: String = "",
     graphNodeKeys: String = "",  // Comma-separated
@@ -539,7 +539,7 @@ data class TaskMemoryDocument(
     val graphNodeKeys: List<String>,     // Graph references
     val ragDocumentIds: List<String>,    // RAG chunk IDs
     val structuredData: Map<String, String>, // Metadata
-    val routingDecision: String,         // DONE / READY_FOR_GPU
+    val routingDecision: String,         // DONE / QUEUED
     val routingReason: String,
     val sourceType: TaskTypeEnum?,       // wire value via .sourceKey (email, jira, git, ...)
     val sourceId: String?
@@ -571,8 +571,8 @@ The Python Orchestrator loads task context from TaskMemory at the start of execu
 - Background tasks continue only after idle threshold (30s)
 
 **Two loops:**
-- **Qualification loop (CPU):** runs continuously, 30s interval
-- **Execution loop (GPU):** runs ONLY when idle (no user requests)
+- **Indexing loop (CPU):** runs continuously, 30s interval
+- **Execution loop (orchestrator):** runs ONLY when idle (no user requests)
 
 **Preemption guarantees:** User requests ALWAYS have priority over background tasks
 
@@ -584,7 +584,7 @@ KB processes in background and calls `/internal/kb-done` with routing hints when
 
 **Async flow:**
 1. `SimpleQualifierAgent.dispatch()` — extracts text, loads attachments, submits to KB
-2. KB returns HTTP 202 immediately — server qualification worker moves to next task
+2. KB returns HTTP 202 immediately — server indexing worker moves to next task
 3. KB processes: attachments → RAG → LLM summary (parallel) → graph extraction (queued)
 4. Progress events pushed via `POST /internal/kb-progress` (real-time UI updates)
 5. On completion: KB POSTs `FullIngestResult` to `POST /internal/kb-done`
@@ -622,10 +622,10 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
   │    → DONE (indexed + action handled locally, terminal)
   │
   ├─ Step 3: isAssignedToMe=true AND hasActionableContent=true
-  │    → READY_FOR_GPU (immediate, high priority)
+  │    → QUEUED (immediate, high priority)
   │
   ├─ Step 4: hasFutureDeadline=true AND hasActionableContent=true
-  │    ├─ deadline < scheduleLeadDays away → READY_FOR_GPU (too close, do now)
+  │    ├─ deadline < scheduleLeadDays away → QUEUED (too close, do now)
   │    └─ deadline >= scheduleLeadDays away → create SCHEDULED_TASK copy
   │         scheduledAt = deadline - scheduleLeadDays
   │         original task → DONE (indexed, terminal)
@@ -636,11 +636,11 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
        │       ├─ kb_search for context
        │       ├─ urgency/relevance analysis
        │       └─ Decision:
-       │           ├─ READY_FOR_GPU (with priority_score)
+       │           ├─ QUEUED (with priority_score)
        │           ├─ DONE (not worth orchestrating)
        │           └─ URGENT_ALERT (push to chat)
        └─ Fallback (qualification unavailable)
-            → READY_FOR_GPU (direct, same as before)
+            → QUEUED (direct, same as before)
 ```
 
 **Note:** No age-based filter — the LLM (`_generate_summary()`) decides actionability even for old content (forgotten tasks, open issues, etc.)
@@ -654,9 +654,9 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - No action items OR simple action handled by qualifier itself
 - Simple informational content
 - Routine updates (status change, minor commit)
-- Never reset on restart — terminal state, unlike DISPATCHED_GPU
+- Never reset on restart — terminal state
 
-**READY_FOR_GPU (immediate orchestrator execution):**
+**QUEUED (immediate orchestrator execution):**
 - Assigned to the team/organization
 - Deadline too close (within schedule lead days)
 - Complex actions requiring orchestrator (coding, architecture, decomposition)
@@ -674,22 +674,22 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 3. **Bi-directional navigation:** Graph (structured) ↔ RAG (semantic)
 4. **Efficient context passing:** TaskMemory eliminates redundant work
 5. **User priority:** Preemption ensures immediate response
-6. **Scalability:** CPU qualification can run in parallel on multiple tasks
+6. **Scalability:** CPU indexing can run in parallel on multiple tasks
 
 ---
 
 ## Background Engine & Task Processing
 
-### Qualification Loop (CPU) — Fire-and-Forget Dispatch
+### Indexing Loop (CPU) — Fire-and-Forget Dispatch
 
 - **Interval:** 30 seconds
-- **Process:** Reads READY_FOR_QUALIFICATION tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
+- **Process:** Reads INDEXING tasks from MongoDB, ordered by `queuePosition ASC NULLS LAST, createdAt ASC`
 - **Agents:** SimpleQualifierAgent dispatches to KB microservice (fire-and-forget)
 - **Concurrency:** 1 (dispatch is fast — Tika extraction + HTTP POST, not blocking on KB)
 - **Dispatch flow:** `setToQualifying()` (atomic claim) → `SimpleQualifierAgent.dispatch()` (text extraction, attachment loading, HTTP POST to `/ingest/full/async`) → returns immediately. Task stays in QUALIFYING until KB calls back.
-- **Retry:** If KB is unreachable or rejects the request → return to queue with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck QUALIFYING tasks (>10min without KB callback) are reset to READY_FOR_QUALIFICATION.
+- **Retry:** If KB is unreachable or rejects the request → return to queue with backoff. KB handles its own internal retry (Ollama busy, timeouts). When KB permanently fails, it calls `/internal/kb-done` with `status="error"` → server marks task as ERROR. Recovery: stuck QUALIFYING tasks (>10min without KB callback) are reset to INDEXING.
 - **Priority:** Items with explicit `queuePosition` are processed first (set via UI reorder controls)
-- **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → `KbResultRouter.routeTask()` handles routing (DONE / READY_FOR_GPU / scheduled). Routing logic lives in `KbResultRouter`, not in the qualification loop.
+- **Completion callback:** KB POSTs to `/internal/kb-done` with `FullIngestResult` → `KbResultRouter.routeTask()` handles routing (DONE / QUEUED / scheduled). Routing logic lives in `KbResultRouter`, not in the indexing loop.
 - **Live progress:** KB pushes progress events via `POST /internal/kb-progress` → Kotlin handler saves to DB + emits to WebSocket (real-time). Pre-KB steps (agent_start, text_extracted, kb_accepted) emitted by `SimpleQualifierAgent.dispatch()`.
 - **Persistent history:** Each progress step saved to `TaskDocument.qualificationSteps` via MongoDB `$push`. `qualificationStartedAt` set atomically in `setToQualifying()`.
 - **UI:** `MainViewModel.qualificationProgress: StateFlow<Map<String, QualificationProgressInfo>>` → `IndexingQueueScreen` shows live step/message per item in "KB zpracování" section.
@@ -700,11 +700,11 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 
 - **Interval:** 60 seconds
 - **Advance dispatch:** 10 minutes before `scheduledAt`
-- **One-shot tasks:** Transitions `NEW → READY_FOR_QUALIFICATION`, clears `scheduledAt`
-- **Recurring tasks (cron):** Creates execution copy → `READY_FOR_QUALIFICATION`, updates original with next `scheduledAt` via `CronExpression.next()`
+- **One-shot tasks:** Transitions `NEW → INDEXING`, clears `scheduledAt`
+- **Recurring tasks (cron):** Creates execution copy → `INDEXING`, updates original with next `scheduledAt` via `CronExpression.next()`
 - **Invalid cron:** Falls back to one-shot behavior (deletes original after creating execution copy)
 
-### Execution Loop (GPU) — Three-Tier Priority
+### Execution Loop (Orchestrator) — Three-Tier Priority
 
 - **Priority order:** FOREGROUND > BACKGROUND > IDLE
 - **FOREGROUND (chat):** Highest priority, processed first by `queuePosition ASC`
@@ -712,8 +712,8 @@ KB ingest_full() returns routing hints (hasActionableContent, suggestedActions, 
 - **IDLE (system idle work):** Lowest priority, processed only when no FG/BG tasks and no active chat
 - **Preemption:** FOREGROUND preempts both BACKGROUND and IDLE; BACKGROUND preempts IDLE; IDLE never preempts
 - **Agent:** Python Orchestrator (LangGraph) with GPU model (OLLAMA_PRIMARY)
-- **Atomic claim:** Uses MongoDB `findAndModify` (READY_FOR_GPU → DISPATCHED_GPU) to prevent duplicate execution
-- **Stale recovery:** On pod startup, BACKGROUND and IDLE tasks stuck in DISPATCHED_GPU/QUALIFYING for >10min are reset (FOREGROUND DISPATCHED_GPU tasks are completed, not stuck). DONE tasks are terminal — never reset.
+- **Atomic claim:** Uses MongoDB `findAndModify` (QUEUED → PROCESSING) to prevent duplicate execution
+- **Stale recovery:** On pod startup, BACKGROUND and IDLE tasks stuck in PROCESSING/QUALIFYING for >10min are reset (FOREGROUND completed tasks are not stuck). DONE tasks are terminal — never reset.
 
 ### KB Queue Count Fix (2026-02-23)
 
@@ -732,18 +732,18 @@ On completion ("done"), `BackgroundEngine` checks for new USER messages that arr
 ```
 orchestrationStartedAt = Instant.now()  ← set on dispatch
 
-... orchestration runs (PYTHON_ORCHESTRATING) ...
+... orchestration runs (PROCESSING) ...
 
 onComplete("done"):
   newMessageCount = chatMessageRepository.countAfterTimestamp(
       projectId, orchestrationStartedAt
   )
   if (newMessageCount > 0):
-      task.state = READY_FOR_GPU      ← auto-requeue (not DISPATCHED_GPU)
+      task.state = QUEUED              ← auto-requeue
       task.orchestrationStartedAt = null
       // Agent will re-process with full context including new messages
   else:
-      // Normal completion flow (DISPATCHED_GPU or DELETE)
+      // Normal completion flow (DONE or DELETE)
 ```
 
 This ensures that messages sent while the agent is busy are not lost -- the task is automatically
@@ -754,24 +754,24 @@ re-processed with the full conversation context once the current orchestration f
 ```
 NEW (from API) → INDEXING (processing) → INDEXED (task created)
     ↓
-READY_FOR_QUALIFICATION → QUALIFYING (atomic findAndModify) → DONE or READY_FOR_GPU
+INDEXING → QUALIFYING (atomic findAndModify) → DONE or QUEUED
     ↓
-READY_FOR_GPU → DISPATCHED_GPU (atomic findAndModify) → PYTHON_ORCHESTRATING → COMPLETED
+QUEUED → PROCESSING (atomic findAndModify) → DONE
                     │                     │                    │
                     │                     │                    └── coding agent dispatched →
-                    │                     │                        WAITING_FOR_AGENT → (watcher resumes) →
-                    │                     │                        PYTHON_ORCHESTRATING (loop)
-                    │                     └── new messages arrived? → READY_FOR_GPU (auto-requeue)
-                    └── interrupted → USER_TASK → user responds → READY_FOR_GPU (loop)
+                    │                     │                        CODING → (watcher resumes) →
+                    │                     │                        PROCESSING (loop)
+                    │                     └── new messages arrived? → QUEUED (auto-requeue)
+                    └── interrupted → USER_TASK → user responds → QUEUED (loop)
 
 Scheduled tasks:
 NEW (scheduledAt set) → scheduler loop dispatches when scheduledAt <= now + 10min
-    ├── one-shot: NEW → READY_FOR_QUALIFICATION (scheduledAt cleared)
+    ├── one-shot: NEW → INDEXING (scheduledAt cleared)
     └── recurring (cron): original stays NEW (scheduledAt = next cron run),
-                          execution copy → READY_FOR_QUALIFICATION
+                          execution copy → INDEXING
 
 Idle work (ProcessingMode.IDLE):
-(no FG/BG tasks + brain configured) → IDLE_REVIEW task (mode=IDLE) → READY_FOR_GPU → PYTHON_ORCHESTRATING → DONE
+(no FG/BG tasks + brain configured) → IDLE_REVIEW task (mode=IDLE) → QUEUED → PROCESSING → DONE
 Max ONE idle task at a time. Automatically preempted when any FG/BG work arrives.
 ```
 
@@ -779,7 +779,7 @@ Max ONE idle task at a time. Automatically preempted when any FG/BG work arrives
 
 - **Deployment strategy:** `Recreate` — old pod is stopped before new pod starts (no overlap)
 - **Atomic task claiming:** MongoDB `findAndModify` ensures only one instance processes each task
-- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (DISPATCHED_GPU, QUALIFYING) for >10 minutes back to their retryable state. FOREGROUND tasks in DISPATCHED_GPU are preserved (completed chat tasks, not stuck).
+- **Stale task recovery:** On startup, BackgroundEngine resets BACKGROUND tasks stuck in transient states (PROCESSING, QUALIFYING) for >10 minutes back to their retryable state. FOREGROUND completed tasks are preserved (not stuck).
 - **Single GPU constraint:** Recreate strategy + atomic claims guarantee no duplicate GPU execution
 
 ### Workspace Retry with Exponential Backoff
@@ -801,7 +801,7 @@ whose backoff has elapsed:
 - **ProcessingMode:** `IDLE` (lowest priority — preempted by both FOREGROUND and BACKGROUND)
 - **Creates:** At most ONE `IDLE_REVIEW` task at a time with `ProcessingMode.IDLE`
 - **Task selection:** `IdleTaskRegistry` returns highest-priority due check (priority-ordered, interval-based)
-- **Lifecycle:** Task created → READY_FOR_GPU → executed → DONE (deleted) → next iteration picks next due check
+- **Lifecycle:** Task created → QUEUED → executed → DONE (deleted) → next iteration picks next due check
 - **Task type:** `TaskTypeEnum.IDLE_REVIEW`
 - **Client resolution:** Uses JERVIS Internal project's client ID
 - **Deadline scan:** Also uses `ProcessingMode.IDLE` (periodic via scheduler loop, every 5 min)
@@ -815,8 +815,8 @@ When `KbResultRouter` sets `needsQualification=true` (Step 5 — complex_actiona
 - **Tools:** CORE tier only (kb_search, web_search, store_knowledge, memory_store/recall, get_kb_stats, get_indexed_items)
 - **Max iterations:** 5 (quick analysis, not deep orchestration)
 - **System prompt:** Czech, instructs agent to search KB for context, assess urgency, make routing decision
-- **Decisions:** READY_FOR_GPU (with priority 0-100), DONE (not actionable), URGENT_ALERT (push to chat)
-- **Fail-safe:** If Python `/qualify` is unavailable, task falls back to direct READY_FOR_GPU
+- **Decisions:** QUEUED (with priority 0-100), DONE (not actionable), URGENT_ALERT (push to chat)
+- **Fail-safe:** If Python `/qualify` is unavailable, task falls back to direct QUEUED
 - **Chat topics:** Kotlin provides recent chat messages as context — agent can detect if incoming data relates to active conversation
 - **Source:** `backend/service-orchestrator/app/unified/qualification_handler.py`
 
@@ -828,7 +828,7 @@ instead of fixed 15s retry:
 - **Backoff schedule:** 5s → 15s → 30s → 60s → 5min cap
 - **Fields:** `TaskDocument.dispatchRetryCount`, `nextDispatchRetryAt`
 - **Task picking:** `getNextForegroundTask()`/`getNextBackgroundTask()` skip tasks where `nextDispatchRetryAt > now`
-- **Reset:** On successful dispatch (PYTHON_ORCHESTRATING), `dispatchRetryCount` resets to 0
+- **Reset:** On successful dispatch (PROCESSING), `dispatchRetryCount` resets to 0
 
 ### Circuit Breaker for Orchestrator Health
 

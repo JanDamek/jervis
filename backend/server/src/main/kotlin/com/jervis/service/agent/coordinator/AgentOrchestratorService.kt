@@ -71,7 +71,7 @@ class AgentOrchestratorService(
             projectId = projectId,
             correlationId = ObjectId().toString(),
             sourceUrn = SourceUrn.chat(clientId),
-            state = TaskStateEnum.READY_FOR_GPU,
+            state = TaskStateEnum.QUEUED,
             attachments = attachments,
             taskName = normalizedText.take(80).lines().first(),
         )
@@ -184,9 +184,9 @@ class AgentOrchestratorService(
     ): Boolean {
         // Guard: limit concurrent orchestrations (resource-based scheduling)
         val maxConcurrent = 4  // TODO: move to config
-        val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+        val orchestratingCount = taskRepository.countByState(TaskStateEnum.PROCESSING)
         if (orchestratingCount >= maxConcurrent) {
-            logger.info { "PYTHON_DISPATCH_SKIP: $orchestratingCount/$maxConcurrent tasks already PYTHON_ORCHESTRATING" }
+            logger.info { "PYTHON_DISPATCH_SKIP: $orchestratingCount/$maxConcurrent tasks already PROCESSING" }
             return false
         }
 
@@ -366,7 +366,7 @@ class AgentOrchestratorService(
             }
 
             val updatedTask = task.copy(
-                state = TaskStateEnum.PYTHON_ORCHESTRATING,
+                state = TaskStateEnum.PROCESSING,
                 orchestratorThreadId = streamResponse.threadId,
                 orchestrationStartedAt = java.time.Instant.now(),
                 orchestratorSteps = emptyList(),
@@ -386,7 +386,7 @@ class AgentOrchestratorService(
     }
 
     /**
-     * Resume Python orchestrator after user interaction (USER_TASK → PYTHON_ORCHESTRATING).
+     * Resume Python orchestrator after user interaction (USER_TASK → PROCESSING).
      *
      * Distinguishes between two interrupt types:
      * - **Clarification**: Pre-planning questions (no "Schválení:" prefix).
@@ -438,7 +438,7 @@ class AgentOrchestratorService(
         }
 
         val updatedTask = task.copy(
-            state = TaskStateEnum.PYTHON_ORCHESTRATING,
+            state = TaskStateEnum.PROCESSING,
             orchestrationStartedAt = java.time.Instant.now(),
         )
         taskRepository.save(updatedTask)

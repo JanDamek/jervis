@@ -40,7 +40,7 @@ private val logger = KotlinLogging.logger {}
  *   - Decides on chunking strategy (semantic, context-aware)
  *   - Creates RAG chunks with semantic meaning
  *   - Links Graph ↔ RAG bi-directionally
- *   - Routes to GPU (READY_FOR_GPU) ONLY if complex analysis needed
+ *   - Routes to orchestrator (QUEUED) ONLY if complex analysis needed
  *
  * ETL Flow: MongoDB (NEW minimal) → API (full details) → CONFLUENCE_PROCESSING Task → Qualifier → Graph + RAG
  */

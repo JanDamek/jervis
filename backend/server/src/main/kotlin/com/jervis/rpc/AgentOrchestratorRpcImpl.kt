@@ -122,7 +122,7 @@ class AgentOrchestratorRpcImpl(
                 return
             }
 
-        if (task.state != com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+        if (task.state != com.jervis.dto.TaskStateEnum.QUEUED) {
             logger.warn { "REORDER_TASK_INVALID_STATE | taskId=$taskId | state=${task.state}" }
             return
         }
@@ -147,7 +147,7 @@ class AgentOrchestratorRpcImpl(
                 return
             }
 
-        if (task.state != com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+        if (task.state != com.jervis.dto.TaskStateEnum.QUEUED) {
             logger.warn { "MOVE_TASK_INVALID_STATE | taskId=$taskId | state=${task.state}" }
             return
         }

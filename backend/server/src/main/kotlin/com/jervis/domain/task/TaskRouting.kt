@@ -5,21 +5,21 @@ package com.jervis.domain.task
  *
  * Graph-Based Routing Architecture:
  * - DONE: Simple document, no further analysis needed (RAG + Graph already created)
- * - READY_FOR_GPU: Complex analysis needed, route to Python orchestrator
+ * - QUEUED: Complex analysis needed, route to Python orchestrator
  */
 data class TaskRouting(
-    /** Routing decision: DONE or READY_FOR_GPU */
+    /** Routing decision: DONE or QUEUED */
     val decision: TaskRoutingDecision,
     /** Reason for routing decision */
     val reason: String,
-    /** Context summary for GPU agent (required if READY_FOR_GPU) */
+    /** Context summary for orchestrator (required if QUEUED) */
     val contextSummary: String? = null,
 )
 
 enum class TaskRoutingDecision {
-    /** Document processed, no GPU analysis needed */
+    /** Document processed, no orchestration needed */
     DONE,
 
-    /** Complex analysis required, send to GPU workflow agent */
-    READY_FOR_GPU,
+    /** Complex analysis required, send to orchestrator */
+    QUEUED,
 }

@@ -531,7 +531,7 @@ async def cancel(thread_id: str):
     """Cancel a running orchestration.
 
     Reports 'cancelled' status to Kotlin so the task doesn't stay stuck in
-    PYTHON_ORCHESTRATING.  Then cancels the asyncio task (CancelledError).
+    PROCESSING.  Then cancels the asyncio task (CancelledError).
     """
     task = _active_tasks.get(thread_id)
     if not task:

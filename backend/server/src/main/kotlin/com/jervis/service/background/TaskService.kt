@@ -50,7 +50,7 @@ class TaskService(
 
     /**
      * Bulk-mark all pipeline tasks for archived clients as DONE.
-     * Targets: READY_FOR_QUALIFICATION, QUALIFYING, READY_FOR_GPU.
+     * Targets: INDEXING, QUALIFYING, QUEUED.
      * Scheduled tasks (NEW) are left untouched — they resume when client is unarchived.
      * Called on startup and periodically (every 5 min) from BackgroundEngine.
      */
@@ -59,9 +59,9 @@ class TaskService(
         if (archivedIds.isEmpty()) return 0
 
         val pipelineStates = listOf(
-            TaskStateEnum.READY_FOR_QUALIFICATION.name,
+            TaskStateEnum.INDEXING.name,
             TaskStateEnum.QUALIFYING.name,
-            TaskStateEnum.READY_FOR_GPU.name,
+            TaskStateEnum.QUEUED.name,
         )
         val query = Query(
             Criteria.where("clientId").`in`(archivedIds)
@@ -84,7 +84,7 @@ class TaskService(
         correlationId: String,
         sourceUrn: SourceUrn,
         projectId: ProjectId? = null,
-        state: TaskStateEnum = TaskStateEnum.READY_FOR_QUALIFICATION,
+        state: TaskStateEnum = TaskStateEnum.INDEXING,
         attachments: List<AttachmentMetadata> = emptyList(),
         taskName: String? = null,
     ): TaskDocument {
@@ -137,7 +137,7 @@ class TaskService(
                 )?.let {
                     emit(it)
                 }
-            emitAll(taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.READY_FOR_GPU))
+            emitAll(taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.QUEUED))
         }
 
     /**
@@ -151,7 +151,7 @@ class TaskService(
         return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
-                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.QUEUED,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
     }
 
@@ -169,7 +169,7 @@ class TaskService(
         return taskRepository
             .findByProcessingModeAndStateOrderByPriorityScoreDescCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
-                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.QUEUED,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
     }
 
@@ -177,14 +177,14 @@ class TaskService(
      * Get next IDLE task (system idle work) ordered by createdAt ASC.
      *
      * IDLE tasks are lowest priority — only picked when no FOREGROUND or BACKGROUND tasks exist.
-     * Returns only tasks with processingMode=IDLE in READY_FOR_GPU state.
+     * Returns only tasks with processingMode=IDLE in QUEUED state.
      */
     suspend fun getNextIdleTask(): TaskDocument? {
         val now = java.time.Instant.now()
         return taskRepository
             .findByProcessingModeAndStateOrderByCreatedAtAsc(
                 ProcessingMode.IDLE,
-                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.QUEUED,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }
     }
 
@@ -198,36 +198,36 @@ class TaskService(
     /**
      * Get currently running task (for progress display).
      * First checks in-memory tracking, then falls back to DB query
-     * for PYTHON_ORCHESTRATING tasks (dispatched to orchestrator but still active).
+     * for PROCESSING tasks (dispatched to orchestrator but still active).
      */
     suspend fun getCurrentRunningTask(): TaskDocument? =
         currentRunningTask ?: getOrchestratingTask()
 
     /**
      * Find any task currently being processed by the Python orchestrator.
-     * Covers both FOREGROUND and BACKGROUND tasks in PYTHON_ORCHESTRATING state.
+     * Covers both FOREGROUND and BACKGROUND tasks in PROCESSING state.
      */
     private suspend fun getOrchestratingTask(): TaskDocument? =
-        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PYTHON_ORCHESTRATING)
+        taskRepository.findByStateOrderByCreatedAtAsc(TaskStateEnum.PROCESSING)
             .toList()
             .firstOrNull()
 
     /**
      * Get queue status: currently running task and queue size.
-     * Queue size counts only FOREGROUND tasks in READY_FOR_GPU state.
-     * Running task is atomically claimed (DISPATCHED_GPU) so it's excluded automatically.
+     * Queue size counts only FOREGROUND tasks in QUEUED state.
+     * Running task is atomically claimed (PROCESSING) so it's excluded automatically.
      */
     suspend fun getGlobalQueueStatus(): Pair<TaskDocument?, Int> {
         val rawCount =
             taskRepository.countByProcessingModeAndState(
                 processingMode = ProcessingMode.FOREGROUND,
-                state = TaskStateEnum.READY_FOR_GPU,
+                state = TaskStateEnum.QUEUED,
             )
-        // Exclude the currently running task from the count (its DB state is still READY_FOR_GPU)
+        // Exclude the currently running task from the count (its DB state is still QUEUED)
         val running = getCurrentRunningTask()
         val isRunningCounted = running != null &&
             running.processingMode == ProcessingMode.FOREGROUND &&
-            running.state == TaskStateEnum.READY_FOR_GPU
+            running.state == TaskStateEnum.QUEUED
         val queueSize = if (isRunningCounted) (rawCount - 1).coerceAtLeast(0) else rawCount
 
         logger.debug {
@@ -239,15 +239,15 @@ class TaskService(
 
     /**
      * Get ALL pending FOREGROUND tasks for queue display (global, not per-client).
-     * Returns only tasks actually waiting to be processed (READY_FOR_GPU).
-     * PYTHON_ORCHESTRATING tasks are NOT in the queue — they're shown in the Agent section.
+     * Returns only tasks actually waiting to be processed (QUEUED).
+     * PROCESSING tasks are NOT in the queue — they're shown in the Agent section.
      */
     suspend fun getPendingForegroundTasks(): List<TaskDocument> {
         val running = currentRunningTask
         return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                 ProcessingMode.FOREGROUND,
-                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.QUEUED,
             ).toList()
             .filter { it.id != running?.id }
     }
@@ -261,7 +261,7 @@ class TaskService(
         return taskRepository
             .findByProcessingModeAndStateOrderByQueuePositionAscCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
-                TaskStateEnum.READY_FOR_GPU,
+                TaskStateEnum.QUEUED,
             ).toList()
             .filter { it.id != running?.id }
     }
@@ -273,7 +273,7 @@ class TaskService(
     suspend fun getPendingBackgroundTasksPaginated(limit: Int, offset: Int): Pair<List<TaskDocument>, Long> {
         val running = currentRunningTask
         val criteria = Criteria.where("processingMode").`is`(ProcessingMode.BACKGROUND.name)
-            .and("state").`is`(TaskStateEnum.READY_FOR_GPU.name)
+            .and("state").`is`(TaskStateEnum.QUEUED.name)
 
         val totalCount = mongoTemplate.count(Query(criteria), TaskDocument::class.java).awaitSingle()
 
@@ -421,7 +421,7 @@ class TaskService(
     }
 
     /**
-     * Return the task from QUALIFYING to READY_FOR_QUALIFICATION for retry.
+     * Return the task from QUALIFYING to INDEXING for retry.
      * Uses DB-based exponential backoff: 1s, 2s, 4s, 8s, ... up to 5min, then stays at 5min forever.
      * Operational errors (timeout, connection refused) never mark as ERROR - they keep retrying.
      * The task is stored in DB with a future nextQualificationRetryAt timestamp.
@@ -446,7 +446,7 @@ class TaskService(
         val nextRetryAt = Instant.now().plusMillis(backoffMs)
 
         val updated = current.copy(
-            state = TaskStateEnum.READY_FOR_QUALIFICATION,
+            state = TaskStateEnum.INDEXING,
             qualificationRetries = newRetryCount,
             nextQualificationRetryAt = nextRetryAt,
         )
@@ -460,7 +460,7 @@ class TaskService(
 
     /**
      * Return all tasks eligible for qualification now:
-     * - READY_FOR_QUALIFICATION where nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
+     * - INDEXING where nextQualificationRetryAt is null (new tasks) OR <= now (backoff expired)
      *
      * Tasks with future nextQualificationRetryAt are hidden until their backoff window elapses.
      * Order: queuePosition ASC NULLS LAST (manually prioritized first), then createdAt ASC (FIFO).
@@ -471,13 +471,13 @@ class TaskService(
             // Ordered by queuePosition (manually prioritized) then createdAt (FIFO)
             emitAll(
                 taskRepository.findByStateAndNextQualificationRetryAtIsNullOrderByQueuePositionAscCreatedAtAsc(
-                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                    TaskStateEnum.INDEXING,
                 ),
             )
             // Retried tasks where backoff has elapsed
             emitAll(
                 taskRepository.findByStateAndNextQualificationRetryAtLessThanEqualOrderByQueuePositionAscCreatedAtAsc(
-                    TaskStateEnum.READY_FOR_QUALIFICATION,
+                    TaskStateEnum.INDEXING,
                     Instant.now(),
                 ),
             )
@@ -488,9 +488,9 @@ class TaskService(
      * This ensures that only ONE worker can claim a specific task, even in concurrent scenarios.
      *
      * SINGLETON GUARANTEE (Level 4 - per-task atomicity):
-     * - Uses MongoDB findAndModify with state check (READY_FOR_QUALIFICATION -> QUALIFYING)
+     * - Uses MongoDB findAndModify with state check (INDEXING -> QUALIFYING)
      * - Atomic operation ensures only one thread/process can claim the task
-     * - If a task is already claimed (not READY_FOR_QUALIFICATION), returns null
+     * - If a task is already claimed (not INDEXING), returns null
      * - This works even across multiple application instances (distributed lock)
      *
      * Returns: Updated task with QUALIFYING state if successfully claimed, null if already claimed
@@ -499,7 +499,7 @@ class TaskService(
         // Custom findAndModify that also sets qualificationStartedAt and clears old steps
         val query = Query(
             Criteria.where("_id").`is`(task.id.value)
-                .and("state").`is`(TaskStateEnum.READY_FOR_QUALIFICATION.name),
+                .and("state").`is`(TaskStateEnum.INDEXING.name),
         )
         val now = Instant.now()
         val update = Update()
@@ -514,7 +514,7 @@ class TaskService(
         if (result != null) {
             logger.info {
                 "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
-                    "from=READY_FOR_QUALIFICATION to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
+                    "from=INDEXING to=QUALIFYING type=${task.type} (ATOMICALLY CLAIMED)"
             }
         } else {
             logger.debug {
@@ -552,14 +552,14 @@ class TaskService(
     suspend fun claimForExecution(task: TaskDocument): TaskDocument? {
         val result = atomicStateTransition(
             taskId = task.id,
-            expectedState = TaskStateEnum.READY_FOR_GPU,
-            newState = TaskStateEnum.DISPATCHED_GPU,
+            expectedState = TaskStateEnum.QUEUED,
+            newState = TaskStateEnum.PROCESSING,
         )
 
         if (result != null) {
             logger.info {
                 "TASK_STATE_TRANSITION: id=${task.id} correlationId=${task.correlationId} " +
-                    "from=READY_FOR_GPU to=DISPATCHED_GPU type=${task.type} (ATOMICALLY CLAIMED)"
+                    "from=QUEUED to=PROCESSING type=${task.type} (ATOMICALLY CLAIMED)"
             }
         } else {
             logger.debug {
@@ -593,79 +593,37 @@ class TaskService(
 
     /**
      * Reset stale tasks stuck in transient states after pod crash/restart.
-     * DISPATCHED_GPU older than threshold → READY_FOR_GPU (BACKGROUND tasks only)
-     * QUALIFYING older than threshold → READY_FOR_QUALIFICATION
+     * PROCESSING older than threshold → QUEUED (BACKGROUND tasks only)
+     * QUALIFYING older than threshold → INDEXING
      * Returns the number of tasks reset.
      *
-     * NOTE: FOREGROUND tasks in DISPATCHED_GPU are completed chat tasks, NOT stuck tasks.
-     * They must remain in DISPATCHED_GPU to prevent re-execution after restart.
+     * NOTE: FOREGROUND tasks in PROCESSING are completed chat tasks (now DONE).
+     * Only BACKGROUND/IDLE PROCESSING tasks are reset.
      */
     suspend fun resetStaleTasks(): Int {
         var resetCount = 0
 
-        // Migration: set processingMode on old tasks that don't have the field
-        val fixModeQuery = Query(Criteria.where("processingMode").exists(false))
-        val fixModeUpdate = Update().set("processingMode", ProcessingMode.BACKGROUND.name)
-        val fixResult = mongoTemplate.updateMulti(fixModeQuery, fixModeUpdate, TaskDocument::class.java).awaitSingle()
-        if (fixResult.modifiedCount > 0) {
-            logger.warn { "MIGRATION: Set processingMode=BACKGROUND on ${fixResult.modifiedCount} tasks missing the field" }
-        }
-
-        // Migration: BACKGROUND + DISPATCHED_GPU + no orchestratorThreadId → DONE
-        // These are old info_only/simple_action tasks that were terminal but used DISPATCHED_GPU before DONE existed
-        val migrateDoneQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
-                .and("processingMode").`is`(ProcessingMode.BACKGROUND.name)
-                .and("orchestratorThreadId").exists(false),
-        )
-        val migrateDoneUpdate = Update().set("state", TaskStateEnum.DONE.name)
-        val migrateDoneResult = mongoTemplate.updateMulti(migrateDoneQuery, migrateDoneUpdate, TaskDocument::class.java)
-            .awaitSingle()
-        if (migrateDoneResult.modifiedCount > 0) {
-            logger.warn { "MIGRATION: Migrated ${migrateDoneResult.modifiedCount} BACKGROUND DISPATCHED_GPU tasks (no orchestratorThreadId) → DONE" }
-        }
-
-        // Reset DISPATCHED_GPU → READY_FOR_GPU (BACKGROUND and IDLE tasks only)
-        // FOREGROUND tasks stay DISPATCHED_GPU - they're completed, not stuck
-        // DONE tasks are terminal — never reset
-        val dispatchedQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.DISPATCHED_GPU.name)
-                .and("processingMode").`in`(ProcessingMode.BACKGROUND.name, ProcessingMode.IDLE.name),
-        )
-        val dispatchedUpdate = Update()
-            .set("state", TaskStateEnum.READY_FOR_GPU.name)
-            .unset("nextDispatchRetryAt")
-            .set("dispatchRetryCount", 0)
-        val dispatchedResult = mongoTemplate.updateMulti(dispatchedQuery, dispatchedUpdate, TaskDocument::class.java)
-            .awaitSingle()
-        val dispatchedCount = dispatchedResult.modifiedCount.toInt()
-        resetCount += dispatchedCount
-
-        if (dispatchedCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $dispatchedCount BACKGROUND DISPATCHED_GPU tasks → READY_FOR_GPU (FOREGROUND tasks excluded)" }
-        }
-
-        // Reset QUALIFYING → READY_FOR_QUALIFICATION
+        // Reset QUALIFYING → INDEXING
         val qualifyingQuery = Query(
             Criteria.where("state").`is`(TaskStateEnum.QUALIFYING.name),
         )
-        val qualifyingUpdate = Update().set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+        val qualifyingUpdate = Update().set("state", TaskStateEnum.INDEXING.name)
         val qualifyingResult = mongoTemplate.updateMulti(qualifyingQuery, qualifyingUpdate, TaskDocument::class.java)
             .awaitSingle()
         val qualifyingCount = qualifyingResult.modifiedCount.toInt()
         resetCount += qualifyingCount
 
         if (qualifyingCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → READY_FOR_QUALIFICATION" }
+            logger.warn { "STALE_RECOVERY: Reset $qualifyingCount QUALIFYING tasks → INDEXING" }
         }
 
-        // Reset ALL PYTHON_ORCHESTRATING → READY_FOR_GPU on pod restart.
+        // Reset ALL PROCESSING → QUEUED on pod restart.
         // If Python orchestrator IS still running, it will get ignored callback and task re-dispatches.
         val orchestratingQuery = Query(
-            Criteria.where("state").`is`(TaskStateEnum.PYTHON_ORCHESTRATING.name),
+            Criteria.where("state").`is`(TaskStateEnum.PROCESSING.name),
         )
         val orchestratingUpdate = Update()
-            .set("state", TaskStateEnum.READY_FOR_GPU.name)
+            .set("state", TaskStateEnum.QUEUED.name)
             .unset("orchestratorThreadId")
             .unset("orchestrationStartedAt")
             .unset("nextDispatchRetryAt")
@@ -676,10 +634,10 @@ class TaskService(
         resetCount += orchestratingCount
 
         if (orchestratingCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PYTHON_ORCHESTRATING tasks → READY_FOR_GPU" }
+            logger.warn { "STALE_RECOVERY: Reset $orchestratingCount PROCESSING tasks → QUEUED" }
         }
 
-        // Reset ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry, max 2 recoveries)
+        // Reset ERROR indexing tasks → INDEXING (KB retry, max 2 recoveries)
         // Uses errorRecoveryCount field to prevent infinite ERROR→retry loops.
         // After 2 recoveries the task stays in ERROR for manual review.
         val indexingTypes = listOf(
@@ -699,7 +657,7 @@ class TaskService(
                 ),
         )
         val errorIndexingUpdate = Update()
-            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .set("state", TaskStateEnum.INDEXING.name)
             .unset("errorMessage")
             .inc("errorRecoveryCount", 1)
         val errorIndexingResult = mongoTemplate.updateMulti(errorIndexingQuery, errorIndexingUpdate, TaskDocument::class.java)
@@ -708,7 +666,7 @@ class TaskService(
         resetCount += errorIndexingCount
 
         if (errorIndexingCount > 0) {
-            logger.warn { "STALE_RECOVERY: Reset $errorIndexingCount ERROR indexing tasks → READY_FOR_QUALIFICATION (KB retry)" }
+            logger.warn { "STALE_RECOVERY: Reset $errorIndexingCount ERROR indexing tasks → INDEXING (KB retry)" }
         }
 
         return resetCount
@@ -719,8 +677,8 @@ class TaskService(
      * Called by TaskQualificationService after a cycle finds no work.
      *
      * Recovers:
-     * 1. ERROR indexing tasks → READY_FOR_QUALIFICATION (max 2 recoveries, then stays ERROR)
-     * 2. QUALIFYING tasks stuck >10 min → READY_FOR_QUALIFICATION (error handler failure)
+     * 1. ERROR indexing tasks → INDEXING (max 2 recoveries, then stays ERROR)
+     * 2. QUALIFYING tasks stuck >10 min → INDEXING (error handler failure)
      */
     suspend fun recoverStuckIndexingTasks(): Int {
         var count = 0
@@ -743,14 +701,14 @@ class TaskService(
                 ),
         )
         val errorUpdate = Update()
-            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .set("state", TaskStateEnum.INDEXING.name)
             .unset("errorMessage")
             .inc("errorRecoveryCount", 1)
         val errorResult = mongoTemplate.updateMulti(errorQuery, errorUpdate, TaskDocument::class.java).awaitSingle()
         val errorCount = errorResult.modifiedCount.toInt()
         count += errorCount
         if (errorCount > 0) {
-            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $errorCount ERROR indexing tasks → READY_FOR_QUALIFICATION" }
+            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $errorCount ERROR indexing tasks → INDEXING" }
         }
 
         // 2. QUALIFYING tasks stuck >10 min (error handler failed, task left in QUALIFYING)
@@ -760,13 +718,13 @@ class TaskService(
                 .and("qualificationStartedAt").lt(stuckThreshold),
         )
         val stuckUpdate = Update()
-            .set("state", TaskStateEnum.READY_FOR_QUALIFICATION.name)
+            .set("state", TaskStateEnum.INDEXING.name)
             .unset("qualificationStartedAt")
         val stuckResult = mongoTemplate.updateMulti(stuckQuery, stuckUpdate, TaskDocument::class.java).awaitSingle()
         val stuckCount = stuckResult.modifiedCount.toInt()
         count += stuckCount
         if (stuckCount > 0) {
-            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $stuckCount stuck QUALIFYING tasks (>10min) → READY_FOR_QUALIFICATION" }
+            logger.warn { "EMPTY_QUEUE_RECOVERY: Reset $stuckCount stuck QUALIFYING tasks (>10min) → INDEXING" }
         }
 
         return count

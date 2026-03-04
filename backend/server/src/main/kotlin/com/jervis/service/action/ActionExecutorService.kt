@@ -154,9 +154,9 @@ class ActionExecutorService(
             )
         }
 
-        // User approved — move task back to READY_FOR_GPU for execution
+        // User approved — move task back to QUEUED for execution
         val updatedTask = task.copy(
-            state = TaskStateEnum.READY_FOR_GPU,
+            state = TaskStateEnum.QUEUED,
             pendingUserQuestion = null,
             userQuestionContext = null,
         )

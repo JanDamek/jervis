@@ -7,7 +7,7 @@ Flow:
 1. Receive KB analysis context (summary, entities, urgency, suggested_actions)
 2. Build system prompt for qualification
 3. Run LLM with CORE tools (kb_search, web_search, memory)
-4. Agent decides: DONE, READY_FOR_GPU, or URGENT_ALERT
+4. Agent decides: DONE, QUEUED, or URGENT_ALERT
 5. POST result to Kotlin /internal/qualification-done
 """
 
@@ -78,7 +78,7 @@ Uživatel v chatu nedávno řešil:
 {topics_text}
 Pokud příchozí data souvisí s aktivním tématem, zvyš prioritu."""
 
-    return f"""Jsi kvalifikační agent systému Jervis. Analyzuješ příchozí data po KB indexaci a rozhoduješ, zda vyžadují orchestraci (READY_FOR_GPU) nebo jsou jen informační (DONE).
+    return f"""Jsi kvalifikační agent systému Jervis. Analyzuješ příchozí data po KB indexaci a rozhoduješ, zda vyžadují orchestraci (QUEUED) nebo jsou jen informační (DONE).
 
 ## Vstupní data
 - **Zdroj**: {request.source_urn}
@@ -104,7 +104,7 @@ Odpověz PŘESNĚ v jednom z těchto formátů (poslední zpráva):
 
 **Pokud vyžaduje orchestraci (analýza, coding, odpověď):**
 ```
-DECISION: READY_FOR_GPU
+DECISION: QUEUED
 PRIORITY: <1-10>
 REASON: <stručné zdůvodnění>
 ```
@@ -128,7 +128,7 @@ Buď stručný. Max {MAX_ITERATIONS} iterací (tool calls). Nezačínej zbytečn
 def _parse_decision(text: str) -> dict[str, Any]:
     """Parse the agent's decision from its final message."""
     result: dict[str, Any] = {
-        "decision": "READY_FOR_GPU",  # default fail-safe
+        "decision": "QUEUED",  # default fail-safe
         "priority_score": 5,
         "reason": "",
         "alert_message": None,
@@ -138,7 +138,7 @@ def _parse_decision(text: str) -> dict[str, Any]:
         line = line.strip()
         if line.startswith("DECISION:"):
             decision = line.split(":", 1)[1].strip().upper()
-            if decision in ("READY_FOR_GPU", "DONE", "URGENT_ALERT"):
+            if decision in ("QUEUED", "DONE", "URGENT_ALERT"):
                 result["decision"] = decision
         elif line.startswith("PRIORITY:"):
             try:
@@ -248,11 +248,11 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         )
         return decision
 
-    # Max iterations reached — default to READY_FOR_GPU
-    logger.warning("QUALIFY_MAX_ITERATIONS | task=%s — defaulting to READY_FOR_GPU", request.task_id)
+    # Max iterations reached — default to QUEUED
+    logger.warning("QUALIFY_MAX_ITERATIONS | task=%s — defaulting to QUEUED", request.task_id)
     last_content = messages[-1].get("content", "") if messages else ""
     return _parse_decision(last_content) if "DECISION:" in last_content else {
-        "decision": "READY_FOR_GPU",
+        "decision": "QUEUED",
         "priority_score": 5,
         "reason": "Max iterations reached",
     }

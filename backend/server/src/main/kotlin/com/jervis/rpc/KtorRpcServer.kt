@@ -307,7 +307,7 @@ class KtorRpcServer(
                                             branch = body.branch,
                                             artifacts = body.artifacts,
                                         )
-                                        // 2. Handle task state transition (PYTHON_ORCHESTRATING → DONE/ERROR/USER_TASK)
+                                        // 2. Handle task state transition (PROCESSING → DONE/ERROR/USER_TASK)
                                         orchestratorStatusHandler.handleStatusChange(
                                             taskId = body.taskId,
                                             status = body.status,
@@ -631,9 +631,9 @@ class KtorRpcServer(
                                             io.ktor.http.ContentType.Application.Json,
                                             HttpStatusCode.NotFound,
                                         )
-                                    // Transition back to PYTHON_ORCHESTRATING (graph will resume)
+                                    // Transition back to PROCESSING (graph will resume)
                                     val updated = task.copy(
-                                        state = com.jervis.dto.TaskStateEnum.PYTHON_ORCHESTRATING,
+                                        state = com.jervis.dto.TaskStateEnum.PROCESSING,
                                         agentJobState = "COMPLETED",
                                     )
                                     taskRepository.save(updated)
@@ -651,7 +651,7 @@ class KtorRpcServer(
                                 }
                             }
 
-                            // Internal endpoint: orchestrator sets task to WAITING_FOR_AGENT with job info
+                            // Internal endpoint: orchestrator sets task to CODING with job info
                             post("/internal/tasks/{taskId}/agent-dispatched") {
                                 val taskIdStr = call.parameters["taskId"]
                                     ?: return@post call.respondText(
@@ -668,7 +668,7 @@ class KtorRpcServer(
                                             HttpStatusCode.NotFound,
                                         )
                                     val updated = task.copy(
-                                        state = com.jervis.dto.TaskStateEnum.WAITING_FOR_AGENT,
+                                        state = com.jervis.dto.TaskStateEnum.CODING,
                                         agentJobName = body.jobName,
                                         agentJobState = "RUNNING",
                                         agentJobStartedAt = java.time.Instant.now(),
@@ -841,7 +841,7 @@ class KtorRpcServer(
                                             val routingDecision = kbResultRouter.routeTask(task, kbResult, onProgress)
 
                                             // If qualification agent is needed, dispatch to Python /qualify
-                                            if (routingDecision.needsQualification && routingDecision.state == com.jervis.dto.TaskStateEnum.READY_FOR_GPU) {
+                                            if (routingDecision.needsQualification && routingDecision.state == com.jervis.dto.TaskStateEnum.QUEUED) {
                                                 // Gather recent chat topics for context relevance check
                                                 val chatTopics = try {
                                                     val session = chatService.getOrCreateActiveSession()
@@ -867,8 +867,8 @@ class KtorRpcServer(
                                                         mapOf("step" to "qualifying", "agent" to "qualification_agent"),
                                                     )
                                                 } else {
-                                                    // Qualification unavailable — fall back to direct READY_FOR_GPU
-                                                    logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to READY_FOR_GPU taskId=${body.taskId}" }
+                                                    // Qualification unavailable — fall back to direct QUEUED
+                                                    logger.warn { "KB_DONE_CALLBACK: qualification unavailable, falling back to QUEUED taskId=${body.taskId}" }
                                                     taskService.updateState(task, routingDecision.state)
                                                 }
                                             } else {
@@ -1018,15 +1018,15 @@ class KtorRpcServer(
                                             )
 
                                             when (body.decision) {
-                                                "READY_FOR_GPU" -> {
+                                                "QUEUED" -> {
                                                     // Qualification says: proceed to orchestration
                                                     val updatedTask = task.copy(
                                                         priorityScore = body.priorityScore ?: task.priorityScore,
                                                         priorityReason = body.reason ?: task.priorityReason,
                                                     )
                                                     taskRepository.save(updatedTask)
-                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.READY_FOR_GPU)
-                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → READY_FOR_GPU priority=${body.priorityScore}" }
+                                                    taskService.updateState(updatedTask, com.jervis.dto.TaskStateEnum.QUEUED)
+                                                    logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → QUEUED priority=${body.priorityScore}" }
                                                 }
                                                 "DONE" -> {
                                                     // Qualification says: no orchestration needed
@@ -1034,9 +1034,9 @@ class KtorRpcServer(
                                                     logger.info { "QUALIFICATION_DONE: taskId=${body.taskId} → DONE reason=${body.reason}" }
                                                 }
                                                 else -> {
-                                                    // Unknown decision — default to READY_FOR_GPU
-                                                    logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to READY_FOR_GPU" }
-                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.READY_FOR_GPU)
+                                                    // Unknown decision — default to QUEUED
+                                                    logger.warn { "QUALIFICATION_DONE: unknown decision=${body.decision}, defaulting to QUEUED" }
+                                                    taskService.updateState(task, com.jervis.dto.TaskStateEnum.QUEUED)
                                                 }
                                             }
                                         } catch (e: Exception) {
@@ -1070,6 +1070,7 @@ class KtorRpcServer(
                                         correlationId = correlationId,
                                         sourceUrn = com.jervis.common.types.SourceUrn("chat:background-task"),
                                         projectId = projectId,
+                                        state = com.jervis.dto.TaskStateEnum.QUEUED,
                                         taskName = body.title,
                                     )
 
@@ -1102,6 +1103,7 @@ class KtorRpcServer(
                                         correlationId = correlationId,
                                         sourceUrn = com.jervis.common.types.SourceUrn("chat:coding-agent"),
                                         projectId = projectId,
+                                        state = com.jervis.dto.TaskStateEnum.QUEUED,
                                         taskName = body.taskDescription.take(100),
                                     )
 
@@ -1471,7 +1473,7 @@ data class ClassifyMeetingRequest(
 data class QualificationDoneCallback(
     @kotlinx.serialization.SerialName("task_id") val taskId: String,
     @kotlinx.serialization.SerialName("client_id") val clientId: String,
-    /** "READY_FOR_GPU" or "DONE" */
+    /** "QUEUED" or "DONE" */
     val decision: String,
     /** Priority score 0-100 (higher = more urgent) */
     @kotlinx.serialization.SerialName("priority_score") val priorityScore: Int? = null,

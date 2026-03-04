@@ -49,7 +49,12 @@ private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state
     "USER_TASK" -> "K vyřízení" to Color(0xFF1976D2)
     "DONE" -> "Dokončeno" to Color(0xFF388E3C)
     "ERROR", "FAILED" -> "Chyba" to Color(0xFFD32F2F)
-    "READY_FOR_GPU" -> "Zpracovává se" to Color(0xFFF57C00)
+    "QUEUED" -> "Ve frontě" to Color(0xFFF57C00)
+    "PROCESSING" -> "Zpracovává se" to Color(0xFFF57C00)
+    "CODING" -> "Kódování" to Color(0xFFF57C00)
+    "INDEXING" -> "Indexace" to Color(0xFF7B1FA2)
+    "QUALIFYING" -> "Kvalifikace" to Color(0xFF7B1FA2)
+    "BLOCKED" -> "Blokován" to Color(0xFF757575)
     "NEW" -> "Nový" to Color(0xFF7B1FA2)
     else -> state to Color(0xFF757575)
 }

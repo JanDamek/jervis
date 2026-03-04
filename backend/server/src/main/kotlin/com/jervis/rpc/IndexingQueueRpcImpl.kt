@@ -215,9 +215,9 @@ class IndexingQueueRpcImpl(
         return try {
             val task = taskRepository.getById(TaskId(ObjectId(taskId))) ?: return false
 
-            // Check if task is in READY_FOR_QUALIFICATION state
-            if (task.state != TaskStateEnum.READY_FOR_QUALIFICATION) {
-                logger.warn { "Cannot process task $taskId: not in READY_FOR_QUALIFICATION state (current: ${task.state})" }
+            // Check if task is in INDEXING state
+            if (task.state != TaskStateEnum.INDEXING) {
+                logger.warn { "Cannot process task $taskId: not in INDEXING state (current: ${task.state})" }
                 return false
             }
 
@@ -254,7 +254,7 @@ class IndexingQueueRpcImpl(
         )
         val activeServerTasksList = mongoTemplate.find(
             Query(
-                Criteria.where("state").`in`(listOf(TaskStateEnum.READY_FOR_QUALIFICATION, TaskStateEnum.QUALIFYING, TaskStateEnum.DONE).map { it.name })
+                Criteria.where("state").`in`(listOf(TaskStateEnum.INDEXING, TaskStateEnum.QUALIFYING, TaskStateEnum.DONE).map { it.name })
                     .and("type").`in`(indexingTaskTypes.map { it.name }),
             ).with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(500),
             TaskDocument::class.java, "tasks",
@@ -435,7 +435,7 @@ class IndexingQueueRpcImpl(
         // KB receives task.correlationId as sourceUrn (e.g. "email:698f..."),
         // NOT task.sourceUrn (e.g. "email::conn:xxx,msgId:yyy").
         val indexingActiveStates = listOf(
-            TaskStateEnum.READY_FOR_QUALIFICATION,
+            TaskStateEnum.INDEXING,
             TaskStateEnum.QUALIFYING,
             TaskStateEnum.DONE,
         )
@@ -500,18 +500,18 @@ class IndexingQueueRpcImpl(
             enrichKbItem(item, index, activeServerTasks, clientMap, connectionMap)
         }
 
-        // Execution Waiting: READY_FOR_GPU (from MongoDB — these are post-KB tasks)
+        // Execution Waiting: QUEUED (from MongoDB — these are post-KB tasks)
         val executionWaitingAll = collectTasksByStates(
-            states = listOf(TaskStateEnum.READY_FOR_GPU),
+            states = listOf(TaskStateEnum.QUEUED),
             types = indexingTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
-            pipelineState = "READY_FOR_GPU",
+            pipelineState = "QUEUED",
         )
 
-        // Execution Running: DISPATCHED_GPU + PYTHON_ORCHESTRATING
+        // Execution Running: PROCESSING
         val executionRunningAll = collectTasksByStates(
-            states = listOf(TaskStateEnum.DISPATCHED_GPU, TaskStateEnum.PYTHON_ORCHESTRATING),
+            states = listOf(TaskStateEnum.PROCESSING),
             types = indexingTaskTypes,
             clientMap = clientMap,
             connectionMap = connectionMap,
@@ -671,8 +671,8 @@ class IndexingQueueRpcImpl(
 
             // Determine pipeline state
             val state = pipelineState ?: when {
-                task.state == TaskStateEnum.READY_FOR_QUALIFICATION && task.qualificationRetries > 0 -> "RETRYING"
-                task.state == TaskStateEnum.READY_FOR_QUALIFICATION -> "WAITING"
+                task.state == TaskStateEnum.INDEXING && task.qualificationRetries > 0 -> "RETRYING"
+                task.state == TaskStateEnum.INDEXING -> "WAITING"
                 else -> task.state.name
             }
 
@@ -705,9 +705,8 @@ class IndexingQueueRpcImpl(
     }
 
     /**
-     * DB-level paginated query for DONE/DISPATCHED_GPU tasks (Hotovo section).
+     * DB-level paginated query for DONE tasks (Hotovo section).
      * Uses MongoDB skip/limit instead of loading all tasks into RAM.
-     * Includes both DONE (info_only/simple_action) and DISPATCHED_GPU (legacy/orchestrated).
      */
     private suspend fun collectIndexedTasksPaginated(
         types: List<TaskTypeEnum>,
@@ -716,7 +715,7 @@ class IndexingQueueRpcImpl(
         page: Int,
         pageSize: Int,
     ): Pair<List<PipelineItemDto>, Long> {
-        val criteria = Criteria.where("state").`in`(listOf(TaskStateEnum.DONE.name, TaskStateEnum.DISPATCHED_GPU.name))
+        val criteria = Criteria.where("state").`in`(listOf(TaskStateEnum.DONE.name))
             .and("type").`in`(types.map { it.name })
 
         // Count total (lightweight)

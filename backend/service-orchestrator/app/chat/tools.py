@@ -127,7 +127,7 @@ TOOL_SEARCH_TASKS: dict = {
                 },
                 "state": {
                     "type": "string",
-                    "enum": ["all", "DONE", "ERROR", "USER_TASK", "PYTHON_ORCHESTRATING", "READY_FOR_GPU"],
+                    "enum": ["all", "DONE", "ERROR", "USER_TASK", "PROCESSING", "QUEUED"],
                     "description": "Filtr dle stavu (default: all).",
                 },
                 "max_results": {
@@ -177,7 +177,7 @@ TOOL_LIST_RECENT_TASKS: dict = {
                 },
                 "state": {
                     "type": "string",
-                    "enum": ["all", "DONE", "ERROR", "USER_TASK", "PYTHON_ORCHESTRATING"],
+                    "enum": ["all", "DONE", "ERROR", "USER_TASK", "PROCESSING"],
                     "description": "Filtr dle stavu (default: all).",
                 },
                 "since": {
@@ -381,7 +381,7 @@ TOOL_CREATE_WORK_PLAN: dict = {
         "name": "create_work_plan",
         "description": (
             "Rozlož složitý úkol na hierarchii dílčích úkolů s fázemi a závislostmi. "
-            "Použij pro úkoly s víc než 3 kroky. Vytvoří root task (PLANNING) s child tasky "
+            "Použij pro úkoly s víc než 3 kroky. Vytvoří root task (BLOCKED) s child tasky "
             "které se automaticky odblokují a zpracují."
         ),
         "parameters": {

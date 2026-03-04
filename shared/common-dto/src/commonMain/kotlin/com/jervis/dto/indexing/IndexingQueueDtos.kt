@@ -130,7 +130,7 @@ data class PipelineItemDto(
     val sourceUrn: String?,
     /** ISO 8601 – when the item entered this stage. */
     val createdAt: String?,
-    /** Pipeline state: WAITING, QUALIFYING, RETRYING, READY_FOR_GPU, DISPATCHED_GPU, PYTHON_ORCHESTRATING */
+    /** Pipeline state: WAITING, QUALIFYING, RETRYING, QUEUED, PROCESSING, CODING, DONE */
     val pipelineState: String,
     /** Number of retry attempts (for items in backoff). */
     val retryCount: Int = 0,
@@ -194,10 +194,10 @@ data class IndexingDashboardDto(
     val kbProcessingCount: Long,
 
     // ── Execution stage ──
-    /** Items waiting for GPU execution (READY_FOR_GPU). */
+    /** Items waiting for execution (QUEUED). */
     val executionWaiting: List<PipelineItemDto>,
     val executionWaitingCount: Long,
-    /** Items currently being executed (DISPATCHED_GPU + PYTHON_ORCHESTRATING). */
+    /** Items currently being executed (PROCESSING + CODING). */
     val executionRunning: List<PipelineItemDto>,
     val executionRunningCount: Long,
 

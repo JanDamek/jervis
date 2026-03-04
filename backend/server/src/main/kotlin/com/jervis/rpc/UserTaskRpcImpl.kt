@@ -108,14 +108,14 @@ class UserTaskRpcImpl(
                         taskRepository
                             .findByProcessingModeAndStateOrderByQueuePositionAsc(
                                 com.jervis.entity.ProcessingMode.FOREGROUND,
-                                TaskStateEnum.READY_FOR_GPU,
+                                TaskStateEnum.QUEUED,
                             ).toList()
                             .maxOfOrNull { it.queuePosition ?: 0 } ?: 0
 
                     val updatedTask =
                         task.copy(
                             type = TaskTypeEnum.USER_INPUT_PROCESSING,
-                            state = TaskStateEnum.READY_FOR_GPU,
+                            state = TaskStateEnum.QUEUED,
                             processingMode = com.jervis.entity.ProcessingMode.FOREGROUND,
                             queuePosition = maxPosition + 1,
                             content = additionalInput ?: "User response: ${task.taskName}",
@@ -163,7 +163,7 @@ class UserTaskRpcImpl(
                     val updatedTask =
                         task.copy(
                             type = TaskTypeEnum.USER_INPUT_PROCESSING,
-                            state = TaskStateEnum.READY_FOR_GPU,
+                            state = TaskStateEnum.QUEUED,
                             processingMode = com.jervis.entity.ProcessingMode.BACKGROUND,
                             queuePosition = null, // BACKGROUND tasks don't use queuePosition
                             content = additionalInput ?: task.content,

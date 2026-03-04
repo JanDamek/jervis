@@ -7,8 +7,8 @@ import java.time.Duration
  * BackgroundEngine timing configuration (prefix: `jervis.background`).
  *
  * Controls the three independent loops in BackgroundEngine:
- * - Qualification loop (CPU): runs every [waitInterval], processes READY_FOR_QUALIFICATION tasks
- * - Execution loop (GPU): runs when idle, processes READY_FOR_GPU tasks
+ * - Indexing loop (CPU): runs every [waitInterval], processes INDEXING tasks
+ * - Execution loop: runs when idle, processes QUEUED tasks
  * - Orchestrator poll loop: polls Python orchestrator every 5s (hardcoded)
  */
 @ConfigurationProperties(prefix = "jervis.background")

@@ -195,11 +195,11 @@ await kotlin_client.report_status_change(
 
 `BackgroundEngine.runOrchestratorResultLoop()` — každých 60 sekund:
 
-1. Najde tasks ve stavu `PYTHON_ORCHESTRATING`
+1. Najde tasks ve stavu `PROCESSING`
 2. Zkontroluje `orchestrationStartedAt` / `stateChangedAt` z TaskDocument v DB
 3. Pokud čas od posledního update < 15 minut (`STUCK_THRESHOLD_MINUTES`) → OK, čeká
 4. Pokud čas od posledního update > 15 minut → zavolá Python `GET /status/{thread_id}`
-5. Pokud Python nedostupný → reset task na `READY_FOR_GPU` (retry)
+5. Pokud Python nedostupný → reset task na `QUEUED` (retry)
 6. Pokud Python vrátí stav → deleguje na `OrchestratorStatusHandler`
 
 ### 2.4 UI notifikace
@@ -226,7 +226,7 @@ Kotlin → UI: via kRPC WebSocket Flow subscriptions
    - Reuses existing task with orchestratorThreadId (for resume)
    - Or creates new FOREGROUND task (type=USER_INPUT_PROCESSING)
      ↓
-5. Task state → READY_FOR_GPU
+5. Task state → QUEUED
      ↓
 6. BackgroundEngine.runExecutionLoop() picks up task
      ↓
@@ -235,14 +235,14 @@ Kotlin → UI: via kRPC WebSocket Flow subscriptions
    - Path B: new task → dispatchToPythonOrchestrator()
      ↓
 8. dispatchToPythonOrchestrator():
-   a. Guard: countByState(PYTHON_ORCHESTRATING) == 0
+   a. Guard: countByState(PROCESSING) == 0
    b. pythonOrchestratorClient.isHealthy() == true
    c. Load project rules, environment, client/project names
    d. ChatHistoryService.prepareChatHistoryPayload(taskId) → chat context
    e. Build OrchestrateRequestDto (includes chat_history)
    f. POST /orchestrate/stream → returns {thread_id, stream_url}
    g. If 429 → return false (orchestrator busy, retry later)
-   h. Task state → PYTHON_ORCHESTRATING, save orchestratorThreadId
+   h. Task state → PROCESSING, save orchestratorThreadId
      ↓
 9. Python _run_and_stream():
    a. asyncio.Semaphore acquire
@@ -259,13 +259,13 @@ Kotlin → UI: via kRPC WebSocket Flow subscriptions
       a. Emit final response to chat stream
       b. Save ASSISTANT ChatMessageDocument
       c. Check for inline messages (arrived during orchestration)
-      d. If inline → re-queue to READY_FOR_GPU (process new messages)
-      e. If no inline → DISPATCHED_GPU (terminal)
+      d. If inline → re-queue to QUEUED (process new messages)
+      e. If no inline → DONE (terminal)
       f. Async: ChatHistoryService.compressIfNeeded() (non-blocking)
     - "interrupted" → handleInterrupted():
       a. Emit clarification/approval to chat
       b. Save ASSISTANT ChatMessageDocument
-      c. Task state → DISPATCHED_GPU (keeps orchestratorThreadId for resume)
+      c. Task state → DONE (keeps orchestratorThreadId for resume)
     - "error" → handleError():
       a. Emit error to chat, save error message
       b. Task state → ERROR
@@ -288,7 +288,7 @@ TaskSchedulingService creates task with processingMode=BACKGROUND
      ↓
 2. AgentOrchestratorRpcImpl detects existing task with orchestratorThreadId
      ↓
-3. Task state → READY_FOR_GPU
+3. Task state → QUEUED
      ↓
 4. BackgroundEngine picks up → AgentOrchestratorService.run()
      ↓
@@ -584,7 +584,7 @@ class OrchestratorState(TypedDict, total=False):
 - Vytvoří `ClarificationQuestion` objekty
 - Zavolá `interrupt()` — graf se zastaví
 - Python pushne `status=interrupted, action=clarify`
-- Kotlin: FOREGROUND → emitne do chatu + DISPATCHED_GPU; BACKGROUND/IDLE → USER_TASK
+- Kotlin: FOREGROUND → emitne do chatu + DONE; BACKGROUND/IDLE → USER_TASK
 - Po resume: `clarification_response` obsahuje user's answers
 
 **Output**: `task_category`, `task_action`, `external_refs`, `task_complexity`, `project_context`, `allow_cloud_prompt`, `needs_clarification`, **`target_branch`**
@@ -957,7 +957,7 @@ Coding agent dispatch je **non-blocking** — orchestrátor nepotí na dokončen
 
 ```
 execute_step() → dispatch_coding_agent() → notify_agent_dispatched() → interrupt()
-    ↓ graph checkpoints, thread released
+    ↓ graph checkpoints, thread released (task state → CODING)
 AgentTaskWatcher._poll_once() → get_job_status() → [succeeded] → collect_result()
     → POST /internal/tasks/{id}/agent-completed
     → resume_orchestration_streaming(thread_id, result)
@@ -968,13 +968,13 @@ AgentTaskWatcher._poll_once() → get_job_status() → [succeeded] → collect_r
 
 1. `prepare_workspace()` — zapíše instrukce do `.jervis/`
 2. `dispatch_coding_agent()` — vytvoří K8s Job, **vrátí okamžitě** s `{job_name, agent_type}`
-3. `notify_agent_dispatched()` — POST na Kotlin, nastaví task state na `WAITING_FOR_AGENT`
+3. `notify_agent_dispatched()` — POST na Kotlin, nastaví task state na `CODING`
 4. `interrupt({"type": "waiting_for_agent", ...})` — graph se checkpointne, thread uvolněn
 5. Agent čte `.jervis/instructions.md`, pracuje v workspace
 6. Agent zapíše `.jervis/result.json` s výsledkem
-7. `AgentTaskWatcher` polluje WAITING_FOR_AGENT tasks (každých 10s)
+7. `AgentTaskWatcher` polluje CODING tasks (každých 10s)
 8. Watcher detekuje completed job → `collect_result()` čte `result.json`
-9. Watcher notifikuje Kotlin (→ PYTHON_ORCHESTRATING) a resumuje orchestraci
+9. Watcher notifikuje Kotlin (→ PROCESSING) a resumuje orchestraci
 10. Graph pokračuje od `interrupt()`, zpracuje result
 
 **Klíčové soubory:**
@@ -1128,11 +1128,11 @@ Pro clarification: `approved=True` vždy, `reason` = user's answer text
 
 ### 13.4 State po interrupt
 
-- FOREGROUND task: `DISPATCHED_GPU` (keeps `orchestratorThreadId`)
+- FOREGROUND task: `DONE` (keeps `orchestratorThreadId`)
   - Clarification/approval emitováno do chatu jako ASSISTANT message
   - User odpovídá přímo v chatu → task reused → resume
 - BACKGROUND task: `USER_TASK` (notification v sidebar)
-  - User responds in sidebar → new READY_FOR_GPU
+  - User responds in sidebar → new QUEUED
 
 ---
 
@@ -1142,7 +1142,7 @@ Pro clarification: `approved=True` vždy, `reason` = user's answer text
 
 **Kotlin (early guard)**:
 ```kotlin
-val orchestratingCount = taskRepository.countByState(TaskStateEnum.PYTHON_ORCHESTRATING)
+val orchestratingCount = taskRepository.countByState(TaskStateEnum.PROCESSING)
 if (orchestratingCount >= maxConcurrent) return false  // skip dispatch
 ```
 
@@ -1168,9 +1168,9 @@ Thread 2: [watcher resumuje] → process result → done
 ### 14.3 Task state machine
 
 ```
-NEW → PYTHON_ORCHESTRATING (dispatch to Python)
-    → WAITING_FOR_AGENT (coding agent K8s Job dispatched)
-    → PYTHON_ORCHESTRATING (agent completed, graph resumed)
+NEW → PROCESSING (dispatch to Python)
+    → CODING (coding agent K8s Job dispatched)
+    → PROCESSING (agent completed, graph resumed)
     → DONE / FAILED
 ```
 
@@ -1186,7 +1186,7 @@ Orchestrátor nemá globální lock — více podů může zpracovávat požadav
 
 Task-level stuck detection uses DB timestamps instead of in-memory heartbeat trackers (OrchestratorHeartbeatTracker and CorrectionHeartbeatTracker have been removed):
 
-- **`orchestrationStartedAt`**: Set when task enters `PYTHON_ORCHESTRATING`
+- **`orchestrationStartedAt`**: Set when task enters `PROCESSING`
 - **`stateChangedAt`**: Updated on each `/internal/orchestrator-progress` callback
 - **`STUCK_THRESHOLD_MINUTES = 15`**: If no progress for 15 min, task is considered stuck
 
@@ -1196,7 +1196,7 @@ This approach survives server restarts (timestamps are in MongoDB) and eliminate
 
 ```
 every 60s:
-  for each task in PYTHON_ORCHESTRATING:
+  for each task in PROCESSING:
     lastUpdate = task.stateChangedAt ?: task.orchestrationStartedAt
     if lastUpdate == null:
       // Task just dispatched, wait
@@ -1210,7 +1210,7 @@ every 60s:
       orchestratorStatusHandler.handleStatusChange(...)
     catch (connectionError):
       // Python unreachable → reset task for retry
-      task.state = READY_FOR_GPU
+      task.state = QUEUED
       task.orchestratorThreadId = null
 ```
 
@@ -1243,12 +1243,12 @@ The Python orchestrator registers a crash handler (`atexit` + `SIGTERM` signal h
 
 **Soubor**: `app/agent_task_watcher.py`
 
-Background asyncio service polling for WAITING_FOR_AGENT tasks:
+Background asyncio service polling for CODING tasks:
 
 ```python
 class AgentTaskWatcher:
     async def _poll_once(self):
-        # 1. GET /internal/tasks/by-state?state=WAITING_FOR_AGENT
+        # 1. GET /internal/tasks/by-state?state=CODING
         # 2. For each task: check K8s Job status via job_runner.get_job_status()
         # 3. On completion: collect result, notify Kotlin, resume orchestration
 ```
@@ -1259,9 +1259,9 @@ class AgentTaskWatcher:
 - Survives pod restarts — all state in MongoDB (TaskDocument + LangGraph checkpoints)
 
 **Internal Kotlin endpoints used by watcher:**
-- `GET /internal/tasks/by-state?state=WAITING_FOR_AGENT` — fetch waiting tasks
-- `POST /internal/tasks/{taskId}/agent-completed` — mark agent done, transition to PYTHON_ORCHESTRATING
-- `POST /internal/tasks/{taskId}/agent-dispatched` — mark task as WAITING_FOR_AGENT (called from graph nodes)
+- `GET /internal/tasks/by-state?state=CODING` — fetch waiting tasks
+- `POST /internal/tasks/{taskId}/agent-completed` — mark agent done, transition to PROCESSING
+- `POST /internal/tasks/{taskId}/agent-dispatched` — mark task as CODING (called from graph nodes)
 
 ---
 
@@ -2316,17 +2316,17 @@ class AgentOrchestratorService(
         // Path 3: unavailable → error response
 
     private suspend fun dispatchToPythonOrchestrator(...):
-        // 1. Guard: PYTHON_ORCHESTRATING count == 0
+        // 1. Guard: PROCESSING count == 0
         // 2. isHealthy()
         // 3. Load rules, environment, names, chat history
         // 4. Build OrchestrateRequestDto
         // 5. POST /orchestrate/stream → get thread_id
-        // 6. Save PYTHON_ORCHESTRATING + orchestratorThreadId
+        // 6. Save PROCESSING + orchestratorThreadId
 
     private suspend fun resumePythonOrchestrator(...):
         // Distinguish clarification vs approval
         // POST /approve/{thread_id}
-        // Save PYTHON_ORCHESTRATING
+        // Save PROCESSING
 }
 ```
 
@@ -2347,14 +2347,14 @@ class OrchestratorStatusHandler(
             "error"       → handleError(task, error)
 
     private suspend fun handleInterrupted(task, action, description):
-        // FOREGROUND: emit to chat stream + save ASSISTANT message + DISPATCHED_GPU
+        // FOREGROUND: emit to chat stream + save ASSISTANT message + DONE
         // BACKGROUND: create USER_TASK notification
 
     private suspend fun handleDone(task, summary):
         // FOREGROUND: emit response + save ASSISTANT message
         // Check inline messages (arrived during orchestration)
-        //   → if yes: re-queue to READY_FOR_GPU
-        //   → if no: DISPATCHED_GPU (terminal)
+        //   → if yes: re-queue to QUEUED
+        //   → if no: DONE (terminal)
         // BACKGROUND: delete task after completion
         // Async: chatHistoryService.compressIfNeeded()
 
@@ -2367,7 +2367,7 @@ class OrchestratorStatusHandler(
 ### 26.5 BackgroundEngine (relevantní loops)
 
 ```kotlin
-// Execution loop (GPU): three-tier priority — FOREGROUND > BACKGROUND > IDLE
+// Execution loop (orchestrator): three-tier priority — FOREGROUND > BACKGROUND > IDLE
 private suspend fun runExecutionLoop():
     while (true):
         // 0. Preemption: FG preempts BG+IDLE, BG preempts IDLE
@@ -2381,11 +2381,11 @@ private suspend fun runExecutionLoop():
         if task != null:
             agentOrchestratorService.run(task, task.content)
 
-// Orchestrator result loop: safety-net for PYTHON_ORCHESTRATING
+// Orchestrator result loop: safety-net for PROCESSING
 private suspend fun runOrchestratorResultLoop():
     while (true):
         delay(60_000)                  // 60s interval
-        tasks = findAll(PYTHON_ORCHESTRATING)
+        tasks = findAll(PROCESSING)
         for task in tasks:
             checkOrchestratorTaskStatus(task)
             // → timestamp stuck check → Python poll → status handler
@@ -2763,7 +2763,7 @@ backend/server/src/main/kotlin/com/jervis/
 │   │   ├── OrchestratorStatusHandler.kt # State transitions (push + poll)
 │   │   # (OrchestratorHeartbeatTracker removed — replaced by timestamp-based stuck detection via DB fields)
 │   ├── background/
-│   │   └── BackgroundEngine.kt          # 4 loops: qualification, execution, scheduler, result
+│   │   └── BackgroundEngine.kt          # 4 loops: indexing, execution, scheduler, result
 │   └── chat/
 │       ├── ChatMessageService.kt        # Message CRUD service
 │       └── ChatHistoryService.kt        # History payload + async compression
@@ -3316,7 +3316,7 @@ delegating to existing Kotlin services:
 | `/internal/tasks/{id}/respond` | POST | `TaskRepository.save()` (state transition) | chat tool |
 | `/internal/meetings/{id}/classify` | POST | `MeetingRpcImpl.classifyMeeting()` | chat tool |
 | `/internal/unclassified-meetings` | GET | `MeetingRpcImpl.listUnclassifiedMeetings()` | chat tool |
-| `/internal/dispatch-coding-agent` | POST | `TaskService.createTask(READY_FOR_GPU)` | chat tool |
+| `/internal/dispatch-coding-agent` | POST | `TaskService.createTask(QUEUED)` | chat tool |
 
 Request DTOs: `InternalCreateTaskRequest` (in InternalTaskApiRouting.kt), `InternalRespondToTaskRequest`, `InternalClassifyMeetingRequest`, `InternalDispatchCodingAgentRequest` (in KtorRpcServer.kt). `InternalCreateTaskRequest` accepts both legacy (`query`) and new (`title`, `description`, `schedule`, `daysOffset`, `createdBy`) fields.
 
@@ -3689,13 +3689,13 @@ TaskDocument now supports parent-child relationships:
 - `parentTaskId` — links child to root task
 - `blockedByTaskIds` — dependencies that must complete before this task runs
 - `phase` + `orderInPhase` — ordering within work plan phases
-- New states: `BLOCKED` (waiting for deps), `PLANNING` (root task being decomposed)
+- State: `BLOCKED` (waiting for deps; also used for root tasks being decomposed)
 
 ### 33.2 WorkPlanExecutor
 
 New loop in BackgroundEngine (15s interval):
-1. Find BLOCKED tasks → if all blockedByTaskIds are DONE → unblock to READY_FOR_QUALIFICATION
-2. Find PLANNING root tasks → if all children DONE → root.state = DONE with summary
+1. Find BLOCKED tasks → if all blockedByTaskIds are DONE → unblock to INDEXING
+2. Find BLOCKED root tasks (with children) → if all children DONE → root.state = DONE with summary
 3. If any child ERROR → root escalated to USER_TASK
 
 ### 33.3 create_work_plan Tool
@@ -3703,7 +3703,7 @@ New loop in BackgroundEngine (15s interval):
 Chat tool that creates hierarchical work plans:
 - LLM sends phases + tasks with dependencies
 - Python forwards to `POST /internal/tasks/create-work-plan`
-- Kotlin creates root (PLANNING) + children (BLOCKED/READY_FOR_QUALIFICATION)
+- Kotlin creates root (BLOCKED) + children (BLOCKED/INDEXING)
 - First phase tasks without dependencies start immediately
 - WorkPlanExecutor handles the rest automatically
 

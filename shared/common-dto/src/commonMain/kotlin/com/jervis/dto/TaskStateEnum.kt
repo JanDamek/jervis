@@ -1,20 +1,21 @@
 package com.jervis.dto
 
 /**
- * Lifecycle state of a PendingTask.
- * Index-first pipeline, then qualification, then optional GPU dispatch.
+ * Lifecycle state of a Task.
+ *
+ * Pipeline: NEW → INDEXING → [QUALIFYING] → QUEUED → PROCESSING → DONE
+ *
+ * States describe what the TASK is doing, not who processes it.
  */
 enum class TaskStateEnum {
-    NEW, // Task created, context can be merged
-    READY_FOR_QUALIFICATION, // Awaiting qualifier claim
-    QUALIFYING, // Claimed by qualifier, making decision
-    READY_FOR_GPU, // Qualification complete, complex task needs GPU execution
-    DISPATCHED_GPU, // Delegated to strong model / GPU pipeline
-    PYTHON_ORCHESTRATING, // Dispatched to Python orchestrator (LangGraph), awaiting result
-    WAITING_FOR_AGENT, // Coding agent K8s Job dispatched, waiting for completion
-    USER_TASK, // Waiting for user input/decision
-    BLOCKED, // Waiting for dependency tasks (blockedByTaskIds) to complete
-    PLANNING, // Root task undergoing decomposition into child tasks
-    DONE, // Terminal state — qualification complete, no orchestrator action needed (info_only, simple_action)
-    ERROR,
+    NEW,           // Scheduled task waiting for scheduledAt
+    INDEXING,      // KB processing: text extraction, embedding, graph nodes (atomic claim via claimedAt)
+    QUALIFYING,    // GPU simple agent preparing context + initial plan (future — not yet implemented)
+    QUEUED,        // Ready for orchestrator pickup (in execution queue)
+    PROCESSING,    // Orchestrator actively working (agentic loop running)
+    CODING,        // K8s coding agent Job dispatched, waiting for completion
+    USER_TASK,     // Waiting for user input/decision
+    BLOCKED,       // Waiting for sub-tasks or dependency tasks (blockedByTaskIds) to complete
+    DONE,          // Terminal — completed or no action needed
+    ERROR,         // Terminal — failed
 }

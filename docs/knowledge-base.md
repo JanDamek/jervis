@@ -291,7 +291,7 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
 
 **Async flow:**
 1. Server dispatches task via `POST /ingest/full/async` with `callbackUrl` + `taskId` (fire-and-forget)
-2. KB returns HTTP 202 immediately — server qualification worker is NOT blocked
+2. KB returns HTTP 202 immediately — server indexing worker is NOT blocked
 3. KB processes in background:
    a. Content hashing (SHA256[:16]) for idempotent re-ingest
    b. RAG ingest (embedding + Weaviate) with `contentHash` property
@@ -299,7 +299,7 @@ Called by `SimpleQualifierAgent` for each task. Fire-and-forget: returns HTTP 20
    d. Graph extraction enqueued to background worker
 4. Progress events pushed to `/internal/kb-progress` (real-time WebSocket updates)
 5. On completion: KB POSTs `FullIngestResult` to `/internal/kb-done` callback
-6. `KbResultRouter` handles routing decision (DONE / READY_FOR_GPU / scheduled)
+6. `KbResultRouter` handles routing decision (DONE / QUEUED / scheduled)
 7. On error: KB POSTs error to `/internal/kb-done` → task marked ERROR
 
 **Legacy endpoint (`POST /ingest/full`):** Still available for backward compatibility (synchronous processing). Note: The Kotlin `ingestFullWithProgress` NDJSON streaming client method has been removed — only the async callback pattern (`POST /ingest/full/async`) is used in production.
@@ -691,7 +691,7 @@ GitContinuousIndexer.createCpgAnalysisTask()
 
 #### Git Commit Ingest Pipeline (incremental — per commit)
 
-Kotlin sends structured commit data directly to KB, bypassing the generic qualification pipeline.
+Kotlin sends structured commit data directly to KB, bypassing the generic indexing pipeline.
 
 ```
 GitContinuousIndexer.processCommit()
@@ -760,11 +760,11 @@ EvidencePack(
 
 ---
 
-## Qualification Queue Priority & Retry
+## Indexing Queue Priority & Retry
 
 ### Queue Priority / Reordering
 
-Tasks in `READY_FOR_QUALIFICATION` state are processed in order: `queuePosition ASC NULLS LAST, createdAt ASC`.
+Tasks in `INDEXING` state are processed in order: `queuePosition ASC NULLS LAST, createdAt ASC`.
 This means manually prioritized items (those with a `queuePosition` set) are processed first, while others fall back to FIFO by creation time.
 
 **RPC endpoints:**
@@ -775,7 +775,7 @@ The UI shows up/down arrows and a prioritize button on items in the "Čeká na K
 
 ### Exponential Retry for Operational Errors
 
-When Ollama is busy or unreachable, qualification retries infinitely with DB-based exponential backoff:
+When Ollama is busy or unreachable, indexing retries infinitely with DB-based exponential backoff:
 
 ```
 5s → 10s → 20s → 40s → 80s → 160s → 300s (cap, retries forever at 5min)
@@ -794,7 +794,7 @@ When Ollama is busy or unreachable, qualification retries infinitely with DB-bas
 - Actual indexing/parsing errors from KB microservice
 
 **Key invariants:**
-- Items stay `READY_FOR_QUALIFICATION` with a future `nextQualificationRetryAt` during backoff (not marked FAILED)
+- Items stay `INDEXING` with a future `nextQualificationRetryAt` during backoff (not marked FAILED)
 - Queue releases items only on restart or crash (stale task recovery in `BackgroundEngine.resetStaleTasks()`)
 - `qualificationRetries` counter tracks retry attempts (displayed in UI as "Opakuje (Nx)")
 
@@ -1079,7 +1079,7 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 
 ### Key Practices
 
-1. **Two-stage processing:** CPU qualification + GPU execution
+1. **Two-stage processing:** CPU indexing + orchestrator execution
 2. **Bidirectional knowledge:** RAG (semantic) + Graph (structured)
 3. **Evidence-based relationships:** Every edge has supporting evidence
 4. **Multi-tenancy:** Per-client isolation in all storage layers
@@ -1087,16 +1087,16 @@ and `SourceUrn.confluenceAttachment()` factories in Kotlin.
 6. **Fail-fast design:** Errors propagate, no silent failures
 7. **Type safety:** Explicit input/output types throughout
 8. **Infinite retry for operational errors:** Ollama busy/timeout → exponential backoff, never marks ERROR
-9. **Queue priority:** Manual reordering of qualification queue items via `queuePosition`
+9. **Queue priority:** Manual reordering of indexing queue items via `queuePosition`
 10. **Write priority:** Dual semaphore ensures MCP/orchestrator writes never blocked by bulk indexing
-11. **Direct structured ingest:** Git commits bypass LLM qualification — structured graph nodes + RAG embedding only
+11. **Direct structured ingest:** Git commits bypass LLM indexing — structured graph nodes + RAG embedding only
 12. **Procedural Memory:** Learned workflows stored per-client for automatic procedure reuse
 13. **Session Memory:** 7-day short-term memory bridging orchestrations for recent context
 
 ### Benefits
 
 1. **Cost efficiency:** GPU models only when necessary
-2. **Scalability:** Parallel CPU qualification, GPU execution on idle
+2. **Scalability:** Parallel CPU indexing, orchestrator execution on idle
 3. **Explainability:** Evidence links for all relationships
 4. **Flexibility:** Schema-less graph for new entity types
 5. **Performance:** Hybrid search combining semantic + structured

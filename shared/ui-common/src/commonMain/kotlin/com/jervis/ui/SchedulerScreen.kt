@@ -401,23 +401,20 @@ private fun taskStateBadge(state: TaskStateEnum): Pair<String, androidx.compose.
     val color = when (state) {
         TaskStateEnum.DONE -> MaterialTheme.colorScheme.primary
         TaskStateEnum.ERROR -> MaterialTheme.colorScheme.error
-        TaskStateEnum.QUALIFYING, TaskStateEnum.READY_FOR_QUALIFICATION -> MaterialTheme.colorScheme.tertiary
-        TaskStateEnum.READY_FOR_GPU, TaskStateEnum.DISPATCHED_GPU,
-        TaskStateEnum.PYTHON_ORCHESTRATING, TaskStateEnum.WAITING_FOR_AGENT,
+        TaskStateEnum.QUALIFYING -> MaterialTheme.colorScheme.tertiary
+        TaskStateEnum.QUEUED, TaskStateEnum.PROCESSING, TaskStateEnum.CODING,
         -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (state) {
         TaskStateEnum.NEW -> "Nový"
-        TaskStateEnum.READY_FOR_QUALIFICATION -> "Čeká na kvalifikaci"
+        TaskStateEnum.INDEXING -> "Indexace"
         TaskStateEnum.QUALIFYING -> "Kvalifikuje se"
-        TaskStateEnum.READY_FOR_GPU -> "Připraven"
-        TaskStateEnum.DISPATCHED_GPU -> "Na GPU"
-        TaskStateEnum.PYTHON_ORCHESTRATING -> "Zpracovává se"
-        TaskStateEnum.WAITING_FOR_AGENT -> "Čeká na agenta"
+        TaskStateEnum.QUEUED -> "Ve frontě"
+        TaskStateEnum.PROCESSING -> "Zpracovává se"
+        TaskStateEnum.CODING -> "Kóduje"
         TaskStateEnum.USER_TASK -> "Čeká na uživatele"
         TaskStateEnum.BLOCKED -> "Blokován"
-        TaskStateEnum.PLANNING -> "Plánování"
         TaskStateEnum.DONE -> "Dokončeno"
         TaskStateEnum.ERROR -> "Chyba"
     }

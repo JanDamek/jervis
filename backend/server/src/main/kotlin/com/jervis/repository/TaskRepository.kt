@@ -74,7 +74,7 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
 
     /**
      * Find tasks by processingMode matching any of the given states, ordered by queuePosition.
-     * Used for queue display: includes both READY_FOR_GPU and PYTHON_ORCHESTRATING tasks
+     * Used for queue display: includes both QUEUED and PROCESSING tasks
      * so inline messages sent during orchestration are visible in the UI queue.
      */
     suspend fun findByProcessingModeAndStateInOrderByQueuePositionAsc(

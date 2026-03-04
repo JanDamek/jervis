@@ -129,7 +129,7 @@ class AutoTaskCreationService(
                     sourceUrn = originalTask.sourceUrn,
                     attachments = originalTask.attachments,
                     taskName = "Auto: ${result.summary.take(80)}",
-                    state = TaskStateEnum.READY_FOR_GPU, // Skip qualification, go straight to GPU
+                    state = TaskStateEnum.QUEUED, // Skip qualification, go straight to orchestrator
                 )
 
                 // Set priority score on the created task
@@ -222,7 +222,7 @@ class AutoTaskCreationService(
             sourceUrn = originalTask.sourceUrn,
             attachments = originalTask.attachments,
             taskName = "Auto: $label — ${result.summary.take(60)}",
-            state = TaskStateEnum.READY_FOR_GPU,
+            state = TaskStateEnum.QUEUED,
         )
 
         updateTaskPriority(task, priority.score)

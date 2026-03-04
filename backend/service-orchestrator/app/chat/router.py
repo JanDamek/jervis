@@ -164,7 +164,7 @@ async def orchestrate_v2(request: dict):
                 keep_environment_running=result.get("keep_environment_running", False),
             )
         except asyncio.CancelledError:
-            # Preemption is NOT an error — Kotlin already reset task to READY_FOR_GPU.
+            # Preemption is NOT an error — Kotlin already reset task to QUEUED.
             # Do NOT send error status — it would show "Chyba" banner in UI.
             logger.info("ORCHESTRATE_V2_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
         except Exception as e:
@@ -215,17 +215,17 @@ async def qualify(request: dict):
             await kotlin_client.report_qualification_done(
                 task_id=qualify_request.task_id,
                 client_id=qualify_request.client_id,
-                decision=result.get("decision", "READY_FOR_GPU"),
+                decision=result.get("decision", "QUEUED"),
                 priority_score=result.get("priority_score", 5),
                 reason=result.get("reason", ""),
             )
         except Exception as e:
             logger.exception("Qualification failed: %s", e)
-            # On failure, default to READY_FOR_GPU (fail-safe)
+            # On failure, default to QUEUED (fail-safe)
             await kotlin_client.report_qualification_done(
                 task_id=qualify_request.task_id,
                 client_id=qualify_request.client_id,
-                decision="READY_FOR_GPU",
+                decision="QUEUED",
                 priority_score=5,
                 reason=f"Qualification error: {e}",
             )

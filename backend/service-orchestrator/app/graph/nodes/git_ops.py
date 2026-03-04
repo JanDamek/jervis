@@ -115,7 +115,7 @@ async def git_operations(state: dict) -> dict:
         git_user_email=rules.git_author_email,
     )
 
-    # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+    # Notify Kotlin server — sets task state to CODING
     await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])
 
     # Interrupt — watcher resumes when commit job completes
@@ -161,7 +161,7 @@ async def git_operations(state: dict) -> dict:
             git_user_email=rules.git_author_email,
         )
 
-        # Notify Kotlin server — sets task state to WAITING_FOR_AGENT
+        # Notify Kotlin server — sets task state to CODING
         await kotlin_client.notify_agent_dispatched(task.id, push_dispatch["job_name"])
 
         # Interrupt — watcher resumes when push job completes

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service
  * Qualification service — dispatches tasks to KB microservice for async processing.
  *
  * Flow (fire-and-forget):
- * 1. Claim READY_FOR_QUALIFICATION tasks (atomic MongoDB update → QUALIFYING)
+ * 1. Claim INDEXING tasks (atomic MongoDB update → QUALIFYING)
  * 2. Extract text + load attachments (local, fast)
  * 3. Submit to KB's /ingest/full/async endpoint (returns immediately with HTTP 202)
  * 4. Move on to next task — KB processes in background

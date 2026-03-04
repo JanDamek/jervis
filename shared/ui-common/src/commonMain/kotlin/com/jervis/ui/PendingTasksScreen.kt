@@ -371,12 +371,14 @@ private fun getTaskTypeLabel(taskType: String): String = when (taskType) {
 
 private fun getTaskStateLabel(state: String): String = when (state) {
     "NEW" -> "Nový"
-    "READY_FOR_QUALIFICATION" -> "K kvalifikaci"
+    "INDEXING" -> "Indexace"
     "QUALIFYING" -> "Kvalifikace"
-    "READY_FOR_GPU" -> "Připraven pro GPU"
-    "DISPATCHED_GPU" -> "Odeslán na GPU"
-    "PYTHON_ORCHESTRATING" -> "Orchestrace"
+    "QUEUED" -> "Ve frontě"
+    "PROCESSING" -> "Zpracovává se"
+    "CODING" -> "Kódování"
     "USER_TASK" -> "Uživatelská úloha"
+    "BLOCKED" -> "Blokován"
+    "DONE" -> "Dokončeno"
     "ERROR" -> "Chyba"
     else -> state
 }

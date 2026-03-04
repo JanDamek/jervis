@@ -684,7 +684,7 @@ async def list_tasks(
     Args:
         client_id: Filter by client ID
         project_id: Filter by project ID
-        state: Filter by state (NEW, PENDING, QUALIFYING, READY_FOR_GPU, PYTHON_ORCHESTRATING, DONE, FAILED)
+        state: Filter by state (NEW, PENDING, QUALIFYING, QUEUED, PROCESSING, DONE, FAILED)
         processing_mode: Filter by mode (FOREGROUND, BACKGROUND)
         limit: Maximum results (default 20)
     """
@@ -1032,7 +1032,7 @@ async def list_scheduled_tasks(
 async def cancel_scheduled_task(task_id: str) -> str:
     """Cancel a scheduled task by setting its state to ERROR with cancellation message.
 
-    Only works on tasks that haven't started processing yet (state in NEW, READY_FOR_QUALIFICATION, QUALIFYING).
+    Only works on tasks that haven't started processing yet (state in NEW, INDEXING, QUALIFYING).
 
     Args:
         task_id: The task ID to cancel
@@ -1042,7 +1042,7 @@ async def cancel_scheduled_task(task_id: str) -> str:
         {
             "_id": task_id,
             "type": "SCHEDULED_TASK",
-            "state": {"$in": ["NEW", "READY_FOR_QUALIFICATION", "QUALIFYING", "READY_FOR_GPU"]},
+            "state": {"$in": ["NEW", "INDEXING", "QUALIFYING", "QUEUED"]},
         },
         {
             "$set": {
