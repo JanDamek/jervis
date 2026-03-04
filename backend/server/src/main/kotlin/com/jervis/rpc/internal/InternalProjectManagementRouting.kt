@@ -190,7 +190,8 @@ fun Routing.installInternalProjectManagementApi(
                 if (!hasRepo) {
                     existingResources.add(
                         com.jervis.entity.ProjectResource(
-                            connectionId = null,
+                            id = ObjectId().toString(),
+                            connectionId = ObjectId(),
                             capability = com.jervis.dto.connection.ConnectionCapability.REPOSITORY,
                             resourceIdentifier = req.gitRemoteUrl,
                             displayName = req.gitRemoteUrl.substringAfterLast("/").removeSuffix(".git"),
@@ -239,7 +240,7 @@ fun Routing.installInternalProjectManagementApi(
             // Link connection to client if clientId provided
             if (req.clientId != null) {
                 val client = clientService.getClientById(ClientId(ObjectId(req.clientId)))
-                val updatedIds = client.connectionIds + saved.id
+                val updatedIds = client.connectionIds + saved.id.value
                 clientService.update(client.copy(connectionIds = updatedIds))
             }
 
@@ -269,38 +270,21 @@ fun Routing.installInternalProjectManagementApi(
         try {
             val connections = mutableListOf<ConnectionDocument>()
             connectionService.findAll().collect { connections.add(it) }
-            val result = connections.map { conn ->
-                mapOf(
-                    "id" to conn.id.toString(),
-                    "name" to conn.name,
-                    "provider" to conn.provider.name,
-                    "state" to conn.state.name,
-                    "baseUrl" to conn.baseUrl,
-                    "capabilities" to conn.availableCapabilities.map { it.name },
-                )
+            val jsonArray = kotlinx.serialization.json.buildJsonArray {
+                for (conn in connections) {
+                    add(kotlinx.serialization.json.buildJsonObject {
+                        put("id", kotlinx.serialization.json.JsonPrimitive(conn.id.toString()))
+                        put("name", kotlinx.serialization.json.JsonPrimitive(conn.name))
+                        put("provider", kotlinx.serialization.json.JsonPrimitive(conn.provider.name))
+                        put("state", kotlinx.serialization.json.JsonPrimitive(conn.state.name))
+                        put("baseUrl", kotlinx.serialization.json.JsonPrimitive(conn.baseUrl))
+                        put("capabilities", kotlinx.serialization.json.buildJsonArray {
+                            conn.availableCapabilities.forEach { add(kotlinx.serialization.json.JsonPrimitive(it.name)) }
+                        })
+                    })
+                }
             }
-            call.respondText(
-                pmJson.encodeToString(
-                    kotlinx.serialization.builtins.ListSerializer(
-                        kotlinx.serialization.builtins.MapSerializer(
-                            kotlinx.serialization.builtins.serializer<String>(),
-                            kotlinx.serialization.json.JsonElement.serializer(),
-                        ),
-                    ),
-                    result.map { entry ->
-                        entry.mapValues { (_, v) ->
-                            when (v) {
-                                is String -> kotlinx.serialization.json.JsonPrimitive(v)
-                                is List<*> -> kotlinx.serialization.json.JsonArray(
-                                    v.map { kotlinx.serialization.json.JsonPrimitive(it as String) },
-                                )
-                                else -> kotlinx.serialization.json.JsonPrimitive(v.toString())
-                            }
-                        },
-                    ),
-                ),
-                ContentType.Application.Json,
-            )
+            call.respondText(jsonArray.toString(), ContentType.Application.Json)
         } catch (e: Exception) {
             logger.warn(e) { "INTERNAL_API_ERROR | endpoint=GET /internal/connections" }
             call.respondText(
