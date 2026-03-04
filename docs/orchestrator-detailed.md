@@ -3944,17 +3944,20 @@ Each vertex executes via a unified agentic tool loop (`_agentic_vertex`):
 
 | Vertex Type | Default Tools | Can Request More? |
 |-------------|--------------|-------------------|
-| PLANNER/DECOMPOSE | KB search, memory recall, repo info/structure, tech stack, KB stats | Yes |
-| INVESTIGATOR | Above + web search, file listing, commits, branches, indexed items | Yes |
-| EXECUTOR/TASK | KB search, web search, files, repo, coding agent, KB write, memory, scheduling | Yes |
-| VALIDATOR | KB search, files, repo, branches, commits | Yes |
-| REVIEWER | KB search, files, repo, branches, commits, tech stack | Yes |
+| PLANNER/DECOMPOSE | KB search, memory recall, repo info/structure, tech stack, KB stats, queue, **get_guidelines** | Yes |
+| INVESTIGATOR | Above + web search, file listing, commits, branches, indexed items, **list_unclassified_meetings** | Yes |
+| EXECUTOR/TASK | KB search, **ask_user**, web search, files, repo, coding agent, KB write, memory, scheduling, **get/update_guidelines**, **classify/list_meetings** | Yes |
+| VALIDATOR | KB search, files, repo, branches, commits, **dispatch_coding_agent** | Yes |
+| REVIEWER | KB search, files, repo, branches, commits, tech stack, **get_guidelines** | Yes |
 | SYNTHESIS | KB search, memory recall, KB write, memory store | No |
-| GATE | KB search, memory recall | Yes |
-| SETUP | KB search, ask_user, environment CRUD, project mgmt tools (create client/project/connection/repo, update project, init workspace, get_stack_recommendations), repo info/structure, tech stack, coding agent, KB write, memory | Yes |
+| GATE | KB search, memory recall, **ask_user** | Yes |
+| SETUP | KB search, ask_user, environment CRUD, project mgmt, repo info/structure, tech stack, coding agent, KB write, memory, **get/update_guidelines** | Yes |
 
 **`request_tools` meta-tool:** Any vertex with this tool can dynamically request additional categories:
-- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, `queue`, `environment`, `project_management`, `setup`, `all`
+- Categories: `kb`, `web`, `git`, `code`, `memory`, `scheduling`, **`interactive`**, **`guidelines`**, **`meetings`**, `queue`, `environment`, `project_management`, `setup`, `all`
+- `interactive` = ask_user (for vertices that don't have it by default)
+- `guidelines` = get_guidelines + update_guideline
+- `meetings` = classify_meeting + list_unclassified_meetings
 - Tools are appended to the current set (deduplicated by name)
 - Available in next LLM call iteration
 

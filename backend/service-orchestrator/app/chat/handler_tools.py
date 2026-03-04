@@ -50,6 +50,8 @@ _TOOL_DESCRIPTIONS = {
     "list_filter_rules": lambda _: "Kontroluji filtrační pravidla",
     "remove_filter_rule": lambda a: f"Odstraňuji pravidlo: {a.get('rule_id', '')}",
     "query_action_log": lambda a: f"Prohledávám akční log: {a.get('query', 'vše')}",
+    "get_guidelines": lambda a: f"Načítám pravidla: {a.get('scope', 'GLOBAL')}",
+    "update_guideline": lambda a: f"Aktualizuji pravidla: {a.get('category', '?')} ({a.get('scope', 'GLOBAL')})",
 }
 
 
@@ -77,6 +79,8 @@ _CHAT_SPECIFIC_TOOLS = {
     "respond_to_user_task",
     "classify_meeting",
     "list_unclassified_meetings",
+    "get_guidelines",
+    "update_guideline",
     "set_filter_rule",
     "list_filter_rules",
     "remove_filter_rule",
@@ -142,6 +146,7 @@ async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_clie
         task_description=args["task_description"],
         client_id=effective_client_id,
         project_id=effective_project_id,
+        agent_preference=args.get("agent_preference", "auto"),
     )
     return f"Coding agent dispatched: {result}"
 
