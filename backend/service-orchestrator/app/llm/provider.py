@@ -420,6 +420,32 @@ class LLMProvider:
             raise TokenTimeoutError(
                 f"LLM blocking call timed out after {timeout}s (tier={tier.value})"
             )
+        except Exception as e:
+            # Dump message structure on provider errors for debugging
+            if "400" in str(e) or "BadRequest" in type(e).__name__:
+                import json as _json
+                msg_summary = []
+                for i, m in enumerate(kwargs.get("messages", [])):
+                    role = m.get("role", "?")
+                    content = m.get("content")
+                    has_tc = bool(m.get("tool_calls"))
+                    tc_id = m.get("tool_call_id", "")
+                    content_info = f"null" if content is None else f"{type(content).__name__}({len(str(content))}ch)"
+                    extras = []
+                    if has_tc:
+                        tc_names = [tc.get("function", {}).get("name", "?") for tc in m.get("tool_calls", [])]
+                        extras.append(f"tool_calls=[{','.join(tc_names)}]")
+                    if tc_id:
+                        extras.append(f"tool_call_id={tc_id}")
+                    extra_str = f" {' '.join(extras)}" if extras else ""
+                    msg_summary.append(f"  [{i}] role={role} content={content_info}{extra_str}")
+                logger.error(
+                    "LLM 400 error — message dump (model=%s, %d msgs, %d tools):\n%s",
+                    config["model"], len(kwargs.get("messages", [])),
+                    len(kwargs.get("tools", [])),
+                    "\n".join(msg_summary),
+                )
+            raise
 
         # Log response summary
         try:
