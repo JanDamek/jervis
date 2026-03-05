@@ -23,6 +23,7 @@ from app.chat.source_attribution import SourceTracker
 from app.chat.topic_tracker import detect_topics, update_conversation_topics, topic_metadata
 from app.llm.router_client import route_request
 from app.chat.handler_tools import (
+    _MAP_TOOLS,
     extract_tool_calls,
     describe_tool_call,
     execute_chat_tool,
@@ -288,7 +289,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "finalize_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context"}
+            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_map", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", *_MAP_TOOLS}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
@@ -331,7 +332,7 @@ async def run_agentic_loop(
                         "content": (
                             f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
                             "Všechna dříve udělená oprávnění pro write akce "
-                            "(create_background_task, create_work_plan, dispatch_coding_agent, store_knowledge) "
+                            "(create_background_task, dispatch_thinking_map, dispatch_coding_agent, store_knowledge) "
                             "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
                             "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),
@@ -352,6 +353,7 @@ async def run_agentic_loop(
                         tool_name, arguments,
                         effective_client_id, effective_project_id,
                         group_id=getattr(request, "active_group_id", None),
+                        session_id=request.session_id,
                     )
                 except ApprovalRequiredInterrupt as approval_exc:
                     # Check session-level auto-approvals first
@@ -362,6 +364,7 @@ async def run_agentic_loop(
                             tool_name, arguments,
                             effective_client_id, effective_project_id,
                             group_id=getattr(request, "active_group_id", None),
+                            session_id=request.session_id,
                         )
                     else:
                         # Emit approval request and wait for user response
@@ -417,22 +420,26 @@ async def run_agentic_loop(
                 if tool_name not in _WRITE_TOOLS:
                     tool_result_cache[cache_key] = result
 
-                if tool_name in ("create_background_task", "create_work_plan"):
+                if tool_name in ("create_background_task", "dispatch_thinking_map"):
                     created_tasks.append(arguments)
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))
 
-                # Emit visual plan update for UI
-                if tool_name == "update_work_plan_draft":
-                    yield ChatStreamEvent(
-                        type="work_plan_update",
-                        content=result,
-                        metadata={
-                            "plan_status": arguments.get("status", "drafting"),
-                            "plan_title": arguments.get("title", ""),
-                            "gap_count": str(len(arguments.get("gaps", []))),
-                        },
-                    )
+                # Emit thinking map update for UI panel
+                if tool_name in _MAP_TOOLS:
+                    from app.chat.thinking_map import get_active_map
+                    graph = await get_active_map(request.session_id)
+                    if graph:
+                        yield ChatStreamEvent(
+                            type="thinking_map_update",
+                            content=graph.model_dump_json(),
+                            metadata={
+                                "graph_id": graph.id,
+                                "title": graph.vertices.get(graph.root_vertex_id, None)
+                                    and graph.vertices[graph.root_vertex_id].title or "Mapa",
+                                "vertex_count": str(len(graph.vertices)),
+                            },
+                        )
 
                 # Track scope from tool arguments
                 tool_client = arguments.get("client_id")

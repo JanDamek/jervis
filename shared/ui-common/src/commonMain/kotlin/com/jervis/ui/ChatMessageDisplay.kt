@@ -746,9 +746,6 @@ private fun ChatMessageItem(
                 }
             }
         }
-    } else if (message.messageType == ChatMessage.MessageType.WORK_PLAN_UPDATE) {
-        // Work plan draft card — iterative planning visualization
-        WorkPlanCard(message = message)
     } else if (message.messageType == ChatMessage.MessageType.URGENT_ALERT) {
         // Urgent alert — always expanded, errorContainer border
         Card(
@@ -1055,128 +1052,6 @@ private fun WorkflowStepsDisplay(
     }
 }
 
-/**
- * Work plan draft card — shows iteratively built plan from chat planning.
- * Displays plan title, status badge, markdown content, and open question count.
- */
-@Composable
-private fun WorkPlanCard(
-    message: ChatMessage,
-    modifier: Modifier = Modifier,
-) {
-    val status = message.metadata["plan_status"] ?: "drafting"
-    val title = message.metadata["plan_title"] ?: "Plán"
-    val gapCount = message.metadata["gap_count"]?.toIntOrNull() ?: 0
-    val isReady = status == "ready"
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isReady) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            },
-        ),
-        border = if (isReady) {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-        } else {
-            null
-        },
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Header: icon + title + status badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.AccountTree,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isReady) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                // Status badge
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isReady) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    ),
-                    modifier = Modifier.padding(0.dp),
-                ) {
-                    Text(
-                        text = if (isReady) "Ke schválení" else "Rozpracováno",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isReady) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Plan content — rendered as markdown
-            if (message.text.isNotBlank()) {
-                SelectionContainer {
-                    SafeMarkdown(
-                        content = message.text,
-                        colors = markdownColor(
-                            text = MaterialTheme.colorScheme.onSurface,
-                            codeBackground = MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                        typography = markdownTypography(
-                            text = MaterialTheme.typography.bodyMedium,
-                            code = MaterialTheme.typography.bodySmall,
-                            h1 = MaterialTheme.typography.titleMedium,
-                            h2 = MaterialTheme.typography.titleSmall,
-                            h3 = MaterialTheme.typography.labelLarge,
-                        ),
-                        fallbackStyle = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-
-            // Open questions indicator
-            if (gapCount > 0) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "$gapCount otevřených otázek",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-            }
-
-            // Timestamp
-            message.timestamp?.let { ts ->
-                if (ts.isNotBlank()) {
-                    Text(
-                        text = formatMessageTime(ts),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
-        }
-    }
-}
 
 /**
  * E14-S4: Confidence badge showing fact-check verification status.

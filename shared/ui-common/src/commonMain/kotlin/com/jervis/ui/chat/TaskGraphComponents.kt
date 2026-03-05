@@ -54,7 +54,7 @@ import com.jervis.dto.graph.TaskGraphDto
  * Initially collapsed — shows summary line. Expanded — shows vertex tree and edges.
  */
 @Composable
-internal fun TaskGraphSection(
+fun TaskGraphSection(
     graph: TaskGraphDto,
     modifier: Modifier = Modifier,
 ) {

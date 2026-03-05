@@ -90,6 +90,24 @@ class ChatViewModel(
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
     val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
+    /** Active thinking map from chat (built iteratively by agent). */
+    private val _activeThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
+    val activeThinkingMap: StateFlow<TaskGraphDto?> = _activeThinkingMap.asStateFlow()
+
+    /** Summary of all thinking maps in the current session. */
+    data class ThinkingMapSummary(val id: String, val title: String, val vertexCount: Int, val status: String)
+    private val _thinkingMaps = MutableStateFlow<List<ThinkingMapSummary>>(emptyList())
+    val thinkingMaps: StateFlow<List<ThinkingMapSummary>> = _thinkingMaps.asStateFlow()
+
+    fun selectThinkingMap(id: String) {
+        // If we have the graph cached, switch to it
+        val graphs = _taskGraphs.value
+        val cached = graphs[id]
+        if (cached != null) {
+            _activeThinkingMap.value = cached
+        }
+    }
+
     /** Show chat messages (user/assistant). Default ON. */
     private val _showChat = MutableStateFlow(true)
     val showChat: StateFlow<Boolean> = _showChat.asStateFlow()
@@ -581,7 +599,7 @@ class ChatViewModel(
 
             ChatResponseType.BACKGROUND_RESULT -> ChatMessage.MessageType.BACKGROUND_RESULT
             ChatResponseType.URGENT_ALERT -> ChatMessage.MessageType.URGENT_ALERT
-            ChatResponseType.WORK_PLAN_UPDATE -> ChatMessage.MessageType.WORK_PLAN_UPDATE
+            ChatResponseType.THINKING_MAP_UPDATE -> ChatMessage.MessageType.THINKING_MAP_UPDATE
 
             else -> null
         }
@@ -719,19 +737,24 @@ class ChatViewModel(
                 )
             }
 
-            ChatMessage.MessageType.WORK_PLAN_UPDATE -> {
-                // Remove progress messages — plan update replaces "thinking" state
-                messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
-                messages.add(
-                    ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = response.message,
-                        contextId = projectId,
-                        messageType = messageType,
-                        metadata = response.metadata,
-                        timestamp = response.metadata["timestamp"],
-                    ),
-                )
+            ChatMessage.MessageType.THINKING_MAP_UPDATE -> {
+                // Parse TaskGraphDto from JSON and update active thinking map
+                try {
+                    val graph = Json.decodeFromString<TaskGraphDto>(response.message)
+                    _activeThinkingMap.value = graph
+                    // Track in maps list
+                    val mapId = response.metadata["graph_id"] ?: graph.taskId
+                    val title = response.metadata["title"] ?: "Mapa"
+                    val vertexCount = response.metadata["vertex_count"]?.toIntOrNull() ?: graph.vertices.size
+                    val existing = _thinkingMaps.value.toMutableList()
+                    val idx = existing.indexOfFirst { it.id == mapId }
+                    val summary = ThinkingMapSummary(mapId, title, vertexCount, graph.status)
+                    if (idx >= 0) existing[idx] = summary else existing.add(summary)
+                    _thinkingMaps.value = existing
+                } catch (e: Exception) {
+                    println("Failed to parse thinking map: ${e.message}")
+                }
+                // Don't add to chat messages — shown in panel
             }
         }
         _chatMessages.value = messages

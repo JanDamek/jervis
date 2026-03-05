@@ -33,8 +33,9 @@ _CATEGORY_TOOL_NAMES: dict[ChatCategory, list[str]] = {
         "switch_context", "kb_search",
     ],
     ChatCategory.COMPLEX: [
-        "create_background_task", "create_work_plan",
-        "update_work_plan_draft", "finalize_work_plan",
+        "create_background_task",
+        "create_thinking_map", "add_map_vertex", "update_map_vertex",
+        "remove_map_vertex", "dispatch_thinking_map", "run_map_vertex",
         "dispatch_coding_agent", "kb_search",
         "web_search",
         "switch_context",

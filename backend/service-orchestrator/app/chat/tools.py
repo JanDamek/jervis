@@ -375,178 +375,165 @@ TOOL_REMOVE_FILTER_RULE: dict = {
 # Action memory tools (EPIC 9-S4)
 # ---------------------------------------------------------------------------
 
-TOOL_CREATE_WORK_PLAN: dict = {
+TOOL_CREATE_THINKING_MAP: dict = {
     "type": "function",
     "function": {
-        "name": "create_work_plan",
+        "name": "create_thinking_map",
         "description": (
-            "Rozlož složitý úkol na hierarchii dílčích úkolů s fázemi a závislostmi. "
-            "Použij pro úkoly s víc než 3 kroky. Vytvoří root task (BLOCKED) s child tasky "
-            "které se automaticky odblokují a zpracují."
+            "Vytvoř novou myšlenkovou mapu pro plánování složitějšího úkolu (>2 kroky). "
+            "Mapa se zobrazí vizuálně v panelu vedle chatu. "
+            "Po vytvoření přidávej kroky přes add_map_vertex."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Název celého plánu (stručný).",
-                },
-                "phases": {
-                    "type": "array",
-                    "description": "Fáze plánu (v pořadí vykonání).",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "Název fáze (např. 'Analýza', 'Implementace').",
-                            },
-                            "tasks": {
-                                "type": "array",
-                                "description": "Úkoly v rámci fáze.",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "title": {
-                                            "type": "string",
-                                            "description": "Název dílčího úkolu.",
-                                        },
-                                        "description": {
-                                            "type": "string",
-                                            "description": "Co přesně se má udělat.",
-                                        },
-                                        "action_type": {
-                                            "type": "string",
-                                            "enum": [
-                                                "DECIDE", "RESEARCH", "DESIGN",
-                                                "CODE", "REVIEW", "TEST",
-                                                "CLARIFY", "ESTIMATE",
-                                            ],
-                                            "description": "Typ akce.",
-                                        },
-                                        "depends_on": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                            "description": "Názvy úkolů na kterých závisí (volitelné).",
-                                        },
-                                    },
-                                    "required": ["title", "description"],
-                                },
-                            },
-                        },
-                        "required": ["name", "tasks"],
-                    },
+                    "description": "Stručný název celého záměru (česky).",
                 },
                 "client_id": {
                     "type": "string",
-                    "description": "Client ID (z kontextu nebo se zeptej).",
+                    "description": "Client ID (volitelné — z kontextu).",
                 },
                 "project_id": {
                     "type": "string",
                     "description": "Project ID (volitelné).",
                 },
             },
-            "required": ["title", "phases"],
+            "required": ["title"],
         },
     },
 }
 
-TOOL_UPDATE_WORK_PLAN_DRAFT: dict = {
+TOOL_ADD_MAP_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "update_work_plan_draft",
+        "name": "add_map_vertex",
         "description": (
-            "Vytvoř nebo aktualizuj rozpracovaný plán práce. Volej po každé odpovědi "
-            "uživatele během plánování. Plán se zobrazí vizuálně v chatu. "
-            "Pokud je plán kompletní (žádné gaps), nastav status na 'ready'."
+            "Přidej krok do myšlenkové mapy. Každý krok má typ — "
+            "investigator (průzkum), executor (realizace), validator (testy/ověření), "
+            "reviewer (review), planner (dekompozice), setup (příprava), synthesis (spojení výsledků)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Název celého plánu.",
+                    "description": "Stručný název kroku (česky).",
                 },
-                "phases": {
-                    "type": "array",
-                    "description": "Fáze plánu (v pořadí vykonání).",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "Název fáze.",
-                            },
-                            "tasks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "title": {"type": "string"},
-                                        "description": {"type": "string"},
-                                        "action_type": {
-                                            "type": "string",
-                                            "enum": [
-                                                "DECIDE", "RESEARCH", "DESIGN",
-                                                "CODE", "REVIEW", "TEST",
-                                                "CLARIFY", "ESTIMATE",
-                                            ],
-                                        },
-                                        "status": {
-                                            "type": "string",
-                                            "enum": ["draft", "confirmed", "removed"],
-                                            "description": "draft=otevřený, confirmed=odsouhlasený, removed=smazaný.",
-                                        },
-                                        "depends_on": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                            "description": "Názvy úkolů na kterých závisí.",
-                                        },
-                                    },
-                                    "required": ["title", "description"],
-                                },
-                            },
-                        },
-                        "required": ["name", "tasks"],
-                    },
+                "description": {
+                    "type": "string",
+                    "description": "Co přesně se má v tomto kroku udělat.",
                 },
-                "gaps": {
+                "vertex_type": {
+                    "type": "string",
+                    "enum": ["investigator", "executor", "validator", "reviewer", "planner", "setup", "synthesis"],
+                    "description": "Typ kroku.",
+                },
+                "depends_on": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Otevřené otázky které je třeba zodpovědět.",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["drafting", "ready"],
-                    "description": "drafting=rozpracováno, ready=plán je kompletní k odsouhlasení.",
+                    "description": "Názvy kroků na kterých tento závisí (volitelné).",
                 },
             },
-            "required": ["title", "phases", "status"],
+            "required": ["title", "description", "vertex_type"],
         },
     },
 }
 
-TOOL_FINALIZE_WORK_PLAN: dict = {
+TOOL_UPDATE_MAP_VERTEX: dict = {
     "type": "function",
     "function": {
-        "name": "finalize_work_plan",
+        "name": "update_map_vertex",
+        "description": "Uprav existující krok v myšlenkové mapě.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "vertex_id": {
+                    "type": "string",
+                    "description": "ID vertexu k úpravě.",
+                },
+                "title": {"type": "string", "description": "Nový název (volitelné)."},
+                "description": {"type": "string", "description": "Nový popis (volitelné)."},
+                "vertex_type": {
+                    "type": "string",
+                    "enum": ["investigator", "executor", "validator", "reviewer", "planner", "setup", "synthesis"],
+                    "description": "Nový typ (volitelné).",
+                },
+            },
+            "required": ["vertex_id"],
+        },
+    },
+}
+
+TOOL_REMOVE_MAP_VERTEX: dict = {
+    "type": "function",
+    "function": {
+        "name": "remove_map_vertex",
+        "description": "Odeber krok z myšlenkové mapy.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "vertex_id": {
+                    "type": "string",
+                    "description": "ID vertexu k odebrání.",
+                },
+            },
+            "required": ["vertex_id"],
+        },
+    },
+}
+
+TOOL_DISPATCH_THINKING_MAP: dict = {
+    "type": "function",
+    "function": {
+        "name": "dispatch_thinking_map",
         "description": (
-            "Finalizuj odsouhlasený plán — vytvoř skutečné background tasky z draft plánu. "
-            "Volej POUZE po explicitním souhlasu uživatele."
+            "Finalizuj myšlenkovou mapu a spusť její realizaci na pozadí. "
+            "Volej POUZE po explicitním souhlasu uživatele s mapou."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "client_id": {
                     "type": "string",
-                    "description": "Client ID.",
+                    "description": "Client ID (volitelné — z kontextu).",
                 },
                 "project_id": {
                     "type": "string",
                     "description": "Project ID (volitelné).",
                 },
             },
-            "required": ["client_id"],
+        },
+    },
+}
+
+TOOL_RUN_MAP_VERTEX: dict = {
+    "type": "function",
+    "function": {
+        "name": "run_map_vertex",
+        "description": (
+            "Spusť jeden krok myšlenkové mapy na pozadí (paralelně s chatem). "
+            "Výsledek se vrátí do mapy automaticky. Použij pro investigátory, "
+            "výzkum, analýzy — cokoliv co trvá déle a uživatel na to nečeká."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "vertex_id": {
+                    "type": "string",
+                    "description": "ID vertexu ke spuštění.",
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Client ID (volitelné — z kontextu).",
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project ID (volitelné).",
+                },
+            },
+            "required": ["vertex_id"],
         },
     },
 }
@@ -664,9 +651,12 @@ TOOL_UPDATE_GUIDELINE: dict = {
 
 CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_CREATE_BACKGROUND_TASK,
-    TOOL_CREATE_WORK_PLAN,
-    TOOL_UPDATE_WORK_PLAN_DRAFT,
-    TOOL_FINALIZE_WORK_PLAN,
+    TOOL_CREATE_THINKING_MAP,
+    TOOL_ADD_MAP_VERTEX,
+    TOOL_UPDATE_MAP_VERTEX,
+    TOOL_REMOVE_MAP_VERTEX,
+    TOOL_DISPATCH_THINKING_MAP,
+    TOOL_RUN_MAP_VERTEX,
     TOOL_DISPATCH_CODING_AGENT,
     TOOL_SEARCH_TASKS,
     TOOL_GET_TASK_STATUS,
@@ -734,6 +724,12 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
     ],
     ToolCategory.TASK_MGMT: [
         TOOL_CREATE_BACKGROUND_TASK,
+        TOOL_CREATE_THINKING_MAP,
+        TOOL_ADD_MAP_VERTEX,
+        TOOL_UPDATE_MAP_VERTEX,
+        TOOL_REMOVE_MAP_VERTEX,
+        TOOL_DISPATCH_THINKING_MAP,
+        TOOL_RUN_MAP_VERTEX,
         TOOL_DISPATCH_CODING_AGENT,
         TOOL_SEARCH_TASKS,
         TOOL_GET_TASK_STATUS,
@@ -760,8 +756,10 @@ TOOL_DOMAINS: dict[str, str] = {
     "kb_search": "search", "kb_delete": "memory", "web_search": "search",
     "memory_recall": "search", "get_kb_stats": "search", "get_indexed_items": "search",
     "memory_store": "memory", "store_knowledge": "memory", "list_affairs": "memory",
-    "create_background_task": "task", "create_work_plan": "task",
-    "update_work_plan_draft": "task", "finalize_work_plan": "task",
+    "create_background_task": "task",
+    "create_thinking_map": "task", "add_map_vertex": "task",
+    "update_map_vertex": "task", "remove_map_vertex": "task",
+    "dispatch_thinking_map": "task", "run_map_vertex": "task",
     "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",

@@ -139,10 +139,11 @@ async def handle_chat(
                 runtime_context=runtime_ctx,
             )
         else:
-            system_prompt_text = build_system_prompt(
+            system_prompt_text = await build_system_prompt(
                 active_client_id=request.active_client_id,
                 active_project_id=request.active_project_id,
                 runtime_context=runtime_ctx,
+                session_id=request.session_id,
             )
         messages = build_messages(
             system_prompt=system_prompt_text,

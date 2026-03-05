@@ -52,6 +52,8 @@ fun MainScreen(
     val orchestratorHealthy by viewModel.queue.orchestratorHealthy.collectAsState()
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
     val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
+    val activeThinkingMap by viewModel.chat.activeThinkingMap.collectAsState()
+    val thinkingMaps by viewModel.chat.thinkingMaps.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -116,6 +118,9 @@ fun MainScreen(
         onToggleNeedReaction = viewModel.chat::toggleNeedReaction,
         backgroundMessageCount = backgroundMessageCount,
         userTaskCount = userTaskCount,
+        activeThinkingMap = activeThinkingMap,
+        thinkingMaps = thinkingMaps,
+        onSelectThinkingMap = viewModel.chat::selectThinkingMap,
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,

@@ -354,9 +354,10 @@ async def process_sub_topic(
                         tool_name, arguments,
                         client_id or request.active_client_id,
                         project_id or request.active_project_id,
+                        session_id=request.session_id,
                     )
                     used_tools.append(tool_name)
-                    if tool_name in ("create_background_task", "create_work_plan"):
+                    if tool_name in ("create_background_task", "dispatch_thinking_map"):
                         created_tasks.append(arguments)
                     if tool_name == "respond_to_user_task":
                         responded_tasks.append(arguments.get("task_id", ""))

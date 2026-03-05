@@ -36,7 +36,12 @@ _TOOL_DESCRIPTIONS = {
     "get_kb_stats": lambda _: "Zjišťuji statistiky KB",
     "get_indexed_items": lambda _: "Kontroluji indexovaný obsah",
     "create_background_task": lambda a: f"Vytvářím úkol: {a.get('title', '')}",
-    "create_work_plan": lambda a: f"Vytvářím plán: {a.get('title', '')}",
+    "create_thinking_map": lambda a: f"Vytvářím myšlenkovou mapu: {a.get('title', '')}",
+    "add_map_vertex": lambda a: f"Přidávám krok: {a.get('title', '')}",
+    "update_map_vertex": lambda a: f"Upravuji krok: {a.get('vertex_id', '')}",
+    "remove_map_vertex": lambda a: f"Odebírám krok: {a.get('vertex_id', '')}",
+    "dispatch_thinking_map": lambda _: "Spouštím realizaci mapy na pozadí",
+    "run_map_vertex": lambda a: f"Spouštím krok na pozadí: {a.get('vertex_id', '')}",
     "dispatch_coding_agent": lambda _: "Odesílám coding task na agenta",
     "search_user_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
     "search_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
@@ -70,9 +75,12 @@ def describe_tool_call(name: str, args: dict) -> str:
 # Chat-specific tools dispatched via Kotlin internal API
 _CHAT_SPECIFIC_TOOLS = {
     "create_background_task",
-    "create_work_plan",
-    "update_work_plan_draft",
-    "finalize_work_plan",
+    "create_thinking_map",
+    "add_map_vertex",
+    "update_map_vertex",
+    "remove_map_vertex",
+    "dispatch_thinking_map",
+    "run_map_vertex",
     "dispatch_coding_agent",
     "search_user_tasks",
     "search_tasks",
@@ -90,16 +98,23 @@ _CHAT_SPECIFIC_TOOLS = {
 }
 
 
+_MAP_TOOLS = {
+    "create_thinking_map", "add_map_vertex", "update_map_vertex",
+    "remove_map_vertex", "dispatch_thinking_map", "run_map_vertex",
+}
+
+
 async def execute_chat_tool(
     tool_name: str,
     arguments: dict,
     active_client_id: str | None,
     active_project_id: str | None,
     group_id: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """Execute a tool call, routing between base tools and chat-specific tools."""
     if tool_name in _CHAT_SPECIFIC_TOOLS:
-        return await _execute_chat_specific_tool(tool_name, arguments, active_client_id, active_project_id)
+        return await _execute_chat_specific_tool(tool_name, arguments, active_client_id, active_project_id, session_id)
 
     return await execute_tool(
         tool_name=tool_name,
@@ -131,133 +146,119 @@ async def _handle_create_background_task(args, client_id, project_id, kotlin_cli
     return f"Background task created: {result}"
 
 
-async def _handle_create_work_plan(args, client_id, project_id, kotlin_client):
-    # Context IDs have priority over LLM-provided args
+async def _handle_create_thinking_map(args, client_id, project_id, _kotlin_client):
+    """Create a new thinking map (TaskGraph) for the chat session."""
+    from app.chat.thinking_map import create_map
+    # session_id is injected by _execute_chat_specific_tool
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
     effective_client_id = client_id or args.get("client_id")
     effective_project_id = project_id or args.get("project_id")
-    # Validate ObjectId format if provided (clientId is optional — None = global)
-    import re
-    _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
-    if effective_client_id and not _OID_RE.match(effective_client_id):
-        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
-    result = await kotlin_client.create_work_plan(
+    graph = await create_map(
         title=args["title"],
-        phases=args["phases"],
+        session_id=session_id,
         client_id=effective_client_id,
         project_id=effective_project_id,
     )
-    return result
+    vertex_count = len(graph.vertices)
+    return f"Myšlenková mapa '{args['title']}' vytvořena ({vertex_count} vrcholů). Přidávej kroky přes add_map_vertex."
 
 
-async def _handle_update_work_plan_draft(args, client_id, project_id, _kotlin_client):
-    """Store draft plan in active affair and return rendered markdown."""
-    from app.chat.work_plan_draft import (
-        DraftPlan, DraftPlanPhase, DraftPlanTask,
-        PLAN_DRAFT_KEY, PLAN_VERSION_KEY,
-        render_plan_markdown, serialize_plan,
-    )
-    from app.memory.agent import _get_or_create_lqm
-
-    lqm = _get_or_create_lqm()
-
-    # Build plan model from args
-    phases = []
-    for p in args.get("phases", []):
-        tasks = [
-            DraftPlanTask(
-                title=t["title"],
-                description=t.get("description", ""),
-                action_type=t.get("action_type", "CODE"),
-                status=t.get("status", "draft"),
-                depends_on=t.get("depends_on", []),
-            )
-            for t in p.get("tasks", [])
-        ]
-        phases.append(DraftPlanPhase(name=p["name"], tasks=tasks))
-
-    # Get active affair for this client
-    affair = lqm.get_active_affair(client_id) if client_id else None
-
-    prev_version = 0
-    if affair and PLAN_VERSION_KEY in affair.key_facts:
-        try:
-            prev_version = int(affair.key_facts[PLAN_VERSION_KEY])
-        except (ValueError, TypeError):
-            pass
-
-    plan = DraftPlan(
-        title=args["title"],
-        phases=phases,
-        gaps=args.get("gaps", []),
-        status=args.get("status", "drafting"),
-        version=prev_version + 1,
-    )
-
-    # Store in affair
-    if affair:
-        affair.key_facts[PLAN_DRAFT_KEY] = serialize_plan(plan)
-        affair.key_facts[PLAN_VERSION_KEY] = str(plan.version)
-        affair.title = f"Plan: {plan.title}"
-        lqm.store_affair(affair)
-    else:
-        logger.warning("No active affair for client %s — plan in tool result only", client_id)
-
-    return render_plan_markdown(plan)
+async def _handle_add_map_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Add a vertex to the active thinking map."""
+    from app.chat.thinking_map import add_vertex
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
+    try:
+        graph, vertex = await add_vertex(
+            session_id=session_id,
+            title=args["title"],
+            description=args["description"],
+            vertex_type=args.get("vertex_type", "executor"),
+            depends_on=args.get("depends_on"),
+        )
+        deps = ", ".join(args.get("depends_on", [])) or "root"
+        return (
+            f"Krok '{vertex.title}' ({vertex.id}) přidán do mapy. "
+            f"Typ: {vertex.vertex_type.value}, závisí na: {deps}. "
+            f"Celkem {len(graph.vertices)} kroků."
+        )
+    except ValueError as e:
+        return f"Chyba: {e}"
 
 
-async def _handle_finalize_work_plan(args, client_id, project_id, kotlin_client):
-    """Convert draft plan to real tasks via create_work_plan Kotlin API."""
-    from app.chat.work_plan_draft import (
-        PLAN_DRAFT_KEY, PLAN_VERSION_KEY,
-        deserialize_plan, serialize_plan,
-    )
-    from app.memory.agent import _get_or_create_lqm
-    from app.memory.models import AffairStatus
+async def _handle_update_map_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Update an existing vertex in the active thinking map."""
+    from app.chat.thinking_map import update_vertex
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
+    try:
+        graph, vertex = await update_vertex(
+            session_id=session_id,
+            vertex_id=args["vertex_id"],
+            title=args.get("title"),
+            description=args.get("description"),
+            vertex_type=args.get("vertex_type"),
+        )
+        return f"Krok '{vertex.title}' ({vertex.id}) aktualizován."
+    except ValueError as e:
+        return f"Chyba: {e}"
 
-    effective_client_id = args.get("client_id") or client_id
-    if not effective_client_id:
-        return "Chyba: client_id je povinný. Zeptej se uživatele na klienta."
 
-    lqm = _get_or_create_lqm()
-    affair = lqm.get_active_affair(effective_client_id)
-    if not affair or PLAN_DRAFT_KEY not in affair.key_facts:
-        return "Chyba: žádný rozpracovaný plán. Nejdřív vytvoř plán pomocí update_work_plan_draft."
+async def _handle_remove_map_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Remove a vertex from the active thinking map."""
+    from app.chat.thinking_map import remove_vertex
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
+    try:
+        graph = await remove_vertex(
+            session_id=session_id,
+            vertex_id=args["vertex_id"],
+        )
+        return f"Krok '{args['vertex_id']}' odebrán. Zbývá {len(graph.vertices)} kroků."
+    except ValueError as e:
+        return f"Chyba: {e}"
 
-    plan = deserialize_plan(affair.key_facts[PLAN_DRAFT_KEY])
 
-    # Convert to create_work_plan format
-    phases = []
-    for phase in plan.phases:
-        tasks = [
-            {
-                "title": t.title,
-                "description": t.description,
-                "action_type": t.action_type,
-                "depends_on": t.depends_on,
-            }
-            for t in phase.tasks
-            if t.status != "removed"
-        ]
-        if tasks:
-            phases.append({"name": phase.name, "tasks": tasks})
+async def _handle_dispatch_thinking_map(args, client_id, project_id, kotlin_client):
+    """Finalize the thinking map and dispatch as a background task."""
+    from app.chat.thinking_map import dispatch_map
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
+    try:
+        task_id = await dispatch_map(
+            session_id=session_id,
+            kotlin_client=kotlin_client,
+            client_id=client_id or args.get("client_id"),
+            project_id=project_id or args.get("project_id"),
+        )
+        return f"Myšlenková mapa odeslána k realizaci. Task ID: {task_id}"
+    except ValueError as e:
+        return f"Chyba: {e}"
 
-    if not phases:
-        return "Chyba: plán neobsahuje žádné aktivní úkoly."
 
-    result = await kotlin_client.create_work_plan(
-        title=plan.title,
-        phases=phases,
-        client_id=effective_client_id,
-        project_id=args.get("project_id", project_id),
-    )
-
-    # Mark plan as executing, resolve affair
-    plan.status = "executing"
-    affair.key_facts[PLAN_DRAFT_KEY] = serialize_plan(plan)
-    affair.status = AffairStatus.RESOLVED
-    lqm.store_affair(affair)
-
-    return f"Plan finalizován a tasky vytvořeny.\n{result}"
+async def _handle_run_map_vertex(args, client_id, project_id, kotlin_client):
+    """Dispatch a single vertex to run in background, results flow back into the map."""
+    from app.chat.thinking_map import run_vertex
+    session_id = args.pop("__session_id__", None)
+    if not session_id:
+        return "Chyba: interní chyba — chybí session_id."
+    try:
+        task_id = await run_vertex(
+            session_id=session_id,
+            vertex_id=args["vertex_id"],
+            kotlin_client=kotlin_client,
+            client_id=client_id or args.get("client_id"),
+            project_id=project_id or args.get("project_id"),
+        )
+        return f"Krok '{args['vertex_id']}' spuštěn na pozadí. Task ID: {task_id}. Výsledek se vrátí do mapy."
+    except ValueError as e:
+        return f"Chyba: {e}"
 
 
 async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
@@ -413,9 +414,12 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
-    "create_work_plan": _handle_create_work_plan,
-    "update_work_plan_draft": _handle_update_work_plan_draft,
-    "finalize_work_plan": _handle_finalize_work_plan,
+    "create_thinking_map": _handle_create_thinking_map,
+    "add_map_vertex": _handle_add_map_vertex,
+    "update_map_vertex": _handle_update_map_vertex,
+    "remove_map_vertex": _handle_remove_map_vertex,
+    "dispatch_thinking_map": _handle_dispatch_thinking_map,
+    "run_map_vertex": _handle_run_map_vertex,
     "dispatch_coding_agent": _handle_dispatch_coding_agent,
     "search_user_tasks": _handle_search_tasks,
     "search_tasks": _handle_search_tasks,
@@ -438,11 +442,16 @@ async def _execute_chat_specific_tool(
     arguments: dict,
     active_client_id: str | None,
     active_project_id: str | None,
+    session_id: str | None = None,
 ) -> str:
     """Execute chat-specific tools via Kotlin internal API using strategy map."""
 
     try:
         from app.tools.kotlin_client import kotlin_client
+
+        # Inject session_id for map tools (they need it to find active graph)
+        if tool_name in _MAP_TOOLS and session_id:
+            arguments["__session_id__"] = session_id
 
         handler = _TOOL_HANDLER_MAP.get(tool_name)
         if not handler:

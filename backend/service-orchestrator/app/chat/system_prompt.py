@@ -20,12 +20,13 @@ class RuntimeContext:
     guidelines_text: str = ""  # Formatted guidelines from GuidelinesResolver
 
 
-def build_system_prompt(
+async def build_system_prompt(
     active_client_id: str | None = None,
     active_project_id: str | None = None,
     active_client_name: str | None = None,
     active_project_name: str | None = None,
     runtime_context: RuntimeContext | None = None,
+    session_id: str | None = None,
 ) -> str:
     """Build the system prompt for Jervis chat.
 
@@ -50,7 +51,7 @@ def build_system_prompt(
     meetings_section = _build_unclassified_meetings_section(ctx.unclassified_meetings_count)
     learned_section = _build_learned_procedures_section(ctx.learned_procedures)
     guidelines_section = f"\n{ctx.guidelines_text}\n" if ctx.guidelines_text else ""
-    active_plan_section = _build_active_plan_section(active_client_id)
+    active_map_section = await _build_active_map_section(session_id)
 
     return f"""Jsi Jervis — osobní AI asistent a project manager pro Jana Damka.
 
@@ -62,14 +63,64 @@ def build_system_prompt(
 
 ## Aktuální čas: {now}
 {scope_info}
-{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_plan_section}
+{clients_section}{pending_section}{meetings_section}{learned_section}{guidelines_section}{active_map_section}
 ## Práce s tools
 Máš k dispozici sadu tools (viz tool schemas). Pravidla:
 - Hledej znalosti: **kb_search** (interní znalosti, kód, architektura) → web_search (internet) → zeptej se
 - Oprav KB: kb_delete (smaž špatné/zastaralé KB záznamy podle sourceUrn z kb_search výsledků)
 - Zapamatuj: memory_store (fakt), store_knowledge (do KB)
 - Úkoly: create_background_task (JEN po souhlasu), respond_to_user_task (čekající task)
+- Myšlenková mapa: Pro úkoly s >2 kroky vytvoř mapu (create_thinking_map → add_map_vertex → dispatch_thinking_map)
 - Kontext: switch_context přepne klient/projekt v UI
+
+### Myšlenková mapa (thinking map)
+Pro složitější úkoly (>2 kroky) vytvoř myšlenkovou mapu — vizuální plán v panelu vedle chatu.
+
+**Tvůj hlavní princip: KOORDINUJ, NEPROGRAMUJ.**
+- Chat je koordinátor — sbírá info, staví plán, dispatchuje práci.
+- Programování, dlouhé analýzy, výzkum → na pozadí (run_map_vertex, create_background_task, dispatch_coding_agent).
+- Chat nesmí být zdržován — rychle vybuduj strukturu, dlouhé práce pošli pryč.
+- Prioritizuj — urgentní věci hned, plánování může počkat.
+
+**Kdy tvořit mapu:**
+- Úkol má víc než 2 kroky → VYTVOŘ MAPU
+- Jednoduchý dotaz/akce (1-2 kroky) → řeš přímo
+
+**Postup:**
+1. `create_thinking_map(title)` — vytvoř mapu s názvem
+2. `add_map_vertex(...)` — přidej kroky RYCHLE (ne jeden po jednom s pauzou — přidej jich víc najednou)
+3. `run_map_vertex(vertex_id)` — spusť investigátory/analýzy OKAMŽITĚ na pozadí (nemusíš čekat na souhlas)
+4. Mezitím pokračuj v chatu — ptej se uživatele, řeš další věci
+5. Když přijdou výsledky z pozadí → aktualizuj mapu, upozorni uživatele
+6. `dispatch_thinking_map()` — po souhlasu spusť celou realizaci na pozadí
+
+**Paralelní běh:** `run_map_vertex` NENÍ fire-and-forget. Výsledky se vrací do mapy.
+Neblokuj chat čekáním. Spusť investigátory paralelně, pokračuj v konverzaci.
+
+**Typy kroků (vertex_type):**
+- `investigator` — průzkum, analýza (typicky → run_map_vertex ihned)
+- `executor` — realizace, implementace (→ dispatch celé mapy nebo coding agent)
+- `validator` — testy, ověření
+- `reviewer` — review, posouzení
+- `planner` — dekompozice, rozpad na podúkoly
+- `setup` — příprava prostředí, prerekvizity
+- `synthesis` — spojení výsledků, shrnutí
+
+**Závislosti:** `depends_on` = seznam názvů kroků (title), na kterých tento závisí.
+Kroky bez závislostí jsou napojeny na root a běží paralelně.
+
+**Příklad efektivního flow:**
+```
+User: "Oprav autentizaci v API"
+→ create_thinking_map("Oprava auth API")
+→ add_map_vertex("Analýza auth flow", investigator)
+→ add_map_vertex("Fix token validation", executor, depends_on=["Analýza"])
+→ add_map_vertex("Testy", validator, depends_on=["Fix token"])
+→ run_map_vertex("Analýza auth flow")   ← běží na pozadí HNED
+→ "Vytvořil jsem plán, analýzu spouštím na pozadí. Co ještě potřebuješ?"
+... pozadí dokončí analýzu ...
+→ "Analýza hotová — auth flow používá JWT, problém v token validation. Pokračujem?"
+```
 
 **Hierarchie důvěryhodnosti:** Uživatel > kb_search (aktuální data) > web_search
 
@@ -281,39 +332,24 @@ def _build_learned_procedures_section(procedures: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _build_active_plan_section(client_id: str | None) -> str:
-    """Build active draft plan section if one exists in LQM affairs."""
-    if not client_id:
+async def _build_active_map_section(session_id: str | None) -> str:
+    """Build active thinking map section if one exists for the session."""
+    if not session_id:
         return ""
     try:
-        from app.memory.agent import _get_or_create_lqm
-        from app.chat.work_plan_draft import PLAN_DRAFT_KEY, deserialize_plan
-
-        lqm = _get_or_create_lqm()
-        affair = lqm.get_active_affair(client_id)
-        if not affair or PLAN_DRAFT_KEY not in affair.key_facts:
-            # Also check parked affairs
-            for parked in lqm.get_parked_affairs(client_id):
-                if PLAN_DRAFT_KEY in parked.key_facts:
-                    plan = deserialize_plan(parked.key_facts[PLAN_DRAFT_KEY])
-                    task_count = sum(len(p.tasks) for p in plan.phases)
-                    return (
-                        f"\n## Odložený plán\n"
-                        f"- **{plan.title}** (v{plan.version}, {task_count} úkolů, "
-                        f"{len(plan.gaps)} otevřených otázek) — ODLOŽENO\n"
-                        f"- Pokud se uživatel ptá na rozpracované věci, zmiň tento plán.\n"
-                    )
+        from app.chat.thinking_map import get_active_map
+        graph = await get_active_map(session_id)
+        if not graph:
             return ""
-
-        plan = deserialize_plan(affair.key_facts[PLAN_DRAFT_KEY])
-        task_count = sum(len(p.tasks) for p in plan.phases)
-        gap_info = f", {len(plan.gaps)} otevřených otázek" if plan.gaps else ""
+        root = graph.vertices.get(graph.root_vertex_id)
+        title = root.title if root else "Mapa"
+        vertex_count = len(graph.vertices)
         return (
-            f"\n## Aktivní plán\n"
-            f"- **{plan.title}** (v{plan.version}, {task_count} úkolů{gap_info})\n"
-            f"- Stav: {plan.status}\n"
-            f"- Pokračuj v práci na tomto plánu, pokud uživatel neřekne jinak.\n"
+            f"\n## Aktivní myšlenková mapa\n"
+            f"- **{title}** ({vertex_count} kroků, stav: {graph.status.value})\n"
+            f"- ID grafu: {graph.id}\n"
+            f"- Pokračuj v úpravách mapy nebo ji dispatchni přes dispatch_thinking_map.\n"
         )
     except Exception as e:
-        logger.debug("Failed to build active plan section: %s", e)
+        logger.debug("Failed to build active map section: %s", e)
         return ""

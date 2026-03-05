@@ -33,6 +33,7 @@ import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.chat.ChatViewModel
+import com.jervis.ui.chat.ThinkingMapPanel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
 import com.jervis.ui.model.PendingMessageInfo
@@ -85,6 +86,9 @@ fun MainScreenView(
     onToggleNeedReaction: () -> Unit = {},
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
+    activeThinkingMap: TaskGraphDto? = null,
+    thinkingMaps: List<ChatViewModel.ThinkingMapSummary> = emptyList(),
+    onSelectThinkingMap: (String) -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -158,7 +162,68 @@ fun MainScreenView(
                     },
                 )
             }
-            // No panel -> normal chat
+            // No environment panel, but thinking map active + expanded layout -> split with map panel
+            !isCompact && activeThinkingMap != null -> {
+                JHorizontalSplitLayout(
+                    splitFraction = 0.6f,
+                    onSplitChange = { /* thinking map split is fixed */ },
+                    minFraction = 0.4f,
+                    maxFraction = 0.8f,
+                    leftContent = { _ ->
+                        ChatContent(
+                            selectedClientId = selectedClientId,
+                            selectedProjectId = selectedProjectId,
+                            chatMessages = chatMessages,
+                            inputText = inputText,
+                            isLoading = isLoading,
+                            isOffline = isOffline,
+                            hasMore = hasMore,
+                            isLoadingMore = isLoadingMore,
+                            compressionBoundaries = compressionBoundaries,
+                            attachments = attachments,
+                            queueSize = queueSize,
+                            onInputChanged = onInputChanged,
+                            onSendClick = onSendClick,
+                            onEditMessage = onEditMessage,
+                            onReplyToTask = onReplyToTask,
+                            onSendReply = onSendReply,
+                            onLoadMore = onLoadMore,
+                            onAttachFile = onAttachFile,
+                            onRemoveAttachment = onRemoveAttachment,
+                            pendingMessageInfo = pendingMessageInfo,
+                            onRetryPending = onRetryPending,
+                            onCancelPending = onCancelPending,
+                            approvalRequest = approvalRequest,
+                            onApproveOnce = onApproveOnce,
+                            onApproveAlways = onApproveAlways,
+                            onDenyAction = onDenyAction,
+                            workspaceInfo = workspaceInfo,
+                            onRetryWorkspace = onRetryWorkspace,
+                            orchestratorHealthy = orchestratorHealthy,
+                            orchestratorProgress = orchestratorProgress,
+                            taskGraphs = taskGraphs,
+                            onLoadTaskGraph = onLoadTaskGraph,
+                            showChat = showChat,
+                            onToggleChat = onToggleChat,
+                            showTasks = showTasks,
+                            onToggleTasks = onToggleTasks,
+                            showNeedReaction = showNeedReaction,
+                            onToggleNeedReaction = onToggleNeedReaction,
+                            backgroundMessageCount = backgroundMessageCount,
+                            userTaskCount = userTaskCount,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    },
+                    rightContent = { _ ->
+                        ThinkingMapPanel(
+                            activeMap = activeThinkingMap,
+                            allMaps = thinkingMaps,
+                            onSelectMap = onSelectThinkingMap,
+                        )
+                    },
+                )
+            }
+            // No panel, no map -> normal chat
             else -> {
                 ChatContent(
                     selectedClientId = selectedClientId,
