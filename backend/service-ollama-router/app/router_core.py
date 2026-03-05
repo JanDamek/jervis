@@ -148,14 +148,12 @@ class OllamaRouter:
     ) -> dict:
         """Capability-based routing decision.
 
-        1. max_tier == "NONE" → always local (CRITICAL, preempts background)
-        2. prefer_cloud + tier >= FREE → skip GPU check, go directly to cloud
-        3. Context > 48k → must go to cloud
-        4. GPU free → local (no cost when GPU is available)
-        5. GPU busy + OpenRouter allowed → cloud (let background keep GPU)
-        6. GPU busy + no cloud model → local (wait in queue)
+        1. max_tier == "NONE" → always local (background tasks, no cloud)
+        2. tier >= FREE → always cloud (foreground chat goes to OpenRouter)
+        3. No cloud model fits → local fallback (wait in queue)
 
-        Background tasks always send max_tier="NONE" → always local.
+        Local GPU is reserved for background tasks (max_tier="NONE").
+        Foreground chat (FREE/PAID/PREMIUM) always uses OpenRouter.
 
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
@@ -176,52 +174,19 @@ class OllamaRouter:
             logger.info("Route decision: max_tier=%s → local (no OpenRouter)", max_tier)
             return local_result
 
-        # Rule 2: prefer_cloud → skip GPU check, go directly to cloud
-        if prefer_cloud and tier_level >= TIER_LEVELS["FREE"]:
-            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
-            if cloud_model:
-                logger.info("Route decision: prefer_cloud=True → cloud %s (tier=%s, tokens=%d)",
-                            cloud_model, max_tier, estimated_tokens)
-                api_key = await get_api_key()
-                return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
-            # No suitable cloud model → fall through to local
-            logger.info("Route decision: prefer_cloud=True but no cloud model fits → local fallback")
-
-        # Rule 3: Context > 48k → must go to cloud
-        if estimated_tokens > 48_000:
-            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
-            if cloud_model:
-                logger.info("Route decision: large context (%d) → cloud %s", estimated_tokens, cloud_model)
-                api_key = await get_api_key()
-                return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
-            logger.info("Route decision: large context (%d) but no cloud fits → local", estimated_tokens)
-            return local_result
-
-        # Rule 4: GPU free → use local (no cost, no preemption needed)
-        # Only check GPUs that have the requested model in their GPU_MODEL_SETS
-        # Also treat GPU as busy when whisper is transcribing on p40-2
-        target_model = local_result["model"]
-        whisper_busy = self.check_whisper_busy()
-        gpu_free = any(
-            b.healthy and b.active_request_count() == 0
-            and not (b.name == VLM_GPU and whisper_busy)
-            for b in self.gpu_pool.all_backends
-            if target_model in GPU_MODEL_SETS.get(b.name, [])
-        )
-        if gpu_free:
-            logger.info("Route decision: GPU free → local (cap=%s, model=%s, tokens=%d)", capability, target_model, estimated_tokens)
-            return local_result
-
-        # Rule 5: GPU busy + OpenRouter allowed → cloud (let background/whisper keep GPU)
-        busy_reason = "whisper" if whisper_busy else "active_request"
+        # Rule 2: tier >= FREE → always cloud (local GPU reserved for background)
+        # Background always sends max_tier="NONE" → Rule 1 handles it.
+        # Foreground chat with FREE/PAID/PREMIUM always goes to OpenRouter.
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
-            logger.info("Route decision: GPU busy (%s) → cloud %s", busy_reason, cloud_model)
+            logger.info("Route decision: tier=%s → cloud %s (tokens=%d)",
+                        max_tier, cloud_model, estimated_tokens)
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
-        # Rule 6: No cloud model fits → local (wait in queue)
-        logger.info("Route decision: GPU busy, no cloud available → local (will wait)")
+        # Rule 3: No cloud model fits → local fallback (wait in queue)
+        logger.info("Route decision: tier=%s, no cloud model fits → local fallback (tokens=%d)",
+                    max_tier, estimated_tokens)
         return local_result
 
     @staticmethod
