@@ -195,6 +195,53 @@ class ChatViewModel(
     }
 
     /**
+     * Send reply to a background task result directly (inline from the bubble).
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun sendReplyToTask(taskId: String, text: String) {
+        if (_isLoading.value) return
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+
+        _isLoading.value = true
+
+        val clientId = selectedClientId.value
+        val projectId = selectedProjectId.value
+
+        val optimisticMsg = ChatMessage(
+            from = ChatMessage.Sender.Me,
+            text = trimmed,
+            contextId = projectId,
+            messageType = ChatMessage.MessageType.USER_MESSAGE,
+        )
+        _chatMessages.value = _chatMessages.value + optimisticMsg
+
+        scope.launch {
+            try {
+                repository.chat.sendMessage(
+                    text = trimmed,
+                    clientMessageId = Uuid.random().toString(),
+                    activeClientId = clientId,
+                    activeProjectId = projectId,
+                    contextTaskId = taskId,
+                )
+                val progressMsg = ChatMessage(
+                    from = ChatMessage.Sender.Assistant,
+                    text = "Zpracovávám...",
+                    contextId = projectId,
+                    messageType = ChatMessage.MessageType.PROGRESS,
+                )
+                _chatMessages.value = _chatMessages.value + progressMsg
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                onError("Chyba odeslání odpovědi: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
      * Load task graph on demand. Caches result so subsequent calls are no-ops.
      * null value in the map means "loading in progress".
      */

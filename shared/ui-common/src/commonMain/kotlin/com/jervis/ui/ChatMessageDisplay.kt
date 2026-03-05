@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -45,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -86,6 +89,7 @@ internal fun ChatArea(
     onLoadMore: () -> Unit = {},
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
+    onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -145,6 +149,7 @@ internal fun ChatArea(
                         orchestratorProgress = if (message.messageType == ChatMessage.MessageType.PROGRESS) orchestratorProgress else null,
                         onEditMessage = onEditMessage,
                         onReplyToTask = onReplyToTask,
+                        onSendReply = onSendReply,
                         taskGraphs = taskGraphs,
                         onLoadTaskGraph = onLoadTaskGraph,
                     )
@@ -305,6 +310,7 @@ private fun ChatMessageItem(
     orchestratorProgress: OrchestratorProgressInfo? = null,
     onEditMessage: (String) -> Unit = {},
     onReplyToTask: (taskId: String) -> Unit = {},
+    onSendReply: (taskId: String, text: String) -> Unit = { _, _ -> },
     taskGraphs: Map<String, TaskGraphDto?> = emptyMap(),
     onLoadTaskGraph: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -582,7 +588,11 @@ private fun ChatMessageItem(
                     }
                 }
 
-                // Timestamp + Reply button row
+                // Timestamp + Reply row
+                val taskId = message.metadata["taskId"]
+                var showReplyInput by remember { mutableStateOf(false) }
+                var replyText by remember { mutableStateOf("") }
+
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -597,11 +607,9 @@ private fun ChatMessageItem(
                             )
                         }
                     }
-                    // "Reagovat" button — sends contextTaskId to chat
-                    val taskId = message.metadata["taskId"]
-                    if (taskId != null) {
+                    if (taskId != null && !showReplyInput) {
                         TextButton(
-                            onClick = { onReplyToTask(taskId) },
+                            onClick = { showReplyInput = true },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             modifier = Modifier.height(28.dp),
                         ) {
@@ -614,6 +622,64 @@ private fun ChatMessageItem(
                             Text(
                                 "Reagovat",
                                 style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
+
+                // Inline reply input
+                AnimatedVisibility(visible = showReplyInput && taskId != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        OutlinedTextField(
+                            value = replyText,
+                            onValueChange = { replyText = it },
+                            placeholder = {
+                                Text(
+                                    "Napište reakci...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            },
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 88.dp),
+                            maxLines = 3,
+                            singleLine = false,
+                        )
+                        IconButton(
+                            onClick = {
+                                if (replyText.isNotBlank() && taskId != null) {
+                                    onSendReply(taskId, replyText)
+                                    replyText = ""
+                                    showReplyInput = false
+                                }
+                            },
+                            enabled = replyText.isNotBlank(),
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Send,
+                                contentDescription = "Odeslat",
+                                tint = if (replyText.isNotBlank()) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                },
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                showReplyInput = false
+                                replyText = ""
+                            },
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Zrušit",
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
