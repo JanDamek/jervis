@@ -279,7 +279,17 @@ async def handle_chat(
 
     except Exception as e:
         logger.exception("Chat handler error: %s", e)
-        yield ChatStreamEvent(type="error", content=str(e), metadata={"error": str(e)})
+        import traceback
+        tb = traceback.format_exception(type(e), e, e.__traceback__)
+        yield ChatStreamEvent(
+            type="error",
+            content=str(e),
+            metadata={
+                "error": str(e),
+                "errorType": type(e).__name__,
+                "traceback": "".join(tb[-3:]),  # Last 3 frames
+            },
+        )
 
     finally:
         # Clean up session auto-approvals

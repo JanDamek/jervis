@@ -517,7 +517,17 @@ async def run_agentic_loop(
         })
     except Exception as e:
         logger.error("Chat: failed to generate max-iterations response: %s", e)
-        yield ChatStreamEvent(type="error", content="Vyčerpán limit operací.")
+        import traceback
+        tb = traceback.format_exception(type(e), e, e.__traceback__)
+        yield ChatStreamEvent(
+            type="error",
+            content=f"Vyčerpán limit operací: {e}",
+            metadata={
+                "error": str(e),
+                "errorType": type(e).__name__,
+                "traceback": "".join(tb[-3:]),
+            },
+        )
 
 
 def _build_interrupted_content(tool_summaries: list[str]) -> str | None:

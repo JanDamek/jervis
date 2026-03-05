@@ -317,25 +317,77 @@ private fun ChatMessageItem(
 ) {
     val isMe = message.from == ChatMessage.Sender.Me
 
-    // Error messages with red styling
+    // Error messages with red styling + expandable details
     if (message.messageType == ChatMessage.MessageType.ERROR) {
-        Row(
+        var showDetails by remember { mutableStateOf(false) }
+        val hasDetails = message.metadata.any { it.key !in setOf("eventType", "streaming") }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                Icons.Default.Warning,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.error,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (hasDetails) {
+                        IconButton(
+                            onClick = { showDetails = !showDetails },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                if (showDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (showDetails) "Skrýt" else "Detail",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = showDetails) {
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp, start = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        message.metadata.forEach { (key, value) ->
+                            if (key !in setOf("eventType", "streaming") && value.isNotBlank()) {
+                                Row {
+                                    Text(
+                                        text = "$key: ",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                                    )
+                                    SelectionContainer {
+                                        Text(
+                                            text = value,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     } else if (message.messageType == ChatMessage.MessageType.PROGRESS) {
         var expanded by remember { mutableStateOf(false) }
@@ -550,6 +602,14 @@ private fun ChatMessageItem(
                     if (graphEntry != null && graphEntry.vertices.isNotEmpty()) {
                         // Graph loaded — show it
                         TaskGraphSection(graph = graphEntry)
+                    } else if (graphEntry != null && graphEntry.vertices.isEmpty()) {
+                        // Tried to load but no graph exists — show info
+                        Text(
+                            text = "Graf není k dispozici",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
                     } else if (graphTaskId !in taskGraphs) {
                         // Not loaded yet — show "load graph" button
                         TextButton(
@@ -568,7 +628,7 @@ private fun ChatMessageItem(
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
-                    } else if (graphEntry == null && graphTaskId in taskGraphs) {
+                    } else {
                         // Loading in progress (key exists, value is null)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

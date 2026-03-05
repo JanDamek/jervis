@@ -247,21 +247,22 @@ class ChatViewModel(
      */
     fun loadTaskGraph(taskId: String) {
         val existing = _taskGraphs.value[taskId]
-        if (existing != null) return // already loaded with data
+        if (existing != null) return // already loaded (or confirmed not found)
         _taskGraphs.update { it + (taskId to null) } // mark loading
         scope.launch {
             try {
                 val graph = repository.taskGraphs.getGraph(taskId)
-                if (graph != null) {
+                if (graph != null && graph.vertices.isNotEmpty()) {
                     println("ChatViewModel: graph loaded for taskId=$taskId — ${graph.vertices.size} vertices")
                     _taskGraphs.update { it + (taskId to graph) }
                 } else {
                     println("ChatViewModel: graph NOT FOUND for taskId=$taskId")
-                    _taskGraphs.update { it - taskId }
+                    // Store empty graph as sentinel — prevents repeated load attempts
+                    _taskGraphs.update { it + (taskId to TaskGraphDto()) }
                 }
             } catch (e: Exception) {
                 println("ChatViewModel: graph load FAILED for taskId=$taskId — ${e.message}")
-                _taskGraphs.update { it - taskId }
+                _taskGraphs.update { it + (taskId to TaskGraphDto()) }
             }
         }
     }
