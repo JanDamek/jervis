@@ -21,6 +21,11 @@ _openrouter_settings_cache: dict | None = None
 _openrouter_settings_ts: float = 0.0
 _OPENROUTER_SETTINGS_TTL = 60.0  # 1 minute
 
+# ── Model error tracking ──────────────────────────────────────────────
+# model_id → {"count": int, "last_error": float, "disabled": bool}
+_model_errors: dict[str, dict] = {}
+_MAX_CONSECUTIVE_ERRORS = 3  # Mark as error after 3 consecutive failures
+
 
 async def _fetch_openrouter_settings() -> dict | None:
     """Fetch OpenRouter settings from Kotlin server (cached 60s)."""
@@ -124,15 +129,69 @@ async def find_cloud_model_for_context(estimated_tokens: int, tier_level: int) -
 
 
 async def _first_cloud_model(queue_name: str, estimated_tokens: int) -> str | None:
-    """Get first available cloud model from a queue that can handle the context."""
+    """Get first available cloud model from a queue that can handle the context.
+
+    Skips models marked as error (3+ consecutive failures).
+    """
     queue_models = await get_queue(queue_name)
     for entry in queue_models:
         if entry.get("isLocal", False):
             continue
+        model_id = entry.get("modelId", "")
+        # Skip models with too many consecutive errors
+        error_info = _model_errors.get(model_id)
+        if error_info and error_info.get("disabled"):
+            logger.debug("Skipping error model %s (%d consecutive errors)",
+                         model_id, error_info.get("count", 0))
+            continue
         max_ctx = entry.get("maxContextTokens", 32_000)
         if estimated_tokens <= max_ctx:
-            return entry.get("modelId")
+            return model_id
     return None
+
+
+def report_model_error(model_id: str) -> bool:
+    """Report a model error. Returns True if model was just disabled (3rd strike).
+
+    Called by orchestrator when a cloud model returns a provider error (400/500).
+    After 3 consecutive errors, model is disabled until manually re-enabled.
+    """
+    info = _model_errors.get(model_id)
+    if not info:
+        info = {"count": 0, "last_error": 0.0, "disabled": False}
+        _model_errors[model_id] = info
+
+    info["count"] = info.get("count", 0) + 1
+    info["last_error"] = time.monotonic()
+
+    if info["count"] >= _MAX_CONSECUTIVE_ERRORS and not info.get("disabled"):
+        info["disabled"] = True
+        logger.warning("Model %s DISABLED after %d consecutive errors", model_id, info["count"])
+        return True
+    logger.info("Model %s error count: %d/%d", model_id, info["count"], _MAX_CONSECUTIVE_ERRORS)
+    return False
+
+
+def report_model_success(model_id: str) -> None:
+    """Report a successful model call. Resets error counter."""
+    if model_id in _model_errors:
+        if _model_errors[model_id].get("count", 0) > 0:
+            logger.info("Model %s error counter reset (success)", model_id)
+        del _model_errors[model_id]
+
+
+def get_model_errors() -> dict[str, dict]:
+    """Get current model error state (for API/UI)."""
+    return dict(_model_errors)
+
+
+def reset_model_error(model_id: str) -> bool:
+    """Re-enable a model after manual testing. Returns True if model was disabled."""
+    info = _model_errors.pop(model_id, None)
+    if info and info.get("disabled"):
+        logger.info("Model %s re-enabled by user", model_id)
+        return True
+    return False
 
 
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:

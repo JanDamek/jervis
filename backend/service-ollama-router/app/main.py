@@ -368,6 +368,57 @@ async def route_max_context(request: Request):
     return JSONResponse(content={"max_context_tokens": max_ctx})
 
 
+@app.post("/route-decision/model-error")
+async def report_model_error_endpoint(request: Request):
+    """Report a model error (called by orchestrator after provider 400/500).
+
+    Input: {"model_id": "stepfun/step-3.5-flash:free"}
+    Output: {"disabled": true/false, "error_count": N}
+    """
+    body = await request.json()
+    model_id = body.get("model_id", "")
+    from .openrouter_catalog import report_model_error, get_model_errors
+    just_disabled = report_model_error(model_id)
+    errors = get_model_errors()
+    info = errors.get(model_id, {})
+    return JSONResponse(content={
+        "model_id": model_id,
+        "disabled": info.get("disabled", False),
+        "error_count": info.get("count", 0),
+        "just_disabled": just_disabled,
+    })
+
+
+@app.post("/route-decision/model-success")
+async def report_model_success_endpoint(request: Request):
+    """Report a successful model call (resets error counter)."""
+    body = await request.json()
+    model_id = body.get("model_id", "")
+    from .openrouter_catalog import report_model_success
+    report_model_success(model_id)
+    return JSONResponse(content={"model_id": model_id, "reset": True})
+
+
+@app.get("/route-decision/model-errors")
+async def get_model_errors_endpoint():
+    """Get current model error state (for UI monitoring)."""
+    from .openrouter_catalog import get_model_errors
+    return JSONResponse(content=get_model_errors())
+
+
+@app.post("/route-decision/model-reset")
+async def reset_model_error_endpoint(request: Request):
+    """Re-enable a disabled model (called from UI after manual testing).
+
+    Input: {"model_id": "stepfun/step-3.5-flash:free"}
+    """
+    body = await request.json()
+    model_id = body.get("model_id", "")
+    from .openrouter_catalog import reset_model_error
+    was_disabled = reset_model_error(model_id)
+    return JSONResponse(content={"model_id": model_id, "re_enabled": was_disabled})
+
+
 # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
 
 @app.post("/router/whisper-notify")

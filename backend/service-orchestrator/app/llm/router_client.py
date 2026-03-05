@@ -74,6 +74,29 @@ async def route_request(
         )
 
 
+async def report_model_error(model_id: str) -> dict:
+    """Report a model error to router. Returns error state."""
+    url = f"{_router_base_url()}/route-decision/model-error"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(url, json={"model_id": model_id})
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        logger.warning("Failed to report model error: %s", e)
+        return {}
+
+
+async def report_model_success(model_id: str) -> None:
+    """Report successful model call to router (resets error counter)."""
+    url = f"{_router_base_url()}/route-decision/model-success"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(url, json={"model_id": model_id})
+    except Exception as e:
+        logger.warning("Failed to report model success: %s", e)
+
+
 async def get_max_context_tokens(max_tier: str = "NONE") -> int:
     """Ask router for max context tokens available for a given tier.
 

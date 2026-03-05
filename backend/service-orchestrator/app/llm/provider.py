@@ -164,6 +164,21 @@ def _trim_content(content: str, max_chars: int) -> str:
     return content[:head_len] + marker + content[-tail_len:]
 
 
+def _sanitize_messages(messages: list[dict]) -> list[dict]:
+    """Sanitize messages for provider compatibility.
+
+    Some providers (e.g. StepFun) reject content=null in assistant messages
+    with tool_calls. OpenAI spec allows it, but not all providers follow it.
+    """
+    sanitized = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("content") is None:
+            msg = dict(msg)
+            msg["content"] = ""
+        sanitized.append(msg)
+    return sanitized
+
+
 def _trim_messages_for_context(
     messages: list[dict], num_ctx: int, max_tokens: int,
 ) -> list[dict]:
@@ -387,6 +402,9 @@ class LLMProvider:
         tier: ModelTier = ModelTier.LOCAL_STANDARD,
     ) -> dict:
         """Blocking LLM call (for tool calls) with tier-based timeout."""
+        # Sanitize messages (content=null → "" for provider compat)
+        messages = _sanitize_messages(messages)
+
         kwargs: dict = {
             "model": config["model"],
             "messages": messages,
@@ -421,16 +439,18 @@ class LLMProvider:
                 f"LLM blocking call timed out after {timeout}s (tier={tier.value})"
             )
         except Exception as e:
+            # Report model error to router for tracking (cloud models only)
+            if tier == ModelTier.CLOUD_OPENROUTER:
+                _report_error_bg(config["model"])
             # Dump message structure on provider errors for debugging
             if "400" in str(e) or "BadRequest" in type(e).__name__:
-                import json as _json
                 msg_summary = []
                 for i, m in enumerate(kwargs.get("messages", [])):
                     role = m.get("role", "?")
                     content = m.get("content")
                     has_tc = bool(m.get("tool_calls"))
                     tc_id = m.get("tool_call_id", "")
-                    content_info = f"null" if content is None else f"{type(content).__name__}({len(str(content))}ch)"
+                    content_info = "null" if content is None else f"{type(content).__name__}({len(str(content))}ch)"
                     extras = []
                     if has_tc:
                         tc_names = [tc.get("function", {}).get("name", "?") for tc in m.get("tool_calls", [])]
@@ -446,6 +466,10 @@ class LLMProvider:
                     "\n".join(msg_summary),
                 )
             raise
+
+        # Report success to router (resets error counter for cloud models)
+        if tier == ModelTier.CLOUD_OPENROUTER:
+            _report_success_bg(config["model"])
 
         # Log response summary
         try:
@@ -561,6 +585,38 @@ async def refresh_openrouter_api_key() -> None:
         logger.warning("Failed to fetch OpenRouter API key from Kotlin server: %s", e)
         if settings.openrouter_api_key:
             logger.info("Using OpenRouter API key from environment variable")
+
+
+def _report_error_bg(model: str) -> None:
+    """Fire-and-forget: report model error to router."""
+    # Strip prefix (openrouter/stepfun/... → stepfun/...)
+    model_id = model.removeprefix("openrouter/")
+    asyncio.ensure_future(_report_error_async(model_id))
+
+
+def _report_success_bg(model: str) -> None:
+    """Fire-and-forget: report model success to router."""
+    model_id = model.removeprefix("openrouter/")
+    asyncio.ensure_future(_report_success_async(model_id))
+
+
+async def _report_error_async(model_id: str) -> None:
+    try:
+        from app.llm.router_client import report_model_error
+        result = await report_model_error(model_id)
+        if result.get("just_disabled"):
+            logger.warning("Model %s DISABLED by router after %d errors",
+                           model_id, result.get("error_count", 0))
+    except Exception as e:
+        logger.debug("Failed to report model error: %s", e)
+
+
+async def _report_success_async(model_id: str) -> None:
+    try:
+        from app.llm.router_client import report_model_success
+        await report_model_success(model_id)
+    except Exception as e:
+        logger.debug("Failed to report model success: %s", e)
 
 
 # Singleton
