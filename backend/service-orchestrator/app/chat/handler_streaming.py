@@ -76,8 +76,25 @@ async def call_llm(
     )
     try:
         if timeout:
-            return await asyncio.wait_for(coro, timeout=timeout)
-        return await coro
+            result = await asyncio.wait_for(coro, timeout=timeout)
+        else:
+            result = await coro
+
+        # Empty response from cloud model (e.g. finish_reason=length with 0 content)
+        # → treat as model failure, retry with next model
+        if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override:
+            msg = result.choices[0].message
+            content = getattr(msg, "content", None) or ""
+            tool_calls = getattr(msg, "tool_calls", None)
+            if not content.strip() and not tool_calls:
+                logger.warning("Empty response from OpenRouter %s (finish_reason=%s), retrying",
+                               model_override, result.choices[0].finish_reason)
+                return await _retry_with_next_model(
+                    ValueError(f"Empty response from {model_override}"),
+                    model_override, messages, tools, max_tokens, temperature,
+                    max_tier=max_tier, estimated_tokens=estimated_tokens,
+                )
+        return result
     except (TokenTimeoutError, asyncio.TimeoutError):
         # Timeout fallback: if local GPU timed out, try cloud via router
         if route and route.target == "local":

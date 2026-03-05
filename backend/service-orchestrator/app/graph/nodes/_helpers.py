@@ -111,6 +111,46 @@ def auto_providers(rules: ProjectRules) -> set[str]:
     return providers
 
 
+def _get_available_providers() -> set[str]:
+    """Providers with API keys configured (can be used via user approval)."""
+    from app.config import settings as _s
+    available = set()
+    if _s.anthropic_api_key:
+        available.add("anthropic")
+    if _s.openai_api_key:
+        available.add("openai")
+    if _s.google_api_key:
+        available.add("gemini")
+    if _s.openrouter_api_key:
+        available.add("openrouter")
+    return available
+
+
+def _suggest_cloud_tier(
+    context_tokens: int,
+    providers: set[str],
+    task_type: str,
+) -> ModelTier | None:
+    """Suggest best cloud tier based on enabled providers and task type."""
+    # OpenRouter can handle everything — preferred first fallback
+    if "openrouter" in providers:
+        return ModelTier.CLOUD_OPENROUTER
+    # Large context → Gemini only
+    if context_tokens > 40_000:
+        return ModelTier.CLOUD_LARGE_CONTEXT if "gemini" in providers else None
+    has_anthropic = "anthropic" in providers
+    has_openai = "openai" in providers
+    if has_anthropic and has_openai:
+        if task_type in ("architecture", "design_review", "decomposition"):
+            return ModelTier.CLOUD_REASONING
+        return ModelTier.CLOUD_CODING
+    if has_anthropic:
+        return ModelTier.CLOUD_REASONING
+    if has_openai:
+        return ModelTier.CLOUD_CODING
+    return None
+
+
 async def llm_with_cloud_fallback(
     state: dict,
     messages: list,
@@ -120,25 +160,30 @@ async def llm_with_cloud_fallback(
     temperature: float = 0.1,
     tools: list | None = None,
 ) -> object:
-    """Call LLM: local first, cloud fallback with policy checks."""
+    """Call LLM: local first, cloud fallback with policy checks.
+
+    Local tier: always LOCAL_STANDARD (48k ctx, GPU1).
+    Cloud fallback: only when explicitly enabled in project rules.
+    """
     rules = ProjectRules(**state["rules"])
     task = CodingTask(**state["task"])
     allow_cloud_prompt = state.get("allow_cloud_prompt", False)
-    escalation = llm_provider.escalation
 
     auto = auto_providers(rules)
     if allow_cloud_prompt:
-        auto = auto | escalation.get_available_providers()
+        auto = auto | _get_available_providers()
 
     # Safety: context exceeds local model max?
     if context_tokens > LOCAL_CONTEXT_LIMIT:
         limit_k = LOCAL_CONTEXT_LIMIT // 1000
         if auto:
-            return await _escalate_to_cloud(
-                task, auto, escalation, context_tokens, task_type,
-                messages, max_tokens, temperature, tools,
-                reason=f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k)",
-            )
+            cloud_tier = _suggest_cloud_tier(context_tokens, auto, task_type)
+            if cloud_tier:
+                return await _escalate_to_cloud(
+                    task, auto, context_tokens, task_type,
+                    messages, max_tokens, temperature, tools,
+                    reason=f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k)",
+                )
         raise RuntimeError(
             f"Context příliš velký ({context_tokens//1000}k tokenů, max je {limit_k}k). "
             "Cloud modely nejsou povoleny v projektu."
@@ -147,8 +192,8 @@ async def llm_with_cloud_fallback(
     # Priority headers for Ollama Router (FOREGROUND → CRITICAL)
     headers = priority_headers(state)
 
-    # Try local first (qwen3 supports up to 256k context)
-    local_tier = escalation.select_local_tier(context_tokens)
+    # Always LOCAL_STANDARD (48k ctx, GPU1) — fixed num_ctx, no dynamic tier selection
+    local_tier = ModelTier.LOCAL_STANDARD
 
     # W-14: Context overflow guard — ensure messages fit selected tier
     tier_config = TIER_CONFIG.get(local_tier, {})
@@ -184,7 +229,7 @@ async def llm_with_cloud_fallback(
         logger.warning("Local LLM failed (tier=%s): %s", local_tier.value, e)
         logger.debug("Local LLM exception details:", exc_info=True)
         return await _escalate_to_cloud(
-            task, auto, escalation, context_tokens, task_type,
+            task, auto, context_tokens, task_type,
             messages, max_tokens, temperature, tools,
             reason=f"Lokální model selhal: {str(e)[:200]}",
         )
@@ -193,7 +238,6 @@ async def llm_with_cloud_fallback(
 async def _escalate_to_cloud(
     task: CodingTask,
     auto_providers_set: set[str],
-    escalation,
     context_tokens: int,
     task_type: str,
     messages: list,
@@ -205,7 +249,7 @@ async def _escalate_to_cloud(
     """Escalate to cloud with auto/interrupt logic."""
 
     # 1. Try auto-enabled providers
-    auto_tier = escalation.suggest_cloud_tier(context_tokens, auto_providers_set, task_type)
+    auto_tier = _suggest_cloud_tier(context_tokens, auto_providers_set, task_type)
     if auto_tier:
         logger.info("Auto-escalating to %s (auto_providers=%s)", auto_tier.value, auto_providers_set)
         return await llm_provider.completion(
@@ -214,7 +258,8 @@ async def _escalate_to_cloud(
         )
 
     # 2. Check if any provider is available at all (has API key)
-    available_tier = escalation.best_available_cloud_tier(context_tokens, task_type)
+    all_available = _get_available_providers()
+    available_tier = _suggest_cloud_tier(context_tokens, all_available, task_type)
     if not available_tier:
         raise RuntimeError(
             f"{reason}. Žádný cloud provider není nakonfigurován (chybí API klíče)."
