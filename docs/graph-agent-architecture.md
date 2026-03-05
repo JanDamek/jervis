@@ -102,14 +102,14 @@ MASTER MAP (global singleton, in RAM, DB = backup)
 
 ## Implementation Phases
 
-### Phase 1: Enable Graph Agent for Background Tasks ✅
+### Phase 1: Enable Graph Agent for Background Tasks [DONE]
 
 - `config.py`: `use_graph_agent = True` (always on)
 - `background/handler.py`: Legacy handler deleted, `handle_background()` delegates
   directly to `_run_graph_agent_background()`
 - No fallback — PoC, correct implementation from start
 
-### Phase 2: Master Map — Persistent Conversational Graph in RAM
+### Phase 2: Master Map — Persistent Conversational Graph in RAM [DONE]
 
 **Goal**: One global master map in orchestrator RAM. Everything the user works on =
 vertices in the map. Background tasks = sub-graphs on edges.
@@ -128,7 +128,7 @@ vertices in the map. Background tasks = sub-graphs on edges.
 - BLOCKED vertices (what's waiting for answer)
 - Fits into 48k GPU context with room for actual vertex work
 
-### Phase 3: Chat↔Graph Integration
+### Phase 3: Chat↔Graph Integration [DONE]
 
 **Goal**: Chat is the interface to the map. Model navigates graph, responds with context,
 unlocks blocked vertices.
