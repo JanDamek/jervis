@@ -181,6 +181,7 @@ fun App(
                         appNavigator.navigateAndClearHistory(Screen.Main)
                     },
                     onRefreshBadge = { viewModel.notification.refreshUserTaskCount() },
+                    userTaskCancelled = viewModel.userTaskCancelled,
                 )
             }
 

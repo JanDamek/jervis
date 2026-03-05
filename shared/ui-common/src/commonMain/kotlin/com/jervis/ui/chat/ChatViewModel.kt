@@ -115,6 +115,7 @@ class ChatViewModel(
 
     private var oldestMessageId: String? = null
     private val streamingBuffer = mutableMapOf<String, String>()
+    private val thinkingHistory = mutableListOf<String>()
     private var pendingState: PendingMessageState? = null
     private var retryJob: Job? = null
     private var chatJob: Job? = null
@@ -590,27 +591,26 @@ class ChatViewModel(
             }
 
             ChatMessage.MessageType.PROGRESS -> {
+                // Accumulate thinking steps (skip duplicates)
+                val step = response.message
+                if (step.isNotBlank() && (thinkingHistory.isEmpty() || thinkingHistory.last() != step)) {
+                    thinkingHistory.add(step)
+                }
+                val progressMessage = ChatMessage(
+                    from = ChatMessage.Sender.Assistant,
+                    text = step,
+                    contextId = projectId,
+                    messageType = messageType,
+                    metadata = response.metadata,
+                    thinkingSteps = thinkingHistory.toList(),
+                )
                 val existingProgressIndex = messages.indexOfLast {
                     it.messageType == ChatMessage.MessageType.PROGRESS
                 }
                 if (existingProgressIndex >= 0) {
-                    messages[existingProgressIndex] = ChatMessage(
-                        from = ChatMessage.Sender.Assistant,
-                        text = response.message,
-                        contextId = projectId,
-                        messageType = messageType,
-                        metadata = response.metadata,
-                    )
+                    messages[existingProgressIndex] = progressMessage
                 } else {
-                    messages.add(
-                        ChatMessage(
-                            from = ChatMessage.Sender.Assistant,
-                            text = response.message,
-                            contextId = projectId,
-                            messageType = messageType,
-                            metadata = response.metadata,
-                        ),
-                    )
+                    messages.add(progressMessage)
                 }
             }
 
@@ -620,6 +620,7 @@ class ChatViewModel(
                         it.metadata["streaming"] == "true"
                 }
                 streamingBuffer.clear()
+                thinkingHistory.clear()
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,
@@ -634,6 +635,7 @@ class ChatViewModel(
 
             ChatMessage.MessageType.ERROR -> {
                 messages.removeAll { it.messageType == ChatMessage.MessageType.PROGRESS }
+                thinkingHistory.clear()
                 messages.add(
                     ChatMessage(
                         from = ChatMessage.Sender.Assistant,

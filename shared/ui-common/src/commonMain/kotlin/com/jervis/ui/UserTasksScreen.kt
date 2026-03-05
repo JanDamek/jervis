@@ -65,6 +65,7 @@ fun UserTasksScreen(
     onBack: () -> Unit,
     onNavigateToProject: ((clientId: String, projectId: String?) -> Unit)? = null,
     onRefreshBadge: (() -> Unit)? = null,
+    userTaskCancelled: kotlinx.coroutines.flow.SharedFlow<String>? = null,
 ) {
     var listItems by remember { mutableStateOf<List<UserTaskListItemDto>>(emptyList()) }
     var hasMore by remember { mutableStateOf(false) }
@@ -132,11 +133,13 @@ fun UserTasksScreen(
                 repository.userTasks.cancel(task.id)
                 showDeleteConfirm = false
                 taskToDelete = null
+                // Optimistic removal — task goes DONE after cancel, remove from list immediately
                 if (selectedListItem?.id == task.id) {
                     selectedListItem = null
                     selectedFullTask = null
                 }
-                loadTasks(filterText)
+                listItems = listItems.filter { it.id != task.id }
+                totalCount = (totalCount - 1).coerceAtLeast(0)
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -148,6 +151,18 @@ fun UserTasksScreen(
     LaunchedEffect(Unit) {
         loadTasks()
         onRefreshBadge?.invoke()
+    }
+
+    // Remove cancelled tasks from list reactively (event from global stream)
+    LaunchedEffect(userTaskCancelled) {
+        userTaskCancelled?.collect { cancelledId ->
+            listItems = listItems.filter { it.id != cancelledId }
+            totalCount = (totalCount - 1).coerceAtLeast(0)
+            if (selectedListItem?.id == cancelledId) {
+                selectedListItem = null
+                selectedFullTask = null
+            }
+        }
     }
 
     var filterJob by remember { mutableStateOf<Job?>(null) }

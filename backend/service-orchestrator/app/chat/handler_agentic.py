@@ -466,6 +466,11 @@ async def run_agentic_loop(
             yield ChatStreamEvent(type="tool_result", content=result[:500], metadata={"tool": tool_name})
             messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
 
+            # Enriched thinking — short summary of tool result for UI
+            result_preview = result[:120].replace("\n", " ").strip()
+            if result_preview:
+                yield ChatStreamEvent(type="thinking", content=f"{tool_name} → {result_preview}")
+
         # Focus reminder
         remaining_iters = effective_max_iterations - iteration - 1
         messages.append({

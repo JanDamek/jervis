@@ -332,11 +332,14 @@ private fun ChatMessageItem(
             )
         }
     } else if (message.messageType == ChatMessage.MessageType.PROGRESS) {
+        var expanded by remember { mutableStateOf(false) }
+        val hasSteps = message.thinkingSteps.size > 1
+
         Column(
             modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // Main progress row: spinner + text
+            // Main progress row: spinner + text + expand toggle
             Row(
                 horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
@@ -350,7 +353,62 @@ private fun ChatMessageItem(
                     text = message.text,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
                 )
+                if (hasSteps) {
+                    IconButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (expanded) "Skrýt" else "Zobrazit detail",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                }
+            }
+
+            // Expandable thinking steps
+            AnimatedVisibility(visible = expanded && hasSteps) {
+                Column(
+                    modifier = Modifier.padding(start = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    message.thinkingSteps.forEachIndexed { index, step ->
+                        val isCurrent = index == message.thinkingSteps.lastIndex
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (isCurrent) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(10.dp),
+                                    strokeWidth = 1.5.dp,
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(10.dp),
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                )
+                            }
+                            Text(
+                                text = "${index + 1}. $step",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isCurrent) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
 
             // Inline orchestrator progress details

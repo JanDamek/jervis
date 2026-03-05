@@ -20,8 +20,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -84,6 +87,10 @@ class MainViewModel(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // User task cancellation events (for UserTasksScreen reactive refresh)
+    private val _userTaskCancelled = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val userTaskCancelled: SharedFlow<String> = _userTaskCancelled.asSharedFlow()
 
     // --- Sub-ViewModels ---
 
@@ -232,7 +239,10 @@ class MainViewModel(
         println("Received global event: ${event::class.simpleName}")
         when (event) {
             is JervisEvent.UserTaskCreated -> notification.handleUserTaskCreated(event)
-            is JervisEvent.UserTaskCancelled -> notification.handleUserTaskCancelled(event)
+            is JervisEvent.UserTaskCancelled -> {
+                notification.handleUserTaskCancelled(event)
+                _userTaskCancelled.tryEmit(event.taskId)
+            }
             is JervisEvent.ErrorNotification -> _errorMessage.value = "Server error: ${event.message}"
             is JervisEvent.MeetingStateChanged -> { /* Handled by MeetingViewModel */ }
             is JervisEvent.MeetingTranscriptionProgress -> { /* Handled by MeetingViewModel */ }

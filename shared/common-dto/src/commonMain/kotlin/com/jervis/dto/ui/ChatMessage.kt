@@ -12,6 +12,7 @@ data class ChatMessage(
     val messageType: MessageType = MessageType.FINAL,
     val metadata: Map<String, String> = emptyMap(),
     val workflowSteps: List<WorkflowStep> = emptyList(),
+    val thinkingSteps: List<String> = emptyList(),
     val sequence: Long? = null,
     val id: String? = null,
 ) {
