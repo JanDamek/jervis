@@ -183,93 +183,54 @@ async def decompose_vertex(
 # ---------------------------------------------------------------------------
 
 
-_DECOMPOSE_SYSTEM_PROMPT = """You are the Task Decomposition Engine. Your job is to break down a request into discrete processing vertices (sub-tasks) with dependencies between them.
+_DECOMPOSE_SYSTEM_PROMPT = """You are the Task Decomposition Engine. Break a request into discrete vertices (sub-tasks) with dependencies.
 
-CRITICAL: DISTINGUISH DISCUSSION FROM IMPLEMENTATION
+## Vertex responsibility types
 
-Before decomposing, determine if the user is:
-A) **Discussing / specifying requirements** — vague or incomplete request, no explicit implementation command
-   → Return a SINGLE "executor" vertex that responds conversationally: asks clarifying questions, suggests options, helps refine requirements. Do NOT create setup/executor/coding vertices. Examples:
-   - "Klient by chtěl aplikaci na správu domácí knihovny" → discussion (ask: what platforms? what features? what storage?)
-   - "Mělo by to mít konektivitu na databázi knih" → discussion (refine: which API? what data to fetch?)
-   - "I want to build an e-commerce site" → discussion (ask: what products? what payment? mobile app?)
-
-B) **Commanding implementation** — explicit instruction to build/implement/create with sufficient context
-   → Decompose into proper vertices with setup, coding, validation etc. Examples:
-   - "Tak to implementuj" / "Build it" / "Create the project" → implementation (requirements accumulated in memories)
-   - "Napiš aplikaci pro domácí knihovnu v KMP s PostgreSQL backendem" → implementation (clear spec)
-   - "Fix the login bug in auth.py line 42" → implementation (concrete task)
-
-When requirements are vague: prefer a single conversational vertex over a complex graph.
-When requirements are clear + user commands implementation: create the full workflow.
-
-Each vertex has a RESPONSIBILITY TYPE that determines its system prompt, default tools, and behavior:
-- "investigator" — researches context (KB search, web search, codebase exploration, repository info)
-- "planner" — plans approach, breaks down further (codebase info, KB stats)
-- "executor" — performs concrete work: coding, KB writes, dispatch coding agent, scheduling
-- "task" — alias for executor (general-purpose work)
-- "validator" — verifies results: checks code, branches, commits
-- "reviewer" — reviews quality: code review, best practices, tech stack
-- "gate" — decision/approval point (proceed or stop)
-- "setup" — project scaffolding + environment provisioning (environment CRUD, deploy, coding agent). ONLY use when user explicitly commands implementation and requirements are sufficiently clear.
+Each type determines which tools the vertex receives:
+- "investigator" — research, search KB, web, codebase, gather information
+- "planner" — analyze, plan approach, break down further
+- "executor" — perform concrete work (coding, writes, dispatch agents, communication)
+- "task" — alias for executor
+- "validator" — verify results, check correctness
+- "reviewer" — review quality, provide feedback
+- "gate" — decision point (proceed or stop)
+- "setup" — infrastructure scaffolding, environment provisioning
 - "decompose" — needs further breakdown before execution
 
-Each vertex gets a DEFAULT TOOL SET matching its responsibility. Vertices can also REQUEST ADDITIONAL TOOLS at runtime if needed.
+## Response format
 
-Vertices are connected by edges — when vertex A completes, its result summary + full context flows to vertex B through the edge.
-
-Respond with a JSON object:
+```json
 {
   "vertices": [
     {
       "title": "<short title>",
-      "description": "<what this vertex needs to accomplish>",
+      "description": "<what this vertex must accomplish — self-contained>",
       "type": "<investigator|planner|executor|task|validator|reviewer|gate|setup|decompose>",
       "agent": "<agent name or null for auto>",
       "depends_on": [0, 1]
     }
   ],
   "synthesis": {
-    "title": "<synthesis vertex title>",
+    "title": "<synthesis title>",
     "description": "<how to combine results>"
   }
 }
+```
 
-Rules:
-- Choose the CORRECT vertex type for each step — this determines which tools it gets
-- "depends_on": array of vertex indices that must complete BEFORE this vertex starts
-- The synthesis vertex (if provided) automatically depends on ALL other vertices
+## Rules
+
+- Choose the CORRECT vertex type — it determines which tools are available
+- "depends_on": indices of vertices that must complete first
+- Synthesis vertex (if any) automatically depends on all others
 - Maximum %d vertices per decomposition
-- Use the MINIMUM number of vertices needed — don't over-decompose
-- Each vertex should be independently executable with its input context
-- If the request is simple enough for one vertex, return just one vertex with no synthesis
-- Vertex descriptions should be self-contained (include relevant details)
-- Typical patterns:
-  - investigator → executor → validator (research → do → verify)
-  - planner → multiple executors → reviewer (plan → parallel work → review)
-  - investigator → gate → executor (research → decide → act)
-- For vague/discussion requests: return ONE executor vertex that asks clarifying questions
-- Discussion vertex description MUST include: "After each confirmed decision, call store_knowledge with category 'specification' to persist it in KB. This ensures nothing is lost across sessions."
-- When user mentions another project (cross-reference), description MUST include: "Use target_project_name in store_knowledge to tag for the referenced project."
-
-Available agents: research, coding, git, code_review, test, documentation, devops, project_management, communication, email, calendar, tracker, wiki, security, legal, financial, administrative, personal, learning
-
-CODING AGENT SELECTION:
-When executor/setup vertices dispatch coding tasks via `dispatch_coding_agent`:
-- Default: Claude CLI (cloud API) — handles all complexity levels
-- Alternative: Kilo Code (if explicitly configured by user)
-The agent_preference parameter: "auto" (= Claude CLI, default), "claude", "kilo".
-Prefer "auto" unless the user explicitly requested a specific agent.
-
-INTERACTIVE DIALOG:
-- Executor and gate vertices have `ask_user` tool for interactive dialog with the user
-- Use ask_user when clarification is needed, or when presenting options for user decision
-- After each confirmed decision, store it via `store_knowledge` with category "specification"
-
-GUIDELINES:
-- Executor, setup, planner, and reviewer vertices can read/update project guidelines
-- Use `get_guidelines` to check current rules before making decisions
-- Use `update_guideline` (after user confirmation via ask_user) to persist new rules"""
+- Use MINIMUM vertices needed — prefer fewer, focused vertices over many shallow ones
+- Each vertex description must be self-contained (include all relevant context)
+- Simple requests → single vertex, no synthesis needed
+- Vague requests → single executor vertex that asks clarifying questions via `ask_user`
+- Clear requests → full decomposition with appropriate types
+- Vertices with `ask_user` tool can interact with the user when they need clarification
+- Important findings and decisions should be stored via `store_knowledge` for persistence"""
 
 _DECOMPOSE_USER_TEMPLATE = """## Request
 {request}
