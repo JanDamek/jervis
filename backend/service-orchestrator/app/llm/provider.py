@@ -367,6 +367,9 @@ class LLMProvider:
             kwargs["messages"] = _trim_messages_for_context(messages, config["num_ctx"], max_tokens)
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
+        # OpenRouter reasoning models: limit reasoning token budget so actual response has room
+        if config["model"].startswith("openrouter/"):
+            kwargs["reasoning_effort"] = "low"
 
         logger.info("LLM streaming call: model=%s headers=%s", config["model"], extra_headers or {})
 
@@ -424,6 +427,9 @@ class LLMProvider:
             kwargs["tools"] = tools
         if extra_headers:
             kwargs["extra_headers"] = extra_headers
+        # OpenRouter reasoning models: limit reasoning token budget so actual response has room
+        if config["model"].startswith("openrouter/"):
+            kwargs["reasoning_effort"] = "low"
 
         timeout = TIER_TIMEOUT_SECONDS.get(tier, TOKEN_TIMEOUT_SECONDS)
         logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds",
@@ -468,8 +474,16 @@ class LLMProvider:
             raise
 
         # Report success to router (resets error counter for cloud models)
+        # Skip for empty responses — caller (handler_streaming) detects empty content
+        # and reports error; reporting success here would reset that counter.
         if tier == ModelTier.CLOUD_OPENROUTER:
-            _report_success_bg(config["model"])
+            choice = response.choices[0] if response.choices else None
+            if choice:
+                msg = choice.message
+                has_content = bool((getattr(msg, "content", None) or "").strip())
+                has_tools = bool(getattr(msg, "tool_calls", None))
+                if has_content or has_tools:
+                    _report_success_bg(config["model"])
 
         # Log response summary
         try:

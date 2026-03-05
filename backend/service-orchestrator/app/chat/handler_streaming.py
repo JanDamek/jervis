@@ -79,29 +79,6 @@ async def call_llm(
             result = await asyncio.wait_for(coro, timeout=timeout)
         else:
             result = await coro
-
-        # Empty response from cloud model (e.g. finish_reason=length with 0 content)
-        # → treat as model failure, report error to router, retry with next model
-        if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override:
-            msg = result.choices[0].message
-            content = getattr(msg, "content", None) or ""
-            tool_calls = getattr(msg, "tool_calls", None)
-            if not content.strip() and not tool_calls:
-                finish = result.choices[0].finish_reason
-                logger.warning("Empty response from OpenRouter %s (finish_reason=%s), retrying",
-                               model_override, finish)
-                # Report to router so error counter increments
-                from app.llm.router_client import report_model_error
-                await report_model_error(
-                    model_override.removeprefix("openrouter/"),
-                    f"Empty response (finish_reason={finish})",
-                )
-                return await _retry_with_next_model(
-                    ValueError(f"Empty response from {model_override}"),
-                    model_override, messages, tools, max_tokens, temperature,
-                    max_tier=max_tier, estimated_tokens=estimated_tokens,
-                )
-        return result
     except (TokenTimeoutError, asyncio.TimeoutError):
         # Timeout fallback: if local GPU timed out, try cloud via router
         if route and route.target == "local":
@@ -122,7 +99,6 @@ async def call_llm(
         raise
     except Exception as e:
         # Model error fallback: if OpenRouter model failed, try next model in queue
-        # provider.py already reported error to router
         if effective_tier != ModelTier.CLOUD_OPENROUTER or not model_override:
             raise
         return await _retry_with_next_model(
@@ -130,8 +106,31 @@ async def call_llm(
             max_tier=max_tier, estimated_tokens=estimated_tokens,
         )
 
+    # Empty response check OUTSIDE try/except — prevents double retry
+    # (ValueError from _retry_with_next_model must NOT be caught by except Exception above)
+    if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override:
+        msg = result.choices[0].message
+        content = getattr(msg, "content", None) or ""
+        tool_calls = getattr(msg, "tool_calls", None)
+        if not content.strip() and not tool_calls:
+            finish = result.choices[0].finish_reason
+            logger.warning("Empty response from OpenRouter %s (finish_reason=%s), retrying",
+                           model_override, finish)
+            from app.llm.router_client import report_model_error
+            await report_model_error(
+                model_override.removeprefix("openrouter/"),
+                f"Empty response (finish_reason={finish})",
+            )
+            return await _retry_with_next_model(
+                ValueError(f"Empty response from {model_override}"),
+                model_override, messages, tools, max_tokens, temperature,
+                max_tier=max_tier, estimated_tokens=estimated_tokens,
+            )
 
-_MAX_MODEL_RETRIES = 2
+    return result
+
+
+_MAX_MODEL_RETRIES_SAFETY_CAP = 20  # Safety cap only — actual limit is queue size
 
 
 async def _retry_with_next_model(
@@ -148,7 +147,8 @@ async def _retry_with_next_model(
     """Try next models in queue after a cloud model failure.
 
     Asks router for route decision with skip_models to get next available model.
-    Up to _MAX_MODEL_RETRIES attempts before re-raising original error.
+    Iterates all queue models (router returns no-match when exhausted), then
+    falls back to local GPU as last resort.
     Reports errors to router so error counters increment and models get disabled.
     """
     from app.llm.router_client import route_request, report_model_error
@@ -156,7 +156,7 @@ async def _retry_with_next_model(
     skip_models = [failed_model]
     extra_headers = foreground_headers(processing_mode) if processing_mode == "FOREGROUND" else None
 
-    for attempt in range(_MAX_MODEL_RETRIES):
+    for attempt in range(_MAX_MODEL_RETRIES_SAFETY_CAP):
         fallback = await route_request(
             capability="chat",
             max_tier=max_tier,
@@ -199,14 +199,26 @@ async def _retry_with_next_model(
             return result
         except Exception as retry_err:
             logger.warning("Fallback model %s also failed: %s", fallback.model, retry_err)
-            # Report error to router for tracking
             await report_model_error(
                 fallback.model.removeprefix("openrouter/"),
                 str(retry_err)[:500],
             )
             skip_models.append(fallback.model)
 
-    raise original_error
+    # All cloud models exhausted → fall back to local GPU as last resort
+    logger.info("All cloud models failed, falling back to local GPU (skip=%s)", skip_models)
+    try:
+        return await llm_provider.completion(
+            messages=messages,
+            tier=ModelTier.LOCAL_STANDARD,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra_headers=foreground_headers(processing_mode),
+        )
+    except Exception as local_err:
+        logger.warning("Local GPU fallback also failed: %s", local_err)
+        raise original_error
 
 
 async def stream_text(text: str):
