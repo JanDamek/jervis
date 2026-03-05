@@ -81,14 +81,21 @@ async def call_llm(
             result = await coro
 
         # Empty response from cloud model (e.g. finish_reason=length with 0 content)
-        # → treat as model failure, retry with next model
+        # → treat as model failure, report error to router, retry with next model
         if effective_tier == ModelTier.CLOUD_OPENROUTER and model_override:
             msg = result.choices[0].message
             content = getattr(msg, "content", None) or ""
             tool_calls = getattr(msg, "tool_calls", None)
             if not content.strip() and not tool_calls:
+                finish = result.choices[0].finish_reason
                 logger.warning("Empty response from OpenRouter %s (finish_reason=%s), retrying",
-                               model_override, result.choices[0].finish_reason)
+                               model_override, finish)
+                # Report to router so error counter increments
+                from app.llm.router_client import report_model_error
+                await report_model_error(
+                    model_override.removeprefix("openrouter/"),
+                    f"Empty response (finish_reason={finish})",
+                )
                 return await _retry_with_next_model(
                     ValueError(f"Empty response from {model_override}"),
                     model_override, messages, tools, max_tokens, temperature,
@@ -142,8 +149,9 @@ async def _retry_with_next_model(
 
     Asks router for route decision with skip_models to get next available model.
     Up to _MAX_MODEL_RETRIES attempts before re-raising original error.
+    Reports errors to router so error counters increment and models get disabled.
     """
-    from app.llm.router_client import route_request
+    from app.llm.router_client import route_request, report_model_error
 
     skip_models = [failed_model]
     extra_headers = foreground_headers(processing_mode) if processing_mode == "FOREGROUND" else None
@@ -164,7 +172,7 @@ async def _retry_with_next_model(
         logger.info("OpenRouter model %s failed, trying fallback %s (attempt %d/%d)",
                      failed_model, fallback.model, attempt + 1, _MAX_MODEL_RETRIES)
         try:
-            return await llm_provider.completion(
+            result = await llm_provider.completion(
                 messages=messages,
                 tier=ModelTier.CLOUD_OPENROUTER,
                 tools=tools,
@@ -174,8 +182,28 @@ async def _retry_with_next_model(
                 model_override=fallback.model,
                 api_key_override=fallback.api_key,
             )
+            # Check for empty response from fallback model too
+            msg = result.choices[0].message
+            content = getattr(msg, "content", None) or ""
+            tool_calls = getattr(msg, "tool_calls", None)
+            if not content.strip() and not tool_calls:
+                finish = result.choices[0].finish_reason
+                logger.warning("Fallback model %s also returned empty (finish_reason=%s)",
+                               fallback.model, finish)
+                await report_model_error(
+                    fallback.model.removeprefix("openrouter/"),
+                    f"Empty response (finish_reason={finish})",
+                )
+                skip_models.append(fallback.model)
+                continue
+            return result
         except Exception as retry_err:
             logger.warning("Fallback model %s also failed: %s", fallback.model, retry_err)
+            # Report error to router for tracking
+            await report_model_error(
+                fallback.model.removeprefix("openrouter/"),
+                str(retry_err)[:500],
+            )
             skip_models.append(fallback.model)
 
     raise original_error

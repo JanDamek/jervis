@@ -23,10 +23,12 @@ _OPENROUTER_SETTINGS_TTL = 60.0  # 1 minute
 
 # ── Model error tracking ──────────────────────────────────────────────
 # model_id → {"count": int, "last_error": float, "disabled": bool,
-#              "errors": [{"message": str, "timestamp": float}]}
+#              "disabled_until": float, "errors": [...]}
 _model_errors: dict[str, dict] = {}
-_MAX_CONSECUTIVE_ERRORS = 3  # Mark as error after 3 consecutive failures
-_MAX_ERROR_HISTORY = 5  # Keep last N error messages per model
+_MAX_CONSECUTIVE_ERRORS = 3   # Disable after N consecutive failures
+_MAX_ERROR_HISTORY = 10       # Keep last N error messages per model
+_RATE_LIMIT_PAUSE_S = 60.0   # Pause model for 60s on rate limit (429)
+_AUTO_RECOVERY_S = 300.0      # Auto re-enable disabled model after 5 min
 
 
 async def _fetch_openrouter_settings() -> dict | None:
@@ -150,12 +152,24 @@ async def _first_cloud_model(
         if model_id in skip_set:
             logger.debug("Skipping model %s (explicitly excluded)", model_id)
             continue
-        # Skip models with too many consecutive errors
+        # Skip models with too many consecutive errors or temporarily paused
         error_info = _model_errors.get(model_id)
-        if error_info and error_info.get("disabled"):
-            logger.debug("Skipping error model %s (%d consecutive errors)",
-                         model_id, error_info.get("count", 0))
-            continue
+        if error_info:
+            now = time.monotonic()
+            disabled_until = error_info.get("disabled_until", 0.0)
+            # Time-based pause (rate limit or auto-recovery)
+            if disabled_until > now:
+                remaining = int(disabled_until - now)
+                logger.debug("Skipping model %s (paused for %ds)", model_id, remaining)
+                continue
+            # Auto-recovery: if disabled but enough time passed, re-enable
+            if error_info.get("disabled") and disabled_until <= now and disabled_until > 0:
+                logger.info("Model %s auto-recovered after cooldown", model_id)
+                del _model_errors[model_id]
+            elif error_info.get("disabled"):
+                logger.debug("Skipping error model %s (%d consecutive errors)",
+                             model_id, error_info.get("count", 0))
+                continue
         max_ctx = entry.get("maxContextTokens", 32_000)
         if estimated_tokens <= max_ctx:
             return model_id
@@ -163,19 +177,22 @@ async def _first_cloud_model(
 
 
 def report_model_error(model_id: str, error_message: str = "") -> bool:
-    """Report a model error. Returns True if model was just disabled (3rd strike).
+    """Report a model error. Returns True if model was just disabled.
 
-    Called by orchestrator when a cloud model returns a provider error (400/500).
-    After 3 consecutive errors, model is disabled until manually re-enabled.
-    Stores last _MAX_ERROR_HISTORY error messages for UI display.
+    Error types handled:
+    - Rate limit (429 / "rate limit"): pause for _RATE_LIMIT_PAUSE_S (60s), don't increment counter
+    - Empty response / provider error: increment counter, disable after _MAX_CONSECUTIVE_ERRORS
+    - Disabled models auto-recover after _AUTO_RECOVERY_S (5 min)
     """
     info = _model_errors.get(model_id)
     if not info:
-        info = {"count": 0, "last_error": 0.0, "disabled": False, "errors": []}
+        info = {"count": 0, "last_error": 0.0, "disabled": False,
+                "disabled_until": 0.0, "errors": []}
         _model_errors[model_id] = info
 
-    info["count"] = info.get("count", 0) + 1
-    info["last_error"] = time.monotonic()
+    now = time.monotonic()
+    info["last_error"] = now
+    msg_lower = error_message.lower() if error_message else ""
 
     # Store error message (keep last N)
     if error_message:
@@ -184,9 +201,21 @@ def report_model_error(model_id: str, error_message: str = "") -> bool:
         if len(errors) > _MAX_ERROR_HISTORY:
             info["errors"] = errors[-_MAX_ERROR_HISTORY:]
 
+    # Rate limit detection — pause but don't count as error
+    is_rate_limit = "429" in msg_lower or "rate limit" in msg_lower or "too many" in msg_lower
+    if is_rate_limit:
+        info["disabled_until"] = now + _RATE_LIMIT_PAUSE_S
+        logger.warning("Model %s RATE LIMITED — paused for %ds", model_id, int(_RATE_LIMIT_PAUSE_S))
+        return False
+
+    # Regular error — increment counter
+    info["count"] = info.get("count", 0) + 1
+
     if info["count"] >= _MAX_CONSECUTIVE_ERRORS and not info.get("disabled"):
         info["disabled"] = True
-        logger.warning("Model %s DISABLED after %d consecutive errors", model_id, info["count"])
+        info["disabled_until"] = now + _AUTO_RECOVERY_S
+        logger.warning("Model %s DISABLED after %d consecutive errors (auto-recovery in %ds)",
+                        model_id, info["count"], int(_AUTO_RECOVERY_S))
         return True
     logger.info("Model %s error count: %d/%d", model_id, info["count"], _MAX_CONSECUTIVE_ERRORS)
     return False
