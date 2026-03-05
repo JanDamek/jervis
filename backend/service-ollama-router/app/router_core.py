@@ -148,10 +148,10 @@ class OllamaRouter:
     ) -> dict:
         """Capability-based routing decision.
 
-        1. NONE → always local (no cloud access)
-        2. FOREGROUND + FREE+ → always cloud
-        3. BACKGROUND + FREE+ ≤48k → local GPU
-        4. BACKGROUND + FREE+ >48k → cloud (overflow)
+        1. NONE → always local GPU (FG NONE preempts BG via CRITICAL priority)
+        2. FG + FREE+ → always OpenRouter
+        3. BG + FREE+ ≤48k + GPU free → local GPU
+        4. BG + FREE+ >48k OR GPU busy → OpenRouter (yield GPU for FG)
         5. No cloud model fits → local fallback
 
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
@@ -169,22 +169,44 @@ class OllamaRouter:
             "api_base": api_base,
         }
 
-        # Rule 1: NONE → always local (no cloud access regardless of context)
+        # Rule 1: NONE → always local GPU (FG NONE preempts BG via CRITICAL priority)
         if tier_level == 0:
             logger.info("Route decision: max_tier=NONE → local (tokens=%d)", estimated_tokens)
             return local_result
 
-        # Rule 2: BACKGROUND + FREE+ ≤48k → local GPU
-        if is_background and estimated_tokens <= 48_000:
-            logger.info("Route decision: BACKGROUND tier=%s ≤48k → local (tokens=%d)",
+        # Rule 2: FOREGROUND + FREE+ → always OpenRouter
+        if not is_background:
+            cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
+            if cloud_model:
+                logger.info("Route decision: FG tier=%s → cloud %s (tokens=%d)",
+                            max_tier, cloud_model, estimated_tokens)
+                api_key = await get_api_key()
+                return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
+            # No cloud model → local fallback
+            logger.info("Route decision: FG tier=%s, no cloud model → local fallback (tokens=%d)",
                         max_tier, estimated_tokens)
             return local_result
 
-        # Rule 3: FOREGROUND → always cloud, BACKGROUND >48k → cloud overflow
+        # Rule 3: BACKGROUND + FREE+ — local only if ≤48k AND GPU free
+        # If GPU busy (e.g. FG NONE running) → BG yields GPU, goes to cloud
+        target_model = local_result["model"]
+        whisper_busy = self.check_whisper_busy()
+        gpu_free = any(
+            b.healthy and b.active_request_count() == 0
+            and not (b.name == VLM_GPU and whisper_busy)
+            for b in self.gpu_pool.all_backends
+            if target_model in GPU_MODEL_SETS.get(b.name, [])
+        )
+        if estimated_tokens <= 48_000 and gpu_free:
+            logger.info("Route decision: BG tier=%s ≤48k + GPU free → local (tokens=%d)",
+                        max_tier, estimated_tokens)
+            return local_result
+
+        # Rule 4: BG >48k OR GPU busy → OpenRouter
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
-            reason = "BACKGROUND overflow >48k" if is_background else "FOREGROUND"
-            logger.info("Route decision: %s tier=%s → cloud %s (tokens=%d)",
+            reason = ">48k" if estimated_tokens > 48_000 else "GPU busy"
+            logger.info("Route decision: BG %s tier=%s → cloud %s (tokens=%d)",
                         reason, max_tier, cloud_model, estimated_tokens)
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
