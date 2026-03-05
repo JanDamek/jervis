@@ -71,6 +71,8 @@ def describe_tool_call(name: str, args: dict) -> str:
 _CHAT_SPECIFIC_TOOLS = {
     "create_background_task",
     "create_work_plan",
+    "update_work_plan_draft",
+    "finalize_work_plan",
     "dispatch_coding_agent",
     "search_user_tasks",
     "search_tasks",
@@ -111,28 +113,38 @@ async def execute_chat_tool(
 
 # Strategy map: tool_name → handler coroutine
 async def _handle_create_background_task(args, client_id, project_id, kotlin_client):
-    effective_client_id = args.get("client_id") or client_id
-    if not effective_client_id:
-        return "Chyba: client_id je povinný pro vytvoření background tasku. Zeptej se uživatele na klienta."
+    # Context IDs have priority over LLM-provided args (LLM often sends names instead of ObjectIds)
+    effective_client_id = client_id or args.get("client_id")
+    effective_project_id = project_id or args.get("project_id")
+    # Validate ObjectId format if provided (clientId is optional — None = global)
+    import re
+    _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
+    if effective_client_id and not _OID_RE.match(effective_client_id):
+        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
     result = await kotlin_client.create_background_task(
         title=args["title"],
         description=args["description"],
         client_id=effective_client_id,
-        project_id=args.get("project_id", project_id),
+        project_id=effective_project_id,
         priority=args.get("priority", "medium"),
     )
     return f"Background task created: {result}"
 
 
 async def _handle_create_work_plan(args, client_id, project_id, kotlin_client):
-    effective_client_id = args.get("client_id") or client_id
-    if not effective_client_id:
-        return "Chyba: client_id je povinný pro vytvoření work planu. Zeptej se uživatele na klienta."
+    # Context IDs have priority over LLM-provided args
+    effective_client_id = client_id or args.get("client_id")
+    effective_project_id = project_id or args.get("project_id")
+    # Validate ObjectId format if provided (clientId is optional — None = global)
+    import re
+    _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
+    if effective_client_id and not _OID_RE.match(effective_client_id):
+        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
     result = await kotlin_client.create_work_plan(
         title=args["title"],
         phases=args["phases"],
         client_id=effective_client_id,
-        project_id=args.get("project_id", project_id),
+        project_id=effective_project_id,
     )
     return result
 
@@ -249,10 +261,19 @@ async def _handle_finalize_work_plan(args, client_id, project_id, kotlin_client)
 
 
 async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
-    effective_client_id = args.get("client_id") or client_id
-    effective_project_id = args.get("project_id") or project_id
-    if not effective_client_id or not effective_project_id:
-        return "Chyba: client_id a project_id jsou povinné pro dispatch coding agenta. Zeptej se uživatele."
+    # Context IDs have priority over LLM-provided args (LLM often sends names instead of ObjectIds)
+    effective_client_id = client_id or args.get("client_id")
+    effective_project_id = project_id or args.get("project_id")
+    # dispatch_coding_agent needs project_id (for git workspace)
+    if not effective_project_id:
+        return "Chyba: project_id je povinný pro dispatch coding agenta. Vyber projekt přes UI."
+    # Validate ObjectId format if provided
+    import re
+    _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
+    if effective_client_id and not _OID_RE.match(effective_client_id):
+        return f"Chyba: client_id '{effective_client_id}' není platné ObjectId. Vyber klienta přes UI."
+    if not _OID_RE.match(effective_project_id):
+        return f"Chyba: project_id '{effective_project_id}' není platné ObjectId. Vyber projekt přes UI."
     result = await kotlin_client.dispatch_coding_agent(
         task_description=args["task_description"],
         client_id=effective_client_id,

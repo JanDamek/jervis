@@ -126,7 +126,8 @@ Příklad: "Zpráva obsahuje X požadavků. Doporučuji vytvořit background tas
 - Sleduj kontext konverzace — pokud user mluví o jiném projektu, přizpůsob.
 - Pokud user chce přepnout na jiného klienta/projekt → zavolej **switch_context** (přepne dropdown v UI).
 - Při nejistotě SE ZEPTEJ: "Myslíš to pro BMS nebo Jervis?"
-- Pro create_background_task a dispatch_coding_agent: client_id POVINNÝ. Ptej se.
+- client_id je nepovinný — pokud není vybrán, task je globální.
+- dispatch_coding_agent vyžaduje project_id (git workspace).
 
 **Proaktivní pravidla:**
 - Při uvítání ("ahoj", "co je nového") → zmíň čekající user_tasks a neklasifikované nahrávky.

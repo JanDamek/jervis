@@ -137,8 +137,9 @@ async def run_agentic_loop(
         logger.info("Chat: estimated_tokens=%d → tier=%s, route=%s/%s (max_tier=%s)",
                      estimated, tier.value, route.target, route.model or tier.value, max_tier)
 
-        # Preempt background only on first iteration AND only when using local GPU
-        if iteration == 0 and route.target == "local":
+        # Preempt background only on first iteration AND only when tier=NONE (local GPU only).
+        # FREE/PAID/PREMIUM tiers use OpenRouter — no GPU contention with background tasks.
+        if iteration == 0 and max_tier == "NONE":
             try:
                 from app.tools.kotlin_client import kotlin_client
                 await kotlin_client.register_foreground_start()
@@ -287,7 +288,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context"}
+            _WRITE_TOOLS = {"create_background_task", "create_work_plan", "finalize_work_plan", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context"}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
