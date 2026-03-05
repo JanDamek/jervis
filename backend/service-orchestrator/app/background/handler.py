@@ -35,6 +35,54 @@ from app.tools.ollama_parsing import extract_tool_calls
 
 logger = logging.getLogger(__name__)
 
+_BG_MAX_MODEL_RETRIES = 2
+
+
+async def _bg_retry_with_next_model(
+    original_error: Exception,
+    failed_model: str,
+    messages: list[dict],
+    max_tier: str,
+    estimated_tokens: int,
+) -> object | None:
+    """Try next cloud models after a background OpenRouter failure.
+
+    Returns LLM response on success, None if all fallbacks exhausted.
+    """
+    from app.llm.router_client import route_request
+
+    skip_models = [failed_model]
+    for attempt in range(_BG_MAX_MODEL_RETRIES):
+        fallback = await route_request(
+            capability="chat",
+            max_tier=max_tier,
+            estimated_tokens=estimated_tokens,
+            processing_mode="BACKGROUND",
+            skip_models=skip_models,
+        )
+        if fallback.target != "openrouter" or not fallback.model or fallback.model in skip_models:
+            logger.warning("No more cloud models available after %s failed (skip=%s)",
+                           failed_model, skip_models)
+            return None
+
+        logger.info("Background: model %s failed, trying fallback %s (attempt %d/%d)",
+                     failed_model, fallback.model, attempt + 1, _BG_MAX_MODEL_RETRIES)
+        try:
+            return await llm_provider.completion(
+                messages=messages,
+                tier=ModelTier.CLOUD_OPENROUTER,
+                max_tokens=settings.default_output_tokens,
+                temperature=0.2,
+                tools=ALL_BACKGROUND_TOOLS,
+                model_override=fallback.model,
+                api_key_override=fallback.api_key,
+            )
+        except Exception as retry_err:
+            logger.warning("Background: fallback model %s also failed: %s", fallback.model, retry_err)
+            skip_models.append(fallback.model)
+
+    return None
+
 
 async def _run_graph_agent_background(
     request: OrchestrateRequest,
@@ -241,9 +289,21 @@ async def handle_background(
                 )
                 final_answer = "Background task aborted: preempted by foreground chat."
                 break
-            logger.warning("LLM call failed: %s (tier=%s)", e, tier.value)
-            final_answer = f"Background task failed: {e}"
-            break
+            # Model error fallback: try next cloud model if OpenRouter failed
+            if effective_tier == ModelTier.CLOUD_OPENROUTER and route.model:
+                response = await _bg_retry_with_next_model(
+                    e, route.model, messages, max_tier, estimated_tokens,
+                )
+                if response is not None:
+                    pass  # success — continue with response
+                else:
+                    logger.warning("LLM call failed (no fallback): %s (tier=%s)", e, tier.value)
+                    final_answer = f"Background task failed: {e}"
+                    break
+            else:
+                logger.warning("LLM call failed: %s (tier=%s)", e, tier.value)
+                final_answer = f"Background task failed: {e}"
+                break
 
         choice = response.choices[0]
         message_obj = choice.message

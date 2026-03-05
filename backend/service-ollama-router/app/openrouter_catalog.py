@@ -105,39 +105,49 @@ async def get_queue(queue_name: str) -> list[dict]:
     return _DEFAULT_QUEUES.get(queue_name, _DEFAULT_QUEUES["FREE"])
 
 
-async def find_cloud_model_for_context(estimated_tokens: int, tier_level: int) -> str | None:
+async def find_cloud_model_for_context(
+    estimated_tokens: int, tier_level: int, skip_models: list[str] | None = None,
+) -> str | None:
     """Find first cloud model that fits the context, iterating queues by tier.
 
     Tries FREE -> PAID -> PREMIUM in order, respecting tier_level limit.
+    skip_models: model IDs to skip (already tried and failed in this request).
     Returns modelId or None.
     """
-    cloud_model = await _first_cloud_model("FREE", estimated_tokens)
+    cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models)
     if cloud_model:
         return cloud_model
 
     if tier_level >= TIER_LEVELS["PAID"]:
-        cloud_model = await _first_cloud_model("PAID", estimated_tokens)
+        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models)
         if cloud_model:
             return cloud_model
 
     if tier_level >= TIER_LEVELS["PREMIUM"]:
-        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens)
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models)
         if cloud_model:
             return cloud_model
 
     return None
 
 
-async def _first_cloud_model(queue_name: str, estimated_tokens: int) -> str | None:
+async def _first_cloud_model(
+    queue_name: str, estimated_tokens: int, skip_models: list[str] | None = None,
+) -> str | None:
     """Get first available cloud model from a queue that can handle the context.
 
-    Skips models marked as error (3+ consecutive failures).
+    Skips models marked as error (3+ consecutive failures) and skip_models list.
     """
+    skip_set = set(skip_models) if skip_models else set()
     queue_models = await get_queue(queue_name)
     for entry in queue_models:
         if entry.get("isLocal", False):
             continue
         model_id = entry.get("modelId", "")
+        # Skip explicitly excluded models (failed in this request)
+        if model_id in skip_set:
+            logger.debug("Skipping model %s (explicitly excluded)", model_id)
+            continue
         # Skip models with too many consecutive errors
         error_info = _model_errors.get(model_id)
         if error_info and error_info.get("disabled"):

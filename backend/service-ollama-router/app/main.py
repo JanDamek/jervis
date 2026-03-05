@@ -355,6 +355,7 @@ async def route_decision(request: Request):
         max_tier=body.get("max_tier", "NONE"),
         estimated_tokens=body.get("estimated_tokens", 0),
         processing_mode=body.get("processing_mode", "FOREGROUND"),
+        skip_models=body.get("skip_models"),
     )
     return JSONResponse(content=decision)
 

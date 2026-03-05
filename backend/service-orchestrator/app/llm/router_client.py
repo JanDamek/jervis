@@ -36,6 +36,7 @@ async def route_request(
     max_tier: str = "NONE",
     estimated_tokens: int = 0,
     processing_mode: str = "FOREGROUND",
+    skip_models: list[str] | None = None,
 ) -> RouteDecision:
     """Ask router for routing decision based on capability.
 
@@ -44,19 +45,23 @@ async def route_request(
         max_tier: "NONE", "FREE", "PAID", "PREMIUM"
         estimated_tokens: estimated context size in tokens
         processing_mode: "FOREGROUND" (chat → always cloud) or "BACKGROUND" (local, cloud >48k)
+        skip_models: model IDs to skip (already tried and failed in this request)
 
     Returns:
         RouteDecision with target, model, and optional api_base.
     """
     url = f"{_router_base_url()}/route-decision"
     try:
+        payload = {
+            "capability": capability,
+            "max_tier": max_tier,
+            "estimated_tokens": estimated_tokens,
+            "processing_mode": processing_mode,
+        }
+        if skip_models:
+            payload["skip_models"] = skip_models
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.post(url, json={
-                "capability": capability,
-                "max_tier": max_tier,
-                "estimated_tokens": estimated_tokens,
-                "processing_mode": processing_mode,
-            })
+            resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
             return RouteDecision(

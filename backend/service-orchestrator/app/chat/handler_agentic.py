@@ -147,7 +147,10 @@ async def run_agentic_loop(
             except Exception as e:
                 logger.warning("Failed to register foreground start: %s", e)
 
-        response = await call_llm(messages=messages, tier=tier, tools=selected_tools, route=route)
+        response = await call_llm(
+            messages=messages, tier=tier, tools=selected_tools, route=route,
+            max_tier=max_tier, estimated_tokens=estimated,
+        )
 
         choice = response.choices[0]
         tool_calls, remaining_text = extract_tool_calls(choice.message)
