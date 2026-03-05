@@ -79,12 +79,15 @@ async def route_request(
         )
 
 
-async def report_model_error(model_id: str) -> dict:
+async def report_model_error(model_id: str, error_message: str = "") -> dict:
     """Report a model error to router. Returns error state."""
     url = f"{_router_base_url()}/route-decision/model-error"
     try:
+        payload = {"model_id": model_id}
+        if error_message:
+            payload["error_message"] = error_message[:500]
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.post(url, json={"model_id": model_id})
+            resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()
     except Exception as e:

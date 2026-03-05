@@ -441,7 +441,7 @@ class LLMProvider:
         except Exception as e:
             # Report model error to router for tracking (cloud models only)
             if tier == ModelTier.CLOUD_OPENROUTER:
-                _report_error_bg(config["model"])
+                _report_error_bg(config["model"], e)
             # Dump message structure on provider errors for debugging
             if "400" in str(e) or "BadRequest" in type(e).__name__:
                 msg_summary = []
@@ -587,11 +587,12 @@ async def refresh_openrouter_api_key() -> None:
             logger.info("Using OpenRouter API key from environment variable")
 
 
-def _report_error_bg(model: str) -> None:
-    """Fire-and-forget: report model error to router."""
+def _report_error_bg(model: str, error: Exception | str = "") -> None:
+    """Fire-and-forget: report model error to router with error message."""
     # Strip prefix (openrouter/stepfun/... → stepfun/...)
     model_id = model.removeprefix("openrouter/")
-    asyncio.ensure_future(_report_error_async(model_id))
+    error_message = str(error)[:500] if error else ""
+    asyncio.ensure_future(_report_error_async(model_id, error_message))
 
 
 def _report_success_bg(model: str) -> None:
@@ -600,10 +601,10 @@ def _report_success_bg(model: str) -> None:
     asyncio.ensure_future(_report_success_async(model_id))
 
 
-async def _report_error_async(model_id: str) -> None:
+async def _report_error_async(model_id: str, error_message: str = "") -> None:
     try:
         from app.llm.router_client import report_model_error
-        result = await report_model_error(model_id)
+        result = await report_model_error(model_id, error_message)
         if result.get("just_disabled"):
             logger.warning("Model %s DISABLED by router after %d errors",
                            model_id, result.get("error_count", 0))

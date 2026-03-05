@@ -15,16 +15,30 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 @Component
 class OpenRouterSettingsRpcImpl(
     private val repository: OpenRouterSettingsRepository,
+    @Value("\${endpoints.ollama-router.url:http://jervis-ollama-router:11430}")
+    private val routerUrl: String = "http://jervis-ollama-router:11430",
 ) : IOpenRouterSettingsService {
     private val logger = KotlinLogging.logger {}
 
@@ -127,6 +141,49 @@ class OpenRouterSettingsRpcImpl(
     suspend fun getSettingsInternal(): OpenRouterSettingsDocument {
         return repository.findById(OpenRouterSettingsDocument.SINGLETON_ID)
             ?: OpenRouterSettingsDocument()
+    }
+
+    override suspend fun getModelErrors(): List<ModelErrorDto> {
+        return try {
+            val baseUrl = routerUrl.trimEnd('/')
+            val response: JsonObject = httpClient.get("$baseUrl/route-decision/model-errors").body()
+            response.entries.map { (modelId, value) ->
+                val obj = value.jsonObject
+                ModelErrorDto(
+                    modelId = modelId,
+                    errorCount = obj["count"]?.jsonPrimitive?.int ?: 0,
+                    disabled = obj["disabled"]?.jsonPrimitive?.boolean ?: false,
+                    errors = (obj["errors"]?.jsonArray ?: emptyList()).map { entry ->
+                        val e = entry.jsonObject
+                        ModelErrorEntryDto(
+                            message = e["message"]?.jsonPrimitive?.content ?: "",
+                            timestamp = e["timestamp"]?.jsonPrimitive?.double ?: 0.0,
+                        )
+                    },
+                )
+            }
+        } catch (e: Exception) {
+            logger.warn { "Failed to fetch model errors from router: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    override suspend fun resetModelError(modelId: String): Boolean {
+        return try {
+            val baseUrl = routerUrl.trimEnd('/')
+            val response: JsonObject = httpClient.post("$baseUrl/route-decision/model-reset") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("model_id" to modelId))
+            }.body()
+            val reEnabled = response["re_enabled"]?.jsonPrimitive?.boolean ?: false
+            if (reEnabled) {
+                logger.info { "Model $modelId re-enabled via router" }
+            }
+            reEnabled
+        } catch (e: Exception) {
+            logger.warn { "Failed to reset model error via router: ${e.message}" }
+            false
+        }
     }
 
     private fun applyFilters(model: OpenRouterModelData, filters: OpenRouterFilters): Boolean {

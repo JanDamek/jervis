@@ -22,9 +22,11 @@ _openrouter_settings_ts: float = 0.0
 _OPENROUTER_SETTINGS_TTL = 60.0  # 1 minute
 
 # ── Model error tracking ──────────────────────────────────────────────
-# model_id → {"count": int, "last_error": float, "disabled": bool}
+# model_id → {"count": int, "last_error": float, "disabled": bool,
+#              "errors": [{"message": str, "timestamp": float}]}
 _model_errors: dict[str, dict] = {}
 _MAX_CONSECUTIVE_ERRORS = 3  # Mark as error after 3 consecutive failures
+_MAX_ERROR_HISTORY = 5  # Keep last N error messages per model
 
 
 async def _fetch_openrouter_settings() -> dict | None:
@@ -160,19 +162,27 @@ async def _first_cloud_model(
     return None
 
 
-def report_model_error(model_id: str) -> bool:
+def report_model_error(model_id: str, error_message: str = "") -> bool:
     """Report a model error. Returns True if model was just disabled (3rd strike).
 
     Called by orchestrator when a cloud model returns a provider error (400/500).
     After 3 consecutive errors, model is disabled until manually re-enabled.
+    Stores last _MAX_ERROR_HISTORY error messages for UI display.
     """
     info = _model_errors.get(model_id)
     if not info:
-        info = {"count": 0, "last_error": 0.0, "disabled": False}
+        info = {"count": 0, "last_error": 0.0, "disabled": False, "errors": []}
         _model_errors[model_id] = info
 
     info["count"] = info.get("count", 0) + 1
     info["last_error"] = time.monotonic()
+
+    # Store error message (keep last N)
+    if error_message:
+        errors = info.setdefault("errors", [])
+        errors.append({"message": error_message[:500], "timestamp": time.time()})
+        if len(errors) > _MAX_ERROR_HISTORY:
+            info["errors"] = errors[-_MAX_ERROR_HISTORY:]
 
     if info["count"] >= _MAX_CONSECUTIVE_ERRORS and not info.get("disabled"):
         info["disabled"] = True

@@ -145,6 +145,8 @@ endpoints:
     baseUrl: http://localhost:8090        # Python orchestrator (LangGraph)
   correction:
     baseUrl: http://localhost:8000        # Python correction service (transcript correction)
+  ollama-router:
+    url: http://localhost:11430           # Ollama Router (GPU routing, model errors)
   providers:
     github: ws://localhost:8085/          # GitHub integration
     gitlab: ws://localhost:8086/          # GitLab integration

@@ -378,8 +378,9 @@ async def report_model_error_endpoint(request: Request):
     """
     body = await request.json()
     model_id = body.get("model_id", "")
+    error_message = body.get("error_message", "")
     from .openrouter_catalog import report_model_error, get_model_errors
-    just_disabled = report_model_error(model_id)
+    just_disabled = report_model_error(model_id, error_message)
     errors = get_model_errors()
     info = errors.get(model_id, {})
     return JSONResponse(content={

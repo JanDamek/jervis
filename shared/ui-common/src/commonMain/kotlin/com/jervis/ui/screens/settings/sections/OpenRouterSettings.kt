@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.jervis.dto.openrouter.ModelErrorDto
 import com.jervis.dto.openrouter.ModelQueueDto
 import com.jervis.dto.openrouter.OpenRouterCatalogModelDto
 import com.jervis.dto.openrouter.OpenRouterFallbackStrategy
@@ -49,6 +52,7 @@ import com.jervis.dto.openrouter.OpenRouterSettingsUpdateDto
 import com.jervis.dto.openrouter.QueueModelEntryDto
 import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -94,6 +98,10 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     var testingConnection by remember { mutableStateOf(false) }
     var connectionTestResult by remember { mutableStateOf<Boolean?>(null) }
 
+    // Model errors
+    var modelErrors by remember { mutableStateOf<List<ModelErrorDto>>(emptyList()) }
+    var loadingErrors by remember { mutableStateOf(false) }
+
     fun applySettings(dto: OpenRouterSettingsDto) {
         settings = dto
         apiKey = dto.apiKey
@@ -127,6 +135,18 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
     }
 
     LaunchedEffect(Unit) { loadSettings() }
+
+    // Auto-refresh model errors every 30s
+    LaunchedEffect(Unit) {
+        while (true) {
+            try {
+                modelErrors = repository.openRouterSettings.getModelErrors()
+            } catch (_: Exception) {
+                // Ignore — router may be unavailable
+            }
+            delay(30_000)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -356,11 +376,13 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                 )
                             } else {
                                 currentModels.forEachIndexed { index, entry ->
+                                    val entryError = modelErrors.find { it.modelId == entry.modelId }
                                     QueueModelCard(
                                         entry = entry,
                                         index = index,
                                         isFirst = index == 0,
                                         isLast = index == currentModels.lastIndex,
+                                        errorInfo = entryError,
                                         onMoveUp = {
                                             if (index > 0) {
                                                 val list = currentModels.toMutableList()
@@ -432,6 +454,70 @@ internal fun OpenRouterSettings(repository: JervisRepository) {
                                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text(if (loadingCatalog) "Načítám katalog..." else "Přidat model do fronty")
+                            }
+                        }
+                    }
+
+                    // --- Model Errors ---
+                    if (modelErrors.isNotEmpty()) {
+                        JSection(title = "Chyby modelů") {
+                            Column(verticalArrangement = Arrangement.spacedBy(JervisSpacing.fieldGap)) {
+                                Text(
+                                    "Modely s opakovanými chybami jsou automaticky deaktivovány (po 3 chybách za sebou).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+
+                                modelErrors.forEach { errorModel ->
+                                    ModelErrorCard(
+                                        error = errorModel,
+                                        onReset = {
+                                            scope.launch {
+                                                try {
+                                                    repository.openRouterSettings.resetModelError(errorModel.modelId)
+                                                    // Refresh errors
+                                                    modelErrors = repository.openRouterSettings.getModelErrors()
+                                                    snackbarHostState.showSnackbar(
+                                                        "Model ${errorModel.modelId} resetován",
+                                                    )
+                                                } catch (e: Exception) {
+                                                    snackbarHostState.showSnackbar(
+                                                        "Chyba resetu: ${e.message}",
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    JSecondaryButton(
+                                        onClick = {
+                                            scope.launch {
+                                                loadingErrors = true
+                                                try {
+                                                    modelErrors = repository.openRouterSettings.getModelErrors()
+                                                } catch (_: Exception) {}
+                                                loadingErrors = false
+                                            }
+                                        },
+                                        enabled = !loadingErrors,
+                                    ) {
+                                        if (loadingErrors) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Obnovit")
+                                    }
+                                }
                             }
                         }
                     }
@@ -513,6 +599,7 @@ private fun QueueModelCard(
     index: Int,
     isFirst: Boolean,
     isLast: Boolean,
+    errorInfo: ModelErrorDto? = null,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onToggle: () -> Unit,
@@ -535,6 +622,20 @@ private fun QueueModelCard(
 
             Spacer(Modifier.width(12.dp))
 
+            if (errorInfo != null) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = "Model má chyby",
+                    tint = if (errorInfo.disabled) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                    },
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     entry.label.ifEmpty { entry.modelId },
@@ -552,9 +653,20 @@ private fun QueueModelCard(
                         if (entry.maxContextTokens > 0) {
                             append(" · ${entry.maxContextTokens / 1000}k ctx")
                         }
+                        if (errorInfo != null) {
+                            if (errorInfo.disabled) {
+                                append(" · DISABLED")
+                            } else {
+                                append(" · ${errorInfo.errorCount}/3 chyb")
+                            }
+                        }
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (errorInfo?.disabled == true) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
 
@@ -803,6 +915,88 @@ private fun AddModelFromCatalogDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ModelErrorCard(
+    error: ModelErrorDto,
+    onReset: () -> Unit,
+) {
+    JCard {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Header: icon + model name + status badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+
+                Text(
+                    error.modelId,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+
+                JStatusBadge(
+                    status = if (error.disabled) "DISABLED" else "${error.errorCount}/3",
+                )
+            }
+
+            // Error count summary
+            Text(
+                "${error.errorCount}× chyba${if (error.errorCount != 1) "" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // Error messages
+            if (error.errors.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    error.errors.sortedByDescending { it.timestamp }.forEach { entry ->
+                        val timeStr = formatErrorTimestamp(entry.timestamp)
+                        Text(
+                            "$timeStr  ${entry.message}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                    }
+                }
+            }
+
+            // Reset button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                JSecondaryButton(onClick = onReset) {
+                    Text("Resetovat")
+                }
+            }
+        }
+    }
+}
+
+private fun formatErrorTimestamp(epochSeconds: Double): String {
+    if (epochSeconds <= 0) return ""
+    return try {
+        val instant = kotlinx.datetime.Instant.fromEpochSeconds(epochSeconds.toLong())
+        val local = instant.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+        "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+    } catch (_: Exception) {
+        ""
     }
 }
 

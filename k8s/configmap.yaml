@@ -151,6 +151,8 @@ data:
         baseUrl: http://jervis-orchestrator:8090/    # Python orchestrator (LangGraph)
       correction:
         baseUrl: http://jervis-correction:8000/      # Python correction service (transcript correction)
+      ollama-router:
+        url: http://jervis-ollama-router:11430       # Ollama Router (GPU routing, model errors)
       providers:
         github: ws://jervis-github:8085/             # GitHub integration
         gitlab: ws://jervis-gitlab:8086/             # GitLab integration

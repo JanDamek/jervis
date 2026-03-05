@@ -232,3 +232,24 @@ data class OpenRouterCatalogModelDto(
     val supportsStreaming: Boolean = true,
     val provider: String = "",
 )
+
+/**
+ * Runtime error state for a cloud model, tracked by the ollama-router.
+ * Models with 3+ consecutive errors are auto-disabled.
+ */
+@Serializable
+data class ModelErrorDto(
+    val modelId: String,
+    val errorCount: Int = 0,
+    val disabled: Boolean = false,
+    val errors: List<ModelErrorEntryDto> = emptyList(),
+)
+
+/**
+ * A single error event for a model.
+ */
+@Serializable
+data class ModelErrorEntryDto(
+    val message: String = "",
+    val timestamp: Double = 0.0,
+)
