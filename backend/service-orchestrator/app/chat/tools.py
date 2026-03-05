@@ -571,6 +571,62 @@ TOOL_QUERY_ACTION_LOG: dict = {
 
 
 # ---------------------------------------------------------------------------
+# Graph interaction tools (master map / task sub-graphs)
+# ---------------------------------------------------------------------------
+
+TOOL_CHECK_TASK_GRAPH: dict = {
+    "type": "function",
+    "function": {
+        "name": "check_task_graph",
+        "description": (
+            "Zjisti stav myšlenkové mapy (task grafu) — vertexy, hrany, stav zpracování. "
+            "Použij pro 'jak je na tom ten úkol', 'stav background tasku', 'co se děje s X'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "TaskDocument ID jehož graf chceš zkontrolovat.",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
+TOOL_ANSWER_BLOCKED_VERTEX: dict = {
+    "type": "function",
+    "function": {
+        "name": "answer_blocked_vertex",
+        "description": (
+            "Odpověz na čekající otázku v myšlenkové mapě (ASK_USER vertex). "
+            "Graf pokračuje tam kde přestal poté co dostane odpověď. "
+            "Použij když uživatel odpovídá na otázku z background tasku."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "Task ID nebo 'master' pro master mapu.",
+                },
+                "vertex_id": {
+                    "type": "string",
+                    "description": "ID vertexu (ASK_USER) na který odpovídáš.",
+                },
+                "answer": {
+                    "type": "string",
+                    "description": "Odpověď od uživatele.",
+                },
+            },
+            "required": ["task_id", "vertex_id", "answer"],
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Guidelines tools
 # ---------------------------------------------------------------------------
 
@@ -671,6 +727,8 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_LIST_FILTER_RULES,
     TOOL_REMOVE_FILTER_RULE,
     TOOL_QUERY_ACTION_LOG,
+    TOOL_CHECK_TASK_GRAPH,
+    TOOL_ANSWER_BLOCKED_VERTEX,
 ]
 
 # All tools available in foreground chat = base research + memory + chat-specific
@@ -707,15 +765,20 @@ class ToolCategory(str, Enum):
 
 
 TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
-    # CORE: minimal set for typical questions. No switch_context (only on explicit user request),
-    # no memory_store (only when learning new procedures — TASK_MGMT intent).
-    # Fewer tools = less tool-calling bias = faster direct answers.
-    # kb_delete is in CORE because self-correction must always be available.
+    # CORE: always available — search, dispatch, graph interaction, knowledge storage.
+    # Model must ALWAYS be able to dispatch coding agents, create tasks, store knowledge,
+    # interact with thinking maps, and answer blocked vertices.
     ToolCategory.CORE: [
         TOOL_KB_SEARCH,
         TOOL_KB_DELETE,
         TOOL_WEB_SEARCH,
         TOOL_MEMORY_RECALL,
+        TOOL_STORE_KNOWLEDGE,
+        TOOL_DISPATCH_CODING_AGENT,
+        TOOL_CREATE_BACKGROUND_TASK,
+        TOOL_RESPOND_TO_USER_TASK,
+        TOOL_CHECK_TASK_GRAPH,
+        TOOL_ANSWER_BLOCKED_VERTEX,
     ],
     ToolCategory.RESEARCH: [
         TOOL_GET_KB_STATS,
@@ -723,21 +786,17 @@ TOOL_CATEGORIES: dict[ToolCategory, list[dict]] = {
         TOOL_LIST_AFFAIRS,
     ],
     ToolCategory.TASK_MGMT: [
-        TOOL_CREATE_BACKGROUND_TASK,
         TOOL_CREATE_THINKING_MAP,
         TOOL_ADD_MAP_VERTEX,
         TOOL_UPDATE_MAP_VERTEX,
         TOOL_REMOVE_MAP_VERTEX,
         TOOL_DISPATCH_THINKING_MAP,
         TOOL_RUN_MAP_VERTEX,
-        TOOL_DISPATCH_CODING_AGENT,
         TOOL_SEARCH_TASKS,
         TOOL_GET_TASK_STATUS,
         TOOL_LIST_RECENT_TASKS,
-        TOOL_RESPOND_TO_USER_TASK,
         TOOL_CLASSIFY_MEETING,
         TOOL_LIST_UNCLASSIFIED_MEETINGS,
-        TOOL_STORE_KNOWLEDGE,
         TOOL_SWITCH_CONTEXT,
         TOOL_MEMORY_STORE,
         TOOL_GET_GUIDELINES,
@@ -763,6 +822,7 @@ TOOL_DOMAINS: dict[str, str] = {
     "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
+    "check_task_graph": "task", "answer_blocked_vertex": "task",
     "classify_meeting": "meeting", "list_unclassified_meetings": "meeting",
     "switch_context": "scope",
     "get_guidelines": "guidelines", "update_guideline": "guidelines",

@@ -91,6 +91,16 @@ async def handle_chat(
         context = await chat_context_assembler.assemble_context(conversation_id=request.session_id)
         runtime_ctx = await load_runtime_context()
 
+        # 1b. Load master map summary for context injection
+        master_map_ctx = ""
+        try:
+            from app.graph_agent.persistence import task_graph_store
+            from app.graph_agent.graph import master_map_summary
+            master = await task_graph_store.get_or_create_master_graph()
+            master_map_ctx = master_map_summary(master, max_tokens=2000)
+        except Exception as e:
+            logger.warning("Chat: failed to load master map: %s", e)
+
         # 2. Intent classification → select tool subset
         intent_categories = classify_intent(
             user_message=request.message,
@@ -151,6 +161,19 @@ async def handle_chat(
             task_context_msg=task_context_msg,
             current_message=request.message,
         )
+
+        # Inject master map summary into messages (if non-empty)
+        if master_map_ctx:
+            messages.insert(1, {
+                "role": "system",
+                "content": (
+                    "## Thinking Map (current state)\n"
+                    f"{master_map_ctx}\n\n"
+                    "Use check_task_graph to inspect task details. "
+                    "Use answer_blocked_vertex to respond to blocked questions."
+                ),
+            })
+            logger.info("Chat: injected master map summary (%d chars)", len(master_map_ctx))
 
         msg_len = len(request.message)
         if msg_len > 4000:
@@ -293,6 +316,22 @@ async def handle_chat(
         )
 
     finally:
+        # Record chat exchange in master map
+        try:
+            from app.graph_agent.persistence import task_graph_store
+            from app.graph_agent.graph import add_chat_vertex
+            master = task_graph_store.get_master_graph_cached()
+            if master:
+                add_chat_vertex(
+                    master,
+                    message=request.message[:200],
+                    response="(streamed)",
+                    response_summary=request.message[:80],
+                )
+                task_graph_store.mark_dirty(master.task_id)
+        except Exception as e:
+            logger.debug("Failed to record chat exchange in master map: %s", e)
+
         # Clean up session auto-approvals
         try:
             from app.chat.handler_agentic import _session_auto_approvals

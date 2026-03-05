@@ -57,6 +57,8 @@ _TOOL_DESCRIPTIONS = {
     "query_action_log": lambda a: f"Prohledávám akční log: {a.get('query', 'vše')}",
     "get_guidelines": lambda a: f"Načítám pravidla: {a.get('scope', 'GLOBAL')}",
     "update_guideline": lambda a: f"Aktualizuji pravidla: {a.get('category', '?')} ({a.get('scope', 'GLOBAL')})",
+    "check_task_graph": lambda a: f"Kontroluji graf úkolu: {a.get('task_id', '')}",
+    "answer_blocked_vertex": lambda a: f"Odpovídám na otázku v grafu: {a.get('vertex_id', '')}",
 }
 
 
@@ -95,6 +97,8 @@ _CHAT_SPECIFIC_TOOLS = {
     "list_filter_rules",
     "remove_filter_rule",
     "query_action_log",
+    "check_task_graph",
+    "answer_blocked_vertex",
 }
 
 
@@ -412,6 +416,56 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
     )
 
 
+async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client):
+    """Check state of a task's thinking map (graph)."""
+    from app.graph_agent.persistence import task_graph_store
+    from app.graph_agent.graph import get_stats, find_blocked_vertices
+
+    task_id = args.get("task_id", "")
+    if not task_id:
+        return "Chyba: chybí task_id."
+
+    # Try RAM cache first, then DB
+    graph = task_graph_store.get_cached_subgraph(task_id)
+    if not graph:
+        graph = await task_graph_store.load(task_id)
+    if not graph:
+        return f"Graf pro úkol {task_id} nenalezen."
+
+    stats = get_stats(graph)
+    blocked = find_blocked_vertices(graph)
+
+    parts = [
+        f"Graf úkolu {task_id}:",
+        f"  Stav: {graph.status.value}",
+        f"  Vrcholů: {stats['total_vertices']} (hran: {stats['total_edges']})",
+        f"  Stavy: {stats['vertex_statuses']}",
+        f"  Tokeny: {stats['total_tokens']}, LLM volání: {stats['total_llm_calls']}",
+    ]
+    if blocked:
+        parts.append(f"  ČEKÁ NA ODPOVĚĎ ({len(blocked)} vertexů):")
+        for v in blocked:
+            parts.append(f"    - [{v.id}] {v.description}")
+    return "\n".join(parts)
+
+
+async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_client):
+    """Answer a blocked ASK_USER vertex to unblock graph processing."""
+    from app.graph_agent.persistence import task_graph_store
+
+    task_id = args.get("task_id", "")
+    vertex_id = args.get("vertex_id", "")
+    answer = args.get("answer", "")
+
+    if not task_id or not vertex_id or not answer:
+        return "Chyba: chybí task_id, vertex_id nebo answer."
+
+    success = await task_graph_store.resume_blocked_vertex(task_id, vertex_id, answer)
+    if success:
+        return f"Vertex {vertex_id} odemčen odpovědí. Graf pokračuje ve zpracování."
+    return f"Nepodařilo se odemknout vertex {vertex_id} — buď neexistuje nebo není blokovaný."
+
+
 _TOOL_HANDLER_MAP = {
     "create_background_task": _handle_create_background_task,
     "create_thinking_map": _handle_create_thinking_map,
@@ -434,6 +488,8 @@ _TOOL_HANDLER_MAP = {
     "list_filter_rules": _handle_list_filter_rules,
     "remove_filter_rule": _handle_remove_filter_rule,
     "query_action_log": _handle_query_action_log,
+    "check_task_graph": _handle_check_task_graph,
+    "answer_blocked_vertex": _handle_answer_blocked_vertex,
 }
 
 
