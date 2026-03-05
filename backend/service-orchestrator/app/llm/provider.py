@@ -369,7 +369,7 @@ class LLMProvider:
             kwargs["extra_headers"] = extra_headers
         # OpenRouter reasoning models: limit reasoning token budget so actual response has room
         if config["model"].startswith("openrouter/"):
-            kwargs["reasoning_effort"] = "low"
+            kwargs["extra_body"] = {"reasoning": {"effort": "low"}}
 
         logger.info("LLM streaming call: model=%s headers=%s", config["model"], extra_headers or {})
 
@@ -429,7 +429,7 @@ class LLMProvider:
             kwargs["extra_headers"] = extra_headers
         # OpenRouter reasoning models: limit reasoning token budget so actual response has room
         if config["model"].startswith("openrouter/"):
-            kwargs["reasoning_effort"] = "low"
+            kwargs["extra_body"] = {"reasoning": {"effort": "low"}}
 
         timeout = TIER_TIMEOUT_SECONDS.get(tier, TOKEN_TIMEOUT_SECONDS)
         logger.info("LLM blocking call (tools): model=%s tier=%s timeout=%ds",

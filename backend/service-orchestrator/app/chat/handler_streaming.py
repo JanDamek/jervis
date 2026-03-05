@@ -169,8 +169,8 @@ async def _retry_with_next_model(
                            failed_model, skip_models)
             break
 
-        logger.info("OpenRouter model %s failed, trying fallback %s (attempt %d/%d)",
-                     failed_model, fallback.model, attempt + 1, _MAX_MODEL_RETRIES)
+        logger.info("OpenRouter model %s failed, trying fallback %s (attempt %d)",
+                     failed_model, fallback.model, attempt + 1)
         try:
             result = await llm_provider.completion(
                 messages=messages,
