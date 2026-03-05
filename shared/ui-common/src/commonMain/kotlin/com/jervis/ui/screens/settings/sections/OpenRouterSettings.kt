@@ -54,6 +54,9 @@ import com.jervis.repository.JervisRepository
 import com.jervis.ui.design.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 @Composable
 internal fun OpenRouterSettings(repository: JervisRepository) {
@@ -992,9 +995,9 @@ private fun ModelErrorCard(
 private fun formatErrorTimestamp(epochSeconds: Double): String {
     if (epochSeconds <= 0) return ""
     return try {
-        val instant = kotlinx.datetime.Instant.fromEpochSeconds(epochSeconds.toLong())
-        val local = instant.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
-        "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+        val dt = Instant.fromEpochSeconds(epochSeconds.toLong())
+            .toLocalDateTime(TimeZone.currentSystemDefault())
+        "${dt.hour.toString().padStart(2, '0')}:${dt.minute.toString().padStart(2, '0')}"
     } catch (_: Exception) {
         ""
     }
