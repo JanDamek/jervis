@@ -144,21 +144,21 @@ class OllamaRouter:
 
     async def decide_route(
         self, capability: str, max_tier: str, estimated_tokens: int,
-        prefer_cloud: bool = False,
+        processing_mode: str = "FOREGROUND",
     ) -> dict:
         """Capability-based routing decision.
 
-        1. max_tier == "NONE" → local, UNLESS context > 48k → cloud FREE
-        2. tier >= FREE → always cloud (foreground chat goes to OpenRouter)
-        3. No cloud model fits → local fallback (wait in queue)
-
-        Background (NONE): local GPU, cloud only for large context overflow.
-        Foreground (FREE/PAID/PREMIUM): always OpenRouter.
+        1. NONE → always local (no cloud access)
+        2. FOREGROUND + FREE+ → always cloud
+        3. BACKGROUND + FREE+ ≤48k → local GPU
+        4. BACKGROUND + FREE+ >48k → cloud (overflow)
+        5. No cloud model fits → local fallback
 
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
         max_tier = normalize_tier(max_tier)  # backward compat: PAID_LOW→PAID, PAID_HIGH→PREMIUM
         tier_level = TIER_LEVELS.get(max_tier, 0)
+        is_background = processing_mode == "BACKGROUND"
 
         # Find local model for requested capability
         local_model = self._find_local_model_for_capability(capability)
@@ -169,29 +169,27 @@ class OllamaRouter:
             "api_base": api_base,
         }
 
-        # Rule 1: NONE → local, unless context > 48k (GPU limit) → cloud FREE
+        # Rule 1: NONE → always local (no cloud access regardless of context)
         if tier_level == 0:
-            if estimated_tokens > 48_000:
-                cloud_model = await find_cloud_model_for_context(estimated_tokens, TIER_LEVELS["FREE"])
-                if cloud_model:
-                    logger.info("Route decision: NONE but context %d > 48k → cloud FREE %s",
-                                estimated_tokens, cloud_model)
-                    api_key = await get_api_key()
-                    return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
-            logger.info("Route decision: max_tier=%s → local (tokens=%d)", max_tier, estimated_tokens)
+            logger.info("Route decision: max_tier=NONE → local (tokens=%d)", estimated_tokens)
             return local_result
 
-        # Rule 2: tier >= FREE → always cloud (local GPU reserved for background)
-        # Background always sends max_tier="NONE" → Rule 1 handles it.
-        # Foreground chat with FREE/PAID/PREMIUM always goes to OpenRouter.
+        # Rule 2: BACKGROUND + FREE+ ≤48k → local GPU
+        if is_background and estimated_tokens <= 48_000:
+            logger.info("Route decision: BACKGROUND tier=%s ≤48k → local (tokens=%d)",
+                        max_tier, estimated_tokens)
+            return local_result
+
+        # Rule 3: FOREGROUND → always cloud, BACKGROUND >48k → cloud overflow
         cloud_model = await find_cloud_model_for_context(estimated_tokens, tier_level)
         if cloud_model:
-            logger.info("Route decision: tier=%s → cloud %s (tokens=%d)",
-                        max_tier, cloud_model, estimated_tokens)
+            reason = "BACKGROUND overflow >48k" if is_background else "FOREGROUND"
+            logger.info("Route decision: %s tier=%s → cloud %s (tokens=%d)",
+                        reason, max_tier, cloud_model, estimated_tokens)
             api_key = await get_api_key()
             return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
 
-        # Rule 3: No cloud model fits → local fallback (wait in queue)
+        # Rule 4: No cloud model fits → local fallback
         logger.info("Route decision: tier=%s, no cloud model fits → local fallback (tokens=%d)",
                     max_tier, estimated_tokens)
         return local_result

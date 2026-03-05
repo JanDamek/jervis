@@ -140,17 +140,25 @@ async def handle_background(
 
     messages.append({"role": "user", "content": request.query})
 
-    # --- Fixed tier — no dynamic selection ---
-    tier = ModelTier.LOCAL_STANDARD  # Fixed 48k
+    # --- Route decision based on context size ---
+    tier = ModelTier.LOCAL_STANDARD  # Default
     initial_estimated = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
+    max_tier = getattr(request, "max_openrouter_tier", "NONE")
+
+    # Route via router: BACKGROUND + FREE+ >48k → cloud, otherwise local
+    from app.llm.router_client import route_request
+    route = await route_request(
+        capability="chat",
+        max_tier=max_tier,
+        estimated_tokens=initial_estimated,
+        processing_mode="BACKGROUND",
+    )
     logger.info(
-        "Background: initial context estimate=%d tokens, tier=%s (fixed)",
-        initial_estimated, tier.value,
+        "Background: initial context estimate=%d tokens, route=%s/%s (max_tier=%s)",
+        initial_estimated, route.target, route.model, max_tier,
     )
 
-    # Background always uses local GPU — no OpenRouter routing
-    # Track escalation history for logging
-    escalation_history = [tier.value]
+    escalation_history = [f"{route.target}/{route.model}"]
 
     # --- EPIC 2-S4: Planning phase ---
     plan = None
@@ -198,22 +206,31 @@ async def handle_background(
 
     while iteration < settings.background_max_iterations:
         iteration += 1
+        # Re-estimate context and re-route (context grows during loop)
+        estimated_tokens = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
+        route = await route_request(
+            capability="chat",
+            max_tier=max_tier,
+            estimated_tokens=estimated_tokens,
+            processing_mode="BACKGROUND",
+        )
+        effective_tier = ModelTier.CLOUD_OPENROUTER if route.target == "openrouter" else tier
+
         logger.info(
-            "Background: iteration %d/%d | tier=%s",
-            iteration, settings.background_max_iterations, tier.value,
+            "Background: iteration %d/%d | route=%s/%s (tokens=%d)",
+            iteration, settings.background_max_iterations,
+            route.target, route.model, estimated_tokens,
         )
 
-        # Re-estimate context for logging
-        estimated_tokens = _estimate_tokens_total(messages, ALL_BACKGROUND_TOOLS)
-
-        # Background always uses local GPU — no OpenRouter routing
         try:
             response = await llm_provider.completion(
                 messages=messages,
-                tier=tier,
+                tier=effective_tier,
                 max_tokens=settings.default_output_tokens,
                 temperature=0.2,
                 tools=ALL_BACKGROUND_TOOLS,
+                model_override=route.model if route.target == "openrouter" else None,
+                api_key_override=route.api_key if route.target == "openrouter" else None,
             )
         except Exception as e:
             err_msg = str(e).lower()
