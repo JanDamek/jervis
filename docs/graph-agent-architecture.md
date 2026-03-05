@@ -82,10 +82,21 @@ MASTER MAP (global singleton, in RAM, DB = backup)
 
 ## Vertex Statuses
 
-`PENDING` → `READY` → `PROCESSING` → `COMPLETED` / `FAILED` / `BLOCKED`
+`PENDING` → `READY` → `RUNNING` → `COMPLETED` / `FAILED` / `BLOCKED`
 
 - `BLOCKED` = waiting for external input (ASK_USER, dependency not met)
 - A BLOCKED vertex stays in the map — info preserved until resolved
+
+---
+
+## Client Isolation (Security)
+
+- **Master map is global** — one per orchestrator instance, no client_id restriction
+- **Task sub-graphs have client_id** — set from OrchestrateRequest, enforced in KB access
+- **Cross-client edges impossible** — all vertices in a sub-graph share client_id
+- **KB access scoped by client_id** — vertex execution passes client_id to all KB calls
+- **Sub-graphs reference by TASK_REF** — no data leaks between client contexts
+- Client A's vertex CANNOT see Client B's KB data (enforced at execution, not graph level)
 
 ---
 

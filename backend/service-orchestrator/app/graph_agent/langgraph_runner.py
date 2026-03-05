@@ -173,8 +173,9 @@ async def node_decompose(state: GraphAgentState) -> dict:
             "final_result": f"Error: graph validation failed — {error_msg}",
         }
 
-    # Persist and store in state
-    await task_graph_store.save(graph)
+    # Cache in RAM + mark dirty for async DB flush
+    task_graph_store.cache_subgraph(graph)
+    task_graph_store.mark_dirty(graph.task_id)
     await report_graph_status(graph, f"Decomposed into {len(graph.vertices) - 1} vertices")
 
     return {
@@ -374,7 +375,9 @@ async def _execute_single_vertex(
         except Exception as e:
             logger.warning("Impact analysis failed for vertex %s: %s", vertex_id, e)
 
-    await task_graph_store.save(graph)
+    # Update RAM cache + mark dirty (periodic flush handles DB write)
+    task_graph_store.cache_subgraph(graph)
+    task_graph_store.mark_dirty(graph.task_id)
 
     return graph
 
@@ -433,7 +436,9 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     else:
         result = raw_result
 
+    # Final save — synchronous (graph is complete, flush immediately)
     await task_graph_store.save(graph)
+    task_graph_store.remove_cached_subgraph(graph.task_id)
     await report_graph_status(graph, "Graph execution completed")
 
     logger.info(
@@ -501,12 +506,16 @@ _checkpointer: MongoDBSaver | None = None
 
 
 async def init_graph_agent_checkpointer() -> None:
-    """Initialize MongoDB checkpointer for Graph Agent."""
+    """Initialize MongoDB checkpointer + TaskGraphStore for Graph Agent."""
     global _checkpointer, _compiled_graph
     client = MongoClient(settings.mongodb_url)
     _checkpointer = MongoDBSaver(client, db_name="jervis_graph_agent")
     _compiled_graph = None
-    logger.info("Graph Agent LangGraph checkpointer initialized")
+
+    # Initialize TaskGraphStore (MongoDB + RAM cache + periodic flush)
+    await task_graph_store.init()
+
+    logger.info("Graph Agent LangGraph checkpointer + TaskGraphStore initialized")
 
 
 def _get_compiled_graph():

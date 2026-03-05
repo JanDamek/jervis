@@ -74,12 +74,16 @@ async def _run_graph_agent_background(
 ) -> dict:
     """Run graph agent for a background task and adapt its return to handle_background format.
 
+    Links the task sub-graph to the master map so all work is visible
+    in the global thinking map.
+
     Args:
         request: Orchestration request from Kotlin.
         thread_id: Thread ID for LangGraph checkpointing. If None, generates one.
                    Must match what's tracked in _active_tasks for interrupt/resume to work.
     """
     from app.graph_agent.langgraph_runner import run_graph_agent
+    from app.graph_agent.persistence import task_graph_store
 
     if not thread_id:
         thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
@@ -92,7 +96,19 @@ async def _run_graph_agent_background(
 
     # Adapt LangGraph state to handle_background return format
     graph_data = state.get("task_graph") or {}
+    graph_id = graph_data.get("id", "") if isinstance(graph_data, dict) else ""
     graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
+
+    # Link sub-graph to master map
+    try:
+        await task_graph_store.link_task_subgraph(
+            task_id=request.task_id,
+            sub_graph_id=graph_id,
+            title=request.query[:80] if request.query else f"Task {request.task_id}",
+        )
+    except Exception as e:
+        logger.warning("Failed to link sub-graph to master map: %s", e)
+
     return {
         "success": graph_status not in ("failed", "cancelled"),
         "summary": state.get("final_result", ""),

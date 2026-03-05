@@ -4,7 +4,11 @@ Core concepts:
 - GraphVertex: a processing unit (decompose, execute, synthesize)
 - GraphEdge: connection carrying summary + full context between vertices
 - EdgePayload: the data that flows through an edge after source completes
-- TaskGraph: the complete DAG for one task
+- TaskGraph: the complete DAG for one task (or the master map)
+
+Graph types:
+- MASTER: one global master map per user — all interactions are vertices
+- TASK_SUBGRAPH: sub-graph for a specific background task, linked to master
 """
 
 from __future__ import annotations
@@ -16,6 +20,13 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
+
+
+class GraphType(str, Enum):
+    """Whether this graph is the master map or a task sub-graph."""
+
+    MASTER = "master"                   # Global master map (one per user)
+    TASK_SUBGRAPH = "task_subgraph"     # Sub-graph for a background task
 
 
 class VertexType(str, Enum):
@@ -35,6 +46,11 @@ class VertexType(str, Enum):
     GATE = "gate"               # Decision / approval point
     SETUP = "setup"             # Project scaffolding + environment provisioning
 
+    # Master map vertex types
+    ASK_USER = "ask_user"       # Blocked — needs user input via chat
+    CHAT_EXCHANGE = "chat_exchange"  # Chat message → response pair
+    TASK_REF = "task_ref"       # Reference to a task sub-graph
+
     # Legacy aliases (backward compat)
     TASK = "task"               # Generic task — auto-routed by agent_name
     DECOMPOSE = "decompose"     # Alias for PLANNER
@@ -50,6 +66,7 @@ class VertexStatus(str, Enum):
     FAILED = "failed"           # Execution failed
     SKIPPED = "skipped"         # Skipped (e.g. conditional branch not taken)
     CANCELLED = "cancelled"     # Cancelled by user or parent graph cancellation
+    BLOCKED = "blocked"         # Waiting for external input (ASK_USER)
 
 
 class EdgeType(str, Enum):
@@ -162,16 +179,23 @@ class GraphVertex(BaseModel):
 
 
 class TaskGraph(BaseModel):
-    """Complete execution DAG for one task.
+    """Complete execution DAG for one task (or the master map).
 
     Contains all vertices and edges. Provides methods for graph traversal,
     topological ordering, context accumulation, and readiness detection.
+
+    graph_type:
+    - MASTER: global singleton, all chat interactions + task refs
+    - TASK_SUBGRAPH: per-task sub-graph, linked to master via parent_graph_id
     """
 
     id: str
     task_id: str
     client_id: str
     project_id: str | None = None
+
+    graph_type: GraphType = GraphType.TASK_SUBGRAPH
+    parent_graph_id: str | None = None  # Master graph ID (for sub-graphs)
 
     root_vertex_id: str
     vertices: dict[str, GraphVertex] = Field(default_factory=dict)
