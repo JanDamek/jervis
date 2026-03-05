@@ -148,12 +148,12 @@ class OllamaRouter:
     ) -> dict:
         """Capability-based routing decision.
 
-        1. max_tier == "NONE" → always local (background tasks, no cloud)
+        1. max_tier == "NONE" → local, UNLESS context > 48k → cloud FREE
         2. tier >= FREE → always cloud (foreground chat goes to OpenRouter)
         3. No cloud model fits → local fallback (wait in queue)
 
-        Local GPU is reserved for background tasks (max_tier="NONE").
-        Foreground chat (FREE/PAID/PREMIUM) always uses OpenRouter.
+        Background (NONE): local GPU, cloud only for large context overflow.
+        Foreground (FREE/PAID/PREMIUM): always OpenRouter.
 
         Returns: {"target": "local"|"openrouter", "model": "...", "api_base": "..."}
         """
@@ -169,9 +169,16 @@ class OllamaRouter:
             "api_base": api_base,
         }
 
-        # Rule 1: No OpenRouter → always local
+        # Rule 1: NONE → local, unless context > 48k (GPU limit) → cloud FREE
         if tier_level == 0:
-            logger.info("Route decision: max_tier=%s → local (no OpenRouter)", max_tier)
+            if estimated_tokens > 48_000:
+                cloud_model = await find_cloud_model_for_context(estimated_tokens, TIER_LEVELS["FREE"])
+                if cloud_model:
+                    logger.info("Route decision: NONE but context %d > 48k → cloud FREE %s",
+                                estimated_tokens, cloud_model)
+                    api_key = await get_api_key()
+                    return {"target": "openrouter", "model": cloud_model, "api_key": api_key}
+            logger.info("Route decision: max_tier=%s → local (tokens=%d)", max_tier, estimated_tokens)
             return local_result
 
         # Rule 2: tier >= FREE → always cloud (local GPU reserved for background)
