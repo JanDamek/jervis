@@ -89,6 +89,8 @@ fun MainScreenView(
     activeThinkingMap: TaskGraphDto? = null,
     thinkingMaps: List<ChatViewModel.ThinkingMapSummary> = emptyList(),
     onSelectThinkingMap: (String) -> Unit = {},
+    thinkingMapPanelVisible: Boolean = false,
+    onToggleThinkingMapPanel: () -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -162,8 +164,8 @@ fun MainScreenView(
                     },
                 )
             }
-            // No environment panel, but thinking map active + expanded layout -> split with map panel
-            !isCompact && activeThinkingMap != null -> {
+            // No environment panel, but thinking map panel visible + data available -> split with map panel
+            !isCompact && thinkingMapPanelVisible && activeThinkingMap != null -> {
                 JHorizontalSplitLayout(
                     splitFraction = 0.6f,
                     onSplitChange = { /* thinking map split is fixed */ },

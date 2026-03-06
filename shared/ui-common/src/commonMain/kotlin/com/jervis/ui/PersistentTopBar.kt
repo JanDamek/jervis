@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
@@ -134,6 +135,9 @@ fun PersistentTopBar(
     runningTaskType: String?,
     queueSize: Int,
     onAgentStatusClick: () -> Unit,
+    // Thinking map
+    hasThinkingMap: Boolean = false,
+    onToggleThinkingMapPanel: () -> Unit = {},
     // Environment
     hasEnvironment: Boolean,
     onToggleEnvironmentPanel: () -> Unit,
@@ -205,6 +209,15 @@ fun PersistentTopBar(
                 queueSize = queueSize,
                 onClick = onAgentStatusClick,
             )
+
+            // Thinking map toggle
+            if (hasThinkingMap) {
+                JIconButton(
+                    onClick = onToggleThinkingMapPanel,
+                    icon = Icons.Default.AccountTree,
+                    contentDescription = "Myšlenková mapa",
+                )
+            }
 
             // K8s environment badge
             if (hasEnvironment) {

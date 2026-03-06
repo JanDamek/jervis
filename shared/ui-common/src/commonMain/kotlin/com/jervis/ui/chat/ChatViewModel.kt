@@ -94,6 +94,14 @@ class ChatViewModel(
     private val _activeThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
     val activeThinkingMap: StateFlow<TaskGraphDto?> = _activeThinkingMap.asStateFlow()
 
+    /** Whether the thinking map side panel is visible (user toggle). */
+    private val _thinkingMapPanelVisible = MutableStateFlow(false)
+    val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
+
+    fun toggleThinkingMapPanel() {
+        _thinkingMapPanelVisible.value = !_thinkingMapPanelVisible.value
+    }
+
     /** Summary of all thinking maps in the current session. */
     data class ThinkingMapSummary(val id: String, val title: String, val vertexCount: Int, val status: String)
     private val _thinkingMaps = MutableStateFlow<List<ThinkingMapSummary>>(emptyList())
@@ -742,6 +750,8 @@ class ChatViewModel(
                 try {
                     val graph = Json.decodeFromString<TaskGraphDto>(response.message)
                     _activeThinkingMap.value = graph
+                    // Auto-show panel when new map data arrives
+                    _thinkingMapPanelVisible.value = true
                     // Track in maps list
                     val mapId = response.metadata["graph_id"] ?: graph.taskId
                     val title = response.metadata["title"] ?: "Mapa"

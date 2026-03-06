@@ -97,6 +97,9 @@ fun App(
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
 
+        // Thinking map
+        val thinkingMaps by viewModel.chat.thinkingMaps.collectAsState()
+
         // User task count for badge
         val userTaskCount by viewModel.notification.userTaskCount.collectAsState()
 
@@ -132,6 +135,8 @@ fun App(
             runningTaskType = runningTaskType,
             queueSize = queueSize,
             onAgentStatusClick = { appNavigator.navigateTo(Screen.AgentWorkload) },
+            hasThinkingMap = thinkingMaps.isNotEmpty(),
+            onToggleThinkingMapPanel = viewModel.chat::toggleThinkingMapPanel,
             hasEnvironment = environments.isNotEmpty(),
             onToggleEnvironmentPanel = viewModel.environment::togglePanel,
             userTaskCount = userTaskCount,
