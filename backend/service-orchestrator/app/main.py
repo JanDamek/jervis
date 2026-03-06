@@ -36,7 +36,6 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.graph.orchestrator import (
-    get_graph_state,
     init_checkpointer,
     close_checkpointer,
 )
@@ -184,15 +183,14 @@ async def lifespan(app: FastAPI):
             await procedural_memory.init()
             logger.info("Procedural memory ready")
 
-    # Initialize Graph Agent (opt-in)
-    if settings.use_graph_agent:
-        from app.graph_agent.persistence import task_graph_store
-        from app.graph_agent.langgraph_runner import init_graph_agent_checkpointer
-        from app.graph_agent.artifact_graph import artifact_graph_store
-        await task_graph_store.init()
-        await init_graph_agent_checkpointer()
-        await artifact_graph_store.init()
-        logger.info("Graph Agent ready (LangGraph + MongoDB + ArangoDB artifact graph)")
+    # Initialize Graph Agent (sole orchestrator)
+    from app.graph_agent.persistence import task_graph_store
+    from app.graph_agent.langgraph_runner import init_graph_agent_checkpointer
+    from app.graph_agent.artifact_graph import artifact_graph_store
+    await task_graph_store.init()
+    await init_graph_agent_checkpointer()
+    await artifact_graph_store.init()
+    logger.info("Graph Agent ready (LangGraph + MongoDB + ArangoDB artifact graph)")
 
     # Memory Agent
     logger.info("Memory Agent ready (affairs + LQM)")
@@ -343,18 +341,10 @@ async def status(thread_id: str):
         status: "running" | "interrupted" | "done" | "error" | "unknown"
         Plus additional fields depending on status.
     """
-    # Try Graph Agent checkpointer first (if enabled), then fall back to legacy
-    graph_state = None
-    if settings.use_graph_agent:
-        try:
-            from app.graph_agent.langgraph_runner import _get_compiled_graph
-            compiled = _get_compiled_graph()
-            config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
-            graph_state = await compiled.aget_state(config)
-        except Exception:
-            pass  # Fall through to legacy checkpointer
-    if graph_state is None:
-        graph_state = await get_graph_state(thread_id)
+    from app.graph_agent.langgraph_runner import _get_compiled_graph
+    compiled = _get_compiled_graph()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+    graph_state = await compiled.aget_state(config)
 
     if graph_state is None:
         return {"status": "unknown", "thread_id": thread_id}
@@ -442,34 +432,26 @@ async def approve(thread_id: str, request: Request):
 
     async def _run_resume():
         try:
-            if settings.use_graph_agent:
-                from app.graph_agent.langgraph_runner import _get_compiled_graph
-                from langgraph.types import Command
-                compiled = _get_compiled_graph()
-                config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
+            from app.graph_agent.langgraph_runner import _get_compiled_graph
+            from langgraph.types import Command
+            compiled = _get_compiled_graph()
+            config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
 
-                # Verify checkpoint exists — stale/old threads have no checkpoint
-                existing = await compiled.aget_state(config)
-                if not existing or not existing.values or "task" not in existing.values:
-                    raise ValueError(
-                        f"No valid checkpoint for thread {thread_id} — "
-                        f"thread may be stale or from an older orchestrator version"
-                    )
-
-                # Update chat_history if provided
-                if chat_history:
-                    await compiled.aupdate_state(config, {"chat_history": chat_history})
-
-                final_state = await compiled.ainvoke(
-                    Command(resume=resume_value), config=config,
+            # Verify checkpoint exists — stale threads have no checkpoint
+            existing = await compiled.aget_state(config)
+            if not existing or not existing.values or "task" not in existing.values:
+                raise ValueError(
+                    f"No valid checkpoint for thread {thread_id} — "
+                    f"thread may be stale"
                 )
-            else:
-                from app.graph.orchestrator import resume_orchestration
-                final_state = await resume_orchestration(
-                    thread_id=thread_id,
-                    resume_value=resume_value,
-                    chat_history=chat_history,
-                )
+
+            # Update chat_history if provided
+            if chat_history:
+                await compiled.aupdate_state(config, {"chat_history": chat_history})
+
+            final_state = await compiled.ainvoke(
+                Command(resume=resume_value), config=config,
+            )
 
             # Report completion
             # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" or "graph-{task_id}-{uuid}"
@@ -550,17 +532,16 @@ async def cancel(thread_id: str):
     cancel_task_id = parts[1] if len(parts) >= 2 else thread_id
 
     # Mark graph as CANCELLED in persistence so agentic loop stops gracefully
-    if settings.use_graph_agent:
-        try:
-            from app.graph_agent.persistence import task_graph_store
-            from app.graph_agent.models import GraphStatus
-            graph = await task_graph_store.load(cancel_task_id)
-            if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
-                graph.status = GraphStatus.CANCELLED
-                await task_graph_store.save(graph)
-                logger.info("Marked graph %s as CANCELLED", graph.id)
-        except Exception as e:
-            logger.warning("Failed to mark graph as cancelled: %s", e)
+    try:
+        from app.graph_agent.persistence import task_graph_store
+        from app.graph_agent.models import GraphStatus
+        graph = await task_graph_store.load(cancel_task_id)
+        if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
+            graph.status = GraphStatus.CANCELLED
+            await task_graph_store.save(graph)
+            logger.info("Marked graph %s as CANCELLED", graph.id)
+    except Exception as e:
+        logger.warning("Failed to mark graph as cancelled: %s", e)
 
     # Report cancelled status to Kotlin so UI updates immediately
     try:
@@ -587,9 +568,6 @@ async def get_task_graph(task_id: str):
 
     Called by Kotlin to serve graph data to the UI.
     """
-    if not settings.use_graph_agent:
-        raise HTTPException(status_code=404, detail="Graph agent not enabled")
-
     from app.graph_agent.persistence import task_graph_store
     graph = await task_graph_store.load(task_id)
     if not graph:

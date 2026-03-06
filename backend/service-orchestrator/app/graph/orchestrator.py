@@ -544,20 +544,15 @@ async def run_orchestration(
 ) -> dict:
     """Execute the full orchestration workflow (blocking).
 
-    Three execution paths (checked in order):
-    1. Graph Agent (use_graph_agent) — LangGraph with dynamic vertex/edge decomposition
-    2. Delegation graph (use_delegation_graph) — LangGraph 7-node multi-agent
-    3. Legacy graph (default) — LangGraph 14-node orchestrator
+    Graph Agent — LangGraph with dynamic vertex/edge decomposition.
     """
     logger.info(
         "Orchestration mode=%s task=%s",
         request.processing_mode, request.task_id,
     )
 
-    # --- Graph Agent path (LangGraph with dynamic decomposition) ---
-    if settings.use_graph_agent:
-        from app.graph_agent.langgraph_runner import run_graph_agent
-        return await run_graph_agent(request, thread_id)
+    from app.graph_agent.langgraph_runner import run_graph_agent
+    return await run_graph_agent(request, thread_id)
 
     graph = get_orchestrator_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 150}

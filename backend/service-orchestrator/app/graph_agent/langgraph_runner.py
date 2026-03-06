@@ -365,7 +365,6 @@ async def _execute_single_vertex(
         completed_vertex
         and completed_vertex.status == VertexStatus.COMPLETED
         and completed_vertex.vertex_type not in (VertexType.PLANNER, VertexType.DECOMPOSE)
-        and settings.use_graph_agent
     ):
         try:
             new_ids = await analyze_impact(graph, completed_vertex, state)
@@ -590,8 +589,7 @@ async def run_graph_agent(
 ) -> dict:
     """Run the Graph Agent via LangGraph.
 
-    Called from run_orchestration() when use_graph_agent is True.
-    Returns the final LangGraph state dict.
+    Called from run_orchestration(). Returns the final LangGraph state dict.
     """
     compiled = _get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}

@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     use_specialist_agents: bool = False
     use_dag_execution: bool = False
     use_procedural_memory: bool = False
-    use_graph_agent: bool = True            # Graph Agent — vertex/edge DAG execution (always on)
+    # use_graph_agent removed — Graph Agent is the sole orchestrator
     # use_memory_agent removed — Memory Agent is always active
 
     # Delegation settings
