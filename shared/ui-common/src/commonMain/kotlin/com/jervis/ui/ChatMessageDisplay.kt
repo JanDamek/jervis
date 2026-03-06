@@ -79,6 +79,27 @@ import com.mikepenz.markdown.model.MarkdownTypography
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
 
+/** Human-readable labels for orchestrator pipeline nodes. */
+private val nodeLabels = mapOf(
+    "intake" to "Analýza úlohy",
+    "evidence" to "Shromažďování kontextu",
+    "evidence_pack" to "Shromažďování kontextu",
+    "plan" to "Plánování",
+    "plan_steps" to "Plánování kroků",
+    "execute" to "Provádění",
+    "execute_step" to "Provádění kroku",
+    "evaluate" to "Vyhodnocení",
+    "finalize" to "Dokončení",
+    "respond" to "Generování odpovědi",
+    "clarify" to "Upřesnění",
+    "decompose" to "Dekompozice na cíle",
+    "select_goal" to "Výběr cíle",
+    "advance_step" to "Další krok",
+    "advance_goal" to "Další cíl",
+    "git_operations" to "Git operace",
+    "report" to "Generování reportu",
+)
+
 @Composable
 internal fun ChatArea(
     messages: List<ChatMessage>,

@@ -89,11 +89,6 @@ fun App(
         val recordingDurationGlobal by meetingViewModel.recordingDuration.collectAsState()
         val uploadStateGlobal by meetingViewModel.uploadState.collectAsState()
 
-        // Agent status
-        val runningProjectId by viewModel.queue.runningProjectId.collectAsState()
-        val runningTaskType by viewModel.queue.runningTaskType.collectAsState()
-        val queueSize by viewModel.queue.queueSize.collectAsState()
-
         // Environment
         val environments by viewModel.environment.environments.collectAsState()
 
@@ -131,10 +126,6 @@ fun App(
             onNavigateToMeetings = { appNavigator.navigateTo(Screen.Meetings) },
             onQuickRecord = { meetingViewModel.startQuickRecording() },
             onStopRecording = { meetingViewModel.stopRecording() },
-            isAgentRunning = runningProjectId != null && runningProjectId != "none",
-            runningTaskType = runningTaskType,
-            queueSize = queueSize,
-            onAgentStatusClick = { appNavigator.navigateTo(Screen.AgentWorkload) },
             hasThinkingMap = thinkingMaps.isNotEmpty(),
             onToggleThinkingMapPanel = viewModel.chat::toggleThinkingMapPanel,
             hasEnvironment = environments.isNotEmpty(),
@@ -214,13 +205,6 @@ fun App(
             Screen.Scheduler -> {
                 SchedulerScreen(
                     repository = repository,
-                    onBack = { appNavigator.goBack() },
-                )
-            }
-
-            Screen.AgentWorkload -> {
-                AgentWorkloadScreen(
-                    viewModel = viewModel,
                     onBack = { appNavigator.goBack() },
                 )
             }

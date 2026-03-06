@@ -26,9 +26,6 @@ sealed class Screen {
 
     object ErrorLogs : Screen()
 
-    // Agent workload / activity log
-    object AgentWorkload : Screen()
-
     // Meetings
     object Meetings : Screen()
 

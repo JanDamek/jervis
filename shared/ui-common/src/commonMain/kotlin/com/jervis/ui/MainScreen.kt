@@ -33,7 +33,6 @@ import com.jervis.dto.CompressionBoundaryDto
 import com.jervis.dto.graph.TaskGraphDto
 import com.jervis.dto.ui.ChatMessage
 import com.jervis.ui.chat.ChatViewModel
-import com.jervis.ui.chat.ThinkingMapPanel
 import com.jervis.ui.design.COMPACT_BREAKPOINT_DP
 import com.jervis.ui.design.JHorizontalSplitLayout
 import com.jervis.ui.model.PendingMessageInfo
@@ -87,10 +86,10 @@ fun MainScreenView(
     backgroundMessageCount: Int = 0,
     userTaskCount: Int = 0,
     activeThinkingMap: TaskGraphDto? = null,
-    thinkingMaps: List<ChatViewModel.ThinkingMapSummary> = emptyList(),
-    onSelectThinkingMap: (String) -> Unit = {},
     thinkingMapPanelVisible: Boolean = false,
-    onToggleThinkingMapPanel: () -> Unit = {},
+    thinkingMapPanelWidthFraction: Float = 0.35f,
+    onThinkingMapPanelWidthChange: (Float) -> Unit = {},
+    thinkingMapPanelContent: @Composable (isCompact: Boolean) -> Unit = {},
     hasEnvironment: Boolean = false,
     environmentPanelVisible: Boolean = false,
     onToggleEnvironmentPanel: () -> Unit = {},
@@ -164,12 +163,16 @@ fun MainScreenView(
                     },
                 )
             }
-            // No environment panel, but thinking map panel visible + data available -> split with map panel
+            // Compact + thinking map panel -> full-screen
+            isCompact && thinkingMapPanelVisible && activeThinkingMap != null -> {
+                thinkingMapPanelContent(true)
+            }
+            // Expanded + thinking map panel -> split layout (draggable)
             !isCompact && thinkingMapPanelVisible && activeThinkingMap != null -> {
                 JHorizontalSplitLayout(
-                    splitFraction = 0.6f,
-                    onSplitChange = { /* thinking map split is fixed */ },
-                    minFraction = 0.4f,
+                    splitFraction = 1f - thinkingMapPanelWidthFraction,
+                    onSplitChange = { onThinkingMapPanelWidthChange(1f - it) },
+                    minFraction = 0.5f,
                     maxFraction = 0.8f,
                     leftContent = { _ ->
                         ChatContent(
@@ -217,11 +220,7 @@ fun MainScreenView(
                         )
                     },
                     rightContent = { _ ->
-                        ThinkingMapPanel(
-                            activeMap = activeThinkingMap,
-                            allMaps = thinkingMaps,
-                            onSelectMap = onSelectThinkingMap,
-                        )
+                        thinkingMapPanelContent(false)
                     },
                 )
             }

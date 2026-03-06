@@ -130,11 +130,6 @@ fun PersistentTopBar(
     onNavigateToMeetings: () -> Unit,
     onQuickRecord: () -> Unit,
     onStopRecording: () -> Unit,
-    // Agent status
-    isAgentRunning: Boolean,
-    runningTaskType: String?,
-    queueSize: Int,
-    onAgentStatusClick: () -> Unit,
     // Thinking map
     hasThinkingMap: Boolean = false,
     onToggleThinkingMapPanel: () -> Unit = {},
@@ -201,14 +196,6 @@ fun PersistentTopBar(
                     contentDescription = "Rychlé nahrávání",
                 )
             }
-
-            // Agent status icon
-            AgentStatusIcon(
-                isRunning = isAgentRunning,
-                taskType = runningTaskType,
-                queueSize = queueSize,
-                onClick = onAgentStatusClick,
-            )
 
             // Thinking map toggle
             if (hasThinkingMap) {
@@ -503,59 +490,6 @@ private fun formatDuration(seconds: Long): String {
     val m = seconds / 60
     val s = seconds % 60
     return "${m}:${s.toString().padStart(2, '0')}"
-}
-
-/**
- * Small agent status icon — spinner when running, dot when idle.
- */
-@Composable
-private fun AgentStatusIcon(
-    isRunning: Boolean,
-    taskType: String?,
-    queueSize: Int,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        if (isRunning) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(14.dp),
-                strokeWidth = 1.5.dp,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else {
-            Text(
-                text = "\u25CF",
-                fontSize = 8.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Column {
-            Text(
-                text = if (isRunning) (taskType ?: "agent") else "idle",
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 10.sp,
-                color = if (isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (queueSize > 0) {
-                Text(
-                    text = "+$queueSize",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-            }
-        }
-    }
 }
 
 /**

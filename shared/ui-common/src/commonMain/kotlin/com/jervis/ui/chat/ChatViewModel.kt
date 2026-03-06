@@ -98,6 +98,9 @@ class ChatViewModel(
     private val _thinkingMapPanelVisible = MutableStateFlow(false)
     val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
 
+    private val _thinkingMapPanelWidthFraction = MutableStateFlow(0.35f)
+    val thinkingMapPanelWidthFraction: StateFlow<Float> = _thinkingMapPanelWidthFraction.asStateFlow()
+
     fun toggleThinkingMapPanel() {
         val newVisible = !_thinkingMapPanelVisible.value
         _thinkingMapPanelVisible.value = newVisible
@@ -105,6 +108,14 @@ class ChatViewModel(
         if (newVisible && _activeThinkingMap.value == null) {
             loadMasterMap()
         }
+    }
+
+    fun closeThinkingMapPanel() {
+        _thinkingMapPanelVisible.value = false
+    }
+
+    fun updateThinkingMapPanelWidthFraction(fraction: Float) {
+        _thinkingMapPanelWidthFraction.value = fraction.coerceIn(0.2f, 0.6f)
     }
 
     /** Summary of all thinking maps in the current session. */

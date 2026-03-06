@@ -55,6 +55,7 @@ fun MainScreen(
     val activeThinkingMap by viewModel.chat.activeThinkingMap.collectAsState()
     val thinkingMaps by viewModel.chat.thinkingMaps.collectAsState()
     val thinkingMapPanelVisible by viewModel.chat.thinkingMapPanelVisible.collectAsState()
+    val thinkingMapPanelWidthFraction by viewModel.chat.thinkingMapPanelWidthFraction.collectAsState()
 
     // Environment panel state (delegated to EnvironmentViewModel)
     val environments by viewModel.environment.environments.collectAsState()
@@ -120,10 +121,18 @@ fun MainScreen(
         backgroundMessageCount = backgroundMessageCount,
         userTaskCount = userTaskCount,
         activeThinkingMap = activeThinkingMap,
-        thinkingMaps = thinkingMaps,
-        onSelectThinkingMap = viewModel.chat::selectThinkingMap,
         thinkingMapPanelVisible = thinkingMapPanelVisible,
-        onToggleThinkingMapPanel = viewModel.chat::toggleThinkingMapPanel,
+        thinkingMapPanelWidthFraction = thinkingMapPanelWidthFraction,
+        onThinkingMapPanelWidthChange = viewModel.chat::updateThinkingMapPanelWidthFraction,
+        thinkingMapPanelContent = { isCompact ->
+            com.jervis.ui.chat.ThinkingMapPanel(
+                activeMap = activeThinkingMap,
+                allMaps = thinkingMaps,
+                onSelectMap = viewModel.chat::selectThinkingMap,
+                isCompact = isCompact,
+                onClose = viewModel.chat::closeThinkingMapPanel,
+            )
+        },
         hasEnvironment = environments.isNotEmpty(),
         environmentPanelVisible = environmentPanelVisible,
         onToggleEnvironmentPanel = viewModel.environment::togglePanel,
