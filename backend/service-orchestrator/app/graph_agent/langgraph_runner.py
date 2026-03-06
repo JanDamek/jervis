@@ -114,6 +114,8 @@ async def node_decompose(state: GraphAgentState) -> dict:
 
     The decomposer LLM decides: simple → 1 vertex, complex → multiple vertices.
     """
+    if "task" not in state:
+        return {"graph_error": "Missing task context — cannot decompose (stale checkpoint?)"}
     task = CodingTask(**state["task"])
     evidence = state.get("evidence_pack")
 

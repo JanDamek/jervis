@@ -448,6 +448,14 @@ async def approve(thread_id: str, request: Request):
                 compiled = _get_compiled_graph()
                 config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 200}
 
+                # Verify checkpoint exists — stale/old threads have no checkpoint
+                existing = await compiled.aget_state(config)
+                if not existing or not existing.values or "task" not in existing.values:
+                    raise ValueError(
+                        f"No valid checkpoint for thread {thread_id} — "
+                        f"thread may be stale or from an older orchestrator version"
+                    )
+
                 # Update chat_history if provided
                 if chat_history:
                     await compiled.aupdate_state(config, {"chat_history": chat_history})
