@@ -89,3 +89,13 @@ spec:
                 name: jervis-ollama-router
                 port:
                   number: 11430
+    - host: jervis-router
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jervis-ollama-router
+                port:
+                  number: 11430
