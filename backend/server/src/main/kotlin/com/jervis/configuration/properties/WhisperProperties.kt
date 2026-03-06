@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "whisper")
 data class WhisperProperties(
     /** Remote Whisper REST server URL */
-    val restRemoteUrl: String = "http://ollama.damek.local:8786",
+    val restRemoteUrl: String = "http://ollama.damek.home:8786",
     /** Model size: large-v3 for max accuracy */
     val model: String = "large-v3",
     /** Beam search size (10 = max accuracy) */

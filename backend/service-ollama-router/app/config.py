@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # ── Whisper GPU coordination (p40-2) ──────────────────────────────────
     # Whisper REST service runs on same GPU (p40-2). Before loading VLM,
     # router asks whisper to release GPU VRAM.
-    whisper_gpu_url: str = "http://ollama.damek.local:8786"
+    whisper_gpu_url: str = "http://ollama.damek.home:8786"
     whisper_gpu_acquire_timeout_s: int = 3600   # Max wait for Kotlin's acquire request (1h)
     whisper_gpu_max_hold_s: int = 7200          # Auto-release stale lock (2h safety net)
 

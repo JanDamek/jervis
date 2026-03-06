@@ -1,0 +1,195 @@
+# =============================================================================
+# DNS Proxy — wildcard *.damek.home → MetalLB ingress VIP
+# Static overrides for infra hosts (NAS, GPU VM)
+# Runs on MetalLB IP 192.168.100.53 (DHCP-distributed DNS)
+# =============================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dns-proxy
+  namespace: network-dns
+data:
+  dns-proxy.py: |
+    #!/usr/bin/env python3
+    """DNS proxy: forwards to upstream, returns wildcard for NXDOMAIN on damek.home.
+    Static records override wildcard for known infrastructure hosts."""
+    import os, socket, struct, threading
+
+    UPSTREAM = os.environ.get("DNS_UPSTREAM", "192.168.100.1")
+    WILDCARD_IP = os.environ.get("WILDCARD_IP", "192.168.100.216")
+    DOMAIN_SUFFIX = os.environ.get("DOMAIN_SUFFIX", ".damek.home.")
+    LISTEN = os.environ.get("LISTEN", "0.0.0.0:53")
+
+    # Static overrides: hostname → IP (bypass wildcard for infra hosts)
+    STATIC_RECORDS = {
+        "nas.damek.home.": "192.168.100.117",
+        "ollama.damek.home.": "192.168.101.36",
+    }
+
+    def parse_qname(data, offset):
+        labels = []
+        while True:
+            length = data[offset]
+            if length == 0:
+                offset += 1
+                break
+            if length >= 192:
+                pointer = struct.unpack("!H", data[offset:offset+2])[0] & 0x3FFF
+                labels.append(parse_qname(data, pointer)[0])
+                offset += 2
+                return ".".join(labels), offset
+            offset += 1
+            labels.append(data[offset:offset+length].decode())
+            offset += length
+        return ".".join(labels) + ".", offset
+
+    def is_single_label_under(qname, suffix):
+        if not qname.lower().endswith(suffix.lower()):
+            return False
+        prefix = qname[:-len(suffix)]
+        return prefix != "" and "." not in prefix
+
+    def build_a_response(query, qname_end, ip):
+        q_end = qname_end + 4  # QTYPE(2) + QCLASS(2)
+        resp = bytearray()
+        resp += query[:2]                          # ID
+        resp += b'\x84\x00'                        # Flags: response, authoritative, no error
+        resp += b'\x00\x01'                        # QDCOUNT=1
+        resp += b'\x00\x01'                        # ANCOUNT=1
+        resp += b'\x00\x00\x00\x00'               # NSCOUNT=0, ARCOUNT=0
+        resp += query[12:q_end]                    # Copy question section only
+        resp += b'\xc0\x0c'                        # Name pointer to offset 12
+        resp += b'\x00\x01'                        # Type A
+        resp += b'\x00\x01'                        # Class IN
+        resp += struct.pack("!I", 60)              # TTL 60s
+        resp += struct.pack("!H", 4)               # RDLENGTH 4
+        resp += socket.inet_aton(ip)               # RDATA
+        return bytes(resp)
+
+    def handle(data, addr, sock):
+        try:
+            qname, qname_end = parse_qname(data, 12)
+            qtype = struct.unpack("!H", data[qname_end:qname_end+2])[0]
+
+            # Check static overrides first (A record queries only)
+            static_ip = STATIC_RECORDS.get(qname.lower()) if qtype == 1 else None
+            if static_ip:
+                resp = build_a_response(data, qname_end, static_ip)
+                sock.sendto(resp, addr)
+                return
+
+            upstream_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            upstream_sock.settimeout(3)
+            upstream_sock.sendto(data, (UPSTREAM, 53))
+            resp, _ = upstream_sock.recvfrom(4096)
+            upstream_sock.close()
+            rcode = resp[3] & 0x0F
+            if rcode == 3 and qtype == 1 and is_single_label_under(qname, DOMAIN_SUFFIX):
+                resp = build_a_response(data, qname_end, WILDCARD_IP)
+            sock.sendto(resp, addr)
+        except Exception as e:
+            print(f"Error: {e}", flush=True)
+
+    def main():
+        host, port = LISTEN.rsplit(":", 1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind((host, int(port)))
+        print(f"DNS proxy: {LISTEN} -> {UPSTREAM}, wildcard={WILDCARD_IP} for *{DOMAIN_SUFFIX}", flush=True)
+        print(f"Static overrides: {STATIC_RECORDS}", flush=True)
+        while True:
+            data, addr = sock.recvfrom(4096)
+            threading.Thread(target=handle, args=(data, addr, sock), daemon=True).start()
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-proxy
+  namespace: network-dns
+  labels:
+    app: dns-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns-proxy
+  template:
+    metadata:
+      labels:
+        app: dns-proxy
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: dns-proxy
+          image: python:3.11-alpine
+          command: ["python3", "/app/dns-proxy.py"]
+          env:
+            - name: DNS_UPSTREAM
+              value: "192.168.100.1"
+            - name: WILDCARD_IP
+              value: "192.168.100.216"
+            - name: DOMAIN_SUFFIX
+              value: ".damek.home."
+          ports:
+            - containerPort: 53
+              protocol: UDP
+            - containerPort: 53
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /app
+      volumes:
+        - name: script
+          configMap:
+            name: dns-proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-proxy-udp
+  namespace: network-dns
+  annotations:
+    metallb.universe.tf/address-pool: metallb-system
+    metallb.universe.tf/allow-shared-ip: dns-proxy
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 192.168.100.53
+  selector:
+    app: dns-proxy
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-proxy-tcp
+  namespace: network-dns
+  annotations:
+    metallb.universe.tf/address-pool: metallb-system
+    metallb.universe.tf/allow-shared-ip: dns-proxy
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 192.168.100.53
+  selector:
+    app: dns-proxy
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP

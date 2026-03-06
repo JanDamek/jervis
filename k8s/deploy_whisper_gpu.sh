@@ -2,7 +2,7 @@
 set -e
 
 # =============================================================================
-# Deploy Whisper GPU REST service to ollama.damek.local (p40-2 VM).
+# Deploy Whisper GPU REST service to ollama.damek.home (p40-2 VM).
 #
 # This service runs OUTSIDE K8s — directly on the GPU VM as a systemd service,
 # sharing the P40 GPU with Ollama via CUDA.
@@ -21,7 +21,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-GPU_HOST="${GPU_HOST:-ollama.damek.local}"
+GPU_HOST="${GPU_HOST:-ollama.damek.home}"
 GPU_USER="${GPU_USER:-damekjan}"
 INSTALL_DIR="/opt/jervis/whisper"
 SERVICE_NAME="jervis-whisper"
@@ -107,7 +107,7 @@ Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
-Environment=ROUTER_URL=http://jervis-router.damek.local
+Environment=ROUTER_URL=http://jervis-router.damek.home
 $HF_TOKEN_LINE
 
 [Install]
