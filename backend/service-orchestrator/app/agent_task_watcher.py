@@ -173,11 +173,13 @@ class AgentTaskWatcher:
                 # Update master map TASK_REF vertex → completed
                 try:
                     from app.graph_agent.persistence import task_graph_store
+                    job_success = result.get("success", False)
                     await task_graph_store.link_task_subgraph(
                         task_id=task_id,
                         sub_graph_id="",
                         title=f"Coding: {task_id[:12]}",
-                        completed=True,
+                        completed=job_success,
+                        failed=not job_success,
                         result_summary=result.get("summary", "")[:500],
                     )
                 except Exception:

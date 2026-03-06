@@ -336,8 +336,19 @@ def fail_vertex(
     vertex.error = error
     vertex.completed_at = str(int(time.time()))
 
-    # Propagate failure: mark unreachable downstream vertices as SKIPPED
-    _propagate_failure(graph, vertex_id)
+    # Fill outgoing edge payloads with error context (unblock downstream)
+    error_payload = EdgePayload(
+        source_vertex_id=vertex.id,
+        source_vertex_title=vertex.title,
+        summary=f"FAILED: {error[:200]}",
+        context=f"Vertex '{vertex.title}' failed: {error}",
+    )
+    for edge in get_outgoing_edges(graph, vertex_id):
+        edge.payload = error_payload
+
+    # Update readiness of downstream vertices
+    for edge in get_outgoing_edges(graph, vertex_id):
+        _update_vertex_readiness(graph, edge.target_id)
 
     _check_graph_completion(graph)
     return vertex
@@ -444,12 +455,14 @@ def get_final_result(graph: TaskGraph) -> str:
         if not outgoing:
             terminal_ids.add(vid)
 
-    # Collect results from terminal vertices
+    # Collect results from terminal vertices (including failed)
     results = []
     for vid in terminal_ids:
         vertex = graph.vertices[vid]
         if vertex.status == VertexStatus.COMPLETED and vertex.result:
             results.append(vertex.result)
+        elif vertex.status == VertexStatus.FAILED and vertex.error:
+            results.append(f"FAILED ({vertex.title}): {vertex.error}")
 
     # If only one terminal, return its result
     if len(results) == 1:
@@ -461,6 +474,8 @@ def get_final_result(graph: TaskGraph) -> str:
         vertex = graph.vertices[vid]
         if vertex.status == VertexStatus.COMPLETED and vertex.result:
             parts.append(f"## {vertex.title}\n{vertex.result}")
+        elif vertex.status == VertexStatus.FAILED and vertex.error:
+            parts.append(f"## {vertex.title} (FAILED)\n{vertex.error}")
     return "\n\n".join(parts)
 
 
@@ -612,25 +627,33 @@ def add_task_ref_vertex(
     sub_graph_id: str,
     title: str,
     completed: bool = False,
+    failed: bool = False,
     result_summary: str = "",
 ) -> GraphVertex:
     """Add a TASK_REF vertex linking to a task sub-graph.
 
     The vertex tracks the lifecycle of a background task. Its status
-    mirrors the sub-graph status (RUNNING while active, COMPLETED when done).
+    mirrors the sub-graph status (RUNNING while active, COMPLETED/FAILED when done).
     """
     now = str(int(time.time()))
+    if failed:
+        status = VertexStatus.FAILED
+    elif completed:
+        status = VertexStatus.COMPLETED
+    else:
+        status = VertexStatus.RUNNING
     vertex = GraphVertex(
         id=f"v-taskref-{uuid.uuid4().hex[:12]}",
         title=title,
         description=f"Background task {task_id} → sub-graph {sub_graph_id}",
         vertex_type=VertexType.TASK_REF,
-        status=VertexStatus.COMPLETED if completed else VertexStatus.RUNNING,
+        status=status,
         input_request=task_id,           # Store task_id in input_request
         local_context=sub_graph_id,      # Store sub_graph_id in local_context
         result_summary=result_summary,
+        error=result_summary if failed else None,
         started_at=now,
-        completed_at=now if completed else None,
+        completed_at=now if (completed or failed) else None,
         depth=1,
     )
     graph.vertices[vertex.id] = vertex

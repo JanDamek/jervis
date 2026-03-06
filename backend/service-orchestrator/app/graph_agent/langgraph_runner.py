@@ -204,9 +204,12 @@ async def node_select_next(state: GraphAgentState) -> dict:
 
     graph = TaskGraph(**graph_data)
 
-    # Cancellation check — stop scheduling new vertices if cancelled
+    # Stop scheduling if graph is cancelled or failed
     if graph.status == GraphStatus.CANCELLED:
         logger.info("Graph %s cancelled — stopping vertex scheduling", graph.id)
+        return {"task_graph": graph.model_dump(), "current_vertex_id": None}
+    if graph.status == GraphStatus.FAILED:
+        logger.info("Graph %s has failures — stopping vertex scheduling", graph.id)
         return {"task_graph": graph.model_dump(), "current_vertex_id": None}
 
     ready = get_ready_vertices(graph)
@@ -395,7 +398,8 @@ async def node_synthesize(state: GraphAgentState) -> dict:
         return {"final_result": state.get("graph_error", "No graph available")}
 
     graph = TaskGraph(**graph_data)
-    graph.status = GraphStatus.COMPLETED
+    has_failures = any(v.status == VertexStatus.FAILED for v in graph.vertices.values())
+    graph.status = GraphStatus.FAILED if has_failures else GraphStatus.COMPLETED
     graph.completed_at = str(int(time.time()))
 
     raw_result = get_final_result(graph)

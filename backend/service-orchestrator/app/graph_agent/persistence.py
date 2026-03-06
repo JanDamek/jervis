@@ -267,6 +267,7 @@ class TaskGraphStore:
         sub_graph_id: str,
         title: str,
         completed: bool = False,
+        failed: bool = False,
         result_summary: str = "",
     ) -> None:
         """Link a task sub-graph to the master map via a TASK_REF vertex."""
@@ -274,7 +275,7 @@ class TaskGraphStore:
         from app.graph_agent.graph import add_task_ref_vertex
         add_task_ref_vertex(
             master, task_id, sub_graph_id, title,
-            completed=completed, result_summary=result_summary,
+            completed=completed, failed=failed, result_summary=result_summary,
         )
         self._dirty.add(master.task_id)
 
