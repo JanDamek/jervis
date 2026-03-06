@@ -114,19 +114,6 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     /**
-     * Start orchestration workflow (blocking – waits for completion).
-     */
-    suspend fun orchestrate(request: OrchestrateRequestDto): OrchestrateResponseDto {
-        logger.info { "PYTHON_ORCHESTRATOR_CALL: taskId=${request.taskId} query='${request.query.take(100)}'" }
-        val response: OrchestrateResponseDto = client.post("$apiBaseUrl/orchestrate") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.body()
-        logger.info { "PYTHON_ORCHESTRATOR_RESULT: taskId=${request.taskId} success=${response.success}" }
-        return response
-    }
-
-    /**
      * Send approval response and resume graph (fire-and-forget).
      *
      * Python endpoint returns immediately with {"status": "resuming"}.
@@ -287,28 +274,27 @@ class PythonOrchestratorClient(baseUrl: String) {
     }
 
     // -----------------------------------------------------------------------
-    // v6 endpoint: simplified background handler
+    // Background orchestration endpoint
     // -----------------------------------------------------------------------
 
     /**
-     * v6 background orchestration endpoint — POST /orchestrate/v2.
+     * Background orchestration — POST /orchestrate.
      *
-     * Replaces the LangGraph /orchestrate/stream for BACKGROUND tasks.
      * Fire-and-forget: returns thread_id immediately.
-     * Python runs 4-phase loop (intake → execute → dispatch → finalize),
+     * Python runs Graph Agent (vertex/edge DAG decomposition),
      * pushes status to Kotlin via POST /internal/orchestrator-status.
      *
      * @return StreamStartResponseDto with thread_id, or null if busy (429)
      */
-    suspend fun orchestrateV2(request: OrchestrateRequestDto): StreamStartResponseDto? {
-        logger.info { "PYTHON_ORCHESTRATE_V2_START: taskId=${request.taskId}" }
+    suspend fun orchestrate(request: OrchestrateRequestDto): StreamStartResponseDto? {
+        logger.info { "PYTHON_ORCHESTRATE_START: taskId=${request.taskId}" }
         return try {
-            val response = client.post("$apiBaseUrl/orchestrate/v2") {
+            val response = client.post("$apiBaseUrl/orchestrate") {
                 contentType(ContentType.Application.Json)
                 setBody(request)
             }
             if (response.status.value == 429) {
-                logger.info { "PYTHON_ORCHESTRATE_V2_BUSY: orchestrator returned 429, skipping dispatch" }
+                logger.info { "PYTHON_ORCHESTRATE_BUSY: orchestrator returned 429, skipping dispatch" }
                 return null
             }
             circuitBreaker.recordSuccess()

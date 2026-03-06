@@ -277,21 +277,16 @@ class AgentOrchestratorService(
 
         val workspacePath = resolveWorkspacePath(task)
 
-        // -----------------------------------------------------------------------
-        // v6 routing: BACKGROUND → /orchestrate/v2 (simplified agentic loop)
-        // No fallback: if v2 fails → error, task goes back to queue
-        // -----------------------------------------------------------------------
-        return dispatchBackgroundV6(task, userInput, rules, clientName, projectName, groupId, workspacePath, onProgress)
+        return dispatchBackground(task, userInput, rules, clientName, projectName, groupId, workspacePath, onProgress)
     }
 
     /**
-     * v6 BACKGROUND dispatch — POST /orchestrate/v2.
+     * Background dispatch — POST /orchestrate.
      *
      * Fire-and-forget: returns thread_id immediately.
-     * Python runs 4-phase loop (intake → execute → dispatch → finalize)
-     * and pushes status to Kotlin via /internal/orchestrator-status.
+     * Python runs Graph Agent and pushes status to Kotlin via /internal/orchestrator-status.
      */
-    private suspend fun dispatchBackgroundV6(
+    private suspend fun dispatchBackground(
         task: TaskDocument,
         userInput: String,
         rules: ProjectRulesDto,
@@ -301,7 +296,7 @@ class AgentOrchestratorService(
         workspacePath: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): Boolean {
-        onProgress("Spouštím orchestrátor v2...", mapOf("phase" to "python_orchestrate_v2"))
+        onProgress("Spouštím orchestrátor...", mapOf("phase" to "python_orchestrate"))
 
         // Resolve environment and auto-provision if PENDING/STOPPED
         var environmentId: String? = null
@@ -361,9 +356,9 @@ class AgentOrchestratorService(
         )
 
         try {
-            val streamResponse = pythonOrchestratorClient.orchestrateV2(request)
+            val streamResponse = pythonOrchestratorClient.orchestrate(request)
             if (streamResponse == null) {
-                logger.info { "ORCHESTRATE_V2_BUSY: returned 429, task will retry later" }
+                logger.info { "ORCHESTRATE_BUSY: returned 429, task will retry later" }
                 return false
             }
 
@@ -375,14 +370,14 @@ class AgentOrchestratorService(
             )
             taskRepository.save(updatedTask)
 
-            logger.info { "ORCHESTRATE_V2_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}" }
+            logger.info { "ORCHESTRATE_DISPATCHED: taskId=${task.id} threadId=${streamResponse.threadId}" }
             onProgress(
                 "Orchestrátor zpracovává úkol...",
                 mapOf("phase" to "python_orchestrating", "threadId" to streamResponse.threadId),
             )
             return true
         } catch (e: Exception) {
-            logger.error(e) { "ORCHESTRATE_V2_FAILED: taskId=${task.id}" }
+            logger.error(e) { "ORCHESTRATE_FAILED: taskId=${task.id}" }
             throw e
         }
     }

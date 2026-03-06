@@ -1,10 +1,10 @@
 """Chat API endpoints — FastAPI router.
 
 Endpoints:
-- POST /chat                          → Foreground chat handler (new v6 flow)
+- POST /chat                          → Foreground chat handler
 - POST /internal/prepare-chat-context → replaces Kotlin prepareChatHistoryPayload()
 - POST /internal/compress-chat-async  → replaces Kotlin compressIfNeeded()
-- POST /orchestrate/v2                → Simplified background handler (new v6 flow)
+- POST /orchestrate                   → Background orchestration (Graph Agent)
 - POST /qualify                       → Qualification agent (fire-and-forget)
 """
 
@@ -93,15 +93,12 @@ async def approve_chat_action(request: ChatApproveRequest):
 
 
 # ---------------------------------------------------------------------------
-# Background v2 endpoint
+# Background orchestration endpoint
 # ---------------------------------------------------------------------------
 
-@router.post("/orchestrate/v2")
-async def orchestrate_v2(request: dict):
-    """Simplified background orchestration (v6 architecture).
-
-    Replaces the old 14-node LangGraph for background tasks.
-    4-phase flow: Intake → Execute → Dispatch → Finalize.
+@router.post("/orchestrate")
+async def orchestrate(request: dict):
+    """Background orchestration — Graph Agent.
 
     Fire-and-forget: returns thread_id immediately, pushes status to Kotlin.
     """
@@ -115,9 +112,9 @@ async def orchestrate_v2(request: dict):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
 
-    thread_id = f"v2-{orchestrate_request.task_id}-{uuid.uuid4().hex[:8]}"
+    thread_id = f"graph-{orchestrate_request.task_id}-{uuid.uuid4().hex[:8]}"
     logger.info(
-        "ORCHESTRATE_V2_START | task_id=%s | thread_id=%s",
+        "ORCHESTRATE_START | task_id=%s | thread_id=%s",
         orchestrate_request.task_id, thread_id,
     )
 
@@ -155,7 +152,7 @@ async def orchestrate_v2(request: dict):
                                     interrupt_description=interrupt_data.get("description", ""),
                                 )
                                 logger.info(
-                                    "ORCHESTRATE_V2_ASK_USER | thread_id=%s | action=%s",
+                                    "ORCHESTRATE_ASK_USER | thread_id=%s | action=%s",
                                     thread_id, interrupt_data.get("action"),
                                 )
                                 return  # Don't report "done" — graph is paused
@@ -174,7 +171,7 @@ async def orchestrate_v2(request: dict):
         except asyncio.CancelledError:
             # Preemption is NOT an error — Kotlin already reset task to QUEUED.
             # Do NOT send error status — it would show "Chyba" banner in UI.
-            logger.info("ORCHESTRATE_V2_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
+            logger.info("ORCHESTRATE_INTERRUPTED | thread_id=%s — preempted by foreground", thread_id)
         except Exception as e:
             logger.exception("Background v2 failed: %s", e)
             await kotlin_client.report_status_change(

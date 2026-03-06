@@ -4,7 +4,7 @@ Accepts requests from Kotlin server, runs orchestration,
 pushes progress via callbacks.
 
 Communication architecture (push-based):
-- Kotlin → Python: POST /orchestrate/v2 (fire-and-forget, returns thread_id)
+- Kotlin → Python: POST /orchestrate (fire-and-forget, returns thread_id)
 - Python → Kotlin: POST /internal/orchestrator-progress (node progress, real-time)
 - Python → Kotlin: POST /internal/orchestrator-status (completion/error)
 - Kotlin → Python: GET /status/{thread_id} (safety-net fallback polling, 60s)
@@ -92,7 +92,7 @@ def _crash_cleanup():
         return
 
     for thread_id in list(_active_tasks.keys()):
-        # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" / "graph-{task_id}-{uuid}"
+        # Extract task_id from thread_id format: "graph-{task_id}-{uuid}"
         parts = thread_id.split("-")
         task_id = parts[1] if len(parts) >= 2 else thread_id
         try:
@@ -454,7 +454,7 @@ async def approve(thread_id: str, request: Request):
             )
 
             # Report completion
-            # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" or "graph-{task_id}-{uuid}"
+            # Extract task_id from thread_id format: "graph-{task_id}-{uuid}"
             parts = thread_id.split("-")
             task_id = parts[1] if len(parts) >= 2 else thread_id
             await kotlin_client.report_status_change(
@@ -527,7 +527,7 @@ async def cancel(thread_id: str):
     if not task:
         raise HTTPException(status_code=404, detail=f"No active task for {thread_id}")
 
-    # Extract task_id from thread_id format: "v2-{task_id}-{uuid}" / "graph-{task_id}-{uuid}"
+    # Extract task_id from thread_id format: "graph-{task_id}-{uuid}"
     parts = thread_id.split("-")
     cancel_task_id = parts[1] if len(parts) >= 2 else thread_id
 
