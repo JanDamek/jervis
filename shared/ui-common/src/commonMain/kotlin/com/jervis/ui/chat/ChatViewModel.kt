@@ -312,18 +312,17 @@ class ChatViewModel(
     }
 
     /**
-     * Load the master map from orchestrator. Called on connection ready
-     * and when toggle button is clicked with no active map.
+     * Load or refresh the master map from orchestrator.
+     * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
      */
     private fun loadMasterMap() {
         scope.launch {
             try {
                 val graph = repository.taskGraphs.getGraph("master")
                 if (graph != null && graph.vertices.isNotEmpty()) {
-                    println("ChatViewModel: master map loaded — ${graph.vertices.size} vertices")
+                    println("ChatViewModel: master map refreshed — ${graph.vertices.size} vertices")
                     _activeThinkingMap.value = graph
-                    _thinkingMapPanelVisible.value = true
-                    // Add to maps list
+                    // Add/update maps list
                     val summary = ThinkingMapSummary(
                         id = graph.taskId.ifEmpty { "master" },
                         title = "Master Map",
@@ -338,7 +337,7 @@ class ChatViewModel(
                     println("ChatViewModel: master map not found or empty")
                 }
             } catch (e: Exception) {
-                println("ChatViewModel: master map load failed: ${e.message}")
+                println("ChatViewModel: master map refresh failed: ${e.message}")
             }
         }
     }
@@ -755,6 +754,8 @@ class ChatViewModel(
                         workflowSteps = parseWorkflowSteps(response.metadata),
                     ),
                 )
+                // Refresh master map after chat completion
+                loadMasterMap()
             }
 
             ChatMessage.MessageType.ERROR -> {
@@ -793,6 +794,8 @@ class ChatViewModel(
                         timestamp = response.metadata["timestamp"],
                     ),
                 )
+                // Refresh master map after background task completion
+                loadMasterMap()
             }
 
             ChatMessage.MessageType.THINKING_MAP_UPDATE -> {

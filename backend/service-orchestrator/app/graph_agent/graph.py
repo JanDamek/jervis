@@ -630,10 +630,11 @@ def add_task_ref_vertex(
     failed: bool = False,
     result_summary: str = "",
 ) -> GraphVertex:
-    """Add a TASK_REF vertex linking to a task sub-graph.
+    """Add or update a TASK_REF vertex linking to a task sub-graph.
 
-    The vertex tracks the lifecycle of a background task. Its status
-    mirrors the sub-graph status (RUNNING while active, COMPLETED/FAILED when done).
+    Upserts: if a TASK_REF with matching task_id already exists, updates it
+    in place. Otherwise creates a new vertex. This prevents duplicate
+    TASK_REF vertices for the same task.
     """
     now = str(int(time.time()))
     if failed:
@@ -642,6 +643,28 @@ def add_task_ref_vertex(
         status = VertexStatus.COMPLETED
     else:
         status = VertexStatus.RUNNING
+
+    # Find existing TASK_REF for this task_id (stored in input_request)
+    existing: GraphVertex | None = None
+    for v in graph.vertices.values():
+        if v.vertex_type == VertexType.TASK_REF and v.input_request == task_id:
+            existing = v
+            break
+
+    if existing:
+        # Update existing vertex
+        existing.status = status
+        existing.title = title
+        if sub_graph_id:
+            existing.local_context = sub_graph_id
+        if result_summary:
+            existing.result_summary = result_summary
+        existing.error = result_summary if failed else None
+        if completed or failed:
+            existing.completed_at = now
+        return existing
+
+    # Create new vertex
     vertex = GraphVertex(
         id=f"v-taskref-{uuid.uuid4().hex[:12]}",
         title=title,

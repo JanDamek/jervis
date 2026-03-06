@@ -567,9 +567,21 @@ async def get_task_graph(task_id: str):
     """Return the full TaskGraph for a given task_id.
 
     Called by Kotlin to serve graph data to the UI.
+    For master map, returns the live RAM version (always fresh).
     """
     from app.graph_agent.persistence import task_graph_store
-    graph = await task_graph_store.load(task_id)
+
+    if task_id == "master":
+        # Return live RAM version — always up-to-date
+        graph = task_graph_store.get_master_graph_cached()
+        if not graph:
+            graph = await task_graph_store.get_or_create_master_graph()
+    else:
+        # Try RAM cache first (active sub-graphs), then DB
+        graph = task_graph_store.get_cached_subgraph(task_id)
+        if not graph:
+            graph = await task_graph_store.load(task_id)
+
     if not graph:
         raise HTTPException(status_code=404, detail=f"No graph for task {task_id}")
     return graph.model_dump()

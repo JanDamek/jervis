@@ -35,9 +35,9 @@ logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "task_graphs"
 _TTL_DAYS = 30
 _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
-_CLEANUP_INTERVAL_S = 3600  # Master map cleanup every 1 hour
-_KEEP_CHAT_VERTICES = 20  # Keep last N chat exchanges
-_KEEP_TASK_VERTICES = 10  # Keep last N completed task refs
+_CLEANUP_INTERVAL_S = 600  # Master map cleanup every 10 min
+_KEEP_CHAT_VERTICES = 5  # Keep last N chat exchanges
+_KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
 
 
 class TaskGraphStore:
@@ -57,6 +57,7 @@ class TaskGraphStore:
         self._dirty: set[str] = set()  # task_ids that need DB flush
         self._flush_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
+        self._pending_archive: list[dict] = []
 
     async def init(self) -> None:
         """Initialize MongoDB connection and create indexes."""
@@ -232,6 +233,14 @@ class TaskGraphStore:
             self._master_graph = TaskGraph(**doc)
             logger.info("Master map loaded from DB (id=%s, vertices=%d)",
                         self._master_graph.id, len(self._master_graph.vertices))
+            # Immediate cleanup on load — archive removed vertices
+            removed = self.cleanup_master_map()
+            if removed > 0:
+                if hasattr(self, "_pending_archive") and self._pending_archive:
+                    await self._archive_vertices(self._pending_archive)
+                    self._pending_archive = []
+                self._dirty.add(self._master_graph.task_id)
+                logger.info("Master map after cleanup: %d vertices", len(self._master_graph.vertices))
             return self._master_graph
 
         # Create new master map
@@ -349,8 +358,12 @@ class TaskGraphStore:
         Keeps:
         - All active vertices (PENDING, READY, RUNNING, BLOCKED)
         - Last N CHAT_EXCHANGE vertices (for summary context)
-        - Last N completed TASK_REF vertices (for summary context)
+        - Last N completed/failed TASK_REF vertices (for summary context)
+        - Root vertex
         - All edges referencing kept vertices
+
+        Removed vertices are archived to `master_map_archive` collection
+        via _archive_vertices() (called separately, async).
 
         Returns number of removed vertices.
         """
@@ -375,7 +388,7 @@ class TaskGraphStore:
         for vid, _ in chats[:_KEEP_CHAT_VERTICES]:
             keep_ids.add(vid)
 
-        # Keep last N completed task refs (sorted by completed_at desc)
+        # Keep last N task refs (sorted by completed_at desc)
         task_refs = sorted(
             [(vid, v) for vid, v in graph.vertices.items()
              if v.vertex_type == VertexType.TASK_REF],
@@ -389,10 +402,15 @@ class TaskGraphStore:
         if graph.root_vertex_id:
             keep_ids.add(graph.root_vertex_id)
 
-        # Remove vertices not in keep set
+        # Identify vertices to remove
         to_remove = set(graph.vertices.keys()) - keep_ids
         if not to_remove:
             return 0
+
+        # Stash removed vertices for async archival
+        self._pending_archive = [
+            graph.vertices[vid].model_dump() for vid in to_remove
+        ]
 
         for vid in to_remove:
             del graph.vertices[vid]
@@ -413,20 +431,56 @@ class TaskGraphStore:
         )
         return len(to_remove)
 
+    async def _archive_vertices(self, vertices: list[dict]) -> None:
+        """Archive removed vertices to a separate MongoDB collection.
+
+        Stores as a batch document with vertex summaries. Retrievable for
+        future context if needed.
+        """
+        if not vertices:
+            return
+        try:
+            coll = await self._ensure_collection()
+            db = coll.database
+            archive_coll = db["master_map_archive"]
+            doc = {
+                "archived_at": datetime.now(timezone.utc),
+                "count": len(vertices),
+                "vertices": [
+                    {
+                        "id": v.get("id"),
+                        "title": v.get("title", ""),
+                        "vertex_type": v.get("vertex_type", ""),
+                        "status": v.get("status", ""),
+                        "result_summary": (v.get("result_summary") or "")[:300],
+                        "error": (v.get("error") or "")[:300],
+                        "completed_at": v.get("completed_at"),
+                        "input_request": v.get("input_request", ""),
+                    }
+                    for v in vertices
+                ],
+            }
+            await archive_coll.insert_one(doc)
+            logger.info("Archived %d vertices to master_map_archive", len(vertices))
+        except Exception as e:
+            logger.warning("Failed to archive vertices: %s", e)
+
     async def _periodic_cleanup(self) -> None:
         """Background task: cleanup master map every N seconds."""
-        # Initial cleanup after 60s (let master map load first)
-        await asyncio.sleep(60)
         while True:
             try:
+                await asyncio.sleep(_CLEANUP_INTERVAL_S)
                 removed = self.cleanup_master_map()
                 if removed > 0:
+                    # Archive first, then flush
+                    if hasattr(self, "_pending_archive") and self._pending_archive:
+                        await self._archive_vertices(self._pending_archive)
+                        self._pending_archive = []
                     await self.flush_dirty()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("Master map cleanup error: %s", e)
-            await asyncio.sleep(_CLEANUP_INTERVAL_S)
 
     # --- Dirty flush ---
 

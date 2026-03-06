@@ -105,7 +105,8 @@ async def _run_graph_agent_background(
             task_id=request.task_id,
             sub_graph_id=graph_id,
             title=request.query[:80] if request.query else f"Task {request.task_id}",
-            completed=True,
+            completed=success,
+            failed=not success,
             result_summary=summary[:500] if summary else "",
         )
     except Exception as e:
