@@ -79,7 +79,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
 spec:
   rules:
-    - host: jervis-router.damek.home
+    - host: jervis-router.lan.mazlusek.com
       http:
         paths:
           - path: /

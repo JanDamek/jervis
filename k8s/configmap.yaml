@@ -47,7 +47,7 @@ data:
       main:
         web-application-type: none   # Non-web (RSocket + custom transport)
       mongodb:
-        host: nas.damek.home
+        host: nas.lan.mazlusek.com
         port: 27017
         database: jervis
         username: root
@@ -59,7 +59,7 @@ data:
 
     # -- Weaviate (vector store for RAG) ----------------------------------------
     weaviate:
-      host: nas.damek.home
+      host: nas.lan.mazlusek.com
       port: 8080                     # REST API
       scheme: http
       grpc-port: 50051               # gRPC for fast vector ops
@@ -75,7 +75,7 @@ data:
     # -- ArangoDB (knowledge graph) ---------------------------------------------
     arango:
       scheme: http
-      host: nas.damek.home
+      host: nas.lan.mazlusek.com
       port: 8529
       database: jervis
       username: root
@@ -102,7 +102,7 @@ data:
 
     # -- Whisper transcription (REST-only, max accuracy) -------------------------
     whisper:
-      rest-remote-url: http://ollama.damek.home:8786
+      rest-remote-url: http://ollama.lan.mazlusek.com:8786
       model: large-v3
       beam-size: 10
       vad-filter: true
@@ -140,7 +140,7 @@ data:
     # Ollama endpoints are in models-config.yaml, not here.
     endpoints:
       searxng:
-        baseUrl: http://nas.damek.home:30053/       # SearXNG web search (NodePort)
+        baseUrl: http://nas.lan.mazlusek.com:30053/       # SearXNG web search (NodePort)
       tika:
         baseUrl: ws://jervis-tika:8081/              # Document extraction
       knowledgebase:
@@ -181,13 +181,13 @@ data:
   INGEST_MODEL_SIMPLE: "qwen3-coder-tool:30b"                 # All ingest via 30b (always loaded on GPU)
   INGEST_MODEL_COMPLEX: "qwen3-coder-tool:30b"                # Same model — no swapping needed
   # -- Storage backends -------------------------------------------------------
-  WEAVIATE_URL: "http://nas.damek.home:8080"                  # Vector store (RAG)
-  WEAVIATE_GRPC_URL: "nas.damek.home:50051"                   # Weaviate gRPC
-  ARANGO_URL: "http://nas.damek.home:8529"                    # Knowledge graph
+  WEAVIATE_URL: "http://nas.lan.mazlusek.com:8080"                  # Vector store (RAG)
+  WEAVIATE_GRPC_URL: "nas.lan.mazlusek.com:50051"                   # Weaviate gRPC
+  ARANGO_URL: "http://nas.lan.mazlusek.com:8529"                    # Knowledge graph
   ARANGO_DB: "jervis"
   ARANGO_USER: "root"
   # -- Microservice endpoints -------------------------------------------------
-  TIKA_URL: "http://nas.damek.home:8081"                      # Apache Tika
+  TIKA_URL: "http://nas.lan.mazlusek.com:8081"                      # Apache Tika
   KOTLIN_SERVER_URL: "http://jervis-server:5500"               # Kotlin server for progress callbacks
 
 ---
@@ -210,7 +210,7 @@ data:
   # -- Microservice endpoints -------------------------------------------------
   KOTLIN_SERVER_URL: "http://jervis-server:5500"
   KNOWLEDGEBASE_URL: "http://jervis-knowledgebase:8080"
-  SEARXNG_URL: "http://nas.damek.home:30053"
+  SEARXNG_URL: "http://nas.lan.mazlusek.com:30053"
   # -- Ollama endpoints (via Ollama Router on :11430) -------------------------
   OLLAMA_API_BASE: "http://jervis-ollama-router:11430"
 
@@ -226,7 +226,7 @@ metadata:
   namespace: jervis
 data:
   ROUTER_PORT: "11430"
-  GPU_BACKENDS: '[{"url":"http://nas.damek.home:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.damek.home:11434","vram_gb":24,"name":"p40-2"}]'
+  GPU_BACKENDS: '[{"url":"http://nas.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-2"}]'
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
   GPU_MODEL_SETS: '{"p40-1":["qwen3-coder-tool:30b"],"p40-2":["qwen3-embedding:8b","qwen3-vl-tool:latest"]}'
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
@@ -251,7 +251,7 @@ metadata:
 data:
   MCP_HOST: "0.0.0.0"
   MCP_PORT: "8100"
-  MCP_MONGODB_HOST: "nas.damek.home"
+  MCP_MONGODB_HOST: "nas.lan.mazlusek.com"
   MCP_MONGODB_PORT: "27017"
   MCP_MONGODB_USER: "root"
   MCP_MONGODB_DATABASE: "jervis"

@@ -1,5 +1,5 @@
 # =============================================================================
-# DNS Proxy — wildcard *.damek.home → MetalLB ingress VIP
+# DNS Proxy — wildcard *.lan.mazlusek.com → MetalLB ingress VIP
 # Static overrides for infra hosts (NAS, GPU VM)
 # Runs on MetalLB IP 192.168.100.53 (DHCP-distributed DNS)
 # =============================================================================
@@ -12,19 +12,19 @@ metadata:
 data:
   dns-proxy.py: |
     #!/usr/bin/env python3
-    """DNS proxy: forwards to upstream, returns wildcard for NXDOMAIN on damek.home.
+    """DNS proxy: forwards to upstream, returns wildcard for NXDOMAIN on lan.mazlusek.com.
     Static records override wildcard for known infrastructure hosts."""
     import os, socket, struct, threading
 
     UPSTREAM = os.environ.get("DNS_UPSTREAM", "192.168.100.1")
     WILDCARD_IP = os.environ.get("WILDCARD_IP", "192.168.100.216")
-    DOMAIN_SUFFIX = os.environ.get("DOMAIN_SUFFIX", ".damek.home.")
+    DOMAIN_SUFFIX = os.environ.get("DOMAIN_SUFFIX", ".lan.mazlusek.com.")
     LISTEN = os.environ.get("LISTEN", "0.0.0.0:53")
 
     # Static overrides: hostname → IP (bypass wildcard for infra hosts)
     STATIC_RECORDS = {
-        "nas.damek.home.": "192.168.100.117",
-        "ollama.damek.home.": "192.168.101.36",
+        "nas.lan.mazlusek.com.": "192.168.100.117",
+        "ollama.lan.mazlusek.com.": "192.168.101.36",
     }
 
     def parse_qname(data, offset):
@@ -54,7 +54,7 @@ data:
         q_end = qname_end + 4  # QTYPE(2) + QCLASS(2)
         resp = bytearray()
         resp += query[:2]                          # ID
-        resp += b'\x84\x00'                        # Flags: response, authoritative, no error
+        resp += b'\x85\x80'                        # Flags: QR=1, AA=1, RD=1, RA=1, RCODE=0
         resp += b'\x00\x01'                        # QDCOUNT=1
         resp += b'\x00\x01'                        # ANCOUNT=1
         resp += b'\x00\x00\x00\x00'               # NSCOUNT=0, ARCOUNT=0
@@ -66,6 +66,10 @@ data:
         resp += struct.pack("!H", 4)               # RDLENGTH 4
         resp += socket.inet_aton(ip)               # RDATA
         return bytes(resp)
+
+    def is_under_domain(qname, suffix):
+        """Check if qname ends with our domain suffix (any depth)."""
+        return qname.lower().endswith(suffix.lower())
 
     def handle(data, addr, sock):
         try:
@@ -79,14 +83,23 @@ data:
                 sock.sendto(resp, addr)
                 return
 
+            # Our domain — handle locally, never forward to upstream
+            # (upstream may have wildcard DNS returning parking page IP)
+            if is_under_domain(qname, DOMAIN_SUFFIX):
+                if qtype == 1 and is_single_label_under(qname, DOMAIN_SUFFIX):
+                    resp = build_a_response(data, qname_end, WILDCARD_IP)
+                else:
+                    # Non-A or multi-label: return NXDOMAIN
+                    resp = bytearray(data[:2]) + b'\x85\x83' + data[4:]  # QR=1,AA=1,RD=1,RA=1,RCODE=3
+                sock.sendto(resp, addr)
+                return
+
+            # Everything else — forward to upstream
             upstream_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             upstream_sock.settimeout(3)
             upstream_sock.sendto(data, (UPSTREAM, 53))
             resp, _ = upstream_sock.recvfrom(4096)
             upstream_sock.close()
-            rcode = resp[3] & 0x0F
-            if rcode == 3 and qtype == 1 and is_single_label_under(qname, DOMAIN_SUFFIX):
-                resp = build_a_response(data, qname_end, WILDCARD_IP)
             sock.sendto(resp, addr)
         except Exception as e:
             print(f"Error: {e}", flush=True)
@@ -135,7 +148,7 @@ spec:
             - name: WILDCARD_IP
               value: "192.168.100.216"
             - name: DOMAIN_SUFFIX
-              value: ".damek.home."
+              value: ".lan.mazlusek.com."
           ports:
             - containerPort: 53
               protocol: UDP

@@ -611,21 +611,26 @@ def add_task_ref_vertex(
     task_id: str,
     sub_graph_id: str,
     title: str,
+    completed: bool = False,
+    result_summary: str = "",
 ) -> GraphVertex:
     """Add a TASK_REF vertex linking to a task sub-graph.
 
     The vertex tracks the lifecycle of a background task. Its status
     mirrors the sub-graph status (RUNNING while active, COMPLETED when done).
     """
+    now = str(int(time.time()))
     vertex = GraphVertex(
         id=f"v-taskref-{uuid.uuid4().hex[:12]}",
         title=title,
         description=f"Background task {task_id} → sub-graph {sub_graph_id}",
         vertex_type=VertexType.TASK_REF,
-        status=VertexStatus.RUNNING,
+        status=VertexStatus.COMPLETED if completed else VertexStatus.RUNNING,
         input_request=task_id,           # Store task_id in input_request
         local_context=sub_graph_id,      # Store sub_graph_id in local_context
-        started_at=str(int(time.time())),
+        result_summary=result_summary,
+        started_at=now,
+        completed_at=now if completed else None,
         depth=1,
     )
     graph.vertices[vertex.id] = vertex
@@ -708,65 +713,81 @@ def find_blocked_vertices(graph: TaskGraph) -> list[GraphVertex]:
 def master_map_summary(graph: TaskGraph, max_tokens: int = 2000) -> str:
     """Generate a compact summary of the master map for LLM context injection.
 
-    Budget: max 2000 tokens. Includes:
-    - Last N chat vertices (title + status)
-    - Active task refs (task_id + status)
-    - BLOCKED vertices (what's waiting for answer)
+    Priority order:
+    1. BLOCKED vertices (user needs to act)
+    2. Active (RUNNING) task refs
+    3. Recent chat exchanges (newest first, title only)
+    4. Recent completed tasks (last 5, title + brief summary)
 
-    Fits into 48k GPU context with room for vertex work.
+    Skips scheduled/idle tasks — only user-initiated work matters for context.
     """
     parts: list[str] = []
     token_count = 0
 
+    def _budget_ok() -> bool:
+        return token_count < max_tokens
+
+    def _add(line: str) -> bool:
+        nonlocal token_count
+        t = estimate_tokens(line)
+        if token_count + t > max_tokens:
+            return False
+        token_count += t
+        parts.append(line)
+        return True
+
     # 1. BLOCKED vertices (highest priority — user needs to act)
     blocked = find_blocked_vertices(graph)
     if blocked:
-        parts.append("## Waiting for your answer:")
+        _add("## Waiting for your answer:")
         for v in blocked:
-            line = f"- [{v.id}] {v.description}"
-            parts.append(line)
+            if not _add(f"- [{v.id}] {v.description[:200]}"):
+                break
 
-    # 2. Active task refs
-    active_refs = [
-        v for v in graph.vertices.values()
-        if v.vertex_type == VertexType.TASK_REF
-        and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)
-    ]
-    if active_refs:
-        parts.append("\n## Active tasks:")
-        for v in active_refs:
-            line = f"- [{v.input_request}] {v.title} ({v.status.value})"
-            parts.append(line)
+    # 2. Active task refs (RUNNING only, skip scheduled/idle noise)
+    active_refs = sorted(
+        [v for v in graph.vertices.values()
+         if v.vertex_type == VertexType.TASK_REF
+         and v.status in (VertexStatus.RUNNING, VertexStatus.BLOCKED)],
+        key=lambda v: v.started_at or "0",
+        reverse=True,
+    )
+    if active_refs and _budget_ok():
+        _add("\n## Active tasks:")
+        for v in active_refs[:10]:  # Max 10 active
+            if not _add(f"- {v.title[:100]} ({v.status.value})"):
+                break
+        if len(active_refs) > 10:
+            _add(f"- ... +{len(active_refs) - 10} more active tasks")
 
-    # 3. Recent chat exchanges (newest first, up to budget)
+    # 3. Recent chat exchanges (newest first, title only — brief)
     chats = sorted(
         [v for v in graph.vertices.values()
          if v.vertex_type == VertexType.CHAT_EXCHANGE],
         key=lambda v: v.completed_at or "0",
         reverse=True,
     )
-    if chats:
-        parts.append("\n## Recent context:")
-        for v in chats:
-            line = f"- {v.title}: {v.result_summary}"
-            token_count += estimate_tokens(line)
-            if token_count > max_tokens:
-                parts.append(f"- ... ({len(chats)} total exchanges)")
+    if chats and _budget_ok():
+        _add("\n## Recent conversation:")
+        for v in chats[:15]:  # Last 15 exchanges
+            title = v.title[:120] if v.title else "?"
+            if not _add(f"- {title}"):
+                _add(f"- ... ({len(chats)} total exchanges)")
                 break
-            parts.append(line)
 
-    # 4. Completed task refs (brief)
-    done_refs = [
-        v for v in graph.vertices.values()
-        if v.vertex_type == VertexType.TASK_REF
-        and v.status == VertexStatus.COMPLETED
-    ]
-    if done_refs:
-        remaining = max_tokens - token_count
-        if remaining > 100:
-            parts.append("\n## Completed tasks:")
-            for v in done_refs[-5:]:  # Last 5
-                line = f"- {v.title} (done)"
-                parts.append(line)
+    # 4. Recent completed tasks (last 5 with summary snippet)
+    done_refs = sorted(
+        [v for v in graph.vertices.values()
+         if v.vertex_type == VertexType.TASK_REF
+         and v.status == VertexStatus.COMPLETED],
+        key=lambda v: v.completed_at or "0",
+        reverse=True,
+    )
+    if done_refs and _budget_ok():
+        _add("\n## Recently completed:")
+        for v in done_refs[:5]:
+            summary = f": {v.result_summary[:100]}" if v.result_summary else ""
+            if not _add(f"- {v.title[:80]}{summary}"):
+                break
 
     return "\n".join(parts) if parts else ""

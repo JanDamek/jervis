@@ -1,5 +1,5 @@
 # =============================================================================
-# Kibana Ingress — internal only at kibana.damek.home (no TLS, no auth)
+# Kibana Ingress — internal only at kibana.lan.mazlusek.com (no TLS, no auth)
 # =============================================================================
 ---
 apiVersion: networking.k8s.io/v1
@@ -11,7 +11,7 @@ metadata:
     kubernetes.io/ingress.class: nginx
 spec:
   rules:
-    - host: kibana.damek.home
+    - host: kibana.lan.mazlusek.com
       http:
         paths:
           - path: /

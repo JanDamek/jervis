@@ -99,12 +99,16 @@ async def _run_graph_agent_background(
     graph_id = graph_data.get("id", "") if isinstance(graph_data, dict) else ""
     graph_status = graph_data.get("status", "") if isinstance(graph_data, dict) else ""
 
-    # Link sub-graph to master map
+    # Link sub-graph to master map (with final status)
+    success = graph_status not in ("failed", "cancelled")
+    summary = state.get("final_result", "")
     try:
         await task_graph_store.link_task_subgraph(
             task_id=request.task_id,
             sub_graph_id=graph_id,
             title=request.query[:80] if request.query else f"Task {request.task_id}",
+            completed=True,
+            result_summary=summary[:500] if summary else "",
         )
     except Exception as e:
         logger.warning("Failed to link sub-graph to master map: %s", e)
