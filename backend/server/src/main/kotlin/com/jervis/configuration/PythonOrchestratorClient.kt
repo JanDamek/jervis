@@ -342,6 +342,7 @@ data class OrchestrateRequestDto(
     @SerialName("processing_mode") val processingMode: String = "FOREGROUND",
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
     @SerialName("qualifier_context") val qualifierContext: String? = null,
+    @SerialName("source_urn") val sourceUrn: String? = null,
 )
 
 @Serializable

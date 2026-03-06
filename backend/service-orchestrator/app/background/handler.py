@@ -1,10 +1,8 @@
-"""Background handler — delegates to Graph Agent for all background tasks.
+"""Background handler — delegates to Graph Agent or K8s coding agent.
 
-All background tasks run through the Graph Agent (vertex/edge DAG with decomposition).
-The graph agent decomposes complex tasks into focused vertices, each processed
-with a small context window (48k GPU). Edge payloads carry summaries, not raw data.
-
-No legacy agentic loop — graph agent is the only execution path.
+Regular background tasks run through the Graph Agent (vertex/edge DAG with decomposition).
+Coding tasks (source_urn="chat:coding-agent") are dispatched as K8s Jobs directly,
+bypassing the graph agent — the K8s Job runs Claude CLI / Kilo Code in a container.
 """
 
 from __future__ import annotations
@@ -130,21 +128,140 @@ def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
     return message_tokens + tools_tokens + settings.default_output_tokens
 
 
+async def _run_coding_agent_background(
+    request: OrchestrateRequest,
+    thread_id: str | None = None,
+) -> dict:
+    """Dispatch a coding agent K8s Job for chat-initiated coding tasks.
+
+    Prepares workspace with instructions, KB context, and environment,
+    then creates a K8s Job (Claude CLI / Kilo Code). Returns immediately —
+    AgentTaskWatcher monitors the job and marks task DONE on completion.
+
+    Args:
+        request: OrchestrateRequest with source_urn="chat:coding-agent".
+        thread_id: Thread ID (stored on task for watcher).
+
+    Returns:
+        dict with coding_dispatched=True and job metadata.
+    """
+    from app.agents.job_runner import job_runner
+    from app.agents.workspace_manager import workspace_manager
+    from app.graph_agent.persistence import task_graph_store
+    from app.tools.kotlin_client import kotlin_client
+
+    agent_type = request.agent_preference if request.agent_preference != "auto" else "claude"
+    logger.info(
+        "CODING_AGENT_BACKGROUND | task_id=%s | agent=%s | workspace=%s",
+        request.task_id, agent_type, request.workspace_path,
+    )
+
+    # 1. Prefetch KB context (optional — best effort)
+    kb_context = None
+    if request.project_id:
+        try:
+            from app.tools.executor import execute_tool
+            kb_result = await execute_tool(
+                tool_name="kb_search",
+                arguments={"query": request.query[:200], "max_results": 5},
+                client_id=request.client_id,
+                project_id=request.project_id,
+            )
+            if kb_result and not str(kb_result).startswith("Error"):
+                kb_context = str(kb_result)[:4000]
+        except Exception as e:
+            logger.debug("KB prefetch failed (non-fatal): %s", e)
+
+    # 2. Build git config from rules
+    git_config = None
+    if request.rules:
+        git_config = {
+            "git_author_name": request.rules.git_author_name,
+            "git_author_email": request.rules.git_author_email,
+            "git_committer_name": request.rules.git_committer_name,
+            "git_committer_email": request.rules.git_committer_email,
+            "git_gpg_sign": request.rules.git_gpg_sign,
+            "git_gpg_key_id": request.rules.git_gpg_key_id,
+        }
+
+    # 3. Prepare workspace (instructions, KB, environment, git config, CLAUDE.md)
+    workspace_path = await workspace_manager.prepare_workspace(
+        task_id=request.task_id,
+        client_id=request.client_id,
+        project_id=request.project_id,
+        project_path=request.workspace_path,
+        instructions=request.query,
+        files=[],  # Agent determines files to modify
+        agent_type=agent_type,
+        kb_context=kb_context,
+        environment_context=request.environment,
+        git_config=git_config,
+    )
+
+    # 4. Dispatch K8s Job (returns immediately)
+    dispatch_info = await job_runner.dispatch_coding_agent(
+        task_id=request.task_id,
+        agent_type=agent_type,
+        client_id=request.client_id,
+        project_id=request.project_id,
+        workspace_path=str(workspace_path),
+        allow_git=False,
+        gpg_key_id=request.rules.git_gpg_key_id if request.rules else None,
+        git_user_name=request.rules.git_author_name if request.rules else None,
+        git_user_email=request.rules.git_author_email if request.rules else None,
+    )
+    job_name = dispatch_info["job_name"]
+
+    # 5. Notify Kotlin — task state → CODING
+    await kotlin_client.notify_agent_dispatched(
+        task_id=request.task_id,
+        job_name=job_name,
+        workspace_path=str(workspace_path),
+        agent_type=agent_type,
+    )
+
+    # 6. Link to master map (not completed yet — watcher will update)
+    try:
+        await task_graph_store.link_task_subgraph(
+            task_id=request.task_id,
+            sub_graph_id="",
+            title=request.query[:80] if request.query else f"Coding {request.task_id}",
+            completed=False,
+            result_summary="",
+        )
+    except Exception as e:
+        logger.warning("Failed to link coding task to master map: %s", e)
+
+    logger.info(
+        "CODING_DISPATCHED | task_id=%s | job=%s | agent=%s",
+        request.task_id, job_name, agent_type,
+    )
+
+    return {
+        "coding_dispatched": True,
+        "job_name": job_name,
+        "agent_type": agent_type,
+        "workspace_path": str(workspace_path),
+    }
+
+
 async def handle_background(
     request: OrchestrateRequest,
     thread_id: str | None = None,
 ) -> dict:
-    """Handle a background task via Graph Agent (vertex/edge DAG).
+    """Handle a background task — routing between graph agent and coding agent.
 
-    All background tasks run through the graph agent — decomposes the task
-    into focused vertices, each processed with small context window.
+    Coding tasks (source_urn="chat:coding-agent") are dispatched as K8s Jobs.
+    All other tasks run through the graph agent (vertex/edge DAG).
 
     Args:
         request: OrchestrateRequest from Kotlin BackgroundEngine.
         thread_id: Thread ID for LangGraph checkpointing.
 
     Returns:
-        dict with {success, summary, artifacts, step_results, branch}
+        dict with {success, summary, ...} or {coding_dispatched: True, ...}
     """
+    if request.source_urn == "chat:coding-agent":
+        return await _run_coding_agent_background(request, thread_id=thread_id)
     return await _run_graph_agent_background(request, thread_id=thread_id)
 

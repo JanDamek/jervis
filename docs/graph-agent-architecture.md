@@ -179,6 +179,37 @@ User sees question in UI / chat
 | `shared/common-dto/.../graph/TaskGraphDtos.kt` | 3 | +GraphType, +summary DTO |
 | `shared/ui-common/.../chat/ThinkingMapPanel.kt` | 3 | graph list, ASK_USER UI |
 
+## Coding Agent Dispatch (K8s Jobs)
+
+Background handler routes coding tasks (sourceUrn=`chat:coding-agent`) directly to K8s Jobs,
+bypassing the graph agent's LLM decomposition.
+
+### Flow
+```
+Chat → dispatch_coding_agent tool
+  → Kotlin: task(QUEUED, sourceUrn="chat:coding-agent")
+    → BackgroundEngine → POST /orchestrate/v2 (with sourceUrn)
+      → handle_background() detects coding task
+        → workspace_manager.prepare_workspace()
+        → job_runner.dispatch_coding_agent() → K8s Job
+        → kotlin_client.notify_agent_dispatched() → CODING
+      → AgentTaskWatcher polls K8s Job
+        → Job done → report_status_change(done) → task DONE
+```
+
+### Key Files
+| File | Role |
+|------|------|
+| `background/handler.py` | `_run_coding_agent_background()` — workspace prep + K8s Job dispatch |
+| `agents/job_runner.py` | `dispatch_coding_agent()` — K8s Job creation |
+| `agents/workspace_manager.py` | `prepare_workspace()` — instructions, KB, env, CLAUDE.md |
+| `agent_task_watcher.py` | Polls CODING tasks, detects completion, marks DONE |
+| `tools/kotlin_client.py` | `notify_agent_dispatched()` — task state → CODING |
+
+### Sequential Execution
+Tasks execute one at a time (BackgroundEngine processes QUEUED sequentially).
+Each coding step completes → user reviews/merges → next task runs.
+
 ## Deploy
 
 - Phase 1: `k8s/build_orchestrator.sh`

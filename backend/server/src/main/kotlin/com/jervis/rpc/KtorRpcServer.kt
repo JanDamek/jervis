@@ -600,6 +600,9 @@ class KtorRpcServer(
                                                 "agentJobName" to task.agentJobName,
                                                 "orchestratorThreadId" to task.orchestratorThreadId,
                                                 "agentJobStartedAt" to task.agentJobStartedAt?.toString(),
+                                                "sourceUrn" to task.sourceUrn.value,
+                                                "agentJobWorkspacePath" to task.agentJobWorkspacePath,
+                                                "agentJobAgentType" to task.agentJobAgentType,
                                             ),
                                         )
                                     }
@@ -672,6 +675,8 @@ class KtorRpcServer(
                                         agentJobName = body.jobName,
                                         agentJobState = "RUNNING",
                                         agentJobStartedAt = java.time.Instant.now(),
+                                        agentJobWorkspacePath = body.workspacePath,
+                                        agentJobAgentType = body.agentType,
                                     )
                                     taskRepository.save(updated)
                                     call.respondText(
@@ -1443,6 +1448,8 @@ data class ScaleRequest(
 @kotlinx.serialization.Serializable
 data class AgentDispatchedRequest(
     val jobName: String,
+    val workspacePath: String? = null,
+    val agentType: String? = null,
 )
 
 @kotlinx.serialization.Serializable

@@ -125,6 +125,14 @@ async def orchestrate_v2(request: dict):
         try:
             result = await handle_background(orchestrate_request, thread_id=thread_id)
 
+            # Coding agent dispatched — task is now CODING, watcher handles completion
+            if result.get("coding_dispatched"):
+                logger.info(
+                    "CODING_DISPATCHED | task_id=%s | job=%s | thread=%s",
+                    orchestrate_request.task_id, result.get("job_name"), thread_id,
+                )
+                return  # Don't report "done" — AgentTaskWatcher monitors the K8s Job
+
             # Check if result indicates an LangGraph interrupt (ask_user)
             # When Graph Agent's interrupt() fires, ainvoke() returns partial state
             # with empty summary and the interrupt data is in the LangGraph checkpoint.

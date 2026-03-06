@@ -267,6 +267,7 @@ class OrchestrateRequest(BaseModel):
     processing_mode: str = "FOREGROUND"  # FOREGROUND = reserve GPU, BACKGROUND = no GPU reservation
     max_openrouter_tier: str = "NONE"  # Resolved tier from CloudModelPolicyResolver (overrides rules.max_openrouter_tier)
     qualifier_context: str | None = None  # JSON context prepared by GPU qualification agent (KB findings, approach)
+    source_urn: str | None = None  # e.g. "chat:coding-agent" — used to detect coding tasks in handler
 
 
 class OrchestrateResponse(BaseModel):

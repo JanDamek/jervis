@@ -212,16 +212,26 @@ class KotlinServerClient:
             logger.warning("Failed to report error to Kotlin: %s", e)
             return False
 
-    async def notify_agent_dispatched(self, task_id: str, job_name: str) -> bool:
+    async def notify_agent_dispatched(
+        self,
+        task_id: str,
+        job_name: str,
+        workspace_path: str = "",
+        agent_type: str = "claude",
+    ) -> bool:
         """Notify Kotlin server that a coding agent K8s Job was dispatched.
 
-        Sets task state to CODING with agentJobName.
+        Sets task state to CODING with agentJobName, workspace path, and agent type.
         """
         try:
             client = await self._get_client()
             resp = await client.post(
                 f"/internal/tasks/{task_id}/agent-dispatched",
-                json={"jobName": job_name},
+                json={
+                    "jobName": job_name,
+                    "workspacePath": workspace_path,
+                    "agentType": agent_type,
+                },
             )
             return resp.status_code == 200
         except Exception as e:

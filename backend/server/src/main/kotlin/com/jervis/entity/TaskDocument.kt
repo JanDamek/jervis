@@ -162,6 +162,10 @@ data class TaskDocument(
     val agentJobState: String? = null,
     /** When the agent job was dispatched. */
     val agentJobStartedAt: Instant? = null,
+    /** Workspace path on shared PVC for the coding agent. */
+    val agentJobWorkspacePath: String? = null,
+    /** Agent type: "claude" or "kilo". */
+    val agentJobAgentType: String? = null,
     // Qualification progress history (persisted for viewing in "Hotovo" section)
     /** Timestamp when qualification actually started (not queue creation time). */
     val qualificationStartedAt: Instant? = null,

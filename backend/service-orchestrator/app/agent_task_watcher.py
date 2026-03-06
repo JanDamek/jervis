@@ -84,11 +84,14 @@ class AgentTaskWatcher:
             job_name = task_data.get("agentJobName")
             thread_id = task_data.get("orchestratorThreadId")
 
-            if not job_name or not thread_id:
-                logger.warning(
-                    "Task %s in CODING but missing job_name=%s or thread_id=%s",
-                    task_id, job_name, thread_id,
-                )
+            if not job_name:
+                logger.warning("Task %s in CODING but missing job_name", task_id)
+                continue
+
+            # thread_id is required for graph-based tasks but optional for direct coding
+            source_urn = task_data.get("sourceUrn", "")
+            if not thread_id and source_urn != "chat:coding-agent":
+                logger.warning("Task %s in CODING but missing thread_id (non-direct)", task_id)
                 continue
 
             # Check K8s Job status
@@ -125,35 +128,64 @@ class AgentTaskWatcher:
                     task_id, job_name, job_status,
                 )
 
-            # Update task state back to PROCESSING and clear agent fields
-            try:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    await client.post(
-                        f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
-                        json={
-                            "agentJobState": job_status,
-                            "result": result,
-                        },
+            # Check if this is a direct coding task (no graph to resume)
+            source_urn = task_data.get("sourceUrn", "")
+            is_direct_coding = source_urn == "chat:coding-agent"
+
+            if is_direct_coding:
+                # Direct coding task — report DONE, no graph resume needed
+                try:
+                    await kotlin_client.report_status_change(
+                        task_id=task_id,
+                        thread_id=thread_id,
+                        status="done",
+                        summary=result.get("summary", "Coding agent completed"),
                     )
-            except Exception as e:
-                logger.error("Failed to update task %s after agent completion: %s", task_id, e)
-                continue
+                    logger.info("Direct coding task completed: task=%s job=%s", task_id, job_name)
+                except Exception as e:
+                    logger.error("Failed to report coding task done %s: %s", task_id, e)
 
-            # Resume orchestration graph with agent result
-            try:
-                from app.graph.orchestrator import resume_orchestration_streaming
+                # Update master map TASK_REF vertex → completed
+                try:
+                    from app.graph_agent.persistence import task_graph_store
+                    await task_graph_store.link_task_subgraph(
+                        task_id=task_id,
+                        sub_graph_id="",
+                        title=f"Coding: {task_id[:12]}",
+                        completed=True,
+                        result_summary=result.get("summary", "")[:500],
+                    )
+                except Exception:
+                    pass  # Non-fatal
+            else:
+                # Graph-based task — update state and resume orchestration graph
+                try:
+                    async with httpx.AsyncClient(timeout=15) as client:
+                        await client.post(
+                            f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
+                            json={
+                                "agentJobState": job_status,
+                                "result": result,
+                            },
+                        )
+                except Exception as e:
+                    logger.error("Failed to update task %s after agent completion: %s", task_id, e)
+                    continue
 
-                logger.info("Resuming orchestration: thread=%s task=%s", thread_id, task_id)
-                async for _event in resume_orchestration_streaming(
-                    thread_id, resume_value=result,
-                ):
-                    pass  # Consume events — the graph handles the rest
-                logger.info("Orchestration resumed successfully: task=%s", task_id)
-            except Exception as e:
-                logger.error(
-                    "Failed to resume orchestration for task %s thread=%s: %s",
-                    task_id, thread_id, e, exc_info=True,
-                )
+                try:
+                    from app.graph.orchestrator import resume_orchestration_streaming
+
+                    logger.info("Resuming orchestration: thread=%s task=%s", thread_id, task_id)
+                    async for _event in resume_orchestration_streaming(
+                        thread_id, resume_value=result,
+                    ):
+                        pass  # Consume events — the graph handles the rest
+                    logger.info("Orchestration resumed successfully: task=%s", task_id)
+                except Exception as e:
+                    logger.error(
+                        "Failed to resume orchestration for task %s thread=%s: %s",
+                        task_id, thread_id, e, exc_info=True,
+                    )
 
 
 # Singleton

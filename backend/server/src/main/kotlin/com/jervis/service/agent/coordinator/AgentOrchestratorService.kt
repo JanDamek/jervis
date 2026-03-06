@@ -357,6 +357,7 @@ class AgentOrchestratorService(
             processingMode = "BACKGROUND",
             maxOpenRouterTier = rules.maxOpenRouterTier,
             qualifierContext = task.qualifierPreparedContext,
+            sourceUrn = task.sourceUrn.value,
         )
 
         try {
