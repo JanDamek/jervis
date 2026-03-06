@@ -82,7 +82,7 @@ class ChatRpcImpl(
             }
 
             // Emit persisted scope so UI restores client/project/group selection on startup
-            val clientId = history.activeClientId
+            val clientId = history.activeClientId?.takeIf { ObjectId.isValid(it) }
             if (!clientId.isNullOrBlank()) {
                 emit(
                     ChatResponseDto(
@@ -131,20 +131,23 @@ class ChatRpcImpl(
         activeProjectId: String?,
         contextTaskId: String?,
     ) {
-        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$activeClientId | projectId=$activeProjectId" }
+        // Validate ObjectId format — reject placeholder values like "client_123"
+        val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
+        val safeProjectId = activeProjectId?.takeIf { ObjectId.isValid(it) }
+        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId" }
 
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
             try {
                 // Resolve CloudModelPolicy (project → group → client hierarchy) and groupId
                 val project = try {
-                    activeProjectId?.let { pid ->
+                    safeProjectId?.let { pid ->
                         projectRepository.getById(ProjectId(ObjectId(pid)))
                     }
                 } catch (_: Exception) { null }
                 val policy = cloudModelPolicyResolver.resolve(
-                    clientId = activeClientId?.let { ClientId(ObjectId(it)) },
-                    projectId = activeProjectId?.let { ProjectId(ObjectId(it)) },
+                    clientId = safeClientId?.let { ClientId(ObjectId(it)) },
+                    projectId = safeProjectId?.let { ProjectId(ObjectId(it)) },
                 )
                 val maxOpenRouterTier = policy.maxOpenRouterTier.name
                 val activeGroupId = project?.groupId?.toString()
@@ -153,8 +156,8 @@ class ChatRpcImpl(
                 val eventFlow = chatService.sendMessage(
                     text = text,
                     clientMessageId = clientMessageId,
-                    activeClientId = activeClientId,
-                    activeProjectId = activeProjectId,
+                    activeClientId = safeClientId,
+                    activeProjectId = safeProjectId,
                     activeGroupId = activeGroupId,
                     contextTaskId = contextTaskId,
                     maxOpenRouterTier = maxOpenRouterTier,
@@ -319,15 +322,22 @@ class ChatRpcImpl(
 
     override suspend fun updateScope(clientId: String?, projectId: String?, groupId: String?) {
         if (clientId.isNullOrBlank()) return
+        // Validate ObjectId format — reject placeholder values
+        if (!ObjectId.isValid(clientId)) {
+            logger.warn { "CHAT_SCOPE_UPDATE_REJECTED | invalid clientId=$clientId" }
+            return
+        }
+        val safeProjectId = projectId?.takeIf { ObjectId.isValid(it) }
+        val safeGroupId = groupId?.takeIf { ObjectId.isValid(it) }
         // If groupId is explicitly provided (group selection), use it directly.
         // Otherwise derive from project's groupId (project selection).
-        val resolvedGroupId = groupId ?: projectId?.let { pid ->
+        val resolvedGroupId = safeGroupId ?: safeProjectId?.let { pid ->
             try {
                 projectRepository.getById(ProjectId(ObjectId(pid)))?.groupId?.toString()
             } catch (_: Exception) { null }
         }
-        chatService.updateSessionScope(clientId = clientId, projectId = projectId, groupId = resolvedGroupId)
-        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$projectId | groupId=$resolvedGroupId" }
+        chatService.updateSessionScope(clientId = clientId, projectId = safeProjectId, groupId = resolvedGroupId)
+        logger.info { "CHAT_SCOPE_UPDATE | clientId=$clientId | projectId=$safeProjectId | groupId=$resolvedGroupId" }
     }
 
     override suspend fun archiveSession() {

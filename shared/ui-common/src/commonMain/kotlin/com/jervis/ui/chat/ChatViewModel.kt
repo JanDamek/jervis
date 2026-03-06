@@ -94,6 +94,9 @@ class ChatViewModel(
     private val _activeThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
     val activeThinkingMap: StateFlow<TaskGraphDto?> = _activeThinkingMap.asStateFlow()
 
+    /** Debounce job for master map refresh — prevents rapid repeated requests. */
+    private var masterMapLoadJob: Job? = null
+
     /** Whether the thinking map side panel is visible (user toggle). */
     private val _thinkingMapPanelVisible = MutableStateFlow(false)
     val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
@@ -316,7 +319,10 @@ class ChatViewModel(
      * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
      */
     private fun loadMasterMap() {
-        scope.launch {
+        // Debounce — cancel previous pending load, wait 500ms before actual request
+        masterMapLoadJob?.cancel()
+        masterMapLoadJob = scope.launch {
+            delay(500)
             try {
                 val graph = repository.taskGraphs.getGraph("master")
                 if (graph != null && graph.vertices.isNotEmpty()) {
