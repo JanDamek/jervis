@@ -352,7 +352,7 @@ class KnowledgeService:
                 extract_entities=True,
                 use_rrf=True,
                 max_graph_hops=2,
-                max_seeds=10,
+                max_seeds=5,
                 diversity_factor=0.7,
                 embedding_priority=embedding_priority
             )

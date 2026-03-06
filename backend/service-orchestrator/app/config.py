@@ -179,7 +179,7 @@ class Settings(BaseSettings):
 
     # Tool execution timeouts (seconds)
     timeout_web_search: float = 15.0
-    timeout_kb_search: float = 30.0  # KB graph traversals can take 10-20s with large graphs
+    timeout_kb_search: float = 300.0  # no aggressive timeout — KB handles its own performance
     max_tool_result_chars: int = 8000
     tool_execution_timeout: int = 120
 

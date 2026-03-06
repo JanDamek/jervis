@@ -9,8 +9,10 @@ This module implements sophisticated hybrid search combining:
 5. Source diversity and deduplication
 """
 
+import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 from app.api.models import (
@@ -85,9 +87,12 @@ class HybridRetriever:
             EvidencePack with ranked results
         """
         all_chunks: dict[str, ScoredChunk] = {}
+        t_start = time.monotonic()
 
         # 1. RAG Vector Search
+        t0 = time.monotonic()
         rag_evidence = await self.rag_service.retrieve(request, embedding_priority=embedding_priority)
+        logger.info("HYBRID: RAG returned %d items (%.0fms)", len(rag_evidence.items), (time.monotonic() - t0) * 1000)
         for i, item in enumerate(rag_evidence.items):
             chunk_id = item.metadata.get("id", f"rag_{i}")
             chunk = ScoredChunk(
@@ -119,6 +124,7 @@ class HybridRetriever:
 
         # 3. Graph Expansion (optional)
         if expand_graph:
+            t0 = time.monotonic()
             seed_nodes = self._collect_seed_nodes(all_chunks, max_seeds)
             if seed_nodes:
                 graph_chunks = await self._expand_via_graph(
@@ -287,6 +293,49 @@ class HybridRetriever:
 
         return seeds
 
+    async def _traverse_single_seed(
+        self,
+        seed_idx: int,
+        seed_key: str,
+        client_id: str,
+        project_id: str,
+        max_hops: int,
+        group_id: str = None,
+    ) -> list[ScoredChunk]:
+        """Traverse a single seed node and return scored chunks."""
+        seed_priority_factor = 1.0 - (seed_idx * 0.05)
+        chunks = []
+        try:
+            t0 = time.monotonic()
+            traversal_request = TraversalRequest(
+                clientId=client_id,
+                projectId=project_id,
+                groupId=group_id,
+                startKey=seed_key,
+                spec=TraversalSpec(direction="ANY", minDepth=1, maxDepth=max_hops)
+            )
+            related_nodes = await self.graph_service.traverse(traversal_request)
+            elapsed = (time.monotonic() - t0) * 1000
+            logger.info("GRAPH_EXPAND: seed[%d] %s → %d nodes (%.0fms)", seed_idx, seed_key, len(related_nodes), elapsed)
+
+            for node in related_nodes:
+                for chunk_id in node.properties.get("ragChunks", []):
+                    distance = node.properties.get("_depth", 1)
+                    distance_factor = 1.0 / (distance + 1)
+                    graph_score = 0.8 * seed_priority_factor * distance_factor
+                    chunks.append(ScoredChunk(
+                        chunk_id=chunk_id,
+                        content="",
+                        source_urn="",
+                        graph_score=graph_score,
+                        graph_distance=distance,
+                        source="graph",
+                        metadata={"seedNode": seed_key, "discoveredVia": node.key}
+                    ))
+        except Exception as e:
+            logger.warning("Graph expansion failed for %s: %s", seed_key, e)
+        return chunks
+
     async def _expand_via_graph(
         self,
         seed_nodes: list[str],
@@ -296,75 +345,52 @@ class HybridRetriever:
         group_id: str = None
     ) -> list[ScoredChunk]:
         """
-        Expand search via graph traversal from seed nodes.
+        Expand search via graph traversal from seed nodes (parallel).
         """
         from ..core.config import settings as kb_settings
-
         max_expansion_chunks = kb_settings.MAX_GRAPH_EXPANSION_CHUNKS
+
+        t0 = time.monotonic()
+
+        # Run all seed traversals in parallel
+        tasks = [
+            self._traverse_single_seed(idx, key, client_id, project_id, max_hops, group_id)
+            for idx, key in enumerate(seed_nodes)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Merge and deduplicate
         chunks = []
         visited_chunks = set()
-
-        for seed_idx, seed_key in enumerate(seed_nodes):
+        for seed_chunks in results:
+            for chunk in seed_chunks:
+                if chunk.chunk_id not in visited_chunks:
+                    visited_chunks.add(chunk.chunk_id)
+                    chunks.append(chunk)
+                    if len(chunks) >= max_expansion_chunks:
+                        logger.info("GRAPH_EXPAND: chunk cap reached (%d), stopping", max_expansion_chunks)
+                        break
             if len(chunks) >= max_expansion_chunks:
-                logger.info("GRAPH_EXPAND: chunk cap reached (%d), stopping", max_expansion_chunks)
                 break
-            # Score penalty based on seed priority
-            seed_priority_factor = 1.0 - (seed_idx * 0.05)
-
-            try:
-                traversal_request = TraversalRequest(
-                    clientId=client_id,
-                    projectId=project_id,
-                    groupId=group_id,
-                    startKey=seed_key,
-                    spec=TraversalSpec(direction="ANY", minDepth=1, maxDepth=max_hops)
-                )
-                related_nodes = await self.graph_service.traverse(traversal_request)
-
-                for node in related_nodes:
-                    node_chunks = node.properties.get("ragChunks", [])
-
-                    for chunk_id in node_chunks:
-                        if chunk_id in visited_chunks:
-                            continue
-                        visited_chunks.add(chunk_id)
-
-                        # Calculate graph score based on distance
-                        # Closer nodes get higher scores (depth from traversal)
-                        distance = node.properties.get("_depth", 1)
-                        distance_factor = 1.0 / (distance + 1)
-                        graph_score = 0.8 * seed_priority_factor * distance_factor
-
-                        chunks.append(ScoredChunk(
-                            chunk_id=chunk_id,
-                            content="",  # Will be fetched if needed
-                            source_urn="",
-                            graph_score=graph_score,
-                            graph_distance=distance,
-                            source="graph",
-                            metadata={
-                                "seedNode": seed_key,
-                                "discoveredVia": node.key
-                            }
-                        ))
-
-            except Exception as e:
-                logger.warning("Graph expansion failed for %s: %s", seed_key, e)
 
         # Fetch content for graph-discovered chunks
         if chunks:
+            t1 = time.monotonic()
             chunk_ids = [c.chunk_id for c in chunks]
             fetched = await self.rag_service.get_chunks_by_ids(chunk_ids)
             fetched_map = {c["id"]: c for c in fetched}
-
             for chunk in chunks:
                 if chunk.chunk_id in fetched_map:
                     data = fetched_map[chunk.chunk_id]
                     chunk.content = data["content"]
                     chunk.source_urn = data["sourceUrn"]
                     chunk.graph_refs = data.get("graphRefs", [])
+            logger.info("GRAPH_EXPAND: fetched %d/%d chunks (%.0fms)", len(fetched_map), len(chunk_ids), (time.monotonic() - t1) * 1000)
 
-        return [c for c in chunks if c.content]  # Only return chunks with content
+        total_ms = (time.monotonic() - t0) * 1000
+        logger.info("GRAPH_EXPAND: total %d seeds → %d chunks (%.0fms)", len(seed_nodes), len(chunks), total_ms)
+
+        return [c for c in chunks if c.content]
 
     def _apply_rrf_scoring(self, chunks: dict[str, ScoredChunk]):
         """
