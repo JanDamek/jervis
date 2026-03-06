@@ -615,8 +615,18 @@ echo "password=${connection.password}"
     }
 
     private fun checkoutBranch(repoDir: Path, branch: String) {
-        executeGitCommand(listOf("git", "checkout", branch), workingDir = repoDir)
-        executeGitCommand(listOf("git", "pull", "origin", branch, "--ff-only"), workingDir = repoDir)
+        val result = executeGitCommand(listOf("git", "checkout", branch), workingDir = repoDir)
+        if (!result.success) {
+            // Local branch doesn't exist — create tracking branch from remote
+            executeGitCommand(
+                listOf("git", "checkout", "-b", branch, "origin/$branch"),
+                workingDir = repoDir,
+            )
+        }
+        executeGitCommand(
+            listOf("git", "pull", "origin", branch, "--ff-only"),
+            workingDir = repoDir,
+        )
     }
 
     /**
@@ -638,12 +648,20 @@ echo "password=${connection.password}"
             workingDir = repoDir,
         )
 
-        if (!logResult.success) {
-            logger.warn { "Git log failed for ${resource.resourceIdentifier}: ${logResult.output}" }
+        // Fallback: remote ref if local branch unavailable
+        val effectiveResult = if (!logResult.success) {
+            executeGitCommand(
+                listOf("git", "log", "origin/$branch", "--format=%H|%an|%aI|%s", "-50"),
+                workingDir = repoDir,
+            )
+        } else logResult
+
+        if (!effectiveResult.success) {
+            logger.warn { "Git log failed for ${resource.resourceIdentifier}: ${effectiveResult.output}" }
             return
         }
 
-        val commits = logResult.output.lines()
+        val commits = effectiveResult.output.lines()
             .filter { it.isNotBlank() }
             .mapNotNull { line ->
                 val parts = line.split("|", limit = 4)
