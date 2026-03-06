@@ -5,6 +5,8 @@ in read-only or write-only mode via the KB_MODE environment variable.
 The legacy `router` includes both for backward compatibility (KB_MODE=all).
 """
 
+import httpx
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from starlette.responses import StreamingResponse
 from app.api.models import (
@@ -25,6 +27,8 @@ from app.services.knowledge_service import KnowledgeService
 from app.services.clients.joern_client import JoernResultDto
 from typing import List, Optional
 import json
+
+logger = logging.getLogger(__name__)
 
 # Global service - will be initialized in main.py lifespan with extraction queue
 service: KnowledgeService = None  # type: ignore
@@ -49,6 +53,9 @@ async def retrieve(request: RetrievalRequest, http_request: Request):
         priority = http_request.headers.get("X-Ollama-Priority")
         priority_int = int(priority) if priority and priority.isdigit() else None
         return await service.retrieve(request, embedding_priority=priority_int)
+    except httpx.HTTPStatusError as e:
+        logger.warning("Retrieve failed (embedding unavailable): %s", e)
+        return EvidencePack(items=[])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -65,6 +72,9 @@ async def retrieve_simple(request: RetrievalRequest, http_request: Request):
         priority = http_request.headers.get("X-Ollama-Priority")
         priority_int = int(priority) if priority and priority.isdigit() else None
         return await service.retrieve_simple(request, embedding_priority=priority_int)
+    except httpx.HTTPStatusError as e:
+        logger.warning("Retrieve simple failed (embedding unavailable): %s", e)
+        return EvidencePack(items=[])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -94,7 +94,7 @@ class RagService:
                     data = resp.json()
                     embeddings = data.get("embeddings", [])
                     return embeddings if is_batch else embeddings[0]
-            except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
+            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.HTTPStatusError, OSError) as e:
                 if attempt < max_retries:
                     wait = 2 ** (attempt + 1)
                     logger.warning(
