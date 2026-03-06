@@ -77,6 +77,7 @@ class JobRunner:
         gpg_key_id: str | None = None,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        claude_token: str | None = None,
     ) -> dict:
         """Run a coding agent as a K8s Job and wait for completion.
 
@@ -129,6 +130,7 @@ class JobRunner:
             gpg_key=gpg_key,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            claude_token=claude_token,
         )
 
         logger.info("Creating K8s Job: %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -252,6 +254,7 @@ class JobRunner:
         gpg_key_id: str | None = None,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        claude_token: str | None = None,
     ) -> dict:
         """Dispatch a coding agent as a K8s Job and return immediately (non-blocking).
 
@@ -289,6 +292,7 @@ class JobRunner:
             gpg_key=gpg_key,
             git_user_name=git_user_name,
             git_user_email=git_user_email,
+            claude_token=claude_token,
         )
 
         logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
@@ -391,6 +395,7 @@ class JobRunner:
         gpg_key: dict | None = None,
         git_user_name: str | None = None,
         git_user_email: str | None = None,
+        claude_token: str | None = None,
     ) -> client.V1Job:
         """Build K8s Job manifest for a coding agent."""
         image = AGENT_IMAGES.get(agent_type)
@@ -406,18 +411,15 @@ class JobRunner:
             client.V1EnvVar(name="WORKSPACE", value=workspace_path),
             client.V1EnvVar(name="AGENT_TYPE", value=agent_type),
             client.V1EnvVar(name="ALLOW_GIT", value=str(allow_git).lower()),
-            # Auth from K8s secrets
-            client.V1EnvVar(
-                name="ANTHROPIC_API_KEY",
-                value_from=client.V1EnvVarSource(
-                    secret_key_ref=client.V1SecretKeySelector(
-                        name="jervis-secrets",
-                        key="ANTHROPIC_API_KEY",
-                        optional=True,
-                    )
-                ),
-            ),
-            client.V1EnvVar(
+        ]
+
+        # Auth: prefer direct token from orchestrator env, fallback to K8s secret
+        effective_token = claude_token or settings.claude_code_oauth_token
+        if effective_token:
+            env_vars.append(client.V1EnvVar(name="CLAUDE_CODE_OAUTH_TOKEN", value=effective_token))
+        else:
+            # Fallback: try K8s secret (may be empty)
+            env_vars.append(client.V1EnvVar(
                 name="CLAUDE_CODE_OAUTH_TOKEN",
                 value_from=client.V1EnvVarSource(
                     secret_key_ref=client.V1SecretKeySelector(
@@ -426,8 +428,21 @@ class JobRunner:
                         optional=True,
                     )
                 ),
-            ),
-        ]
+            ))
+
+        if settings.anthropic_api_key:
+            env_vars.append(client.V1EnvVar(name="ANTHROPIC_API_KEY", value=settings.anthropic_api_key))
+        else:
+            env_vars.append(client.V1EnvVar(
+                name="ANTHROPIC_API_KEY",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="jervis-secrets",
+                        key="ANTHROPIC_API_KEY",
+                        optional=True,
+                    )
+                ),
+            ))
 
         if gpg_key:
             env_vars.append(client.V1EnvVar(name="GPG_KEY_ID", value=gpg_key["keyId"]))

@@ -24,6 +24,8 @@ class AgentTaskWatcher:
     def __init__(self):
         self._running = False
         self._task: asyncio.Task | None = None
+        # Track processed jobs to avoid infinite reprocessing if Kotlin call fails
+        self._processed_jobs: set[str] = set()
 
     async def start(self):
         if self._running:
@@ -94,6 +96,11 @@ class AgentTaskWatcher:
                 logger.warning("Task %s in CODING but missing thread_id (non-direct)", task_id)
                 continue
 
+            # Skip already-processed jobs (prevents infinite loop if Kotlin update fails)
+            if job_name in self._processed_jobs:
+                logger.debug("Skipping already-processed job: %s", job_name)
+                continue
+
             # Check K8s Job status
             status = job_runner.get_job_status(job_name)
             job_status = status.get("status", "unknown")
@@ -105,43 +112,61 @@ class AgentTaskWatcher:
             workspace_path = task_data.get("agentJobWorkspacePath", "")
             agent_type = task_data.get("agentJobAgentType", "unknown")
 
+            # Always try to collect result.json first — entrypoint writes detailed errors
+            result = job_runner.collect_result(
+                workspace_path=workspace_path,
+                job_name=job_name,
+                task_id=task_id,
+                agent_type=agent_type,
+            )
+
             if job_status == "succeeded":
-                result = job_runner.collect_result(
-                    workspace_path=workspace_path,
-                    job_name=job_name,
-                    task_id=task_id,
-                    agent_type=agent_type,
-                )
                 logger.info(
                     "Agent job completed: task=%s job=%s success=%s",
                     task_id, job_name, result.get("success", False),
                 )
             else:
-                result = {
-                    "taskId": task_id,
-                    "success": False,
-                    "summary": f"Agent job {job_name} failed: {job_status}",
-                    "agentType": agent_type,
-                }
+                # Enrich with job status if result.json had no detailed summary
+                if result.get("summary", "").startswith("Job "):
+                    result["summary"] = f"Agent job {job_name} failed: {job_status}"
+                result["success"] = False
                 logger.warning(
-                    "Agent job failed: task=%s job=%s status=%s",
-                    task_id, job_name, job_status,
+                    "Agent job failed: task=%s job=%s status=%s summary=%s",
+                    task_id, job_name, job_status, result.get("summary", "")[:200],
                 )
+
+            # Mark as processed immediately to prevent reprocessing
+            self._processed_jobs.add(job_name)
 
             # Check if this is a direct coding task (no graph to resume)
             source_urn = task_data.get("sourceUrn", "")
             is_direct_coding = source_urn == "chat:coding-agent"
 
             if is_direct_coding:
-                # Direct coding task — report DONE, no graph resume needed
+                # Direct coding task — two-step: CODING→PROCESSING→DONE
+                # Step 1: agent-completed moves CODING→PROCESSING
+                try:
+                    async with httpx.AsyncClient(timeout=15) as client:
+                        await client.post(
+                            f"{settings.kotlin_server_url}/internal/tasks/{task_id}/agent-completed",
+                            json={
+                                "agentJobState": job_status,
+                                "result": result,
+                            },
+                        )
+                except Exception as e:
+                    logger.error("Failed to mark agent-completed for direct task %s: %s", task_id, e)
+
+                # Step 2: report_status_change moves PROCESSING→DONE
                 try:
                     await kotlin_client.report_status_change(
                         task_id=task_id,
-                        thread_id=thread_id,
-                        status="done",
+                        thread_id=thread_id or "",
+                        status="done" if result.get("success") else "error",
                         summary=result.get("summary", "Coding agent completed"),
+                        error=None if result.get("success") else result.get("summary"),
                     )
-                    logger.info("Direct coding task completed: task=%s job=%s", task_id, job_name)
+                    logger.info("Direct coding task completed: task=%s job=%s success=%s", task_id, job_name, result.get("success"))
                 except Exception as e:
                     logger.error("Failed to report coding task done %s: %s", task_id, e)
 
@@ -186,6 +211,10 @@ class AgentTaskWatcher:
                         "Failed to resume orchestration for task %s thread=%s: %s",
                         task_id, thread_id, e, exc_info=True,
                     )
+
+            # Cap processed set size (prevent unbounded memory growth)
+            if len(self._processed_jobs) > 1000:
+                self._processed_jobs.clear()
 
 
 # Singleton

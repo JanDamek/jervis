@@ -170,6 +170,16 @@ async def _execute_code_step(
         ) if rules_data.get(k)
     } or None
 
+    # Fetch guidelines for coding agent workspace
+    guidelines_text = None
+    try:
+        from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_coding_agent
+        guidelines = await resolve_guidelines(task.client_id, task.project_id)
+        if guidelines:
+            guidelines_text = format_guidelines_for_coding_agent(guidelines)
+    except Exception as e:
+        logger.debug("Guidelines fetch for execute node failed (non-fatal): %s", e)
+
     # Prepare workspace
     await workspace_manager.prepare_workspace(
         task_id=f"{task.id}-step-{step.index}",
@@ -182,6 +192,7 @@ async def _execute_code_step(
         kb_context=kb_context,
         environment_context=state.get("environment"),
         git_config=git_config,
+        guidelines_text=guidelines_text,
     )
 
     # Dispatch coding agent (returns immediately)

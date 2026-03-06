@@ -156,7 +156,17 @@ async def _run_coding_agent_background(
         request.task_id, agent_type, request.workspace_path,
     )
 
-    # 1. Prefetch KB context (optional — best effort)
+    # 1. Fetch merged guidelines (global → client → project)
+    guidelines_text = None
+    try:
+        from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_coding_agent
+        guidelines = await resolve_guidelines(request.client_id, request.project_id)
+        if guidelines:
+            guidelines_text = format_guidelines_for_coding_agent(guidelines)
+    except Exception as e:
+        logger.debug("Guidelines fetch failed (non-fatal): %s", e)
+
+    # 2. Prefetch KB context (optional — best effort)
     kb_context = None
     if request.project_id:
         try:
@@ -172,7 +182,7 @@ async def _run_coding_agent_background(
         except Exception as e:
             logger.debug("KB prefetch failed (non-fatal): %s", e)
 
-    # 2. Build git config from rules
+    # 3. Build git config from rules
     git_config = None
     if request.rules:
         git_config = {
@@ -184,7 +194,7 @@ async def _run_coding_agent_background(
             "git_gpg_key_id": request.rules.git_gpg_key_id,
         }
 
-    # 3. Prepare workspace (instructions, KB, environment, git config, CLAUDE.md)
+    # 4. Prepare workspace (instructions, KB, environment, git config, guidelines, CLAUDE.md)
     workspace_path = await workspace_manager.prepare_workspace(
         task_id=request.task_id,
         client_id=request.client_id,
@@ -196,9 +206,10 @@ async def _run_coding_agent_background(
         kb_context=kb_context,
         environment_context=request.environment,
         git_config=git_config,
+        guidelines_text=guidelines_text,
     )
 
-    # 4. Dispatch K8s Job (returns immediately)
+    # 5. Dispatch K8s Job (returns immediately)
     dispatch_info = await job_runner.dispatch_coding_agent(
         task_id=request.task_id,
         agent_type=agent_type,

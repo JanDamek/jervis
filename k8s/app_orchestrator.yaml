@@ -49,6 +49,12 @@ spec:
                   name: jervis-secrets
                   key: OPENROUTER_API_KEY
                   optional: true
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jervis-secrets
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+                  optional: true
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data

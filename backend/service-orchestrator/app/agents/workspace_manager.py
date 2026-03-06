@@ -34,6 +34,7 @@ class WorkspaceManager:
         kb_context: str | None = None,
         environment_context: dict | None = None,
         git_config: dict | None = None,
+        guidelines_text: str | None = None,
     ) -> Path:
         """Add instructions and context to an existing workspace.
 
@@ -97,7 +98,8 @@ class WorkspaceManager:
         # 4. Agent-specific configuration
         if agent_type == "claude":
             self._setup_claude_workspace(
-                workspace, client_id, project_id, kb_context, environment_context
+                workspace, client_id, project_id, kb_context, environment_context,
+                guidelines_text=guidelines_text,
             )
 
         # 5. Git config (author, committer, GPG signing)
@@ -119,6 +121,7 @@ class WorkspaceManager:
         project_id: str | None,
         kb_context: str | None,
         environment_context: dict | None = None,
+        guidelines_text: str | None = None,
     ):
         """Claude Code: HTTP MCP config + CLAUDE.md for runtime KB + environment access."""
 
@@ -148,6 +151,7 @@ class WorkspaceManager:
             "## FORBIDDEN ACTIONS",
             "- NEVER run git commands (commit, push, branch, checkout, merge, rebase)",
             "- Make the requested code changes and exit.",
+            "- Report any errors with full details so the orchestrator can diagnose and fix them.",
             "",
             "## Knowledge Base",
             "You have access to the `jervis` MCP server with these tools:",
@@ -165,6 +169,14 @@ class WorkspaceManager:
             "Use KB to look up coding conventions, architecture decisions,",
             "and previous findings before making changes.",
         ]
+
+        if guidelines_text:
+            claude_md_parts.extend(
+                [
+                    "",
+                    guidelines_text,
+                ]
+            )
 
         if kb_context:
             claude_md_parts.extend(

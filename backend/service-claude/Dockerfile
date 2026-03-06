@@ -81,6 +81,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # KB + Environment tools now served by HTTP service-mcp (agents connect via HTTP)
 COPY backend/service-joern-mcp/requirements.txt /opt/jervis/mcp/joern-requirements.txt
 RUN pip install --no-cache-dir -r /opt/jervis/mcp/joern-requirements.txt
+RUN pip install --no-cache-dir claude-agent-sdk
 COPY backend/service-joern-mcp/server.py /opt/jervis/mcp/joern-server.py
 
 # === Application JAR ===
@@ -88,6 +89,7 @@ WORKDIR /opt/jervis/claude
 COPY backend/service-claude/build/libs/service-claude-*.jar jervis-claude.jar
 COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
 RUN chmod +x /opt/jervis/entrypoint-job.sh
+COPY backend/service-claude/claude_sdk_runner.py /opt/jervis/claude_sdk_runner.py
 
 ENV PORT=3400 \
     JAVA_OPTS="-Xmx1g -Xms256m"

@@ -26,6 +26,29 @@ TASK_ID="${TASK_ID:?TASK_ID env is required}"
 AGENT_TYPE="${AGENT_TYPE:?AGENT_TYPE env is required}"
 RESULT_FILE="$WORKSPACE/.jervis/result.json"
 
+# Trap: write error result on unexpected exit so orchestrator gets error details
+trap '_trap_exit' ERR
+_trap_exit() {
+    local exit_code=$?
+    local line_no=${BASH_LINENO[0]:-0}
+    echo "ERROR at line $line_no (exit $exit_code)"
+    # Try to write result.json even if workspace setup failed
+    mkdir -p "$(dirname "$RESULT_FILE")" 2>/dev/null || true
+    python3 -c "
+import json, datetime
+result = {
+    'taskId': '${TASK_ID}',
+    'success': False,
+    'summary': 'Entrypoint failed at line $line_no with exit code $exit_code. Check job logs for details.',
+    'agentType': '${AGENT_TYPE}',
+    'changedFiles': [],
+    'timestamp': datetime.datetime.now().isoformat()
+}
+with open('${RESULT_FILE}', 'w') as f:
+    json.dump(result, f, indent=2)
+" 2>/dev/null || true
+}
+
 cd "$WORKSPACE"
 
 # --- Global gitignore: prevent coding agent artifacts from leaking into commits ---
@@ -36,6 +59,9 @@ cat > "$GLOBAL_GITIGNORE" <<'GITIGNORE'
 .claude/
 CLAUDE.md
 .aider.conf.yml
+# Generated environment files (workspace_manager)
+.env
+.env.*
 GITIGNORE
 git config --global core.excludesFile "$GLOBAL_GITIGNORE"
 
@@ -150,12 +176,14 @@ case "$AGENT_TYPE" in
         CMD="python3 -m openhands.core.main --task \"$INSTRUCTIONS\" --max-iterations 10"
         ;;
     claude)
-        CMD="claude --dangerously-skip-permissions --output-format json"
-        if [ -n "${CLAUDE_MODEL:-}" ]; then
-            CMD="$CMD --model $CLAUDE_MODEL"
+        # Verify auth (either CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY must be non-empty)
+        if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "ERROR: Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY set in K8s secret"
+            write_result "false" "Missing Claude authentication — add ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to jervis-secrets"
+            exit 1
         fi
-        CMD="$CMD \"$INSTRUCTIONS\""
-        # CLAUDE.md controls rules – git permission is in the generated CLAUDE.md
+        # Claude Agent SDK (Python) — replaces direct CLI invocation
+        CMD="python3 /opt/jervis/claude_sdk_runner.py"
         ;;
     junie)
         CMD="junie \"$INSTRUCTIONS\""
@@ -177,12 +205,18 @@ echo "Allow git: $ALLOW_GIT"
 echo "Instructions length: ${#INSTRUCTIONS} chars"
 echo "==================================================="
 
-if eval "$CMD" 2>&1; then
+# Capture output for error reporting — orchestrator needs detailed error messages
+AGENT_OUTPUT_FILE="/tmp/jervis-agent-output-$$"
+if eval "$CMD" 2>&1 | tee "$AGENT_OUTPUT_FILE"; then
     write_result "true" "Agent completed successfully."
     echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID (SUCCESS) ==="
 else
-    EXIT_CODE=$?
-    write_result "false" "Agent exited with code $EXIT_CODE"
+    EXIT_CODE=${PIPESTATUS[0]}
+    # Capture last 50 lines of output for error diagnosis
+    LAST_OUTPUT=$(tail -50 "$AGENT_OUTPUT_FILE" 2>/dev/null || echo "No output captured")
+    write_result "false" "Agent exited with code $EXIT_CODE. Output: $LAST_OUTPUT"
     echo "=== JERVIS AGENT DONE: $AGENT_TYPE / $TASK_ID (FAILED: $EXIT_CODE) ==="
+    rm -f "$AGENT_OUTPUT_FILE"
     exit $EXIT_CODE
 fi
+rm -f "$AGENT_OUTPUT_FILE"
