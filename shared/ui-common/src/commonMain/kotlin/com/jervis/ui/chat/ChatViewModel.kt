@@ -99,7 +99,12 @@ class ChatViewModel(
     val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
 
     fun toggleThinkingMapPanel() {
-        _thinkingMapPanelVisible.value = !_thinkingMapPanelVisible.value
+        val newVisible = !_thinkingMapPanelVisible.value
+        _thinkingMapPanelVisible.value = newVisible
+        // If toggling on and no active map, try loading master map
+        if (newVisible && _activeThinkingMap.value == null) {
+            loadMasterMap()
+        }
     }
 
     /** Summary of all thinking maps in the current session. */
@@ -176,6 +181,8 @@ class ChatViewModel(
                         if (e is CancellationException) throw e
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
+                    // Load master map on connection ready
+                    loadMasterMap()
                 }
             }.collect { response ->
                 handleChatResponse(response)
@@ -289,6 +296,38 @@ class ChatViewModel(
             } catch (e: Exception) {
                 println("ChatViewModel: graph load FAILED for taskId=$taskId — ${e.message}")
                 _taskGraphs.update { it + (taskId to TaskGraphDto()) }
+            }
+        }
+    }
+
+    /**
+     * Load the master map from orchestrator. Called on connection ready
+     * and when toggle button is clicked with no active map.
+     */
+    private fun loadMasterMap() {
+        scope.launch {
+            try {
+                val graph = repository.taskGraphs.getGraph("master")
+                if (graph != null && graph.vertices.isNotEmpty()) {
+                    println("ChatViewModel: master map loaded — ${graph.vertices.size} vertices")
+                    _activeThinkingMap.value = graph
+                    _thinkingMapPanelVisible.value = true
+                    // Add to maps list
+                    val summary = ThinkingMapSummary(
+                        id = graph.taskId.ifEmpty { "master" },
+                        title = "Master Map",
+                        vertexCount = graph.vertices.size,
+                        status = graph.status,
+                    )
+                    val existing = _thinkingMaps.value.toMutableList()
+                    val idx = existing.indexOfFirst { it.id == summary.id }
+                    if (idx >= 0) existing[idx] = summary else existing.add(0, summary)
+                    _thinkingMaps.value = existing
+                } else {
+                    println("ChatViewModel: master map not found or empty")
+                }
+            } catch (e: Exception) {
+                println("ChatViewModel: master map load failed: ${e.message}")
             }
         }
     }
