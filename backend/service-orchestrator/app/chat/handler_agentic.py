@@ -160,11 +160,11 @@ async def run_agentic_loop(
             final_text = remaining_text or choice.message.content or ""
             logger.info("Chat: final answer after %d iterations (%d chars)", iteration + 1, len(final_text))
 
-            # EPIC 14-S1: Fact-check post-processing
-            fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
-
-            # EPIC 9-S1: Topic tracking
-            topics = await detect_topics(request.message, final_text, used_tools)
+            # Fact-check + topic tracking — parallel
+            fc_result, topics = await asyncio.gather(
+                run_fact_check(final_text, effective_client_id, effective_project_id),
+                detect_topics(request.message, final_text, used_tools),
+            )
             await update_conversation_topics(request.session_id, topics)
 
             # Save to DB BEFORE streaming so messages survive window switch
@@ -225,11 +225,11 @@ async def run_agentic_loop(
             break_response = await call_llm(messages=messages, tier=tier)
             final_text = break_response.choices[0].message.content or "Nemám dostatek informací pro odpověď."
 
-            # EPIC 14-S1: Fact-check post-processing
-            fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
-
-            # EPIC 9-S1: Topic tracking
-            drift_topics = await detect_topics(request.message, final_text, used_tools)
+            # Fact-check + topic tracking — parallel
+            fc_result, drift_topics = await asyncio.gather(
+                run_fact_check(final_text, effective_client_id, effective_project_id),
+                detect_topics(request.message, final_text, used_tools),
+            )
             await update_conversation_topics(request.session_id, drift_topics)
 
             # Save to DB BEFORE streaming so messages survive window switch
@@ -502,11 +502,11 @@ async def run_agentic_loop(
         final_resp = await call_llm(messages=messages, tier=tier)
         final_text = final_resp.choices[0].message.content or "Omlouvám se, vyčerpal jsem limit operací."
 
-        # EPIC 14-S1: Fact-check post-processing
-        fc_result = await run_fact_check(final_text, effective_client_id, effective_project_id)
-
-        # EPIC 9-S1: Topic tracking
-        max_iter_topics = await detect_topics(request.message, final_text, used_tools)
+        # EPIC 14-S1 + EPIC 9-S1: Fact-check + topic detection in parallel
+        fc_result, max_iter_topics = await asyncio.gather(
+            run_fact_check(final_text, effective_client_id, effective_project_id),
+            detect_topics(request.message, final_text, used_tools),
+        )
         await update_conversation_topics(request.session_id, max_iter_topics)
 
         # Save to DB BEFORE streaming so messages survive window switch

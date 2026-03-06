@@ -27,6 +27,7 @@ from app.graph_agent.models import (
     GraphVertex,
     TaskGraph,
     VertexStatus,
+    VertexType,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "task_graphs"
 _TTL_DAYS = 30
 _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
+_CLEANUP_INTERVAL_S = 3600  # Master map cleanup every 1 hour
+_KEEP_CHAT_VERTICES = 20  # Keep last N chat exchanges
+_KEEP_TASK_VERTICES = 10  # Keep last N completed task refs
 
 
 class TaskGraphStore:
@@ -52,6 +56,7 @@ class TaskGraphStore:
         self._subgraphs: dict[str, TaskGraph] = {}  # task_id → TaskGraph
         self._dirty: set[str] = set()  # task_ids that need DB flush
         self._flush_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task | None = None
 
     async def init(self) -> None:
         """Initialize MongoDB connection and create indexes."""
@@ -77,9 +82,11 @@ class TaskGraphStore:
             _COLLECTION_NAME, _TTL_DAYS,
         )
 
-        # Start periodic flush
+        # Start periodic flush + cleanup
         if self._flush_task is None:
             self._flush_task = asyncio.create_task(self._periodic_flush())
+        if self._cleanup_task is None:
+            self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
 
     async def _ensure_collection(self) -> AsyncIOMotorCollection:
         if self._collection is None:
@@ -327,6 +334,98 @@ class TaskGraphStore:
             self._dirty.add(task_id)
             return True
         return False
+
+    # --- Master map cleanup ---
+
+    _ACTIVE_STATUSES = {
+        VertexStatus.PENDING, VertexStatus.READY,
+        VertexStatus.RUNNING, VertexStatus.BLOCKED,
+    }
+
+    def cleanup_master_map(self) -> int:
+        """Remove old completed/failed vertices from master map.
+
+        Keeps:
+        - All active vertices (PENDING, READY, RUNNING, BLOCKED)
+        - Last N CHAT_EXCHANGE vertices (for summary context)
+        - Last N completed TASK_REF vertices (for summary context)
+        - All edges referencing kept vertices
+
+        Returns number of removed vertices.
+        """
+        if not self._master_graph:
+            return 0
+
+        graph = self._master_graph
+        keep_ids: set[str] = set()
+
+        # Always keep active (non-terminal) vertices
+        for vid, v in graph.vertices.items():
+            if v.status in self._ACTIVE_STATUSES:
+                keep_ids.add(vid)
+
+        # Keep last N chat exchanges (sorted by completed_at desc)
+        chats = sorted(
+            [(vid, v) for vid, v in graph.vertices.items()
+             if v.vertex_type == VertexType.CHAT_EXCHANGE],
+            key=lambda x: x[1].completed_at or "0",
+            reverse=True,
+        )
+        for vid, _ in chats[:_KEEP_CHAT_VERTICES]:
+            keep_ids.add(vid)
+
+        # Keep last N completed task refs (sorted by completed_at desc)
+        task_refs = sorted(
+            [(vid, v) for vid, v in graph.vertices.items()
+             if v.vertex_type == VertexType.TASK_REF],
+            key=lambda x: x[1].completed_at or "0",
+            reverse=True,
+        )
+        for vid, _ in task_refs[:_KEEP_TASK_VERTICES]:
+            keep_ids.add(vid)
+
+        # Always keep root vertex
+        if graph.root_vertex_id:
+            keep_ids.add(graph.root_vertex_id)
+
+        # Remove vertices not in keep set
+        to_remove = set(graph.vertices.keys()) - keep_ids
+        if not to_remove:
+            return 0
+
+        for vid in to_remove:
+            del graph.vertices[vid]
+
+        # Remove edges referencing removed vertices
+        graph.edges = [
+            e for e in graph.edges
+            if e.source_id in keep_ids and e.target_id in keep_ids
+        ]
+
+        self._dirty.add(graph.task_id)
+        logger.info(
+            "Master map cleanup: removed %d vertices, kept %d (active=%d, chats=%d, tasks=%d)",
+            len(to_remove), len(keep_ids),
+            sum(1 for v in graph.vertices.values() if v.status in self._ACTIVE_STATUSES),
+            min(len(chats), _KEEP_CHAT_VERTICES),
+            min(len(task_refs), _KEEP_TASK_VERTICES),
+        )
+        return len(to_remove)
+
+    async def _periodic_cleanup(self) -> None:
+        """Background task: cleanup master map every N seconds."""
+        # Initial cleanup after 60s (let master map load first)
+        await asyncio.sleep(60)
+        while True:
+            try:
+                removed = self.cleanup_master_map()
+                if removed > 0:
+                    await self.flush_dirty()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Master map cleanup error: %s", e)
+            await asyncio.sleep(_CLEANUP_INTERVAL_S)
 
     # --- Dirty flush ---
 

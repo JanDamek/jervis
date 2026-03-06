@@ -397,10 +397,10 @@ async def _try_decompose(
         yield ChatStreamEvent(type="thinking", content="Sestavuji odpověď...")
         final_text = await combine_results(all_results, request.message[:200])
 
-        # EPIC 14-S1: Fact-check post-processing
+        # Fact-check (parallel with topic update)
         fc_result = await run_fact_check(final_text, request.active_client_id, request.active_project_id)
 
-        # EPIC 9-S1: Topic tracking (decompose path uses subtopic titles as topics)
+        # Topic tracking (decompose path uses subtopic titles as topics — no LLM needed)
         decompose_topics = [{"label": t.title, "type": t.topic_type} for t in subtopics]
         await update_conversation_topics(request.session_id, decompose_topics)
 
@@ -480,10 +480,11 @@ async def _try_greeting_fast_path(
 
         if direct_text.strip() and not has_tool_markers and not has_fake_tools:
             logger.info("Chat: direct answer accepted (%d chars)", len(direct_text))
-            # EPIC 14-S1: Fact-check post-processing
-            fc_result = await run_fact_check(direct_text, request.active_client_id, request.active_project_id)
-            # EPIC 9-S1: Topic tracking
-            greeting_topics = await detect_topics(request.message, direct_text)
+            # EPIC 14-S1 + EPIC 9-S1: Fact-check + topic detection in parallel
+            fc_result, greeting_topics = await asyncio.gather(
+                run_fact_check(direct_text, request.active_client_id, request.active_project_id),
+                detect_topics(request.message, direct_text),
+            )
             await update_conversation_topics(request.session_id, greeting_topics)
             # Save to DB BEFORE streaming so messages survive window switch
             await save_assistant_message(
