@@ -123,6 +123,7 @@ async def execute_tool(
     processing_mode: str = "FOREGROUND",
     skip_approval: bool = False,
     group_id: str | None = None,
+    task_id: str | None = None,
 ) -> str:
     """Execute a tool call and return the result as a string.
 
@@ -133,6 +134,7 @@ async def execute_tool(
         project_id: Tenant project ID for KB scoping.
         skip_approval: If True, skip approval gate (already approved by user).
         group_id: Group ID for cross-project KB visibility.
+        task_id: Parent task ID (for sub-task nesting in master map).
 
     Returns:
         Formatted result string (never raises).
@@ -527,6 +529,7 @@ async def execute_tool(
                 client_id=arguments.get("client_id") or client_id,
                 project_id=arguments.get("project_id") or project_id,
                 agent_preference=arguments.get("agent_preference", "auto"),
+                parent_task_id=task_id,
             )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
@@ -3051,6 +3054,7 @@ async def _execute_dispatch_coding_agent(
     client_id: str,
     project_id: str | None,
     agent_preference: str = "auto",
+    parent_task_id: str | None = None,
 ) -> str:
     """Dispatch a coding agent for a task."""
     from app.tools.kotlin_client import kotlin_client
@@ -3063,4 +3067,21 @@ async def _execute_dispatch_coding_agent(
         project_id=project_id,
         agent_preference=agent_preference,
     )
+
+    # Register parent→child relationship for master map nesting
+    if parent_task_id and result and not str(result).startswith("Error"):
+        try:
+            import re
+            child_id = None
+            result_str = str(result)
+            # Try to extract task ID (24-char hex ObjectId)
+            match = re.search(r"[0-9a-f]{24}", result_str)
+            if match:
+                child_id = match.group(0)
+            if child_id:
+                from app.graph_agent.persistence import task_graph_store
+                task_graph_store.register_task_parent(child_id, parent_task_id)
+        except Exception as e:
+            logger.debug("Failed to register task parent: %s", e)
+
     return f"Coding agent dispatched: {result}"

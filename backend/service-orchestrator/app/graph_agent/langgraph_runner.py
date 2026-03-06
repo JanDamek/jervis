@@ -830,6 +830,7 @@ async def _agentic_vertex(
                         project_id=project_id,
                         processing_mode=state.get("processing_mode", "BACKGROUND"),
                         skip_approval=True,
+                        task_id=graph.task_id,
                     ),
                     timeout=_VERTEX_TOOL_TIMEOUT_S,
                 )

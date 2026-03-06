@@ -59,6 +59,10 @@ class TaskGraphStore:
         self._cleanup_task: asyncio.Task | None = None
         self._pending_archive: list[dict] = []
 
+        # Task parent tracking: child_task_id → parent_task_id
+        # Used to nest sub-tasks under their parent TASK_REF in master map
+        self._task_parent_map: dict[str, str] = {}
+
     async def init(self) -> None:
         """Initialize MongoDB connection and create indexes."""
         self._client = AsyncIOMotorClient(settings.mongodb_url)
@@ -268,6 +272,26 @@ class TaskGraphStore:
         """Remove a completed sub-graph from RAM cache."""
         self._subgraphs.pop(task_id, None)
 
+    # --- Task parent tracking (child → parent nesting in master map) ---
+
+    def register_task_parent(self, child_task_id: str, parent_task_id: str) -> None:
+        """Register a child task's parent for master map nesting."""
+        self._task_parent_map[child_task_id] = parent_task_id
+        logger.debug("Task parent registered: %s → %s", child_task_id, parent_task_id)
+
+    def get_task_parent(self, child_task_id: str) -> str | None:
+        """Get parent task_id for a child task."""
+        return self._task_parent_map.get(child_task_id)
+
+    def _find_parent_vertex_id(self, parent_task_id: str) -> str | None:
+        """Find the master map vertex ID for a parent task_id."""
+        if not self._master_graph:
+            return None
+        for v in self._master_graph.vertices.values():
+            if v.vertex_type == VertexType.TASK_REF and v.input_request == parent_task_id:
+                return v.id
+        return None
+
     # --- Link master ↔ sub-graph ---
 
     async def link_task_subgraph(
@@ -279,12 +303,24 @@ class TaskGraphStore:
         failed: bool = False,
         result_summary: str = "",
     ) -> None:
-        """Link a task sub-graph to the master map via a TASK_REF vertex."""
+        """Link a task sub-graph to the master map via a TASK_REF vertex.
+
+        If the task has a registered parent, the vertex is nested under
+        the parent's TASK_REF vertex (via parent_id + depth).
+        """
         master = await self.get_or_create_master_graph()
         from app.graph_agent.graph import add_task_ref_vertex
+
+        # Find parent vertex for nesting
+        parent_vertex_id: str | None = None
+        parent_task_id = self.get_task_parent(task_id)
+        if parent_task_id:
+            parent_vertex_id = self._find_parent_vertex_id(parent_task_id)
+
         add_task_ref_vertex(
             master, task_id, sub_graph_id, title,
             completed=completed, failed=failed, result_summary=result_summary,
+            parent_vertex_id=parent_vertex_id,
         )
         self._dirty.add(master.task_id)
 

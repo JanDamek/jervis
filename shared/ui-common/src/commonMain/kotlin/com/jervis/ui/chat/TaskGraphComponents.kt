@@ -107,9 +107,9 @@ fun TaskGraphSection(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Vertices — rendered as a flat list sorted by depth
-                val sortedVertices = remember(graph.vertices) {
-                    graph.vertices.values.sortedWith(compareBy({ it.depth }, { it.id }))
+                // Vertices — tree-walk order (DFS by parent_id), root hidden
+                val sortedVertices = remember(graph.vertices, graph.rootVertexId) {
+                    buildTreeOrder(graph.vertices.values.toList(), graph.rootVertexId)
                 }
 
                 sortedVertices.forEach { vertex ->
@@ -507,4 +507,40 @@ private fun formatTimestamp(iso: String): String {
     if (timeStart < 0) return iso
     val timePart = iso.substring(timeStart + 1)
     return timePart.take(8) // HH:mm:ss
+}
+
+/**
+ * Build DFS tree-walk order from vertices using parentId.
+ * Root vertex is excluded from the result.
+ * Orphan vertices (no parent, not root) are appended at the end.
+ */
+private fun buildTreeOrder(
+    vertices: List<GraphVertexDto>,
+    rootVertexId: String,
+): List<GraphVertexDto> {
+    val byParent = vertices.groupBy { it.parentId ?: "" }
+    val result = mutableListOf<GraphVertexDto>()
+    val visited = mutableSetOf<String>()
+
+    fun walk(parentId: String) {
+        val children = byParent[parentId] ?: return
+        for (child in children.sortedByDescending { it.startedAt ?: it.completedAt ?: "0" }) {
+            if (child.id in visited) continue
+            visited.add(child.id)
+            result.add(child)
+            walk(child.id)
+        }
+    }
+
+    // Walk from root's children (root itself is hidden)
+    walk(rootVertexId)
+
+    // Orphan vertices (parentId is null/empty and not root) — depth=1, no parent link
+    for (v in vertices) {
+        if (v.id !in visited && v.vertexType != "root") {
+            result.add(v)
+        }
+    }
+
+    return result
 }

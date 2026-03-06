@@ -629,12 +629,16 @@ def add_task_ref_vertex(
     completed: bool = False,
     failed: bool = False,
     result_summary: str = "",
+    parent_vertex_id: str | None = None,
 ) -> GraphVertex:
     """Add or update a TASK_REF vertex linking to a task sub-graph.
 
     Upserts: if a TASK_REF with matching task_id already exists, updates it
     in place. Otherwise creates a new vertex. This prevents duplicate
     TASK_REF vertices for the same task.
+
+    If parent_vertex_id is set, the vertex is nested under the parent
+    (sets parent_id and depth = parent.depth + 1).
     """
     now = str(int(time.time()))
     if failed:
@@ -643,6 +647,11 @@ def add_task_ref_vertex(
         status = VertexStatus.COMPLETED
     else:
         status = VertexStatus.RUNNING
+
+    # Calculate depth from parent
+    depth = 1
+    if parent_vertex_id and parent_vertex_id in graph.vertices:
+        depth = graph.vertices[parent_vertex_id].depth + 1
 
     # Find existing TASK_REF for this task_id (stored in input_request)
     existing: GraphVertex | None = None
@@ -662,6 +671,10 @@ def add_task_ref_vertex(
         existing.error = result_summary if failed else None
         if completed or failed:
             existing.completed_at = now
+        # Update parent if newly provided
+        if parent_vertex_id and not existing.parent_id:
+            existing.parent_id = parent_vertex_id
+            existing.depth = depth
         return existing
 
     # Create new vertex
@@ -675,9 +688,10 @@ def add_task_ref_vertex(
         local_context=sub_graph_id,      # Store sub_graph_id in local_context
         result_summary=result_summary,
         error=result_summary if failed else None,
+        parent_id=parent_vertex_id,
         started_at=now,
         completed_at=now if (completed or failed) else None,
-        depth=1,
+        depth=depth,
     )
     graph.vertices[vertex.id] = vertex
     return vertex
