@@ -327,6 +327,8 @@ async def handle_chat(
                     message=request.message[:200],
                     response="(streamed)",
                     response_summary=request.message[:80],
+                    client_id=request.active_client_id or "",
+                    project_id=request.active_project_id,
                 )
                 task_graph_store.mark_dirty(master.task_id)
         except Exception as e:

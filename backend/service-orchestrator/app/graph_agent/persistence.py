@@ -302,16 +302,21 @@ class TaskGraphStore:
         completed: bool = False,
         failed: bool = False,
         result_summary: str = "",
+        client_id: str = "",
+        client_name: str = "",
+        project_id: str | None = None,
+        project_name: str = "",
     ) -> None:
         """Link a task sub-graph to the master map via a TASK_REF vertex.
 
-        If the task has a registered parent, the vertex is nested under
-        the parent's TASK_REF vertex (via parent_id + depth).
+        Parent resolution order:
+        1. Task parent (sub-task nesting via _task_parent_map)
+        2. Client/project hierarchy (auto-creates CLIENT/PROJECT vertices)
         """
         master = await self.get_or_create_master_graph()
         from app.graph_agent.graph import add_task_ref_vertex
 
-        # Find parent vertex for nesting
+        # Find parent vertex for nesting (sub-task → parent task)
         parent_vertex_id: str | None = None
         parent_task_id = self.get_task_parent(task_id)
         if parent_task_id:
@@ -321,6 +326,8 @@ class TaskGraphStore:
             master, task_id, sub_graph_id, title,
             completed=completed, failed=failed, result_summary=result_summary,
             parent_vertex_id=parent_vertex_id,
+            client_id=client_id, client_name=client_name,
+            project_id=project_id, project_name=project_name,
         )
         self._dirty.add(master.task_id)
 
@@ -434,9 +441,12 @@ class TaskGraphStore:
         for vid, _ in task_refs[:_KEEP_TASK_VERTICES]:
             keep_ids.add(vid)
 
-        # Always keep root vertex
+        # Always keep root, CLIENT, and PROJECT vertices (structural hierarchy)
         if graph.root_vertex_id:
             keep_ids.add(graph.root_vertex_id)
+        for vid, v in graph.vertices.items():
+            if v.vertex_type in (VertexType.CLIENT, VertexType.PROJECT):
+                keep_ids.add(vid)
 
         # Identify vertices to remove
         to_remove = set(graph.vertices.keys()) - keep_ids

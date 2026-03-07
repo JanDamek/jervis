@@ -595,17 +595,93 @@ def create_master_graph(client_id: str = "") -> TaskGraph:
     )
 
 
+def ensure_hierarchy(
+    graph: TaskGraph,
+    client_id: str = "",
+    client_name: str = "",
+    project_id: str | None = None,
+    project_name: str = "",
+) -> str | None:
+    """Find or create CLIENT/PROJECT vertices, return parent vertex ID.
+
+    Returns the most specific parent:
+    - project vertex ID if project_id is set
+    - client vertex ID if only client_id
+    - None if neither (orphan at root level)
+    """
+    if not client_id:
+        return None
+
+    # Find or create CLIENT vertex (keyed by input_request == client_id)
+    client_vertex: GraphVertex | None = None
+    for v in graph.vertices.values():
+        if v.vertex_type == VertexType.CLIENT and v.input_request == client_id:
+            client_vertex = v
+            # Update name if we now have it and didn't before
+            if client_name and v.title.startswith("Client:"):
+                v.title = client_name
+            break
+
+    if not client_vertex:
+        client_vertex = GraphVertex(
+            id=f"v-client-{uuid.uuid4().hex[:8]}",
+            title=client_name or f"Client: {client_id[:12]}",
+            description=f"Client {client_id}",
+            vertex_type=VertexType.CLIENT,
+            status=VertexStatus.COMPLETED,
+            input_request=client_id,
+            parent_id=graph.root_vertex_id,
+            depth=1,
+        )
+        graph.vertices[client_vertex.id] = client_vertex
+
+    if not project_id:
+        return client_vertex.id
+
+    # Find or create PROJECT vertex (keyed by input_request == project_id)
+    project_vertex: GraphVertex | None = None
+    for v in graph.vertices.values():
+        if v.vertex_type == VertexType.PROJECT and v.input_request == project_id:
+            project_vertex = v
+            if project_name and v.title.startswith("Project:"):
+                v.title = project_name
+            break
+
+    if not project_vertex:
+        project_vertex = GraphVertex(
+            id=f"v-project-{uuid.uuid4().hex[:8]}",
+            title=project_name or f"Project: {project_id[:12]}",
+            description=f"Project {project_id}",
+            vertex_type=VertexType.PROJECT,
+            status=VertexStatus.COMPLETED,
+            input_request=project_id,
+            parent_id=client_vertex.id,
+            depth=2,
+        )
+        graph.vertices[project_vertex.id] = project_vertex
+
+    return project_vertex.id
+
+
 def add_chat_vertex(
     graph: TaskGraph,
     message: str,
     response: str,
     response_summary: str = "",
+    client_id: str = "",
+    client_name: str = "",
+    project_id: str | None = None,
+    project_name: str = "",
 ) -> GraphVertex:
     """Add a CHAT_EXCHANGE vertex to the master map.
 
-    Records a chat message→response pair. The response_summary is stored
-    as result_summary for compact master map summaries.
+    Records a chat message→response pair. Nested under client/project if known.
     """
+    parent_id = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+    depth = 1
+    if parent_id and parent_id in graph.vertices:
+        depth = graph.vertices[parent_id].depth + 1
+
     vertex = GraphVertex(
         id=f"v-chat-{uuid.uuid4().hex[:12]}",
         title=message[:80] if message else "Chat",
@@ -615,7 +691,8 @@ def add_chat_vertex(
         result=response,
         result_summary=response_summary or response[:200],
         completed_at=str(int(time.time())),
-        depth=1,
+        parent_id=parent_id,
+        depth=depth,
     )
     graph.vertices[vertex.id] = vertex
     return vertex
@@ -630,15 +707,20 @@ def add_task_ref_vertex(
     failed: bool = False,
     result_summary: str = "",
     parent_vertex_id: str | None = None,
+    client_id: str = "",
+    client_name: str = "",
+    project_id: str | None = None,
+    project_name: str = "",
 ) -> GraphVertex:
     """Add or update a TASK_REF vertex linking to a task sub-graph.
 
     Upserts: if a TASK_REF with matching task_id already exists, updates it
-    in place. Otherwise creates a new vertex. This prevents duplicate
-    TASK_REF vertices for the same task.
+    in place. Otherwise creates a new vertex.
 
-    If parent_vertex_id is set, the vertex is nested under the parent
-    (sets parent_id and depth = parent.depth + 1).
+    Parent resolution order:
+    1. explicit parent_vertex_id (sub-task nesting)
+    2. client/project hierarchy (ensure_hierarchy)
+    3. root level (depth=1)
     """
     now = str(int(time.time()))
     if failed:
@@ -648,10 +730,15 @@ def add_task_ref_vertex(
     else:
         status = VertexStatus.RUNNING
 
+    # Resolve parent: explicit parent > client/project hierarchy
+    effective_parent = parent_vertex_id
+    if not effective_parent:
+        effective_parent = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+
     # Calculate depth from parent
     depth = 1
-    if parent_vertex_id and parent_vertex_id in graph.vertices:
-        depth = graph.vertices[parent_vertex_id].depth + 1
+    if effective_parent and effective_parent in graph.vertices:
+        depth = graph.vertices[effective_parent].depth + 1
 
     # Find existing TASK_REF for this task_id (stored in input_request)
     existing: GraphVertex | None = None
@@ -672,8 +759,8 @@ def add_task_ref_vertex(
         if completed or failed:
             existing.completed_at = now
         # Update parent if newly provided
-        if parent_vertex_id and not existing.parent_id:
-            existing.parent_id = parent_vertex_id
+        if effective_parent and not existing.parent_id:
+            existing.parent_id = effective_parent
             existing.depth = depth
         return existing
 
@@ -684,11 +771,11 @@ def add_task_ref_vertex(
         description=f"Background task {task_id} → sub-graph {sub_graph_id}",
         vertex_type=VertexType.TASK_REF,
         status=status,
-        input_request=task_id,           # Store task_id in input_request
-        local_context=sub_graph_id,      # Store sub_graph_id in local_context
+        input_request=task_id,
+        local_context=sub_graph_id,
         result_summary=result_summary,
         error=result_summary if failed else None,
-        parent_id=parent_vertex_id,
+        parent_id=effective_parent,
         started_at=now,
         completed_at=now if (completed or failed) else None,
         depth=depth,

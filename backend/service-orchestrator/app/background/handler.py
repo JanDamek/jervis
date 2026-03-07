@@ -108,6 +108,10 @@ async def _run_graph_agent_background(
             completed=success,
             failed=not success,
             result_summary=summary[:500] if summary else "",
+            client_id=request.client_id,
+            client_name=request.client_name or "",
+            project_id=request.project_id,
+            project_name=request.project_name or "",
         )
     except Exception as e:
         logger.warning("Failed to link sub-graph to master map: %s", e)

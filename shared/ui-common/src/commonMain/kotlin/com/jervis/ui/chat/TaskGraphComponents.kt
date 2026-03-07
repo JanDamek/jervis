@@ -18,9 +18,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -113,6 +115,12 @@ fun TaskGraphSection(
                 }
 
                 sortedVertices.forEach { vertex ->
+                    // CLIENT and PROJECT vertices — section headers, not cards
+                    if (vertex.vertexType == "client" || vertex.vertexType == "project") {
+                        HierarchyHeader(vertex = vertex, depthIndent = vertex.depth - 1)
+                        return@forEach
+                    }
+
                     val incomingEdges = remember(graph.edges, vertex.id) {
                         graph.edges.filter { it.targetId == vertex.id }
                     }
@@ -432,6 +440,50 @@ private fun EdgeRow(
     }
 }
 
+/**
+ * Section header for CLIENT and PROJECT vertices — non-collapsible label with icon.
+ */
+@Composable
+private fun HierarchyHeader(
+    vertex: GraphVertexDto,
+    depthIndent: Int,
+) {
+    val indentDp = (depthIndent * 16).dp
+    val isClient = vertex.vertexType == "client"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = indentDp, top = 4.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            if (isClient) Icons.Default.Business else Icons.Default.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = if (isClient) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.secondary
+            },
+        )
+        Text(
+            text = vertex.title,
+            style = if (isClient) {
+                MaterialTheme.typography.titleSmall
+            } else {
+                MaterialTheme.typography.labelLarge
+            },
+            color = if (isClient) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.secondary
+            },
+        )
+    }
+}
+
 // --- Helpers ---
 
 @Composable
@@ -468,6 +520,10 @@ private fun statusLabel(status: String): String = when (status) {
 }
 
 private fun vertexTypeIcon(type: String): ImageVector = when (type) {
+    "client" -> Icons.Default.Business
+    "project" -> Icons.Default.Folder
+    "chat_exchange" -> Icons.Default.ArrowForward
+    "task_ref" -> Icons.Default.PlayArrow
     "planner" -> Icons.Default.AccountTree
     "investigator" -> Icons.Default.Schedule
     "executor" -> Icons.Default.PlayArrow
@@ -479,6 +535,10 @@ private fun vertexTypeIcon(type: String): ImageVector = when (type) {
 }
 
 private fun vertexTypeLabel(type: String): String = when (type) {
+    "client" -> "Klient"
+    "project" -> "Projekt"
+    "chat_exchange" -> "Chat"
+    "task_ref" -> "Úloha"
     "planner" -> "Plánovač"
     "investigator" -> "Průzkumník"
     "executor" -> "Exekutor"

@@ -47,6 +47,8 @@ class VertexType(str, Enum):
     SETUP = "setup"             # Project scaffolding + environment provisioning
 
     # Master map vertex types
+    CLIENT = "client"           # Client organization in hierarchy
+    PROJECT = "project"         # Project within client
     ASK_USER = "ask_user"       # Blocked — needs user input via chat
     CHAT_EXCHANGE = "chat_exchange"  # Chat message → response pair
     TASK_REF = "task_ref"       # Reference to a task sub-graph
