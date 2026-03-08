@@ -303,7 +303,7 @@ class ChatViewModel(
      * Load or refresh the Paměťová mapa (memory map) from orchestrator.
      * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
      */
-    private fun loadMemoryMap() {
+    internal fun loadMemoryMap() {
         memoryMapLoadJob?.cancel()
         memoryMapLoadJob = scope.launch {
             delay(500)

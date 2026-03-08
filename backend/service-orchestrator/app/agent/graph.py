@@ -12,9 +12,9 @@ This module provides the core graph engine:
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from collections import deque
+from datetime import datetime, timezone
 
 from app.config import estimate_tokens
 from app.agent.models import (
@@ -70,7 +70,7 @@ def create_task_graph(
         project_id=project_id,
         root_vertex_id=root_id,
         vertices={root_id: root},
-        created_at=str(int(time.time())),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
@@ -261,7 +261,7 @@ def start_vertex(graph: AgentGraph, vertex_id: str) -> GraphVertex | None:
     # Accumulate context from all incoming edges
     vertex.incoming_context = accumulate_context(graph, vertex_id)
     vertex.status = VertexStatus.RUNNING
-    vertex.started_at = str(int(time.time()))
+    vertex.started_at = datetime.now(timezone.utc).isoformat()
     graph.status = GraphStatus.EXECUTING
     return vertex
 
@@ -292,7 +292,7 @@ def complete_vertex(
     vertex.result = result
     vertex.result_summary = result_summary
     vertex.local_context = local_context or result
-    vertex.completed_at = str(int(time.time()))
+    vertex.completed_at = datetime.now(timezone.utc).isoformat()
     vertex.token_count = token_count
     vertex.llm_calls = llm_calls
     if tools_used:
@@ -334,7 +334,7 @@ def fail_vertex(
 
     vertex.status = VertexStatus.FAILED
     vertex.error = error
-    vertex.completed_at = str(int(time.time()))
+    vertex.completed_at = datetime.now(timezone.utc).isoformat()
 
     # Fill outgoing edge payloads with error context (unblock downstream)
     error_payload = EdgePayload(
@@ -361,7 +361,7 @@ def skip_vertex(graph: AgentGraph, vertex_id: str) -> GraphVertex | None:
         return None
 
     vertex.status = VertexStatus.SKIPPED
-    vertex.completed_at = str(int(time.time()))
+    vertex.completed_at = datetime.now(timezone.utc).isoformat()
     return vertex
 
 
@@ -557,7 +557,7 @@ def _check_graph_completion(graph: AgentGraph) -> None:
             v.status == VertexStatus.FAILED for v in graph.vertices.values()
         )
         graph.status = GraphStatus.FAILED if has_failures else GraphStatus.COMPLETED
-        graph.completed_at = str(int(time.time()))
+        graph.completed_at = datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -591,7 +591,7 @@ def create_memory_map(client_id: str = "") -> AgentGraph:
         root_vertex_id=root_id,
         vertices={root_id: root},
         status=GraphStatus.EXECUTING,  # Memory map is always "executing"
-        created_at=str(int(time.time())),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
@@ -690,7 +690,7 @@ def add_request_vertex(
         status=VertexStatus.COMPLETED,
         result=response,
         result_summary=response_summary or response[:200],
-        completed_at=str(int(time.time())),
+        completed_at=datetime.now(timezone.utc).isoformat(),
         parent_id=parent_id,
         depth=depth,
     )
@@ -722,7 +722,7 @@ def add_task_ref_vertex(
     2. client/project hierarchy (ensure_hierarchy)
     3. root level (depth=1)
     """
-    now = str(int(time.time()))
+    now = datetime.now(timezone.utc).isoformat()
     if failed:
         status = VertexStatus.FAILED
     elif completed:
@@ -815,7 +815,7 @@ def add_incoming_vertex(
         local_context=prepared_context,
         parent_id=parent_id,
         depth=depth,
-        started_at=str(int(time.time())),
+        started_at=datetime.now(timezone.utc).isoformat(),
     )
     graph.vertices[vertex.id] = vertex
     logger.info("Added INCOMING vertex %s for task %s (urgency=%s)", vertex.id, task_id, urgency)
@@ -847,7 +847,7 @@ def create_ask_user_vertex(
         local_context=context,
         parent_id=parent_vertex_id,
         depth=depth,
-        started_at=str(int(time.time())),
+        started_at=datetime.now(timezone.utc).isoformat(),
     )
     graph.vertices[vertex.id] = vertex
     return vertex

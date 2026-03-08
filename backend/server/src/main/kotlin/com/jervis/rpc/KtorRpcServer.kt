@@ -290,6 +290,19 @@ class KtorRpcServer(
                                 }
                             }
 
+                            // Internal endpoint: memory map changed — triggers UI refresh
+                            post("/internal/memory-map-changed") {
+                                try {
+                                    launch {
+                                        notificationRpcImpl.emitMemoryMapChanged()
+                                    }
+                                    call.respondText("{\"ok\":true}", io.ktor.http.ContentType.Application.Json)
+                                } catch (e: Exception) {
+                                    logger.debug(e) { "Failed to process memory-map-changed" }
+                                    call.respondText("{\"ok\":false}", io.ktor.http.ContentType.Application.Json)
+                                }
+                            }
+
                             // Internal endpoint: orchestrator sends status changes here (done/error/interrupted)
                             // Handles BOTH UI notification (via NotificationRpc) AND task state transition (via StatusHandler)
                             post("/internal/orchestrator-status") {

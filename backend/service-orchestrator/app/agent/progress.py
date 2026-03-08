@@ -10,6 +10,7 @@ import logging
 
 from app.agent.models import (
     GraphStatus,
+    GraphType,
     AgentGraph,
     VertexStatus,
 )
@@ -48,6 +49,10 @@ async def report_vertex_started(
         delegation_depth=vertex.depth,
     )
 
+    # Notify UI about memory map change (only for memory_map graphs)
+    if graph.graph_type == GraphType.MEMORY_MAP:
+        await kotlin_client.notify_memory_map_changed()
+
 
 async def report_vertex_completed(
     graph: AgentGraph,
@@ -78,6 +83,10 @@ async def report_vertex_completed(
         delegation_depth=vertex.depth,
     )
 
+    # Notify UI about memory map change (only for memory_map graphs)
+    if graph.graph_type == GraphType.MEMORY_MAP:
+        await kotlin_client.notify_memory_map_changed()
+
 
 async def report_graph_status(
     graph: AgentGraph,
@@ -104,6 +113,10 @@ async def report_graph_status(
         message=message,
         percent=percent,
     )
+
+    # Notify UI about memory map change (only for memory_map graphs)
+    if graph.graph_type == GraphType.MEMORY_MAP:
+        await kotlin_client.notify_memory_map_changed()
 
 
 async def report_decomposition_progress(

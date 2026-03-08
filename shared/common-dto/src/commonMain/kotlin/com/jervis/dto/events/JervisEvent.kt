@@ -120,6 +120,15 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     /**
+     * Memory map changed — triggers UI refresh of the Paměťová mapa panel.
+     * Emitted when vertex status changes during background task execution.
+     */
+    @Serializable
+    data class MemoryMapChanged(
+        override val timestamp: String,
+    ) : JervisEvent()
+
+    /**
      * EPIC 5: Approval required event — emitted when an action needs user approval.
      */
     @Serializable

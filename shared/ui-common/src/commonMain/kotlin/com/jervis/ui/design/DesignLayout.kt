@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -459,6 +461,7 @@ fun JHorizontalSplitLayout(
                     .fillMaxHeight()
                     .width(dividerWidth)
                     .background(MaterialTheme.colorScheme.outlineVariant)
+                    .pointerHoverIcon(PointerIcon.Hand)
                     .pointerInput(Unit) {
                         detectDragGestures { _, dragAmount ->
                             val delta = dragAmount.x / totalWidthPx

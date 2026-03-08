@@ -170,14 +170,19 @@ class AgentTaskWatcher:
                 except Exception as e:
                     logger.error("Failed to report coding task done %s: %s", task_id, e)
 
-                # Update master map TASK_REF vertex → completed
+                # Update memory map TASK_REF vertex → completed
                 try:
                     from app.agent.persistence import agent_store
                     job_success = result.get("success", False)
+                    task_title = (
+                        task_data.get("taskName")
+                        or (task_data.get("content", "") or "")[:80]
+                        or f"Coding: {task_id[:12]}"
+                    )
                     await agent_store.link_thinking_map(
                         task_id=task_id,
                         sub_graph_id="",
-                        title=f"Coding: {task_id[:12]}",
+                        title=task_title,
                         completed=job_success,
                         failed=not job_success,
                         result_summary=result.get("summary", "")[:500],

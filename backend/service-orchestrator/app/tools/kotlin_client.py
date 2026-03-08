@@ -270,6 +270,24 @@ class KotlinServerClient:
             return False
 
     # ------------------------------------------------------------------
+    # Memory map change notification
+    # ------------------------------------------------------------------
+
+    async def notify_memory_map_changed(self) -> bool:
+        """Notify Kotlin server that the memory map changed — triggers UI refresh.
+
+        Called after vertex status changes during graph execution.
+        Kotlin broadcasts MemoryMapChanged event to all connected UI clients.
+        """
+        try:
+            client = await self._get_client()
+            await client.post("/internal/memory-map-changed")
+            return True
+        except Exception as e:
+            logger.debug("Failed to notify memory map changed: %s", e)
+            return False
+
+    # ------------------------------------------------------------------
     # Chat foreground preemption
     # ------------------------------------------------------------------
 

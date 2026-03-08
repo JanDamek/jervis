@@ -53,6 +53,9 @@ import androidx.compose.ui.unit.dp
 import com.jervis.dto.graph.GraphEdgeDto
 import com.jervis.dto.graph.GraphVertexDto
 import com.jervis.dto.graph.TaskGraphDto
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Expandable section showing a task decomposition graph inside a BACKGROUND_RESULT bubble.
@@ -301,14 +304,15 @@ private fun VertexCard(
                         }
                     }
 
-                    // Timing
-                    if (vertex.startedAt != null || vertex.completedAt != null) {
+                    // Timing — start time + duration
+                    if (vertex.startedAt != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            vertex.startedAt?.let {
-                                StatChip("Začátek", formatTimestamp(it))
-                            }
-                            vertex.completedAt?.let {
-                                StatChip("Konec", formatTimestamp(it))
+                            StatChip("Začátek", formatTimestamp(vertex.startedAt!!))
+                            if (vertex.completedAt != null) {
+                                val duration = formatDuration(vertex.startedAt!!, vertex.completedAt!!)
+                                if (duration != null) {
+                                    StatChip("Trvání", duration)
+                                }
                             }
                         }
                     }
@@ -322,9 +326,13 @@ private fun VertexCard(
                         )
                     }
 
-                    // Input request
+                    // Input request — for task_ref show as "Úloha (ID)"
                     if (vertex.inputRequest.isNotBlank()) {
-                        ExpandableTextSection("Vstupní požadavek", vertex.inputRequest)
+                        val inputLabel = when (vertex.vertexType) {
+                            "task_ref" -> "Úloha"
+                            else -> "Vstupní požadavek"
+                        }
+                        ExpandableTextSection(inputLabel, vertex.inputRequest)
                     }
 
                     // Result summary / full result
@@ -335,9 +343,14 @@ private fun VertexCard(
                         ExpandableTextSection("Plný výsledek", vertex.result)
                     }
 
-                    // Local context
+                    // Local context — for task_ref show as "Myšlenková mapa"
                     if (vertex.localContext.isNotBlank()) {
-                        ExpandableTextSection("Lokální kontext", vertex.localContext)
+                        val contextLabel = when {
+                            vertex.vertexType == "task_ref" && vertex.localContext.startsWith("tg-") ->
+                                "Myšlenková mapa"
+                            else -> "Lokální kontext"
+                        }
+                        ExpandableTextSection(contextLabel, vertex.localContext)
                     }
 
                     // Incoming edges — why this vertex was triggered
@@ -584,12 +597,48 @@ private fun formatTokens(count: Int): String {
     return if (count >= 1000) "${count / 1000}k" else count.toString()
 }
 
-private fun formatTimestamp(iso: String): String {
-    // Extract HH:mm:ss from ISO timestamp
-    val timeStart = iso.indexOf('T')
-    if (timeStart < 0) return iso
-    val timePart = iso.substring(timeStart + 1)
-    return timePart.take(8) // HH:mm:ss
+private fun formatTimestamp(value: String): String {
+    // Handle ISO timestamp (contains 'T')
+    val timeStart = value.indexOf('T')
+    if (timeStart >= 0) {
+        val timePart = value.substring(timeStart + 1)
+        return timePart.take(8) // HH:mm:ss
+    }
+    // Handle epoch seconds (all digits) — show as HH:mm:ss in local timezone
+    val epochSec = value.toLongOrNull()
+    if (epochSec != null && epochSec > 1_000_000_000) {
+        val tz = TimeZone.currentSystemDefault()
+        val instant = Instant.fromEpochSeconds(epochSec)
+        val local = instant.toLocalDateTime(tz)
+        return "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}:${local.second.toString().padStart(2, '0')}"
+    }
+    return value
+}
+
+private fun parseEpochSeconds(value: String): Long? {
+    // ISO → parse to epoch
+    val timeStart = value.indexOf('T')
+    if (timeStart >= 0) {
+        return try {
+            Instant.parse(value).epochSeconds
+        } catch (_: Exception) {
+            null
+        }
+    }
+    // Epoch digits
+    return value.toLongOrNull()?.takeIf { it > 1_000_000_000 }
+}
+
+private fun formatDuration(startValue: String, endValue: String): String? {
+    val startSec = parseEpochSeconds(startValue) ?: return null
+    val endSec = parseEpochSeconds(endValue) ?: return null
+    val diffSec = endSec - startSec
+    if (diffSec < 0) return null
+    return when {
+        diffSec < 60 -> "${diffSec}s"
+        diffSec < 3600 -> "${diffSec / 60}m ${diffSec % 60}s"
+        else -> "${diffSec / 3600}h ${(diffSec % 3600) / 60}m"
+    }
 }
 
 /**

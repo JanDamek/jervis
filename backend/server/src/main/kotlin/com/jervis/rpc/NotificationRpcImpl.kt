@@ -250,6 +250,15 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    suspend fun emitMemoryMapChanged() {
+        val event = JervisEvent.MemoryMapChanged(
+            timestamp = Instant.now().toString(),
+        )
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
+
     /**
      * Emit a generic event to a client.
      */

@@ -1109,25 +1109,19 @@ class BackgroundEngine(
     /**
      * Create a single IDLE task for the highest-priority due idle check.
      * Uses ProcessingMode.IDLE so the execution loop treats it as lowest priority.
+     *
+     * Task scope is GLOBAL — the prompt includes all active clients and projects
+     * so the orchestrator can work across the entire system, not just one client.
      */
     private suspend fun createIdleTask() {
-        val defaultClientId = try {
-            val projects = projectRepository.findAll().toList()
-            val jervisProject = projects.firstOrNull { it.name.contains("JERVIS", ignoreCase = true) }
-                ?: projects.firstOrNull()
-            jervisProject?.clientId
+        val allClients = try {
+            clientRepository.findAll().toList().filter { !it.archived }
         } catch (_: Exception) {
-            null
+            emptyList()
         }
 
-        if (defaultClientId == null) {
-            logger.debug { "IDLE_TASK: No client found, skipping" }
-            return
-        }
-
-        val defaultClient = clientRepository.getById(defaultClientId)
-        if (defaultClient == null || defaultClient.archived) {
-            logger.debug { "IDLE_TASK: Client $defaultClientId not found or archived, skipping" }
+        if (allClients.isEmpty()) {
+            logger.debug { "IDLE_TASK: No active clients found, skipping" }
             return
         }
 
@@ -1139,14 +1133,39 @@ class BackgroundEngine(
             return
         }
 
+        // Build client/project overview for global scope
+        val allProjects = try {
+            projectRepository.findAll().toList().filter { !it.archived }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val clientOverview = allClients.joinToString("\n") { client ->
+            val projects = allProjects.filter { it.clientId == client.id }
+            val projectNames = projects.joinToString(", ") { it.name }
+            "- ${client.name} (ID: ${client.id}): projekty: $projectNames"
+        }
+
         val taskName = idleTaskRegistry.getTaskDescription(nextTask.type)
         val prompt = buildIdleTaskPrompt(nextTask.type)
+        val globalPrompt = """
+            |$prompt
+            |
+            |## Scope: ALL clients and projects
+            |
+            |Proveď kontrolu napříč VŠEMI klienty a projekty (ne jen jedním).
+            |Použij tool get_clients_projects() pro aktuální seznam.
+            |
+            |Přehled klientů:
+            |$clientOverview
+        """.trimMargin()
 
+        // Use first client for DB constraint, but prompt is global
+        val primaryClientId = allClients.first().id!!
         val idleTask = TaskDocument(
             type = com.jervis.dto.TaskTypeEnum.IDLE_REVIEW,
             taskName = taskName,
-            content = prompt,
-            clientId = defaultClientId,
+            content = globalPrompt,
+            clientId = primaryClientId,
             state = TaskStateEnum.QUEUED,
             processingMode = com.jervis.entity.ProcessingMode.IDLE,
             sourceUrn = com.jervis.common.types.SourceUrn("system:idle-task:${nextTask.type.name.lowercase()}"),
@@ -1154,7 +1173,7 @@ class BackgroundEngine(
         taskRepository.save(idleTask)
         taskNotifier.notifyNewTask()
 
-        logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} (mode=IDLE) for client $defaultClientId" }
+        logger.info { "IDLE_TASK: Created ${nextTask.type} task ${idleTask.id} (mode=IDLE, global scope, ${allClients.size} clients)" }
     }
 
     /**

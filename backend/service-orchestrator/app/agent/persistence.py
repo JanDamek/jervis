@@ -114,21 +114,57 @@ class AgentStore:
                 logger.info("Migrated %d graphs: graph_type '%s' → '%s'",
                             result.modified_count, old, new)
 
-        # Migrate vertex_type inside vertices map (chat_exchange → request)
+        # Migrate vertex_type, epoch timestamps, and TASK_REF descriptions inside vertices
         # MongoDB doesn't support wildcard keys in $set, so we load + update
+        from datetime import datetime, timezone
         async for doc in coll.find({"$expr": {"$gt": [{"$size": {"$objectToArray": {"$ifNull": ["$vertices", {}]}}}, 0]}}):
             changed = False
             vertices = doc.get("vertices", {})
+
+            # Migrate graph-level epoch timestamps to ISO
+            for ts_field in ("created_at", "completed_at"):
+                val = doc.get(ts_field)
+                if val and isinstance(val, str) and val.isdigit() and len(val) <= 12:
+                    try:
+                        iso = datetime.fromtimestamp(int(val), tz=timezone.utc).isoformat()
+                        await coll.update_one(
+                            {"_id": doc["_id"]},
+                            {"$set": {ts_field: iso}},
+                        )
+                        changed = True
+                    except Exception:
+                        pass
+
             for vid, vdata in vertices.items():
+                # vertex_type migration
                 if vdata.get("vertex_type") == "chat_exchange":
                     vertices[vid]["vertex_type"] = "request"
                     changed = True
+
+                # Epoch timestamps in vertices → ISO
+                for ts_field in ("started_at", "completed_at"):
+                    val = vdata.get(ts_field)
+                    if val and isinstance(val, str) and val.isdigit() and len(val) <= 12:
+                        try:
+                            vertices[vid][ts_field] = datetime.fromtimestamp(int(val), tz=timezone.utc).isoformat()
+                            changed = True
+                        except Exception:
+                            pass
+
+                # TASK_REF descriptions: fix hex-only descriptions
+                if vdata.get("vertex_type") == "task_ref":
+                    desc = vdata.get("description", "")
+                    title = vdata.get("title", "")
+                    if desc.startswith("Background task ") and title and title != desc:
+                        vertices[vid]["description"] = title
+                        changed = True
+
             if changed:
                 await coll.update_one(
                     {"_id": doc["_id"]},
                     {"$set": {"vertices": vertices}},
                 )
-                logger.info("Migrated vertex types in graph %s", doc.get("task_id", "?"))
+                logger.info("Migrated data in graph %s", doc.get("task_id", "?"))
 
     async def _ensure_collection(self) -> AsyncIOMotorCollection:
         if self._collection is None:
@@ -367,6 +403,13 @@ class AgentStore:
             project_id=project_id, project_name=project_name,
         )
         self._dirty.add(master.task_id)
+
+        # Notify UI about memory map change
+        from app.tools.kotlin_client import kotlin_client
+        try:
+            await kotlin_client.notify_memory_map_changed()
+        except Exception:
+            pass  # Non-fatal
 
     # --- ASK_USER helpers ---
 

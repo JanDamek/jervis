@@ -135,6 +135,7 @@ class ConnectionManager(
             is com.jervis.dto.events.JervisEvent.OrchestratorTaskProgress -> { /* handled by MainViewModel */ }
             is com.jervis.dto.events.JervisEvent.OrchestratorTaskStatusChange -> { /* handled by MainViewModel */ }
             is com.jervis.dto.events.JervisEvent.QualificationProgress -> { /* handled by MainViewModel */ }
+            is com.jervis.dto.events.JervisEvent.MemoryMapChanged -> { /* handled by MainViewModel */ }
             is com.jervis.dto.events.JervisEvent.ApprovalRequired -> {
                 println("Approval required: ${event.action}")
                 updateTaskBadge()
