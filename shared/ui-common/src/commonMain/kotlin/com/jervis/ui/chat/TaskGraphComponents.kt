@@ -26,8 +26,11 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -503,9 +506,11 @@ private fun statusColor(status: String): Color {
         "completed" -> MaterialTheme.colorScheme.primary
         "running" -> MaterialTheme.colorScheme.tertiary
         "failed" -> MaterialTheme.colorScheme.error
-        "cancelled" -> MaterialTheme.colorScheme.onSurfaceVariant
+        "cancelled", "skipped" -> MaterialTheme.colorScheme.onSurfaceVariant
         "ready" -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        "pending" -> MaterialTheme.colorScheme.onSurfaceVariant
+        "blocked" -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+        else -> error("Unknown vertex status: $status")
     }
 }
 
@@ -516,49 +521,57 @@ private fun statusLabel(status: String): String = when (status) {
     "cancelled" -> "Zrušeno"
     "pending" -> "Čeká"
     "ready" -> "Připraveno"
-    else -> status
+    "skipped" -> "Přeskočeno"
+    "blocked" -> "Blokováno"
+    else -> error("Unknown vertex status: $status")
 }
 
 private fun vertexTypeIcon(type: String): ImageVector = when (type) {
     "client" -> Icons.Default.Business
     "project" -> Icons.Default.Folder
     "request" -> Icons.Default.ArrowForward
-    "chat_exchange" -> Icons.Default.ArrowForward  // Legacy
-    "incoming" -> Icons.Default.Email
+    "incoming" -> Icons.Default.Notifications
     "task_ref" -> Icons.Default.PlayArrow
-    "planner" -> Icons.Default.AccountTree
+    "root" -> Icons.Default.AccountTree
+    "planner", "decompose" -> Icons.Default.AccountTree
     "investigator" -> Icons.Default.Schedule
-    "executor" -> Icons.Default.PlayArrow
+    "executor", "task" -> Icons.Default.PlayArrow
     "validator" -> Icons.Default.CheckCircle
     "reviewer" -> Icons.Default.Build
     "synthesis" -> Icons.Default.CheckCircle
     "gate" -> Icons.Default.HourglassEmpty
-    else -> Icons.Default.AccountTree
+    "setup" -> Icons.Default.Settings
+    "ask_user" -> Icons.Default.QuestionAnswer
+    else -> error("Unknown vertex type: $type")
 }
 
 private fun vertexTypeLabel(type: String): String = when (type) {
     "client" -> "Klient"
     "project" -> "Projekt"
     "request" -> "Požadavek"
-    "chat_exchange" -> "Požadavek"  // Legacy
     "incoming" -> "Příchozí"
     "task_ref" -> "Úloha"
-    "planner" -> "Plánovač"
+    "root" -> "Kořen"
+    "planner", "decompose" -> "Plánovač"
     "investigator" -> "Průzkumník"
-    "executor" -> "Exekutor"
+    "executor", "task" -> "Exekutor"
     "validator" -> "Validátor"
     "reviewer" -> "Recenzent"
     "synthesis" -> "Syntéza"
     "gate" -> "Brána"
-    else -> type
+    "setup" -> "Setup"
+    "ask_user" -> "Dotaz"
+    else -> error("Unknown vertex type: $type")
 }
 
 private fun edgeTypeLabel(type: String): String = when (type) {
     "dependency" -> "závislost"
+    "decomposition" -> "dekompozice"
+    "sequence" -> "sekvence"
     "context" -> "kontext"
     "result" -> "výsledek"
     "validation" -> "validace"
-    else -> type
+    else -> error("Unknown edge type: $type")
 }
 
 private fun formatTokens(count: Int): String {

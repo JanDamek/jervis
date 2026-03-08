@@ -28,10 +28,6 @@ class GraphType(str, Enum):
     MEMORY_MAP = "memory_map"           # Global Paměťová mapa (one per user)
     THINKING_MAP = "thinking_map"       # Myšlenková mapa for a background task
 
-    # Legacy aliases for DB compatibility
-    MASTER = "master"
-    TASK_SUBGRAPH = "task_subgraph"
-
 
 class VertexType(str, Enum):
     """What kind of processing this vertex performs.
@@ -58,12 +54,9 @@ class VertexType(str, Enum):
     TASK_REF = "task_ref"       # Reference to a Myšlenková mapa
     INCOMING = "incoming"       # Qualified item from indexation
 
-    # Legacy alias for DB compatibility
-    CHAT_EXCHANGE = "chat_exchange"
-
-    # Legacy aliases (backward compat)
+    # Decomposer vertex types
     TASK = "task"               # Generic task — auto-routed by agent_name
-    DECOMPOSE = "decompose"     # Alias for PLANNER
+    DECOMPOSE = "decompose"     # Decomposition step (like PLANNER but from decomposer)
 
 
 class VertexStatus(str, Enum):

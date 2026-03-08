@@ -87,11 +87,48 @@ class AgentStore:
             _COLLECTION_NAME, _TTL_DAYS,
         )
 
+        # One-time migration: normalize old enum values in DB
+        await self._migrate_old_enum_values()
+
         # Start periodic flush + cleanup
         if self._flush_task is None:
             self._flush_task = asyncio.create_task(self._periodic_flush())
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
+
+    async def _migrate_old_enum_values(self) -> None:
+        """One-time migration: rename old GraphType and VertexType values in DB.
+
+        Converts: master → memory_map, task_subgraph → thinking_map,
+        chat_exchange → request (inside vertices).
+        """
+        coll = await self._ensure_collection()
+
+        # Migrate graph_type
+        for old, new in [("master", "memory_map"), ("task_subgraph", "thinking_map")]:
+            result = await coll.update_many(
+                {"graph_type": old},
+                {"$set": {"graph_type": new}},
+            )
+            if result.modified_count > 0:
+                logger.info("Migrated %d graphs: graph_type '%s' → '%s'",
+                            result.modified_count, old, new)
+
+        # Migrate vertex_type inside vertices map (chat_exchange → request)
+        # MongoDB doesn't support wildcard keys in $set, so we load + update
+        async for doc in coll.find({"$expr": {"$gt": [{"$size": {"$objectToArray": {"$ifNull": ["$vertices", {}]}}}, 0]}}):
+            changed = False
+            vertices = doc.get("vertices", {})
+            for vid, vdata in vertices.items():
+                if vdata.get("vertex_type") == "chat_exchange":
+                    vertices[vid]["vertex_type"] = "request"
+                    changed = True
+            if changed:
+                await coll.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"vertices": vertices}},
+                )
+                logger.info("Migrated vertex types in graph %s", doc.get("task_id", "?"))
 
     async def _ensure_collection(self) -> AsyncIOMotorCollection:
         if self._collection is None:

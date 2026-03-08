@@ -10,7 +10,6 @@ import kotlinx.serialization.Serializable
  * with Kotlin naming conventions.
  *
  * GraphType values: "memory_map" (Paměťová mapa), "thinking_map" (Myšlenková mapa)
- * Legacy DB values "master" and "task_subgraph" are also accepted.
  */
 
 @Serializable
