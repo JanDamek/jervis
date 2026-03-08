@@ -83,7 +83,7 @@ PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
 | `GATE` | Decision point (go/no-go) | Gate criteria |
 | `SETUP` | Project scaffolding, repo creation, environment | Setup tools |
 | `ASK_USER` | Blocked — needs user input via chat | Question + context |
-| `REQUEST` | Chat message → agent execution → response | Message + tools + streaming |
+| `REQUEST` | Chat message → agent execution → response (dynamic status from trace) | Message + tools + streaming |
 | `TASK_REF` | Reference to a Myšlenková mapa | task_id + sub_graph_id |
 | `INCOMING` | Qualified item from indexation | Prepared context from qualifier |
 | `CLIENT` | Client hierarchy node in Memory Map | Client metadata |
@@ -95,6 +95,21 @@ PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
 
 - `BLOCKED` = waiting for external input (ASK_USER, dependency not met)
 - A BLOCKED vertex stays in the map — info preserved until resolved
+
+### REQUEST Vertex Dynamic Status
+
+REQUEST vertices (chat interactions) get their final status from **trace analysis** in `sse_handler.py`,
+not from the default PENDING→COMPLETED lifecycle. After the agentic loop finishes, the trace is inspected:
+
+| Status | Condition | Example |
+|--------|-----------|---------|
+| `FAILED` | Any tool result contains error markers (`Error:`, `Chyba:`, `error:`) | KB search failed, API error |
+| `RUNNING` | `create_background_task` or `dispatch_coding_agent` was called (no errors) | User asked to implement a feature |
+| `COMPLETED` | Tool calls succeeded without background dispatch, or simple Q&A with no tool calls | Simple question, KB lookup |
+
+This allows the memory map to accurately reflect which chat interactions spawned ongoing work
+(RUNNING), which had problems (FAILED), and which were fully resolved (COMPLETED).
+`add_request_vertex()` accepts the status parameter — default is COMPLETED.
 
 ## Timestamps
 
