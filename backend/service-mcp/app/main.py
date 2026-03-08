@@ -2069,6 +2069,7 @@ _combined_app = Starlette(
         *oauth_routes,
         Mount("/", app=_mcp_app),
     ],
+    lifespan=_mcp_app.lifespan,
 )
 app = AcceptHeaderFixMiddleware(_combined_app)
 
