@@ -395,7 +395,7 @@ fun JVerticalSplitLayout(
     val currentOnChange by rememberUpdatedState(onSplitChange)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val totalHeightPx = constraints.maxHeight.toFloat()
+        val totalHeightDp = maxHeight.value // dp as Float — density-independent
         val totalHeight = maxHeight
         val dividerHeight = 6.dp
         val topHeight = totalHeight * splitFraction
@@ -412,7 +412,8 @@ fun JVerticalSplitLayout(
                     .background(MaterialTheme.colorScheme.outlineVariant)
                     .pointerInput(Unit) {
                         detectDragGestures { _, dragAmount ->
-                            val delta = dragAmount.y / totalHeightPx
+                            val deltaDp = dragAmount.y / density
+                            val delta = deltaDp / totalHeightDp
                             val newFraction = (currentFraction + delta).coerceIn(0.1f, 0.9f)
                             currentOnChange(newFraction)
                         }
@@ -454,7 +455,7 @@ fun JHorizontalSplitLayout(
     val currentOnChange by rememberUpdatedState(onSplitChange)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val totalWidthPx = constraints.maxWidth.toFloat()
+        val totalWidthDp = maxWidth.value // dp as Float — density-independent
         val totalWidth = maxWidth
         val dividerWidth = 6.dp
         val leftWidth = totalWidth * splitFraction
@@ -472,7 +473,8 @@ fun JHorizontalSplitLayout(
                     .pointerHoverIcon(PointerIcon.Hand)
                     .pointerInput(Unit) {
                         detectDragGestures { _, dragAmount ->
-                            val delta = dragAmount.x / totalWidthPx
+                            val deltaDp = dragAmount.x / density
+                            val delta = deltaDp / totalWidthDp
                             val newFraction = (currentFraction + delta).coerceIn(minFraction, maxFraction)
                             currentOnChange(newFraction)
                         }

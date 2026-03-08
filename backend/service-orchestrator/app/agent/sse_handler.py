@@ -43,6 +43,7 @@ async def handle_chat_sse(
     - Vertex recorded in memory map for every interaction
     """
     _response_chunks: list[str] = []
+    _trace_parts: list[str] = []
     try:
         # ── 1. Load context ──────────────────────────────────────────
         context = await chat_context_assembler.assemble_context(
@@ -157,6 +158,14 @@ async def handle_chat_sse(
         ):
             if event.type == "content" and event.content:
                 _response_chunks.append(event.content)
+            elif event.type == "thinking" and event.content:
+                _trace_parts.append(f"[thinking] {event.content}")
+            elif event.type == "tool_call" and event.content:
+                args_str = event.metadata.get("args", "")
+                _trace_parts.append(f"[tool] {event.content}({str(args_str)[:100]})")
+            elif event.type == "tool_result" and event.content:
+                tool = event.metadata.get("tool", "?")
+                _trace_parts.append(f"[result:{tool}] {event.content[:150]}")
             yield event
 
     except Exception as e:
@@ -178,18 +187,47 @@ async def handle_chat_sse(
         try:
             from app.agent.persistence import agent_store
             from app.agent.graph import add_request_vertex
+            from app.agent.models import VertexStatus
             master = agent_store.get_memory_map_cached()
             if master:
                 _full_response = "".join(_response_chunks) if _response_chunks else ""
+                _trace_str = "\n".join(_trace_parts) if _trace_parts else ""
+                # Full trace: thinking + tools + final response (for context in memory map)
+                _full_record = (_trace_str + "\n---\n" + _full_response) if _trace_str else _full_response
+
+                # Determine vertex status from trace analysis
+                _has_errors = any(
+                    ("Error:" in p or "Chyba:" in p or "error:" in p)
+                    for p in _trace_parts if p.startswith("[result:")
+                )
+                _bg_tools = {"create_background_task", "dispatch_coding_agent"}
+                _has_bg_dispatch = any(
+                    any(t in p for t in _bg_tools)
+                    for p in _trace_parts if p.startswith("[tool]")
+                ) and not _has_errors
+                _has_tool_calls = any(p.startswith("[tool]") for p in _trace_parts)
+
+                if _has_errors:
+                    _vertex_status = VertexStatus.FAILED
+                elif _has_bg_dispatch:
+                    _vertex_status = VertexStatus.RUNNING
+                elif _has_tool_calls:
+                    # Tool calls succeeded, no background dispatch → completed
+                    _vertex_status = VertexStatus.COMPLETED
+                else:
+                    # Simple Q&A, no tool calls → completed
+                    _vertex_status = VertexStatus.COMPLETED
+
                 add_request_vertex(
                     master,
                     message=request.message[:200],
-                    response=_full_response[:500] if _full_response else "(no response)",
+                    response=_full_record[:2000] if _full_record else "(no response)",
                     response_summary=_full_response[:120] if _full_response else request.message[:80],
                     client_id=request.active_client_id or "",
                     client_name=request.active_client_name or "",
                     project_id=request.active_project_id,
                     project_name=request.active_project_name or "",
+                    status=_vertex_status,
                 )
                 agent_store.mark_dirty(master.task_id)
         except Exception as e:

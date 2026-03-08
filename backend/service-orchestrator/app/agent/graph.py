@@ -672,25 +672,32 @@ def add_request_vertex(
     client_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
+    status: VertexStatus = VertexStatus.COMPLETED,
 ) -> GraphVertex:
     """Add a REQUEST vertex to the master map.
 
     Records a chat message→response pair. Nested under client/project if known.
+    Status is determined by the caller:
+    - COMPLETED: simple Q&A, no pending work
+    - RUNNING: background tasks dispatched, ongoing work
+    - FAILED: tool calls returned errors
     """
     parent_id = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
     depth = 1
     if parent_id and parent_id in graph.vertices:
         depth = graph.vertices[parent_id].depth + 1
 
+    now = datetime.now(timezone.utc).isoformat()
     vertex = GraphVertex(
         id=f"v-chat-{uuid.uuid4().hex[:12]}",
         title=message[:80] if message else "Chat",
         description=message,
         vertex_type=VertexType.REQUEST,
-        status=VertexStatus.COMPLETED,
+        status=status,
         result=response,
         result_summary=response_summary or response[:200],
-        completed_at=datetime.now(timezone.utc).isoformat(),
+        started_at=now,
+        completed_at=now if status == VertexStatus.COMPLETED else "",
         parent_id=parent_id,
         depth=depth,
     )
