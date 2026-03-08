@@ -143,14 +143,7 @@ fun TaskGraphSection(
  */
 private fun graphSummaryLine(graph: TaskGraphDto): String {
     val vCount = graph.vertices.size
-    val statusLabel = when (graph.status) {
-        "completed" -> "Dokončeno"
-        "running" -> "Probíhá"
-        "failed" -> "Selhalo"
-        "cancelled" -> "Zrušeno"
-        "pending" -> "Čeká"
-        else -> graph.status
-    }
+    val statusLabel = statusLabel(graph.status)
     return "Graf: $statusLabel — $vCount vrcholů, ${graph.totalLlmCalls} LLM volání, ${formatTokens(graph.totalTokenCount)} tokenů"
 }
 
@@ -503,6 +496,7 @@ private fun vertexContainerColor(status: String): Color {
 @Composable
 private fun statusColor(status: String): Color {
     return when (status) {
+        // Vertex statuses
         "completed" -> MaterialTheme.colorScheme.primary
         "running" -> MaterialTheme.colorScheme.tertiary
         "failed" -> MaterialTheme.colorScheme.error
@@ -510,11 +504,15 @@ private fun statusColor(status: String): Color {
         "ready" -> MaterialTheme.colorScheme.secondary
         "pending" -> MaterialTheme.colorScheme.onSurfaceVariant
         "blocked" -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-        else -> error("Unknown vertex status: $status")
+        // Graph-level statuses
+        "building" -> MaterialTheme.colorScheme.tertiary
+        "executing" -> MaterialTheme.colorScheme.tertiary
+        else -> error("Unknown status: $status")
     }
 }
 
 private fun statusLabel(status: String): String = when (status) {
+    // Vertex statuses
     "completed" -> "Dokončeno"
     "running" -> "Probíhá"
     "failed" -> "Selhalo"
@@ -523,7 +521,10 @@ private fun statusLabel(status: String): String = when (status) {
     "ready" -> "Připraveno"
     "skipped" -> "Přeskočeno"
     "blocked" -> "Blokováno"
-    else -> error("Unknown vertex status: $status")
+    // Graph-level statuses
+    "building" -> "Sestavování"
+    "executing" -> "Vykonávání"
+    else -> error("Unknown status: $status")
 }
 
 private fun vertexTypeIcon(type: String): ImageVector = when (type) {
