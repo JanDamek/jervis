@@ -10,6 +10,7 @@ Designed to run:
 Priority: CRITICAL (same as orchestrator) – KB queries must not wait in queue.
 
 Uses FastMCP for clean Streamable HTTP transport + BearerTokenAuth.
+Supports both legacy Bearer tokens and OAuth 2.1 tokens (for Claude.ai / iOS).
 """
 
 from __future__ import annotations
@@ -18,12 +19,13 @@ import logging
 import os
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import StaticTokenVerifier
+from fastmcp.server.auth import StaticTokenVerifier, TokenVerifier, AccessToken
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.config import settings
 from app.db import close_db, get_db
+from app.oauth_provider import validate_oauth_token
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,16 +33,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jervis-mcp")
 
-# ── Auth setup ───────────────────────────────────────────────────────────
 
-auth = None
+# ── Auth setup (dual-mode: static tokens + OAuth) ────────────────────────
+
+
+class HybridTokenVerifier(TokenVerifier):
+    """Accepts both legacy static API tokens and OAuth-issued access tokens."""
+
+    def __init__(self, static_tokens: dict[str, dict] | None = None) -> None:
+        super().__init__()
+        self._static = (
+            StaticTokenVerifier(tokens=static_tokens) if static_tokens else None
+        )
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        # 1. Try static token
+        if self._static:
+            result = await self._static.verify_token(token)
+            if result:
+                return result
+
+        # 2. Try OAuth-issued token
+        oauth_data = validate_oauth_token(token)
+        if oauth_data:
+            return AccessToken(
+                token=token,
+                client_id=oauth_data.get("client_id", "oauth"),
+                scopes=[],
+                expires_at=oauth_data.get("expires_at"),
+            )
+
+        return None
+
+
 tokens = list(settings.valid_tokens)
+static_map = {t: {"client_id": "jervis", "scopes": []} for t in tokens} if tokens else None
+auth = HybridTokenVerifier(static_tokens=static_map)
 if tokens:
-    token_map = {t: {"client_id": "jervis", "scopes": []} for t in tokens}
-    auth = StaticTokenVerifier(tokens=token_map)
-    logger.info("Bearer token auth enabled (%d tokens)", len(tokens))
+    logger.info("Bearer token auth enabled (%d static tokens + OAuth)", len(tokens))
 else:
-    logger.warning("No MCP_API_TOKENS set – running WITHOUT authentication!")
+    logger.info("Bearer token auth enabled (OAuth only, no static tokens)")
 
 # ── MCP Server ───────────────────────────────────────────────────────────
 
@@ -2023,10 +2055,25 @@ class AcceptHeaderFixMiddleware:
 
 
 # ── ASGI app for uvicorn ─────────────────────────────────────────────────
+# Combines OAuth 2.1 endpoints with FastMCP app using Starlette routing.
 
-_inner_app = mcp.http_app(path="/mcp", stateless_http=True)
-app = AcceptHeaderFixMiddleware(_inner_app)
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from app.oauth_provider import oauth_routes
+
+_mcp_app = mcp.http_app(path="/mcp", stateless_http=True)
+
+# Combined app: OAuth routes + MCP (as catch-all mount)
+_combined_app = Starlette(
+    routes=[
+        *oauth_routes,
+        Mount("/", app=_mcp_app),
+    ],
+)
+app = AcceptHeaderFixMiddleware(_combined_app)
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http", host=settings.host, port=settings.port)
+    import uvicorn
+
+    uvicorn.run(app, host=settings.host, port=settings.port)

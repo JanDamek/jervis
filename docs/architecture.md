@@ -1391,7 +1391,7 @@ associated with their project via the unified `jervis-mcp` HTTP server (port 810
 
 ```
 Agent (Claude Code)
-  └─ MCP HTTP: jervis-mcp:8100/mcp (FastMCP, Bearer token auth)
+  └─ MCP HTTP: jervis-mcp:8100/mcp (FastMCP, Bearer token + OAuth 2.1 auth)
        ├─ KB tools → httpx → jervis-knowledgebase:8080
        ├─ Environment tools → httpx → Kotlin server :5500/internal/environment/{ns}/*
        ├─ MongoDB tools → Motor → MongoDB
@@ -1479,7 +1479,10 @@ GET  /internal/environment/{ns}/status
 - Secrets: only names returned, NEVER values
 - Replica scaling capped at 0-10
 - ClusterRole `jervis-server-environment-role` grants cross-namespace K8s access
-- MCP server authenticated via Bearer token (`MCP_API_TOKENS`)
+- MCP server dual-mode auth: legacy Bearer tokens (`MCP_API_TOKENS`) + OAuth 2.1 with Google IdP (for Claude.ai / iOS connectors)
+- OAuth whitelist: only configured Google accounts (`OAUTH_ALLOWED_EMAILS`) can obtain tokens
+- OAuth flow: Google login → email verification → Jervis access token (1h) + refresh token (30d)
+- OAuth endpoints: `/.well-known/oauth-authorization-server`, `/oauth/register`, `/oauth/authorize`, `/oauth/callback`, `/oauth/token`
 
 **Workspace Integration:**
 - `workspace_manager.py` writes `.claude/mcp.json` with HTTP MCP server URL
@@ -1491,7 +1494,8 @@ GET  /internal/environment/{ns}/status
 
 | File | Purpose |
 |------|---------|
-| `backend/service-mcp/app/main.py` | Unified HTTP MCP server (KB + env CRUD + resource inspection + mongo + orchestrator) |
+| `backend/service-mcp/app/main.py` | Unified HTTP MCP server (KB + env CRUD + resource inspection + mongo + orchestrator + OAuth 2.1) |
+| `backend/service-mcp/app/oauth_provider.py` | OAuth 2.1 authorization server (DCR, Google IdP, token issuance) |
 | `backend/server/.../environment/EnvironmentResourceService.kt` | K8s resource inspection via fabric8 |
 | `backend/server/.../environment/EnvironmentK8sService.kt` | Namespace/deployment/service lifecycle |
 | `backend/server/.../rpc/internal/InternalEnvironmentRouting.kt` | Internal REST endpoints for environment CRUD |

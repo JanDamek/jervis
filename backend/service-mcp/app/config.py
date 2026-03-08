@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     # Authentication – Bearer token required for all MCP connections
     mcp_api_tokens: str = ""  # Comma-separated list of valid tokens
 
+    # OAuth 2.1 (Google IdP for Claude.ai / iOS connectors)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    oauth_issuer: str = "https://jervis-mcp.damek-soft.eu"
+    oauth_allowed_emails: str = ""  # Comma-separated whitelist
+    oauth_token_expiry: int = 3600  # 1 hour
+    oauth_refresh_expiry: int = 2592000  # 30 days
+
     # MongoDB (direct read access for queries)
     mongodb_host: str = "192.168.100.117"
     mongodb_port: int = 27017
