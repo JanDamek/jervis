@@ -1134,8 +1134,10 @@ class BackgroundEngine(
         }
 
         // Build client/project overview for global scope
+        val activeClientIds = allClients.mapNotNull { it.id }.toSet()
         val allProjects = try {
-            projectRepository.findAll().toList().filter { !it.archived }
+            projectRepository.findAll().toList()
+                .filter { it.clientId in activeClientIds }
         } catch (_: Exception) {
             emptyList()
         }
