@@ -110,6 +110,8 @@ async def _run_graph_agent_background(
             result_summary=summary[:500] if summary else "",
             client_id=request.client_id,
             client_name=request.client_name or "",
+            group_id=request.group_id,
+            group_name=request.group_name or "",
             project_id=request.project_id,
             project_name=request.project_name or "",
         )
@@ -244,6 +246,12 @@ async def _run_coding_agent_background(
             title=request.task_name or request.query[:80] or f"Coding {request.task_id}",
             completed=False,
             result_summary="",
+            client_id=request.client_id,
+            client_name=request.client_name or "",
+            group_id=request.group_id,
+            group_name=request.group_name or "",
+            project_id=request.project_id,
+            project_name=request.project_name or "",
         )
     except Exception as e:
         logger.warning("Failed to link coding task to master map: %s", e)

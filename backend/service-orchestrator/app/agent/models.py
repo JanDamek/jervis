@@ -48,7 +48,8 @@ class VertexType(str, Enum):
 
     # Paměťová mapa vertex types
     CLIENT = "client"           # Client organization in hierarchy
-    PROJECT = "project"         # Project within client
+    GROUP = "group"             # Project group within client
+    PROJECT = "project"         # Project within client (or group)
     ASK_USER = "ask_user"       # Blocked — needs user input via chat
     REQUEST = "request"         # Chat message → agent execution → response
     TASK_REF = "task_ref"       # Reference to a Myšlenková mapa

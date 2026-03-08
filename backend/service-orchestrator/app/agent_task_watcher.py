@@ -186,6 +186,8 @@ class AgentTaskWatcher:
                         completed=job_success,
                         failed=not job_success,
                         result_summary=result.get("summary", "")[:500],
+                        client_id=str(task_data.get("clientId", "")),
+                        project_id=str(task_data.get("projectId", "")) if task_data.get("projectId") else None,
                     )
                 except Exception:
                     pass  # Non-fatal

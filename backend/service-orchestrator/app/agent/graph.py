@@ -599,13 +599,17 @@ def ensure_hierarchy(
     graph: AgentGraph,
     client_id: str = "",
     client_name: str = "",
+    group_id: str | None = None,
+    group_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
 ) -> str | None:
-    """Find or create CLIENT/PROJECT vertices, return parent vertex ID.
+    """Find or create CLIENT/GROUP/PROJECT vertices, return parent vertex ID.
 
+    Hierarchy: ROOT → CLIENT → GROUP → PROJECT
     Returns the most specific parent:
     - project vertex ID if project_id is set
+    - group vertex ID if group_id is set (no project)
     - client vertex ID if only client_id
     - None if neither (orphan at root level)
     """
@@ -635,8 +639,35 @@ def ensure_hierarchy(
         )
         graph.vertices[client_vertex.id] = client_vertex
 
+    # Find or create GROUP vertex (keyed by input_request == group_id)
+    group_vertex: GraphVertex | None = None
+    if group_id:
+        for v in graph.vertices.values():
+            if v.vertex_type == VertexType.GROUP and v.input_request == group_id:
+                group_vertex = v
+                if group_name and v.title.startswith("Group:"):
+                    v.title = group_name
+                break
+
+        if not group_vertex:
+            group_vertex = GraphVertex(
+                id=f"v-group-{uuid.uuid4().hex[:8]}",
+                title=group_name or f"Group: {group_id[:12]}",
+                description=f"Group {group_id}",
+                vertex_type=VertexType.GROUP,
+                status=VertexStatus.COMPLETED,
+                input_request=group_id,
+                parent_id=client_vertex.id,
+                depth=2,
+            )
+            graph.vertices[group_vertex.id] = group_vertex
+
+    # Effective parent for projects/requests: group if exists, else client
+    container_vertex = group_vertex or client_vertex
+    container_depth = container_vertex.depth
+
     if not project_id:
-        return client_vertex.id
+        return container_vertex.id
 
     # Find or create PROJECT vertex (keyed by input_request == project_id)
     project_vertex: GraphVertex | None = None
@@ -645,6 +676,10 @@ def ensure_hierarchy(
             project_vertex = v
             if project_name and v.title.startswith("Project:"):
                 v.title = project_name
+            # Re-parent under group if it was previously under client
+            if group_vertex and v.parent_id != group_vertex.id:
+                v.parent_id = group_vertex.id
+                v.depth = container_depth + 1
             break
 
     if not project_vertex:
@@ -655,8 +690,8 @@ def ensure_hierarchy(
             vertex_type=VertexType.PROJECT,
             status=VertexStatus.COMPLETED,
             input_request=project_id,
-            parent_id=client_vertex.id,
-            depth=2,
+            parent_id=container_vertex.id,
+            depth=container_depth + 1,
         )
         graph.vertices[project_vertex.id] = project_vertex
 
@@ -670,19 +705,21 @@ def add_request_vertex(
     response_summary: str = "",
     client_id: str = "",
     client_name: str = "",
+    group_id: str | None = None,
+    group_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
     status: VertexStatus = VertexStatus.COMPLETED,
 ) -> GraphVertex:
     """Add a REQUEST vertex to the master map.
 
-    Records a chat message→response pair. Nested under client/project if known.
+    Records a chat message→response pair. Nested under client/group/project if known.
     Status is determined by the caller:
     - COMPLETED: simple Q&A, no pending work
     - RUNNING: background tasks dispatched, ongoing work
     - FAILED: tool calls returned errors
     """
-    parent_id = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+    parent_id = ensure_hierarchy(graph, client_id, client_name, group_id, group_name, project_id, project_name)
     depth = 1
     if parent_id and parent_id in graph.vertices:
         depth = graph.vertices[parent_id].depth + 1
@@ -716,6 +753,8 @@ def add_task_ref_vertex(
     parent_vertex_id: str | None = None,
     client_id: str = "",
     client_name: str = "",
+    group_id: str | None = None,
+    group_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
 ) -> GraphVertex:
@@ -740,7 +779,7 @@ def add_task_ref_vertex(
     # Resolve parent: explicit parent > client/project hierarchy
     effective_parent = parent_vertex_id
     if not effective_parent:
-        effective_parent = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+        effective_parent = ensure_hierarchy(graph, client_id, client_name, group_id, group_name, project_id, project_name)
 
     # Calculate depth from parent
     depth = 1
@@ -798,6 +837,8 @@ def add_incoming_vertex(
     prepared_context: str = "",
     client_id: str = "",
     client_name: str = "",
+    group_id: str | None = None,
+    group_name: str = "",
     project_id: str | None = None,
     project_name: str = "",
     urgency: str = "normal",
@@ -807,7 +848,7 @@ def add_incoming_vertex(
     Created by the qualifier after processing an indexed item.
     Status = READY (waiting for user to decide action).
     """
-    parent_id = ensure_hierarchy(graph, client_id, client_name, project_id, project_name)
+    parent_id = ensure_hierarchy(graph, client_id, client_name, group_id, group_name, project_id, project_name)
     depth = 1
     if parent_id and parent_id in graph.vertices:
         depth = graph.vertices[parent_id].depth + 1

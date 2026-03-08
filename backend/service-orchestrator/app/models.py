@@ -256,6 +256,7 @@ class OrchestrateRequest(BaseModel):
     group_id: str | None = None
     client_name: str | None = None
     project_name: str | None = None
+    group_name: str | None = None
     workspace_path: str
     query: str
     agent_preference: str = "auto"

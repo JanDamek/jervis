@@ -68,6 +68,7 @@ class ChatService(
         activeGroupId: String? = null,
         activeClientName: String? = null,
         activeProjectName: String? = null,
+        activeGroupName: String? = null,
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
     ): Flow<ChatStreamEvent> {
@@ -128,6 +129,7 @@ class ChatService(
             activeGroupId = activeGroupId,
             activeClientName = activeClientName,
             activeProjectName = activeProjectName,
+            activeGroupName = activeGroupName,
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
         )

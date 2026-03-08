@@ -156,7 +156,7 @@ async def handle_chat_sse(
             is_summarized=False,
             msg_len=len(request.message),
         ):
-            if event.type == "content" and event.content:
+            if event.type in ("content", "token") and event.content:
                 _response_chunks.append(event.content)
             elif event.type == "thinking" and event.content:
                 _trace_parts.append(f"[thinking] {event.content}")
@@ -225,6 +225,8 @@ async def handle_chat_sse(
                     response_summary=_full_response[:120] if _full_response else request.message[:80],
                     client_id=request.active_client_id or "",
                     client_name=request.active_client_name or "",
+                    group_id=request.active_group_id,
+                    group_name=request.active_group_name or "",
                     project_id=request.active_project_id,
                     project_name=request.active_project_name or "",
                     status=_vertex_status,

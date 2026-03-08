@@ -43,6 +43,7 @@ class ChatRpcImpl(
     private val backgroundEngine: BackgroundEngine,
     private val clientRepository: ClientRepository,
     private val projectRepository: ProjectRepository,
+    private val projectGroupRepository: com.jervis.repository.ProjectGroupRepository,
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val taskRepository: TaskRepository,
 ) : IChatService {
@@ -131,12 +132,14 @@ class ChatRpcImpl(
         clientMessageId: String?,
         activeClientId: String?,
         activeProjectId: String?,
+        activeGroupId: String?,
         contextTaskId: String?,
     ) {
         // Validate ObjectId format — reject placeholder values like "client_123"
         val safeClientId = activeClientId?.takeIf { ObjectId.isValid(it) }
         val safeProjectId = activeProjectId?.takeIf { ObjectId.isValid(it) }
-        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId" }
+        val safeGroupId = activeGroupId?.takeIf { ObjectId.isValid(it) }
+        logger.info { "CHAT_SEND | text='${text.take(80)}' | clientId=$safeClientId | projectId=$safeProjectId | groupId=$safeGroupId" }
 
         // Start processing in background — results arrive via chatEventStream
         backgroundScope.launch {
@@ -157,7 +160,16 @@ class ChatRpcImpl(
                     projectId = safeProjectId?.let { ProjectId(ObjectId(it)) },
                 )
                 val maxOpenRouterTier = policy.maxOpenRouterTier.name
-                val activeGroupId = project?.groupId?.toString()
+                // Use explicitly provided groupId, or derive from project
+                val resolvedGroupId = safeGroupId ?: project?.groupId?.toString()
+
+                // Resolve group name for memory map hierarchy
+                val groupName = resolvedGroupId?.let { gid ->
+                    try {
+                        val groupRepo = projectGroupRepository
+                        groupRepo.getById(com.jervis.common.types.ProjectGroupId(ObjectId(gid)))?.name
+                    } catch (_: Exception) { null }
+                }
 
                 // Persistence-first: sendMessage() saves USER_MESSAGE to DB before returning the Flow
                 val eventFlow = chatService.sendMessage(
@@ -165,9 +177,10 @@ class ChatRpcImpl(
                     clientMessageId = clientMessageId,
                     activeClientId = safeClientId,
                     activeProjectId = safeProjectId,
-                    activeGroupId = activeGroupId,
+                    activeGroupId = resolvedGroupId,
                     activeClientName = client?.name,
                     activeProjectName = project?.name,
+                    activeGroupName = groupName,
                     contextTaskId = contextTaskId,
                     maxOpenRouterTier = maxOpenRouterTier,
                 )

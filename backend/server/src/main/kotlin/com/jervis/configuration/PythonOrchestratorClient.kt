@@ -317,6 +317,7 @@ data class OrchestrateRequestDto(
     @SerialName("group_id") val groupId: String? = null,
     @SerialName("client_name") val clientName: String? = null,
     @SerialName("project_name") val projectName: String? = null,
+    @SerialName("group_name") val groupName: String? = null,
     @SerialName("workspace_path") val workspacePath: String,
     val query: String,
     @SerialName("agent_preference") val agentPreference: String = "auto",

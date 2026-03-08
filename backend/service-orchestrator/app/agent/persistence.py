@@ -377,6 +377,8 @@ class AgentStore:
         result_summary: str = "",
         client_id: str = "",
         client_name: str = "",
+        group_id: str | None = None,
+        group_name: str = "",
         project_id: str | None = None,
         project_name: str = "",
     ) -> None:
@@ -384,7 +386,7 @@ class AgentStore:
 
         Parent resolution order:
         1. Task parent (sub-task nesting via _task_parent_map)
-        2. Client/project hierarchy (auto-creates CLIENT/PROJECT vertices)
+        2. Client/group/project hierarchy (auto-creates CLIENT/GROUP/PROJECT vertices)
         """
         master = await self.get_or_create_memory_map()
         from app.agent.graph import add_task_ref_vertex
@@ -400,6 +402,7 @@ class AgentStore:
             completed=completed, failed=failed, result_summary=result_summary,
             parent_vertex_id=parent_vertex_id,
             client_id=client_id, client_name=client_name,
+            group_id=group_id, group_name=group_name,
             project_id=project_id, project_name=project_name,
         )
         self._dirty.add(master.task_id)

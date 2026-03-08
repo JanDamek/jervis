@@ -50,6 +50,7 @@ class AgentOrchestratorService(
     private val cloudModelPolicyResolver: CloudModelPolicyResolver,
     private val gitRepositoryService: com.jervis.service.indexing.git.GitRepositoryService,
     private val directoryStructureService: com.jervis.service.storage.DirectoryStructureService,
+    private val projectGroupRepository: com.jervis.repository.ProjectGroupRepository,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -274,10 +275,15 @@ class AgentOrchestratorService(
         }
         val projectName = projectDoc?.name
         val groupId = projectDoc?.groupId?.toString()
+        val groupName = groupId?.let { gid ->
+            try {
+                projectGroupRepository.getById(com.jervis.common.types.ProjectGroupId(org.bson.types.ObjectId(gid)))?.name
+            } catch (_: Exception) { null }
+        }
 
         val workspacePath = resolveWorkspacePath(task)
 
-        return dispatchBackground(task, userInput, rules, clientName, projectName, groupId, workspacePath, onProgress)
+        return dispatchBackground(task, userInput, rules, clientName, projectName, groupId, groupName, workspacePath, onProgress)
     }
 
     /**
@@ -293,6 +299,7 @@ class AgentOrchestratorService(
         clientName: String?,
         projectName: String?,
         groupId: String?,
+        groupName: String?,
         workspacePath: String,
         onProgress: suspend (message: String, metadata: Map<String, String>) -> Unit,
     ): Boolean {
@@ -343,6 +350,7 @@ class AgentOrchestratorService(
             groupId = groupId,
             clientName = clientName,
             projectName = projectName,
+            groupName = groupName,
             workspacePath = workspacePath,
             query = userInput,
             rules = rules,

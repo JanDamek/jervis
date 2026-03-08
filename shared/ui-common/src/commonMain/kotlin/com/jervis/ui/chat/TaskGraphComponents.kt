@@ -121,8 +121,8 @@ fun TaskGraphSection(
                 }
 
                 sortedVertices.forEach { vertex ->
-                    // CLIENT and PROJECT vertices — section headers, not cards
-                    if (vertex.vertexType == "client" || vertex.vertexType == "project") {
+                    // CLIENT, GROUP, and PROJECT vertices — section headers, not cards
+                    if (vertex.vertexType == "client" || vertex.vertexType == "group" || vertex.vertexType == "project") {
                         HierarchyHeader(vertex = vertex, depthIndent = vertex.depth - 1)
                         return@forEach
                     }
@@ -455,7 +455,7 @@ private fun EdgeRow(
 }
 
 /**
- * Section header for CLIENT and PROJECT vertices — non-collapsible label with icon.
+ * Section header for CLIENT, GROUP, and PROJECT vertices — non-collapsible label with icon.
  */
 @Composable
 private fun HierarchyHeader(
@@ -464,6 +464,23 @@ private fun HierarchyHeader(
 ) {
     val indentDp = (depthIndent * 16).dp
     val isClient = vertex.vertexType == "client"
+    val isGroup = vertex.vertexType == "group"
+
+    val icon = when {
+        isClient -> Icons.Default.Business
+        isGroup -> Icons.Default.AccountTree
+        else -> Icons.Default.Folder
+    }
+    val tint = when {
+        isClient -> MaterialTheme.colorScheme.primary
+        isGroup -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+    val style = when {
+        isClient -> MaterialTheme.typography.titleSmall
+        isGroup -> MaterialTheme.typography.titleSmall
+        else -> MaterialTheme.typography.labelLarge
+    }
 
     Row(
         modifier = Modifier
@@ -473,27 +490,15 @@ private fun HierarchyHeader(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(
-            if (isClient) Icons.Default.Business else Icons.Default.Folder,
+            icon,
             contentDescription = null,
             modifier = Modifier.size(16.dp),
-            tint = if (isClient) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.secondary
-            },
+            tint = tint,
         )
         Text(
             text = vertex.title,
-            style = if (isClient) {
-                MaterialTheme.typography.titleSmall
-            } else {
-                MaterialTheme.typography.labelLarge
-            },
-            color = if (isClient) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.secondary
-            },
+            style = style,
+            color = tint,
         )
     }
 }
@@ -547,6 +552,7 @@ private fun statusLabel(status: String): String = when (status) {
 
 private fun vertexTypeIcon(type: String): ImageVector = when (type) {
     "client" -> Icons.Default.Business
+    "group" -> Icons.Default.AccountTree
     "project" -> Icons.Default.Folder
     "request" -> Icons.Default.ArrowForward
     "incoming" -> Icons.Default.Notifications
@@ -566,6 +572,7 @@ private fun vertexTypeIcon(type: String): ImageVector = when (type) {
 
 private fun vertexTypeLabel(type: String): String = when (type) {
     "client" -> "Klient"
+    "group" -> "Skupina"
     "project" -> "Projekt"
     "request" -> "Požadavek"
     "incoming" -> "Příchozí"

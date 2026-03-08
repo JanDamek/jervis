@@ -107,6 +107,7 @@ class MainViewModel(
         connectionManager = connectionManager,
         selectedClientId = _selectedClientId,
         selectedProjectId = _selectedProjectId,
+        selectedGroupId = _selectedGroupId,
         onScopeChange = ::updateChatScope,
         onConnectionReady = { connection.updateState(ConnectionViewModel.State.CONNECTED) },
         onError = ::reportError,

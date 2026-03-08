@@ -29,6 +29,7 @@ interface IChatService {
      * @param clientMessageId Client-generated UUID for dedup
      * @param activeClientId Currently selected client in UI (scope)
      * @param activeProjectId Currently selected project in UI (scope)
+     * @param activeGroupId Currently selected group in UI (scope)
      * @param contextTaskId If responding to a specific user_task
      */
     suspend fun sendMessage(
@@ -36,6 +37,7 @@ interface IChatService {
         clientMessageId: String? = null,
         activeClientId: String? = null,
         activeProjectId: String? = null,
+        activeGroupId: String? = null,
         contextTaskId: String? = null,
     )
 

@@ -43,6 +43,7 @@ class ChatViewModel(
     private val connectionManager: RpcConnectionManager,
     private val selectedClientId: StateFlow<String?>,
     private val selectedProjectId: StateFlow<String?>,
+    private val selectedGroupId: StateFlow<String?>,
     private val onScopeChange: (clientId: String, projectId: String?, projectsJson: String?, groupId: String?) -> Unit,
     private val onConnectionReady: () -> Unit,
     private val onError: (String) -> Unit,
@@ -239,6 +240,7 @@ class ChatViewModel(
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
+        val groupId = selectedGroupId.value
 
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
@@ -255,6 +257,7 @@ class ChatViewModel(
                     clientMessageId = Uuid.random().toString(),
                     activeClientId = clientId,
                     activeProjectId = projectId,
+                    activeGroupId = groupId,
                     contextTaskId = taskId,
                 )
                 val progressMsg = ChatMessage(
@@ -367,6 +370,7 @@ class ChatViewModel(
 
         val clientId = selectedClientId.value
         val projectId = selectedProjectId.value
+        val groupId = selectedGroupId.value
 
         val optimisticMsg = ChatMessage(
             from = ChatMessage.Sender.Me,
@@ -401,6 +405,7 @@ class ChatViewModel(
                     clientMessageId = clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
+                    activeGroupId = groupId,
                     contextTaskId = taskContext,
                 )
                 println("=== Message sent successfully (RPC) ===")
@@ -449,6 +454,7 @@ class ChatViewModel(
         val state = pendingState ?: return
         val clientId = state.contextClientId ?: selectedClientId.value ?: return
         val projectId = state.contextProjectId ?: selectedProjectId.value
+        val groupId = selectedGroupId.value
 
         retryJob?.cancel()
         scope.launch {
@@ -459,6 +465,7 @@ class ChatViewModel(
                     clientMessageId = state.clientMessageId,
                     activeClientId = clientId,
                     activeProjectId = projectId,
+                    activeGroupId = groupId,
                 )
                 println("=== Retried message sent successfully ===")
                 pendingState = null

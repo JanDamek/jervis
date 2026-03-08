@@ -84,6 +84,7 @@ class PythonChatClient(
         activeGroupId: String? = null,
         activeClientName: String? = null,
         activeProjectName: String? = null,
+        activeGroupName: String? = null,
         contextTaskId: String? = null,
         maxOpenRouterTier: String = "NONE",
     ): Flow<ChatStreamEvent> = flow {
@@ -98,6 +99,7 @@ class PythonChatClient(
             activeGroupId = activeGroupId,
             activeClientName = activeClientName,
             activeProjectName = activeProjectName,
+            activeGroupName = activeGroupName,
             contextTaskId = contextTaskId,
             maxOpenRouterTier = maxOpenRouterTier,
         )
@@ -255,6 +257,7 @@ private data class PythonChatRequest(
     @SerialName("active_group_id") val activeGroupId: String? = null,
     @SerialName("active_client_name") val activeClientName: String? = null,
     @SerialName("active_project_name") val activeProjectName: String? = null,
+    @SerialName("active_group_name") val activeGroupName: String? = null,
     @SerialName("context_task_id") val contextTaskId: String? = null,
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
 )
