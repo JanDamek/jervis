@@ -222,10 +222,8 @@ async def _retry_with_next_model(
 
 
 async def stream_text(text: str):
-    """Yield chunked token events for progressive rendering."""
-    for i in range(0, len(text), STREAM_CHUNK_SIZE):
-        yield ChatStreamEvent(type="token", content=text[i:i + STREAM_CHUNK_SIZE])
-        await asyncio.sleep(0.03)
+    """Yield text as a single token event."""
+    yield ChatStreamEvent(type="token", content=text)
 
 
 async def save_assistant_message(
