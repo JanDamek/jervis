@@ -42,6 +42,7 @@ async def handle_chat_sse(
     - No long message decomposition (agent handles itself)
     - Vertex recorded in memory map for every interaction
     """
+    _response_chunks: list[str] = []
     try:
         # ── 1. Load context ──────────────────────────────────────────
         context = await chat_context_assembler.assemble_context(
@@ -84,6 +85,7 @@ async def handle_chat_sse(
                 resp = await call_llm(messages=messages, tier=ModelTier.LOCAL_COMPACT)
                 text = resp.choices[0].message.content or ""
                 if text.strip():
+                    _response_chunks.append(text)
                     await save_assistant_message(
                         request.session_id, text, {"direct_answer": "true"},
                     )
@@ -153,6 +155,8 @@ async def handle_chat_sse(
             is_summarized=False,
             msg_len=len(request.message),
         ):
+            if event.type == "content" and event.content:
+                _response_chunks.append(event.content)
             yield event
 
     except Exception as e:
@@ -176,11 +180,12 @@ async def handle_chat_sse(
             from app.agent.graph import add_request_vertex
             master = agent_store.get_memory_map_cached()
             if master:
+                _full_response = "".join(_response_chunks) if _response_chunks else ""
                 add_request_vertex(
                     master,
                     message=request.message[:200],
-                    response="(streamed)",
-                    response_summary=request.message[:80],
+                    response=_full_response[:500] if _full_response else "(no response)",
+                    response_summary=_full_response[:120] if _full_response else request.message[:80],
                     client_id=request.active_client_id or "",
                     client_name=request.active_client_name or "",
                     project_id=request.active_project_id,

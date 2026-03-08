@@ -2297,6 +2297,13 @@ POST /internal/correction-progress
   Body: { meetingId, phase, chunkIndex, totalChunks, segmentsProcessed, totalSegments, message }
   → Update stateChangedAt on meeting document (timestamp-based stuck detection)
   → Emit notification to UI
+
+POST /internal/memory-map-changed
+  Body: (empty)
+  → NotificationRpcImpl.emitMemoryMapChanged() [broadcast to ALL connected clients]
+  → UI re-fetches Paměťová mapa via getGraph("master") [500ms debounce]
+  Triggered by: vertex status changes (PENDING→RUNNING→COMPLETED), TASK_REF linking
+  Only fires for MEMORY_MAP graphs (not TASK_SUBGRAPH thinking maps)
 ```
 
 ### 26.3 AgentOrchestratorService

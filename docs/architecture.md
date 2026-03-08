@@ -1452,6 +1452,8 @@ Hybrid push/local notification architecture for real-time user alerts.
 | **Transcription Progress** | `MeetingTranscriptionProgress` | NORMAL | UI shows Whisper progress % + last segment text |
 | **Orchestrator Progress** | `OrchestratorTaskProgress` | NORMAL | UI shows node/goal/step progress |
 | **Orchestrator Status** | `OrchestratorTaskStatusChange` | NORMAL | UI shows done/error/interrupted |
+| **Memory Map Changed** | `MemoryMapChanged` | NORMAL | UI refreshes Paměťová mapa panel (500ms debounce) |
+| **Qualification Progress** | `QualificationProgress` | NORMAL | UI shows qualification step progress |
 
 ### Event Flow
 
@@ -1467,6 +1469,11 @@ Python Orchestrator → completion/error/interrupt
     → KtorRpcServer → OrchestratorStatusHandler.handleStatusChange()
     → NotificationRpcImpl.emitOrchestratorTaskStatusChange() [kRPC stream]
     → MainViewModel.handleGlobalEvent() → QueueViewModel.handleOrchestratorStatusChange()
+
+Python Orchestrator → vertex status change (memory map)
+  → POST /internal/memory-map-changed
+    → KtorRpcServer → NotificationRpcImpl.emitMemoryMapChanged() [broadcast ALL clients]
+    → MainViewModel.handleGlobalEvent() → ChatViewModel.loadMemoryMap() [500ms debounce]
 
 Python Orchestrator → interrupt (approval required)
   → OrchestratorStatusHandler → UserTaskService.failAndEscalateToUserTask()

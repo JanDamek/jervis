@@ -96,6 +96,31 @@ PAMĚŤOVÁ MAPA (Memory Map — global singleton, in RAM, DB = backup)
 - `BLOCKED` = waiting for external input (ASK_USER, dependency not met)
 - A BLOCKED vertex stays in the map — info preserved until resolved
 
+## Timestamps
+
+All timestamps are **ISO 8601 UTC** strings (e.g. `2026-03-08T14:30:00+00:00`).
+
+Fields: `created_at`, `started_at`, `completed_at` on vertices; `created_at` on graphs.
+
+UI displays time as `HH:mm:ss` + duration (e.g. "13:15:30 (trvání: 1m 19s)").
+
+Legacy epoch timestamps (e.g. "1772969660") are auto-migrated to ISO on graph load.
+
+## Real-time Push Updates
+
+Vertex status changes in Paměťová mapa trigger real-time UI refresh:
+
+```
+Python: vertex_started/completed (progress.py)
+  → if graph.graph_type == MEMORY_MAP:
+    → kotlin_client.notify_memory_map_changed()
+      → POST /internal/memory-map-changed
+        → Kotlin broadcasts MemoryMapChanged event to ALL clients
+          → MainViewModel → ChatViewModel.loadMemoryMap() (500ms debounce)
+```
+
+Also fires after `link_thinking_map()` (persistence.py) — when TASK_REF vertices are added/updated.
+
 ---
 
 ## Unified Agent — ONE system for chat + background
