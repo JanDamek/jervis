@@ -353,6 +353,7 @@ class AgentOrchestratorService(
             maxOpenRouterTier = rules.maxOpenRouterTier,
             qualifierContext = task.qualifierPreparedContext,
             sourceUrn = task.sourceUrn.value,
+            taskName = task.taskName,
         )
 
         try {

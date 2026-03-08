@@ -329,6 +329,7 @@ data class OrchestrateRequestDto(
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
     @SerialName("qualifier_context") val qualifierContext: String? = null,
     @SerialName("source_urn") val sourceUrn: String? = null,
+    @SerialName("task_name") val taskName: String? = null,
 )
 
 @Serializable

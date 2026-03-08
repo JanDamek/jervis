@@ -104,7 +104,7 @@ async def _run_graph_agent_background(
         await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id=graph_id,
-            title=request.query[:80] if request.query else f"Task {request.task_id}",
+            title=request.task_name or request.query[:80] or f"Task {request.task_id}",
             completed=success,
             failed=not success,
             result_summary=summary[:500] if summary else "",
@@ -241,7 +241,7 @@ async def _run_coding_agent_background(
         await agent_store.link_thinking_map(
             task_id=request.task_id,
             sub_graph_id="",
-            title=request.query[:80] if request.query else f"Coding {request.task_id}",
+            title=request.task_name or request.query[:80] or f"Coding {request.task_id}",
             completed=False,
             result_summary="",
         )
