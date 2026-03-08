@@ -130,8 +130,8 @@ fun PersistentTopBar(
     onNavigateToMeetings: () -> Unit,
     onQuickRecord: () -> Unit,
     onStopRecording: () -> Unit,
-    // Thinking map
-    hasThinkingMap: Boolean = false,
+    // Paměťová mapa panel toggle
+    hasMemoryMap: Boolean = false,
     onToggleThinkingMapPanel: () -> Unit = {},
     // Environment
     hasEnvironment: Boolean,
@@ -197,12 +197,12 @@ fun PersistentTopBar(
                 )
             }
 
-            // Thinking map toggle
-            if (hasThinkingMap) {
+            // Paměťová mapa toggle
+            if (hasMemoryMap) {
                 JIconButton(
                     onClick = onToggleThinkingMapPanel,
                     icon = Icons.Default.AccountTree,
-                    contentDescription = "Myšlenková mapa",
+                    contentDescription = "Paměťová mapa",
                 )
             }
 

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "task_graphs"
 _TTL_DAYS = 30
 _FLUSH_INTERVAL_S = 30  # Periodic DB flush interval
-_CLEANUP_INTERVAL_S = 600  # Master map cleanup every 10 min
+_CLEANUP_INTERVAL_S = 600  # Memory map cleanup every 10 min
 _KEEP_CHAT_VERTICES = 5  # Keep last N chat exchanges
 _KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
 
@@ -43,7 +43,7 @@ _KEEP_TASK_VERTICES = 5  # Keep last N completed/failed task refs
 class AgentStore:
     """MongoDB-backed persistence for task graphs with RAM cache.
 
-    Master map is held in RAM as a singleton. Task sub-graphs are cached
+    Memory map is held in RAM as a singleton. Task sub-graphs are cached
     in RAM while active. DB is used for restart recovery only.
     """
 
@@ -60,7 +60,7 @@ class AgentStore:
         self._pending_archive: list[dict] = []
 
         # Task parent tracking: child_task_id → parent_task_id
-        # Used to nest sub-tasks under their parent TASK_REF in master map
+        # Used to nest sub-tasks under their parent TASK_REF in memory map
         self._task_parent_map: dict[str, str] = {}
 
     async def init(self) -> None:
@@ -257,10 +257,10 @@ class AgentStore:
     # --- Master Map (RAM singleton) ---
 
     async def get_or_create_memory_map(self, client_id: str = "") -> AgentGraph:
-        """Get or create the global master map (one per orchestrator instance).
+        """Get or create the global memory map (one per orchestrator instance).
 
         RAM-first: returns cached graph if available. Falls back to DB on
-        cold start. Creates new master map if none exists.
+        cold start. Creates new memory map if none exists.
         """
         if self._memory_map is not None:
             return self._memory_map
@@ -272,27 +272,27 @@ class AgentStore:
             doc.pop("_id", None)
             doc.pop("updated_at", None)
             self._memory_map = AgentGraph(**doc)
-            logger.info("Master map loaded from DB (id=%s, vertices=%d)",
+            logger.info("Memory map loaded from DB (id=%s, vertices=%d)",
                         self._memory_map.id, len(self._memory_map.vertices))
             # Immediate cleanup on load — archive removed vertices
-            removed = self.cleanup_master_map()
+            removed = self.cleanup_memory_map()
             if removed > 0:
                 if hasattr(self, "_pending_archive") and self._pending_archive:
                     await self._archive_vertices(self._pending_archive)
                     self._pending_archive = []
                 self._dirty.add(self._memory_map.task_id)
-                logger.info("Master map after cleanup: %d vertices", len(self._memory_map.vertices))
+                logger.info("Memory map after cleanup: %d vertices", len(self._memory_map.vertices))
             return self._memory_map
 
-        # Create new master map
+        # Create new memory map
         from app.agent.graph import create_memory_map
         self._memory_map = create_memory_map(client_id)
         self._dirty.add(self._memory_map.task_id)
-        logger.info("New master map created (id=%s)", self._memory_map.id)
+        logger.info("New memory map created (id=%s)", self._memory_map.id)
         return self._memory_map
 
     def get_memory_map_cached(self) -> AgentGraph | None:
-        """Get master map from RAM only (no DB fallback). For sync callers."""
+        """Get memory map from RAM only (no DB fallback). For sync callers."""
         return self._memory_map
 
     # --- Sub-graph RAM cache ---
@@ -309,10 +309,10 @@ class AgentStore:
         """Remove a completed sub-graph from RAM cache."""
         self._subgraphs.pop(task_id, None)
 
-    # --- Task parent tracking (child → parent nesting in master map) ---
+    # --- Task parent tracking (child → parent nesting in memory map) ---
 
     def register_task_parent(self, child_task_id: str, parent_task_id: str) -> None:
-        """Register a child task's parent for master map nesting."""
+        """Register a child task's parent for memory map nesting."""
         self._task_parent_map[child_task_id] = parent_task_id
         logger.debug("Task parent registered: %s → %s", child_task_id, parent_task_id)
 
@@ -321,7 +321,7 @@ class AgentStore:
         return self._task_parent_map.get(child_task_id)
 
     def _find_parent_vertex_id(self, parent_task_id: str) -> str | None:
-        """Find the master map vertex ID for a parent task_id."""
+        """Find the memory map vertex ID for a parent task_id."""
         if not self._memory_map:
             return None
         for v in self._memory_map.vertices.values():
@@ -344,7 +344,7 @@ class AgentStore:
         project_id: str | None = None,
         project_name: str = "",
     ) -> None:
-        """Link a task sub-graph to the master map via a TASK_REF vertex.
+        """Link a task sub-graph to the memory map via a TASK_REF vertex.
 
         Parent resolution order:
         1. Task parent (sub-task nesting via _task_parent_map)
@@ -377,7 +377,7 @@ class AgentStore:
         """
         results: list[tuple[str, GraphVertex]] = []
 
-        # Check master map
+        # Check memory map
         if self._memory_map:
             for v in self._memory_map.vertices.values():
                 if v.status == VertexStatus.BLOCKED:
@@ -425,15 +425,15 @@ class AgentStore:
             return True
         return False
 
-    # --- Master map cleanup ---
+    # --- Memory map cleanup ---
 
     _ACTIVE_STATUSES = {
         VertexStatus.PENDING, VertexStatus.READY,
         VertexStatus.RUNNING, VertexStatus.BLOCKED,
     }
 
-    def cleanup_master_map(self) -> int:
-        """Remove old completed/failed vertices from master map.
+    def cleanup_memory_map(self) -> int:
+        """Remove old completed/failed vertices from memory map.
 
         Keeps:
         - All active vertices (PENDING, READY, RUNNING, BLOCKED)
@@ -506,7 +506,7 @@ class AgentStore:
 
         self._dirty.add(graph.task_id)
         logger.info(
-            "Master map cleanup: removed %d vertices, kept %d (active=%d, chats=%d, tasks=%d)",
+            "Memory map cleanup: removed %d vertices, kept %d (active=%d, chats=%d, tasks=%d)",
             len(to_remove), len(keep_ids),
             sum(1 for v in graph.vertices.values() if v.status in self._ACTIVE_STATUSES),
             min(len(chats), _KEEP_CHAT_VERTICES),
@@ -549,11 +549,11 @@ class AgentStore:
             logger.warning("Failed to archive vertices: %s", e)
 
     async def _periodic_cleanup(self) -> None:
-        """Background task: cleanup master map every N seconds."""
+        """Background task: cleanup memory map every N seconds."""
         while True:
             try:
                 await asyncio.sleep(_CLEANUP_INTERVAL_S)
-                removed = self.cleanup_master_map()
+                removed = self.cleanup_memory_map()
                 if removed > 0:
                     # Archive first, then flush
                     if hasattr(self, "_pending_archive") and self._pending_archive:
@@ -563,7 +563,7 @@ class AgentStore:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Master map cleanup error: %s", e)
+                logger.error("Memory map cleanup error: %s", e)
 
     # --- Dirty flush ---
 

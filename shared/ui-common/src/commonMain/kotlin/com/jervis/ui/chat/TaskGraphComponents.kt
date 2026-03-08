@@ -144,7 +144,12 @@ fun TaskGraphSection(
 private fun graphSummaryLine(graph: TaskGraphDto): String {
     val vCount = graph.vertices.size
     val statusLabel = statusLabel(graph.status)
-    return "Graf: $statusLabel — $vCount vrcholů, ${graph.totalLlmCalls} LLM volání, ${formatTokens(graph.totalTokenCount)} tokenů"
+    val typeName = when (graph.graphType) {
+        "memory_map" -> "Paměťová mapa"
+        "thinking_map" -> "Myšlenková mapa"
+        else -> "Graf"
+    }
+    return "$typeName: $statusLabel — $vCount vrcholů, ${graph.totalLlmCalls} LLM volání, ${formatTokens(graph.totalTokenCount)} tokenů"
 }
 
 /**

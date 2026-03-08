@@ -19,6 +19,7 @@ data class TaskGraphDto(
     @SerialName("client_id") val clientId: String = "",
     @SerialName("project_id") val projectId: String? = null,
     val status: String = "",
+    @SerialName("graph_type") val graphType: String = "",
     @SerialName("root_vertex_id") val rootVertexId: String = "",
     val vertices: Map<String, GraphVertexDto> = emptyMap(),
     val edges: List<GraphEdgeDto> = emptyList(),

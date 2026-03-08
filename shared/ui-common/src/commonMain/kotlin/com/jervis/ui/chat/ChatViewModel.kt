@@ -90,14 +90,14 @@ class ChatViewModel(
     private val _taskGraphs = MutableStateFlow<Map<String, TaskGraphDto?>>(emptyMap())
     val taskGraphs: StateFlow<Map<String, TaskGraphDto?>> = _taskGraphs.asStateFlow()
 
-    /** Active thinking map from chat (built iteratively by agent). */
+    /** Active map shown in the side panel (always = Paměťová mapa). */
     private val _activeThinkingMap = MutableStateFlow<TaskGraphDto?>(null)
     val activeThinkingMap: StateFlow<TaskGraphDto?> = _activeThinkingMap.asStateFlow()
 
-    /** Debounce job for master map refresh — prevents rapid repeated requests. */
-    private var masterMapLoadJob: Job? = null
+    /** Debounce job for memory map refresh — prevents rapid repeated requests. */
+    private var memoryMapLoadJob: Job? = null
 
-    /** Whether the thinking map side panel is visible (user toggle). */
+    /** Whether the map side panel is visible (user toggle). */
     private val _thinkingMapPanelVisible = MutableStateFlow(false)
     val thinkingMapPanelVisible: StateFlow<Boolean> = _thinkingMapPanelVisible.asStateFlow()
 
@@ -107,9 +107,8 @@ class ChatViewModel(
     fun toggleThinkingMapPanel() {
         val newVisible = !_thinkingMapPanelVisible.value
         _thinkingMapPanelVisible.value = newVisible
-        // If toggling on and no active map, try loading master map
         if (newVisible && _activeThinkingMap.value == null) {
-            loadMasterMap()
+            loadMemoryMap()
         }
     }
 
@@ -119,20 +118,6 @@ class ChatViewModel(
 
     fun updateThinkingMapPanelWidthFraction(fraction: Float) {
         _thinkingMapPanelWidthFraction.value = fraction.coerceIn(0.2f, 0.6f)
-    }
-
-    /** Summary of all thinking maps in the current session. */
-    data class ThinkingMapSummary(val id: String, val title: String, val vertexCount: Int, val status: String)
-    private val _thinkingMaps = MutableStateFlow<List<ThinkingMapSummary>>(emptyList())
-    val thinkingMaps: StateFlow<List<ThinkingMapSummary>> = _thinkingMaps.asStateFlow()
-
-    fun selectThinkingMap(id: String) {
-        // If we have the graph cached, switch to it
-        val graphs = _taskGraphs.value
-        val cached = graphs[id]
-        if (cached != null) {
-            _activeThinkingMap.value = cached
-        }
     }
 
     /** Show chat messages (user/assistant). Default ON. */
@@ -196,7 +181,7 @@ class ChatViewModel(
                         println("ChatViewModel: history load failed: ${e.message}")
                     }
                     // Load master map on connection ready
-                    loadMasterMap()
+                    loadMemoryMap()
                 }
             }.collect { response ->
                 handleChatResponse(response)
@@ -315,35 +300,23 @@ class ChatViewModel(
     }
 
     /**
-     * Load or refresh the master map from orchestrator.
+     * Load or refresh the Paměťová mapa (memory map) from orchestrator.
      * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
      */
-    private fun loadMasterMap() {
-        // Debounce — cancel previous pending load, wait 500ms before actual request
-        masterMapLoadJob?.cancel()
-        masterMapLoadJob = scope.launch {
+    private fun loadMemoryMap() {
+        memoryMapLoadJob?.cancel()
+        memoryMapLoadJob = scope.launch {
             delay(500)
             try {
                 val graph = repository.taskGraphs.getGraph("master")
                 if (graph != null && graph.vertices.isNotEmpty()) {
-                    println("ChatViewModel: master map refreshed — ${graph.vertices.size} vertices")
+                    println("ChatViewModel: memory map refreshed — ${graph.vertices.size} vertices")
                     _activeThinkingMap.value = graph
-                    // Add/update maps list
-                    val summary = ThinkingMapSummary(
-                        id = graph.taskId.ifEmpty { "master" },
-                        title = "Paměťová mapa",
-                        vertexCount = graph.vertices.size,
-                        status = graph.status,
-                    )
-                    val existing = _thinkingMaps.value.toMutableList()
-                    val idx = existing.indexOfFirst { it.id == summary.id }
-                    if (idx >= 0) existing[idx] = summary else existing.add(0, summary)
-                    _thinkingMaps.value = existing
                 } else {
-                    println("ChatViewModel: master map not found or empty")
+                    println("ChatViewModel: memory map not found or empty")
                 }
             } catch (e: Exception) {
-                println("ChatViewModel: master map refresh failed: ${e.message}")
+                println("ChatViewModel: memory map refresh failed: ${e.message}")
             }
         }
     }
@@ -761,7 +734,7 @@ class ChatViewModel(
                     ),
                 )
                 // Refresh master map after chat completion
-                loadMasterMap()
+                loadMemoryMap()
             }
 
             ChatMessage.MessageType.ERROR -> {
@@ -801,29 +774,12 @@ class ChatViewModel(
                     ),
                 )
                 // Refresh master map after background task completion
-                loadMasterMap()
+                loadMemoryMap()
             }
 
             ChatMessage.MessageType.THINKING_MAP_UPDATE -> {
-                // Parse TaskGraphDto from JSON and update active thinking map
-                try {
-                    val graph = Json.decodeFromString<TaskGraphDto>(response.message)
-                    _activeThinkingMap.value = graph
-                    // Auto-show panel when new map data arrives
-                    _thinkingMapPanelVisible.value = true
-                    // Track in maps list
-                    val mapId = response.metadata["graph_id"] ?: graph.taskId
-                    val title = response.metadata["title"] ?: "Mapa"
-                    val vertexCount = response.metadata["vertex_count"]?.toIntOrNull() ?: graph.vertices.size
-                    val existing = _thinkingMaps.value.toMutableList()
-                    val idx = existing.indexOfFirst { it.id == mapId }
-                    val summary = ThinkingMapSummary(mapId, title, vertexCount, graph.status)
-                    if (idx >= 0) existing[idx] = summary else existing.add(summary)
-                    _thinkingMaps.value = existing
-                } catch (e: Exception) {
-                    println("Failed to parse thinking map: ${e.message}")
-                }
-                // Don't add to chat messages — shown in panel
+                // Refresh memory map when background updates arrive
+                loadMemoryMap()
             }
         }
         _chatMessages.value = messages

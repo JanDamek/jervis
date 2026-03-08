@@ -561,23 +561,23 @@ def _check_graph_completion(graph: AgentGraph) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Master Map operations
+# Paměťová mapa (Memory Map) operations
 # ---------------------------------------------------------------------------
 
 
 def create_memory_map(client_id: str = "") -> AgentGraph:
-    """Create a new master map (global singleton).
+    """Create a new Paměťová mapa (global singleton).
 
-    The master map is a persistent graph that holds all chat interactions
-    and references to task sub-graphs. It never completes.
+    The memory map is a persistent graph that holds all chat interactions
+    and references to Myšlenkové mapy (task sub-graphs). It never completes.
     """
     graph_id = f"master-{uuid.uuid4().hex[:8]}"
     root_id = f"v-master-root-{uuid.uuid4().hex[:8]}"
 
     root = GraphVertex(
         id=root_id,
-        title="Master Map",
-        description="Global thinking map — all interactions and task references",
+        title="Paměťová mapa",
+        description="Globální paměťový kontext — všechny interakce a odkazy na úlohy",
         vertex_type=VertexType.ROOT,
         status=VertexStatus.COMPLETED,  # Root is always done
         depth=0,
@@ -590,7 +590,7 @@ def create_memory_map(client_id: str = "") -> AgentGraph:
         graph_type=GraphType.MEMORY_MAP,
         root_vertex_id=root_id,
         vertices={root_id: root},
-        status=GraphStatus.EXECUTING,  # Master is always "executing"
+        status=GraphStatus.EXECUTING,  # Memory map is always "executing"
         created_at=str(int(time.time())),
     )
 
@@ -768,7 +768,7 @@ def add_task_ref_vertex(
     vertex = GraphVertex(
         id=f"v-taskref-{uuid.uuid4().hex[:12]}",
         title=title,
-        description=f"Background task {task_id} → sub-graph {sub_graph_id}",
+        description=title,
         vertex_type=VertexType.TASK_REF,
         status=status,
         input_request=task_id,

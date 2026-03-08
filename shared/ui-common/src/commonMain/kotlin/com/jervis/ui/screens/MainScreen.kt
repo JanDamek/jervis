@@ -53,7 +53,6 @@ fun MainScreen(
     val orchestratorProgress by viewModel.queue.orchestratorProgress.collectAsState()
     val taskGraphs by viewModel.chat.taskGraphs.collectAsState()
     val activeThinkingMap by viewModel.chat.activeThinkingMap.collectAsState()
-    val thinkingMaps by viewModel.chat.thinkingMaps.collectAsState()
     val thinkingMapPanelVisible by viewModel.chat.thinkingMapPanelVisible.collectAsState()
     val thinkingMapPanelWidthFraction by viewModel.chat.thinkingMapPanelWidthFraction.collectAsState()
 
@@ -127,8 +126,6 @@ fun MainScreen(
         thinkingMapPanelContent = { isCompact ->
             com.jervis.ui.chat.ThinkingMapPanel(
                 activeMap = activeThinkingMap,
-                allMaps = thinkingMaps,
-                onSelectMap = viewModel.chat::selectThinkingMap,
                 isCompact = isCompact,
                 onClose = viewModel.chat::closeThinkingMapPanel,
             )
