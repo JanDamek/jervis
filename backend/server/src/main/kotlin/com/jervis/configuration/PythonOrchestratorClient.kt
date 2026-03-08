@@ -458,6 +458,10 @@ data class QualifyRequestDto(
     @SerialName("source_urn") val sourceUrn: String = "",
     /** Cloud model tier available for qualification. */
     @SerialName("max_openrouter_tier") val maxOpenRouterTier: String = "NONE",
+    /** Whether this task has email/source attachments with extract records. */
+    @SerialName("has_attachments") val hasAttachments: Boolean = false,
+    /** Number of attachments for this task. */
+    @SerialName("attachment_count") val attachmentCount: Int = 0,
 )
 
 @Serializable

@@ -87,6 +87,8 @@ class TaskService(
         state: TaskStateEnum = TaskStateEnum.INDEXING,
         attachments: List<AttachmentMetadata> = emptyList(),
         taskName: String? = null,
+        hasAttachments: Boolean = false,
+        attachmentCount: Int = 0,
     ): TaskDocument {
         require(content.isNotBlank()) { "PendingTask content must be provided and non-blank" }
 
@@ -103,6 +105,8 @@ class TaskService(
                 correlationId = correlationId,
                 sourceUrn = sourceUrn,
                 attachments = attachments,
+                hasAttachments = hasAttachments,
+                attachmentCount = attachmentCount,
             )
 
         val saved = taskRepository.save(task)

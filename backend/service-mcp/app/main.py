@@ -399,7 +399,9 @@ import base64
 
 @mcp.tool
 async def kb_document_upload(
-    file_path: str,
+    file_path: str = "",
+    file_content: str = "",
+    file_name: str = "",
     client_id: str = "",
     project_id: str = "",
     title: str = "",
@@ -409,11 +411,18 @@ async def kb_document_upload(
 ) -> str:
     """Upload a document to the Knowledge Base.
 
-    Stores the file on shared FS, extracts text (via Tika/OCR), and indexes
+    Stores the file on shared FS, extracts text (via VLM/Tika), and indexes
     the content into RAG + knowledge graph. Supports PDF, DOCX, TXT, images, etc.
+
+    Two ways to provide the file:
+      A) file_path — absolute path on Jervis PVC (server-side upload)
+      B) file_content (base64) + file_name — direct upload from client
+         Use this when a user attaches a file in the chat.
 
     Args:
         file_path: Absolute path to the file on local disk or shared PVC
+        file_content: Base64-encoded file content (alternative to file_path)
+        file_name: Original filename when using file_content (e.g. "smlouva.pdf")
         client_id: Client ID (leave empty for default)
         project_id: Project ID (leave empty for default)
         title: Human-readable document title (defaults to filename)
@@ -427,17 +436,42 @@ async def kb_document_upload(
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
-    if not os.path.exists(file_path):
-        return f"Error: File not found: {file_path}"
+    # Resolve file bytes from either file_path or file_content+file_name
+    if file_path:
+        if not os.path.exists(file_path):
+            return f"Error: File not found: {file_path}"
+        filename = os.path.basename(file_path)
+        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type = mime_type or "application/octet-stream"
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+    elif file_content and file_name:
+        # Validate filename extension (whitelist)
+        allowed_extensions = {
+            '.pdf', '.docx', '.doc', '.xlsx', '.xls',
+            '.txt', '.csv', '.png', '.jpg', '.jpeg',
+            '.md', '.json', '.xml', '.html',
+        }
+        ext = os.path.splitext(file_name)[1].lower()
+        if ext not in allowed_extensions:
+            return f"Error: File extension '{ext}' not allowed. Supported: {', '.join(sorted(allowed_extensions))}"
 
-    filename = os.path.basename(file_path)
-    mime_type, _ = mimetypes.guess_type(file_path)
-    mime_type = mime_type or "application/octet-stream"
+        try:
+            file_bytes = base64.b64decode(file_content)
+        except Exception as e:
+            return f"Error: Invalid base64 content: {e}"
 
-    with open(file_path, "rb") as f:
-        file_bytes = f.read()
+        max_size = 20 * 1024 * 1024  # 20 MB
+        if len(file_bytes) > max_size:
+            return f"Error: File too large ({len(file_bytes)} bytes). Max: {max_size} bytes (20 MB)"
 
-    # Upload to KB service via Kotlin internal API
+        filename = file_name
+        mime_type, _ = mimetypes.guess_type(file_name)
+        mime_type = mime_type or "application/octet-stream"
+    else:
+        return "Error: Provide either file_path OR (file_content + file_name)"
+
+    # Upload to KB service
     async with httpx.AsyncClient(timeout=300) as client:
         resp = await client.post(
             f"{settings.knowledgebase_write_url}/api/v1/documents/upload",

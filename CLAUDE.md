@@ -95,8 +95,13 @@ Expanded (≥600dp, tablet/desktop):  240dp sidebar + content side-by-side
 - KB document DTOs: `shared/common-dto/.../kb/KbDocumentDtos.kt`
 - KB document service: `shared/common-api/.../IKbDocumentService.kt`, `backend/server/.../rpc/KbDocumentRpcImpl.kt`
 - KB document storage: `backend/server/.../storage/DirectoryStructureService.kt` (storeKbDocument, readKbDocument, deleteKbDocument)
-- KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*)
-- KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload, kb_document_list, kb_document_delete)
+- KB document Python endpoints: `backend/service-knowledgebase/app/api/routes.py` (/documents/*, /documents/extract-text)
+- KB document MCP tools: `backend/service-mcp/app/main.py` (kb_document_upload with base64 support, kb_document_list, kb_document_delete)
+- Attachment extraction: `backend/server/.../entity/AttachmentExtractDocument.kt`, `backend/server/.../repository/AttachmentExtractRepository.kt`
+- Attachment extraction service: `backend/server/.../service/indexing/AttachmentExtractionService.kt` (VLM-first text extraction)
+- Attachment KB indexing: `backend/server/.../service/indexing/AttachmentKbIndexingService.kt` (register pre-stored attachments)
+- VLM image service: `backend/service-knowledgebase/app/services/image_service.py` (qwen3-vl-tool, ChatOllama)
+- Text extraction endpoint: `backend/service-knowledgebase/app/services/knowledge_service.py` (extract_text_only — VLM/Tika without RAG)
 - Agent (unified): `backend/service-orchestrator/app/agent/` (models.py, graph.py, decomposer.py, validation.py, langgraph_runner.py, tool_sets.py, persistence.py, progress.py, artifact_graph.py, impact.py, vertex_executor.py, chat_router.py, sse_handler.py)
 - MongoDB tools + cache invalidation: `backend/service-orchestrator/app/tools/definitions.py` (MONGO_TOOLS), `backend/service-orchestrator/app/tools/executor.py` (handlers + auto cache invalidation), `backend/service-orchestrator/app/tools/kotlin_client.py` (invalidate_cache)
 - Graph UI visualization: `shared/ui-common/.../chat/TaskGraphComponents.kt` (TaskGraphSection, VertexCard, EdgeRow)

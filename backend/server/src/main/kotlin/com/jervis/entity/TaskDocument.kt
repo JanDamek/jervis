@@ -199,6 +199,11 @@ data class TaskDocument(
     // Qualifier prepared context: GPU agent enriches task before orchestrator
     /** JSON context prepared by the qualifying GPU agent (KB search results, suggested approach). */
     val qualifierPreparedContext: String? = null,
+    // Attachment extraction tracking
+    /** Whether this task has email/source attachments with extract records. */
+    val hasAttachments: Boolean = false,
+    /** Number of attachment extract records created for this task. */
+    val attachmentCount: Int = 0,
 ) {
     companion object {
         /**
@@ -251,6 +256,8 @@ data class TaskDocument(
             orderInPhase: Int?,
             indexingClaimedAt: Instant?,
             qualifierPreparedContext: String?,
+            hasAttachments: Boolean?,
+            attachmentCount: Int?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -293,7 +300,8 @@ data class TaskDocument(
             orderInPhase = orderInPhase ?: 0,
             indexingClaimedAt = indexingClaimedAt,
             qualifierPreparedContext = qualifierPreparedContext,
-        )
+            hasAttachments = hasAttachments ?: false,
+            attachmentCount = attachmentCount ?: 0,
     }
 }
 

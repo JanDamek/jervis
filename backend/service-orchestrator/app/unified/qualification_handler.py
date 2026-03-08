@@ -62,6 +62,10 @@ class QualifyRequest(BaseModel):
     # Original content (from Kotlin as "content")
     content: str = ""
 
+    # Attachment tracking
+    has_attachments: bool = False
+    attachment_count: int = 0
+
 
 def _build_system_prompt(request: QualifyRequest) -> str:
     """Build system prompt for qualification agent with orchestrator context preparation."""
@@ -319,6 +323,12 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
             "QUALIFY_DECISION | task=%s | decision=%s | priority=%s | reason=%s",
             request.task_id, decision["decision"], decision.get("priority_score"), decision.get("reason", "")[:100],
         )
+
+        # Score attachment relevance (if task has attachments)
+        attachment_results = await _score_attachment_relevance(request, decision)
+        if attachment_results:
+            decision["attachments"] = attachment_results
+
         await _record_incoming_vertex(request, decision)
         return decision
 
@@ -334,8 +344,169 @@ async def handle_qualification(request: QualifyRequest) -> dict[str, Any]:
         "action_type": "",
         "estimated_complexity": "",
     }
+
+    # Score attachment relevance (if task has attachments)
+    attachment_results = await _score_attachment_relevance(request, decision)
+    if attachment_results:
+        decision["attachments"] = attachment_results
+
     await _record_incoming_vertex(request, decision)
     return decision
+
+
+async def _score_attachment_relevance(request: QualifyRequest, decision: dict) -> list[dict]:
+    """Score attachment relevance using LLM and upload high-scoring ones to KB.
+
+    Reads extract records from MongoDB (attachment_extracts collection),
+    scores each with the qualification LLM, and uploads relevant ones
+    (score >= 0.7) to KB via the register endpoint.
+
+    Returns list of attachment assessment dicts for qualifierPreparedContext.
+    """
+    if not request.has_attachments:
+        return []
+
+    from app.tools.kotlin_client import get_mongo_db
+
+    try:
+        db = await get_mongo_db()
+        extracts = await db.attachment_extracts.find({
+            "taskId": request.task_id,
+            "tikaStatus": "SUCCESS",
+        }).to_list(length=50)
+
+        if not extracts:
+            logger.info("QUALIFY_ATTACHMENTS | task=%s | no SUCCESS extracts found", request.task_id)
+            return []
+
+        logger.info(
+            "QUALIFY_ATTACHMENTS | task=%s | scoring %d extracts",
+            request.task_id, len(extracts),
+        )
+
+        task_context = decision.get("context_summary", request.summary) or request.content[:1000]
+        results = []
+
+        for extract in extracts:
+            filename = extract.get("filename", "unknown")
+            extracted_text = extract.get("extractedText", "")
+            if not extracted_text:
+                continue
+
+            # Score relevance using a simple structured prompt (non-reasoning model)
+            prompt = (
+                f"Úkol: {request.content[:500]}\n"
+                f"Kontext: {task_context[:500]}\n\n"
+                f"Obsah přílohy '{filename}':\n"
+                f"{extracted_text[:4000]}\n\n"
+                f"Je tato příloha relevantní pro splnění úkolu?\n"
+                f"Odpověz JSON: {{\"relevant\": true/false, \"score\": 0.0-1.0, \"reason\": \"...\"}}"
+            )
+
+            try:
+                route = await route_request(
+                    capability="thinking",
+                    estimated_tokens=estimate_tokens(prompt) + 200,
+                    max_tier="NONE",
+                    prefer_cloud=False,
+                )
+
+                response = await llm_provider.completion(
+                    messages=[
+                        {"role": "system", "content": "Odpovídej pouze platným JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=[],
+                    model_override=route.model,
+                    api_base_override=route.api_base,
+                    api_key_override=route.api_key,
+                )
+
+                import json as _json
+                content = response.choices[0].message.content or "{}"
+                # Strip markdown code fences if present
+                content = content.strip()
+                if content.startswith("```"):
+                    content = "\n".join(content.split("\n")[1:])
+                if content.endswith("```"):
+                    content = "\n".join(content.split("\n")[:-1])
+                content = content.strip()
+
+                scored = _json.loads(content)
+                score = float(scored.get("score", 0.0))
+                reason = scored.get("reason", "")
+
+                # Update extract record
+                update_fields = {
+                    "relevanceScore": score,
+                    "relevanceReason": reason,
+                    "updatedAt": __import__("datetime").datetime.utcnow(),
+                }
+
+                # Upload to KB if relevant (score >= 0.7)
+                if score >= 0.7:
+                    try:
+                        import httpx
+                        from app.config import settings as app_settings
+
+                        kb_url = getattr(app_settings, "knowledgebase_write_url", None) or \
+                                 getattr(app_settings, "kb_write_url", None)
+
+                        if kb_url and extract.get("filePath"):
+                            # Register pre-stored attachment with KB
+                            async with httpx.AsyncClient(timeout=120) as client:
+                                resp = await client.post(
+                                    f"{kb_url}/api/v1/documents/register",
+                                    json={
+                                        "clientId": request.client_id,
+                                        "projectId": request.project_id or "",
+                                        "filename": filename,
+                                        "mimeType": extract.get("mimeType", "application/octet-stream"),
+                                        "sizeBytes": 0,
+                                        "storagePath": extract["filePath"],
+                                        "title": f"Attachment: {filename}",
+                                        "description": reason,
+                                        "category": "OTHER",
+                                        "tags": ["email-attachment", "qualifier-approved"],
+                                    },
+                                )
+                                if resp.status_code == 200:
+                                    kb_doc = resp.json()
+                                    update_fields["kbUploaded"] = True
+                                    update_fields["kbDocId"] = kb_doc.get("id", "")
+                                    logger.info(
+                                        "QUALIFY_ATTACHMENT_UPLOADED | task=%s | file=%s | score=%.2f | kbDocId=%s",
+                                        request.task_id, filename, score, kb_doc.get("id", ""),
+                                    )
+                    except Exception as e:
+                        logger.warning("Failed to upload attachment %s to KB: %s", filename, e)
+
+                await db.attachment_extracts.update_one(
+                    {"_id": extract["_id"]},
+                    {"$set": update_fields},
+                )
+
+                results.append({
+                    "filename": filename,
+                    "kbDocId": update_fields.get("kbDocId"),
+                    "relevanceScore": score,
+                    "relevanceReason": reason,
+                })
+
+                logger.info(
+                    "QUALIFY_ATTACHMENT_SCORED | task=%s | file=%s | score=%.2f | reason=%s",
+                    request.task_id, filename, score, reason[:100],
+                )
+
+            except Exception as e:
+                logger.warning("Failed to score attachment %s: %s", filename, e)
+                continue
+
+        return results
+
+    except Exception as e:
+        logger.warning("Failed to score attachments for task %s: %s", request.task_id, e)
+        return []
 
 
 async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> None:

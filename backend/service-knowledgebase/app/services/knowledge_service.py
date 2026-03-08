@@ -294,6 +294,57 @@ class KnowledgeService:
         request.content = text
         return await self.ingest(request)
 
+    async def extract_text_only(self, file_bytes: bytes, filename: str, mime_type: str) -> dict:
+        """Extract text from a file without RAG indexing.
+
+        Uses VLM-first for images, Tika for documents. Returns extracted text
+        and the method used. No graph nodes or RAG chunks are created.
+
+        Used by Qualifier relevance assessment pipeline.
+        """
+        is_image = mime_type.startswith("image/") or filename.lower().endswith(
+            ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif')
+        )
+        is_text = mime_type.startswith("text/") or filename.lower().endswith(('.txt', '.csv'))
+
+        try:
+            if is_text:
+                # Plain text — just decode directly
+                text = file_bytes.decode("utf-8", errors="replace")
+                method = "direct"
+            elif is_image:
+                # VLM-first for images (better than OCR for understanding)
+                try:
+                    text = await self.image_service.describe_image(file_bytes)
+                    method = "vlm"
+                except Exception as e:
+                    logger.warning("VLM failed for %s: %s — falling back to Tika OCR", filename, e)
+                    text = await self.tika_client.process_file(file_bytes, filename)
+                    method = "tika_ocr"
+            else:
+                # Documents (PDF, DOCX, XLSX) — Tika for text extraction
+                text = await self.tika_client.process_file(file_bytes, filename)
+                method = "tika"
+
+                # For PDFs: if Tika returns very little text, might be scanned — try VLM
+                if mime_type == "application/pdf" and len((text or "").strip()) < settings.OCR_TEXT_THRESHOLD:
+                    logger.info("PDF has little text (%d chars), trying VLM for %s",
+                                len((text or "").strip()), filename)
+                    try:
+                        vlm_text = await self.image_service.describe_image(file_bytes)
+                        if len(vlm_text.strip()) > len((text or "").strip()):
+                            text = vlm_text
+                            method = "vlm"
+                    except Exception as e:
+                        logger.warning("VLM failed for scanned PDF %s: %s", filename, e)
+
+            logger.info("extract_text_only: file=%s method=%s chars=%d", filename, method, len(text or ""))
+            return {"extracted_text": text or "", "method": method}
+
+        except Exception as e:
+            logger.error("extract_text_only failed for %s: %s", filename, e)
+            return {"extracted_text": "", "method": "error", "error": str(e)}
+
     async def analyze_code(self, query: str, workspace_path: str) -> JoernResultDto:
         return await self.joern_client.run(query, workspace_path)
 
